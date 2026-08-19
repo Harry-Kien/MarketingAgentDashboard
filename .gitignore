@@ -1,0 +1,25 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# --- Bên thứ ba ---
+# ZaloCRM là repo riêng, giấy phép AGPL. Giữ nó NGOÀI repo này là chủ ý:
+# nghĩa vụ copyleft nằm gọn trong container của nó, không lan sang mã nguồn
+# này. Commit nó vào đây là phá đúng quyết định kiến trúc đó.
+ZaloCRM/
+video-studio/
+
+# --- Dữ liệu doanh nghiệp: KHÔNG đẩy lên repo công khai ---
+# Tài liệu công ty, bảng giá, tồn kho, bộ eval và kết quả chạy đều là dữ
+# liệu vận hành, không phải mã nguồn. Repo này công khai.
+data/knowledge/
+data/eval/
+data/test_img/
+data/catalog.json
+data/videos/
+
+# Ảnh mẫu tổng hợp (do script sinh ra) thì GIỮ LẠI — lệnh test trong README
+# cần chúng, và chúng không chứa thông tin thật nào.
+!data/mau/

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marketing Agent — Trạm điều độ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Lora:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<script>
+  // Đặt chủ đề trước khi vẽ để không nháy trắng.
+  (function () {
+    var t = localStorage.getItem("theme");
+    if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead__id">
+    <span class="masthead__mark" aria-hidden="true"></span>
+    <span class="masthead__title">Marketing Agent</span>
+    <span class="masthead__sub">Trạm điều độ</span>
+  </div>
+
+  <div class="masthead__controls">
+    <div class="modeswitch" role="group" aria-label="Chế độ làm việc">
+      <button type="button" data-mode="assist" class="modeswitch__opt">Gợi ý</button>
+      <button type="button" data-mode="auto" class="modeswitch__opt">Tự động</button>
+    </div>
+
+    <button type="button" id="killswitch" class="killswitch">
+      <span class="killswitch__lamp" aria-hidden="true"></span>
+      <span id="killswitch-label">Đang chạy</span>
+    </button>
+
+    <button type="button" id="themetoggle" class="themetoggle" aria-label="Đổi giao diện sáng tối">
+      <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+  </div>
+
+  <!-- Băng ca trực: mỗi vạch là một hội thoại, màu là kết cục, cao theo số tin. -->
+  <div class="tape">
+    <div class="tape__strip" id="tape" role="list" aria-label="Băng ca trực"></div>
+    <div class="tape__legend">
+      <span><i class="dot dot--auto"></i>Agent xử lý</span>
+      <span><i class="dot dot--assist"></i>Chờ duyệt</span>
+      <span><i class="dot dot--halt"></i>Đã chuyển người</span>
+      <span class="tape__now" id="tape-now">—</span>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Khu vực">
+    <button type="button" class="rail__item is-active" data-view="ca">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M13.4 10.6 19 5"/><path d="M20.6 17A9 9 0 1 0 3.4 17"/></svg>
+      <span>Ca trực</span><b id="c-ca" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="hoithoai">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+      <span>Hội thoại</span><b id="c-hoithoai" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="donhang">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <span>Đơn hàng</span><b id="c-donhang" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="video">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+      <span>Video</span><b id="c-video" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="trithuc">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
+      <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="nhatky">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+      <span>Nhật ký</span><b class="rail__count"></b>
+    </button>
+
+    <div class="rail__foot">
+      <span class="rail__footlabel">Chi phí 24 giờ</span>
+      <span class="rail__footvalue" id="rail-cost">—</span>
+    </div>
+  </nav>
+
+  <main class="stage" id="stage">
+
+    <!-- ============ CA TRỰC ============ -->
+    <section class="view is-active" data-view="ca">
+      <div class="readout" id="readout"></div>
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Chờ người xử lý</h2>
+          <div id="queue" class="rows"></div>
+        </section>
+        <section class="panel">
+          <h2 class="panel__head">Video chờ duyệt</h2>
+          <div id="videoqueue" class="rows"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ============ HỘI THOẠI ============ -->
+    <section class="view" data-view="hoithoai">
+      <div class="convo">
+        <aside class="convo__list">
+          <div class="filterbar" id="convfilter">
+            <button type="button" class="chip is-on" data-status="all">Tất cả</button>
+            <button type="button" class="chip" data-status="assist">Chờ duyệt</button>
+            <button type="button" class="chip" data-status="escalated">Đã chuyển</button>
+            <button type="button" class="chip" data-status="auto">Tự xử lý</button>
+          </div>
+          <div id="convlist" class="rows"></div>
+        </aside>
+        <section class="convo__detail" id="convdetail">
+          <p class="empty">Chọn một hội thoại ở cột bên trái để xem chi tiết.</p>
+        </section>
+      </div>
+    </section>
+
+    <!-- ============ ĐƠN HÀNG ============ -->
+    <section class="view" data-view="donhang">
+      <section class="panel">
+        <h2 class="panel__head">Đơn hàng</h2>
+        <div class="filterbar" id="orderfilter">
+          <button type="button" class="chip is-on" data-ostatus="all">Tất cả</button>
+          <button type="button" class="chip" data-ostatus="cho_duyet">Chờ duyệt</button>
+          <button type="button" class="chip" data-ostatus="da_chot">Đã chốt</button>
+          <button type="button" class="chip" data-ostatus="da_huy">Đã huỷ</button>
+        </div>
+        <div id="orders" class="rows"></div>
+      </section>
+    </section>
+
+    <!-- ============ VIDEO ============ -->
+    <section class="view" data-view="video">
+      <section class="panel">
+        <h2 class="panel__head">Đặt video mới</h2>
+        <form id="videoform" class="form">
+          <label class="field">
+            <span>Tiêu đề</span>
+            <input name="title" required maxlength="200" placeholder="Giới thiệu ghế Aurora M1">
+          </label>
+          <label class="field">
+            <span>Loại video</span>
+            <select name="kind">
+              <option value="explainer">Giải thích / hoạt họa</option>
+              <option value="product">Giới thiệu sản phẩm</option>
+            </select>
+          </label>
+          <label class="field field--wide">
+            <span>Nội dung cần truyền tải</span>
+            <textarea name="brief" required rows="3" minlength="10"
+              placeholder="Ghế công thái học, lưng lưới thoáng khí, tựa đầu chỉnh 3 hướng, bảo hành 24 tháng. Nhấn vào việc ngồi lâu không mỏi lưng."></textarea>
+          </label>
+          <label class="field field--wide">
+            <span>Ảnh sản phẩm <em class="hint">tối đa 8 ảnh · jpg/png/webp · agent tự xem ảnh rồi quyết bố cục</em></span>
+            <input id="videoimages" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+            <div id="imgpreview" class="thumbs"></div>
+          </label>
+          <button type="submit" class="btn btn--primary">Bắt đầu sản xuất</button>
+        </form>
+      </section>
+      <div id="videos" class="gallery"></div>
+    </section>
+
+    <!-- ============ TRI THỨC ============ -->
+    <section class="view" data-view="trithuc">
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Nạp tài liệu</h2>
+          <form id="docform" class="form">
+            <label class="field field--wide">
+              <span>Tên tài liệu</span>
+              <input name="title" required maxlength="200" placeholder="Chính sách bảo hành 2026">
+            </label>
+            <label class="field field--wide">
+              <span>Nội dung</span>
+              <textarea name="text" required rows="8" minlength="20"
+                placeholder="Dán nội dung tài liệu vào đây. Cách nhau một dòng trống giữa các đoạn để hệ thống cắt đúng ngữ nghĩa."></textarea>
+            </label>
+            <button type="submit" class="btn btn--primary">Nạp vào cơ sở tri thức</button>
+          </form>
+        </section>
+        <section class="panel">
+          <h2 class="panel__head">Thử truy vấn</h2>
+          <p class="panel__note">Kiểm tra agent tìm được gì, không tốn lượt gọi model.</p>
+          <form id="probeform" class="form">
+            <label class="field field--wide">
+              <span>Câu hỏi của khách</span>
+              <input name="question" required placeholder="Ghế Aurora bảo hành mấy năm?">
+            </label>
+            <button type="submit" class="btn">Tìm</button>
+          </form>
+          <div id="probe" class="rows"></div>
+        </section>
+      </div>
+      <section class="panel">
+        <h2 class="panel__head">Tài liệu đã nạp</h2>
+        <div id="docs" class="rows"></div>
+      </section>
+    </section>
+
+    <!-- ============ NHẬT KÝ ============ -->
+    <section class="view" data-view="nhatky">
+      <section class="panel">
+        <h2 class="panel__head">Nhật ký kiểm toán</h2>
+        <div id="events" class="rows"></div>
+      </section>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

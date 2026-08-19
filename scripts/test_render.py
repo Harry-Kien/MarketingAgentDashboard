@@ -111,8 +111,22 @@ async def main() -> int:
         for i, scene in enumerate(SCENES):
             scene["anh_index"] = i % max(1, len(asset_rows))
 
-    print("\n[1] Đo thời lượng (chưa có TTS -> dùng ước lượng âm tiết)")
-    total = await timing.measure_scenes(SCENES, [None] * len(SCENES))
+    # Có sẵn file giọng đọc trong thư mục audio thì ĐO THẬT bằng ffprobe.
+    # Bản trước luôn truyền [None] nên bài test chưa bao giờ chạm vào đường
+    # có âm thanh — và đó là lý do lỗi `-shortest` cắt mất khoảng nghỉ nằm
+    # im suốt: không có audio thì không có gì để cắt.
+    audio_paths = []
+    for i in range(len(SCENES)):
+        w = audio_dir / f"scene_{i:02d}.wav"
+        audio_paths.append(w if w.exists() else None)
+    co_tieng = sum(1 for a in audio_paths if a)
+
+    if co_tieng:
+        print(f"\n[1] Đo thời lượng ({co_tieng}/{len(SCENES)} cảnh có giọng đọc "
+              "-> đo thật bằng ffprobe)")
+    else:
+        print("\n[1] Đo thời lượng (chưa có TTS -> dùng ước lượng âm tiết)")
+    total = await timing.measure_scenes(SCENES, audio_paths)
     for i, s in enumerate(SCENES):
         print(f"    cảnh {i}: {s['duration']:>5.2f}s  bắt đầu {s['start']:>5.2f}s"
               f"  ({s['timing_source']})")
@@ -146,7 +160,35 @@ async def main() -> int:
     print(f"    thời lượng thật: {measured:.2f}s" if measured else "    đo lại: LỖI")
     print(f"    sai lệch:        {drift:.2f}s "
           f"{'(đạt)' if drift < 0.6 else '(LỆCH QUÁ NGƯỠNG)'}")
+
+    # Video câm mà tưởng có tiếng là hỏng âm thầm — kiểm bằng số đo, không
+    # bằng niềm tin. -91 dB là ngưỡng im lặng tuyệt đối của ffmpeg.
+    if co_tieng:
+        vol = await _do_am_luong(out_path)
+        if vol is None:
+            print("    âm lượng:        KHÔNG ĐO ĐƯỢC")
+        else:
+            print(f"    âm lượng TB:     {vol:.1f} dB "
+                  f"{'(có tiếng)' if vol > -60 else '(CÂM — audio bị rớt)'}")
+            if vol <= -60:
+                return 1
+
     return 0 if measured and drift < 0.6 else 1
+
+
+async def _do_am_luong(path: Path) -> float | None:
+    """Âm lượng trung bình của file, qua bộ lọc volumedetect của ffmpeg."""
+    import re
+    import shutil
+
+    proc = await asyncio.create_subprocess_exec(
+        shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-i", str(path),
+        "-af", "volumedetect", "-f", "null", "-",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    m = re.search(r"mean_volume:\s*(-?[\d.]+) dB", out.decode(errors="replace"))
+    return float(m.group(1)) if m else None
 
 
 if __name__ == "__main__":

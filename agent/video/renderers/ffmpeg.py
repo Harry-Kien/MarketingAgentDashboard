@@ -33,6 +33,18 @@ FPS = 30
 FADE_IN = 0.3
 ZOOM_RANGE = 0.10          # phóng 10% suốt cảnh — đủ thấy, chưa thấy méo
 
+# Cảnh rời là file TẠM, sẽ bị mã hoá lại lần nữa khi ghép. Nén chặt ở bước
+# này là tự chồng nhiễu lên nhiễu, nên để chất lượng gần như không mất
+# (crf 16) rồi mới nén thật ở bước cuối.
+CRF_SEGMENT = 16
+CRF_FINAL = 19
+PRESET_FINAL = "medium"    # chậm hơn veryfast nhưng đây là bản giao đi
+
+# Chuẩn âm lượng của các nền tảng xã hội: -16 LUFS, đỉnh thật -1.5 dBTP.
+# Không chuẩn hoá thì mỗi video một mức to nhỏ khác nhau, người xem phải
+# chỉnh loa liên tục — lỗi nghiệp dư dễ thấy nhất ở video doanh nghiệp.
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
 
 def _ffmpeg() -> str:
     return shutil.which("ffmpeg") or "ffmpeg"
@@ -104,9 +116,15 @@ async def _segment(
         "-af", "apad",
         "-t", f"{dur:.3f}",
         "-r", str(FPS),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", str(CRF_SEGMENT),
         "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-ar", "44100", "-b:a", "128k",
+        # ÉP CỨNG stereo 48kHz cho MỌI cảnh. Cảnh có giọng đọc lấy layout từ
+        # file wav (viet-tts trả mono), cảnh không có thì anullsrc sinh
+        # stereo. Ghép hai loại lại thì `concat` lấy thông số của cảnh ĐẦU
+        # TIÊN làm chuẩn — nghĩa là định dạng audio của cả video đổi theo
+        # việc cảnh mở đầu có lời thoại hay không. Đầu ra không được phép
+        # phụ thuộc vào nội dung như vậy.
+        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "192k",
         str(seg),
     ]
 
@@ -151,8 +169,15 @@ async def render(ctx: RenderContext) -> tuple[bool, str]:
                 note = "ffmpeg + phụ đề"
 
         cmd += [
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+            "-af", LOUDNORM,
+            "-c:v", "libx264", "-preset", PRESET_FINAL, "-crf", str(CRF_FINAL),
+            "-profile:v", "high", "-level", "4.1",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-ar", "48000", "-b:a", "192k",
+            # Đưa chỉ mục lên đầu file: không có cờ này thì trình duyệt và
+            # ứng dụng phải tải hết file mới phát được, video 20MB trên 4G
+            # là đứng im mấy giây rồi mới chạy.
+            "-movflags", "+faststart",
             str(ctx.out_path),
         ]
 

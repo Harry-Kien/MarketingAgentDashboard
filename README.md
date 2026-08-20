@@ -24,6 +24,33 @@ Chạy trên **Vertex AI** (Claude + về sau là Veo), một GCP project, một
 
 ---
 
+## Cài trên máy mới
+
+Repo mang sẵn dữ liệu mẫu để chạy được ngay sau khi clone, **chưa cần** Zalo,
+chưa cần danh mục thật, chưa cần tài liệu công ty:
+
+- `data/catalog.example.json` — 22 sản phẩm mô phỏng. Mã tự dùng file này khi
+  chưa có `data/catalog.json` (bản thật không lên repo).
+- `data/products/` — 44 ảnh sản phẩm cho 22 mã, đủ để agent dựng video ngay.
+- `data/knowledge.example/` — tài liệu mẫu cho RAG.
+- `data/mau/` — ảnh tổng hợp cho bài test bộ dựng.
+
+Việc phải làm khi chuyển sang dùng thật: đặt danh mục thật vào
+`data/catalog.json`, tài liệu thật vào `data/knowledge/` rồi nạp, và thay ảnh
+sinh trong `data/products/<mã>/` bằng **ảnh chụp sản phẩm thật** — ảnh trong
+repo là do model sinh, không phải hàng thật của bạn.
+
+Kiểm nhanh xem máy đã sẵn sàng chưa, không cần Postgres hay Zalo:
+
+```bash
+.venv/Scripts/python.exe -m scripts.test_render --images data/mau
+```
+
+Ra được `data/videos/_test/video.mp4` với sai lệch thời lượng dưới 0,6 giây
+là bộ dựng chạy đúng.
+
+---
+
 ## Chạy trong 15 phút
 
 ### 1. Điều kiện
@@ -110,6 +137,33 @@ http://host.docker.internal:8000/webhook
 > `localhost` — container không tự gọi được vào host.
 
 Điền `ZALOCRM_API_KEY` vào `.env` rồi khởi động lại app.
+
+---
+
+## Giọng đọc
+
+Không có giọng đọc thì video **câm** và thời lượng chỉ là ước lượng âm tiết —
+mất đúng thứ khiến hệ thống này khác các bộ dựng video khác. Kiểm trước:
+
+```bash
+.venv/Scripts/python.exe -m scripts.test_tts
+```
+
+Hai đường, hệ thống tự chọn đường nào đang chạy (`TTS_PROVIDER=auto`):
+
+| Đường | Cần gì | Chi phí |
+|---|---|---|
+| **Google Cloud TTS** | Bật một API trên chính project GCP đang dùng | ~0,005 USD mỗi video 30 giây |
+| **viet-tts** | Clone repo, tải model, tự dựng | Miễn phí |
+
+Đường nhanh nhất:
+
+```bash
+gcloud services enable texttospeech.googleapis.com
+```
+
+Đường miễn phí: dựng [viet-tts](https://github.com/dangvansam/viet-tts) theo
+README của nó rồi trỏ `TTS_BASE_URL` vào cổng nó mở.
 
 ---
 

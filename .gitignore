@@ -17,9 +17,13 @@ video-studio/
 data/knowledge/
 data/eval/
 data/test_img/
-data/catalog.json
 data/videos/
+
+# Danh mục THẬT không lên repo. Bản mẫu `catalog.example.json` thì CÓ, để
+# máy vừa clone về chạy được ngay — mã tự dùng bản mẫu khi chưa có bản thật.
+data/catalog.json
 
 # Ảnh mẫu tổng hợp (do script sinh ra) thì GIỮ LẠI — lệnh test trong README
 # cần chúng, và chúng không chứa thông tin thật nào.
 !data/mau/
+.env.chatwoot

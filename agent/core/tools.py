@@ -173,10 +173,22 @@ TOOLS: list[dict] = [
 ]
 
 
+CATALOG_MAU = ROOT / "data" / "catalog.example.json"
+
+
 def _catalog() -> dict:
-    if not CATALOG_PATH.exists():
+    """
+    Danh mục sản phẩm. Ưu tiên dữ liệu thật, không có thì dùng bản mẫu.
+
+    Bản mẫu đi kèm repo để máy vừa clone về chạy được ngay: thiếu danh mục
+    thì mọi tool tra cứu trả rỗng, agent không nói được giá nào và chuyển hết
+    cho người — đúng thiết kế nhưng vô dụng, mà người mới cài thì tưởng hệ
+    thống hỏng. Dữ liệu thật đặt ở `catalog.json`, file đó không lên repo.
+    """
+    duong_dan = CATALOG_PATH if CATALOG_PATH.exists() else CATALOG_MAU
+    if not duong_dan.exists():
         return {"san_pham": [], "don_hang": []}
-    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    return json.loads(duong_dan.read_text(encoding="utf-8"))
 
 
 def _norm(s: str) -> str:
@@ -204,6 +216,11 @@ def _score(query: str, product: dict) -> float:
     'Aurora' nên khớp lỏng sẽ trả nhầm sản phẩm — tức agent báo giá món
     khác. Đó là lỗi tệ hơn nhiều so với trả lời không tìm thấy.
     """
+    # Tự chuẩn hoá thay vì tin người gọi đã làm. Trước đây hàm ngầm đòi
+    # tham số đã qua _norm; gọi bằng chuỗi thô thì nó IM LẶNG trả điểm sai
+    # chứ không báo lỗi — loại phụ thuộc ẩn dễ gây trả nhầm sản phẩm nhất.
+    # _norm là luỹ đẳng nên gọi hai lần vô hại.
+    query = _norm(query)
     hay = _norm(product.get("ten", "")) + " " + _norm(product.get("ma", ""))
     hay_words = set(hay.split())
     q_words = [w for w in query.split() if len(w) > 1 and w not in _STOPWORDS]

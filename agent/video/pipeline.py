@@ -90,15 +90,23 @@ def bind_scenes_to_assets(scenes: list[dict], asset_rows: list[dict]) -> None:
         scene["anh_index"] = idx
 
 
+# Đọc tối đa 2 cảnh cùng lúc. Bắn cả 6 cảnh một lượt vào API giọng đọc thì
+# có cảnh bị từ chối vì quá nhanh, và cảnh đó lặng lẽ mất tiếng — video vẫn
+# ra, các cảnh khác vẫn có giọng, nên không ai để ý.
+SONG_SONG_DOC = 2
+
+
 async def voice_scenes(scenes: list[dict], audio_dir: Path) -> list[Path | None]:
-    """Bước 2 — đọc từng cảnh thành file wav (song song)."""
+    """Bước 2 — đọc từng cảnh thành file wav, có giới hạn số lời gọi cùng lúc."""
     audio_dir.mkdir(parents=True, exist_ok=True)
+    khoa = asyncio.Semaphore(SONG_SONG_DOC)
 
     async def one(i: int, scene: dict) -> Path | None:
         line = str(scene.get("loi_thoai", "")).strip()
         if not line:
             return None
-        return await tts.synthesize(line, audio_dir / f"scene_{i:02d}.wav")
+        async with khoa:
+            return await tts.synthesize(line, audio_dir / f"scene_{i:02d}.wav")
 
     return list(
         await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes)))

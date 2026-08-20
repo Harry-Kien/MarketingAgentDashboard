@@ -21,6 +21,7 @@ Chưa bật thì API trả 403 và hệ thống lặng lẽ tụt xuống bậc 
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
 
@@ -111,24 +112,49 @@ async def _google(text: str, out_path: Path, ly_do: list | None = None) -> Path 
             "speakingRate": 0.96,
         },
     }
-    try:
-        token = await _token()
-        async with httpx.AsyncClient(timeout=60.0) as c:
-            r = await c.post(
-                GOOGLE_URL, json=body,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    # ADC cục bộ bắt buộc phải chỉ rõ project chịu hạn mức,
-                    # thiếu header này thì API trả 403 dù quyền vẫn đủ.
-                    "x-goog-user-project": settings.gcp_project_id,
-                },
-            )
-    except httpx.HTTPError as exc:
-        ghi(f"không gọi được: {type(exc).__name__}")
-        return None
-    except Exception as exc:  # noqa: BLE001 — token hỏng cũng phải nói ra
-        ghi(f"{type(exc).__name__}: {str(exc)[:120]}")
+    # THỬ LẠI cho lỗi tạm thời. Không có bước này thì một cảnh trong lô hỏng
+    # là cảnh đó mất giọng đọc, và `timing.py` lặng lẽ chuyển riêng cảnh ấy
+    # sang ước lượng âm tiết — video vẫn ra, vẫn có tiếng ở các cảnh khác,
+    # nên không ai để ý. Đã bắt gặp đúng chuyện này: 4/5 cảnh đo thật, cảnh
+    # thứ tư im lặng vì một lần gọi rớt.
+    #
+    # 403 (chưa bật API) và 400 (câu chữ sai) thì thử lại vô nghĩa.
+    TAM_THOI = {429, 500, 502, 503, 504}
+    cho = 2.0
+    r = None
+
+    for lan in range(3):
+        try:
+            token = await _token()
+            async with httpx.AsyncClient(timeout=60.0) as c:
+                r = await c.post(
+                    GOOGLE_URL, json=body,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                        # ADC cục bộ bắt buộc phải chỉ rõ project chịu hạn
+                        # mức, thiếu header này thì API trả 403 dù quyền đủ.
+                        "x-goog-user-project": settings.gcp_project_id,
+                    },
+                )
+        except httpx.HTTPError as exc:
+            if lan == 2:
+                ghi(f"không gọi được: {type(exc).__name__}")
+                return None
+            await asyncio.sleep(cho)
+            cho *= 2
+            continue
+        except Exception as exc:  # noqa: BLE001 — token hỏng cũng phải nói ra
+            ghi(f"{type(exc).__name__}: {str(exc)[:120]}")
+            return None
+
+        if r.status_code < 400 or r.status_code not in TAM_THOI or lan == 2:
+            break
+        await asyncio.sleep(cho)
+        cho *= 2
+
+    if r is None:
+        ghi("không gọi được model")
         return None
 
     if r.status_code >= 400:

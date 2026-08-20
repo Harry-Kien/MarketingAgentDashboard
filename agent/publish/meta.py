@@ -82,7 +82,12 @@ class MetaPublisher(PublishAdapter):
             return PublishResult(ok=False, kenh=t.kenh,
                                  detail="Instagram bắt buộc phải có video hoặc ảnh")
         # Instagram chỉ nhận URL công khai, không nhận upload trực tiếp.
-        video_url = f"{settings.public_base_url}/media/videos/{t.video_path.name}"
+        video_url = t.video_url()
+        if not video_url:
+            return PublishResult(
+                ok=False, kenh=t.kenh,
+                detail=f"Video nằm ngoài thư mục công khai: {t.video_path}",
+            )
         try:
             r = await self._http.post(
                 f"{GRAPH}/{ig}/media",

@@ -44,6 +44,41 @@ class PublishTarget:
     video_path: Path | None = None
     anh_paths: list[Path] = field(default_factory=list)
 
+    def video_url(self) -> str:
+        """
+        URL công khai của video, hoặc rỗng nếu không có.
+
+        VÌ SAO KHÔNG DÙNG `video_path.name`
+        -----------------------------------
+        Dây chuyền dựng video đặt mỗi video trong một thư mục riêng theo id:
+
+            data/videos/<id-video>/video.mp4
+
+        Nên `.name` của MỌI video đều là "video.mp4". Dựng URL từ nó ra
+        `/media/videos/video.mp4` — vừa không tồn tại, vừa GIỐNG HỆT NHAU
+        cho mọi video. Instagram sẽ nhận 404, hoặc tệ hơn, nếu tình cờ có
+        một file tên đó thì mọi bài đăng đều dùng chung một video.
+
+        Lỗi này im lặng cho tới đúng ngày ai đó bật đăng tự động.
+
+        Phải là đường TƯƠNG ĐỐI so với thư mục được mount, và phải dùng dấu
+        gạch chéo xuôi — Windows trả về dấu ngược, mà dấu ngược trong URL
+        thì máy chủ không hiểu.
+        """
+        if not self.video_path:
+            return ""
+        from ..config import settings
+        goc = settings.video_out_path
+        try:
+            tuong_doi = self.video_path.resolve().relative_to(goc.resolve())
+        except (ValueError, OSError):
+            # File nằm ngoài thư mục được mount -> không có URL công khai.
+            # Trả rỗng để bên gọi biết mà dùng đường khác, thay vì dựng ra
+            # một URL trông đúng nhưng luôn 404.
+            return ""
+        duong = "/".join(tuong_doi.parts)
+        return f"{settings.public_base_url}/media/videos/{duong}"
+
     def caption(self) -> str:
         """Nội dung kèm hashtag, đúng cách người Việt viết caption."""
         tags = " ".join(

@@ -506,7 +506,29 @@ async def retry_video(video_id: str) -> dict:
 
 @router.post("/videos/{video_id}/approve")
 async def approve_video(video_id: str) -> dict:
+    """
+    Duyệt video. CHỈ duyệt được khi file thật sự có trên đĩa.
+
+    Trước đây endpoint này đặt thẳng `ready` mà không kiểm gì. Kết quả là
+    trong CSDL có video mang trạng thái "đã duyệt" với `file_path = NULL` —
+    dashboard hiện là xong, gắn vào bài đăng được, và bộ đăng tay báo "có
+    video" rồi nút tải trả 404.
+
+    Hai bản ghi đã ở đúng tình trạng đó khi rà lại.
+    """
     vid = uuid.UUID(video_id)
+    v = await db.fetchrow("SELECT file_path, status FROM videos WHERE id = $1", vid)
+    if v is None:
+        raise HTTPException(404, "Không tìm thấy video")
+
+    fp = v["file_path"]
+    if not fp or not Path(fp).exists():
+        raise HTTPException(
+            422,
+            "Video chưa có file dựng xong nên không duyệt được. "
+            f"Trạng thái hiện tại: {v['status']}.",
+        )
+
     await db.execute(
         "UPDATE videos SET status = 'ready', updated_at = now() WHERE id = $1", vid
     )

@@ -44,10 +44,7 @@ class N8nPublisher(PublishAdapter):
             # được. Gửi cả đường tuyệt đối lẫn URL tải qua HTTP để workflow
             # chọn cách nào tiện.
             "video_path": str(target.video_path) if target.video_path else None,
-            "video_url": (
-                f"{settings.public_base_url}/media/videos/{target.video_path.name}"
-                if target.video_path else None
-            ),
+            "video_url": target.video_url() or None,
             "callback_url": f"{settings.public_base_url}/api/posts/{target.post_id}/callback",
         }
         headers = {}

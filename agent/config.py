@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # không được phép tự chạy chỉ vì có ảnh trong tay. Điền tên model (ví dụ
     # `veo-3.1-generate-preview`) mới bật.
     veo_model: str = ""
+    # Bậc HyperFrames cũng TẮT theo mặc định, nhưng vì lý do khác Veo: nó
+    # chưa dựng được lớp giọng đọc trong composition. Bật khi hình đẹp quan
+    # trọng hơn tiếng, hoặc sau khi đã làm xong phần âm thanh cho nó.
+    hyperframes_bat: bool = False
     # Số video dựng cùng lúc. Để 1: ffmpeg ăn CPU nặng, mà nó chạy chung
     # tiến trình với việc trả lời khách — việc trước mặt khách ưu tiên hơn.
     video_workers: int = 1
@@ -106,6 +110,9 @@ class Settings(BaseSettings):
     # --- Vận hành ---
     agent_enabled: bool = True
     agent_mode: str = "assist"          # assist | auto
+    # Tách câu trả lời dài thành 2-3 tin và nghỉ giữa các tin đúng khoảng
+    # thời gian gõ. Tắt đi thì gửi một cục, nhanh hơn nhưng lộ máy ngay.
+    nhip_nguoi_that: bool = True
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.

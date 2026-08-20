@@ -104,20 +104,42 @@ def build_html(ctx: RenderContext) -> str:
 
 
 async def render(ctx: RenderContext) -> tuple[bool, str]:
+    # TẮT THEO MẶC ĐỊNH, có lý do kỹ thuật chứ không phải vì chưa làm xong.
+    #
+    # Bậc ffmpeg ghép giọng đọc theo từng cảnh và thời lượng đã được kiểm
+    # bằng số đo ffprobe. HyperFrames lái hoạt ảnh bằng GSAP trên đồng hồ
+    # riêng của nó; muốn có giọng đọc thì phải dựng thêm lớp âm thanh trong
+    # composition và bảo đảm tổng thời lượng khớp đúng số đo. Chưa kiểm
+    # chứng được điều đó, mà hỏng thì video ĐẸP HƠN NHƯNG MẤT TIẾNG.
+    #
+    # Với hệ thống có cả kiến trúc xoay quanh việc khớp giọng đọc, đổi tiếng
+    # lấy hình đẹp là đổi sai. Bật bằng HYPERFRAMES_BAT=true khi đã dựng
+    # xong lớp âm thanh và kiểm bằng scripts/test_render.
+    if not getattr(settings, "hyperframes_bat", False):
+        return False, "hyperframes đang tắt (chưa xử lý giọng đọc; bật bằng HYPERFRAMES_BAT=true)"
+
     studio = settings.studio_path
     if not studio.exists():
         return False, "chưa có video-studio (chạy: npx hyperframes init video-studio)"
     if shutil.which("npx") is None:
         return False, "không thấy npx (cần Node 22+)"
 
-    comp = studio / "src" / "composition.html"
+    # CLI thật (hyperframes 0.8.4):
+    #     hyperframes render [OPTIONS] [DIR]
+    #     -c/--composition  đường dẫn TƯƠNG ĐỐI trong dự án
+    #     -o/--output       file ra
+    # Bản trước tôi viết `--input <đường dẫn tuyệt đối>` theo phỏng đoán —
+    # tham số đó không tồn tại, nên bậc này hỏng ở mọi lần gọi.
+    comp = studio / "compositions" / "marketing.html"
     comp.parent.mkdir(parents=True, exist_ok=True)
     comp.write_text(build_html(ctx), encoding="utf-8")
 
     proc = await asyncio.create_subprocess_exec(
         "npx", "hyperframes", "render",
-        "--input", str(comp),
+        "--composition", "compositions/marketing.html",
         "--output", str(ctx.out_path),
+        "--quiet",
+        str(studio),
         cwd=str(studio),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,

@@ -24,7 +24,17 @@ services:
       retries: 20
 
   # --- Langfuse: trace, chi phí, dataset eval -----------------
+  # --- Langfuse: TẮT theo mặc định ---------------------------------
+  # Nằm trong profile "trace" nên `docker compose up -d` KHÔNG khởi động nó.
+  # Bật khi cần:  docker compose --profile trace up -d
+  #
+  # Vì sao tắt: nó chỉ nhận dữ liệu khi LANGFUSE_PUBLIC_KEY/SECRET_KEY được
+  # điền, mà lấy hai khoá đó phải tự tạo tài khoản trong giao diện của nó.
+  # Chạy mà không nhận gì thì tốn ~195MB RAM để làm nền. Số liệu token, chi
+  # phí và độ trễ đã có sẵn trong bảng `messages` và hiện ở màn Số hiệu —
+  # xem GET /api/cost.
   langfuse_db:
+    profiles: ["trace"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: langfuse
@@ -39,6 +49,7 @@ services:
       retries: 20
 
   langfuse:
+    profiles: ["trace"]
     image: langfuse/langfuse:2
     depends_on:
       langfuse_db:

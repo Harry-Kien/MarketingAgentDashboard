@@ -198,7 +198,7 @@
     {
       "ma": "AS-SR01",
       "ten": "Serum phục hồi Aurora Revitalizing Serum",
-      "loai": "Đặc trị",
+      "loai": "Tinh chất chuyên sâu",
       "gia": 690000,
       "dung_tich": "30ml",
       "ton_kho": 45,
@@ -233,7 +233,7 @@
     {
       "ma": "AS-SR02",
       "ten": "Serum Vitamin C Aurora Bright C15",
-      "loai": "Đặc trị",
+      "loai": "Tinh chất chuyên sâu",
       "gia": 780000,
       "dung_tich": "30ml",
       "ton_kho": 22,
@@ -263,7 +263,7 @@
     {
       "ma": "AS-SR03",
       "ten": "Serum Niacinamide Aurora Pore Refine 10%",
-      "loai": "Đặc trị",
+      "loai": "Tinh chất chuyên sâu",
       "gia": 520000,
       "dung_tich": "30ml",
       "ton_kho": 67,
@@ -294,7 +294,7 @@
     {
       "ma": "AS-SR04",
       "ten": "Tinh chất Retinol Aurora Night Retinol 0.3%",
-      "loai": "Đặc trị",
+      "loai": "Tinh chất chuyên sâu",
       "gia": 850000,
       "dung_tich": "30ml",
       "ton_kho": 19,
@@ -328,7 +328,7 @@
     {
       "ma": "AS-SR05",
       "ten": "Serum cấp ẩm Aurora Hydra B5",
-      "loai": "Đặc trị",
+      "loai": "Tinh chất chuyên sâu",
       "gia": 430000,
       "dung_tich": "30ml",
       "ton_kho": 0,

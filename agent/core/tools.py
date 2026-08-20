@@ -56,7 +56,7 @@ TOOLS: list[dict] = [
                 },
                 "nhom": {
                     "type": "string",
-                    "description": "Làm sạch, Cân bằng, Đặc trị, Dưỡng ẩm, Chống nắng, Mặt nạ, Combo",
+                    "description": "Làm sạch, Cân bằng, Tinh chất chuyên sâu, Dưỡng ẩm, Chống nắng, Mặt nạ, Combo",
                 },
                 "gia_toi_da": {
                     "type": "integer",

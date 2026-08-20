@@ -202,3 +202,28 @@ CREATE INDEX IF NOT EXISTS idx_metric_post ON post_metrics (post_id, thu_thap_lu
 -- khách thấy một người lạ trả lời.
 -- NULL = dùng nick mặc định đang chọn trên dashboard.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS zalo_account_id TEXT;
+
+-- --- Trí nhớ về khách hàng ------------------------------------
+-- Ranh giới giữa chatbot và agent: một chatbot trả lời rồi quên, agent giữ
+-- lại hiểu biết về từng người và dùng ở lần sau.
+--
+-- `ghi_nho` là danh sách mẩu, mỗi mẩu có nguồn gốc:
+--   hanh_dong  suy ra từ lời gọi công cụ  -> kiểm chứng được, không bịa nổi
+--   don_hang   suy ra từ đơn đã lên
+--   agent_ghi  điều agent nghe khách nói  -> kém chắc hơn
+--
+-- ĐÂY LÀ DỮ LIỆU CÁ NHÂN theo Nghị định 13/2023/NĐ-CP. Nó phải biến mất
+-- khi khách yêu cầu xoá — xem agent/core/du_lieu_ca_nhan.py.
+CREATE TABLE IF NOT EXISTS ho_so_khach (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    customer_ref  TEXT NOT NULL,
+    channel       TEXT NOT NULL,
+    ten           TEXT NOT NULL DEFAULT '',
+    sdt           TEXT,
+    ghi_nho       JSONB NOT NULL DEFAULT '[]',
+    lan_dau       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lan_cuoi      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (customer_ref, channel)
+);
+CREATE INDEX IF NOT EXISTS idx_ho_so_cuoi ON ho_so_khach (lan_cuoi DESC);
+CREATE INDEX IF NOT EXISTS idx_ho_so_sdt ON ho_so_khach (sdt) WHERE sdt IS NOT NULL;

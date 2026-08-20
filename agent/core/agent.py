@@ -12,6 +12,7 @@ Ba cơ chế an toàn nằm ở đây, không nằm trong prompt:
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 
 import json
 import uuid
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 from agent import db
 from agent.config import ROOT, settings
 from agent.core import llm, rag, tools
-from agent.core import phong_thu
+from agent.core import ho_so_khach, phong_thu
 
 SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
 MAX_TOOL_ROUNDS = 4
@@ -138,9 +139,17 @@ def _confidence(passages: list[rag.Passage], used_tool: bool) -> float:
 
 
 async def respond(
-    *, conversation_id: uuid.UUID, history: list[dict], question: str
+    *, conversation_id: uuid.UUID, history: list[dict], question: str,
+    customer_ref: str = "", channel: str = "",
 ) -> Reply:
-    """Sinh câu trả lời cho một lượt. `history` là các lượt trước đã chuẩn hoá."""
+    """
+    Sinh câu trả lời cho một lượt. `history` là các lượt trước đã chuẩn hoá.
+
+    `customer_ref` + `channel` mở trí nhớ về khách: những gì đã biết từ các
+    lần trước được nhét vào ngữ cảnh, và những gì học được lượt này được ghi
+    lại. Bỏ trống thì agent chạy như cũ, không nhớ gì — dùng cho bộ eval,
+    nơi mỗi ca phải độc lập.
+    """
     conv = await db.fetchrow(
         "SELECT cost_usd FROM conversations WHERE id = $1", conversation_id
     )
@@ -170,6 +179,18 @@ async def respond(
 
     passages = await rag.retrieve(question, k=5)
     context = rag.as_context(passages)
+
+    # Trí nhớ về khách đi CÙNG khối biến động với ngữ cảnh RAG, không đi
+    # cùng khối ổn định — hồ sơ đổi theo từng khách, đặt nhầm vào khối
+    # cached thì mỗi khách lại ghi một bản cache mới và không bao giờ đọc
+    # lại được.
+    if customer_ref:
+        # Quét lời khách TRƯỚC khi dựng ngữ cảnh, để điều vừa nói có mặt
+        # ngay trong lượt này chứ không phải chờ tới lượt sau.
+        with suppress(Exception):
+            await ho_so_khach.tu_tin_nhan(customer_ref, channel, question)
+        if (ngu_canh_khach := await ho_so_khach.lam_ngu_canh(customer_ref, channel)):
+            context = f"{ngu_canh_khach}\n\n{context}" if context else ngu_canh_khach
 
     # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
     # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.
@@ -226,6 +247,16 @@ async def respond(
         tool_results: list[dict] = []
         for call in result.tool_calls:
             out = await tools.run_tool(call["name"], call["input"], conversation_id)
+
+            # Hồ sơ dựng từ việc ĐÃ XẢY RA, không từ một lượt model riêng đi
+            # "trích xuất thông tin khách hàng". Cách này không tốn thêm
+            # đồng nào và quan trọng hơn: không bịa nổi, vì agent chỉ gọi
+            # goi_y_san_pham(loai_da="da dầu") khi khách đã nói điều đó.
+            if customer_ref:
+                with suppress(Exception):
+                    await ho_so_khach.tu_tool(
+                        customer_ref, channel, call["name"], call["input"]
+                    )
 
             if call["name"] == "chuyen_nhan_vien":
                 escalate = True

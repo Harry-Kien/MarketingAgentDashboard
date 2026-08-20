@@ -45,6 +45,7 @@ import hashlib
 import re
 
 from .. import db
+from . import ho_so_khach
 from ..config import settings
 
 AN_DANH = "[đã ẩn danh theo yêu cầu]"
@@ -163,12 +164,17 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         )
         hoi_thoai = int(r.split()[-1]) if r.split()[-1].isdigit() else len(conv_ids)
 
-    # 3. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
+    # 3. Xoá hồ sơ ghi nhớ. Xây trí nhớ mà quên đường xoá là tạo ra một kho
+    #    dữ liệu cá nhân ngoài tầm kiểm soát.
+    ho_so = await ho_so_khach.xoa(sdt=so)
+
+    # 4. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
     await db.log_event(
         "pdpd.xoa_du_lieu", actor="nguoi",
         dau_van_tay=_dau_van_tay(so),
         so_don_an_danh=truoc["so_don_hang"],
         so_hoi_thoai_xoa=hoi_thoai,
+        so_ho_so_xoa=ho_so,
         ly_do=ly_do,
         can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
     )
@@ -177,6 +183,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         "da_xoa": True,
         "don_hang_an_danh": truoc["so_don_hang"],
         "hoi_thoai_da_xoa": hoi_thoai,
+        "ho_so_ghi_nho_da_xoa": ho_so,
         "ghi_chu": (
             f"Đã ẩn danh {truoc['so_don_hang']} đơn hàng (giữ mã đơn và số "
             f"tiền cho sổ sách kế toán) và xoá hẳn {hoi_thoai} hội thoại "

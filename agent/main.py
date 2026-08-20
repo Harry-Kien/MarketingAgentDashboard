@@ -318,7 +318,10 @@ async def handle_inbound(msg: InboundMessage) -> None:
 
     runtime.mark_busy(cid)          # dashboard vẽ bong bóng "đang soạn tin"
     try:
-        reply = await brain.respond(conversation_id=cid, history=history, question=msg.text)
+        reply = await brain.respond(
+            conversation_id=cid, history=history, question=msg.text,
+            customer_ref=msg.customer_ref, channel=msg.channel,
+        )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
         await db.execute(
             "UPDATE conversations SET status = 'escalated', updated_at = now() "

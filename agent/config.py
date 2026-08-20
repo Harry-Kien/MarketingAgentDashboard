@@ -123,6 +123,17 @@ class Settings(BaseSettings):
     # Tự dọn dữ liệu quá hạn mỗi ngày. Tắt thì phải tự bấm trên dashboard.
     tu_dong_don_du_lieu: bool = True
 
+    # --- Canh gác ---
+    # Hỏi sức khoẻ đều đặn và báo khi trạng thái ĐỔI sang hỏng. Báo mỗi lần
+    # kiểm thì sau nửa tiếng người ta tắt thông báo, và lần hỏng thật tiếp
+    # theo không ai đọc.
+    canh_gac_bat: bool = True
+    canh_gac_moi_giay: int = 300
+    # Nơi nhận báo động. Đi qua webhook chứ không gửi thẳng Zalo hay email:
+    # nơi nhận là việc của doanh nghiệp, và n8n đã chạy sẵn để định tuyến.
+    # Để rỗng thì chỉ ghi vào nhật ký.
+    canh_gac_webhook: str = ""
+
     # --- Vận hành ---
     agent_enabled: bool = True
     agent_mode: str = "assist"          # assist | auto

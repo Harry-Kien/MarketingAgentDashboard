@@ -24,6 +24,7 @@ from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent import canh_gac
 from agent.core import du_lieu_ca_nhan, xac_thuc
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
@@ -151,6 +152,10 @@ async def lifespan(app: FastAPI):
     poller = asyncio.create_task(poll_loop()) if settings.zalocrm_api_key else None
     scheduler = asyncio.create_task(schedule_loop())
     don_du_lieu = asyncio.create_task(don_du_lieu_loop())
+    # Canh gác: phát hiện SUY GIẢM (model chết, kênh mất kết nối, sao
+    # lưu cũ). KHÔNG phát hiện được chính tiến trình này chết — lúc đó
+    # nó chết theo. Xem scripts/canh_gac_ngoai.py cho trường hợp ấy.
+    canh = asyncio.create_task(canh_gac.vong_canh_gac())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
     # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
     # thái dở, không ai nhặt lại và không dòng lỗi nào.
@@ -169,7 +174,7 @@ async def lifespan(app: FastAPI):
     for w in video_workers:
         with suppress(asyncio.CancelledError):
             await w
-    for t in (scheduler, don_du_lieu):
+    for t in (scheduler, don_du_lieu, canh):
         t.cancel()
         with suppress(asyncio.CancelledError):
             await t

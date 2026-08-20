@@ -1,24 +1,60 @@
-# --- Agent core ---
-anthropic[vertex]>=0.69.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-pydantic>=2.9.0
-pydantic-settings>=2.6.0
-httpx>=0.27.0
+# ============================================================
+#  Marketing Agent — thư viện Python
+#
+#  GHIM PHIÊN BẢN CHÍNH XÁC (==), không dùng >=.
+#
+#  Vì sao: `>=` nghĩa là mỗi lần cài lại có thể ra một tổ hợp khác. Đã gặp
+#  đúng chuyện này khi làm — `mcp` cài về là 2.0.0 với API khác hẳn bản
+#  trước (mcp.server.mcpserver thay cho fastmcp), mã viết theo tài liệu cũ
+#  không chạy. Người chấm bài clone repo về ba tháng sau sẽ gặp lỗi mà máy
+#  bạn không tái hiện được.
+#
+#  Cập nhật: sửa số, chạy `pytest tests/ -q` và `python -m scripts.eval`,
+#  rồi commit cả hai thứ cùng nhau.
+#
+#  Ghim đúng phiên bản đã kiểm trên Python 3.12 / Windows 11.
+# ============================================================
 
-# --- Data / RAG ---
-asyncpg>=0.30.0
-pgvector>=0.3.6
-google-cloud-aiplatform>=1.71.0
+# --- Web + cấu hình -------------------------------------------
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.4
+pydantic-settings==2.15.0
+httpx==0.28.1
+# FastAPI cần cái này để nhận file tải lên (ảnh sản phẩm). Không import
+# trực tiếp ở đâu, nhưng thiếu là endpoint upload trả 500.
+python-multipart==0.0.32
+python-dotenv==1.2.1
 
-# --- Observability ---
-langfuse>=2.53.0
+# --- Dữ liệu và RAG -------------------------------------------
+asyncpg==0.31.0
+# pgvector: phần Python chỉ để đăng ký kiểu; phần quan trọng là extension
+# trong Postgres (xem agent/schema.sql).
+pgvector==0.5.0
 
-# --- Video ---
+# --- Model ----------------------------------------------------
+# vertexai (trong gói này) dùng cho embedding tiếng Việt của RAG — hạn mức
+# riêng, độc lập với quota Claude, nên vẫn cần dù chọn provider nào.
+google-cloud-aiplatform==1.165.0
+# Chỉ dùng khi LLM_PROVIDER=anthropic hoặc vertex. Để nguyên cho đủ ba
+# đường đi trong agent/core/llm.py.
+anthropic[vertex]==0.123.0
+
+# --- MCP ------------------------------------------------------
+# Mở hệ thống ra cho Claude Desktop / Claude Code. Xem docs/mcp.md.
+# CẢNH BÁO: 2.0 đổi bố cục gói so với 1.x — mcp.server.mcpserver.MCPServer
+# thay cho mcp.server.fastmcp.FastMCP. Đừng nâng mà không sửa mã.
+mcp[cli]==2.0.0
+
+# --- Video ----------------------------------------------------
 # Chuẩn hoá ảnh sản phẩm (xoay theo EXIF, xoá EXIF, hạ kích thước) và vẽ
 # toàn bộ bố cục chữ — xem agent/video/renderers/layout.py.
-Pillow>=11.0.0
+pillow==12.3.0
 
-# --- Utilities ---
-python-multipart>=0.0.12
-python-dotenv>=1.0.1
+# --- Kiểm thử -------------------------------------------------
+pytest==9.1.1
+
+# --- ĐÃ GỠ ----------------------------------------------------
+# langfuse: từng có trong danh sách nhưng KHÔNG được import ở bất kỳ đâu.
+# Quan sát chi phí giờ dựng từ bảng `messages` — xem GET /api/cost. Container
+# Langfuse cũng đã chuyển vào profile "trace" nên không tự chạy nữa.

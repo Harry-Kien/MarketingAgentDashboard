@@ -100,9 +100,13 @@ def _nhan_tieng_anh(ten: str) -> str:
     Tên trong catalog có dạng "Serum phục hồi Aurora Revitalizing Serum" —
     phần mô tả tiếng Việt đứng trước, tên thương mại tiếng Anh đứng sau. Chỉ
     lấy từ chữ "Aurora" trở đi, vì bao bì mỹ phẩm không in mô tả tiếng Việt.
+
+    Rồi BỎ luôn chữ "Aurora": dòng thương hiệu ở trên đã in nó, giữ lại thì
+    nhãn đọc thành "AURORA / Aurora Clay Mask" — thừa một lần.
     """
     i = ten.find("Aurora")
-    return (ten[i:] if i >= 0 else ten).strip()
+    ten = (ten[i:] if i >= 0 else ten).strip()
+    return ten[len("Aurora"):].strip() if ten.startswith("Aurora") else ten
 
 
 def _loi_nhac(sp: dict, goc: str) -> str:

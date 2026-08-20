@@ -53,6 +53,26 @@ là bộ dựng chạy đúng.
 
 ## Chạy trong 15 phút
 
+### 0. Clone kèm submodule
+
+```bash
+git clone --recurse-submodules https://github.com/Harry-Kien/MarketingAgentDashboard.git
+cd MarketingAgentDashboard
+.\scripts\cai_dat.ps1
+```
+
+Quên `--recurse-submodules` thì thư mục `ZaloCRM/` rỗng. Sửa bằng:
+
+```bash
+git submodule update --init --recursive
+```
+
+**Vì sao ZaloCRM là submodule chứ không nằm sẵn trong repo:** nó cấp phép
+AGPL-3.0. Chép mã vào đây là gộp hai thứ làm một, và Điều 13 của giấy phép
+buộc công bố **toàn bộ mã nguồn hệ thống** cho bất kỳ ai dùng nó qua mạng.
+Submodule là một con trỏ tới repo của họ — mã của họ ở lại repo của họ,
+dưới giấy phép của họ, còn bạn vẫn clone một lệnh là đủ.
+
 ### 1. Điều kiện
 
 - Docker Desktop **đang chạy**

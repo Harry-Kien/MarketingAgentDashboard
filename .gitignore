@@ -5,10 +5,13 @@ __pycache__/
 .DS_Store
 
 # --- Bên thứ ba ---
-# ZaloCRM là repo riêng, giấy phép AGPL. Giữ nó NGOÀI repo này là chủ ý:
-# nghĩa vụ copyleft nằm gọn trong container của nó, không lan sang mã nguồn
-# này. Commit nó vào đây là phá đúng quyết định kiến trúc đó.
-ZaloCRM/
+# ZaloCRM giờ là SUBMODULE, ghim đúng commit đang dùng — xem .gitmodules.
+# Submodule là một CON TRỎ tới repo của họ, không phải bản chép. Nhờ vậy:
+#   - clone kèm --recurse-submodules là có đủ để chạy
+#   - mã AGPL vẫn nằm trong repo của họ, dưới giấy phép của họ, nên nghĩa
+#     vụ copyleft không lan sang mã nguồn này
+# Chép thẳng mã vào đây thì gộp hai thứ làm một, và AGPL Điều 13 buộc công
+# bố toàn bộ mã nguồn hệ thống cho bất kỳ ai dùng nó qua mạng.
 video-studio/
 
 # --- Dữ liệu doanh nghiệp: KHÔNG đẩy lên repo công khai ---

@@ -81,8 +81,20 @@ async def _viettts(text: str, out_path: Path) -> Path | None:
 #  Bậc 2 — Google Cloud TTS
 # ---------------------------------------------------------------
 
-async def _google(text: str, out_path: Path) -> Path | None:
+async def _google(text: str, out_path: Path, ly_do: list | None = None) -> Path | None:
+    """
+    Đọc bằng Google Cloud TTS.
+
+    `ly_do` là hộp để nhét NGUYÊN NHÂN hỏng ra ngoài. Bản đầu chỉ trả None,
+    nên khi API báo 403 vì chưa bật dịch vụ thì người vận hành chỉ thấy chữ
+    "không" và không biết phải làm gì — mất hẳn một buổi để lần ra.
+    """
+    def ghi(msg: str) -> None:
+        if ly_do is not None:
+            ly_do.append(msg)
+
     if not settings.gcp_project_id:
+        ghi("chưa đặt GCP_PROJECT_ID trong .env")
         return None
 
     from agent.core.llm import _token
@@ -112,16 +124,31 @@ async def _google(text: str, out_path: Path) -> Path | None:
                     "x-goog-user-project": settings.gcp_project_id,
                 },
             )
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        ghi(f"không gọi được: {type(exc).__name__}")
+        return None
+    except Exception as exc:  # noqa: BLE001 — token hỏng cũng phải nói ra
+        ghi(f"{type(exc).__name__}: {str(exc)[:120]}")
         return None
 
     if r.status_code >= 400:
+        try:
+            msg = (r.json().get("error", {}) or {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            msg = r.text[:200]
+        if r.status_code == 403 and "has not been used" in msg:
+            ghi("API chưa được bật trên project — xem hướng dẫn bên dưới")
+        else:
+            ghi(f"HTTP {r.status_code}: {msg[:180]}")
         return None
+
     try:
         wav = base64.b64decode(r.json()["audioContent"])
     except (ValueError, KeyError):
+        ghi("API trả về dữ liệu âm thanh không đọc được")
         return None
     if not wav:
+        ghi("API trả về file rỗng")
         return None
     out_path.write_bytes(wav)
     return out_path
@@ -168,12 +195,15 @@ async def chan_doan() -> dict:
     """
     import tempfile
 
-    ket = {"nha_cung_cap": _nha_cung_cap(), "viettts": False, "google": False}
+    ket = {"nha_cung_cap": _nha_cung_cap(), "viettts": False, "google": False,
+           "ly_do_google": ""}
     ket["viettts"] = await viettts_san_sang()
 
+    ly_do: list[str] = []
     with tempfile.TemporaryDirectory() as d:
-        thu = await _google("thử", Path(d) / "thu.wav")
+        thu = await _google("thử", Path(d) / "thu.wav", ly_do)
         ket["google"] = thu is not None
+    ket["ly_do_google"] = "; ".join(ly_do)
 
     ket["dung_duoc"] = ket["viettts"] or ket["google"]
     return ket

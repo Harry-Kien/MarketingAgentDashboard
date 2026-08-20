@@ -39,13 +39,21 @@ async def main() -> int:
     print(f"  cấu hình TTS_PROVIDER : {ch['nha_cung_cap']}")
     print(f"  viet-tts ({settings.tts_base_url:32s}): {dau(ch['viettts'])}")
     print(f"  Google Cloud TTS ({settings.google_tts_voice:16s}): {dau(ch['google'])}")
+    if ch.get("ly_do_google") and not ch["google"]:
+        print(f"      lý do: {ch['ly_do_google']}")
 
     if not ch["dung_duoc"]:
         print("\nKHÔNG có nhà cung cấp nào chạy được.")
         print("Video sẽ CÂM và thời lượng chỉ là ước lượng âm tiết.\n")
-        print("Cách nhanh nhất — bật Google Cloud TTS (tính tiền theo ký tự):")
-        print(f"  gcloud services enable texttospeech.googleapis.com "
-              f"--project {settings.gcp_project_id}")
+        print("Cách chắc ăn nhất — bật bằng giao diện web, không cần CLI:")
+        print("  https://console.cloud.google.com/apis/library/"
+              f"texttospeech.googleapis.com?project={settings.gcp_project_id}")
+        print("  Bấm ENABLE, đợi 1-2 phút rồi chạy lại lệnh này.\n")
+        print("Nếu muốn dùng dòng lệnh, `gcloud` thường KHÔNG nằm sẵn trong PATH")
+        print("trên Windows. Đường dẫn đầy đủ thường là:")
+        print(r"  %LOCALAPPDATA%\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd")
+        print("và phải `gcloud auth login` trước thì lệnh enable mới chạy được —")
+        print("khác với `gcloud auth application-default login` mà app đang dùng.")
         print("\nHoặc dựng viet-tts theo README rồi trỏ TTS_BASE_URL vào nó.")
         return 1
 

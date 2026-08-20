@@ -3,7 +3,7 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", openConv: null, timer: null };
+const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", openConv: null, nickDefault: "", timer: null };
 
 /* ---------------- tiện ích ---------------- */
 
@@ -205,8 +205,9 @@ async function loadOverview() {
 /* ---------------- hội thoại ---------------- */
 
 const CHANNEL_LABEL = {
-  zalocrm: "Zalo", zalo_oa: "Zalo OA", facebook: "Facebook",
-  instagram: "Instagram", tiktok: "TikTok", web: "Web", test: "Thử",
+  zalocrm: "Zalo", zalo_oa: "Zalo OA", chatwoot: "Chatwoot",
+  facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok",
+  whatsapp: "WhatsApp", web: "Web", test: "Thử",
 };
 
 function srcBadge(ch) {
@@ -294,6 +295,10 @@ async function loadThread(id) {
       <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
       <span class="convo__spacer"></span>
       ${srcBadge(c.channel)}<span class="msg__meta">${usd(c.cost)}</span>
+      ${NICKS.length > 1 ? `<select class="nickpin" id="nickpin" title="Nick Zalo trả lời riêng cho hội thoại này">
+        <option value="">nick mặc định${nickTen(state.nickDefault) ? " (" + esc(nickTen(state.nickDefault)) + ")" : ""}</option>
+        ${NICKS.map((n) => `<option value="${esc(n.id)}"${n.id === c.zalo_account_id ? " selected" : ""}${n.san_sang ? "" : " disabled"}>${esc(n.ten)}</option>`).join("")}
+      </select>` : ""}
       <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
         ${taken ? "Trả lại cho agent" : "Tôi tiếp quản"}
       </button>
@@ -318,6 +323,15 @@ async function loadThread(id) {
       } catch (e) { toast(e.message, true); }
     })
   );
+
+  const pin = $("#nickpin");
+  if (pin) pin.addEventListener("change", async () => {
+    try {
+      await api("/conversations/" + id + "/account", { method: "POST",
+        body: JSON.stringify({ zalo_account_id: pin.value }) });
+      toast(pin.value ? "Đã ghim nick cho hội thoại này." : "Đã bỏ ghim, dùng nick mặc định.");
+    } catch (e) { toast(e.message, true); }
+  });
 
   $("#btn-take").addEventListener("click", async () => {
     try {
@@ -400,7 +414,9 @@ async function loadOrders() {
 /* ---------------- video ---------------- */
 
 const VIDEO_STATUS = {
-  queued: "Đang xếp hàng", scripting: "Đang viết kịch bản", voicing: "Đang thu giọng",
+  queued: "Đang xếp hàng", claimed: "Đã nhận việc",
+  looking: "Đang xem ảnh sản phẩm",
+  scripting: "Đang viết kịch bản", voicing: "Đang thu giọng",
   rendering: "Đang dựng hình", pending_review: "Chờ duyệt", ready: "Đã duyệt", failed: "Lỗi",
 };
 
@@ -432,6 +448,8 @@ async function loadVideos() {
       </div>
       ${v.status === "pending_review"
         ? `<div class="card__actions"><button type="button" class="btn btn--sm btn--go" data-vapprove="${v.id}">Duyệt</button></div>`
+        : v.status === "failed"
+        ? `<div class="card__actions"><button type="button" class="btn btn--sm" data-vretry="${v.id}">Chạy lại</button></div>`
         : ""}
     </article>`;
   }).join("") : '<p class="empty">Chưa có video nào. Đặt một cái ở khung phía trên.</p>';
@@ -441,6 +459,16 @@ async function loadVideos() {
       await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
       toast("Đã duyệt video.");
       loadVideos();
+    })
+  );
+
+  $$("[data-vretry]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        await api("/videos/" + b.dataset.vretry + "/retry", { method: "POST" });
+        toast("Đã đưa lại vào hàng đợi. Ảnh sản phẩm giữ nguyên, không cần tải lại.");
+        loadVideos();
+      } catch (e) { toast(e.message, true); }
     })
   );
 }
@@ -571,14 +599,268 @@ async function loadEvents() {
   }).join("") : '<p class="empty">Chưa có sự kiện nào.</p>';
 }
 
+
+/* ---------------- nick Zalo ---------------- */
+
+// Doanh nghiệp chạy nhiều nick. Nick mặc định áp cho hội thoại chưa ghim
+// riêng; ghim riêng thắng, vì khách phải nhận trả lời từ đúng nick họ nhắn vào.
+let NICKS = [];
+
+function nickTen(id) {
+  const n = NICKS.find((x) => x.id === id);
+  return n ? n.ten : "";
+}
+
+async function loadChannelStrip() {
+  const { channels } = await api("/channels");
+  // Nói rõ kênh nào đẩy, kênh nào kéo. Hai cơ chế ngược nhau chạy song song
+  // là điểm dễ gây hiểu nhầm nhất khi vận hành.
+  $("#chanstrip").innerHTML = channels.map((c) =>
+    `<span class="src src--${esc(c.ten)}" style="${c.dang_bat ? "" : "opacity:.45"}"
+       title="${esc(c.co_che === "polling" ? "kéo tin mỗi vài giây" : "nhận webhook tức thì")}${c.dang_bat ? "" : " — chưa cấu hình"}">${esc(CHANNEL_LABEL[c.ten] || c.ten)} · ${esc(c.co_che)}</span>`
+  ).join("");
+}
+
+async function loadNicks() {
+  const r = await api("/zalo/accounts");
+  NICKS = r.accounts;
+  state.nickDefault = r.dang_chon;
+  const opts = NICKS.map((n) =>
+    `<option value="${esc(n.id)}"${n.id === r.dang_chon ? " selected" : ""}${n.san_sang ? "" : " disabled"}>`
+    + `${esc(n.ten)}${n.sdt ? " · " + esc(n.sdt) : ""}${n.san_sang ? "" : " (mất kết nối)"}</option>`
+  ).join("");
+  $("#nickdefault").innerHTML = NICKS.length
+    ? opts : '<option value="">— chưa có nick nào —</option>';
+  $("#nickhint").textContent = r.ghi_chu
+    || (NICKS.length > 1 ? "Ghim nick riêng cho từng hội thoại ở khung bên phải." : "");
+}
+
+$("#nickdefault").addEventListener("change", async (e) => {
+  try {
+    await api("/zalo/account", { method: "POST",
+      body: JSON.stringify({ zalo_account_id: e.target.value }) });
+    toast("Đã đổi nick trả lời mặc định.");
+  } catch (err) { toast(err.message, true); loadNicks(); }
+});
+
+/* ---------------- đăng bài ---------------- */
+
+const POST_LABEL = {
+  cho_duyet: "Chờ duyệt", da_len_lich: "Đã hẹn giờ", dang_dang: "Đang đăng",
+  da_dang: "Đã đăng", loi: "Lỗi", da_huy: "Đã huỷ", nhap: "Nháp",
+};
+const POST_TONE = {
+  cho_duyet: "duyet", da_len_lich: "duyet", dang_dang: "duyet",
+  da_dang: "chot", loi: "huy", da_huy: "huy",
+};
+const KENH_LABEL = {
+  facebook: "Facebook", instagram: "Instagram",
+  tiktok: "TikTok", youtube: "YouTube",
+};
+const num = (n) => Number(n || 0).toLocaleString("vi-VN");
+
+$$("#postfilter .chip").forEach((chip) =>
+  chip.addEventListener("click", () => {
+    state.postFilter = chip.dataset.pstatus;
+    $$("#postfilter .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
+    loadPosts();
+  })
+);
+
+async function loadPubChannels() {
+  const { kenh } = await api("/publish/channels");
+  $("#pubchannels").innerHTML = kenh.map((k) => {
+    const steps = k.duong_di.map((d) =>
+      `<span class="lane__step lane__step--${d.san_sang ? "on" : "off"}">${esc(d.adapter)}</span>`
+    ).join('<span class="lane__step" style="border:0;padding:0">&rarr;</span>');
+    const chan = k.duong_di.filter((d) => !d.san_sang && d.ly_do);
+    return `<div class="row">
+      <span class="row__flag row__flag--${k.dang_dung === "manual" ? "assist" : "auto"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(KENH_LABEL[k.kenh] || k.kenh)}</span>
+        <span class="lane">${steps}</span>
+        ${chan.map((d) => `<span class="lane__why">${esc(d.adapter)}: ${esc(d.ly_do)}</span>`).join("")}
+      </span>
+      <span class="row__side"><span class="row__num">${esc(k.dang_dung || "—")}</span></span>
+    </div>`;
+  }).join("");
+}
+
+async function fillPostPickers() {
+  if (fillPostPickers.done) return;
+  fillPostPickers.done = true;
+  const [{ san_pham }, videos] = await Promise.all([
+    api("/catalog/products"), api("/videos"),
+  ]);
+  $("#sanphamlist").innerHTML = san_pham
+    .map((p) => `<option value="${esc(p.ma)}">${esc(p.ten)}</option>`).join("");
+  const dung_duoc = videos.filter((v) => v.status === "ready" || v.status === "pending_review");
+  $("#postvideo").innerHTML = '<option value="">— không gắn video —</option>'
+    + dung_duoc.map((v) => `<option value="${esc(v.id)}">${esc(v.title)}</option>`).join("");
+}
+
+function drawDraft(d) {
+  const tags = (d.hashtags || []).join(" ");
+  const canhbao = d.so_lan_thu > 1
+    ? `<span class="tag tag--duyet">Đã sửa ${d.so_lan_thu - 1} lần cho đúng luật quảng cáo</span>` : "";
+  $("#postdraft").innerHTML = `<div class="draft__box">
+    <div class="draft__title">${esc(d.tieu_de || "(không tiêu đề)")} ${canhbao}</div>
+    <div class="draft__text">${esc(d.noi_dung)}</div>
+    <div class="draft__tags">${esc(tags)}</div>
+    <div class="draft__foot">
+      <button type="button" class="btn btn--primary btn--sm" id="draftsave">Đưa vào hàng đợi</button>
+      <input type="datetime-local" id="draftwhen" class="draft__sched" title="Để trống là đăng ngay sau khi duyệt">
+      <button type="button" class="btn btn--sm" id="draftredo">Soạn lại</button>
+      <span class="draft__meta">${esc(KENH_LABEL[d.kenh] || d.kenh)} · ${usd(d.chi_phi_usd)}</span>
+    </div>
+  </div>`;
+
+  $("#draftsave").addEventListener("click", async () => {
+    const when = $("#draftwhen").value;
+    await api("/posts", { method: "POST", body: JSON.stringify({
+      tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
+      kenh: [d.kenh], video_id: d.video_id || null,
+      lich_dang: when ? new Date(when).toISOString() : null,
+    })});
+    $("#postdraft").innerHTML = "";
+    toast("Đã vào hàng đợi. Bấm Duyệt thì bài mới đi.");
+    loadPosts();
+  });
+  $("#draftredo").addEventListener("click", () => $("#postform").requestSubmit());
+}
+
+$("#postform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type="submit"]');
+  const f = Object.fromEntries(new FormData(e.target));
+  btn.disabled = true; btn.textContent = "Agent đang viết…";
+  try {
+    drawDraft(await api("/posts/draft", { method: "POST", body: JSON.stringify({
+      kenh: f.kenh, san_pham: f.san_pham || "", y_tuong: f.y_tuong || "",
+      video_id: f.video_id || null,
+    })}));
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "Agent soạn bài";
+  }
+});
+
+async function loadPosts() {
+  const q = state.postFilter && state.postFilter !== "all"
+    ? "?trang_thai=" + state.postFilter : "";
+  const { posts } = await api("/posts" + q);
+  const cho = posts.filter((p) => p.trang_thai === "cho_duyet").length;
+  $("#c-dangbai").textContent = cho || "";
+
+  $("#posts").innerHTML = posts.length ? posts.map((p) => {
+    const kenhs = (p.kenh || []).map((k) =>
+      `<span class="tag tag--plain">${esc(KENH_LABEL[k] || k)}</span>`).join(" ");
+    const kq = p.ket_qua || {};
+    const links = Object.entries(kq).map(([k, v]) => v.url
+      ? `<a class="post__link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(k)} &#8599;</a>`
+      : v.detail ? `<span class="post__link" style="color:hsl(var(--muted-foreground))">${esc(k)}: ${esc(v.detail)}</span>` : ""
+    ).join("");
+    const cho_duyet = p.trang_thai === "cho_duyet";
+    const dang_roi = p.trang_thai === "da_dang" || p.trang_thai === "dang_dang";
+    return `<div class="row">
+      <span class="row__flag row__flag--${cho_duyet ? "assist" : p.trang_thai === "loi" ? "halt" : "auto"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(p.tieu_de || "(không tiêu đề)")}
+          <span class="tag tag--${POST_TONE[p.trang_thai] || "plain"}">${POST_LABEL[p.trang_thai] || p.trang_thai}</span>
+          ${kenhs}${p.co_video ? '<span class="tag tag--plain">có video</span>' : ""}</span>
+        <span class="post__body">${esc(p.noi_dung)}</span>
+        <span class="post__links">${links}</span>
+      </span>
+      <span class="row__side">
+        <span class="row__time">${p.lich_dang ? "hẹn " + clock(p.lich_dang) : clock(p.created_at)}</span>
+        <span style="display:flex;gap:6px;margin-top:4px">
+          ${cho_duyet ? `<button type="button" class="btn btn--sm btn--go" data-papprove="${p.id}">Duyệt &amp; đăng</button>` : ""}
+          ${!dang_roi && p.trang_thai !== "da_huy" ? `<button type="button" class="btn btn--sm btn--halt" data-pcancel="${p.id}">Huỷ</button>` : ""}
+          ${dang_roi ? `<button type="button" class="btn btn--sm" data-pmetric="${p.id}" data-pkenh="${esc((p.kenh || [])[0] || "")}">Nhập số liệu</button>` : ""}
+        </span>
+      </span>
+    </div>`;
+  }).join("") : '<p class="empty">Chưa có bài đăng nào.</p>';
+
+  $$("[data-papprove]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await api("/posts/" + b.dataset.papprove + "/approve", { method: "POST" });
+      toast(r.trang_thai === "da_len_lich" ? "Đã xếp lịch." : "Đã gửi đi.");
+    } catch (e) { toast(e.message, true); }
+    loadPosts();
+  }));
+  $$("[data-pcancel]").forEach((b) => b.addEventListener("click", async () => {
+    await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
+    toast("Đã huỷ bài."); loadPosts();
+  }));
+  // Chưa có quyền Insights API -> nhập tay. Cùng một bảng, cùng một biểu đồ.
+  $$("[data-pmetric]").forEach((b) => b.addEventListener("click", async () => {
+    const v = prompt("Nhập: lượt xem, lượt thích, bình luận, chia sẻ\n(ngăn cách bằng dấu phẩy)", "0,0,0,0");
+    if (!v) return;
+    const [x = 0, t = 0, bl = 0, cs = 0] = v.split(",").map((n) => parseInt(n.trim(), 10) || 0);
+    await api("/posts/" + b.dataset.pmetric + "/metrics", { method: "POST", body: JSON.stringify({
+      kenh: b.dataset.pkenh, luot_xem: x, luot_thich: t, binh_luan: bl, chia_se: cs,
+    })});
+    toast("Đã ghi số liệu."); loadAnalytics();
+  }));
+}
+
+/* ---------------- số hiệu ---------------- */
+
+async function loadAnalytics() {
+  const a = await api("/analytics");
+  const t = a.tong;
+  const maxView = Math.max(1, ...a.theo_kenh.map((k) => Number(k.luot_xem || 0)));
+
+  $("#anaCards").innerHTML =
+      cell("Lượt xem", num(t.luot_xem), "", 1, "spend")
+    + cell("Tương tác", num(t.luot_thich + t.binh_luan + t.chia_se), "", null, "auto")
+    + cell("Tỷ lệ tương tác", t.ty_le_tuong_tac, "%", Math.min(1, t.ty_le_tuong_tac / 10), "auto")
+    + cell("Đã đăng", num(a.theo_trang_thai.da_dang || 0), "bài", null, "auto")
+    + cell("Chờ duyệt", num(a.theo_trang_thai.cho_duyet || 0), "bài", null, "assist");
+
+  $("#anaChannels").innerHTML = a.theo_kenh.length ? a.theo_kenh.map((k) => {
+    const tt = k.luot_xem > 0
+      ? ((Number(k.luot_thich) + Number(k.binh_luan) + Number(k.chia_se)) / k.luot_xem * 100).toFixed(2)
+      : "0.00";
+    return `<div class="row">
+      <span class="row__flag row__flag--spend" style="width:3px"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(KENH_LABEL[k.kenh] || k.kenh)}
+          <span class="tag tag--plain">${k.so_bai} bài</span></span>
+        <span class="row__sub">${num(k.luot_thich)} thích · ${num(k.binh_luan)} bình luận · ${num(k.chia_se)} chia sẻ · tương tác ${tt}%</span>
+        <span class="readout__bar" style="margin-top:5px"><span class="readout__fill readout__fill--spend" style="width:${Math.max(2, k.luot_xem / maxView * 100)}%"></span></span>
+      </span>
+      <span class="row__side"><span class="row__num">${num(k.luot_xem)}</span>
+        <span class="row__time">lượt xem</span></span>
+    </div>`;
+  }).join("") : '<p class="empty">Chưa có số liệu. Đăng bài rồi nhập số liệu ở màn Đăng bài.</p>';
+
+  $("#anaTop").innerHTML = a.bai_tot_nhat.length ? a.bai_tot_nhat.map((b) => `
+    <div class="row">
+      <span class="row__flag row__flag--auto"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(b.tieu_de)}
+          <span class="tag tag--plain">${esc(KENH_LABEL[b.kenh] || b.kenh)}</span></span>
+        <span class="row__sub">${num(b.luot_thich)} thích · ${num(b.binh_luan)} bình luận · tương tác ${b.ty_le_tuong_tac}%</span>
+      </span>
+      <span class="row__side"><span class="row__num">${num(b.luot_xem)}</span>
+        <span class="row__time">lượt xem</span></span>
+    </div>`).join("") : '<p class="empty">Chưa đủ dữ liệu để xếp hạng.</p>';
+}
+
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
   try {
     await loadOverview();
-    if (state.view === "hoithoai") await loadConversations();
+    if (state.view === "hoithoai") { await loadChannelStrip(); await loadNicks(); await loadConversations(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "video") await loadVideos();
+    if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
+    if (state.view === "sohieu") await loadAnalytics();
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "nhatky") await loadEvents();
   } catch (e) {

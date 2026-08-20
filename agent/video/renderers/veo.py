@@ -144,9 +144,12 @@ async def render(ctx: RenderContext) -> tuple[bool, str]:
         return False, "chưa đặt GCP_PROJECT_ID"
 
     try:
-        from agent.core.llm import _vertex_token
+        # Bản BẤT ĐỒNG BỘ. `_vertex_token()` đồng bộ sẽ chặn vòng lặp sự kiện
+        # suốt lời gọi mạng làm mới token — mà thợ dựng video chạy chung tiến
+        # trình với việc trả lời khách, nên chặn ở đây là cả hệ thống đứng im.
+        from agent.core.llm import _token
 
-        token = _vertex_token()
+        token = await _token()
     except Exception as exc:  # noqa: BLE001
         return False, f"không lấy được token Vertex: {type(exc).__name__}"
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import uuid
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -18,12 +19,15 @@ from fastapi.staticfiles import StaticFiles
 from agent import db, runtime
 from agent.api.routes import router as api_router
 from agent.channels.base import InboundMessage
-from agent.channels.zalocrm import ZaloCRMAdapter
+from agent.channels import registry as channels
+from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent.publish import registry as pub_registry
+from agent.publish import service as post_service
+from agent.video import worker as video_worker
 
 DASHBOARD_DIR = ROOT / "dashboard"
-channel = ZaloCRMAdapter()
 
 HISTORY_TURNS = 12
 
@@ -40,7 +44,7 @@ async def poll_loop() -> None:
     while True:
         try:
             if settings.zalocrm_api_key and runtime.enabled():
-                for msg in await channel.fetch_new():
+                for msg in await channels.keo_tin_moi():
                     await handle_inbound(msg)
         except asyncio.CancelledError:
             raise
@@ -49,22 +53,57 @@ async def poll_loop() -> None:
         await asyncio.sleep(settings.zalocrm_poll_seconds)
 
 
+async def schedule_loop() -> None:
+    """
+    Đăng những bài ĐÃ DUYỆT và đã tới giờ hẹn.
+
+    Chỉ đụng tới trạng thái `da_len_lich` — bài chưa duyệt không bao giờ
+    lọt vào đây, dù có lịch hẹn hay không. Hẹn giờ là tiện lợi, không phải
+    đường vòng qua khâu duyệt.
+    """
+    while True:
+        try:
+            for row in await post_service.den_gio_dang():
+                await post_service.dang_bai(str(row["id"]), boi="lich_hen")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await db.log_event("schedule.error",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_db()
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
     poller = asyncio.create_task(poll_loop()) if settings.zalocrm_api_key else None
+    scheduler = asyncio.create_task(schedule_loop())
+    # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
+    # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
+    # thái dở, không ai nhặt lại và không dòng lỗi nào.
+    video_workers = await video_worker.start()
     if poller:
         await db.log_event("poll.start", every_s=settings.zalocrm_poll_seconds)
 
     yield
 
+    for w in video_workers:
+        w.cancel()
+    for w in video_workers:
+        with suppress(asyncio.CancelledError):
+            await w
+    scheduler.cancel()
+    with suppress(asyncio.CancelledError):
+        await scheduler
     if poller:
         poller.cancel()
         with suppress(asyncio.CancelledError):
             await poller
-    await channel.aclose()
+    await pub_registry.dong_tat_ca()
+    await zalo_acc.aclose()
+    await channels.dong_tat_ca()
     await db.close_db()
 
 
@@ -82,10 +121,24 @@ async def healthz() -> dict:
 # ---------------------------------------------------------------
 
 @app.post("/webhook")
-async def webhook(request: Request, tasks: BackgroundTasks) -> JSONResponse:
+@app.post("/webhook/{kenh}")
+async def webhook(
+    request: Request, tasks: BackgroundTasks, kenh: str = "zalocrm"
+) -> JSONResponse:
+    """
+    Cửa vào chung cho mọi kênh đẩy webhook.
+
+    `/webhook` không có tên kênh vẫn về ZaloCRM để cấu hình cũ không hỏng.
+    Chatwoot trỏ về `/webhook/chatwoot`.
+    """
+    # Nhận secret ở header HOẶC ở tham số URL. Cần cả hai vì giao diện
+    # webhook của Chatwoot không cho thêm header tuỳ ý — bắt buộc header là
+    # khoá cửa luôn kênh đó. Dùng so sánh hằng thời gian để không rò rỉ
+    # secret qua thời gian phản hồi.
     if settings.webhook_secret:
-        supplied = request.headers.get("x-webhook-secret", "")
-        if supplied != settings.webhook_secret:
+        supplied = (request.headers.get("x-webhook-secret")
+                    or request.query_params.get("token", ""))
+        if not secrets.compare_digest(supplied, settings.webhook_secret):
             return JSONResponse({"ok": False, "error": "sai secret"}, status_code=401)
 
     try:
@@ -93,7 +146,7 @@ async def webhook(request: Request, tasks: BackgroundTasks) -> JSONResponse:
     except (json.JSONDecodeError, ValueError):
         return JSONResponse({"ok": False, "error": "payload không phải JSON"}, 400)
 
-    inbound = channel.parse(payload)
+    inbound = channels.get(kenh).parse(payload)
     if inbound is None:
         return JSONResponse({"ok": True, "skipped": "không phải tin văn bản đến"})
 
@@ -161,8 +214,9 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt.
     auto_send = runtime.mode() == "auto" and not reply.escalate
     delivered = False
-    if auto_send and await channel.can_send_now(msg.conversation_ref):
-        delivered = (await channel.send_text(msg.conversation_ref, reply.text)).ok
+    adapter = channels.get(msg.channel)
+    if auto_send and await adapter.can_send_now(msg.conversation_ref):
+        delivered = (await adapter.send_text(msg.conversation_ref, reply.text)).ok
 
     await db.execute(
         """
@@ -235,6 +289,13 @@ async def _history(cid: uuid.UUID) -> list[dict]:
 # ---------------------------------------------------------------
 #  Giao diện
 # ---------------------------------------------------------------
+
+# Video tĩnh — n8n và Instagram Graph API cần TẢI ĐƯỢC file qua HTTP,
+# không nhận đường dẫn ổ đĩa. Phải mount TRƯỚC "/" vì mount "/" nuốt hết.
+_VIDEO_DIR = settings.video_out_path
+if _VIDEO_DIR.exists():
+    app.mount("/media/videos",
+              StaticFiles(directory=str(_VIDEO_DIR)), name="media-videos")
 
 if DASHBOARD_DIR.exists():
     app.mount("/", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")

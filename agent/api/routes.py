@@ -10,12 +10,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from agent import db, runtime
-from agent.channels.zalocrm import ZaloCRMAdapter
+from agent.channels import registry as channels
+from agent.config import settings
+from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import rag
+from agent.publish import analytics, copywriter, registry
+from agent.publish import service as post_service
 from agent.video import pipeline
 
 router = APIRouter(prefix="/api")
-_channel = ZaloCRMAdapter()
 
 
 def _num(v) -> float:
@@ -178,6 +181,7 @@ async def conversation_detail(conv_id: str) -> dict:
         "channel": conv["channel"],
         "external_id": conv["external_id"],
         "status": conv["status"],
+        "zalo_account_id": conv["zalo_account_id"] or "",
         "typing": runtime.is_busy(conv["id"]),
         "cost": round(_num(conv["cost_usd"]), 6),
         "messages": [
@@ -210,7 +214,7 @@ async def staff_send(conv_id: str, body: SendBody) -> dict:
     if not conv:
         raise HTTPException(404, "Không thấy hội thoại")
 
-    delivery = await _channel.send_text(conv["external_id"], body.text)
+    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], body.text)
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content, delivered) "
         "VALUES ($1,'staff',$2,$3)",
@@ -240,7 +244,7 @@ async def approve_draft(message_id: str) -> dict:
     conv = await db.fetchrow(
         "SELECT * FROM conversations WHERE id = $1", msg["conversation_id"]
     )
-    delivery = await _channel.send_text(conv["external_id"], msg["content"])
+    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], msg["content"])
     if delivery.ok:
         await db.execute("UPDATE messages SET delivered = TRUE WHERE id = $1", mid)
         await db.execute(
@@ -394,6 +398,26 @@ async def video_file(video_id: str):
     return FileResponse(row["file_path"], media_type="video/mp4")
 
 
+@router.post("/videos/{video_id}/retry")
+async def retry_video(video_id: str) -> dict:
+    """
+    Đưa một video hỏng trở lại hàng đợi.
+
+    Ảnh sản phẩm vẫn nằm nguyên trên đĩa và trong `video_assets`, nên không
+    phải tải lên lại. Mọi bước còn lại đều làm lại được từ đầu.
+    """
+    vid = uuid.UUID(video_id)
+    row = await db.fetchrow(
+        "UPDATE videos SET status = 'queued', error = NULL, updated_at = now() "
+        "WHERE id = $1 AND status = 'failed' RETURNING id",
+        vid,
+    )
+    if not row:
+        raise HTTPException(409, "Chỉ chạy lại được video đang ở trạng thái lỗi")
+    await db.log_event("video.retry", actor="staff", ref_id=vid)
+    return {"ok": True}
+
+
 @router.post("/videos/{video_id}/approve")
 async def approve_video(video_id: str) -> dict:
     vid = uuid.UUID(video_id)
@@ -545,3 +569,235 @@ async def cancel_order(order_id: str) -> dict:
     )
     await db.log_event("order.cancel", actor="staff", ref_id=oid)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------
+#  Bài đăng mạng xã hội
+#
+#  Luồng: agent soạn -> người duyệt -> PublishAdapter phân phối ->
+#  số liệu quay về -> agent dùng số liệu đó cho bài sau.
+#  Không có nhánh nào bỏ qua bước duyệt.
+# ---------------------------------------------------------------
+
+class SoanBaiIn(BaseModel):
+    kenh: str = Field("facebook")
+    san_pham: str = ""
+    y_tuong: str = ""
+    video_id: str | None = None
+
+
+class TaoBaiIn(BaseModel):
+    tieu_de: str
+    noi_dung: str
+    kenh: list[str] = Field(default_factory=lambda: ["facebook"])
+    hashtags: list[str] | None = None
+    video_id: str | None = None
+    lich_dang: datetime | None = None
+
+
+class SoLieuIn(BaseModel):
+    kenh: str
+    luot_xem: int = 0
+    luot_thich: int = 0
+    binh_luan: int = 0
+    chia_se: int = 0
+    luot_click: int = 0
+    url: str = ""
+
+
+class CallbackIn(BaseModel):
+    kenh: str
+    ok: bool = True
+    url: str = ""
+    detail: str = ""
+
+
+@router.get("/publish/channels")
+async def publish_channels() -> dict:
+    """Kênh nào đang đi đường nào, và nếu chưa dùng được thì vì sao."""
+    return {"kenh": await registry.trang_thai_kenh()}
+
+
+@router.post("/posts/draft")
+async def draft_post(body: SoanBaiIn) -> dict:
+    try:
+        return await copywriter.soan(
+            kenh=body.kenh, san_pham=body.san_pham,
+            y_tuong=body.y_tuong, video_id=body.video_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/posts")
+async def list_posts(trang_thai: str | None = None, limit: int = 50) -> dict:
+    sql = (
+        "SELECT p.*, v.file_path AS video_path FROM posts p "
+        "LEFT JOIN videos v ON v.id = p.video_id "
+    )
+    args: list = []
+    if trang_thai:
+        sql += "WHERE p.trang_thai = $1 "
+        args.append(trang_thai)
+    sql += f"ORDER BY p.created_at DESC LIMIT ${len(args) + 1}"
+    args.append(min(limit, 200))
+    rows = await db.fetch(sql, *args)
+    for r in rows:
+        r["co_video"] = bool(r.pop("video_path", None))
+    return {"posts": rows}
+
+
+@router.post("/posts")
+async def create_post(body: TaoBaiIn) -> dict:
+    try:
+        return await post_service.tao_bai(
+            tieu_de=body.tieu_de, noi_dung=body.noi_dung, kenh=body.kenh,
+            hashtags=body.hashtags, video_id=body.video_id,
+            lich_dang=body.lich_dang, tao_boi="nguoi",
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/posts/{post_id}/approve")
+async def approve_post(post_id: uuid.UUID) -> dict:
+    try:
+        return await post_service.duyet(str(post_id))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/posts/{post_id}/cancel")
+async def cancel_post(post_id: uuid.UUID) -> dict:
+    row = await db.fetchrow(
+        "UPDATE posts SET trang_thai='da_huy', updated_at=now() "
+        "WHERE id=$1 RETURNING *", post_id,
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy bài đăng")
+    await db.log_event("post.cancelled", actor="nguoi", ref_id=post_id)
+    return row
+
+
+@router.post("/posts/{post_id}/callback")
+async def post_callback(post_id: uuid.UUID, body: CallbackIn) -> dict:
+    """n8n gọi về đây sau khi workflow chạy xong."""
+    row = await post_service.ghi_nhan_callback(
+        str(post_id), body.kenh, body.ok, body.url, body.detail
+    )
+    if row is None:
+        raise HTTPException(404, "Không tìm thấy bài đăng")
+    return row
+
+
+@router.post("/posts/{post_id}/metrics")
+async def add_metrics(post_id: uuid.UUID, body: SoLieuIn) -> dict:
+    return await analytics.ghi_so_lieu(
+        str(post_id), body.kenh, luot_xem=body.luot_xem,
+        luot_thich=body.luot_thich, binh_luan=body.binh_luan,
+        chia_se=body.chia_se, luot_click=body.luot_click, url=body.url,
+    )
+
+
+@router.get("/posts/{post_id}/metrics")
+async def get_metrics(post_id: uuid.UUID) -> dict:
+    return {"so_lieu": await analytics.moi_nhat_theo_bai(str(post_id))}
+
+
+@router.get("/analytics")
+async def get_analytics(ngay: int = 30) -> dict:
+    tq = await analytics.tong_quan(ngay)
+    tq["bai_tot_nhat"] = await analytics.bai_tot_nhat()
+    return tq
+
+
+@router.get("/catalog/products")
+async def catalog_products() -> dict:
+    """Danh sách gọn cho ô gợi ý sản phẩm khi soạn bài."""
+    import json as _json
+    from agent.config import ROOT as _ROOT
+    data = _json.loads((_ROOT / "data" / "catalog.json").read_text(encoding="utf-8"))
+    return {"san_pham": [
+        {"ma": p["ma"], "ten": p["ten"], "loai": p.get("loai", "")}
+        for p in data.get("san_pham", [])
+    ]}
+
+
+# ---------------------------------------------------------------
+#  Nick Zalo
+#
+#  Public API của ZaloCRM không liệt kê được nick, nên phần này đọc
+#  CHỈ ĐỌC từ CSDL của nó. Xem agent/channels/zalocrm_accounts.py.
+# ---------------------------------------------------------------
+
+class ChonNickIn(BaseModel):
+    zalo_account_id: str
+
+
+@router.get("/zalo/accounts")
+async def zalo_accounts() -> dict:
+    ds = await zalo_acc.danh_sach()
+    return {
+        "accounts": ds,
+        "dang_chon": runtime.STATE.get("zalo_account_id") or "",
+        "ghi_chu": "" if ds else (
+            "Không đọc được danh sách nick. Kiểm tra container zalo-crm-db "
+            "đang chạy và ZALOCRM_DB_URL trong .env."
+        ),
+    }
+
+
+@router.post("/zalo/account")
+async def set_default_account(body: ChonNickIn) -> dict:
+    """Đặt nick mặc định cho mọi hội thoại chưa ghim riêng."""
+    if body.zalo_account_id and not await zalo_acc.hop_le(body.zalo_account_id):
+        raise HTTPException(422, "Nick không tồn tại hoặc đang không kết nối")
+    runtime.update(zalo_account_id=body.zalo_account_id)
+    await db.log_event("zalo.account.default", actor="nguoi",
+                       account_id=body.zalo_account_id)
+    return {"dang_chon": body.zalo_account_id}
+
+
+@router.post("/conversations/{conv_id}/account")
+async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn) -> dict:
+    """Ghim một nick cho riêng hội thoại này. Chuỗi rỗng = bỏ ghim."""
+    acc = body.zalo_account_id or None
+    if acc and not await zalo_acc.hop_le(acc):
+        raise HTTPException(422, "Nick không tồn tại hoặc đang không kết nối")
+    row = await db.fetchrow(
+        "UPDATE conversations SET zalo_account_id = $2, updated_at = now() "
+        "WHERE id = $1 RETURNING id, zalo_account_id", conv_id, acc,
+    )
+    if not row:
+        raise HTTPException(404, "Không tìm thấy hội thoại")
+    await db.log_event("zalo.account.pinned", actor="nguoi",
+                       ref_id=conv_id, account_id=acc)
+    return row
+
+
+@router.get("/channels")
+async def list_channels() -> dict:
+    """
+    Kênh nào đang nối vào hệ thống, và đi bằng cơ chế gì.
+
+    Hai kênh chạy ngược nhau (ZaloCRM kéo, Chatwoot đẩy) mà agent không
+    phân biệt — đây là chỗ nhìn thấy điều đó.
+    """
+    bat = set(channels.dang_bat())
+    co_che = {"zalocrm": "polling", "chatwoot": "webhook"}
+    return {"channels": [
+        {
+            "ten": ten,
+            "dang_bat": ten in bat,
+            "co_che": co_che.get(ten, "webhook"),
+            "webhook_url": (
+                f"{settings.public_base_url}/webhook/{ten}"
+                if co_che.get(ten) == "webhook" else ""
+            ),
+        }
+        for ten in channels.tat_ca()
+    ]}

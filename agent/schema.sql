@@ -75,7 +75,11 @@ CREATE TABLE IF NOT EXISTS videos (
     title           TEXT NOT NULL,
     brief           TEXT NOT NULL,
     kind            TEXT NOT NULL DEFAULT 'explainer',   -- explainer | product
-    -- queued | scripting | voicing | rendering | ready | failed | pending_review
+    -- Vòng đời: queued -> claimed -> looking -> scripting -> voicing
+    --           -> rendering -> pending_review -> ready
+    -- Nhánh chết: failed. Thợ nền (agent/video/worker.py) nhận việc bằng
+    -- `claimed`, và mọi trạng thái giữa chừng đều được nhặt lại khi app
+    -- khởi động lại — không có video nào kẹt vĩnh viễn.
     status          TEXT NOT NULL DEFAULT 'queued',
     renderer        TEXT,                                -- hyperframes | veo | hybrid
     duration_s      REAL,
@@ -152,3 +156,49 @@ CREATE INDEX IF NOT EXISTS idx_order_status  ON orders (trang_thai);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_order_dedupe
     ON orders (conversation_id, md5(items::text))
     WHERE trang_thai <> 'da_huy';
+
+-- --- Bài đăng mạng xã hội ------------------------------------
+-- Agent soạn nội dung + gắn video, người duyệt, rồi PublishAdapter
+-- đẩy đi. KHÔNG BAO GIỜ tự đăng khi chưa duyệt.
+CREATE TABLE IF NOT EXISTS posts (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    video_id    UUID REFERENCES videos(id) ON DELETE SET NULL,
+    tieu_de     TEXT NOT NULL,
+    noi_dung    TEXT NOT NULL,
+    hashtags    JSONB NOT NULL DEFAULT '[]',
+    kenh        JSONB NOT NULL DEFAULT '[]',   -- ["facebook","tiktok"]
+    -- nhap | cho_duyet | da_len_lich | dang_dang | da_dang | loi | da_huy
+    trang_thai  TEXT NOT NULL DEFAULT 'cho_duyet',
+    lich_dang   TIMESTAMPTZ,
+    ket_qua     JSONB NOT NULL DEFAULT '{}',   -- {facebook:{ok,url,error}}
+    tao_boi     TEXT NOT NULL DEFAULT 'agent',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_post_created ON posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_status  ON posts (trang_thai);
+CREATE INDEX IF NOT EXISTS idx_post_lich    ON posts (lich_dang)
+    WHERE trang_thai = 'da_len_lich';
+
+-- --- Số liệu bài đăng ----------------------------------------
+-- Vòng phản hồi: nội dung nào chạy tốt thì agent biết mà làm tiếp.
+CREATE TABLE IF NOT EXISTS post_metrics (
+    id          BIGSERIAL PRIMARY KEY,
+    post_id     UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    kenh        TEXT NOT NULL,
+    url         TEXT,
+    luot_xem    BIGINT NOT NULL DEFAULT 0,
+    luot_thich  BIGINT NOT NULL DEFAULT 0,
+    binh_luan   BIGINT NOT NULL DEFAULT 0,
+    chia_se     BIGINT NOT NULL DEFAULT 0,
+    luot_click  BIGINT NOT NULL DEFAULT 0,
+    thu_thap_luc TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_metric_post ON post_metrics (post_id, thu_thap_luc DESC);
+
+-- --- Nick Zalo dùng để trả lời từng hội thoại -----------------
+-- Doanh nghiệp chạy nhiều nick (mỗi nhân viên một nick, hoặc tách theo
+-- ngành hàng). Trả lời phải đi ra đúng nick khách đã nhắn vào, không thì
+-- khách thấy một người lạ trả lời.
+-- NULL = dùng nick mặc định đang chọn trên dashboard.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS zalo_account_id TEXT;

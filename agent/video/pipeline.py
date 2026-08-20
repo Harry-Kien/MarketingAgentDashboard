@@ -22,12 +22,6 @@ from agent.video import assets, renderers, timing, tts, vision
 
 PROMPT = (ROOT / "agent" / "prompts" / "video_script.md").read_text(encoding="utf-8")
 
-# Giữ tham chiếu mạnh tới job nền. Không giữ thì CPython được phép thu gom
-# task đang chờ giữa chừng, và video treo ở trạng thái `queued` vĩnh viễn mà
-# không có dòng lỗi nào.
-_JOBS: set[asyncio.Task] = set()
-
-
 async def write_script(
     brief: str, seconds: int = 30, catalogue: str = ""
 ) -> tuple[dict | None, float]:
@@ -241,7 +235,9 @@ async def request_video(
                 nhan=len(saved), loai=warnings[:5],
             )
 
-    task = asyncio.create_task(produce(vid))
-    _JOBS.add(task)
-    task.add_done_callback(_JOBS.discard)
+    # KHÔNG chạy ngay tại đây. Video nằm lại hàng đợi trong Postgres, thợ
+    # nền (agent/video/worker.py) nhận và dựng. Nhờ vậy app tắt giữa chừng
+    # thì việc được nhặt lại ở lần khởi động sau, và nhiều yêu cầu cùng lúc
+    # không sinh ra bấy nhiêu tiến trình ffmpeg tranh CPU với việc trả lời
+    # khách đang đợi trước mặt.
     return vid

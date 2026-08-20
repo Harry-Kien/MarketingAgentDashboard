@@ -1,9 +1,11 @@
 # Marketing Agent — MVP
 
-Nhân sự số cho doanh nghiệp: nhận tin nhắn Zalo, tra tài liệu công ty để trả
-lời **có căn cứ**, gọi hệ thống nghiệp vụ khi cần số liệu thật, chuyển cho
-người khi vượt khả năng — và sản xuất video marketing có giọng đọc **khớp
-đúng thời lượng nội dung**.
+Nhân sự số cho doanh nghiệp: nhận tin nhắn Zalo (và Facebook / Instagram /
+WhatsApp / web qua Chatwoot), tra tài liệu công ty để trả lời **có căn cứ**,
+gọi hệ thống nghiệp vụ khi cần số liệu thật, tự lên đơn, chuyển cho người khi
+vượt khả năng — sản xuất video marketing có giọng đọc **khớp đúng thời lượng
+nội dung**, rồi soạn bài và phân phối lên mạng xã hội **sau khi có người
+duyệt**, đo hiệu quả và mang số liệu đó quay lại cho lần soạn sau.
 
 Chạy trên **Vertex AI** (Claude + về sau là Veo), một GCP project, một hóa đơn.
 
@@ -17,6 +19,8 @@ Chạy trên **Vertex AI** (Claude + về sau là Veo), một GCP project, một
 | **Âm thanh trước, hình sau** — thời lượng cảnh đo bằng `ffprobe` từ file giọng đọc thật, không bao giờ để model đoán | `agent/video/timing.py` |
 | **Không phát ngôn không căn cứ** — giá, tồn kho, tình trạng đơn chỉ đến từ tool; thiếu căn cứ thì chuyển người | `agent/core/tools.py`, `agent/prompts/system.md` |
 | **Vertex không có auto-caching** — phải tự đặt `cache_control` lên khối ổn định, ngữ cảnh RAG biến động nằm sau | `agent/core/llm.py` → `cached_system()` |
+| **PublishAdapter là ranh giới thứ hai** — đăng bài đi qua n8n, API chính thức, hay hàng đợi thủ công đều cùng một hợp đồng; thiếu quyền nền tảng thì tụt bậc chứ không chết | `agent/publish/base.py` |
+| **Nội dung ra công chúng luôn phải có người duyệt** — ràng buộc nằm trong mã, không nằm trong prompt | `agent/publish/service.py` |
 
 ---
 
@@ -192,10 +196,45 @@ hay **ước lượng**.
 Bậc Veo **tắt theo mặc định** vì tính tiền theo giây video. Bật bằng cách đặt
 `VEO_MODEL` trong `.env`.
 
+### Hàng đợi — video chạy độc lập với người dùng
+
+Video không dựng ngay lúc bấm nút. Nó vào hàng đợi trong Postgres, thợ nền
+(`agent/video/worker.py`) nhận và chạy. Ba điều đổi được nhờ vậy:
+
+- **App tắt giữa chừng không mất việc.** Khởi động lại thì việc dở dang được
+  nhặt lại và chạy tiếp. Trước đây video kẹt vĩnh viễn ở trạng thái dở, không
+  một dòng lỗi nào.
+- **Không tranh CPU với khách.** Mặc định dựng một video tại một thời điểm
+  (`VIDEO_WORKERS`), vì ffmpeg nặng mà nó chạy chung tiến trình với việc trả
+  lời khách đang đợi.
+- **Video lỗi chạy lại được** bằng nút *Chạy lại* trên thẻ video. Ảnh sản phẩm
+  giữ nguyên, không phải tải lên lần nữa.
+
+Việc nhận dùng `FOR UPDATE SKIP LOCKED` nên chạy nhiều app trên cùng một DB
+cũng không ai giẫm chân ai.
+
 Phụ đề được burn cứng vào hình, lấy mốc thời gian từ chính số đo ffprobe.
 Khi chưa có TTS, đây là thứ duy nhất truyền được lời thoại.
 
 Video xong ở trạng thái **chờ duyệt** — hệ thống không bao giờ tự đăng.
+
+---
+
+## Phân phối nội dung và đo hiệu quả
+
+Hộp thư đa nền tảng, chọn nick Zalo, đăng bài lên mạng xã hội, phân tích
+hiệu quả — kể cả phần **bị chặn bởi quy trình duyệt của nền tảng** và cách
+hệ thống vẫn chạy trong lúc chờ: [docs/phan-phoi-noi-dung.md](docs/phan-phoi-noi-dung.md)
+
+Tóm tắt ngắn:
+
+- Đăng thẳng lên Facebook/Instagram cần Business Verification + App Review
+  (1–4 tuần). TikTok cần audit; **chưa audit thì bài bị ép về riêng tư**.
+- Nên đường mặc định đi qua **n8n** (đã chạy sẵn ở cổng 5678) — n8n giữ
+  OAuth, hệ thống này không giữ token dài hạn của mạng xã hội.
+- Không cấu hình gì thì bài vào **hàng đợi thủ công**: hệ thống không bao
+  giờ chết vì thiếu quyền nền tảng.
+- Bài **không bao giờ tự đi khi chưa có người duyệt**, kể cả khi đã hẹn giờ.
 
 ---
 
@@ -238,7 +277,10 @@ agent/
   runtime.py           công tắc ngắt, chế độ, ngưỡng (đổi lúc chạy)
   channels/
     base.py            ChannelAdapter — RANH GIỚI KIẾN TRÚC
-    zalocrm.py         giai đoạn 1 (Zalo cá nhân)
+    registry.py        định tuyến theo kênh, một chỗ duy nhất
+    zalocrm.py         Zalo cá nhân — KÉO (chốt SSRF chặn webhook)
+    zalocrm_accounts.py  đọc chỉ-đọc CSDL ZaloCRM để liệt kê nick
+    chatwoot.py        Facebook/Instagram/WhatsApp/web — ĐẨY (webhook)
   core/
     llm.py             AnthropicVertex + cache_control thủ công + tính giá
     rag.py             pgvector + embedding tiếng Việt  ← cắm RAG pháp lý vào đây
@@ -249,6 +291,16 @@ agent/
     tts.py             giọng đọc
     timing.py          ffprobe — mảnh làm nên video khớp lời
     renderer.py        hyperframes + lưới an toàn ffmpeg
+  publish/
+    base.py            PublishAdapter — RANH GIỚI PHÂN PHỐI
+    registry.py        n8n -> API chính thức -> hàng đợi thủ công
+    n8n.py             chạy được ngay, n8n giữ OAuth mạng xã hội
+    meta.py            Facebook/Instagram — chờ App Review
+    tiktok.py          TikTok — chờ audit
+    manual.py          lưới an toàn cuối cùng
+    copywriter.py      agent soạn caption, kiểm tuân thủ 2 lớp
+    service.py         vòng đời bài: soạn -> duyệt -> đăng
+    analytics.py       số liệu và vòng phản hồi về prompt
   api/routes.py        API dashboard
 dashboard/             giao diện, không build step
 scripts/               nạp tài liệu, dữ liệu trình diễn

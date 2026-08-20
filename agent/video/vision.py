@@ -117,6 +117,25 @@ async def analyse_one(file_path: str | Path) -> tuple[dict, float]:
     return coerce(llm.parse_json(result.text)), result.cost_usd
 
 
+def huong_tu_kich_thuoc(width, height) -> str | None:
+    """
+    Hướng ảnh TÍNH TỪ SỐ ĐO, không hỏi model.
+
+    Chúng ta đã biết chính xác chiều rộng và chiều cao từ lúc chuẩn hoá ảnh.
+    Hỏi model một thứ mình đã đo được là vừa tốn token vừa mời sai sót: trong
+    lần chạy thử, model gọi một tấm 1920x1080 là ảnh "vuông". Cùng lý do
+    `timing.py` không hỏi model thời lượng cảnh.
+    """
+    if not width or not height:
+        return None
+    ratio = width / height
+    if ratio > 1.15:
+        return "ngang"
+    if ratio < 0.87:
+        return "doc"
+    return "vuong"
+
+
 async def analyse_all(asset_rows: list[dict]) -> tuple[list[dict], float]:
     """
     Nhìn cả lô ảnh, song song.
@@ -134,6 +153,9 @@ async def analyse_all(asset_rows: list[dict]) -> tuple[list[dict], float]:
     out, total = [], 0.0
     for row, (analysis, cost) in zip(asset_rows, pairs):
         total += cost
+        do = huong_tu_kich_thuoc(row.get("width"), row.get("height"))
+        if do:
+            analysis["huong"] = do          # số đo thắng phán đoán của model
         out.append({**row, "analysis": analysis, "usable": is_usable(analysis)})
     return out, round(total, 6)
 

@@ -1,0 +1,86 @@
+# Chatwoot — hộp thư đa nền tảng (Facebook, Instagram, WhatsApp, web, email)
+#
+# Tách khỏi docker-compose.yml chính vì đây là hệ thống độc lập, có CSDL và
+# Redis riêng. Bật/tắt không ảnh hưởng agent:
+#     docker compose -f docker-compose.chatwoot.yml up -d
+#     docker compose -f docker-compose.chatwoot.yml down
+#
+# CỔNG — chọn tránh mọi thứ đang chạy trên máy này:
+#     3200  Chatwoot web      (3000 ZaloCRM nội bộ, 3001 Langfuse, 3080 ZaloCRM)
+#     5435  Postgres riêng    (5433 agent, 5434 ZaloCRM)
+#     6380  Redis riêng       (6379 ZaloCRM)
+#
+# Chatwoot >= 3.x cần pgvector cho tính năng tìm kiếm ngữ nghĩa của nó.
+
+name: chatwoot
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chatwoot
+      POSTGRES_USER: chatwoot
+      POSTGRES_PASSWORD: chatwoot_local_pw
+    volumes:
+      - chatwoot_pg:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatwoot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "chatwoot_local_pw"]
+    volumes:
+      - chatwoot_redis:/data
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "chatwoot_local_pw", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Chạy migration rồi thoát. Các service khác chờ nó xong mới khởi động —
+  # nếu không, rails và sidekiq cùng chạy migration một lúc và giẫm lên nhau.
+  migrate:
+    image: chatwoot/chatwoot:latest
+    command: ["bundle", "exec", "rails", "db:chatwoot_prepare"]
+    env_file: .env.chatwoot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  rails:
+    image: chatwoot/chatwoot:latest
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    env_file: .env.chatwoot
+    ports:
+      - "127.0.0.1:3200:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Sidekiq xử lý việc nền: gửi tin ra nền tảng, gửi email, chạy automation.
+  # Thiếu nó thì giao diện vẫn lên nhưng tin nhắn không bao giờ đi.
+  sidekiq:
+    image: chatwoot/chatwoot:latest
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    env_file: .env.chatwoot
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  chatwoot_pg:
+  chatwoot_redis:

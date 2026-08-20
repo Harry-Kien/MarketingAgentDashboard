@@ -226,6 +226,111 @@ class ZaloCRMAdapter(ChannelAdapter):
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    # ---------------------------------------------------------------
+    #  Danh bạ và lịch hẹn — phần Public API mà hệ thống chưa dùng tới
+    #
+    #  ZaloCRM mở 9 endpoint công khai, adapter này ban đầu chỉ dùng 3
+    #  (đọc hội thoại, đọc tin, gửi tin). Sáu cái còn lại là danh bạ khách
+    #  và lịch hẹn — với cửa hàng mỹ phẩm thì đặt lịch tư vấn da là nghiệp
+    #  vụ thật, không phải tính năng thừa.
+    #
+    #  Gọi qua HTTP chứ KHÔNG chép mã ZaloCRM vào đây. ZaloCRM là AGPL-3.0:
+    #  chép mã vào là cả dự án này thành tác phẩm phái sinh và phải mang
+    #  cùng giấy phép. Gọi qua API thì copyleft dừng ở biên giới container —
+    #  đúng ranh giới mà README dự án đã đặt ra từ đầu.
+    # ---------------------------------------------------------------
+
+    async def danh_ba(
+        self, *, tim: str = "", trang_thai: str = "", limit: int = 20
+    ) -> list[dict]:
+        """Danh bạ khách hàng bên ZaloCRM. Tìm theo tên, số điện thoại, email."""
+        if not settings.zalocrm_api_key:
+            return []
+        params: dict = {"limit": max(1, min(limit, 100))}
+        if tim:
+            params["search"] = tim
+        if trang_thai:
+            params["status"] = trang_thai
+        try:
+            r = await self._client.get("/api/public/contacts", params=params)
+            r.raise_for_status()
+            return r.json().get("contacts", [])
+        except (httpx.HTTPError, ValueError):
+            return []
+
+    async def khach(self, contact_id: str) -> dict | None:
+        """Một khách cụ thể, kèm ghi chú và thẻ mà nhân viên đã gắn."""
+        if not self.cau_hinh_du() or not contact_id:
+            return None
+        try:
+            r = await self._client.get(f"/api/public/contacts/{contact_id}")
+            r.raise_for_status()
+            data = r.json()
+            return data.get("contact", data)
+        except (httpx.HTTPError, ValueError):
+            return None
+
+    async def luu_khach(self, **truong) -> dict | None:
+        """
+        Tạo khách mới trong danh bạ ZaloCRM.
+
+        ZaloCRM đòi có ít nhất `fullName` hoặc `phone`; thiếu cả hai thì nó
+        trả 400. Chặn sớm ở đây để không tốn một vòng gọi mạng.
+        """
+        if not settings.zalocrm_api_key:
+            return None
+        if not (truong.get("fullName") or truong.get("phone")):
+            return None
+        try:
+            r = await self._client.post("/api/public/contacts", json=truong)
+            r.raise_for_status()
+            return r.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+
+    async def lich_hen(self, *, tu: str = "", den: str = "") -> list[dict]:
+        """Lịch hẹn trong khoảng thời gian. Bỏ trống thì lấy tất cả."""
+        if not settings.zalocrm_api_key:
+            return []
+        params = {k: v for k, v in (("from", tu), ("to", den)) if v}
+        try:
+            r = await self._client.get("/api/public/appointments", params=params)
+            r.raise_for_status()
+            return r.json().get("appointments", [])
+        except (httpx.HTTPError, ValueError):
+            return []
+
+    async def dat_lich(
+        self, *, contact_id: str, ngay: str, gio: str = "",
+        loai: str = "", ghi_chu: str = "",
+    ) -> tuple[bool, str]:
+        """
+        Đặt lịch hẹn cho một khách. Trả (thành công, id hoặc lý do hỏng).
+
+        Trả LÝ DO chứ không chỉ True/False: `contactId` sai thì ZaloCRM trả
+        404, và người vận hành cần phân biệt "khách không có trong danh bạ"
+        với "ZaloCRM đang chết" — hai chuyện, hai cách xử lý.
+        """
+        if not settings.zalocrm_api_key:
+            return False, "Chưa cấu hình ZALOCRM_* trong .env"
+        if not contact_id or not ngay:
+            return False, "Thiếu mã khách hoặc ngày hẹn"
+
+        body = {"contactId": contact_id, "appointmentDate": ngay}
+        for khoa, gia_tri in (("appointmentTime", gio), ("type", loai),
+                              ("notes", ghi_chu)):
+            if gia_tri:
+                body[khoa] = gia_tri
+        try:
+            r = await self._client.post("/api/public/appointments", json=body)
+            if r.status_code == 404:
+                return False, "Khách chưa có trong danh bạ ZaloCRM"
+            r.raise_for_status()
+            return True, str(r.json().get("id") or "")
+        except httpx.HTTPError as exc:
+            return False, f"{type(exc).__name__}: {exc}"[:150]
+        except ValueError:
+            return False, "ZaloCRM trả về dữ liệu không đọc được"
 
 def _parse_time(value) -> datetime:
     if isinstance(value, str):

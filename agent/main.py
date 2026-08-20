@@ -347,6 +347,15 @@ async def handle_inbound(msg: InboundMessage) -> None:
     if auto_send and await adapter.can_send_now(msg.conversation_ref):
         delivered = await _gui_nhu_nguoi(adapter, msg, cid, reply.text)
 
+        # Ảnh đi SAU lời, không đi trước. Nhận ảnh trước khi biết đó là gì
+        # thì khách phải tự đoán; nhận lời trước rồi thấy ảnh là đúng thứ
+        # tự nhiên của một người bán hàng.
+        for anh in reply.anh_can_gui:
+            with suppress(Exception):
+                await adapter.send_file(
+                    msg.conversation_ref, anh["duong_dan"], caption=anh["ten"]
+                )
+
     # Chuyển người mà không nói gì với khách là để họ ngồi im không biết có
     # ai thấy tin của mình chưa. Nhân viên thì đã có việc trong hàng chờ,
     # còn khách thì chịu toàn bộ khoảng lặng đó.

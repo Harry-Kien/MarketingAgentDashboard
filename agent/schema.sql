@@ -227,3 +227,29 @@ CREATE TABLE IF NOT EXISTS ho_so_khach (
 );
 CREATE INDEX IF NOT EXISTS idx_ho_so_cuoi ON ho_so_khach (lan_cuoi DESC);
 CREATE INDEX IF NOT EXISTS idx_ho_so_sdt ON ho_so_khach (sdt) WHERE sdt IS NOT NULL;
+
+-- --- Kho hàng ------------------------------------------------
+-- Tồn kho là dữ liệu GIAO DỊCH: đổi mỗi lần bán, cần khoá hàng khi hai
+-- khách cùng chốt món cuối. Nên nó nằm ở đây chứ không nằm trong
+-- data/catalog.json — file đó giữ dữ liệu THAM CHIẾU (tên, giá, thành
+-- phần) vốn ít đổi và nên vào được git.
+CREATE TABLE IF NOT EXISTS ton_kho (
+    ma           TEXT PRIMARY KEY,
+    so_luong     INT NOT NULL DEFAULT 0 CHECK (so_luong >= 0),
+    cap_nhat_luc TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Sổ biến động. Không có nó thì khi tồn kho lệch với thực tế, không ai
+-- truy được lệch từ đâu — và tồn kho LUÔN lệch, đó là chuyện thường ngày
+-- của mọi kho hàng.
+CREATE TABLE IF NOT EXISTS kho_bien_dong (
+    id        BIGSERIAL PRIMARY KEY,
+    ma        TEXT NOT NULL,
+    thay_doi  INT  NOT NULL,          -- âm là xuất, dương là nhập
+    ly_do     TEXT NOT NULL,          -- ban | huy_don | nhap | kiem_ke
+    ma_don    TEXT,
+    ghi_chu   TEXT,
+    luc       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kho_bd_ma  ON kho_bien_dong (ma, luc DESC);
+CREATE INDEX IF NOT EXISTS idx_kho_bd_don ON kho_bien_dong (ma_don) WHERE ma_don IS NOT NULL;

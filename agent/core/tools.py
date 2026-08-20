@@ -10,9 +10,11 @@ lời gọi ERP/KiotViet/Haravan — chữ ký và schema giữ nguyên, agent k
 from __future__ import annotations
 
 import json
+import pathlib
 import unicodedata
 
 from agent.config import ROOT, settings
+from agent.core import kho
 
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 
@@ -63,6 +65,25 @@ TOOLS: list[dict] = [
                     "description": "Ngân sách tối đa cho một sản phẩm, đơn vị VND",
                 },
             },
+        },
+    },
+    {
+        "name": "gui_anh_san_pham",
+        "description": (
+            "Gửi ảnh sản phẩm cho khách. Dùng khi khách hỏi 'cho xem ảnh', "
+            "'sản phẩm trông thế nào', hoặc khi đang tư vấn một sản phẩm cụ "
+            "thể mà ảnh giúp khách quyết định nhanh hơn. Gọi CÙNG LÚC với "
+            "câu trả lời chứ không thay cho nó — khách cần cả ảnh lẫn lời."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ten_san_pham": {
+                    "type": "string",
+                    "description": "Tên hoặc mã sản phẩm cần gửi ảnh",
+                }
+            },
+            "required": ["ten_san_pham"],
         },
     },
     {
@@ -191,6 +212,52 @@ def _catalog() -> dict:
     return json.loads(duong_dan.read_text(encoding="utf-8"))
 
 
+async def _catalog_song() -> dict:
+    """
+    Danh mục kèm TỒN KHO SỐNG từ bảng `ton_kho`.
+
+    File JSON giữ dữ liệu tham chiếu (tên, giá, thành phần) vốn ít đổi.
+    Số tồn thì đổi mỗi lần bán, nên nó nằm trong CSDL và được chồng lên ở
+    đây. Không chồng thì agent đọc con số của ngày file được viết ra và
+    xác nhận đơn cho món đã hết từ lâu.
+
+    Hỏng đường CSDL thì rơi về số trong file — thà cũ còn hơn không có gì,
+    và chốt tồn kho lúc chốt đơn vẫn chặn được bán quá.
+    """
+    data = _catalog()
+    try:
+        from agent.core import kho
+        song = await kho.lay_tat_ca()
+    except Exception:  # noqa: BLE001
+        return data
+    if song:
+        for sp in data.get("san_pham", []):
+            if sp.get("ma") in song:
+                sp["ton_kho"] = song[sp["ma"]]
+    return data
+
+
+ANH_DIR = ROOT / "data" / "products"
+
+
+def _anh_san_pham(ma: str) -> pathlib.Path | None:
+    """
+    Ảnh đầu tiên của một mã sản phẩm, hoặc None.
+
+    Ảnh nằm ở `data/products/<mã>/img_00.jpg`, kèm `manifest.json` ghi rõ
+    ảnh do model sinh hay chụp thật. Ở đây chỉ cần đường dẫn — phần cảnh
+    báo "ảnh sinh, chưa phải ảnh chụp thật" là việc của người vận hành
+    trước khi bán hàng, không phải việc agent nhắc khách mỗi lần gửi.
+    """
+    thu_muc = ANH_DIR / ma
+    if not thu_muc.is_dir():
+        return None
+    for ten in sorted(thu_muc.glob("img_*.jpg")):
+        if ten.is_file() and ten.stat().st_size > 0:
+            return ten
+    return None
+
+
 def _norm(s: str) -> str:
     """
     Chuẩn hoá để so khớp: bỏ dấu tiếng Việt.
@@ -246,7 +313,7 @@ def _tom_tat(sp: dict) -> dict:
 
 
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
-    catalog = _catalog()
+    catalog = await _catalog_song()
     products = catalog.get("san_pham", [])
 
     # ---------- tra cứu một sản phẩm ----------
@@ -316,6 +383,35 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             "so_luong": len(hits),
             "san_pham": [_tom_tat(h) for h in (con_hang or hits)[:6]],
             "het_hang": [h.get("ten") for h in hits if (h.get("ton_kho") or 0) == 0],
+        }
+
+    # ---------- gửi ảnh sản phẩm ----------
+    if name == "gui_anh_san_pham":
+        q = _norm(args.get("ten_san_pham", ""))
+        ranked = sorted(
+            ((_score(q, sp), sp) for sp in products), key=lambda x: x[0], reverse=True
+        )
+        if not ranked or ranked[0][0] < 0.5:
+            return {"gui_duoc": False,
+                    "ly_do": "Không rõ khách muốn xem ảnh sản phẩm nào. Hỏi lại tên."}
+        sp = ranked[0][1]
+        anh = _anh_san_pham(sp["ma"])
+        if not anh:
+            return {"gui_duoc": False,
+                    "ly_do": f"Chưa có ảnh cho {sp['ten']}. Mô tả bằng lời thay vì hứa gửi ảnh."}
+        # Tool KHÔNG tự gửi. Nó báo "gửi được" kèm đường dẫn; việc gửi do
+        # lớp kênh làm trong main.py — cùng cách `tao_video` báo `da_nhan`.
+        # Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không
+        # nên biết.
+        return {
+            "gui_duoc": True,
+            "ma": sp["ma"],
+            "ten": sp["ten"],
+            "duong_dan": str(anh),
+            "ghi_chu_cho_agent": (
+                "Ảnh đang được gửi. Vẫn phải trả lời bằng lời như bình thường, "
+                "đừng chỉ nói 'em gửi ảnh nhé' rồi dừng."
+            ),
         }
 
     # ---------- đơn hàng ----------
@@ -501,6 +597,16 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
                          "Hãy báo khách là đơn đã ghi nhận, đừng tạo thêm.",
             }
         return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
+
+    # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
+    # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
+    # khách khác có thể đã lấy mất món cuối. Chỉ khoá hàng lúc trừ mới
+    # chặn được, và nếu không đủ thì phải huỷ luôn đơn vừa tạo — thà không
+    # có đơn còn hơn có đơn cho hàng không tồn tại.
+    du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
+    if not du_hang:
+        await db.execute("DELETE FROM orders WHERE id = $1", row["id"])
+        return {"tao_duoc": False, "ly_do": ly_do_kho}
 
     await db.log_event(
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],

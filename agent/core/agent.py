@@ -42,6 +42,10 @@ class Reply:
     latency_ms: int = 0
     model: str = ""
     video_id: str | None = None
+    # Ảnh agent muốn gửi kèm. Tool chỉ BÁO, lớp kênh trong main.py mới gửi
+    # — tool không biết mình đang chạy trên Zalo hay Chatwoot, và không nên
+    # biết. Cùng cách `video_id` được xử lý.
+    anh_can_gui: list[dict] = field(default_factory=list)
 
 
 
@@ -202,6 +206,7 @@ async def respond(
     escalate = False
     escalate_reason = ""
     video_id: str | None = None
+    anh_can_gui: list[dict] = []
     final_text = ""
 
     for _ in range(MAX_TOOL_ROUNDS):
@@ -262,6 +267,11 @@ async def respond(
                 escalate = True
                 escalate_reason = call["input"].get("ly_do", "")
 
+            if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
+                anh_can_gui.append(
+                    {"duong_dan": out["duong_dan"], "ten": out["ten"]}
+                )
+
             if call["name"] == "tao_video" and out.get("da_nhan"):
                 from agent.video import pipeline
 
@@ -307,6 +317,7 @@ async def respond(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",
         escalate=escalate,
         escalate_reason=escalate_reason,
+        anh_can_gui=anh_can_gui,
         grounded=bool(passages) or used_tool,
         confidence=confidence,
         sources=[p.doc_title for p in passages],

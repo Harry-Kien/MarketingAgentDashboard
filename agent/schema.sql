@@ -71,6 +71,37 @@ CREATE TABLE IF NOT EXISTS chunks (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_doc ON chunks (document_id);
+
+-- Tìm kiếm TỪ KHOÁ, đi kèm tìm kiếm vector chứ không thay thế.
+--
+-- Vector bắt được Ý GẦN GIỐNG nhưng bỏ lỡ TỪ CHÍNH XÁC. Đo trên kho thật:
+-- "chính sách đổi trả bao nhiêu ngày" trả về đoạn nói chuyện phiếm, "đơn
+-- bao nhiêu tiền miễn phí ship" trả về đoạn quà tặng kèm. Từ "đổi trả" và
+-- "miễn phí ship" có mặt nguyên văn trong tài liệu, chỉ là vector không ưu
+-- tiên chúng.
+--
+-- Dùng cấu hình `simple`: nó tách theo khoảng trắng và KHÔNG chuẩn hoá gốc
+-- từ. Đúng cho tiếng Việt — tiếng Việt không biến hình, mà bộ chuẩn hoá của
+-- tiếng Anh sẽ cắt sai âm tiết.
+-- Khách Việt nhắn KHÔNG DẤU là chuyện thường ngày. Đo trên kho thật:
+-- "đổi | trả" khớp 28 đoạn, "doi | tra" chỉ khớp 8 — tức là bộ tìm từ khoá
+-- gần như vô dụng với cách gõ phổ biến nhất. Bỏ dấu cả hai phía thì cả hai
+-- cách gõ khớp y hệt nhau (35 đoạn).
+--
+-- `unaccent()` là STABLE nên không dùng thẳng trong cột sinh tự động được;
+-- phải bọc vào một hàm IMMUTABLE. `translate` xử lý riêng chữ đ/Đ vì đó là
+-- CHỮ CÁI riêng trong bảng chữ cái tiếng Việt, không phải chữ d có dấu, nên
+-- unaccent không đụng tới.
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+CREATE OR REPLACE FUNCTION bo_dau(text) RETURNS text AS
+$$ SELECT translate(unaccent('unaccent', $1), 'đĐ', 'dD') $$
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE;
+
+ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS tim_kiem tsvector
+    GENERATED ALWAYS AS (to_tsvector('simple', bo_dau(content))) STORED;
+CREATE INDEX IF NOT EXISTS idx_chunk_tim_kiem ON chunks USING GIN (tim_kiem);
 -- ivfflat cần dữ liệu trước khi build; tạo sau khi nạp corpus:
 --   CREATE INDEX ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists=100);
 

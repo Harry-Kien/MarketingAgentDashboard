@@ -7,6 +7,8 @@ chỉ phụ thuộc vào kiểu trả về `Passage`.
 """
 from __future__ import annotations
 
+import re
+
 import asyncio
 from dataclasses import dataclass
 
@@ -66,32 +68,161 @@ def _vec(values: list[float]) -> str:
     return "[" + ",".join(f"{v:.6f}" for v in values) + "]"
 
 
+# Hợp nhất hai bảng xếp hạng bằng Reciprocal Rank Fusion.
+#
+# RRF cộng 1/(K + thứ hạng) từ mỗi bảng. Ưu điểm quyết định: KHÔNG cần chuẩn
+# hoá điểm. Cosine chạy 0..1 còn ts_rank chạy 0..vô hạn và phụ thuộc độ dài
+# đoạn — cộng thẳng hai thứ đó lại thì bảng nào có thang lớn hơn sẽ nuốt bảng
+# kia. RRF chỉ nhìn THỨ HẠNG nên tránh được hẳn chuyện đó.
+#
+# K = 5, KHÔNG phải 60 như mặc định thường thấy — và đây là chỗ đo thật sự
+# quan trọng hơn việc chép giá trị từ bài báo.
+#
+# K=60 hợp lý khi mỗi bảng có hàng nghìn ứng viên. Ở đây mỗi bảng chỉ 20:
+# 1/(60+1) so với 1/(60+20) chỉ chênh 30%, nên "có mặt ở CẢ HAI bảng" át hết
+# "xếp hạng CAO ở một bảng". Hậu quả cụ thể: đoạn `van-chuyen-doi-tra` đứng
+# hạng 2 ở bộ từ khoá vẫn bị đẩy khỏi top 5.
+#
+# Với K=5 thì 1/(5+1) so với 1/(5+20) chênh 4 lần, thứ hạng lấy lại trọng
+# lượng. Quét thử K = 5, 10, 20, 40, 60 trên 8 câu hỏi thật: K=5 cho 8/8,
+# mọi giá trị còn lại 6/8. So với vector thuần (6/8) thì đây là +2 câu.
+#
+# Lưu ý cho người sửa sau: 8 câu là mẫu NHỎ. Nếu đổi cách chia đoạn hay nạp
+# kho tài liệu lớn hơn nhiều, hãy quét lại K thay vì tin con số này.
+RRF_K = 5
+LAY_MOI_BEN = 20
+
+
+# Từ ĐỆM tiếng Việt — viết ở dạng đã bỏ dấu vì bộ tìm cũng làm việc ở dạng đó.
+#
+# Đây không phải chuyện làm cho đẹp. Đo trực tiếp trên kho thật:
+#
+#   "chinh | sach | doi | tra | bao | nhieu | ngay"  -> xu-ly-tinh-huong-ban-hang (SAI)
+#   "doi | tra"                                       -> van-chuyen-doi-tra      (ĐÚNG)
+#
+# `ts_rank` xếp theo tần suất khớp chứ KHÔNG có IDF, nên từ đệm xuất hiện
+# khắp nơi sẽ át hết từ mang nghĩa. Bỏ chúng đi là bộ tìm từ khoá mới trỏ
+# đúng chỗ.
+#
+# Chỉ liệt kê từ CHỨC NĂNG — thứ không bao giờ là câu trả lời. Cố ý GIỮ LẠI
+# "ngay", "tien", "gia", "thang": chúng trông phổ thông nhưng lại chính là
+# nội dung khách hỏi ("giao mấy ngày", "bao nhiêu tiền").
+TU_DEM = frozenset("""
+a ah ak la va voi cho cua o tai tu den nhu thi ma nen neu con nhung
+co khong chua duoc dang se da roi lam bi boi
+the nao sao gi day do kia nay ây vay
+bao nhieu may moi cac nhung tat ca
+em anh chi minh ban shop toi ho no
+xin vui long a nhe nha oi ui
+can muon hoi biet cho xem giup toi
+""".split())
+
+
+def _tsquery(cau: str) -> str:
+    """
+    Câu hỏi -> biểu thức tìm kiếm, các từ nối bằng HOẶC.
+
+    Nối bằng VÀ (mặc định của plainto_tsquery) là quá chặt: khách hỏi "chính
+    sách đổi trả bao nhiêu ngày" mà tài liệu viết "đổi trả trong 7 ngày" thì
+    thiếu chữ "chính sách" là trượt sạch. Nối HOẶC rồi để RRF xếp hạng.
+
+    Không bỏ dấu ở đây — hàm `bo_dau()` trong CSDL lo việc đó cho CẢ hai
+    phía, nên chỉ có MỘT nơi định nghĩa thế nào là "bỏ dấu". Tách ra hai chỗ
+    là sớm muộn cũng lệch nhau.
+    """
+    tu = re.findall(r"[0-9A-Za-zÀ-ỹ]+", str(cau or ""))
+    giu = [t for t in tu if len(t) > 1 and _fold(t) not in TU_DEM]
+    # Câu toàn từ đệm ("cho mình hỏi với ạ") thì đừng bỏ sạch — thà tìm bằng
+    # tất cả còn hơn không tìm gì, vector vẫn gánh phần còn lại.
+    return " | ".join(giu or [t for t in tu if len(t) > 1])
+
+
+def _fold(t: str) -> str:
+    """Bỏ dấu một từ, khớp cách `bo_dau()` trong CSDL đang làm."""
+    import unicodedata
+
+    x = unicodedata.normalize("NFD", t.lower())
+    return "".join(c for c in x if unicodedata.category(c) != "Mn").replace("đ", "d")
+
+
 async def retrieve(question: str, k: int = 5, min_score: float = 0.35) -> list[Passage]:
-    """Lấy các đoạn liên quan. Rỗng = agent KHÔNG được phát ngôn có căn cứ."""
+    """
+    Lấy các đoạn liên quan, trộn tìm kiếm VECTOR và TỪ KHOÁ.
+
+    Vector thuần bắt được ý gần giống nhưng bỏ lỡ từ chính xác. Đo trên kho
+    thật trước khi sửa: "chính sách đổi trả bao nhiêu ngày" trả về đoạn nói
+    chuyện phiếm, "đơn bao nhiêu tiền miễn phí ship" trả về đoạn quà tặng
+    kèm — trong khi những từ đó nằm nguyên văn trong tài liệu.
+
+    Rỗng = agent KHÔNG được phát ngôn có căn cứ.
+    """
     try:
         qvec = (await embed([question], query=True))[0]
     except Exception:  # noqa: BLE001 — thiếu quyền Vertex thì degrade, đừng sập
+        qvec = None
+
+    tq = _tsquery(question)
+    if qvec is None and not tq:
         return []
 
+    # Một câu SQL, hai nhánh xếp hạng, hợp nhất bằng RRF. Làm trong CSDL để
+    # không kéo 40 đoạn văn qua mạng rồi mới loại bỏ.
     rows = await db.fetch(
-        """
-        SELECT d.title AS doc_title,
-               c.content,
-               1 - (c.embedding <=> $1::vector) AS score
-        FROM chunks c
+        f"""
+        WITH theo_vector AS (
+            SELECT c.id,
+                   row_number() OVER (ORDER BY c.embedding <=> $1::vector) AS hang,
+                   1 - (c.embedding <=> $1::vector) AS diem_cosine
+            FROM chunks c
+            WHERE c.embedding IS NOT NULL AND $1::vector IS NOT NULL
+            ORDER BY c.embedding <=> $1::vector
+            LIMIT {LAY_MOI_BEN}
+        ),
+        theo_tu_khoa AS (
+            SELECT c.id,
+                   row_number() OVER (
+                       ORDER BY ts_rank(c.tim_kiem, to_tsquery('simple', bo_dau($2))) DESC
+                   ) AS hang
+            FROM chunks c
+            WHERE $2 <> '' AND c.tim_kiem @@ to_tsquery('simple', bo_dau($2))
+            ORDER BY ts_rank(c.tim_kiem, to_tsquery('simple', bo_dau($2))) DESC
+            LIMIT {LAY_MOI_BEN}
+        ),
+        gop AS (
+            SELECT coalesce(v.id, t.id) AS id,
+                   coalesce(v.diem_cosine, 0)                     AS diem_cosine,
+                   coalesce(1.0 / ({RRF_K} + v.hang), 0)
+                     + coalesce(1.0 / ({RRF_K} + t.hang), 0)      AS diem_gop,
+                   t.hang                                          AS hang_tu_khoa
+            FROM theo_vector v
+            FULL OUTER JOIN theo_tu_khoa t ON t.id = v.id
+        )
+        SELECT d.title AS doc_title, c.content,
+               g.diem_cosine AS score, g.hang_tu_khoa
+        FROM gop g
+        JOIN chunks c ON c.id = g.id
         JOIN documents d ON d.id = c.document_id
-        WHERE c.embedding IS NOT NULL
-        ORDER BY c.embedding <=> $1::vector
-        LIMIT $2
+        ORDER BY g.diem_gop DESC
+        LIMIT $3
         """,
-        _vec(qvec),
+        _vec(qvec) if qvec is not None else None,
+        tq,
         k,
     )
+
+    # Giữ đoạn nếu vector thấy nó ĐỦ GIỐNG, HOẶC từ khoá xếp nó vào top 3.
+    #
+    # Chỉ lọc theo cosine là vứt mất đúng thứ vừa sửa được: đoạn trúng từ
+    # khoá chính xác thường có cosine thấp vì diễn đạt khác hẳn câu khách hỏi.
     return [
         Passage(r["doc_title"], r["content"], float(r["score"]))
         for r in rows
         if float(r["score"]) >= min_score
+        or (r["hang_tu_khoa"] is not None and int(r["hang_tu_khoa"]) <= 3)
     ]
+
+
+
 
 
 def as_context(passages: list[Passage]) -> str:

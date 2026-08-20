@@ -431,3 +431,62 @@ Nói rõ để không nhầm bản này là production:
 - Chưa có Veo 3.1; toàn bộ video hiện dựng bằng template
 
 Lộ trình đầy đủ nằm trong kế hoạch giai đoạn 3.
+
+---
+
+## MCP — ứng dụng ngoài cắm vào hệ thống
+
+Hệ thống mở ra 9 công cụ và 2 tài nguyên qua Model Context Protocol, nên
+Claude Desktop / Claude Code hỏi thẳng được:
+
+> *"Aurora Skin còn bao nhiêu sữa rửa mặt cho da dầu?"*
+> *"Tuần này bài nào chạy tốt nhất?"*
+
+```bash
+.venv/Scripts/python.exe -m scripts.mcp_thu
+```
+
+**Ranh giới an toàn:** MCP chỉ có công cụ ĐỌC và soạn bài nháp. Không có
+công cụ đăng bài, chốt đơn hay nhắn tin cho khách — client MCP là một model
+khác, không đi qua chốt tuân thủ nào của hệ thống này. Ràng buộc đó được
+canh bằng test, không bằng lời hứa.
+
+Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
+
+---
+
+## Kiểm thử
+
+```bash
+.venv/Scripts/python.exe -m pytest tests/ -q
+```
+
+93 ca, chạy dưới 1 giây, không gọi API. Đo phần logic quanh model — chốt
+tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm.
+
+Bộ 56 câu hỏi vàng (`python -m scripts.eval`) đo hành vi thật của model:
+mất ~13 phút, tốn tiền API, và **không tất định** — các lần chạy cho 51-55
+điểm. Dùng nó để đo chất lượng, dùng pytest để chặn hồi quy.
+
+---
+
+## Chỉ số hệ thống
+
+Đo trên bộ 56 câu hỏi vàng (`python -m scripts.eval`):
+
+| Chỉ số | Giá trị |
+|---|---|
+| Đạt | **55/56 (98%)** |
+| Bỏ sót chuyển người | **0/16** |
+| Dùng từ cấm quảng cáo | **0** |
+| Dấu hiệu lộ bot — khách thật sự nhận | **0,09 / câu · 91% sạch** |
+| Độ trễ | trung vị 3,6s · p90 8,6s |
+| Chi phí | $0,0693 cho 56 ca (~1.732đ) |
+| Token đọc từ cache | **86,8%** |
+
+Chỉ số giọng văn đo ở **hai mốc**: văn bản model sinh ra (0,45 dấu hiệu/câu)
+và thứ khách thật sự nhận sau khi tách tin (0,09). Cái đầu đo prompt, cái
+sau đo trải nghiệm.
+
+Quan sát chi phí: `GET /api/cost` hoặc màn **Số hiệu** — dựng từ bảng
+`messages`, không cần Langfuse hay hệ thống ngoài nào.

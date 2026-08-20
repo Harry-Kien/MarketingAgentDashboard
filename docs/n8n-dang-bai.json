@@ -1,0 +1,142 @@
+{
+  "name": "Marketing Agent - dang bai mang xa hoi",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketing-agent-dang-bai",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-nhan-bai",
+      "name": "Nhan bai tu Marketing Agent",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-360, 0],
+      "webhookId": "marketing-agent-dang-bai"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.kenh }}",
+                    "rightValue": "facebook",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "facebook"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.kenh }}",
+                    "rightValue": "tiktok",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "tiktok"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "chia-theo-kenh",
+      "name": "Chia theo kenh",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-140, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "ghi_chu",
+              "value": "THAY NODE NAY bang node Facebook Graph API cua n8n. Ket noi OAuth trong Credentials, chon Page, dat message = {{ $('Nhan bai tu Marketing Agent').item.json.body.caption }} va video = {{ ...body.video_url }}",
+              "type": "string"
+            },
+            { "id": "a2", "name": "ok", "value": "true", "type": "string" },
+            { "id": "a3", "name": "url", "value": "", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dang-facebook",
+      "name": "Dang len Facebook (thay bang node that)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [80, -120]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "ghi_chu",
+              "value": "THAY NODE NAY bang node TikTok cua n8n hoac HTTP Request goi Content Posting API. Luu y: app chua qua audit thi bai bi ep ve SELF_ONLY.",
+              "type": "string"
+            },
+            { "id": "b2", "name": "ok", "value": "true", "type": "string" },
+            { "id": "b3", "name": "url", "value": "", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dang-tiktok",
+      "name": "Dang len TikTok (thay bang node that)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [80, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Nhan bai tu Marketing Agent').item.json.body.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kenh: $('Nhan bai tu Marketing Agent').item.json.body.kenh, ok: $json.ok === 'true' || $json.ok === true, url: $json.url || '', detail: 'n8n xu ly xong' }) }}",
+        "options": {}
+      },
+      "id": "bao-ket-qua",
+      "name": "Bao ket qua ve Marketing Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {
+    "Nhan bai tu Marketing Agent": {
+      "main": [[{ "node": "Chia theo kenh", "type": "main", "index": 0 }]]
+    },
+    "Chia theo kenh": {
+      "main": [
+        [{ "node": "Dang len Facebook (thay bang node that)", "type": "main", "index": 0 }],
+        [{ "node": "Dang len TikTok (thay bang node that)", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Dang len Facebook (thay bang node that)": {
+      "main": [[{ "node": "Bao ket qua ve Marketing Agent", "type": "main", "index": 0 }]]
+    },
+    "Dang len TikTok (thay bang node that)": {
+      "main": [[{ "node": "Bao ket qua ve Marketing Agent", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

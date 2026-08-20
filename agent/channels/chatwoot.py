@@ -30,12 +30,18 @@ HỢP ĐỒNG API
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from datetime import datetime, timezone
 
 import httpx
 
 from agent.channels.base import ChannelAdapter, Delivery, InboundMessage
 from agent.config import settings
+
+
+# Nhãn gắn lên hội thoại cần người xử lý. Đặt một chỗ để trưởng nhóm lọc
+# được, và để đổi tên không phải đi tìm khắp nơi.
+NHAN_CHO_NGUOI = "can-nguoi-ho-tro"
 
 
 class ChatwootAdapter(ChannelAdapter):
@@ -130,6 +136,56 @@ class ChatwootAdapter(ChannelAdapter):
         if r.status_code < 400:
             return Delivery(True)
         return Delivery(False, f"{r.status_code} {r.text[:200]}")
+
+    # ---------------- bàn giao cho người ----------------
+
+    async def bao_dang_go(self, conversation_ref: str, bat: bool) -> None:
+        if not self.cau_hinh_du():
+            return
+        with suppress(httpx.HTTPError):
+            await self._client.post(
+                f"/api/v1/accounts/{settings.chatwoot_account_id}"
+                f"/conversations/{conversation_ref}/toggle_typing_status",
+                json={"typing_status": "on" if bat else "off"},
+            )
+
+    async def bao_chuyen_nguoi(
+        self, conversation_ref: str, ly_do: str, tom_tat: str = ""
+    ) -> None:
+        """
+        Bàn giao nhìn thấy được: ghi chú nội bộ, gắn nhãn, mở lại hội thoại.
+
+        Ba việc, mỗi việc phục vụ một người khác nhau:
+
+          ghi chú nội bộ  nhân viên tiếp quản đọc được VÌ SAO agent dừng,
+                          không phải đọc lại cả hội thoại để đoán. Ghi chú
+                          `private` nên khách không thấy.
+          nhãn            trưởng nhóm lọc được hàng chờ trong hộp thư
+          mở lại          Chatwoot tự đóng hội thoại khi agent trả lời xong;
+                          không mở lại thì nó nằm ở tab "đã xử lý" và không
+                          ai ngó tới
+
+        Cố ý KHÔNG tự gán cho một nhân viên cụ thể: gán sai người thì việc
+        nằm im trong hàng của người đang nghỉ. Để hàng chờ chung, ai rảnh
+        nhận — đó là cách một tổ chăm sóc khách hàng thật vận hành.
+        """
+        if not self.cau_hinh_du():
+            return
+        goc = f"/api/v1/accounts/{settings.chatwoot_account_id}/conversations/{conversation_ref}"
+
+        ghi_chu = f"[Agent chuyển người] {ly_do}"
+        if tom_tat:
+            ghi_chu += f"\n\nTóm tắt: {tom_tat}"
+
+        with suppress(httpx.HTTPError):
+            await self._client.post(
+                f"{goc}/messages",
+                json={"content": ghi_chu, "message_type": "outgoing", "private": True},
+            )
+        with suppress(httpx.HTTPError):
+            await self._client.post(f"{goc}/labels", json={"labels": [NHAN_CHO_NGUOI]})
+        with suppress(httpx.HTTPError):
+            await self._client.post(f"{goc}/toggle_status", json={"status": "open"})
 
     async def aclose(self) -> None:
         await self._client.aclose()

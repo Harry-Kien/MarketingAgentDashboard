@@ -317,6 +317,12 @@ async def handle_inbound(msg: InboundMessage) -> None:
     history = await _history(cid)
 
     runtime.mark_busy(cid)          # dashboard vẽ bong bóng "đang soạn tin"
+    # Và báo luôn cho kênh, để KHÁCH cũng thấy — không chỉ người vận hành.
+    # Màn hình im lặng rồi bỗng hiện ra một đoạn dài là dấu hiệu máy trả
+    # lời; thấy "đang soạn tin" thì cảm giác hoàn toàn khác.
+    adapter = channels.get(msg.channel)
+    with suppress(Exception):
+        await adapter.bao_dang_go(msg.conversation_ref, True)
     try:
         reply = await brain.respond(
             conversation_id=cid, history=history, question=msg.text,
@@ -332,13 +338,32 @@ async def handle_inbound(msg: InboundMessage) -> None:
         return
     finally:
         runtime.clear_busy(cid)
+        with suppress(Exception):
+            await adapter.bao_dang_go(msg.conversation_ref, False)
 
     # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt.
     auto_send = runtime.mode() == "auto" and not reply.escalate
     delivered = False
-    adapter = channels.get(msg.channel)
     if auto_send and await adapter.can_send_now(msg.conversation_ref):
         delivered = await _gui_nhu_nguoi(adapter, msg, cid, reply.text)
+
+    # Chuyển người mà không nói gì với khách là để họ ngồi im không biết có
+    # ai thấy tin của mình chưa. Nhân viên thì đã có việc trong hàng chờ,
+    # còn khách thì chịu toàn bộ khoảng lặng đó.
+    #
+    # Gửi câu CỐ ĐỊNH trong cấu hình chứ không gửi lời model vừa sinh ra:
+    # lúc chuyển người là lúc agent đã tự nhận không đủ thẩm quyền, nên đó
+    # chính là lúc không nên để nó tự chọn chữ. Câu cố định không thể chứa
+    # lời khuyên, không thể hứa gì, và không thể vi phạm quảng cáo.
+    #
+    # Chỉ ở chế độ auto. Chế độ assist thì người duyệt mọi thứ, tự gửi thêm
+    # một câu là đi ngược ý nghĩa của chế độ đó.
+    elif reply.escalate and runtime.mode() == "auto":
+        if await adapter.can_send_now(msg.conversation_ref):
+            with suppress(Exception):
+                await adapter.send_text(
+                    msg.conversation_ref, settings.tin_chuyen_nguoi
+                )
 
     await db.execute(
         """
@@ -381,6 +406,16 @@ async def handle_inbound(msg: InboundMessage) -> None:
         await db.log_event(
             "conversation.escalated", ref_id=cid, reason=reply.escalate_reason
         )
+        # Bàn giao NHÌN THẤY ĐƯỢC ở phía kênh. Ghi vào CSDL của mình thôi
+        # thì nhân viên đang làm việc trong hộp thư của kênh không thấy gì:
+        # hội thoại trông như đã xử lý xong, khách ngồi chờ, không ai biết.
+        # Bàn giao chỉ là bàn giao khi bên nhận nhìn thấy.
+        with suppress(Exception):
+            await adapter.bao_chuyen_nguoi(
+                msg.conversation_ref,
+                reply.escalate_reason or "agent không xử lý được",
+                tom_tat=msg.text[:200],
+            )
 
 
 async def _history(cid: uuid.UUID) -> list[dict]:

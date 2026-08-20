@@ -129,6 +129,13 @@ class Settings(BaseSettings):
     # Tách câu trả lời dài thành 2-3 tin và nghỉ giữa các tin đúng khoảng
     # thời gian gõ. Tắt đi thì gửi một cục, nhanh hơn nhưng lộ máy ngay.
     nhip_nguoi_that: bool = True
+    # Câu báo cho khách khi agent chuyển người. CỐ ĐỊNH, không phải lời
+    # model sinh ra: lúc chuyển người là lúc agent đã tự nhận không đủ thẩm
+    # quyền, nên đó chính là lúc KHÔNG nên để nó tự chọn chữ.
+    tin_chuyen_nguoi: str = (
+        "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc "
+        "ạ. Bạn ấy sẽ nhắn lại cho mình sớm nhé."
+    )
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.

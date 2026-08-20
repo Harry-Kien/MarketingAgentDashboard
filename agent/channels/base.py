@@ -62,6 +62,32 @@ class ChannelAdapter(ABC):
         """
         return []
 
+    async def bao_dang_go(self, conversation_ref: str, bat: bool) -> None:
+        """
+        Bật/tắt dấu hiệu "đang gõ" phía kênh.
+
+        Kênh nào không có thì để nguyên mặc định. Đây là chi tiết nhỏ nhưng
+        nó là khác biệt giữa "có người đang trả lời" và "màn hình im lặng
+        rồi bỗng hiện ra một đoạn dài".
+        """
+        return None
+
+    async def bao_chuyen_nguoi(
+        self, conversation_ref: str, ly_do: str, tom_tat: str = ""
+    ) -> None:
+        """
+        Báo cho kênh biết hội thoại này cần người tiếp quản.
+
+        VÌ SAO PHẢI CÓ: agent chuyển người mà chỉ ghi vào CSDL của mình thì
+        nhân viên đang làm việc trong hộp thư của kênh KHÔNG THẤY GÌ. Hội
+        thoại trông như đã xử lý xong, khách ngồi chờ, và không ai biết.
+        Bàn giao chỉ là bàn giao khi bên nhận nhìn thấy.
+
+        Kênh nào không hỗ trợ thì để nguyên mặc định — ZaloCRM là ví dụ,
+        Public API của nó không có endpoint nào làm việc này.
+        """
+        return None
+
     async def can_send_now(self, conversation_ref: str) -> bool:
         """
         Kênh có cho phép gửi chủ động lúc này không?

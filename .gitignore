@@ -27,3 +27,7 @@ data/catalog.json
 # cần chúng, và chúng không chứa thông tin thật nào.
 !data/mau/
 .env.chatwoot
+
+# Log của server chạy nền
+data/uvicorn.log
+data/uvicorn.log.err

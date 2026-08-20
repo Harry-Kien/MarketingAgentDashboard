@@ -43,8 +43,11 @@ async def write_script(
         system=llm.cached_system(PROMPT),
         messages=[{"role": "user", "content": ask}],
         model=settings.model_chat,
-        max_tokens=2000,
-        effort="medium",
+        # Kịch bản 5-6 cảnh ra khoảng 900-1200 token JSON. Để 2000 là quá sát:
+        # token suy nghĩ của Gemini cũng tính vào đây, nên có lúc bị cắt giữa
+        # chừng và trả về JSON dở dang.
+        max_tokens=6000,
+        effort="low",          # viết kịch bản không cần suy nghĩ dài
     )
     kich_ban = llm.parse_json(result.text)
     if kich_ban is None:

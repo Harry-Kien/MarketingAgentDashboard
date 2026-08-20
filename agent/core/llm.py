@@ -268,9 +268,21 @@ def _to_gemini(messages: list[dict], tools: list[dict] | None) -> tuple[list, li
     return contents, gem_tools
 
 
+# Ngân sách token SUY NGHĨ của Gemini 2.5, theo mức effort.
+#
+# Đây là cái bẫy: token suy nghĩ ĐẾM VÀO `maxOutputTokens` nhưng KHÔNG hiện
+# trong `candidatesTokenCount`. Nên một lời gọi có thể dừng vì MAX_TOKENS
+# trong khi báo cáo chỉ 465 token ra — nhìn như model tự ý cắt ngang. Đúng
+# lỗi đó đã làm hỏng bước viết kịch bản video.
+#
+# Trước đây `effort` chỉ có tác dụng với Claude; Gemini bỏ qua hoàn toàn dù
+# nó là nhà cung cấp MẶC ĐỊNH của hệ thống này.
+THINKING_BUDGET = {"low": 0, "medium": 1024, "high": 8192, "max": 24576}
+
+
 async def _complete_gemini(
     *, system: dict, messages: list[dict], model: str, max_tokens: int,
-    tools: list[dict] | None,
+    tools: list[dict] | None, effort: str = "medium",
 ) -> LLMResult:
     if not settings.gcp_project_id or settings.gcp_project_id.startswith("your-"):
         raise RuntimeError("Chưa đặt GCP_PROJECT_ID trong .env")
@@ -278,9 +290,17 @@ async def _complete_gemini(
     contents, gem_tools = _to_gemini(messages, tools)
     sys_text = "\n\n".join(x for x in (system.get("stable"), system.get("volatile")) if x)
 
+    ngan_sach = THINKING_BUDGET.get(effort, 1024)
     body: dict[str, Any] = {
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.3},
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.3,
+            # Chặn trần phần suy nghĩ để nó không nuốt hết chỗ dành cho câu
+            # trả lời. Không đặt thì Gemini 2.5 tự quyết, và với việc trả JSON
+            # dài nó hay tiêu gần hết ngân sách vào suy nghĩ rồi bị cắt ngang.
+            "thinkingConfig": {"thinkingBudget": ngan_sach},
+        },
     }
     if sys_text:
         body["systemInstruction"] = {"parts": [{"text": sys_text}]}
@@ -487,7 +507,7 @@ async def complete(
     if p == "gemini":
         return await _complete_gemini(
             system=system, messages=messages, model=model,
-            max_tokens=max_tokens, tools=tools,
+            max_tokens=max_tokens, tools=tools, effort=effort,
         )
     if p in ("vertex", "anthropic"):
         return await _complete_claude(

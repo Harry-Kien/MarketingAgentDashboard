@@ -1108,3 +1108,52 @@ svg { flex: none; }
    mà không phải đọc chữ. Màu lấy đúng màu thương hiệu của từng nền tảng. */
 .src--whatsapp { color:#25D366; background:#25D36614; border-color:#25D36633; }
 .src--whatsapp::before { background:#25D366; }
+
+/* ---------- cổng đăng nhập ---------- */
+
+.cong {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: hsl(var(--background));
+  padding: 24px;
+}
+.cong.is-off { display: none; }
+
+.cong__form {
+  width: 100%; max-width: 340px;
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card, var(--background)));
+  padding: 30px 28px 26px;
+}
+.cong__ten {
+  font-size: 19px; font-weight: 600; letter-spacing: -.01em;
+  margin: 0; color: hsl(var(--foreground));
+}
+.cong__phu {
+  margin: -8px 0 6px; font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+.cong__form .field { display: flex; flex-direction: column; gap: 5px; }
+.cong__form .field span { font-size: 12px; font-weight: 500; }
+.cong__form input {
+  font-size: 14px; padding: 9px 11px;
+  border: 1px solid hsl(var(--border)); border-radius: 7px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.cong__form input:focus-visible {
+  outline: 2px solid hsl(var(--primary)); outline-offset: 1px;
+}
+.cong__loi {
+  margin: 0; min-height: 18px; font-size: 12.5px;
+  color: hsl(var(--destructive));
+}
+.cong__note {
+  margin: 4px 0 0; font-size: 11px; line-height: 1.6;
+  color: hsl(var(--muted-foreground));
+}
+.cong__note code {
+  display: block; margin-top: 4px; word-break: break-all;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}

@@ -17,13 +17,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import db, runtime
+from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.channels.base import InboundMessage
 from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
-from agent.core import du_lieu_ca_nhan
+from agent.core import du_lieu_ca_nhan, xac_thuc
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -183,6 +184,47 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Marketing Agent", version="0.1.0", lifespan=lifespan)
+
+
+# Đường KHÔNG cần đăng nhập. Danh sách ngắn có chủ đích — mỗi mục là một
+# quyết định cân nhắc riêng, không phải một tiện lợi.
+_MO = (
+    "/api/dang-nhap",     # phải vào được mới đăng nhập được
+    "/api/dang-xuat",     # đăng xuất luôn phải chạy, kể cả phiên đã hỏng
+)
+
+
+@app.middleware("http")
+async def chan_neu_chua_dang_nhap(request: Request, call_next):
+    """
+    Chặn mọi /api/* nếu chưa đăng nhập.
+
+    LÀM Ở MIDDLEWARE CHỨ KHÔNG GẮN Depends VÀO TỪNG ENDPOINT — đây là điểm
+    quan trọng nhất của cả lớp bảo vệ này.
+
+    Gắn từng endpoint là cơ chế HỎNG-MỞ: hơn bốn mươi endpoint, quên một
+    cái là cái đó phơi ra, và không có gì báo. Người thêm endpoint mới tháng
+    sau cũng không biết là phải nhớ.
+
+    Middleware là cơ chế HỎNG-ĐÓNG: endpoint mới được bảo vệ theo mặc định,
+    và muốn mở thì phải cố ý thêm vào danh sách trên — một việc nhìn thấy
+    được khi đọc lại mã.
+
+    `/webhook*` không đi qua đây vì nó không nằm dưới `/api` — nó tự xác
+    thực bằng `WEBHOOK_SECRET`, do bên gọi là Chatwoot chứ không phải người.
+    `/healthz` để mở để công cụ giám sát hỏi được mà không cần tài khoản.
+    """
+    duong = request.url.path
+    if duong.startswith("/api/") and duong not in _MO:
+        nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
+        if nguoi is None:
+            return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)
+        # Gắn vào request để endpoint biết AI đang thao tác — nhật ký ghi
+        # tên thật thay vì "nguoi" hay "staff" chung chung.
+        request.state.nguoi = nguoi
+    return await call_next(request)
+
+
 app.include_router(api_router)
 
 

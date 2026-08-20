@@ -259,3 +259,30 @@ CREATE TABLE IF NOT EXISTS kho_bien_dong (
 );
 CREATE INDEX IF NOT EXISTS idx_kho_bd_ma  ON kho_bien_dong (ma, luc DESC);
 CREATE INDEX IF NOT EXISTS idx_kho_bd_don ON kho_bien_dong (ma_don) WHERE ma_don IS NOT NULL;
+
+-- --- Tài khoản và phiên đăng nhập -----------------------------
+-- Dashboard cho phép đọc PII khách hàng, gửi tin nhân danh doanh nghiệp,
+-- và xoá vĩnh viễn dữ liệu. Không có bảng này thì ai chạm được cổng 8000
+-- đều làm được tất cả.
+CREATE TABLE IF NOT EXISTS nguoi_dung (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ten_dang_nhap  TEXT UNIQUE NOT NULL,
+    mat_khau_bam   TEXT NOT NULL,          -- scrypt, có muối riêng từng người
+    ho_ten         TEXT NOT NULL DEFAULT '',
+    vai_tro        TEXT NOT NULL DEFAULT 'nhan_vien',   -- quan_tri | nhan_vien
+    khoa           BOOLEAN NOT NULL DEFAULT false,
+    tao_luc        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    dang_nhap_cuoi TIMESTAMPTZ
+);
+
+-- Phiên nằm trong CSDL chứ không phải JWT: JWT không thu hồi được. Nhân
+-- viên nghỉ việc lúc 9 giờ sáng thì token của họ vẫn dùng được tới lúc hết
+-- hạn. Ở đây xoá một dòng là xong.
+CREATE TABLE IF NOT EXISTS phien (
+    token         TEXT PRIMARY KEY,
+    nguoi_dung_id UUID NOT NULL REFERENCES nguoi_dung(id) ON DELETE CASCADE,
+    tao_luc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    het_han       TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_phien_nd ON phien (nguoi_dung_id);
+CREATE INDEX IF NOT EXISTS idx_phien_han ON phien (het_han);

@@ -95,10 +95,34 @@
     </button>
 
     <div class="rail__foot">
+      <span class="rail__footlabel" id="rail-nguoi"></span>
       <span class="rail__footlabel">Chi phí 24 giờ</span>
       <span class="rail__footvalue" id="rail-cost">—</span>
     </div>
   </nav>
+
+  <!-- Lớp phủ đăng nhập. Nằm trong cùng trang thay vì một file riêng để
+       không phải chuyển trang rồi quay lại — và để dashboard phía sau
+       không bao giờ hiện ra dù chỉ một nhịp trước khi biết đã đăng nhập
+       chưa. Mặc định HIỆN, JS ẩn đi khi xác nhận có phiên. -->
+  <div class="cong" id="cong">
+    <form class="cong__form" id="loginform">
+      <h1 class="cong__ten">Marketing Agent</h1>
+      <p class="cong__phu">Trạm điều độ — Aurora Skin</p>
+      <label class="field">
+        <span>Tên đăng nhập</span>
+        <input name="ten_dang_nhap" autocomplete="username" required autofocus>
+      </label>
+      <label class="field">
+        <span>Mật khẩu</span>
+        <input name="mat_khau" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn btn--primary">Đăng nhập</button>
+      <p class="cong__loi" id="loginerr"></p>
+      <p class="cong__note">Chưa có tài khoản? Chạy trên máy chủ:
+        <code>python -m scripts.tao_tai_khoan admin "mật khẩu" --quan-tri</code></p>
+    </form>
+  </div>
 
   <main class="stage" id="stage">
 

@@ -1335,6 +1335,48 @@ $("#pdpdform").addEventListener("submit", async (e) => {
   });
 });
 
+/* ---------------- cổng đăng nhập ---------------- */
+
+// Dashboard đọc PII khách hàng và gửi tin nhân danh doanh nghiệp. Không
+// vẽ gì cho tới khi biết chắc có phiên hợp lệ.
+async function kiemPhien() {
+  try {
+    const nguoi = await api("/toi");
+    $("#cong").classList.add("is-off");
+    const nhan = $("#rail-nguoi");
+    if (nhan) nhan.innerHTML =
+      `${esc(nguoi.ho_ten || nguoi.ten_dang_nhap)}`
+      + ` · <a href="#" id="logout" style="color:inherit">thoát</a>`;
+    const out = $("#logout");
+    if (out) out.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await api("/dang-xuat", { method: "POST" });
+      location.reload();
+    });
+    return true;
+  } catch {
+    $("#cong").classList.remove("is-off");
+    return false;
+  }
+}
+
+$("#loginform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  $("#loginerr").textContent = "";
+  try {
+    await api("/dang-nhap", { method: "POST", body: JSON.stringify(f) });
+    location.reload();
+  } catch (err) {
+    // Thông báo giữ nguyên như máy chủ trả về — không tách "sai tên" khỏi
+    // "sai mật khẩu", vì tách ra là chỉ cho người dò biết tên nào có thật.
+    $("#loginerr").textContent = err.message || "Đăng nhập không thành công";
+    btn.disabled = false;
+  }
+});
+
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
@@ -1355,5 +1397,11 @@ async function refresh() {
   }
 }
 
-refresh();
-state.timer = setInterval(refresh, 6000);
+// Chỉ bắt đầu vòng làm mới SAU KHI xác nhận có phiên. Gọi refresh() ngay
+// khi chưa đăng nhập thì mọi request trả 401 và người dùng thấy một loạt
+// thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
+kiemPhien().then((co) => {
+  if (!co) return;
+  refresh();
+  state.timer = setInterval(refresh, 6000);
+});

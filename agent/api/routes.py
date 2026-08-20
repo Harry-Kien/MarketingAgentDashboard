@@ -5,7 +5,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
+                     Response, UploadFile)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -13,12 +14,56 @@ from agent import db, runtime
 from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
-from agent.core import du_lieu_ca_nhan, kho, rag
+from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
 from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
 
 router = APIRouter(prefix="/api")
+
+# --- Xác thực: đặt NGAY ĐÂY, trước mọi endpoint ---------------
+# Python đánh giá tham số mặc định lúc ĐỊNH NGHĨA hàm, nên
+# `Depends(bat_buoc_quan_tri)` ở endpoint dòng 500 cần hàm này đã tồn
+# tại từ trước. Để cuối file thì NameError lúc import — và lỗi đó chỉ
+# nổ khi khởi động, không phải khi chạy test.
+TEN_COOKIE = "phien_marketing_agent"
+
+
+class DangNhapIn(BaseModel):
+    ten_dang_nhap: str = Field(min_length=1, max_length=64)
+    mat_khau: str = Field(min_length=1, max_length=200)
+
+
+class DoiMatKhauIn(BaseModel):
+    mat_khau_moi: str = Field(min_length=8, max_length=200)
+
+
+class TaoNguoiDungIn(BaseModel):
+    ten_dang_nhap: str = Field(min_length=3, max_length=64)
+    mat_khau: str = Field(min_length=8, max_length=200)
+    ho_ten: str = Field("", max_length=120)
+    vai_tro: str = Field("nhan_vien")
+
+
+async def nguoi_hien_tai(request: Request) -> dict | None:
+    """Người đứng sau phiên hiện tại, hoặc None."""
+    return await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
+
+
+async def bat_buoc_dang_nhap(request: Request) -> dict:
+    nguoi = await nguoi_hien_tai(request)
+    if nguoi is None:
+        raise HTTPException(401, "Chưa đăng nhập")
+    return nguoi
+
+
+async def bat_buoc_quan_tri(request: Request) -> dict:
+    nguoi = await bat_buoc_dang_nhap(request)
+    if nguoi["vai_tro"] != "quan_tri":
+        raise HTTPException(403, "Việc này cần quyền quản trị")
+    return nguoi
+
+
 
 
 def _num(v) -> float:
@@ -536,7 +581,7 @@ class RuntimeBody(BaseModel):
 
 
 @router.post("/runtime")
-async def set_runtime(body: RuntimeBody) -> dict:
+async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
     state = runtime.update(**body.model_dump(exclude_none=True))
     await db.log_event("runtime.update", actor="staff", **{k: str(v) for k, v in state.items()})
     return state
@@ -1287,7 +1332,8 @@ async def pdpd_tra_cuu(sdt: str) -> dict:
 
 
 @router.post("/pdpd/{sdt}/xoa")
-async def pdpd_xoa(sdt: str, body: XoaDuLieuIn) -> dict:
+async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
+                   nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
     """
     Thực hiện yêu cầu xoá. KHÔNG HOÀN TÁC ĐƯỢC.
 
@@ -1298,7 +1344,12 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn) -> dict:
     if chuan(body.xac_nhan_sdt) != chuan(sdt):
         raise HTTPException(422, "Số xác nhận không khớp — nhập lại để chắc chắn")
     try:
-        return await du_lieu_ca_nhan.xoa(sdt, ly_do=body.ly_do)
+        # Ghi TÊN THẬT của người xoá, không ghi "nguoi" chung chung. Xoá dữ
+        # liệu cá nhân là việc không hoàn tác được; nhật ký phải trả lời
+        # được câu "ai đã làm việc này".
+        return await du_lieu_ca_nhan.xoa(
+            sdt, ly_do=f"{body.ly_do} (bởi {nguoi['ten_dang_nhap']})"
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -1320,3 +1371,111 @@ async def pdpd_tong_quan() -> dict:
 async def pdpd_don() -> dict:
     """Dọn ngay hội thoại quá thời hạn, không chờ vòng lặp hằng ngày."""
     return await du_lieu_ca_nhan.don_theo_thoi_han()
+
+
+# ---------------------------------------------------------------
+#  Đăng nhập
+#
+#  Dashboard đọc PII khách hàng, gửi tin nhân danh doanh nghiệp, và xoá
+#  vĩnh viễn dữ liệu. Trước lớp này, ai chạm được cổng 8000 đều làm được
+#  tất cả — chỉ an toàn nhờ nghe ở 127.0.0.1, tức an toàn cho tới đúng ngày
+#  ai đó đưa lên server.
+# ---------------------------------------------------------------
+
+@router.post("/dang-nhap")
+async def dang_nhap(body: DangNhapIn, response: Response) -> dict:
+    token = await xac_thuc.dang_nhap(body.ten_dang_nhap, body.mat_khau)
+    if token is None:
+        # KHÔNG nói sai tên hay sai mật khẩu. Nói rõ là chỉ ra tên nào có
+        # tồn tại, và đó là nửa đầu của việc dò tài khoản.
+        raise HTTPException(401, "Tên đăng nhập hoặc mật khẩu không đúng")
+
+    response.set_cookie(
+        TEN_COOKIE, token,
+        httponly=True,       # JavaScript không đọc được -> XSS không lấy được phiên
+        samesite="lax",      # chặn gửi cookie kèm request từ trang khác
+        max_age=xac_thuc.PHIEN_NGAY * 86400,
+        # secure=True khi chạy sau HTTPS. Bật cứng ở đây thì đăng nhập trên
+        # http://localhost hỏng, nên để theo cấu hình.
+        secure=settings.cookie_bao_mat,
+    )
+    nguoi = await xac_thuc.doc_phien(token)
+    return {"ok": True, "nguoi": nguoi}
+
+
+@router.post("/dang-xuat")
+async def dang_xuat(request: Request, response: Response) -> dict:
+    await xac_thuc.dang_xuat(request.cookies.get(TEN_COOKIE, ""))
+    response.delete_cookie(TEN_COOKIE)
+    return {"ok": True}
+
+
+@router.get("/toi")
+async def toi(request: Request) -> dict:
+    """Ai đang đăng nhập. Dashboard gọi lúc tải để biết có cần vào trang đăng nhập không."""
+    nguoi = await nguoi_hien_tai(request)
+    if nguoi is None:
+        raise HTTPException(401, "Chưa đăng nhập")
+    return nguoi
+
+
+@router.post("/toi/doi-mat-khau")
+async def doi_mat_khau(body: DoiMatKhauIn,
+                       nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
+    """Đổi mật khẩu của chính mình. Mọi phiên đang mở bị đá ra."""
+    await xac_thuc.doi_mat_khau(nguoi["ten_dang_nhap"], body.mat_khau_moi)
+    await db.log_event("auth.doi_mat_khau", actor=nguoi["ten_dang_nhap"])
+    return {"ok": True, "ghi_chu": "Đã đổi. Mọi thiết bị phải đăng nhập lại."}
+
+
+@router.get("/nguoi-dung")
+async def danh_sach_nguoi_dung(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    rows = await db.fetch(
+        "SELECT id, ten_dang_nhap, ho_ten, vai_tro, khoa, tao_luc, dang_nhap_cuoi "
+        "FROM nguoi_dung ORDER BY tao_luc"
+    )
+    for r in rows:
+        r["id"] = str(r["id"])
+        for k in ("tao_luc", "dang_nhap_cuoi"):
+            if r.get(k):
+                r[k] = r[k].isoformat()
+    return {"nguoi_dung": rows}
+
+
+@router.post("/nguoi-dung")
+async def them_nguoi_dung(body: TaoNguoiDungIn,
+                          nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    try:
+        r = await xac_thuc.tao_nguoi_dung(
+            body.ten_dang_nhap, body.mat_khau, body.ho_ten, body.vai_tro
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await db.log_event("auth.tao_nguoi_dung", actor=nguoi["ten_dang_nhap"],
+                       ten_moi=body.ten_dang_nhap, vai_tro=body.vai_tro)
+    return r
+
+
+@router.post("/nguoi-dung/{ten}/khoa")
+async def khoa_nguoi_dung(ten: str, khoa: bool = True,
+                          nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    """
+    Khoá tài khoản và ĐÁ MỌI PHIÊN ĐANG MỞ.
+
+    Khoá mà không xoá phiên thì người vừa bị khoá vẫn ngồi trong hệ thống
+    tới lúc phiên hết hạn — với hệ thống nắm dữ liệu khách hàng, đó là bảy
+    ngày quá nhiều.
+    """
+    if ten.strip().lower() == nguoi["ten_dang_nhap"]:
+        raise HTTPException(422, "Không tự khoá tài khoản của mình được")
+    r = await db.fetchrow(
+        "UPDATE nguoi_dung SET khoa = $2 WHERE ten_dang_nhap = $1 RETURNING id",
+        ten.strip().lower(), khoa,
+    )
+    if r is None:
+        raise HTTPException(404, "Không có tài khoản này")
+    if khoa:
+        await db.execute("DELETE FROM phien WHERE nguoi_dung_id = $1", r["id"])
+    await db.log_event("auth.khoa_nguoi_dung", actor=nguoi["ten_dang_nhap"],
+                       ten=ten, khoa=khoa)
+    return {"ok": True, "ten_dang_nhap": ten, "khoa": khoa}

@@ -1,0 +1,218 @@
+"""
+Xác thực và phân quyền cho dashboard.
+
+VÌ SAO PHẢI CÓ TRƯỚC KHI ĐƯA VÀO DOANH NGHIỆP
+---------------------------------------------
+Dashboard cho phép: đọc tên, số điện thoại và địa chỉ khách hàng; đọc toàn
+bộ nội dung hội thoại; gửi tin nhắn nhân danh doanh nghiệp; XOÁ VĨNH VIỄN
+dữ liệu khách; sửa tồn kho; duyệt bài đăng lên fanpage.
+
+Trước lớp này, bất kỳ ai chạm tới cổng 8000 đều làm được tất cả. Nó chỉ an
+toàn nhờ nghe ở 127.0.0.1 — nghĩa là an toàn cho tới đúng ngày ai đó đưa
+lên server.
+
+Theo Nghị định 13/2023/NĐ-CP, dữ liệu cá nhân phải có biện pháp bảo vệ.
+"Không ai biết địa chỉ IP" không phải một biện pháp.
+
+CHỌN CÁCH ĐƠN GIẢN NHẤT ĐỦ DÙNG
+-------------------------------
+Không dùng OAuth, không JWT, không thư viện ngoài. Một tiệm mỹ phẩm có 2-5
+nhân viên; thứ họ cần là mỗi người một tài khoản để biết AI ĐÃ LÀM GÌ, chứ
+không phải một hệ thống định danh liên thông.
+
+  mật khẩu   scrypt trong thư viện chuẩn — chậm có chủ đích, chống dò
+  phiên      token ngẫu nhiên trong CSDL, cookie HttpOnly
+  quyền      hai vai: quản trị và nhân viên
+
+VÌ SAO PHIÊN NẰM TRONG CSDL CHỨ KHÔNG PHẢI JWT
+----------------------------------------------
+JWT không thu hồi được. Nhân viên nghỉ việc lúc 9 giờ sáng thì token của họ
+vẫn dùng được tới lúc hết hạn. Phiên trong CSDL thì xoá một dòng là xong —
+và với hệ thống nắm dữ liệu khách hàng, thu hồi ngay là điều bắt buộc.
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from .. import db
+
+# scrypt: chậm và tốn bộ nhớ có chủ đích. Tham số theo khuyến nghị OWASP
+# cho ứng dụng tương tác — đủ chậm để dò mật khẩu không kinh tế, đủ nhanh
+# để đăng nhập không thấy trễ.
+_N, _R, _P = 2 ** 14, 8, 1
+_DAI_KHOA = 32
+
+PHIEN_NGAY = 7          # phiên sống bao lâu
+VAI_TRO = ("quan_tri", "nhan_vien")
+
+# Việc chỉ quản trị được làm. Nhân viên đọc và xử lý hội thoại bình thường,
+# nhưng không được xoá dữ liệu khách hay đổi cách agent vận hành.
+CHI_QUAN_TRI = (
+    "pdpd.xoa",           # xoá vĩnh viễn dữ liệu cá nhân
+    "runtime",            # bật/tắt agent, đổi chế độ, đổi ngưỡng
+    "nguoi_dung",         # tạo/xoá tài khoản
+)
+
+
+def bam_mat_khau(mat_khau: str) -> str:
+    """
+    Băm mật khẩu kèm muối ngẫu nhiên. Trả chuỗi tự chứa đủ để kiểm lại.
+
+    Muối riêng cho từng người: hai người đặt cùng mật khẩu vẫn ra hai bản
+    băm khác nhau, nên lộ một bản không suy ra được bản kia.
+    """
+    muoi = secrets.token_bytes(16)
+    khoa = hashlib.scrypt(mat_khau.encode(), salt=muoi, n=_N, r=_R, p=_P,
+                          dklen=_DAI_KHOA)
+    return f"scrypt${_N}${_R}${_P}${muoi.hex()}${khoa.hex()}"
+
+
+def kiem_mat_khau(mat_khau: str, bam: str) -> bool:
+    """
+    So sánh bằng compare_digest — thời gian không phụ thuộc nội dung.
+
+    So bằng `==` để lộ độ dài tiền tố đúng qua thời gian phản hồi; với đủ
+    lần thử, đó là một đường dò mật khẩu.
+    """
+    try:
+        thuat, n, r, p, muoi_hex, khoa_hex = bam.split("$")
+        if thuat != "scrypt":
+            return False
+        khoa = hashlib.scrypt(
+            mat_khau.encode(), salt=bytes.fromhex(muoi_hex),
+            n=int(n), r=int(r), p=int(p), dklen=len(khoa_hex) // 2,
+        )
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(khoa.hex(), khoa_hex)
+
+
+# ---------------------------------------------------------------
+#  Tài khoản
+# ---------------------------------------------------------------
+
+async def tao_nguoi_dung(
+    ten_dang_nhap: str, mat_khau: str, ho_ten: str = "",
+    vai_tro: str = "nhan_vien",
+) -> dict:
+    ten_dang_nhap = ten_dang_nhap.strip().lower()
+    if len(ten_dang_nhap) < 3:
+        raise ValueError("Tên đăng nhập phải từ 3 ký tự")
+    if len(mat_khau) < 8:
+        raise ValueError("Mật khẩu phải từ 8 ký tự")
+    if vai_tro not in VAI_TRO:
+        raise ValueError(f"Vai trò không hợp lệ. Chỉ nhận: {VAI_TRO}")
+
+    row = await db.fetchrow(
+        "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam, ho_ten, vai_tro) "
+        "VALUES ($1,$2,$3,$4) "
+        "ON CONFLICT (ten_dang_nhap) DO NOTHING "
+        "RETURNING id, ten_dang_nhap, ho_ten, vai_tro",
+        ten_dang_nhap, bam_mat_khau(mat_khau), ho_ten or ten_dang_nhap, vai_tro,
+    )
+    if row is None:
+        raise ValueError(f"Tên đăng nhập {ten_dang_nhap!r} đã tồn tại")
+    row["id"] = str(row["id"])
+    await db.log_event("auth.tao_nguoi_dung", actor="he_thong",
+                       ten_dang_nhap=ten_dang_nhap, vai_tro=vai_tro)
+    return row
+
+
+async def co_nguoi_dung_nao_chua() -> bool:
+    r = await db.fetchrow("SELECT 1 FROM nguoi_dung LIMIT 1")
+    return r is not None
+
+
+async def doi_mat_khau(ten_dang_nhap: str, mat_khau_moi: str) -> bool:
+    if len(mat_khau_moi) < 8:
+        raise ValueError("Mật khẩu phải từ 8 ký tự")
+    r = await db.fetchrow(
+        "UPDATE nguoi_dung SET mat_khau_bam = $2 WHERE ten_dang_nhap = $1 "
+        "RETURNING id", ten_dang_nhap.strip().lower(), bam_mat_khau(mat_khau_moi),
+    )
+    if r:
+        # Đổi mật khẩu phải ĐÁ MỌI PHIÊN ĐANG MỞ. Không làm thế thì người
+        # chiếm được tài khoản vẫn ngồi trong đó sau khi chủ đã đổi mật khẩu.
+        await db.execute("DELETE FROM phien WHERE nguoi_dung_id = $1", r["id"])
+    return r is not None
+
+
+# ---------------------------------------------------------------
+#  Phiên
+# ---------------------------------------------------------------
+
+async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
+    """Trả token phiên, hoặc None nếu sai. KHÔNG nói sai ở đâu."""
+    ten_dang_nhap = (ten_dang_nhap or "").strip().lower()
+    nd = await db.fetchrow(
+        "SELECT id, mat_khau_bam, vai_tro, khoa FROM nguoi_dung "
+        "WHERE ten_dang_nhap = $1", ten_dang_nhap,
+    )
+
+    # Vẫn băm một lần dù không có tài khoản: trả lời ngay lập tức cho tên
+    # không tồn tại là chỉ ra tên nào CÓ tồn tại.
+    if nd is None:
+        kiem_mat_khau(mat_khau, bam_mat_khau("khong-co-that"))
+        await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
+                           ly_do="không có tài khoản")
+        return None
+
+    if nd["khoa"]:
+        await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
+                           ly_do="tài khoản bị khoá")
+        return None
+
+    if not kiem_mat_khau(mat_khau, nd["mat_khau_bam"]):
+        await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
+                           ly_do="sai mật khẩu")
+        return None
+
+    token = secrets.token_urlsafe(32)
+    await db.execute(
+        "INSERT INTO phien (token, nguoi_dung_id, het_han) VALUES ($1,$2,$3)",
+        token, nd["id"], datetime.now(timezone.utc) + timedelta(days=PHIEN_NGAY),
+    )
+    await db.execute(
+        "UPDATE nguoi_dung SET dang_nhap_cuoi = now() WHERE id = $1", nd["id"]
+    )
+    await db.log_event("auth.dang_nhap", actor=ten_dang_nhap)
+    return token
+
+
+async def doc_phien(token: str) -> dict | None:
+    """Người đứng sau token này, hoặc None nếu phiên hỏng/hết hạn."""
+    if not token:
+        return None
+    r = await db.fetchrow(
+        "SELECT n.id, n.ten_dang_nhap, n.ho_ten, n.vai_tro, n.khoa "
+        "FROM phien p JOIN nguoi_dung n ON n.id = p.nguoi_dung_id "
+        "WHERE p.token = $1 AND p.het_han > now()",
+        token,
+    )
+    if r is None or r["khoa"]:
+        return None
+    r["id"] = str(r["id"])
+    return r
+
+
+async def dang_xuat(token: str) -> None:
+    if token:
+        await db.execute("DELETE FROM phien WHERE token = $1", token)
+
+
+async def don_phien_het_han() -> int:
+    r = await db.execute("DELETE FROM phien WHERE het_han <= now()")
+    phan = r.split()
+    return int(phan[-1]) if phan and phan[-1].isdigit() else 0
+
+
+def duoc_phep(nguoi: dict | None, viec: str) -> bool:
+    """Người này có được làm việc này không."""
+    if not nguoi:
+        return False
+    if viec in CHI_QUAN_TRI:
+        return nguoi.get("vai_tro") == "quan_tri"
+    return True

@@ -136,6 +136,10 @@ class Settings(BaseSettings):
         "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc "
         "ạ. Bạn ấy sẽ nhắn lại cho mình sớm nhé."
     )
+    # Cookie phiên chỉ gửi qua HTTPS. Bật cứng thì đăng nhập trên
+    # http://localhost hỏng, nên để theo cấu hình — và BẮT BUỘC bật khi
+    # đưa lên server thật.
+    cookie_bao_mat: bool = False
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.

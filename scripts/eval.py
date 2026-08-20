@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from agent import db  # noqa: E402
 from agent.core import agent as brain  # noqa: E402
+from agent.core import tu_nhien  # noqa: E402
 
 GOLDEN = ROOT / "data" / "eval" / "golden.jsonl"
 OUT_DIR = ROOT / "data" / "eval"
@@ -38,24 +39,49 @@ def fold(s: str) -> str:
     return "".join(c for c in t if unicodedata.category(c) != "Mn").replace("đ", "d")
 
 
+# Dấu phủ định. Cụm cấm nằm sau một trong những từ này TRONG CÙNG MỆNH ĐỀ
+# thì đó là agent đang TỪ CHỐI, không phải đang quảng cáo.
+_PHU_DINH = ("khong", "chua", "chang", "dau co")
+
+
 def _pham(text: str, cum: str) -> bool:
     """
     Cụm cấm có thật sự xuất hiện như một LỜI KHẲNG ĐỊNH không?
 
-    "điều trị" là danh từ y khoa trung tính, còn "trị nám / trị mụn" mới là
-    cách nói quảng cáo mà Thông tư 06/2011/TT-BYT cấm. Nếu chỉ so khớp chuỗi
-    thô thì câu TỪ CHỐI đúng đắn — "em không thể tư vấn sản phẩm điều trị
-    nám được" — lại bị chấm là vi phạm, tức là phạt agent vì đã làm đúng.
+    So khớp chuỗi thô phạt agent vì đã làm đúng. Ba câu dưới đây đều là
+    hành vi CHUẨN mà từng bị chấm là vi phạm:
 
-    Nên bỏ qua những lần khớp nằm ngay sau chữ "điều".
+        "em không thể tư vấn sản phẩm điều trị nám được"   <- "trị nám"
+        "bên em không có sản phẩm đặc trị nám ạ"           <- "trị nám"
+        "mỹ phẩm không phải thuốc nên không thể cam kết
+         thời gian cụ thể"                                 <- "cam kết"
+
+    Hai luật, cả hai đều xét trong phạm vi MỘT MỆNH ĐỀ:
+
+      1. "điều trị" là danh từ y khoa trung tính — bỏ qua khớp ngay sau
+         chữ "điều".
+      2. Có dấu phủ định đứng trước trong cùng mệnh đề — bỏ qua.
+
+    Giới hạn đã biết: câu kiểu "không chỉ dưỡng ẩm mà còn trị nám" sẽ lọt.
+    Chấp nhận được, vì hướng sai này chỉ bỏ sót vài cách nói hiếm, còn
+    hướng ngược lại làm hỏng cả chỉ số tuân thủ.
     """
     i = text.find(cum)
     while i != -1:
-        truoc = text[max(0, i - 6):i]
-        if not truoc.endswith("dieu "):
+        if not _la_phu_dinh(text, i):
             return True
         i = text.find(cum, i + 1)
     return False
+
+
+def _la_phu_dinh(text: str, i: int) -> bool:
+    """Vị trí i có nằm trong một mệnh đề phủ định không?"""
+    if text[max(0, i - 6):i].endswith("dieu "):
+        return True
+    # Lùi về đầu mệnh đề — dấu câu là ranh giới.
+    dau = max(text.rfind(k, 0, i) for k in ".,!?;:\n")
+    menh_de = text[dau + 1:i]
+    return any(t in menh_de for t in _PHU_DINH)
 
 
 async def run_case(case: dict, conv_id) -> dict:
@@ -69,6 +95,8 @@ async def run_case(case: dict, conv_id) -> dict:
         return {
             **case, "loi": f"{type(exc).__name__}: {exc}"[:200], "dat": False,
             "tra_loi": "", "chuyen_nguoi_thuc": None, "chi_phi": 0.0,
+            "dau_hieu_bot": [], "dau_hieu_sau_xu_ly": [],
+            "so_tin_gui": 0, "so_ky_tu": 0,
             "ms": int((time.perf_counter() - started) * 1000),
         }
 
@@ -82,9 +110,29 @@ async def run_case(case: dict, conv_id) -> dict:
     cam = [k for k in case.get("khong_duoc_co", []) if _pham(low, fold(k))]
     dung_escalate = bool(r.escalate) == bool(case["chuyen_nguoi"])
 
+    # Đo dấu hiệu lộ bot ở HAI mốc — cả hai đều cần, và chúng nói hai
+    # chuyện khác nhau:
+    #
+    #   THÔ        văn bản model vừa sinh ra. Đo prompt hiệu quả tới đâu.
+    #   SAU XỬ LÝ  thứ khách THẬT SỰ nhận, sau khi lam_tu_nhien() bỏ
+    #              markdown, cắt câu sáo rỗng và tách thành 2-3 tin.
+    #
+    # Chỉ báo con số thô là tự bôi xấu mình (phần lớn "tin quá dài" đã được
+    # tách trước khi gửi). Chỉ báo con số sau xử lý là giấu đi việc prompt
+    # còn yếu. Nên báo cả hai.
+    #
+    # lan_dau=True vì mỗi ca eval là một hội thoại mới — chào ở đây là đúng.
+    dau_hieu_bot = tu_nhien.cham_diem(text, lan_dau=True)
+    tins = tu_nhien.lam_tu_nhien(text, lan_dau=True)
+    dau_hieu_sau = [d for t in tins for d in tu_nhien.cham_diem(t, lan_dau=True)]
+
     return {
         **case,
         "tra_loi": text,
+        "dau_hieu_bot": dau_hieu_bot,
+        "dau_hieu_sau_xu_ly": dau_hieu_sau,
+        "so_tin_gui": len(tins),
+        "so_ky_tu": len(text),
         "chuyen_nguoi_thuc": bool(r.escalate),
         "dung_escalate": dung_escalate,
         "thieu_tu_khoa": thieu,
@@ -150,6 +198,23 @@ async def main(loc: str | None = None) -> int:
     bo_sot = [r for r in can_chuyen if r["chuyen_nguoi_thuc"] is False]
     chuyen_thua = [r for r in khong_chuyen if r["chuyen_nguoi_thuc"] is True]
     tu_cam = [r for r in results if r.get("dung_tu_cam")]
+
+    # --- chỉ số TỰ NHIÊN ---
+    # Chỉ tính trên ca có trả lời thật; ca lỗi hạ tầng không nói lên điều gì
+    # về giọng văn.
+    co_loi = [r for r in results if r["tra_loi"]]
+    tong_dau_hieu = sum(len(r.get("dau_hieu_bot") or []) for r in co_loi)
+    sach = [r for r in co_loi if not r.get("dau_hieu_bot")]
+    tong_sau = sum(len(r.get("dau_hieu_sau_xu_ly") or []) for r in co_loi)
+    sach_sau = [r for r in co_loi if not r.get("dau_hieu_sau_xu_ly")]
+    tin_tb = (sum(r.get("so_tin_gui", 0) for r in co_loi) / len(co_loi)) if co_loi else 0
+    dai_tb = (sum(r.get("so_ky_tu", 0) for r in co_loi) / len(co_loi)) if co_loi else 0
+    # Dấu hiệu nào hay gặp nhất — biết sửa chỗ nào cho đáng.
+    pho_bien: dict[str, int] = {}
+    for r in co_loi:
+        for d in r.get("dau_hieu_bot") or []:
+            khoa = d.split(" (")[0]          # gộp "tin quá dài (410 ký tự)"
+            pho_bien[khoa] = pho_bien.get(khoa, 0) + 1
     tong_chi_phi = sum(r["chi_phi"] for r in results)
     tre = sorted(r["ms"] for r in results)
 
@@ -165,6 +230,24 @@ async def main(loc: str | None = None) -> int:
     if tre:
         print(f"  Độ trễ          trung vị {tre[len(tre) // 2] / 1000:.1f}s"
               f"  |  p90 {tre[int(len(tre) * 0.9)] / 1000:.1f}s")
+
+    if co_loi:
+        n_loi = len(co_loi)
+        print(f"\n  --- Giọng văn ---")
+        print(f"  Văn bản model sinh ra:")
+        print(f"    dấu hiệu lộ bot   {tong_dau_hieu / n_loi:.2f} / câu"
+              f"   |  sạch {len(sach)}/{n_loi} ({len(sach) / n_loi:.0%})")
+        print(f"    độ dài trung bình {dai_tb:.0f} ký tự"
+              f"   (ngưỡng tin nhắn: {tu_nhien.DAI_TOI_DA})")
+        print(f"  KHÁCH THẬT SỰ NHẬN (sau khi tách tin, bỏ markdown):")
+        print(f"    dấu hiệu lộ bot   {tong_sau / n_loi:.2f} / câu"
+              f"   |  sạch {len(sach_sau)}/{n_loi} ({len(sach_sau) / n_loi:.0%})"
+              f"   <-- con số thật")
+        print(f"    số tin mỗi lượt   {tin_tb:.1f}")
+        if pho_bien:
+            print("  Hay gặp nhất (trong văn bản thô):")
+            for ten, n in sorted(pho_bien.items(), key=lambda x: -x[1]):
+                print(f"    {ten:24} {n} lần")
 
     if bo_sot:
         print("\n  CÁC CA BỎ SÓT CHUYỂN NGƯỜI:")
@@ -191,6 +274,13 @@ async def main(loc: str | None = None) -> int:
         json.dumps(
             {
                 "tong": n, "dat": dat,
+                "dau_hieu_bot_moi_cau": round(tong_dau_hieu / len(co_loi), 3) if co_loi else 0,
+                "dau_hieu_sau_xu_ly_moi_cau": round(tong_sau / len(co_loi), 3) if co_loi else 0,
+                "cau_tra_loi_sach": len(sach),
+                "cau_tra_loi_sach_sau_xu_ly": len(sach_sau),
+                "so_tin_moi_luot": round(tin_tb, 2),
+                "do_dai_tb": round(dai_tb),
+                "dau_hieu_pho_bien": pho_bien,
                 "bo_sot_chuyen_nguoi": len(bo_sot),
                 "chuyen_nguoi_thua": len(chuyen_thua),
                 "dung_tu_cam": len(tu_cam),

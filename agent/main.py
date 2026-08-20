@@ -23,6 +23,7 @@ from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
 from agent.video import worker as video_worker
@@ -155,6 +156,50 @@ async def webhook(
     return JSONResponse({"ok": True, "queued": True})
 
 
+async def _gui_nhu_nguoi(adapter, msg, cid, text: str) -> bool:
+    """
+    Gửi câu trả lời theo nhịp của một người thật đang nhắn tin.
+
+    Ba việc, theo thứ tự:
+      1. Dọn dấu hiệu lộ bot (markdown, chào lại, câu kết sáo rỗng) và tách
+         khối dài thành 2-3 tin ngắn — xem agent/core/tu_nhien.py.
+      2. Nghỉ giữa các tin đúng khoảng thời gian gõ chừng ấy chữ. Ba tin
+         nhảy ra cùng một giây thì dù nội dung có tự nhiên đến mấy, khách
+         vẫn biết ngay là máy.
+      3. Giữ cờ "đang soạn tin" suốt quá trình để dashboard hiển thị đúng.
+
+    Trả True nếu tin ĐẦU TIÊN đi được. Tin đầu là tin quyết định khách có
+    nhận được câu trả lời hay không; các tin sau chỉ bổ sung, hỏng một tin
+    sau không có nghĩa là cả câu trả lời thất bại.
+    """
+    lan_dau = await _la_tin_dau(cid)
+    tins = tu_nhien.lam_tu_nhien(text, lan_dau=lan_dau)
+    if not tins:
+        return False
+
+    ok_dau = False
+    for i, phan in enumerate(tins):
+        if i and settings.nhip_nguoi_that:
+            runtime.mark_busy(cid)
+            await asyncio.sleep(tu_nhien.nhip_go(phan))
+        kq = await adapter.send_text(msg.conversation_ref, phan)
+        if i == 0:
+            ok_dau = kq.ok
+            if not kq.ok:
+                break        # tin đầu hỏng thì gửi tiếp cũng vô nghĩa
+    runtime.clear_busy(cid)
+    return ok_dau
+
+
+async def _la_tin_dau(cid) -> bool:
+    """Agent đã nói câu nào trong hội thoại này chưa? Quyết định có chào không."""
+    r = await db.fetchrow(
+        "SELECT count(*) n FROM messages WHERE conversation_id = $1 AND role = 'agent'",
+        cid,
+    )
+    return (r["n"] if r else 0) == 0
+
+
 async def handle_inbound(msg: InboundMessage) -> None:
     """Toàn bộ luồng xử lý một tin nhắn đến."""
     if await db.seen_webhook(msg.dedupe_key):
@@ -216,7 +261,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
     delivered = False
     adapter = channels.get(msg.channel)
     if auto_send and await adapter.can_send_now(msg.conversation_ref):
-        delivered = (await adapter.send_text(msg.conversation_ref, reply.text)).ok
+        delivered = await _gui_nhu_nguoi(adapter, msg, cid, reply.text)
 
     await db.execute(
         """

@@ -11,6 +11,7 @@ from agent.config import settings
 STATE: dict[str, object] = {
     "enabled": settings.agent_enabled,
     "mode": settings.agent_mode,               # assist | auto
+    "zalo_account_id": settings.zalocrm_account_id,
     "confidence_floor": settings.confidence_floor,
     "max_cost_per_conversation": settings.max_cost_per_conversation,
 }

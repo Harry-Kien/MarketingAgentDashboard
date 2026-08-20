@@ -125,7 +125,7 @@ _creds = None
 
 
 def _vertex_token() -> str:
-    """Token ADC, tự làm mới khi hết hạn."""
+    """Token ADC, tự làm mới khi hết hạn. ĐỒNG BỘ — xem _token() bên dưới."""
     global _creds
     import google.auth
     import google.auth.transport.requests
@@ -137,6 +137,28 @@ def _vertex_token() -> str:
     if not _creds.valid:
         _creds.refresh(google.auth.transport.requests.Request())
     return _creds.token
+
+
+async def _token() -> str:
+    """
+    Lấy token ADC mà KHÔNG chặn vòng lặp sự kiện.
+
+    `_creds.refresh()` của google-auth là lời gọi mạng ĐỒNG BỘ. Gọi thẳng
+    nó trong coroutine thì trong lúc chờ, toàn bộ tiến trình đứng im: poller
+    ngừng lấy tin Zalo, API dashboard ngừng trả lời, hàng đợi bài đăng ngừng
+    chạy. Token hết hạn mỗi giờ nên chuyện này xảy ra đều đặn, và khi mạng
+    tới GCP chậm thì cả hệ thống treo theo mà không có dấu vết gì trong log.
+
+    `to_thread` đẩy nó sang luồng khác; `wait_for` đặt trần thời gian để một
+    lần làm mới hỏng không kéo dài vô hạn.
+    """
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_vertex_token), timeout=30)
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            "Quá 30 giây không lấy được token Vertex. Kiểm tra mạng tới GCP "
+            "hoặc chạy lại: gcloud auth application-default login"
+        ) from exc
 
 
 def _gemini_url(model: str) -> str:
@@ -275,7 +297,7 @@ async def _complete_gemini(
             r = await client.post(
                 _gemini_url(model),
                 headers={
-                    "Authorization": f"Bearer {_vertex_token()}",
+                    "Authorization": f"Bearer {await _token()}",
                     "Content-Type": "application/json",
                 },
                 json=body,

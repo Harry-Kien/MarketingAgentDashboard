@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 import httpx
 
 from agent.channels.base import ChannelAdapter, Delivery, InboundMessage
+from agent import db, runtime
 from agent.config import settings
 
 # senderType trong ZaloCRM: 'contact' = khách, 'self' = mình, 'ai_assistant' = AI
@@ -157,12 +158,33 @@ class ZaloCRMAdapter(ChannelAdapter):
             return None
         return self._threads.get(conversation_ref)
 
+    async def _nick_gui(self, conversation_ref: str) -> str:
+        """
+        Chọn nick Zalo để gửi, theo thứ tự:
+            nick đã ghim cho hội thoại này  ->  nick đang chọn trên
+            dashboard  ->  nick trong .env
+
+        Ghim theo hội thoại là bắt buộc khi doanh nghiệp chạy nhiều nick:
+        khách nhắn vào nick A mà trả lời đi ra từ nick B thì với khách đó
+        là một người lạ nhắn tin, không phải câu trả lời.
+        """
+        row = await db.fetchrow(
+            "SELECT zalo_account_id FROM conversations "
+            "WHERE channel = $1 AND external_id = $2",
+            self.name, conversation_ref,
+        )
+        if row and row["zalo_account_id"]:
+            return str(row["zalo_account_id"])
+        return str(runtime.STATE.get("zalo_account_id") or
+                   settings.zalocrm_account_id or "")
+
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
-        if not settings.zalocrm_account_id:
+        account_id = await self._nick_gui(conversation_ref)
+        if not account_id:
             return Delivery(
                 False,
-                "Chưa đặt ZALOCRM_ACCOUNT_ID trong .env "
-                "(chạy: python -m scripts.zalo_link sau khi quét QR)",
+                "Chưa chọn nick Zalo để gửi. Vào màn Hội thoại trên dashboard "
+                "chọn nick, hoặc chạy: python -m scripts.zalo_link sau khi quét QR.",
             )
         thread = await self._thread_of(conversation_ref)
         if not thread or not thread[0]:
@@ -173,7 +195,7 @@ class ZaloCRMAdapter(ChannelAdapter):
             r = await self._client.post(
                 "/api/public/messages/send",
                 json={
-                    "zaloAccountId": settings.zalocrm_account_id,
+                    "zaloAccountId": account_id,
                     "threadId": external_id,
                     "content": text,
                     "threadType": thread_type,

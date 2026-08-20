@@ -11,6 +11,8 @@ Ba cơ chế an toàn nằm ở đây, không nằm trong prompt:
 """
 from __future__ import annotations
 
+import re
+
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -86,9 +88,24 @@ _HANDOFF_HINTS = (
 )
 
 
+# Danh sách chuỗi cố định ở trên quá giòn: agent diễn đạt lời hứa chuyển
+# người bằng vô số cách, và mỗi cách trượt là một lần khách bị bỏ rơi giữa
+# chừng — agent nói "em chuyển cho nhân viên" rồi không ai nhận việc.
+# Mẫu này bắt cấu trúc "chuyển ... cho <người có thẩm quyền>" trong cùng một
+# câu, thay vì đoán trước từng cách nói.
+_HANDOFF_RE = re.compile(
+    r"(chuyển|nhờ|báo|gửi|kết nối)[^.!?]{0,60}?"
+    r"(nhân viên|chuyên viên|chuyên môn|chuyên trách|phụ trách|bộ phận"
+    r"|tư vấn viên|quản lý|người có chuyên môn)",
+    re.IGNORECASE,
+)
+
+
 def _promises_handoff(text: str) -> bool:
     low = (text or "").lower()
-    return any(hint in low for hint in _HANDOFF_HINTS)
+    if any(hint in low for hint in _HANDOFF_HINTS):
+        return True
+    return bool(_HANDOFF_RE.search(text or ""))
 
 
 def _confidence(passages: list[rag.Passage], used_tool: bool) -> float:

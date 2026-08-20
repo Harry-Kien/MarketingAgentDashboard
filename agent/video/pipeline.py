@@ -46,7 +46,18 @@ async def write_script(
         max_tokens=2000,
         effort="medium",
     )
-    return llm.parse_json(result.text), result.cost_usd
+    kich_ban = llm.parse_json(result.text)
+    if kich_ban is None:
+        # Không nuốt nguyên nhân. "Không dựng được kịch bản hợp lệ" không nói
+        # được gì cho ai: model trả rỗng vì chạm hạn mức, bị cắt vì hết token,
+        # hay trả văn xuôi thay vì JSON — ba chuyện khác nhau, ba cách sửa
+        # khác nhau. Kèm luôn phần đầu câu trả lời để còn truy được.
+        raise ValueError(
+            f"model không trả JSON hợp lệ "
+            f"(stop={result.stop_reason or 'không rõ'}, "
+            f"{result.tokens_out} token ra): {result.text[:200] or '(rỗng)'}"
+        )
+    return kich_ban, result.cost_usd
 
 
 def bind_scenes_to_assets(scenes: list[dict], asset_rows: list[dict]) -> None:
@@ -132,7 +143,7 @@ async def produce(video_id: str) -> None:
         )
         cost += vision_cost
         if not script or not script.get("canh"):
-            await mark("failed", error="Không dựng được kịch bản hợp lệ")
+            await mark("failed", error="Kịch bản trả về không có cảnh nào")
             return
         scenes = script["canh"]
         title = script.get("tieu_de") or row["title"]

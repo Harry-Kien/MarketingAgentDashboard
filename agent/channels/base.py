@@ -24,6 +24,10 @@ class InboundMessage:
     dedupe_key: str                # để chống xử lý trùng
     received_at: datetime
     attachments: list[str] = field(default_factory=list)
+    # Thông tin riêng của kênh mà lớp trên KHÔNG được phụ thuộc vào — chỉ
+    # dùng để hiển thị. Ví dụ Chatwoot cho biết tin tới từ Facebook hay
+    # Instagram; agent trả lời y hệt nhau, chỉ dashboard gắn huy hiệu khác.
+    meta: dict = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -48,6 +52,15 @@ class ChannelAdapter(ABC):
     async def send_file(
         self, conversation_ref: str, path: str, caption: str = ""
     ) -> Delivery: ...
+
+    async def fetch_new(self, per_conversation: int = 8) -> list[InboundMessage]:
+        """
+        Kéo tin mới về. Kênh đi bằng webhook thì để nguyên mặc định này.
+
+        Có cả hai cơ chế vì hai kênh thật đang chạy ngược nhau: ZaloCRM bị
+        chốt SSRF chặn nên phải kéo, Chatwoot đẩy được nên dùng webhook.
+        """
+        return []
 
     async def can_send_now(self, conversation_ref: str) -> bool:
         """

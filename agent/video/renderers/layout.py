@@ -48,7 +48,16 @@ _BOLD = [
 
 # Dải tối càng đậm khi ảnh càng sáng — bảo đảm chữ trắng luôn đọc được, thay
 # vì phải đoán đúng màu chữ cho từng ảnh rồi cầu may.
-SCRIM_ALPHA = {"toi": 150, "trung_binh": 185, "sang": 215}
+#
+# Mức cũ (150/185/215) đủ để đọc chữ nhưng NUỐT MẤT SẢN PHẨM: khung đầu tiên
+# dựng từ ảnh serum thật ra một chai gần như đen. Màn tối là để tách chữ khỏi
+# nền, không phải để giấu hàng đi. Nay nhẹ hơn, và chỗ nào chữ đặt sang bên
+# thì đẩy sản phẩm sang bên kia (xem `LECH_TAM`) thay vì phủ tối lên nó.
+SCRIM_ALPHA = {"toi": 105, "trung_binh": 135, "sang": 165}
+
+# Chữ đặt một bên thì sản phẩm dịch sang bên đối diện, tính theo phần bề
+# ngang khung. Đây là bố cục quảng cáo cơ bản: chữ và hàng không chồng nhau.
+LECH_TAM = 0.17
 
 ACCENT_DEFAULT = (31, 111, 92)
 
@@ -133,7 +142,7 @@ def _cover(src: Image.Image, size) -> Image.Image:
     return resized.crop((left, top, left + size[0], top + size[1]))
 
 
-def base_frame(image_path=None, accent: bool = False) -> Image.Image:
+def base_frame(image_path=None, accent: bool = False, day_ve: str | None = None) -> Image.Image:
     """
     Lớp nền: ảnh sản phẩm phủ kín khung dọc, cỡ gấp đôi để còn chỗ zoom.
 
@@ -149,11 +158,25 @@ def base_frame(image_path=None, accent: bool = False) -> Image.Image:
     except OSError:
         return Image.new("RGB", size, BG_ACCENT if accent else BG)
 
+    # Độ dịch ngang khi chữ đặt sang một bên: sản phẩm né sang bên kia.
+    lech = 0
+    if day_ve == "phai":
+        lech = int(size[0] * LECH_TAM)
+    elif day_ve == "trai":
+        lech = -int(size[0] * LECH_TAM)
+
     target_ratio = size[0] / size[1]
     src_ratio = src.width / src.height
 
     if abs(src_ratio - target_ratio) < 0.12:
-        return _cover(src, size)
+        khung = _cover(src, size)
+        if lech:
+            # Ảnh đã phủ kín khung: dịch nội dung rồi lấp mép bằng chính nó
+            # kéo giãn, không để lộ dải trống.
+            nen = khung.resize((size[0] + abs(lech) * 2, size[1]), Image.LANCZOS)
+            nen.paste(khung, (abs(lech) + lech, 0))
+            khung = nen.crop((abs(lech), 0, abs(lech) + size[0], size[1]))
+        return khung
 
     bg = _cover(src, size).filter(ImageFilter.GaussianBlur(radius=60))
     bg = Image.blend(bg, Image.new("RGB", size, BG), 0.35)
@@ -161,12 +184,24 @@ def base_frame(image_path=None, accent: bool = False) -> Image.Image:
     # KHÔNG dùng `thumbnail()`: nó chỉ thu nhỏ, không bao giờ phóng to. Ảnh
     # ngang 1920px hẹp hơn khung 2160px sẽ nằm lọt thỏm giữa màn hình, viền
     # mờ bao quanh bốn phía — trông như lỗi chứ không như dụng ý.
-    scale = min(size[0] / src.width, size[1] / src.height)
+    # Chữ đặt một bên thì thu ảnh nhỏ lại một chút để còn chỗ thở cho chữ.
+    khung_rong = size[0] - (abs(lech) if lech else 0)
+    scale = min(khung_rong / src.width, size[1] / src.height)
     fg = src.resize(
         (max(1, int(src.width * scale)), max(1, int(src.height * scale))),
         Image.LANCZOS,
     )
-    bg.paste(fg, ((size[0] - fg.width) // 2, (size[1] - fg.height) // 2))
+    # Dán qua mặt nạ MÉP MỀM. Dán thẳng thì ảnh vuông đặt trên nền mờ để lại
+    # một đường viền chữ nhật cứng, nhìn như hai lớp dán chồng chứ không như
+    # một khung hình. Làm nhoè mép cho nó tan vào nền.
+    toa_do = ((size[0] - fg.width) // 2 + lech, (size[1] - fg.height) // 2)
+    nhoe = max(8, int(min(fg.width, fg.height) * 0.045))
+    mat_na = Image.new("L", fg.size, 0)
+    ImageDraw.Draw(mat_na).rectangle(
+        [nhoe, nhoe, fg.width - nhoe, fg.height - nhoe], fill=255
+    )
+    mat_na = mat_na.filter(ImageFilter.GaussianBlur(radius=nhoe * 0.75))
+    bg.paste(fg, toa_do, mat_na)
     return bg
 
 
@@ -268,7 +303,14 @@ def write_scene(scene: dict, asset, work: Path, index: int):
     analysis = asset.get("analysis") or {}
     accent = analysis.get("mau_chu_dao") or "#1F6F5C"
 
-    base = base_frame(asset.get("file_path"), accent=bool(scene.get("nhan_manh")))
+    # Chữ bên trái -> đẩy sản phẩm sang phải, và ngược lại.
+    vung = analysis.get("vung_trong")
+    day_ve = {"trai": "phai", "phai": "trai"}.get(vung)
+    base = base_frame(
+        asset.get("file_path"),
+        accent=bool(scene.get("nhan_manh")),
+        day_ve=day_ve,
+    )
     over = overlay_frame(scene, analysis, index, accent)
 
     base_path = work / f"base_{index:02d}.jpg"

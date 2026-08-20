@@ -18,7 +18,7 @@ from pathlib import Path
 from agent import db
 from agent.config import ROOT, settings
 from agent.core import llm
-from agent.video import assets, renderers, timing, tts, vision
+from agent.video import assets, catalog_images, renderers, timing, tts, vision
 
 PROMPT = (ROOT / "agent" / "prompts" / "video_script.md").read_text(encoding="utf-8")
 
@@ -196,6 +196,7 @@ async def request_video(
     kind: str = "explainer",
     conversation_id=None,
     images: list | None = None,
+    ma_san_pham: str | None = None,
 ) -> str:
     """Tạo bản ghi và khởi động dây chuyền ở nền. Trả về video id."""
     # Hội thoại có thể đã bị xoá giữa chừng — khoá ngoại sẽ nổ và làm hỏng cả
@@ -219,6 +220,17 @@ async def request_video(
 
     # Ảnh phải nằm trên đĩa và trong DB TRƯỚC khi job nền chạy, vì bước đầu
     # của dây chuyền là đọc chúng ra để nhìn.
+    # Không ai tải ảnh lên nhưng biết mã sản phẩm thì lấy từ kho ảnh. Đây là
+    # mắt xích khiến agent tự dựng được video: khách nhắn "làm video giới
+    # thiệu serum phục hồi", agent gọi tool kèm mã, dây chuyền tự có ảnh.
+    if not images and ma_san_pham:
+        for a in catalog_images.asset_rows_cho(ma_san_pham):
+            await db.execute(
+                "INSERT INTO video_assets (video_id, ord, file_path, width, height) "
+                "VALUES ($1,$2,$3,$4,$5) ON CONFLICT (video_id, ord) DO NOTHING",
+                uuid.UUID(vid), a["ord"], a["file_path"], a["width"], a["height"],
+            )
+
     if images:
         saved, warnings = await assets.save_uploads(
             settings.video_out_path / vid / "assets", images

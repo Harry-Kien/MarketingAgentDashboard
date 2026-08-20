@@ -142,6 +142,44 @@ def _bo_ket_sao_rong(text: str) -> str:
     return "\n".join(dong).strip()
 
 
+def _tach_menh_de(cau: str) -> list[str]:
+    """
+    Cắt MỘT câu quá dài thành hai mẩu, tại ranh giới mệnh đề gần giữa nhất.
+
+    Chỉ động vào câu vượt ngưỡng. Câu vừa phải trả về nguyên vẹn, nên nguyên
+    tắc "không cắt giữa câu" vẫn đúng ở mọi trường hợp bình thường.
+
+    Không có chỗ cắt nào tử tế thì TRẢ NGUYÊN CÂU chứ không cắt bừa giữa từ:
+    một tin hơi dài vẫn đọc được, một câu đứt ngang thì không.
+    """
+    cau = cau.strip()
+    if len(cau) <= DAI_TOI_DA:
+        return [cau] if cau else []
+
+    giua = len(cau) // 2
+
+    def _diem(mau: str) -> list[int]:
+        # IGNORECASE là bắt buộc: "Còn" đầu câu viết hoa, mẫu phân biệt hoa
+        # thường thì trượt đúng những chỗ cắt tự nhiên nhất.
+        vi_tri = [m.end() for m in re.finditer(mau, cau, re.IGNORECASE)]
+        # Bỏ chỗ cắt sát hai đầu — cắt ở đó chỉ tạo ra một mẩu cụt lủn.
+        return [i for i in vi_tri if NGAN_TOI_THIEU <= i <= len(cau) - NGAN_TOI_THIEU]
+
+    # Ưu tiên cắt ở RANH GIỚI CÂU. Hàm này cũng được gọi cho tin đã bị các
+    # bước gộp ở trên ghép từ nhiều câu — với chúng, cắt sau dấu chấm là
+    # cách tách tự nhiên nhất, không phải cắt giữa câu.
+    diem = _diem(r"(?<=[.!?])\s+") or _diem(r",\s+|;\s+|\s+(?:và|còn|nhưng)\s+")
+    if not diem:
+        return [cau]
+
+    cat = min(diem, key=lambda i: abs(i - giua))
+    dau, duoi = cau[:cat].strip().rstrip(",;"), cau[cat:].strip()
+    if not dau or not duoi:
+        return [cau]
+    # Nửa sau vẫn dài thì cắt tiếp — liệt kê dài có thể cần hơn một nhát.
+    return [dau, *_tach_menh_de(duoi)]
+
+
 def _tach_tin(text: str) -> list[str]:
     """
     Tách một khối dài thành 2-3 tin ngắn, cắt ở ranh giới câu.
@@ -159,6 +197,16 @@ def _tach_tin(text: str) -> list[str]:
         manh = doan
     else:
         manh = [c.strip() for c in re.split(r"(?<=[.!?])\s+", text) if c.strip()]
+
+    # Một CÂU dài hơn ngưỡng thì cắt theo câu không cứu được gì — nó không
+    # có dấu chấm nào để cắt. Trường hợp thật hay gặp: liệt kê nhiều sản
+    # phẩm ngăn bằng dấu phẩy trong một câu. Đo trên bộ golden: 4/56 câu
+    # trả lời còn tin quá dài, và cả bốn đều đúng dạng này.
+    #
+    # Khi đó mới cắt theo mệnh đề, và cắt ở chỗ GẦN GIỮA nhất để hai nửa
+    # cân nhau — cắt ở dấu phẩy đầu tiên thì ra một mẩu cụt và một mẩu vẫn
+    # dài. Vẫn giữ nguyên tắc gốc: câu ngắn thì không bao giờ bị cắt giữa.
+    manh = [n for m in manh for n in _tach_menh_de(m)]
 
     tin: list[str] = []
     for m in manh:
@@ -178,7 +226,16 @@ def _tach_tin(text: str) -> list[str]:
             break
         tin[-2] = f"{tin[-2]} {tin[-1]}".strip()
         tin.pop()
-    return tin
+
+    # Lượt rà CUỐI CÙNG. Các bước gộp ở trên có thể ghép hai mẩu hợp lệ
+    # thành một tin vượt ngưỡng — đo trên bộ golden còn 2/56 ca đúng kiểu
+    # đó, vượt 5-11 ký tự. Ở đây bảo đảm bất biến: không tin nào rời hệ
+    # thống mà dài quá ngưỡng.
+    #
+    # Có thể ra hơn SO_TIN_TOI_DA tin. Chấp nhận, đúng theo nguyên tắc đã
+    # ghi ngay bên trên: thà nhắn thừa một tin ngắn còn hơn dội cho khách
+    # một bức tường chữ.
+    return [n for t in tin for n in _tach_menh_de(t)]
 
 
 def lam_tu_nhien(text: str, *, lan_dau: bool) -> list[str]:

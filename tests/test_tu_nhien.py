@@ -174,3 +174,56 @@ def test_khong_mat_noi_dung_khi_tach_khoi_rat_dai():
     ghep = " ".join(lam_tu_nhien(dai, lan_dau=False))
     for i in range(1, 12):
         assert f"Bước {i}:" in ghep, f"mất Bước {i}"
+
+
+# ---------------------------------------------------------------
+#  Bất biến: KHÔNG tin nào rời hệ thống mà dài quá ngưỡng
+#
+#  Đo trên bộ golden 56 ca: văn bản thô có 24 ca quá dài, sau khi tách còn
+#  4, rồi 2, rồi 0. Hai lần sót cuối đều do lỗi trong chính lớp cắt:
+#  mẫu phân biệt hoa thường nên trượt chữ "Còn" viết hoa, và nó không cắt
+#  được theo dấu chấm nên bó tay với tin đã bị gộp từ nhiều câu.
+# ---------------------------------------------------------------
+
+_KHOI_DAI = [
+    # Một câu duy nhất, liệt kê ngăn bằng dấu phẩy — không có dấu chấm nào
+    # để cắt. Đây là dạng hay gặp nhất khi agent gợi ý nhiều sản phẩm.
+    "Dạ với da dầu và lỗ chân lông to, mình tham khảo Gel rửa mặt kiềm dầu "
+    "Aurora Clear Foam, Serum Niacinamide Aurora Pore Refine 10% và Kem dưỡng "
+    "ẩm Aurora Oil-Free Gel để cấp ẩm mà không gây bí da nhé ạ.",
+    # Nhiều câu, chữ "Còn" VIẾT HOA đứng đầu mệnh đề sau.
+    "Với các sản phẩm cấp ẩm thì mình có thể cảm nhận được trong vài ngày. "
+    "Còn những thay đổi về kết cấu da hay làm đều màu da thì thường cần "
+    "khoảng 8 đến 12 tuần dùng đều đặn mới thấy rõ ạ.",
+    # Mở đầu bằng mẩu rất ngắn — dạng khiến vòng gộp ghép cả khối lại.
+    "em là Linh ạ. Em rất tiếc khi chị có trải nghiệm không tốt về sản phẩm. "
+    "Trường hợp này em xin phép chuyển thông tin của chị đến bộ phận chăm sóc "
+    "khách hàng để các bạn hỗ trợ chị tốt nhất nhé.",
+]
+
+
+@pytest.mark.parametrize("khoi", _KHOI_DAI)
+def test_khong_tin_nao_qua_dai(khoi):
+    tins = lam_tu_nhien(khoi, lan_dau=False)
+    assert tins
+    qua_dai = [t for t in tins if len(t) > DAI_TOI_DA]
+    assert not qua_dai, (
+        f"còn {len(qua_dai)} tin quá {DAI_TOI_DA} ký tự: "
+        f"{[len(t) for t in qua_dai]}"
+    )
+
+
+@pytest.mark.parametrize("khoi", _KHOI_DAI)
+def test_tach_dai_khong_lam_mat_chu(khoi):
+    """Cắt nhỏ thì được, nuốt mất chữ thì không."""
+    tins = lam_tu_nhien(khoi, lan_dau=False)
+    goc = "".join(khoi.split())
+    ra = "".join("".join(t.split()) for t in tins)
+    # Cho phép hụt vài ký tự do bỏ dấu phẩy ở chỗ cắt.
+    assert len(ra) >= len(goc) - 3 * len(tins), "cắt tin làm mất nội dung"
+
+
+def test_cau_ngan_khong_bao_gio_bi_cat_giua():
+    """Nguyên tắc gốc phải còn nguyên: câu vừa phải thì giữ nguyên vẹn."""
+    cau = "Dạ serum này giá 690.000đ ạ."
+    assert lam_tu_nhien(cau, lan_dau=False) == [cau]

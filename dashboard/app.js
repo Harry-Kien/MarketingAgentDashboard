@@ -473,6 +473,21 @@ async function loadVideos() {
   );
 }
 
+/* Nạp danh mục vào ô chọn sản phẩm. Ghi rõ sản phẩm nào có ảnh trong kho —
+   chọn phải mã không có ảnh thì video ra thẻ chữ, biết trước vẫn hơn. */
+async function fillProductPicker() {
+  const sel = $("#videoproduct");
+  if (!sel || sel.dataset.loaded) return;
+  try {
+    const { san_pham } = await api("/catalog/products");
+    sel.insertAdjacentHTML("beforeend", san_pham.map((p) =>
+      `<option value="${esc(p.ma)}">${esc(p.ma)} — ${esc(p.ten)}` +
+      `${p.so_anh ? ` (${p.so_anh} ảnh)` : " (chưa có ảnh)"}</option>`
+    ).join(""));
+    sel.dataset.loaded = "1";
+  } catch { /* không có danh mục thì để ô rỗng, form vẫn dùng được */ }
+}
+
 /* Xem trước ảnh trước khi gửi — thấy mình chọn nhầm ảnh nào thì đổi ngay,
    thay vì phát hiện sau khi đã dựng xong mất mấy phút. */
 $("#videoimages")?.addEventListener("change", (ev) => {
@@ -503,13 +518,16 @@ $("#videoform").addEventListener("submit", async (ev) => {
       const out = await r.json();
       toast(`Đã nhận ${out.so_anh_nhan} ảnh. Agent đang xem ảnh trước khi viết kịch bản.`);
     } else {
-      await api("/videos", {
+      const out = await api("/videos", {
         method: "POST",
         body: JSON.stringify({
           title: f.get("title"), brief: f.get("brief"), kind: f.get("kind"),
+          ma_san_pham: f.get("ma_san_pham") || "",
         }),
       });
-      toast("Đã nhận. Dây chuyền đang chạy: kịch bản → giọng đọc → đo thời lượng → dựng hình.");
+      toast(out.so_anh_kho
+        ? `Đã nhận, dùng ${out.so_anh_kho} ảnh trong kho. Agent đang xem ảnh trước khi viết kịch bản.`
+        : "Đã nhận. Không gắn sản phẩm nên video sẽ là thẻ chữ, không có ảnh.");
     }
     ev.target.reset();
     $("#imgpreview").innerHTML = "";
@@ -695,8 +713,11 @@ async function fillPostPickers() {
   $("#sanphamlist").innerHTML = san_pham
     .map((p) => `<option value="${esc(p.ma)}">${esc(p.ten)}</option>`).join("");
   const dung_duoc = videos.filter((v) => v.status === "ready" || v.status === "pending_review");
-  $("#postvideo").innerHTML = '<option value="">— không gắn video —</option>'
+  const opts = '<option value="">— không gắn video —</option>'
     + dung_duoc.map((v) => `<option value="${esc(v.id)}">${esc(v.title)}</option>`).join("");
+  $("#postvideo").innerHTML = opts;
+  const cv = $("#campaignvideo");
+  if (cv) cv.innerHTML = opts;
 }
 
 function drawDraft(d) {
@@ -753,6 +774,23 @@ async function loadPosts() {
   const cho = posts.filter((p) => p.trang_thai === "cho_duyet").length;
   $("#c-dangbai").textContent = cho || "";
 
+  const cho_duyet_n = posts.filter((p) => p.trang_thai === "cho_duyet").length;
+  const thanh = $("#postbulk");
+  if (thanh) {
+    thanh.innerHTML = cho_duyet_n > 1
+      ? `<button type="button" class="btn btn--sm btn--go" id="bulkapprove">Duyệt cả ${cho_duyet_n} bài</button>`
+      : "";
+    const bulk = $("#bulkapprove");
+    if (bulk) bulk.addEventListener("click", async () => {
+      bulk.disabled = true;
+      const r = await api("/posts/approve-all", { method: "POST" });
+      toast(r.bi_chan
+        ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
+        : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
+      loadPosts();
+    });
+  }
+
   $("#posts").innerHTML = posts.length ? posts.map((p) => {
     const kenhs = (p.kenh || []).map((k) =>
       `<span class="tag tag--plain">${esc(KENH_LABEL[k] || k)}</span>`).join(" ");
@@ -777,6 +815,7 @@ async function loadPosts() {
         <span style="display:flex;gap:6px;margin-top:4px">
           ${cho_duyet ? `<button type="button" class="btn btn--sm btn--go" data-papprove="${p.id}">Duyệt &amp; đăng</button>` : ""}
           ${!dang_roi && p.trang_thai !== "da_huy" ? `<button type="button" class="btn btn--sm btn--halt" data-pcancel="${p.id}">Huỷ</button>` : ""}
+          <button type="button" class="btn btn--sm" data-pkit="${p.id}">Bộ đăng tay</button>
           ${dang_roi ? `<button type="button" class="btn btn--sm" data-pmetric="${p.id}" data-pkenh="${esc((p.kenh || [])[0] || "")}">Nhập số liệu</button>` : ""}
         </span>
       </span>
@@ -791,6 +830,8 @@ async function loadPosts() {
     } catch (e) { toast(e.message, true); }
     loadPosts();
   }));
+  $$("[data-pkit]").forEach((b) => b.addEventListener("click", () =>
+    moKit(b.dataset.pkit, b.closest(".row"))));
   $$("[data-pcancel]").forEach((b) => b.addEventListener("click", async () => {
     await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
     toast("Đã huỷ bài."); loadPosts();
@@ -805,6 +846,93 @@ async function loadPosts() {
     })});
     toast("Đã ghi số liệu."); loadAnalytics();
   }));
+}
+
+/* ---------------- chiến dịch đa nền tảng ---------------- */
+
+// Không copy-paste một caption ra bốn chỗ: mỗi nền tảng được soạn riêng.
+// Xem agent/publish/chien_dich.py để biết vì sao.
+$("#campaignform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button[type="submit"]');
+  const kenh = $$('#campaignkenh input:checked').map((i) => i.value);
+  if (!kenh.length) { toast("Chọn ít nhất một nền tảng.", true); return; }
+
+  const f = Object.fromEntries(new FormData(form));
+  btn.disabled = true; btn.textContent = `Đang soạn ${kenh.length} bài…`;
+  $("#campaignout").innerHTML = "";
+  try {
+    const r = await api("/campaigns", { method: "POST", body: JSON.stringify({
+      ten: f.ten, kenh, san_pham: f.san_pham || "", y_tuong: f.y_tuong || "",
+      video_id: f.video_id || null,
+      gian_cach_phut: parseInt(f.gian_cach_phut, 10) || 0,
+    })});
+    drawCampaign(r);
+    toast(`${r.so_bai} bài đã vào hàng chờ duyệt.`);
+    loadPosts();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "Agent soạn cả chiến dịch";
+  }
+});
+
+function drawCampaign(r) {
+  const bai = r.bai.map((b) => `
+    <div class="draft__box" style="margin-bottom:10px">
+      <div class="draft__title">${esc(KENH_LABEL[b.kenh[0]] || b.kenh[0])}
+        <span class="tag tag--duyet">Chờ duyệt</span>
+        ${b.so_lan_thu > 1 ? `<span class="tag tag--plain">sửa ${b.so_lan_thu - 1} lần cho đúng luật</span>` : ""}
+      </div>
+      <div class="draft__text">${esc(b.noi_dung)}</div>
+      <div class="draft__tags">${esc((b.hashtags || []).join(" "))}</div>
+    </div>`).join("");
+  const hong = r.kenh_hong.length
+    ? `<p class="lane__why">Soạn hỏng: ${r.kenh_hong.map((h) => `${esc(h.kenh)} — ${esc(h.ly_do)}`).join("; ")}</p>`
+    : "";
+  $("#campaignout").innerHTML =
+    `<p class="kit__note">${esc(r.ghi_chu)} · ${usd(r.chi_phi_usd)}</p>${bai}${hong}`;
+}
+
+/* ---------------- bộ đăng thủ công ---------------- */
+
+// Chừng nào Facebook và TikTok chưa duyệt quyền, đây là con đường DUY NHẤT
+// nội dung ra được cả bốn nền tảng. Làm cho nó nhanh còn hơn ngồi chờ.
+async function moKit(id, o) {
+  const cu = document.getElementById("kit-" + id);
+  if (cu) { cu.remove(); return; }
+  const k = await api(`/posts/${id}/kit`);
+  const luuy = Object.entries(k.luu_y || {})
+    .map(([kenh, t]) => `<div>${esc(KENH_LABEL[kenh] || kenh)}: ${esc(t)}</div>`).join("");
+  const box = document.createElement("div");
+  box.id = "kit-" + id;
+  box.className = "kit";
+  box.innerHTML = `
+    <div class="kit__cap" id="cap-${id}">${esc(k.caption)}</div>
+    <div class="kit__note">${luuy}</div>
+    <div class="kit__row">
+      <button type="button" class="btn btn--sm" data-copy="${id}">Chép caption</button>
+      ${k.co_video ? `<a class="btn btn--sm" href="/api${k.video_url.replace('/api','')}" download>Tải video</a>` : ""}
+      <button type="button" class="btn btn--sm btn--go" data-posted="${id}"
+        data-kenh="${esc((k.kenh || [])[0] || "")}">Đã đăng xong</button>
+    </div>`;
+  o.after(box);
+
+  box.querySelector("[data-copy]").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(k.caption);
+      toast("Đã chép caption.");
+    } catch { toast("Trình duyệt chặn chép tự động — bôi đen rồi Ctrl+C.", true); }
+  });
+  box.querySelector("[data-posted]").addEventListener("click", async () => {
+    const url = prompt("Dán link bài vừa đăng (để đo hiệu quả sau này):", "");
+    if (url === null) return;
+    await api(`/posts/${id}/mark-posted`, { method: "POST", body: JSON.stringify({
+      kenh: box.querySelector("[data-posted]").dataset.kenh, ok: true, url,
+    })});
+    toast("Đã ghi nhận."); loadPosts();
+  });
 }
 
 /* ---------------- số hiệu ---------------- */
@@ -858,7 +986,7 @@ async function refresh() {
     await loadOverview();
     if (state.view === "hoithoai") { await loadChannelStrip(); await loadNicks(); await loadConversations(); }
     if (state.view === "donhang") await loadOrders();
-    if (state.view === "video") await loadVideos();
+    if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "sohieu") await loadAnalytics();
     if (state.view === "trithuc") await loadDocs();

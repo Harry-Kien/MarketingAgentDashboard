@@ -73,6 +73,14 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
       <span>Video</span><b id="c-video" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="dangbai">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H7l-3 3V4z"/><path d="M8 9h8M8 12h5"/></svg>
+      <span>Đăng bài</span><b id="c-dangbai" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="sohieu">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Số hiệu</span><b class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="trithuc">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
       <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
@@ -107,6 +115,13 @@
 
     <!-- ============ HỘI THOẠI ============ -->
     <section class="view" data-view="hoithoai">
+      <div class="nickbar" id="nickbar">
+        <span class="nickbar__label">Nick Zalo trả lời</span>
+        <select id="nickdefault" class="nickbar__select"></select>
+        <span class="nickbar__hint" id="nickhint"></span>
+        <span class="nickbar__spacer"></span>
+        <span class="chanstrip" id="chanstrip"></span>
+      </div>
       <div class="convo">
         <aside class="convo__list">
           <div class="filterbar" id="convfilter">
@@ -158,8 +173,14 @@
             <textarea name="brief" required rows="3" minlength="10"
               placeholder="Ghế công thái học, lưng lưới thoáng khí, tựa đầu chỉnh 3 hướng, bảo hành 24 tháng. Nhấn vào việc ngồi lâu không mỏi lưng."></textarea>
           </label>
+          <label class="field">
+            <span>Sản phẩm <em class="hint">chọn mã để dùng ảnh có sẵn trong kho</em></span>
+            <select id="videoproduct" name="ma_san_pham">
+              <option value="">— không gắn sản phẩm —</option>
+            </select>
+          </label>
           <label class="field field--wide">
-            <span>Ảnh sản phẩm <em class="hint">tối đa 8 ảnh · jpg/png/webp · agent tự xem ảnh rồi quyết bố cục</em></span>
+            <span>Ảnh sản phẩm <em class="hint">bỏ trống thì dùng ảnh trong kho · tải lên tối đa 8 ảnh để dùng ảnh riêng</em></span>
             <input id="videoimages" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
             <div id="imgpreview" class="thumbs"></div>
           </label>
@@ -167,6 +188,115 @@
         </form>
       </section>
       <div id="videos" class="gallery"></div>
+    </section>
+
+    <!-- ============ ĐĂNG BÀI ============ -->
+    <section class="view" data-view="dangbai">
+      <section class="panel">
+        <h2 class="panel__head">Chiến dịch đa nền tảng
+          <span class="panel__note">một ý tưởng · mỗi nền tảng một bài viết riêng</span></h2>
+        <form id="campaignform" class="form">
+          <label class="field">
+            <span>Tên chiến dịch</span>
+            <input name="ten" required maxlength="200" placeholder="Kiềm dầu mùa hè">
+          </label>
+          <label class="field">
+            <span>Sản phẩm <em class="hint">mã hoặc tên · để trống nếu viết chung</em></span>
+            <input name="san_pham" placeholder="AS-CL02" list="sanphamlist">
+          </label>
+          <label class="field field--wide">
+            <span>Nền tảng <em class="hint">mỗi nơi được viết riêng theo hành vi người dùng của nó</em></span>
+            <span class="checks" id="campaignkenh">
+              <label><input type="checkbox" name="kenh" value="facebook" checked> Facebook</label>
+              <label><input type="checkbox" name="kenh" value="instagram"> Instagram</label>
+              <label><input type="checkbox" name="kenh" value="tiktok" checked> TikTok</label>
+              <label><input type="checkbox" name="kenh" value="youtube"> YouTube Shorts</label>
+            </span>
+          </label>
+          <label class="field field--wide">
+            <span>Góc nội dung</span>
+            <textarea name="y_tuong" rows="2"
+              placeholder="Da dầu mùa hè, bí kíp kiềm dầu buổi trưa mà không làm khô da"></textarea>
+          </label>
+          <label class="field">
+            <span>Gắn video</span>
+            <select name="video_id" id="campaignvideo"><option value="">— không gắn —</option></select>
+          </label>
+          <label class="field">
+            <span>Giãn cách <em class="hint">phút giữa hai bài</em></span>
+            <input name="gian_cach_phut" type="number" value="30" min="0" max="1440">
+          </label>
+          <button type="submit" class="btn btn--primary">Agent soạn cả chiến dịch</button>
+        </form>
+        <div id="campaignout" class="draft"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__head">Soạn một bài</h2>
+        <form id="postform" class="form">
+          <label class="field">
+            <span>Nền tảng</span>
+            <select name="kenh" id="postkenh">
+              <option value="facebook">Facebook</option>
+              <option value="instagram">Instagram</option>
+              <option value="tiktok">TikTok</option>
+              <option value="youtube">YouTube Shorts</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Sản phẩm <em class="hint">mã hoặc tên · để trống nếu viết chung</em></span>
+            <input name="san_pham" placeholder="AS-SR01" list="sanphamlist">
+          </label>
+          <label class="field field--wide">
+            <span>Góc nội dung</span>
+            <textarea name="y_tuong" rows="2"
+              placeholder="Da dầu mùa hè, bí kíp kiềm dầu buổi trưa mà không làm khô da"></textarea>
+          </label>
+          <label class="field field--wide">
+            <span>Gắn video <em class="hint">chọn từ thư viện video đã duyệt</em></span>
+            <select name="video_id" id="postvideo"><option value="">— không gắn video —</option></select>
+          </label>
+          <button type="submit" class="btn btn--primary">Agent soạn bài</button>
+        </form>
+        <div id="postdraft" class="draft"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__head">Đường phân phối</h2>
+        <div id="pubchannels" class="rows"></div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__head">Hàng đợi bài đăng</h2>
+        <div class="filterbar" id="postfilter">
+          <button type="button" class="chip is-on" data-pstatus="all">Tất cả</button>
+          <button type="button" class="chip" data-pstatus="cho_duyet">Chờ duyệt</button>
+          <button type="button" class="chip" data-pstatus="da_len_lich">Đã hẹn giờ</button>
+          <button type="button" class="chip" data-pstatus="da_dang">Đã đăng</button>
+          <button type="button" class="chip" data-pstatus="loi">Lỗi</button>
+          <span class="nickbar__spacer"></span>
+          <span id="postbulk"></span>
+        </div>
+        <div id="posts" class="rows"></div>
+      </section>
+    </section>
+
+    <!-- ============ SỐ HIỆU ============ -->
+    <section class="view" data-view="sohieu">
+      <section class="panel">
+        <h2 class="panel__head">Hiệu quả bài đăng
+          <span class="panel__note">30 ngày gần nhất</span></h2>
+        <div id="anaCards" class="readout"></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Theo nền tảng</h2>
+        <div id="anaChannels" class="rows"></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Bài chạy tốt nhất
+          <span class="panel__note">agent dùng những bài này làm mẫu cho lần soạn sau</span></h2>
+        <div id="anaTop" class="rows"></div>
+      </section>
     </section>
 
     <!-- ============ TRI THỨC ============ -->
@@ -220,5 +350,6 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="/app.js"></script>
+  <datalist id="sanphamlist"></datalist>
 </body>
 </html>

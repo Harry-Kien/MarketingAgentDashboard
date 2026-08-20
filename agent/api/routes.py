@@ -14,7 +14,7 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import rag
-from agent.publish import analytics, copywriter, registry
+from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
 
@@ -313,14 +313,23 @@ class VideoBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     brief: str = Field(min_length=10, max_length=4000)
     kind: str = "explainer"
+    # Có mã thì lấy ảnh trong kho sản phẩm. Thiếu trường này thì người dùng
+    # dashboard chỉ dựng được video thẻ chữ, dù kho có sẵn ảnh cho đúng sản
+    # phẩm đó — agent thì lấy được, người thì không. Một hệ thống mà công cụ
+    # nội bộ mạnh hơn giao diện cho người dùng là hệ thống thiết kế hỏng.
+    ma_san_pham: str = ""
 
 
 @router.post("/videos")
 async def create_video(body: VideoBody) -> dict:
+    from agent.video import catalog_images
+
+    ma = body.ma_san_pham.strip().upper()
     vid = await pipeline.request_video(
-        title=body.title, brief=body.brief, kind=body.kind
+        title=body.title, brief=body.brief, kind=body.kind,
+        ma_san_pham=ma or None,
     )
-    return {"id": vid}
+    return {"id": vid, "so_anh_kho": len(catalog_images.anh_cua(ma)) if ma else 0}
 
 
 @router.post("/videos/upload")
@@ -717,13 +726,27 @@ async def get_analytics(ngay: int = 30) -> dict:
 
 @router.get("/catalog/products")
 async def catalog_products() -> dict:
-    """Danh sách gọn cho ô gợi ý sản phẩm khi soạn bài."""
-    import json as _json
-    from agent.config import ROOT as _ROOT
-    data = _json.loads((_ROOT / "data" / "catalog.json").read_text(encoding="utf-8"))
+    """
+    Danh sách gọn cho ô gợi ý sản phẩm khi soạn bài hoặc đặt video.
+
+    Đọc qua `tools._catalog()` chứ không mở thẳng `catalog.json`: máy vừa
+    clone repo về chưa có file đó, mở thẳng là ném FileNotFoundError và cả
+    trang trắng. Hàm kia tự rơi về bản mẫu đi kèm repo.
+
+    `so_anh` cho biết sản phẩm nào dựng video có hình được, sản phẩm nào chỉ
+    ra thẻ chữ — biết trước vẫn hơn nhận về rồi mới thấy.
+    """
+    from agent.core.tools import _catalog
+    from agent.video import catalog_images
+
     return {"san_pham": [
-        {"ma": p["ma"], "ten": p["ten"], "loai": p.get("loai", "")}
-        for p in data.get("san_pham", [])
+        {
+            "ma": p["ma"],
+            "ten": p["ten"],
+            "loai": p.get("loai", ""),
+            "so_anh": len(catalog_images.anh_cua(p["ma"])),
+        }
+        for p in _catalog().get("san_pham", [])
     ]}
 
 
@@ -801,3 +824,128 @@ async def list_channels() -> dict:
         }
         for ten in channels.tat_ca()
     ]}
+
+
+class ChienDichIn(BaseModel):
+    ten: str = Field(min_length=1, max_length=200)
+    kenh: list[str] = Field(default_factory=lambda: ["facebook", "tiktok"])
+    san_pham: str = ""
+    y_tuong: str = ""
+    video_id: str | None = None
+    bat_dau: datetime | None = None
+    gian_cach_phut: int = Field(30, ge=0, le=1440)
+
+
+@router.post("/campaigns")
+async def create_campaign(body: ChienDichIn) -> dict:
+    """
+    Một ý tưởng -> mỗi nền tảng một bài viết riêng, tất cả vào hàng chờ duyệt.
+
+    Không phải copy-paste một caption ra bốn chỗ: mỗi kênh được soạn riêng
+    theo hành vi người dùng của nó. Xem agent/publish/chien_dich.py.
+    """
+    try:
+        return await chien_dich.tao(
+            ten=body.ten, kenh=body.kenh, san_pham=body.san_pham,
+            y_tuong=body.y_tuong, video_id=body.video_id,
+            bat_dau=body.bat_dau, gian_cach_phut=body.gian_cach_phut,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/posts/approve-all")
+async def approve_all(trang_thai: str = "cho_duyet") -> dict:
+    """
+    Duyệt hàng loạt — nhưng vẫn là NGƯỜI bấm, không phải hệ thống tự quyết.
+
+    Bài vi phạm quảng cáo bị chặn riêng lẻ và báo rõ, không kéo đổ cả lô.
+    """
+    rows = await db.fetch(
+        "SELECT id FROM posts WHERE trang_thai = $1 ORDER BY created_at", trang_thai
+    )
+    xong, chan = [], []
+    for r in rows:
+        try:
+            kq = await post_service.duyet(str(r["id"]))
+            xong.append({"id": str(r["id"]), "trang_thai": kq["trang_thai"]})
+        except ValueError as exc:
+            chan.append({"id": str(r["id"]), "ly_do": str(exc)})
+    return {"da_duyet": len(xong), "bi_chan": len(chan),
+            "chi_tiet": xong, "vi_pham": chan}
+
+
+@router.get("/posts/{post_id}/kit")
+async def post_kit(post_id: uuid.UUID) -> dict:
+    """
+    Gói mọi thứ cần để một người đăng bài THỦ CÔNG trong một phút.
+
+    Đây không phải tính năng tạm bợ: chừng nào Facebook và TikTok chưa duyệt
+    quyền, đây là con đường DUY NHẤT nội dung ra được cả bốn nền tảng. Làm
+    cho nó nhanh và không sai sót còn giá trị hơn chờ App Review.
+
+    Caption trả về đã ghép sẵn hashtag đúng định dạng từng nền tảng.
+    """
+    p = await db.fetchrow(
+        "SELECT p.*, v.file_path FROM posts p "
+        "LEFT JOIN videos v ON v.id = p.video_id WHERE p.id = $1", post_id,
+    )
+    if not p:
+        raise HTTPException(404, "Không tìm thấy bài đăng")
+
+    tags = [t if t.startswith("#") else f"#{t}" for t in (p["hashtags"] or [])]
+    caption = f"{p['noi_dung']}\n\n{' '.join(tags)}".strip() if tags else p["noi_dung"]
+    co_video = bool(p["file_path"] and Path(p["file_path"]).exists())
+
+    # Mỗi nền tảng một chỗ đăng và một ràng buộc riêng — nói trước để người
+    # đăng không phải nhớ, và không bị nền tảng từ chối vì sai định dạng.
+    luu_y = {
+        "facebook": "Trang cá nhân/Fanpage › Tạo bài viết. Video dọc hiển thị tốt trong Reels.",
+        "instagram": "Chỉ đăng được từ điện thoại. Reels nhận video dọc 9:16, tối đa 90 giây.",
+        "tiktok": "Video dọc 9:16. Caption tối đa 2.200 ký tự, hashtag tính trong giới hạn đó.",
+        "youtube": "Shorts cần video dọc dưới 60 giây và có #Shorts trong tiêu đề hoặc mô tả.",
+    }
+    return {
+        "id": str(post_id),
+        "tieu_de": p["tieu_de"],
+        "caption": caption,
+        "hashtags": tags,
+        "kenh": p["kenh"],
+        "trang_thai": p["trang_thai"],
+        "co_video": co_video,
+        "video_url": f"/api/posts/{post_id}/video" if co_video else "",
+        "luu_y": {k: luu_y.get(k, "") for k in (p["kenh"] or [])},
+    }
+
+
+@router.get("/posts/{post_id}/video")
+async def post_video(post_id: uuid.UUID):
+    """Tải video của bài về máy để đăng thủ công."""
+    p = await db.fetchrow(
+        "SELECT v.file_path FROM posts p JOIN videos v ON v.id = p.video_id "
+        "WHERE p.id = $1", post_id,
+    )
+    if not p or not p["file_path"]:
+        raise HTTPException(404, "Bài này không gắn video")
+    f = Path(p["file_path"])
+    if not f.exists():
+        raise HTTPException(404, f"Không thấy file: {f.name}")
+    return FileResponse(f, media_type="video/mp4", filename=f.name)
+
+
+@router.post("/posts/{post_id}/mark-posted")
+async def mark_posted(post_id: uuid.UUID, body: CallbackIn) -> dict:
+    """
+    Người đã đăng tay xong thì đánh dấu ở đây, kèm link bài thật.
+
+    Có link mới đo được hiệu quả — không có nó thì bài coi như biến mất
+    khỏi hệ thống ngay sau khi đăng, và vòng phản hồi số liệu đứt.
+    """
+    row = await post_service.ghi_nhan_callback(
+        str(post_id), body.kenh, True, body.url, body.detail or "đăng thủ công"
+    )
+    if row is None:
+        raise HTTPException(404, "Không tìm thấy bài đăng")
+    return row

@@ -130,7 +130,15 @@ def test_khong_con_nhac_ten_nhom_hang_bi_cam():
     gửi cho khách thật — nguồn rò rỉ nằm ở dữ liệu, không ở prompt.
     """
     import json
-    catalog = json.loads((ROOT / "data" / "catalog.json").read_text(encoding="utf-8"))
+
+    # Đọc qua `_catalog()` chứ KHÔNG mở thẳng `data/catalog.json`: file đó
+    # nằm trong .gitignore nên máy vừa clone repo về không có nó, và test
+    # hỏng bằng FileNotFoundError. Hàm kia tự rơi về `catalog.example.json`
+    # đi kèm repo — nhờ vậy phép kiểm tuân thủ này chạy được ở CI và trên
+    # máy người mới, đúng những chỗ cần nó nhất.
+    from agent.core.tools import _catalog
+
+    catalog = _catalog()
     loai = {p.get("loai", "") for p in catalog.get("san_pham", [])}
     assert "Đặc trị" not in loai, "Tên nhóm hàng vi phạm quảng cáo mỹ phẩm"
 

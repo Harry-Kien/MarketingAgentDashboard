@@ -490,3 +490,21 @@ sau đo trải nghiệm.
 
 Quan sát chi phí: `GET /api/cost` hoặc màn **Số hiệu** — dựng từ bảng
 `messages`, không cần Langfuse hay hệ thống ngoài nào.
+
+---
+
+## Bảo vệ dữ liệu cá nhân
+
+Hệ thống lưu tên, số điện thoại, địa chỉ và nội dung hội thoại của khách
+thật, nên nó phải trả lời được ba câu của **Nghị định 13/2023/NĐ-CP**:
+
+| Điều | Quyền | Ở đâu |
+|---|---|---|
+| 9.1.c | Biết hệ thống giữ gì | dashboard mục **Nhật ký** |
+| 9.1.đ | Yêu cầu xoá | cùng chỗ, có chốt xác nhận |
+| 16 | Thời hạn lưu trữ | 180 ngày, dọn tự động hằng ngày |
+
+Đơn hàng được **ẩn danh** chứ không xoá — Luật Kế toán 2015 Điều 41 buộc
+lưu chứng từ tối thiểu 10 năm. Hội thoại và tin nhắn thì xoá hẳn.
+
+Chi tiết: [docs/du-lieu-ca-nhan.md](docs/du-lieu-ca-nhan.md)

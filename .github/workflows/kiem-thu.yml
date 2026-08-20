@@ -1,0 +1,80 @@
+# Chạy bộ kiểm thử mỗi lần push và mỗi pull request.
+#
+# CHỈ chạy phần tất định — 145 ca trong tests/, không gọi API nào.
+# Bộ 56 câu hỏi vàng (scripts/eval.py) KHÔNG chạy ở đây, có chủ đích:
+# nó gọi Vertex AI thật, tốn tiền, mất 13 phút, và không tất định (bốn lần
+# chạy liên tiếp cho 51, 55, 52, 54 điểm). Một CI đỏ ngẫu nhiên thì người
+# ta ngừng đọc CI. Bộ vàng để đo chất lượng, chạy tay khi sửa prompt.
+
+name: Kiểm thử
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cài thư viện
+        # Phiên bản đã ghim bằng == trong requirements.txt, nên lần chạy này
+        # dùng đúng tổ hợp đã kiểm trên máy phát triển.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Chạy kiểm thử
+        run: python -m pytest tests/ -q
+
+      - name: Kiểm mọi module import được
+        # pytest chỉ chạm tới module nào test import. Bước này bắt lỗi cú
+        # pháp và import vòng ở những file chưa có test — đã xảy ra thật khi
+        # một dấu xuống dòng lọt vào chuỗi regex.
+        run: |
+          python - <<'PY'
+          import importlib, sys
+          mods = [
+              "agent.main", "agent.config", "agent.db", "agent.runtime",
+              "agent.core.agent", "agent.core.llm", "agent.core.rag",
+              "agent.core.tools", "agent.core.tu_nhien",
+              "agent.core.du_lieu_ca_nhan",
+              "agent.channels.base", "agent.channels.registry",
+              "agent.channels.zalocrm", "agent.channels.chatwoot",
+              "agent.channels.zalocrm_accounts",
+              "agent.publish.base", "agent.publish.registry",
+              "agent.publish.service", "agent.publish.analytics",
+              "agent.publish.copywriter", "agent.publish.chien_dich",
+              "agent.publish.n8n", "agent.publish.meta", "agent.publish.tiktok",
+              "agent.publish.manual",
+              "agent.video.pipeline", "agent.video.worker",
+              "agent.api.routes", "agent.mcp_server",
+          ]
+          hong = []
+          for m in mods:
+              try:
+                  importlib.import_module(m)
+              except Exception as e:
+                  hong.append(f"{m}: {type(e).__name__}: {e}")
+          for h in hong:
+              print("HỎNG", h)
+          print(f"{len(mods) - len(hong)}/{len(mods)} module import sạch")
+          sys.exit(1 if hong else 0)
+          PY
+
+      - name: Chặn bí mật lọt vào repo
+        # .gitignore đã chặn .env, nhưng một lần `git add -f` là đủ để lộ.
+        # Kiểm ở đây vì lộ khoá API thì không rút lại được.
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.chatwoot$'; then
+            echo "LỖI: file .env bị theo dõi trong git"
+            exit 1
+          fi
+          echo "Không có file bí mật nào bị theo dõi"

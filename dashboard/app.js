@@ -715,6 +715,40 @@ async function loadAnalyticsKhach() {
   }).join("") : '<p class="empty">Chưa có hội thoại nào trong 30 ngày.</p>';
 }
 
+/* ---------------- các hệ thống đang chạy ---------------- */
+
+/* Một CỔNG VÀO để nhớ, không phải một tiến trình để chạy. ZaloCRM và
+   Chatwoot dùng đường dẫn tuyệt đối nên không proxy dưới tiền tố được mà
+   không viết lại HTML/CSS/JS đang bay qua — xem agent/he_thong.py. */
+async function loadHeThong() {
+  const box = $("#hethong");
+  const btn = $("#hethongrun");
+  if (btn) btn.disabled = true;
+  box.innerHTML = '<p class="empty">Đang hỏi từng dịch vụ…</p>';
+  try {
+    const d = await api("/he-thong");
+    $("#c-hethong").textContent = `${d.dang_chay}/${d.tong}`;
+    box.innerHTML = d.dich_vu.map((x) => `<div class="row">
+        <span class="row__flag row__flag--${x.song ? "auto" : "halt"}"></span>
+        <div class="row__main">
+          <b>${esc(x.ten)}${x.chinh ? " · trang bạn đang xem" : ""}</b>
+          <span class="row__sub">${esc(x.mo_ta)}
+            ${x.can_dang_nhap ? "· cần đăng nhập riêng" : ""}</span>
+        </div>
+        ${x.song
+          ? `<a class="btn btn--sm" href="${esc(x.url)}" target="_blank" rel="noopener">Mở</a>`
+          : `<span class="tag tag--halt">không chạy</span>`}
+      </div>`).join("");
+    $("#hethongvisao").textContent = d.vi_sao_tach;
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$("#hethongrun")?.addEventListener("click", loadHeThong);
+
 /* ---------------- sức khoẻ hệ thống ---------------- */
 
 /* KHÔNG tự chạy khi mở trang: phép kiểm gọi model thật và mất vài giây.
@@ -1387,6 +1421,7 @@ async function refresh() {
     if (state.view === "kho") await loadKho();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
+    if (state.view === "hethong") await loadHeThong();
     if (state.view === "sohieu") {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }

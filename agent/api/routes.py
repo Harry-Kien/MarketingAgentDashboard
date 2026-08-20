@@ -74,6 +74,19 @@ def _num(v) -> float:
 #  Tổng quan ca trực
 # ---------------------------------------------------------------
 
+@router.get("/he-thong")
+async def he_thong() -> dict:
+    """
+    Mọi hệ thống con nhìn từ MỘT chỗ: cái nào sống, mở ở đâu.
+
+    Đây là cổng vào duy nhất để nhớ, không phải tiến trình duy nhất để chạy
+    — xem `agent/he_thong.py` để biết vì sao không gộp làm một.
+    """
+    from agent import he_thong as ht
+
+    return await ht.kiem_tat_ca()
+
+
 @router.get("/suc-khoe")
 async def suc_khoe() -> dict:
     """

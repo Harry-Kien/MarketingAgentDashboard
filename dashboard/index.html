@@ -89,6 +89,10 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
       <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="hethong">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
+      <span>Hệ thống</span><b id="c-hethong" class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="nhatky">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
       <span>Nhật ký</span><b class="rail__count"></b>
@@ -413,6 +417,19 @@
       <section class="panel">
         <h2 class="panel__head">Tài liệu đã nạp</h2>
         <div id="docs" class="rows"></div>
+      </section>
+    </section>
+
+    <!-- ============ HỆ THỐNG ============ -->
+    <section class="view" data-view="hethong">
+      <section class="panel">
+        <h2 class="panel__head">Các hệ thống đang chạy
+          <span class="panel__note">một cổng vào để nhớ · bấm để mở</span>
+          <button type="button" id="hethongrun" class="btn btn--sm">Kiểm tra</button></h2>
+        <div id="hethong" class="rows">
+          <p class="empty">Bấm <b>Kiểm tra</b> để xem hệ thống nào đang sống.</p>
+        </div>
+        <p class="empty" id="hethongvisao" style="text-align:left"></p>
       </section>
     </section>
 

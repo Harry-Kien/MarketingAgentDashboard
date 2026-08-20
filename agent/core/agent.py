@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from agent import db
 from agent.config import ROOT, settings
 from agent.core import llm, rag, tools
+from agent.core import phong_thu
 
 SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
 MAX_TOOL_ROUNDS = 4
@@ -151,10 +152,28 @@ async def respond(
             escalate_reason=f"Vượt trần chi phí hội thoại ({spent:.4f} USD)",
         )
 
+    # Quét prompt injection TRƯỚC khi tốn một lời gọi model nào. Thấy dấu
+    # hiệu thì chuyển người ngay — không chặn khách, vì người thật cũng có
+    # thể gõ câu lạ, nhưng cũng không để model tự xoay xở với nó.
+    co_tan_cong, dau_hieu = phong_thu.quet(question)
+    if co_tan_cong:
+        await db.log_event(
+            "bao_mat.injection", ref_id=conversation_id, dau_hieu=dau_hieu,
+            trich=str(question)[:200],
+        )
+        return Reply(
+            text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
+            escalate=True,
+            escalate_reason="Tin nhắn có dấu hiệu can thiệp hệ thống: "
+                            + ", ".join(dau_hieu),
+        )
+
     passages = await rag.retrieve(question, k=5)
     context = rag.as_context(passages)
 
-    messages = [*history, {"role": "user", "content": question}]
+    # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
+    # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.
+    messages = [*history, {"role": "user", "content": phong_thu.boc(question)}]
     total_cost = 0.0
     tok_in = tok_out = cache_read = latency = 0
     used_tool = False

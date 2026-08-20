@@ -31,3 +31,6 @@ data/catalog.json
 # Log của server chạy nền
 data/uvicorn.log
 data/uvicorn.log.err
+
+# Ban sao luu: chua du lieu that, KHONG len repo cong khai
+data/backup/

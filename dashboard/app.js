@@ -3,7 +3,7 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", openConv: null, nickDefault: "", timer: null };
+const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", khoFilter: "all", openConv: null, nickDefault: "", timer: null };
 
 /* ---------------- tiện ích ---------------- */
 
@@ -413,6 +413,109 @@ async function loadOrders() {
     await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
     toast("Đã huỷ đơn."); loadOrders();
   }));
+}
+
+/* ---------------- kho hàng ---------------- */
+
+// Tồn kho là số SỐNG: trừ khi chốt đơn, trả khi huỷ. Trước đây nó là một
+// con số tĩnh trong file JSON — bán trăm đơn vẫn báo y nguyên.
+const KHO_LY_DO = {
+  ban: "bán", huy_don: "huỷ đơn", nhap: "nhập hàng", kiem_ke: "kiểm kê",
+};
+
+$$("#khofilter .chip").forEach((chip) =>
+  chip.addEventListener("click", () => {
+    state.khoFilter = chip.dataset.kstatus;
+    $$("#khofilter .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
+    loadKho();
+  })
+);
+
+async function loadKho() {
+  const k = await api("/kho");
+  $("#c-kho").textContent = (k.het_hang + k.sap_het) || "";
+
+  $("#khoCards").innerHTML =
+      cell("Mã hàng", num(k.tong_ma), "", null, "auto")
+    + cell("Hết hàng", num(k.het_hang), "", null, k.het_hang ? "halt" : "auto")
+    + cell("Sắp hết", num(k.sap_het), "\u2264" + k.nguong_sap_het, null,
+           k.sap_het ? "assist" : "auto")
+    + cell("Giá trị tồn", vnd(k.gia_tri_ton), "", 1, "spend");
+
+  const loc = state.khoFilter || "all";
+  const ds = k.san_pham.filter((x) =>
+    loc === "het" ? x.so_luong === 0
+    : loc === "sap_het" ? x.sap_het
+    : true);
+
+  $("#khoRows").innerHTML = ds.length ? ds.map((x) => {
+    const tone = x.so_luong === 0 ? "halt" : x.sap_het ? "assist" : "auto";
+    return `<div class="row">
+      <span class="row__flag row__flag--${tone}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(x.ma)} · ${esc(x.ten)}
+          ${x.so_luong === 0 ? '<span class="tag tag--huy">Hết hàng</span>'
+            : x.sap_het ? '<span class="tag tag--duyet">Sắp hết</span>' : ""}</span>
+        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}</span>
+      </span>
+      <span class="row__side">
+        <span class="row__num">${num(x.so_luong)}</span>
+        <span style="display:flex;gap:6px;margin-top:4px">
+          <button type="button" class="btn btn--sm" data-knhap="${esc(x.ma)}">Nhập</button>
+          <button type="button" class="btn btn--sm" data-kkiemke="${esc(x.ma)}"
+            data-kton="${x.so_luong}">Kiểm kê</button>
+        </span>
+      </span>
+    </div>`;
+  }).join("") : '<p class="empty">Không có mã nào khớp bộ lọc.</p>';
+
+  $$("[data-knhap]").forEach((b) => b.addEventListener("click", async () => {
+    const sl = prompt(`Nhập thêm bao nhiêu cho ${b.dataset.knhap}?`, "50");
+    if (!sl) return;
+    const ghi_chu = prompt("Ghi chú (số lô, nhà cung cấp…):", "") || "";
+    try {
+      const r = await api(`/kho/${encodeURIComponent(b.dataset.knhap)}/nhap`, {
+        method: "POST",
+        body: JSON.stringify({ so_luong: parseInt(sl, 10), ghi_chu }),
+      });
+      toast(`${r.ma}: tồn mới ${r.ton_moi}`);
+      loadKho();
+    } catch (e) { toast(e.message, true); }
+  }));
+
+  // Kiểm kê bắt buộc có lý do — kho LUÔN lệch, và không ghi vì sao thì
+  // sau này không ai truy được lệch từ đâu.
+  $$("[data-kkiemke]").forEach((b) => b.addEventListener("click", async () => {
+    const moi = prompt(
+      `Đếm thực tế được bao nhiêu? (hệ thống đang ghi ${b.dataset.kton})`,
+      b.dataset.kton);
+    if (moi === null) return;
+    const ly_do = prompt("Lý do lệch (bắt buộc): vỡ, mất, đếm sai…", "");
+    if (!ly_do) { toast("Kiểm kê bắt buộc có lý do.", true); return; }
+    try {
+      const r = await api(`/kho/${encodeURIComponent(b.dataset.kkiemke)}/kiem-ke`, {
+        method: "POST",
+        body: JSON.stringify({ so_luong_moi: parseInt(moi, 10), ly_do }),
+      });
+      toast(`${r.ma}: ${r.cu} → ${r.moi} (lệch ${r.lech > 0 ? "+" : ""}${r.lech})`);
+      loadKho();
+    } catch (e) { toast(e.message, true); }
+  }));
+
+  const { bien_dong } = await api("/kho/bien-dong?limit=25");
+  $("#khoSo").innerHTML = bien_dong.length ? bien_dong.map((b) => `
+    <div class="row">
+      <span class="row__flag row__flag--${b.thay_doi < 0 ? "halt" : "auto"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(b.ma)}
+          <span class="tag tag--plain">${esc(KHO_LY_DO[b.ly_do] || b.ly_do)}</span></span>
+        <span class="row__sub">${esc(b.ma_don || b.ghi_chu || "")}</span>
+      </span>
+      <span class="row__side">
+        <span class="row__num">${b.thay_doi > 0 ? "+" : ""}${b.thay_doi}</span>
+        <span class="row__time">${clock(b.luc)}</span>
+      </span>
+    </div>`).join("") : '<p class="empty">Chưa có biến động nào.</p>';
 }
 
 /* ---------------- video ---------------- */
@@ -1166,6 +1269,7 @@ async function refresh() {
     await loadOverview();
     if (state.view === "hoithoai") { await loadChannelStrip(); await loadNicks(); await loadConversations(); }
     if (state.view === "donhang") await loadOrders();
+    if (state.view === "kho") await loadKho();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "sohieu") { await loadAnalytics(); await loadCost(); }

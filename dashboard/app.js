@@ -979,6 +979,64 @@ async function loadAnalytics() {
     </div>`).join("") : '<p class="empty">Chưa đủ dữ liệu để xếp hạng.</p>';
 }
 
+
+/* ---------------- chi phí và hiệu năng ---------------- */
+
+// Thay cho Langfuse. Mọi số này đã nằm sẵn trong bảng messages từ ngày đầu.
+// Dựng từ dữ liệu của chính mình thì không phải cài thêm hệ thống nào, và
+// không có container nào chạy nền mà không ai dùng.
+const vnd0 = (n) => Math.round(Number(n || 0)).toLocaleString("vi-VN") + "đ";
+
+async function loadCost() {
+  const c = await api("/cost");
+  const t = c.tong;
+  const maxNgay = Math.max(1e-9, ...c.theo_ngay.map((d) => d.chi_phi));
+
+  $("#costCards").innerHTML =
+      cell("Chi phí 7 ngày", vnd0(t.chi_phi_vnd), "", 1, "spend")
+    + cell("Mỗi tin nhắn", usd(t.trung_binh_moi_tin), "", null, "spend")
+    + cell("Tin agent đã gửi", num(t.so_tin), "", null, "auto")
+    + cell("Token vào", num(t.token_vao), "", null, "auto")
+    + cell("Đọc từ cache", t.ty_le_cache, "%", Math.min(1, t.ty_le_cache / 100), "auto");
+
+  $("#costDays").innerHTML = c.theo_ngay.length ? c.theo_ngay.map((d) => `
+    <div class="row">
+      <span class="row__flag row__flag--spend" style="width:3px"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(d.ngay)}
+          <span class="tag tag--plain">${d.so_tin} tin</span></span>
+        <span class="row__sub">${num(d.token_vao)} vào · ${num(d.token_ra)} ra · ${num(d.token_cache)} cache</span>
+        <span class="readout__bar" style="margin-top:5px"><span class="readout__fill readout__fill--spend"
+          style="width:${Math.max(2, d.chi_phi / maxNgay * 100)}%"></span></span>
+      </span>
+      <span class="row__side"><span class="row__num">${vnd0(d.chi_phi * 25000)}</span>
+        <span class="row__time">${usd(d.chi_phi)}</span></span>
+    </div>`).join("") : '<p class="empty">Chưa có dữ liệu.</p>';
+
+  $("#costModels").innerHTML = c.theo_model.length ? c.theo_model.map((m) => `
+    <div class="row">
+      <span class="row__flag row__flag--auto" style="width:3px"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(m.model)}
+          <span class="tag tag--plain">${m.so_tin} tin</span></span>
+        <span class="row__sub">độ trễ trung bình ${(m.tre_tb / 1000).toFixed(1)}s</span>
+      </span>
+      <span class="row__side"><span class="row__num">${usd(m.chi_phi)}</span></span>
+    </div>`).join("") : '<p class="empty">Chưa có dữ liệu.</p>';
+
+  $("#costTop").innerHTML = c.hoi_thoai_dat_nhat.length
+    ? c.hoi_thoai_dat_nhat.map((h) => `
+      <div class="row">
+        <span class="row__flag row__flag--spend"></span>
+        <span class="row__body">
+          <span class="row__title">${esc(h.customer_name || "Khách")} ${srcBadge(h.channel)}</span>
+          <span class="row__sub">${h.msg_count} tin</span>
+        </span>
+        <span class="row__side"><span class="row__num">${usd(h.chi_phi)}</span>
+          <span class="row__time">${vnd0(h.chi_phi * 25000)}</span></span>
+      </div>`).join("") : '<p class="empty">Chưa có dữ liệu.</p>';
+}
+
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
@@ -988,7 +1046,7 @@ async function refresh() {
     if (state.view === "donhang") await loadOrders();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
-    if (state.view === "sohieu") await loadAnalytics();
+    if (state.view === "sohieu") { await loadAnalytics(); await loadCost(); }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "nhatky") await loadEvents();
   } catch (e) {

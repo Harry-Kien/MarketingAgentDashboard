@@ -960,3 +960,127 @@ svg { flex: none; }
 .tag--chot   { color: hsl(var(--success));     background: hsl(var(--success) / .12); }
 .tag--duyet  { color: hsl(var(--warning));     background: hsl(var(--warning) / .14); }
 .tag--huy    { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .12); }
+
+/* ---------- bản nháp bài đăng ---------- */
+
+.draft { margin-top: 16px; }
+.draft:empty { margin: 0; }
+
+.draft__box {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / .5);
+  padding: 14px 16px;
+}
+.draft__title {
+  font-weight: 600; font-size: 14px; margin-bottom: 6px;
+  color: hsl(var(--foreground));
+}
+.draft__text {
+  white-space: pre-wrap; font-size: 13px; line-height: 1.6;
+  color: hsl(var(--foreground));
+}
+.draft__tags {
+  margin-top: 8px; font-size: 12px; color: hsl(var(--primary));
+  word-break: break-word;
+}
+.draft__foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid hsl(var(--border));
+}
+.draft__meta {
+  margin-left: auto; font-size: 11px;
+  color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums;
+}
+.draft__sched {
+  font-size: 12px; padding: 5px 8px;
+  border: 1px solid hsl(var(--border)); border-radius: 6px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+
+/* Đường phân phối — bậc nào đang chạy, bậc nào bị chặn và vì sao. */
+.lane { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lane__step {
+  font-size: 11px; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+.lane__step--on {
+  border-color: hsl(var(--success)); color: hsl(var(--success));
+  font-weight: 600;
+}
+.lane__step--off { opacity: .55; text-decoration: line-through; }
+.lane__why {
+  font-size: 11px; color: hsl(var(--muted-foreground));
+  margin-top: 3px; line-height: 1.5;
+}
+
+.post__body {
+  font-size: 12px; color: hsl(var(--muted-foreground));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.post__links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
+.post__link { font-size: 11px; color: hsl(var(--primary)); }
+
+/* ---------- chọn nick Zalo ---------- */
+
+.nickbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / .45);
+}
+.nickbar__label {
+  font-size: 12px; font-weight: 600; color: hsl(var(--foreground));
+}
+.nickbar__select {
+  font-size: 13px; padding: 5px 8px;
+  border: 1px solid hsl(var(--border)); border-radius: 6px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  min-width: 220px;
+}
+.nickbar__hint {
+  font-size: 11px; color: hsl(var(--muted-foreground));
+}
+.nickpin {
+  font-size: 12px; padding: 3px 7px;
+  border: 1px solid hsl(var(--border)); border-radius: 6px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+
+.nickbar__spacer { flex: 1; }
+.chanstrip { display: flex; gap: 6px; flex-wrap: wrap; }
+.src--chatwoot { color:#1F93FF; background:#1F93FF14; border-color:#1F93FF33; }
+.src--chatwoot::before { background:#1F93FF; }
+
+/* ---------- chọn nhiều nền tảng ---------- */
+
+.checks { display: flex; gap: 14px; flex-wrap: wrap; padding-top: 4px; }
+.checks label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: hsl(var(--foreground)); cursor: pointer;
+}
+.checks input { accent-color: hsl(var(--primary)); }
+
+/* ---------- bộ đăng thủ công ---------- */
+
+.kit { margin-top: 10px; }
+.kit__cap {
+  white-space: pre-wrap; font-size: 12px; line-height: 1.6;
+  background: hsl(var(--muted) / .6); border: 1px solid hsl(var(--border));
+  border-radius: 6px; padding: 10px 12px; max-height: 190px; overflow: auto;
+}
+.kit__note {
+  font-size: 11px; color: hsl(var(--muted-foreground));
+  margin-top: 6px; line-height: 1.55;
+}
+.kit__row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+.subhead {
+  font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  color: hsl(var(--muted-foreground));
+  margin: 16px 0 6px; text-transform: uppercase;
+}
+.subhead:first-child { margin-top: 8px; }

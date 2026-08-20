@@ -949,3 +949,93 @@ async def mark_posted(post_id: uuid.UUID, body: CallbackIn) -> dict:
     if row is None:
         raise HTTPException(404, "Không tìm thấy bài đăng")
     return row
+
+
+# ---------------------------------------------------------------
+#  Chi phí và hiệu năng
+#
+#  Thay cho Langfuse. Mọi số ở đây đã nằm sẵn trong bảng `messages` từ
+#  ngày đầu — model, token vào/ra, token đọc từ cache, chi phí, độ trễ.
+#  Dựng lên từ dữ liệu của chính mình thì không phải cài thêm hệ thống,
+#  không phải tạo tài khoản, và không có gì chạy nền mà không dùng.
+# ---------------------------------------------------------------
+
+@router.get("/cost")
+async def cost_report(ngay: int = 7) -> dict:
+    """Chi phí theo ngày, theo model, và các hội thoại tốn nhất."""
+    theo_ngay = await db.fetch(
+        """
+        SELECT date_trunc('day', created_at)::date AS ngay,
+               count(*)                            AS so_tin,
+               coalesce(sum(cost_usd), 0)          AS chi_phi,
+               coalesce(sum(tokens_in), 0)         AS token_vao,
+               coalesce(sum(tokens_out), 0)        AS token_ra,
+               coalesce(sum(cache_read), 0)        AS token_cache
+        FROM messages
+        WHERE role = 'agent' AND created_at > now() - ($1 || ' days')::interval
+        GROUP BY 1 ORDER BY 1
+        """,
+        str(ngay),
+    )
+    theo_model = await db.fetch(
+        """
+        SELECT coalesce(model, '(không ghi)')      AS model,
+               count(*)                            AS so_tin,
+               coalesce(sum(cost_usd), 0)          AS chi_phi,
+               coalesce(avg(latency_ms), 0)        AS tre_tb
+        FROM messages
+        WHERE role = 'agent' AND created_at > now() - ($1 || ' days')::interval
+        GROUP BY 1 ORDER BY chi_phi DESC
+        """,
+        str(ngay),
+    )
+    dat_nhat = await db.fetch(
+        """
+        SELECT c.id, c.customer_name, c.channel, c.msg_count,
+               coalesce(c.cost_usd, 0) AS chi_phi
+        FROM conversations c
+        WHERE c.updated_at > now() - ($1 || ' days')::interval
+        ORDER BY c.cost_usd DESC NULLS LAST LIMIT 5
+        """,
+        str(ngay),
+    )
+
+    def _so(rows, *cot):
+        for r in rows:
+            for k in cot:
+                r[k] = float(r[k] or 0)
+        return rows
+
+    _so(theo_ngay, "chi_phi")
+    _so(theo_model, "chi_phi", "tre_tb")
+    _so(dat_nhat, "chi_phi")
+    for r in theo_ngay:
+        r["ngay"] = r["ngay"].isoformat()
+        for k in ("so_tin", "token_vao", "token_ra", "token_cache"):
+            r[k] = int(r[k] or 0)
+    for r in dat_nhat:
+        r["id"] = str(r["id"])
+
+    tong = sum(r["chi_phi"] for r in theo_ngay)
+    t_vao = sum(r["token_vao"] for r in theo_ngay)
+    t_cache = sum(r["token_cache"] for r in theo_ngay)
+    so_tin = sum(r["so_tin"] for r in theo_ngay)
+
+    return {
+        "ngay": ngay,
+        "theo_ngay": theo_ngay,
+        "theo_model": theo_model,
+        "hoi_thoai_dat_nhat": dat_nhat,
+        "tong": {
+            "chi_phi_usd": round(tong, 6),
+            "chi_phi_vnd": round(tong * 25000),
+            "so_tin": so_tin,
+            "trung_binh_moi_tin": round(tong / so_tin, 6) if so_tin else 0,
+            "token_vao": t_vao,
+            "token_ra": sum(r["token_ra"] for r in theo_ngay),
+            # Tỉ lệ token đọc từ cache. Vertex không tự cache, phải tự đặt
+            # cache_control lên khối ổn định — con số này cho biết việc đó
+            # có thật sự ăn thua không.
+            "ty_le_cache": round(t_cache / t_vao * 100, 1) if t_vao else 0.0,
+        },
+    }

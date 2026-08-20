@@ -29,6 +29,23 @@ def _num(v) -> float:
 #  Tổng quan ca trực
 # ---------------------------------------------------------------
 
+@router.get("/suc-khoe")
+async def suc_khoe() -> dict:
+    """
+    Tự chẩn đoán: mọi mảnh của hệ thống có ĐANG PHỤC VỤ ĐƯỢC không.
+
+    Khác `/healthz` ở chỗ nó gọi thật từng thứ thay vì chỉ xác nhận tiến
+    trình còn sống. Tiến trình sống mà hết hạn mức model thì khách vẫn không
+    được trả lời — và khoảng thời gian giữa lúc hỏng và lúc có người phát
+    hiện chính là khoảng thời gian mất khách.
+
+    Mất vài giây vì có gọi model thật. Đừng đặt vào vòng làm mới tự động.
+    """
+    from agent import suc_khoe as sk
+
+    return await sk.tong_kiem()
+
+
 @router.get("/overview")
 async def overview() -> dict:
     since = datetime.now(timezone.utc) - timedelta(hours=24)

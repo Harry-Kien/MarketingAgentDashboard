@@ -535,6 +535,37 @@ $("#videoform").addEventListener("submit", async (ev) => {
   } catch (e) { toast(e.message, true); }
 });
 
+/* ---------------- sức khoẻ hệ thống ---------------- */
+
+/* KHÔNG tự chạy khi mở trang: phép kiểm gọi model thật và mất vài giây.
+   Người vận hành bấm khi cần, không phải mỗi lần liếc qua dashboard. */
+const HEALTH_TONE = { tot: "auto", canh_bao: "assist", hong: "halt" };
+const HEALTH_LABEL = { tot: "Tốt", canh_bao: "Cảnh báo", hong: "Hỏng" };
+
+$("#healthrun")?.addEventListener("click", async () => {
+  const box = $("#health");
+  const btn = $("#healthrun");
+  btn.disabled = true;
+  box.innerHTML = '<p class="empty">Đang gọi thật từng dịch vụ…</p>';
+  try {
+    const d = await api("/suc-khoe");
+    box.innerHTML =
+      `<div class="row"><span class="row__flag row__flag--${HEALTH_TONE[d.trang_thai]}"></span>
+         <div class="row__main"><b>Tổng thể: ${HEALTH_LABEL[d.trang_thai] || d.trang_thai}</b>
+         <span class="row__sub">kiểm trong ${d.kiem_trong_ms} ms · agent ${d.agent?.enabled ? "đang chạy" : "đã ngắt"} · chế độ ${esc(d.agent?.mode || "?")}</span></div></div>` +
+      d.muc.map((m) => `<div class="row">
+         <span class="row__flag row__flag--${HEALTH_TONE[m.trang_thai] || "plain"}"></span>
+         <div class="row__main"><b>${esc(m.ten)}</b>
+         <span class="row__sub">${esc(m.ghi_chu)}</span></div>
+         <span class="tag tag--${HEALTH_TONE[m.trang_thai] || "plain"}">${HEALTH_LABEL[m.trang_thai] || m.trang_thai}</span>
+       </div>`).join("");
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ---------------- tri thức ---------------- */
 
 async function loadDocs() {

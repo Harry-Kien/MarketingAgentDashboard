@@ -54,8 +54,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"
 
     # --- TTS ---
+    # auto = thử viet-tts trước, không có thì dùng Google Cloud TTS.
+    # viettts | google = ép dùng đúng một nhà cung cấp.
+    tts_provider: str = "auto"
     tts_base_url: str = "http://localhost:8298/v1"
     tts_voice: str = "nu-nhe-nhang"
+    # Giọng Google Cloud TTS. Cần bật API trước (tính tiền theo ký tự):
+    #   gcloud services enable texttospeech.googleapis.com
+    google_tts_voice: str = "vi-VN-Neural2-A"
 
     # --- Video ---
     video_studio_dir: str = "./video-studio"

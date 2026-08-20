@@ -55,6 +55,8 @@ _BUOC_CHUYEN = (
     # đang điều trị y tế
     "bác sĩ", "bac si", "theo toa", "đơn thuốc", "bôi thuốc", "uống thuốc",
     "đang điều trị", "da liễu",
+    # hỏi VỀ thuốc — là câu hỏi y tế, không phải câu hỏi danh mục hàng hoá
+    "thuốc uống", "thuốc bôi", "thuốc trị", "kháng sinh", "isotretinoin",
     # bệnh lý da
     "viêm da", "mụn viêm", "mụn bọc", "mụn mủ", "nám", "chàm", "vẩy nến",
     "dị ứng", "kích ứng nặng",
@@ -101,6 +103,21 @@ _HANDOFF_RE = re.compile(
 )
 
 
+# Model đôi khi viết "để em kiểm tra giá nha" rồi DỪNG, không gọi công cụ.
+# Khách nhận một lời hứa thay vì câu trả lời, và không có gì trong hệ thống
+# biết là mình vừa bỏ dở. Prompt đã cấm rõ điều này mà model vẫn trượt —
+# nên phải có lưới an toàn trong mã, đúng như với lời hứa chuyển người.
+_STALL_RE = re.compile(
+    r"(để em|em sẽ|em xin|cho em)[^.!?]{0,40}"
+    r"(kiểm tra|tra cứu|xem lại|kiểm tra lại|check|hỏi lại|báo lại|xác nhận)",
+    re.IGNORECASE,
+)
+
+
+def _stalls(text: str) -> bool:
+    return bool(_STALL_RE.search(text or ""))
+
+
 def _promises_handoff(text: str) -> bool:
     low = (text or "").lower()
     if any(hint in low for hint in _HANDOFF_HINTS):
@@ -141,6 +158,7 @@ async def respond(
     total_cost = 0.0
     tok_in = tok_out = cache_read = latency = 0
     used_tool = False
+    da_thuc = False   # đã nhắc model gọi công cụ chưa (chỉ nhắc một lần)
     escalate = False
     escalate_reason = ""
     video_id: str | None = None
@@ -164,6 +182,16 @@ async def respond(
 
         if not result.tool_calls:
             final_text = result.text
+            # Hứa đi tra cứu mà chưa gọi công cụ lần nào -> ép thêm một vòng
+            # thay vì gửi lời hứa suông cho khách. Chỉ ép ĐÚNG MỘT LẦN, nếu
+            # không thì một model cứng đầu sẽ quay vòng tới hết trần chi phí.
+            if _stalls(final_text) and not used_tool and not da_thuc:
+                da_thuc = True
+                messages.append({"role": "assistant", "content": final_text})
+                messages.append({"role": "user", "content":
+                    "Đừng hứa rồi dừng. Gọi công cụ tra cứu NGAY bây giờ và "
+                    "trả lời khách bằng số liệu thật trong cùng lượt này."})
+                continue
             break
 
         used_tool = True

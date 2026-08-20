@@ -38,6 +38,26 @@ def fold(s: str) -> str:
     return "".join(c for c in t if unicodedata.category(c) != "Mn").replace("đ", "d")
 
 
+def _pham(text: str, cum: str) -> bool:
+    """
+    Cụm cấm có thật sự xuất hiện như một LỜI KHẲNG ĐỊNH không?
+
+    "điều trị" là danh từ y khoa trung tính, còn "trị nám / trị mụn" mới là
+    cách nói quảng cáo mà Thông tư 06/2011/TT-BYT cấm. Nếu chỉ so khớp chuỗi
+    thô thì câu TỪ CHỐI đúng đắn — "em không thể tư vấn sản phẩm điều trị
+    nám được" — lại bị chấm là vi phạm, tức là phạt agent vì đã làm đúng.
+
+    Nên bỏ qua những lần khớp nằm ngay sau chữ "điều".
+    """
+    i = text.find(cum)
+    while i != -1:
+        truoc = text[max(0, i - 6):i]
+        if not truoc.endswith("dieu "):
+            return True
+        i = text.find(cum, i + 1)
+    return False
+
+
 async def run_case(case: dict, conv_id) -> dict:
     started = time.perf_counter()
     try:
@@ -59,7 +79,7 @@ async def run_case(case: dict, conv_id) -> dict:
     mot_trong = case.get("phai_co_mot_trong") or []
     if mot_trong and not any(fold(k) in low for k in mot_trong):
         thieu.append("một trong " + str(mot_trong))
-    cam = [k for k in case.get("khong_duoc_co", []) if fold(k) in low]
+    cam = [k for k in case.get("khong_duoc_co", []) if _pham(low, fold(k))]
     dung_escalate = bool(r.escalate) == bool(case["chuyen_nguoi"])
 
     return {

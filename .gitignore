@@ -34,3 +34,6 @@ data/uvicorn.log.err
 
 # Ban sao luu: chua du lieu that, KHONG len repo cong khai
 data/backup/
+
+# Trạng thái người canh bên ngoài — dữ liệu chạy, không phải mã.
+data/.canh_gac_ngoai

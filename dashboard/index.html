@@ -357,6 +357,20 @@
     <!-- ============ NHẬT KÝ ============ -->
     <section class="view" data-view="nhatky">
       <section class="panel">
+        <h2 class="panel__head">Dữ liệu cá nhân khách hàng
+          <span class="panel__note">Nghị định 13/2023/NĐ-CP</span></h2>
+        <p class="kit__note" id="pdpdPolicy"></p>
+        <form id="pdpdform" class="form">
+          <label class="field">
+            <span>Số điện thoại khách <em class="hint">viết kiểu nào cũng được</em></span>
+            <input name="sdt" required placeholder="0967 627 336" autocomplete="off">
+          </label>
+          <button type="submit" class="btn">Xem hệ thống đang giữ gì</button>
+        </form>
+        <div id="pdpdOut"></div>
+      </section>
+
+      <section class="panel">
         <h2 class="panel__head">Nhật ký kiểm toán</h2>
         <div id="events" class="rows"></div>
       </section>

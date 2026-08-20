@@ -1037,6 +1037,93 @@ async function loadCost() {
       </div>`).join("") : '<p class="empty">Chưa có dữ liệu.</p>';
 }
 
+/* ---------------- dữ liệu cá nhân (Nghị định 13/2023) ---------------- */
+
+// Xoá dữ liệu KHÔNG hoàn tác được. Nên luồng bắt buộc là: tra cứu để nhìn
+// thấy sẽ mất gì -> gõ lại số điện thoại -> mới xoá được. Không có nút xoá
+// nào bấm được bằng một cú lỡ tay.
+async function loadPdpdPolicy() {
+  const p = await api("/pdpd");
+  $("#pdpdPolicy").innerHTML =
+    `Hội thoại lưu tối đa <b>${p.thoi_han_ngay} ngày</b>`
+    + ` · ${p.tu_dong_don ? "tự dọn hằng ngày" : "dọn thủ công"}`
+    + ` · ${p.so_hoi_thoai_qua_han} hội thoại quá hạn`
+    + `<br>Đơn hàng KHÔNG bị xoá theo thời hạn — chứng từ kế toán phải lưu`
+    + ` tối thiểu 10 năm (Luật Kế toán 2015, Điều 41).`;
+}
+
+$("#pdpdform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const sdt = new FormData(e.target).get("sdt");
+  $("#pdpdOut").innerHTML = "";
+  let d;
+  try { d = await api("/pdpd/" + encodeURIComponent(sdt)); }
+  catch (err) { toast(err.message, true); return; }
+
+  if (!d.co_du_lieu) {
+    $("#pdpdOut").innerHTML =
+      `<p class="empty">Không tìm thấy dữ liệu nào của số ${esc(d.so_dien_thoai)}.</p>`;
+    return;
+  }
+
+  const don = d.don_hang.map((o) => `
+    <div class="row">
+      <span class="row__flag row__flag--spend"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}</span>
+        <span class="row__sub">${esc(o.khach_dia_chi)}</span>
+      </span>
+      <span class="row__side"><span class="row__num">${vnd(o.tong_tien)}</span>
+        <span class="row__time">${clock(o.created_at)}</span></span>
+    </div>`).join("");
+
+  const hoi = d.hoi_thoai.map((h) => `
+    <div class="row">
+      <span class="row__flag row__flag--assist"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(h.customer_name || "Khách")} ${srcBadge(h.channel)}</span>
+        <span class="row__sub">${h.msg_count} tin nhắn</span>
+      </span>
+      <span class="row__side"><span class="row__time">${clock(h.updated_at)}</span></span>
+    </div>`).join("");
+
+  $("#pdpdOut").innerHTML = `
+    <h3 class="subhead">Đơn hàng (${d.so_don_hang}) — sẽ được ẩn danh, không xoá</h3>
+    <div class="rows">${don || '<p class="empty">Không có.</p>'}</div>
+    <h3 class="subhead">Hội thoại (${d.so_hoi_thoai}) — sẽ bị xoá hẳn cùng mọi tin nhắn</h3>
+    <div class="rows">${hoi || '<p class="empty">Không có.</p>'}</div>
+    <div class="danger">
+      <div class="danger__head">Thực hiện yêu cầu xoá — không hoàn tác được</div>
+      <div class="kit__note">Đơn hàng giữ lại mã đơn, sản phẩm và số tiền cho sổ sách;
+        tên, số điện thoại và địa chỉ bị thay bằng dấu ẩn danh. Hội thoại và tin nhắn
+        xoá hẳn. Mọi lần xoá đều được ghi vào nhật ký kèm căn cứ pháp lý.</div>
+      <div class="danger__row">
+        <input id="pdpdConfirm" placeholder="Gõ lại ${esc(d.so_dien_thoai)}" autocomplete="off">
+        <input id="pdpdReason" placeholder="Lý do (khách yêu cầu qua Zalo…)" autocomplete="off">
+        <button type="button" class="btn btn--sm btn--halt" id="pdpdDelete">Xoá dữ liệu</button>
+      </div>
+    </div>`;
+
+  $("#pdpdDelete").addEventListener("click", async () => {
+    const btn = $("#pdpdDelete");
+    btn.disabled = true;
+    try {
+      const r = await api(`/pdpd/${encodeURIComponent(d.so_dien_thoai)}/xoa`, {
+        method: "POST",
+        body: JSON.stringify({
+          xac_nhan_sdt: $("#pdpdConfirm").value,
+          ly_do: $("#pdpdReason").value || "khách yêu cầu",
+        }),
+      });
+      $("#pdpdOut").innerHTML = `<p class="kit__note">${esc(r.ghi_chu)}</p>`;
+      toast("Đã thực hiện yêu cầu xoá.");
+      loadPdpdPolicy(); loadEvents();
+    } catch (err) {
+      toast(err.message, true); btn.disabled = false;
+    }
+  });
+});
+
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
@@ -1048,7 +1135,7 @@ async function refresh() {
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "sohieu") { await loadAnalytics(); await loadCost(); }
     if (state.view === "trithuc") await loadDocs();
-    if (state.view === "nhatky") await loadEvents();
+    if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }

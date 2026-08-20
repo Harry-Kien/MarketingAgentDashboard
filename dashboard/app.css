@@ -1084,3 +1084,22 @@ svg { flex: none; }
   margin: 16px 0 6px; text-transform: uppercase;
 }
 .subhead:first-child { margin-top: 8px; }
+
+/* ---------- dữ liệu cá nhân ---------- */
+
+.danger {
+  border: 1px solid hsl(var(--destructive) / .45);
+  border-radius: var(--radius);
+  background: hsl(var(--destructive) / .06);
+  padding: 12px 14px; margin-top: 12px;
+}
+.danger__head {
+  font-size: 13px; font-weight: 600; color: hsl(var(--destructive));
+  margin-bottom: 6px;
+}
+.danger__row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.danger__row input {
+  font-size: 13px; padding: 5px 8px; min-width: 170px;
+  border: 1px solid hsl(var(--border)); border-radius: 6px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}

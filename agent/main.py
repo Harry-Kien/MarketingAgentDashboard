@@ -23,6 +23,7 @@ from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent.core import du_lieu_ca_nhan
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -74,6 +75,73 @@ async def schedule_loop() -> None:
         await asyncio.sleep(30)
 
 
+async def backup_loop() -> None:
+    """
+    Sao lưu CSDL mỗi ngày một lần.
+
+    Đặt trong app chứ không giao cho Task Scheduler của Windows vì lý do rất
+    thực tế: việc gì phải nhớ mới làm thì sẽ có ngày không ai nhớ. Sao lưu
+    là thứ chỉ có giá trị khi nó chạy đều, và mất dữ liệu là loại hỏng duy
+    nhất trong hệ thống này KHÔNG sửa được sau.
+
+    Chạy trong luồng riêng vì `pg_dump` là lời gọi đồng bộ và có thể mất vài
+    giây — đủ lâu để làm nghẽn việc trả lời khách nếu chạy thẳng.
+    """
+    while True:
+        try:
+            if settings.sao_luu_moi_ngay:
+                from scripts import sao_luu as bk
+
+                dau = __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ).strftime("%Y%m%d-%H%M%S")
+                ok, ghi_chu = await asyncio.to_thread(
+                    bk.sao_luu_db, bk.KHO / f"db-{dau}.sql.gz"
+                )
+                await asyncio.to_thread(bk.sao_luu_tai_lieu,
+                                        bk.KHO / f"knowledge-{dau}.tar.gz")
+                await asyncio.to_thread(bk.don_ban_cu, settings.sao_luu_giu_lai)
+                await db.log_event(
+                    "backup.done" if ok else "backup.failed", ghi_chu=ghi_chu[:200]
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — vòng lặp nền không được chết
+            await db.log_event("backup.error",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(24 * 3600)
+
+
+async def don_du_lieu_loop() -> None:
+    """
+    Dọn hội thoại quá thời hạn lưu trữ, mỗi ngày một lần.
+
+    Nghị định 13/2023/NĐ-CP Điều 16: dữ liệu chỉ được lưu trong thời hạn
+    phù hợp với mục đích đã thông báo. Không có vòng này thì "chính sách
+    lưu 180 ngày" chỉ là một dòng trong tài liệu, còn dữ liệu thì nằm đó
+    mãi mãi.
+
+    Chạy một lần lúc khởi động rồi cứ 24 giờ một lần. Chỉ đụng hội thoại,
+    KHÔNG đụng đơn hàng — chứng từ kế toán có thời hạn riêng dài hơn nhiều.
+    """
+    while True:
+        try:
+            if settings.tu_dong_don_du_lieu:
+                kq = await du_lieu_ca_nhan.don_theo_thoi_han()
+                if kq["da_xoa"]:
+                    await db.log_event(
+                        "pdpd.auto", so_hoi_thoai=kq["da_xoa"],
+                        thoi_han_ngay=kq["thoi_han_ngay"],
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await db.log_event(
+                "pdpd.error", error=f"{type(exc).__name__}: {exc}"[:200]
+            )
+        await asyncio.sleep(24 * 3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_db()
@@ -81,23 +149,29 @@ async def lifespan(app: FastAPI):
 
     poller = asyncio.create_task(poll_loop()) if settings.zalocrm_api_key else None
     scheduler = asyncio.create_task(schedule_loop())
+    don_du_lieu = asyncio.create_task(don_du_lieu_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
     # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
     # thái dở, không ai nhặt lại và không dòng lỗi nào.
     video_workers = await video_worker.start()
+    backuper = asyncio.create_task(backup_loop())
     if poller:
         await db.log_event("poll.start", every_s=settings.zalocrm_poll_seconds)
 
     yield
 
+    backuper.cancel()
+    with suppress(asyncio.CancelledError):
+        await backuper
     for w in video_workers:
         w.cancel()
     for w in video_workers:
         with suppress(asyncio.CancelledError):
             await w
-    scheduler.cancel()
-    with suppress(asyncio.CancelledError):
-        await scheduler
+    for t in (scheduler, don_du_lieu):
+        t.cancel()
+        with suppress(asyncio.CancelledError):
+            await t
     if poller:
         poller.cancel()
         with suppress(asyncio.CancelledError):

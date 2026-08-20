@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # tiến trình với việc trả lời khách — việc trước mặt khách ưu tiên hơn.
     video_workers: int = 1
 
+    # --- Sao lưu ---
+    # Mất dữ liệu là loại hỏng DUY NHẤT trong hệ thống này không sửa được
+    # sau, nên mặc định BẬT. Bản sao nằm ở data/backup, không lên repo.
+    sao_luu_moi_ngay: bool = True
+    sao_luu_giu_lai: int = 14
+
     # --- Phân phối nội dung lên mạng xã hội ---
     # Đường đi ưu tiên: n8n -> API chính thức -> hàng đợi thủ công.
     # n8n giữ OAuth của Facebook/TikTok, hệ thống này không giữ token dài hạn.
@@ -106,6 +112,16 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3001"
+
+    # --- Bảo vệ dữ liệu cá nhân (Nghị định 13/2023/NĐ-CP) ---
+    # Điều 16: dữ liệu chỉ được lưu trong thời hạn phù hợp với mục đích đã
+    # thông báo. 180 ngày là mức hợp lý cho mục đích chăm sóc khách hàng:
+    # đủ dài để tra lại lịch sử tư vấn, đủ ngắn để không giữ vô thời hạn.
+    # KHÔNG áp cho đơn hàng — chứng từ kế toán có thời hạn riêng dài hơn
+    # nhiều (Luật Kế toán 2015, Điều 41).
+    luu_hoi_thoai_ngay: int = 180
+    # Tự dọn dữ liệu quá hạn mỗi ngày. Tắt thì phải tự bấm trên dashboard.
+    tu_dong_don_du_lieu: bool = True
 
     # --- Vận hành ---
     agent_enabled: bool = True

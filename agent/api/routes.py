@@ -13,7 +13,7 @@ from agent import db, runtime
 from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
-from agent.core import rag
+from agent.core import du_lieu_ca_nhan, rag
 from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
@@ -1039,3 +1039,64 @@ async def cost_report(ngay: int = 7) -> dict:
             "ty_le_cache": round(t_cache / t_vao * 100, 1) if t_vao else 0.0,
         },
     }
+
+
+# ---------------------------------------------------------------
+#  Bảo vệ dữ liệu cá nhân — Nghị định 13/2023/NĐ-CP
+#
+#  Ba quyền của chủ thể dữ liệu mà hệ thống phải đáp ứng được:
+#    Điều 9.1.c  quyền BIẾT hệ thống giữ gì   -> GET  /api/pdpd/{sdt}
+#    Điều 9.1.đ  quyền YÊU CẦU XOÁ            -> POST /api/pdpd/{sdt}/xoa
+#    Điều 16     thời hạn lưu trữ              -> POST /api/pdpd/don-theo-han
+# ---------------------------------------------------------------
+
+class XoaDuLieuIn(BaseModel):
+    ly_do: str = Field("khách yêu cầu", max_length=300)
+    # Xoá không hoàn tác được. Bắt gõ đúng số điện thoại một lần nữa để
+    # không ai xoá nhầm bằng một cú bấm lỡ tay.
+    xac_nhan_sdt: str = Field(min_length=9, max_length=20)
+
+
+@router.get("/pdpd/{sdt}")
+async def pdpd_tra_cuu(sdt: str) -> dict:
+    """Hệ thống đang giữ những gì về số điện thoại này."""
+    try:
+        return await du_lieu_ca_nhan.tra_cuu(sdt)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/pdpd/{sdt}/xoa")
+async def pdpd_xoa(sdt: str, body: XoaDuLieuIn) -> dict:
+    """
+    Thực hiện yêu cầu xoá. KHÔNG HOÀN TÁC ĐƯỢC.
+
+    Hội thoại và tin nhắn xoá hẳn; đơn hàng ẩn danh để giữ nghĩa vụ lưu
+    chứng từ kế toán (Luật Kế toán 2015, Điều 41).
+    """
+    chuan = du_lieu_ca_nhan.chuan_hoa_sdt
+    if chuan(body.xac_nhan_sdt) != chuan(sdt):
+        raise HTTPException(422, "Số xác nhận không khớp — nhập lại để chắc chắn")
+    try:
+        return await du_lieu_ca_nhan.xoa(sdt, ly_do=body.ly_do)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/pdpd")
+async def pdpd_tong_quan() -> dict:
+    """Chính sách lưu trữ đang áp dụng và số bản ghi sắp quá hạn."""
+    return {
+        **await du_lieu_ca_nhan.don_theo_thoi_han(chi_dem=True),
+        "tu_dong_don": settings.tu_dong_don_du_lieu,
+        "can_cu": [
+            "Nghị định 13/2023/NĐ-CP — bảo vệ dữ liệu cá nhân",
+            "Luật Kế toán 2015, Điều 41 — thời hạn lưu chứng từ",
+        ],
+    }
+
+
+@router.post("/pdpd/don-theo-han")
+async def pdpd_don() -> dict:
+    """Dọn ngay hội thoại quá thời hạn, không chờ vòng lặp hằng ngày."""
+    return await du_lieu_ca_nhan.don_theo_thoi_han()

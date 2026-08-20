@@ -642,6 +642,48 @@ $("#videoform").addEventListener("submit", async (ev) => {
   } catch (e) { toast(e.message, true); }
 });
 
+/* ---------------- khách đến từ đâu ---------------- */
+
+/* Câu hỏi cơ bản nhất của người vận hành mà bảng cũ không trả lời được:
+   khách của mình đến từ kênh nào, kênh nào agent tự lo được, kênh nào phải
+   gọi người liên tục. Kênh có tỷ lệ chuyển người cao không phải kênh tệ —
+   thường là kênh có loại câu hỏi khác hẳn, và đó là chỗ cần bổ sung tài liệu. */
+const KENH_TEN = {
+  zalocrm: "Zalo", chatwoot: "Chatwoot", facebook: "Facebook",
+  instagram: "Instagram", whatsapp: "WhatsApp", web: "Website", email: "Email",
+};
+
+async function loadAnalyticsKhach() {
+  let d;
+  try { d = await api("/analytics/khach"); } catch { return; }
+
+  $("#anaKhachTong").innerHTML = [
+    cell("Tổng hội thoại", d.tong.hoi_thoai, "cuộc", null, "auto"),
+    cell("Khách khác nhau", d.tong.khach, "người", null, "auto"),
+    cell("Số kênh đang có khách", d.tong.so_kenh, "kênh", null, "auto"),
+    cell("Chi phí 30 ngày", usd(d.tong.chi_phi), "tổng", null, "spend"),
+  ].join("");
+
+  $("#anaKhach").innerHTML = d.kenh.length ? d.kenh.map((k) => {
+    /* Màu theo tỷ lệ tự xử lý: đây là con số nói lên agent đang gánh được
+       bao nhiêu, và nó là lý do tồn tại của cả hệ thống. */
+    const tone = k.ty_le_tu_xu_ly >= 0.6 ? "auto"
+               : k.ty_le_tu_xu_ly >= 0.3 ? "assist" : "halt";
+    return `<div class="row">
+      <span class="row__flag row__flag--${tone}"></span>
+      <div class="row__main">
+        <b>${esc(KENH_TEN[k.kenh] || k.kenh)}</b>
+        <span class="row__sub">${k.hoi_thoai} hội thoại · ${k.khach} khách · ${k.tin} tin
+          · tự xử lý ${pct(k.ty_le_tu_xu_ly)} · chuyển người ${pct(k.ty_le_chuyen_nguoi)}
+          ${k.co_can_cu != null ? "· có căn cứ " + pct(k.co_can_cu) : ""}
+          ${k.tre_tb_ms ? "· trễ " + (k.tre_tb_ms / 1000).toFixed(1) + "s" : ""}</span>
+      </div>
+      <span class="row__num">${usd(k.chi_phi_moi_hoi_thoai)}<br>
+        <span class="row__time">mỗi hội thoại</span></span>
+    </div>`;
+  }).join("") : '<p class="empty">Chưa có hội thoại nào trong 30 ngày.</p>';
+}
+
 /* ---------------- sức khoẻ hệ thống ---------------- */
 
 /* KHÔNG tự chạy khi mở trang: phép kiểm gọi model thật và mất vài giây.
@@ -1272,7 +1314,9 @@ async function refresh() {
     if (state.view === "kho") await loadKho();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
-    if (state.view === "sohieu") { await loadAnalytics(); await loadCost(); }
+    if (state.view === "sohieu") {
+      await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
+    }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {

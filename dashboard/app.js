@@ -214,7 +214,35 @@ const CHANNEL_LABEL = {
   whatsapp: "WhatsApp", web: "Web", test: "Thử",
 };
 
-function srcBadge(ch) {
+/* Chatwoot là HỘP THƯ GỘP: Facebook Messenger, Instagram DM, WhatsApp,
+   chat website, email, Telegram đều đổ về cùng một kênh. Hiện huy hiệu
+   "Chatwoot" là mất đúng thông tin người trực cần — khách này đến từ đâu.
+   Tên lớp Chatwoot đặt có dạng "Channel::FacebookPage"; bộ đọc đã cắt phần
+   "Channel::" nên ở đây chỉ còn phần đuôi. */
+const NEN_TANG_LABEL = {
+  facebookpage: "Facebook", facebook: "Facebook",
+  instagram: "Instagram", whatsapp: "WhatsApp",
+  webwidget: "Web chat", email: "Email", telegram: "Telegram",
+  twiliosms: "SMS", line: "LINE", api: "API",
+};
+
+/* Nền tảng nào chưa có màu riêng thì mượn màu của Chatwoot — vẫn đúng, vì
+   nó đến qua Chatwoot thật. */
+const NEN_TANG_MAU = {
+  facebook: "facebook", instagram: "instagram", whatsapp: "whatsapp",
+  "web chat": "web", email: "chatwoot", telegram: "chatwoot",
+  sms: "chatwoot", line: "chatwoot", api: "chatwoot",
+};
+
+function srcBadge(ch, nenTang) {
+  const goc = String(nenTang || "").toLowerCase();
+  const ten = NEN_TANG_LABEL[goc];
+  if (ten) {
+    const mau = NEN_TANG_MAU[ten.toLowerCase()] || "chatwoot";
+    // Ghi rõ đường đi khi rê chuột: người trực biết trả lời qua đâu.
+    const qua = CHANNEL_LABEL[ch] || ch;
+    return `<span class="src src--${esc(mau)}" title="${esc(ten)} qua ${esc(qua)}">${esc(ten)}</span>`;
+  }
   const key = ch || "web";
   return `<span class="src src--${esc(key)}">${esc(CHANNEL_LABEL[key] || key)}</span>`;
 }
@@ -227,7 +255,7 @@ function convRow(c) {
   return `<button type="button" class="row ${state.openConv === c.id ? "is-on" : ""}" data-conv="${c.id}">
     <span class="row__flag row__flag--${sig}"></span>
     <span class="row__body">
-      <span class="row__title">${esc(c.customer || "Khách")} ${srcBadge(c.channel)}</span>
+      <span class="row__title">${esc(c.customer || "Khách")} ${srcBadge(c.channel, c.nen_tang)}</span>
       ${sub}
     </span>
     <span class="row__side">
@@ -298,7 +326,7 @@ async function loadThread(id) {
       <span class="convo__name">${esc(c.customer || "Khách")}</span>
       <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
       <span class="convo__spacer"></span>
-      ${srcBadge(c.channel)}<span class="msg__meta">${usd(c.cost)}</span>
+      ${srcBadge(c.channel, c.nen_tang)}<span class="msg__meta">${usd(c.cost)}</span>
       ${NICKS.length > 1 ? `<select class="nickpin" id="nickpin" title="Nick Zalo trả lời riêng cho hội thoại này">
         <option value="">nick mặc định${nickTen(state.nickDefault) ? " (" + esc(nickTen(state.nickDefault)) + ")" : ""}</option>
         ${NICKS.map((n) => `<option value="${esc(n.id)}"${n.id === c.zalo_account_id ? " selected" : ""}${n.san_sang ? "" : " disabled"}>${esc(n.ten)}</option>`).join("")}
@@ -390,7 +418,7 @@ async function loadOrders() {
       <span class="row__body">
         <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
           <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
-          ${srcBadge(o.channel)}</span>
+          ${srcBadge(o.channel, o.nen_tang)}</span>
         <span class="order__items">${items}</span>
         <span class="order__ship">${esc(o.khach_sdt)} · ${esc(o.khach_dia_chi)}</span>
       </span>
@@ -672,7 +700,10 @@ async function loadAnalyticsKhach() {
     return `<div class="row">
       <span class="row__flag row__flag--${tone}"></span>
       <div class="row__main">
-        <b>${esc(KENH_TEN[k.kenh] || k.kenh)}</b>
+        <b>${esc(NEN_TANG_LABEL[String(k.nen_tang || "").toLowerCase()]
+                  || KENH_TEN[k.nen_tang] || KENH_TEN[k.kenh] || k.nen_tang || k.kenh)}</b>
+        ${k.nen_tang && k.nen_tang !== k.kenh
+          ? `<span class="row__sub">qua ${esc(KENH_TEN[k.kenh] || k.kenh)}</span>` : ""}
         <span class="row__sub">${k.hoi_thoai} hội thoại · ${k.khach} khách · ${k.tin} tin
           · tự xử lý ${pct(k.ty_le_tu_xu_ly)} · chuyển người ${pct(k.ty_le_chuyen_nguoi)}
           ${k.co_can_cu != null ? "· có căn cứ " + pct(k.co_can_cu) : ""}

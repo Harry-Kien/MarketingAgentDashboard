@@ -180,6 +180,9 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
         {
             "id": str(r["id"]),
             "channel": r["channel"],
+            # Nền tảng gốc: Chatwoot gom nhiều nơi về một kênh, dashboard
+            # cần biết khách thật sự nhắn từ Facebook hay Instagram.
+            "nen_tang": r.get("nen_tang"),
             "customer": r["customer_name"],
             "status": r["status"],
             "outcome": r["outcome"],
@@ -207,6 +210,7 @@ async def conversation_detail(conv_id: str) -> dict:
         "id": str(conv["id"]),
         "customer": conv["customer_name"],
         "channel": conv["channel"],
+        "nen_tang": conv["nen_tang"],
         "external_id": conv["external_id"],
         "status": conv["status"],
         "zalo_account_id": conv["zalo_account_id"] or "",
@@ -860,6 +864,10 @@ async def analytics_khach(ngay: int = 30) -> dict:
     rows = await db.fetch(
         """
         SELECT c.channel,
+               -- Gộp theo NỀN TẢNG GỐC khi có. Chatwoot mà không tách thì
+               -- Facebook, Instagram, WhatsApp bị nhập làm một dòng, và
+               -- bảng này mất đúng thứ nó sinh ra để trả lời.
+               coalesce(c.nen_tang, c.channel)                      AS nen_tang,
                count(*)                                            AS hoi_thoai,
                count(DISTINCT c.customer_ref)                      AS khach,
                coalesce(sum(c.msg_count), 0)                       AS tin,
@@ -870,7 +878,7 @@ async def analytics_khach(ngay: int = 30) -> dict:
                max(c.updated_at)                                   AS gan_nhat
         FROM conversations c
         WHERE c.updated_at >= $1
-        GROUP BY c.channel
+        GROUP BY c.channel, coalesce(c.nen_tang, c.channel)
         ORDER BY count(*) DESC
         """,
         tu,
@@ -879,16 +887,16 @@ async def analytics_khach(ngay: int = 30) -> dict:
     # Chất lượng trả lời đo ở bảng `messages`, không gộp chung được vào câu
     # trên vì join sẽ nhân bản dòng và làm sai mọi phép đếm hội thoại.
     chat_luong = {
-        r["channel"]: r
+        r["nen_tang"]: r
         for r in await db.fetch(
             """
-            SELECT c.channel,
+            SELECT coalesce(c.nen_tang, c.channel)         AS nen_tang,
                    count(*)                                    AS luot_tra_loi,
                    count(*) FILTER (WHERE m.grounded IS TRUE)  AS co_can_cu,
                    coalesce(avg(m.latency_ms), 0)              AS tre_tb
             FROM messages m JOIN conversations c ON c.id = m.conversation_id
             WHERE m.role = 'agent' AND m.created_at >= $1
-            GROUP BY c.channel
+            GROUP BY coalesce(c.nen_tang, c.channel)
             """,
             tu,
         )
@@ -897,10 +905,11 @@ async def analytics_khach(ngay: int = 30) -> dict:
     kenh = []
     for r in rows:
         tong = int(r["hoi_thoai"]) or 1
-        q = chat_luong.get(r["channel"], {})
+        q = chat_luong.get(r["nen_tang"], {})
         tra_loi = int(q.get("luot_tra_loi") or 0)
         kenh.append({
             "kenh": r["channel"],
+            "nen_tang": r["nen_tang"],
             "hoi_thoai": int(r["hoi_thoai"]),
             "khach": int(r["khach"] or 0),
             "tin": int(r["tin"] or 0),

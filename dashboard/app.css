@@ -1103,3 +1103,8 @@ svg { flex: none; }
   border: 1px solid hsl(var(--border)); border-radius: 6px;
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
+
+/* Nền tảng đến qua Chatwoot — mỗi nơi một màu để người trực nhận ra ngay
+   mà không phải đọc chữ. Màu lấy đúng màu thương hiệu của từng nền tảng. */
+.src--whatsapp { color:#25D366; background:#25D36614; border-color:#25D36633; }
+.src--whatsapp::before { background:#25D366; }

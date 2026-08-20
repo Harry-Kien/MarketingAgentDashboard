@@ -82,5 +82,16 @@ services:
     restart: unless-stopped
 
 volumes:
+  # GHIM tên volume tuyệt đối.
+  #
+  # Mặc định Docker đặt tên volume theo <tên project>_<tên volume>. Tên
+  # project lấy từ tên thư mục, nên chỉ cần đổi tên thư mục, gộp file này
+  # vào docker-compose.yml, hay chạy bằng `-p` khác là volume thành một cái
+  # KHÁC — rỗng. Hộp thư, kết nối OAuth và toàn bộ lịch sử khách trông như
+  # biến mất, dù dữ liệu vẫn nằm nguyên trong volume cũ.
+  #
+  # Ghim tên rồi thì dữ liệu bám vào volume chứ không bám vào tên thư mục.
   chatwoot_pg:
+    name: chatwoot_chatwoot_pg
   chatwoot_redis:
+    name: chatwoot_chatwoot_redis

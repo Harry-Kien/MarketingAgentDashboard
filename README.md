@@ -167,6 +167,45 @@ README của nó rồi trỏ `TTS_BASE_URL` vào cổng nó mở.
 
 ---
 
+## Chatwoot — hộp thư nhiều nền tảng
+
+Chatwoot gom Facebook Messenger, Instagram DM, WhatsApp, chat website và
+email về **một hộp thư**. Agent trả lời y hệt nhau ở mọi nơi; chỉ dashboard
+và thống kê là tách ra.
+
+```bash
+docker compose -f docker-compose.chatwoot.yml up -d
+```
+
+Rồi trong Chatwoot: **Settings › Integrations › Webhooks**, trỏ về
+
+```
+http://host.docker.internal:8000/webhook/chatwoot?token=<WEBHOOK_SECRET>
+```
+
+và chọn sự kiện `message_created`. Điền `CHATWOOT_*` vào `.env`.
+
+Mỗi hội thoại lưu **nền tảng gốc** riêng, nên huy hiệu ghi "Facebook" hay
+"Instagram" chứ không phải "Chatwoot", và mục *Số hiệu* tách từng nền tảng
+thành một dòng.
+
+### Vì sao KHÔNG gộp vào `docker-compose.yml`
+
+Gộp trông gọn hơn nhưng **không giảm được container nào**: Chatwoot cần
+Rails, Sidekiq, Postgres và Redis riêng dù nằm ở file nào.
+
+Đổi lại nó thêm một rủi ro thật. Docker đặt tên volume theo *tên project*,
+mà tên project lấy từ tên thư mục. Gộp file là đổi project, và volume
+`chatwoot_chatwoot_pg` thành `marketing_chatwoot_pg` — một volume RỖNG. Hộp
+thư, kết nối OAuth, toàn bộ lịch sử khách trông như biến mất.
+
+Tên volume nay đã được **ghim tuyệt đối** trong `docker-compose.chatwoot.yml`
+nên dữ liệu bám vào volume chứ không bám vào tên thư mục. Nhưng hai file vẫn
+tách nhau, vì tách đúng ranh giới: Chatwoot là dịch vụ bên ngoài có vòng đời
+riêng, `docker compose down` của dự án này không được phép kéo nó theo.
+
+---
+
 ## Nạp tài liệu cho agent
 
 Không có tài liệu thì agent không có căn cứ và sẽ chuyển hết cho người — đúng

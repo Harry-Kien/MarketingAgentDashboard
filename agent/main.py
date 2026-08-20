@@ -281,16 +281,22 @@ async def handle_inbound(msg: InboundMessage) -> None:
 
     conv = await db.fetchrow(
         """
-        INSERT INTO conversations (channel, external_id, customer_name, customer_ref)
-        VALUES ($1,$2,$3,$4)
+        INSERT INTO conversations
+            (channel, external_id, customer_name, customer_ref, nen_tang)
+        VALUES ($1,$2,$3,$4,$5)
         ON CONFLICT (channel, external_id) DO UPDATE
-            SET customer_name = EXCLUDED.customer_name, updated_at = now()
+            SET customer_name = EXCLUDED.customer_name,
+                -- Chỉ ghi đè khi tin mới CÓ nền tảng. Kênh nào không biết
+                -- nền tảng gốc thì để nguyên giá trị cũ, không xoá mất.
+                nen_tang = coalesce(EXCLUDED.nen_tang, conversations.nen_tang),
+                updated_at = now()
         RETURNING *
         """,
         msg.channel,
         msg.conversation_ref,
         msg.customer_name,
         msg.customer_ref,
+        (msg.meta or {}).get("nen_tang_goc"),
     )
     cid: uuid.UUID = conv["id"]
 

@@ -8,7 +8,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- --- Hội thoại ----------------------------------------------
 CREATE TABLE IF NOT EXISTS conversations (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    channel         TEXT        NOT NULL,          -- zalocrm | zalo_oa | ...
+    channel         TEXT        NOT NULL,          -- zalocrm | chatwoot | ...
+    -- Nền tảng GỐC nơi khách thật sự nhắn tới. Chatwoot là hộp thư gộp:
+    -- Facebook Messenger, Instagram DM, WhatsApp, chat website, email đều
+    -- đổ về cùng một kênh `chatwoot`. Không tách ra thì dashboard chỉ ghi
+    -- "Chatwoot" và mất đúng thông tin người vận hành cần — khách này đến
+    -- từ đâu. Agent trả lời y hệt nhau; chỉ hiển thị và thống kê khác.
+    nen_tang        TEXT,
     external_id     TEXT        NOT NULL,          -- id hội thoại phía kênh
     customer_name   TEXT,
     customer_ref    TEXT,

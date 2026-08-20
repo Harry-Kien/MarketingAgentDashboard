@@ -547,3 +547,20 @@ thật, nên nó phải trả lời được ba câu của **Nghị định 13/2
 lưu chứng từ tối thiểu 10 năm. Hội thoại và tin nhắn thì xoá hẳn.
 
 Chi tiết: [docs/du-lieu-ca-nhan.md](docs/du-lieu-ca-nhan.md)
+
+---
+
+## Đưa vào doanh nghiệp
+
+Dashboard đọc PII khách hàng và gửi tin nhân danh doanh nghiệp, nên **phải
+đăng nhập**. Tạo tài khoản đầu tiên trên máy chủ:
+
+```bash
+python -m scripts.tao_tai_khoan admin "mật khẩu mạnh" --quan-tri
+```
+
+Hai vai: `nhan_vien` xem hội thoại, xử lý đơn, nhập kho — `quan_tri` thêm
+quyền xoá dữ liệu khách, đổi cấu hình agent, quản lý tài khoản.
+
+Bảy việc bắt buộc trước khi chạy thật, và những chỗ còn hở:
+[docs/dua-vao-doanh-nghiep.md](docs/dua-vao-doanh-nghiep.md)

@@ -359,11 +359,35 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Chỉ ở chế độ auto. Chế độ assist thì người duyệt mọi thứ, tự gửi thêm
     # một câu là đi ngược ý nghĩa của chế độ đó.
     elif reply.escalate and runtime.mode() == "auto":
-        if await adapter.can_send_now(msg.conversation_ref):
-            with suppress(Exception):
-                await adapter.send_text(
+        # Câu báo chuyển người là tin QUAN TRỌNG NHẤT trong luồng này: khách
+        # vừa hỏi một chuyện agent không đủ thẩm quyền trả lời, và nếu không
+        # nhận được gì thì họ ngồi chờ trong im lặng. Đã bắt gặp thật trên
+        # Chatwoot: hai hội thoại về retinol khi mang thai, khách không nhận
+        # được dòng nào — chỉ có ghi chú nội bộ mà họ không nhìn thấy.
+        #
+        # Trước đây bọc trong `suppress(Exception)`: gửi hỏng thì nuốt luôn,
+        # không ai biết. Nay hỏng vẫn không làm sập luồng, nhưng PHẢI để lại
+        # dấu vết để người trực còn biết mà nhắn tay.
+        try:
+            if await adapter.can_send_now(msg.conversation_ref):
+                kq = await adapter.send_text(
                     msg.conversation_ref, settings.tin_chuyen_nguoi
                 )
+                if not getattr(kq, "ok", True):
+                    await db.log_event(
+                        "escalate.bao_that_bai", ref_id=cid,
+                        ly_do=str(getattr(kq, "error", ""))[:200],
+                    )
+            else:
+                await db.log_event(
+                    "escalate.khong_gui_duoc", ref_id=cid,
+                    ly_do="kênh từ chối gửi lúc này (ngoài cửa sổ cho phép)",
+                )
+        except Exception as exc:  # noqa: BLE001 — không được làm sập luồng
+            await db.log_event(
+                "escalate.bao_that_bai", ref_id=cid,
+                ly_do=f"{type(exc).__name__}: {exc}"[:200],
+            )
 
     await db.execute(
         """

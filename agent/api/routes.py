@@ -13,7 +13,7 @@ from agent import db, runtime
 from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
-from agent.core import du_lieu_ca_nhan, rag
+from agent.core import du_lieu_ca_nhan, kho, rag
 from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
@@ -159,7 +159,18 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
         FROM conversations c
     """
     args: list = []
-    if status and status != "all":
+    if status == "can_nguoi":
+        # Mọi hội thoại ĐANG CHỜ NGƯỜI, gộp một chỗ.
+        #
+        # `assist` là agent soạn xong chờ duyệt; `escalated` là agent tự nhận
+        # không đủ thẩm quyền. Hai trạng thái khác nhau nhưng CÙNG một việc
+        # cần làm: một người phải vào trả lời khách.
+        #
+        # Trước đây khung "Chờ người xử lý" chỉ lọc `assist`, nên hội thoại
+        # đã chuyển người biến mất khỏi màn hình trực. Đo trên dữ liệu thật:
+        # 2 cái hiện, 7 cái không — bảy khách ngồi đợi mà không ai thấy.
+        sql += " WHERE c.status IN ('assist', 'escalated')"
+    elif status and status != "all":
         sql += " WHERE c.status = $1"
         args.append(status)
     sql += f" ORDER BY c.updated_at DESC LIMIT {int(limit)}"
@@ -589,12 +600,105 @@ async def approve_order(order_id: str) -> dict:
 
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str) -> dict:
+    """
+    Huỷ đơn và TRẢ HÀNG VỀ KHO.
+
+    Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
+    huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
+    """
     oid = uuid.UUID(order_id)
-    await db.execute(
-        "UPDATE orders SET trang_thai='da_huy', updated_at=now() WHERE id=$1", oid
+    don = await db.fetchrow(
+        "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
+        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don", oid,
     )
-    await db.log_event("order.cancel", actor="staff", ref_id=oid)
-    return {"ok": True}
+    if don is None:
+        return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
+
+    so_dong = await kho.tra_hang(don["ma_don"])
+    await db.log_event("order.cancel", actor="staff", ref_id=oid,
+                       ma_don=don["ma_don"], so_mat_hang_tra_kho=so_dong)
+    return {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
+
+
+# ---------------------------------------------------------------
+#  Kho hàng
+# ---------------------------------------------------------------
+
+class NhapKhoIn(BaseModel):
+    so_luong: int = Field(gt=0, le=100000)
+    ghi_chu: str = Field("", max_length=300)
+
+
+class KiemKeIn(BaseModel):
+    so_luong_moi: int = Field(ge=0, le=100000)
+    ly_do: str = Field(min_length=3, max_length=300)
+
+
+@router.get("/kho")
+async def kho_tong_quan() -> dict:
+    """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
+    import json as _json
+    from agent.core.tools import _catalog
+
+    danh_muc = {p["ma"]: p for p in _catalog().get("san_pham", [])}
+    ton = await db.fetch("SELECT ma, so_luong, cap_nhat_luc FROM ton_kho ORDER BY ma")
+    ra = []
+    for t in ton:
+        sp = danh_muc.get(t["ma"], {})
+        ra.append({
+            "ma": t["ma"],
+            "ten": sp.get("ten", "(không có trong danh mục)"),
+            "loai": sp.get("loai", ""),
+            "gia": sp.get("gia", 0),
+            "so_luong": int(t["so_luong"]),
+            "sap_het": int(t["so_luong"]) <= kho.NGUONG_SAP_HET,
+            "cap_nhat_luc": t["cap_nhat_luc"].isoformat(),
+        })
+    het = [x for x in ra if x["so_luong"] == 0]
+    sap = [x for x in ra if 0 < x["so_luong"] <= kho.NGUONG_SAP_HET]
+    return {
+        "san_pham": ra,
+        "tong_ma": len(ra),
+        "het_hang": len(het),
+        "sap_het": len(sap),
+        "nguong_sap_het": kho.NGUONG_SAP_HET,
+        "gia_tri_ton": sum(x["so_luong"] * (x["gia"] or 0) for x in ra),
+    }
+
+
+@router.get("/kho/bien-dong")
+async def kho_bien_dong(ma: str = "", limit: int = 50) -> dict:
+    return {"bien_dong": await kho.so_bien_dong(ma, limit)}
+
+
+@router.post("/kho/{ma}/nhap")
+async def kho_nhap(ma: str, body: NhapKhoIn) -> dict:
+    try:
+        r = await kho.nhap_hang(ma, body.so_luong, body.ghi_chu)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await db.log_event("kho.nhap", actor="nguoi", ma=ma, so_luong=body.so_luong)
+    return r
+
+
+@router.post("/kho/{ma}/kiem-ke")
+async def kho_kiem_ke(ma: str, body: KiemKeIn) -> dict:
+    """
+    Đặt lại số tồn về đúng thực tế đếm được.
+
+    Kho LUÔN lệch — vỡ, mất, đếm sai. Cần một đường sửa hợp lệ, và đường đó
+    bắt buộc phải có lý do để sau này truy được.
+    """
+    try:
+        r = await kho.dieu_chinh(ma, body.so_luong_moi, body.ly_do)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await db.log_event("kho.kiem_ke", actor="nguoi", **r, ly_do=body.ly_do)
+    return r
 
 
 # ---------------------------------------------------------------

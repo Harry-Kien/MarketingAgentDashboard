@@ -158,7 +158,11 @@ async function loadOverview() {
   applyRuntime(o.runtime);
   drawTape(o.tape);
 
-  $("#c-ca").textContent = o.conversations.waiting || 0;
+  // Huy hiệu "Ca trực" đếm MỌI hội thoại cần người, không riêng cái chờ
+  // duyệt — nếu không thì bảy hội thoại đã chuyển người nằm ngoài con số
+  // và người trực tưởng ca đang êm.
+  $("#c-ca").textContent =
+    (o.conversations.waiting || 0) + (o.conversations.escalated || 0);
   $("#c-hoithoai").textContent = o.conversations.total || 0;
   $("#c-video").textContent = o.video.review || 0;
   $("#rail-cost").textContent = usd(o.cost.total_usd);
@@ -183,7 +187,7 @@ async function loadOverview() {
          null, "auto"),
   ].join("");
 
-  const waiting = await api("/conversations?status=assist&limit=12");
+  const waiting = await api("/conversations?status=can_nguoi&limit=12");
   $("#queue").innerHTML = waiting.length
     ? waiting.map(convRow).join("")
     : '<p class="empty">Không có hội thoại nào đang chờ. Ca trực êm.</p>';

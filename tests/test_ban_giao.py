@@ -123,7 +123,16 @@ def test_cau_bao_la_co_dinh_khong_phai_loi_model():
     khuyên, không thể hứa gì, không thể vi phạm quảng cáo.
     """
     src = inspect.getsource(app_main.handle_inbound)
-    khoi = src.split("elif reply.escalate", 1)[1][:400]
+    # Soi CẢ NHÁNH escalate, không phải 400 ký tự đầu.
+    #
+    # Cửa sổ cố định là phép cắt giòn: chỉ cần thêm vài dòng chú thích là
+    # dòng cần kiểm bị đẩy ra ngoài, và test đỏ dù mã vẫn đúng. Đã xảy ra
+    # thật khi bổ sung xử lý lỗi cho lời gửi câu báo.
+    #
+    # Nhánh kết thúc ở lệnh ghi tin nhắn xuống DB ngay sau đó, nên lấy tới
+    # đúng chỗ ấy. Phạm vi rộng hơn nghĩa là phép kiểm CHẶT hơn, không lỏng
+    # hơn: `reply.text` xuất hiện ở bất cứ đâu trong nhánh đều bị bắt.
+    khoi = src.split("elif reply.escalate", 1)[1].split("await db.execute", 1)[0]
     assert "settings.tin_chuyen_nguoi" in khoi
     assert "reply.text" not in khoi, "đang gửi lời model sinh ra, không phải câu cố định"
 

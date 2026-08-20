@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agent import db          # noqa: E402
 from agent.core import rag    # noqa: E402
 
+GIAN_CACH_GIAY = 3.0
 SUFFIXES = {".md", ".txt"}
 
 
@@ -45,7 +46,11 @@ async def main(folder: str) -> None:
                 continue
             n = await rag.ingest(path.stem, str(path), text)
             total += n
-            print(f"  {path.name}: {n} đoạn")
+            print(f"  {path.name}: {n} đoạn", flush=True)
+            # Giãn nhịp giữa các tài liệu. Hạn mức embedding của Vertex tính
+            # theo phút, nên bắn 12 tài liệu liên tiếp là chạm trần rồi phải
+            # ngồi chờ backoff — chậm hơn nhiều so với đi đều từ đầu.
+            await asyncio.sleep(GIAN_CACH_GIAY)
     finally:
         await db.close_db()
 

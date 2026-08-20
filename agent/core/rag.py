@@ -38,9 +38,28 @@ def _embed_sync(texts: list[str], task: str) -> list[list[float]]:
     return [e.values for e in model.get_embeddings(inputs)]
 
 
+# Vertex có hạn mức riêng cho embedding. Nạp cả kho tri thức một lượt là
+# đủ chạm trần, và khi đó lỗi 429 làm kho nạp DỞ trong im lặng: vài tài liệu
+# vào được, vài tài liệu không, không ai biết cho tới lúc agent trả lời
+# thiếu. Đã xảy ra thật khi mở rộng kho từ 6 lên 12 tài liệu.
+# Hạn mức của Vertex tính theo PHÚT, nên backoff phải phủ được một phút.
+# Bản đầu chờ 4+8+16 = 28 giây và vẫn thua — chưa qua hết cửa sổ hạn mức.
+_LAN_THU_EMBED = 5
+_CHO_DAU_GIAY = 15.0
+
+
 async def embed(texts: list[str], *, query: bool = False) -> list[list[float]]:
     task = "RETRIEVAL_QUERY" if query else "RETRIEVAL_DOCUMENT"
-    return await asyncio.to_thread(_embed_sync, texts, task)
+    cho = _CHO_DAU_GIAY
+    for lan in range(_LAN_THU_EMBED):
+        try:
+            return await asyncio.to_thread(_embed_sync, texts, task)
+        except Exception as exc:  # noqa: BLE001
+            tam_thoi = "429" in str(exc) or "exhaust" in str(exc).lower()
+            if not tam_thoi or lan == _LAN_THU_EMBED - 1:
+                raise
+            await asyncio.sleep(cho)
+            cho *= 2
 
 
 def _vec(values: list[float]) -> str:
@@ -106,9 +125,19 @@ def chunk_text(text: str, size: int = 900, overlap: int = 150) -> list[str]:
 
 
 async def ingest(title: str, source: str, text: str) -> int:
-    """Nạp một tài liệu vào cơ sở tri thức. Trả về số chunk."""
+    """
+    Nạp một tài liệu vào cơ sở tri thức. Trả về số chunk.
+
+    Nạp lại cùng một `source` thì THAY bản cũ, không thêm bản thứ hai.
+    Trước đây chạy `scripts.ingest` hai lần tạo ra hai bản ghi documents và
+    nhân đôi số đoạn — RAG trả về cùng một đoạn hai lần, vừa tốn ngữ cảnh
+    vừa làm lệch điểm khớp. Ba tài liệu đã bị trùng đúng như vậy.
+    """
     pieces = chunk_text(text)
     vectors = await embed(pieces)
+
+    # Xoá trước khi ghi. `chunks` có ON DELETE CASCADE nên đoạn cũ đi theo.
+    await db.execute("DELETE FROM documents WHERE source = $1", source)
 
     doc = await db.fetchrow(
         "INSERT INTO documents (title, source, chunk_count) VALUES ($1,$2,$3) "

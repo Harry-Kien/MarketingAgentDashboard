@@ -78,14 +78,17 @@ async def main() -> int:
         return 0
 
     can = {m.strip().upper() for m in args.ma}
+    # Điều kiện là THIẾU SO VỚI SỐ ẢNH YÊU CẦU, không phải "chưa có ảnh nào".
+    # Bản đầu lọc theo "chưa có ảnh" nên 16 sản phẩm chỉ sinh được 1/2 ảnh
+    # (ảnh kia dính 429) bị bỏ qua vĩnh viễn ở mọi lần chạy sau.
     chon = [
         sp for sp in items
         if (args.tat_ca or sp.get("ma", "").upper() in can)
-        and (args.lam_lai or not kho.anh_cua(sp.get("ma", "")))
+        and (args.lam_lai or len(kho.anh_cua(sp.get("ma", ""))) < args.so_anh)
     ]
 
     if not chon:
-        print("Không có sản phẩm nào cần sinh ảnh. Thêm --lam-lai để sinh đè.")
+        print(f"Mọi sản phẩm đã đủ {args.so_anh} ảnh. Thêm --lam-lai để sinh đè.")
         return 0
 
     uoc = len(chon) * args.so_anh * 95

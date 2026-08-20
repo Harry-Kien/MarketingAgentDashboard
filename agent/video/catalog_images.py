@@ -44,7 +44,10 @@ MODEL_ANH = "gemini-2.5-flash-image"
 # Sinh một ảnh mất khoảng 90-100 giây. Đặt trần rộng, và đừng chạy quá nhiều
 # ảnh cùng lúc kẻo nghẽn hạn mức.
 TIMEOUT = 240.0
-SONG_SONG = 2
+# Chạy MỘT ảnh một lúc. Với 2 luồng, cả lô 22 sản phẩm đâm vào hạn mức:
+# 11/11 lần hỏng còn lại đều là 429. Hạn mức sinh ảnh chặt hơn hạn mức chữ
+# nhiều, nên ở đây chậm mà chắc hơn là nhanh rồi hỏng nửa lô.
+SONG_SONG = 1
 
 # Ba góc chụp cho một sản phẩm: chính diện trên nền sạch (dùng cho cảnh giới
 # thiệu), cận cảnh chất liệu (cảnh nói về công dụng), và đặt trong bối cảnh
@@ -153,10 +156,12 @@ async def _goi_model(prompt: str) -> tuple[bytes | None, str]:
     # là lỗi TẠM THỜI. Lần chạy đầu không thử lại nên 17/22 sản phẩm sinh
     # hỏng — trong khi `llm.py` vốn đã thử lại đúng những mã này.
     TAM_THOI = {401, 429, 500, 503}
-    cho = 5.0
+    # Chờ lâu hơn và thử nhiều lần hơn bản đầu (5s x 3): hạn mức sinh ảnh
+    # hồi lại theo phút chứ không theo giây, 5 giây là quay lại quá sớm.
+    cho = 15.0
     r = None
 
-    for lan in range(3):
+    for lan in range(4):
         try:
             # Lấy token MỖI LẦN, không dùng lại: 401 sinh ra chính vì token
             # cũ hết hạn trong lúc lô ảnh đang chạy.
@@ -168,7 +173,7 @@ async def _goi_model(prompt: str) -> tuple[bytes | None, str]:
                              "Content-Type": "application/json"},
                 )
         except Exception as exc:  # noqa: BLE001 — hỏng thì bỏ ảnh, không chặn lô
-            if lan == 2:
+            if lan == 3:
                 return None, f"{type(exc).__name__}: {str(exc)[:100]}"
             await asyncio.sleep(cho)
             cho *= 2
@@ -176,7 +181,7 @@ async def _goi_model(prompt: str) -> tuple[bytes | None, str]:
 
         if r.status_code < 400:
             break
-        if r.status_code not in TAM_THOI or lan == 2:
+        if r.status_code not in TAM_THOI or lan == 3:
             break
         await asyncio.sleep(cho)
         cho *= 2

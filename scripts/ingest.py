@@ -27,11 +27,19 @@ SUFFIXES = {".md", ".txt"}
 
 async def main(folder: str) -> None:
     root = Path(folder)
-    if not root.exists():
-        print(f"Không thấy thư mục: {root}")
-        return
+    files = sorted(p for p in root.rglob("*") if p.suffix.lower() in SUFFIXES)         if root.exists() else []
 
-    files = sorted(p for p in root.rglob("*") if p.suffix.lower() in SUFFIXES)
+    # Máy vừa clone repo về không có `data/knowledge/` — thư mục đó chứa
+    # tài liệu THẬT của doanh nghiệp nên nằm trong .gitignore. Rơi về bản
+    # mẫu đi kèm repo, đúng cách `_catalog()` rơi về catalog.example.json.
+    # Không có bước này thì người mới clone chạy agent với kho tri thức
+    # rỗng, và không hiểu vì sao agent trả lời "chưa có thông tin đó".
+    if not files:
+        mau = root.parent / f"{root.name}.example"
+        if mau.exists():
+            files = sorted(p for p in mau.rglob("*") if p.suffix.lower() in SUFFIXES)
+            if files:
+                print(f"Không có tài liệu thật trong {root} — dùng bản mẫu {mau.name}")
     if not files:
         print(f"Không có file .md hoặc .txt trong {root}")
         return

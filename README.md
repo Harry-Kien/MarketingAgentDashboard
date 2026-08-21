@@ -478,18 +478,35 @@ Giá token giống hệt nhau ở cả hai đường.
 
 ---
 
-## Đã biết còn thiếu ở MVP này
+## Đã biết còn thiếu
 
-Nói rõ để không nhầm bản này là production:
+Mục này từng liệt kê sáu thiếu sót của bản MVP đầu. **Bốn trong số đó đã
+làm xong** và danh sách cũ nằm lại quá lâu — một tài liệu nói hệ thống tệ
+hơn thực tế cũng sai như một tài liệu nói nó tốt hơn. Ghi lại cả hai cột để
+lần sau đối chiếu được:
 
-- Chưa có eval gate / golden set (tuần 2)
-- Chưa chống prompt injection có hệ thống
-- Chưa che PII trước khi vào log
-- Render video chạy trong tiến trình app — cần đẩy sang hàng đợi (`taskiq`)
-- Dashboard chưa có đăng nhập — **chỉ chạy trong mạng nội bộ**
-- Chưa có Veo 3.1; toàn bộ video hiện dựng bằng template
+| Từng thiếu | Nay |
+|---|---|
+| Chưa có eval gate / golden set | `scripts/eval.py` + 56 câu hỏi vàng |
+| Chưa chống prompt injection | `agent/core/phong_thu.py`, quét trước khi gọi model |
+| Chưa che PII trước khi vào log | `agent/core/du_lieu_ca_nhan.py` |
+| Render video chạy trong tiến trình app | hàng đợi trong Postgres — `agent/video/worker.py` |
+| Dashboard chưa có đăng nhập | `agent/core/xac_thuc.py`, 17/17 endpoint chặn |
+| Chưa có Veo 3.1 | **vẫn chưa** — video dựng bằng template ba bậc |
 
-Lộ trình đầy đủ nằm trong kế hoạch giai đoạn 3.
+Còn thiếu thật, tính tới hôm nay:
+
+- **Chưa có chăm sóc chủ động.** Agent chỉ trả lời khi được hỏi. Không theo
+  khách im lặng, không hỏi thăm sau khi giao hàng, không nhắc hết hạn dùng.
+  Đây là nửa còn lại của bốn chữ "chăm sóc khách hàng" — và nó **không được
+  làm trước khi chuyển sang Zalo OA**: nhắn chủ động hàng loạt từ nick cá
+  nhân là cách nhanh nhất để bị khoá nick, và nick khoá thì mất luôn lịch
+  sử hội thoại với khách.
+- **Bộ đo nhiều lượt đã có nhưng chưa chạy lần nào.** 12 kịch bản · 43 lượt
+  sẵn sàng, bộ chấm có 29 test canh — nhưng chạy thật thì gọi model thật,
+  nên chưa có con số. Tới khi chạy, khả năng tư vấn nhiều lượt vẫn là ẩn số.
+- **Chưa có Veo 3.1.**
+- **Một máy, không có phương án khi máy hỏng.**
 
 ---
 
@@ -520,8 +537,47 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-93 ca, chạy dưới 1 giây, không gọi API. Đo phần logic quanh model — chốt
-tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm.
+330 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
+trực, giới hạn đăng nhập.
+
+Gõ `pytest` trần cũng chạy đúng bộ này: `pytest.ini` chặn không cho nó bò
+vào submodule `ZaloCRM/` — trước khi có file đó, `pytest` không kèm đường
+dẫn sẽ vỡ ngay lúc thu thập vì các file sao lưu Windows không đọc được.
+
+## Đo tư vấn nhiều lượt
+
+Bộ 56 câu vàng gọi `respond(history=[], ...)` — một câu hỏi, một câu trả
+lời, rồi quên. Nó đo rất kỹ chuyện agent có nói bậy không. Nó **không** đo
+được agent tư vấn giỏi tới đâu, vì tư vấn là việc nhiều lượt.
+
+```bash
+.venv/Scripts/python.exe -m scripts.eval_nhieu_luot --kho   # không tốn tiền
+.venv/Scripts/python.exe -m scripts.eval_nhieu_luot         # chạy thật
+```
+
+12 kịch bản · 43 lượt, **bật trí nhớ khách** (`customer_ref`) — khác hẳn bộ
+vàng vốn tắt đi để các ca độc lập. Chấm hai tầng:
+
+| Tầng | Đo gì |
+|---|---|
+| Từng lượt | phải có gì, cấm gì, có chuyển người không — **ở mọi lượt**, không chỉ lượt đầu |
+| Cả hội thoại | chào lại · hỏi lại điều khách đã nói · hỏi dồn · bỏ rơi khách ở cuối |
+
+Ca quan trọng nhất là loại `tuan_thu_giua_chung`: khách nói *"à mà em đang
+bầu 5 tháng"* ở **lượt thứ tư**. Bộ vàng chỉ hỏi ở lượt đầu nên mù hoàn
+toàn với tình huống này — và đây đúng là tình huống có thật.
+
+Chỉ số `hỏi lại điều đã biết` là **phép đo trực tiếp đầu tiên** cho
+`ho_so_khach`: module được xây để chống đúng lỗi đó nhưng trước nay chưa
+có con số nào chứng minh nó có tác dụng.
+
+Bộ chấm nằm ở `agent/core/cham_nhieu_luot.py`, tách riêng khỏi bộ chạy để
+kiểm thử được mà không gọi API. **Nó đo HÌNH THỨC cuộc tư vấn, không đo
+NỘI DUNG lời khuyên** — "có hỏi lại loại da trước khi gợi ý không" thì đo
+được, "gợi ý ấy có hợp với da khách không" thì phải người trong nghề đọc.
+
+---
 
 Bộ 56 câu hỏi vàng (`python -m scripts.eval`) đo hành vi thật của model:
 mất ~13 phút, tốn tiền API, và **không tất định** — các lần chạy cho 51-55
@@ -535,7 +591,7 @@ mất ~13 phút, tốn tiền API, và **không tất định** — các lần c
 
 | Chỉ số | Giá trị |
 |---|---|
-| Đạt | **55/56 (98%)** |
+| Đạt | **51–55 / 56** (bốn lần chạy liên tiếp: 51, 55, 52, 54) |
 | Bỏ sót chuyển người | **0/16** |
 | Dùng từ cấm quảng cáo | **0** |
 | Dấu hiệu lộ bot — khách thật sự nhận | **0,09 / câu · 91% sạch** |
@@ -543,9 +599,32 @@ mất ~13 phút, tốn tiền API, và **không tất định** — các lần c
 | Chi phí | $0,0693 cho 56 ca (~1.732đ) |
 | Token đọc từ cache | **86,8%** |
 
+Báo cả dải chứ không báo mỗi lần tốt nhất. Bộ vàng gọi model thật nên
+**không tất định**, và con số doanh nghiệp sẽ gặp là mức sàn (51/56 ≈ 91%),
+không phải kỷ lục (55/56 ≈ 98%). Một tài liệu chỉ ghi kỷ lục là một tài liệu
+sẽ làm người đọc thất vọng đúng vào ngày họ đo lại.
+
 Chỉ số giọng văn đo ở **hai mốc**: văn bản model sinh ra (0,45 dấu hiệu/câu)
 và thứ khách thật sự nhận sau khi tách tin (0,09). Cái đầu đo prompt, cái
 sau đo trải nghiệm.
+
+### Bộ vàng KHÔNG đo được cái gì
+
+Quan trọng ngang phần nó đo được. Mỗi ca chạy với `history=[]` và **không
+truyền `customer_ref`** — cố ý, để các ca độc lập với nhau. Hệ quả:
+
+- **Không có ca nhiều lượt nào.** Cả 56 ca đều là một câu hỏi, một câu trả
+  lời. Việc hỏi lại cho rõ trước khi khuyên, giữ mạch qua bảy lượt, không
+  hỏi lại điều khách vừa nói, dẫn khách tới lúc chốt đơn — không đo.
+- **Trí nhớ khách nằm ngoài vùng đo.** `agent/core/ho_so_khach.py` có 19
+  test đơn vị chứng minh nó ghi và xoá đúng; không có con số nào chứng minh
+  agent *dùng* hồ sơ đó khéo với người thật.
+- **Cách chấm là khớp từ khoá** (`phai_co` / `khong_duoc_co`) cộng với kiểm
+  chuyển người đúng lúc. Nó đo **"không sai"**, không đo **"khuyên hay"**.
+
+20/56 ca — hơn một phần ba — thuộc nhóm tuân thủ, thẩm quyền và ngoài danh
+mục, tức là các ca *đừng nói bậy*. Bộ này chứng minh agent không gây tai
+nạn. Nó chưa chứng minh agent tư vấn giỏi.
 
 Quan sát chi phí: `GET /api/cost` hoặc màn **Số hiệu** — dựng từ bảng
 `messages`, không cần Langfuse hay hệ thống ngoài nào.

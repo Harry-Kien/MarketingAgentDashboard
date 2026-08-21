@@ -1,6 +1,6 @@
 # Chạy bộ kiểm thử mỗi lần push và mỗi pull request.
 #
-# CHỈ chạy phần tất định — 145 ca trong tests/, không gọi API nào.
+# CHỈ chạy phần tất định — 330 ca trong tests/, không gọi API nào.
 # Bộ 56 câu hỏi vàng (scripts/eval.py) KHÔNG chạy ở đây, có chủ đích:
 # nó gọi Vertex AI thật, tốn tiền, mất 13 phút, và không tất định (bốn lần
 # chạy liên tiếp cho 51, 55, 52, 54 điểm). Một CI đỏ ngẫu nhiên thì người
@@ -46,6 +46,8 @@ jobs:
               "agent.core.agent", "agent.core.llm", "agent.core.rag",
               "agent.core.tools", "agent.core.tu_nhien",
               "agent.core.du_lieu_ca_nhan",
+              "agent.core.gio_lam_viec", "agent.core.cham_nhieu_luot",
+              "agent.core.xac_thuc", "agent.suc_khoe", "agent.canh_gac",
               "agent.channels.base", "agent.channels.registry",
               "agent.channels.zalocrm", "agent.channels.chatwoot",
               "agent.channels.zalocrm_accounts",

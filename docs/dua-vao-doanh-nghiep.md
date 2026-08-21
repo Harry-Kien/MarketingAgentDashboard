@@ -10,15 +10,19 @@ mới là thứ gây tai nạn.
 
 | | Bằng chứng |
 |---|---|
-| Chất lượng tư vấn | 56/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
+| Chất lượng tư vấn | 51–55/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
-| Kiểm thử | 236 ca, dưới 2 giây, chạy tự động mỗi push |
+| Kiểm thử | 330 ca, dưới 2 giây, chạy tự động mỗi push |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |
 | Đa kênh | Zalo (kéo) + Chatwoot (đẩy), cùng một agent |
 | Sao lưu | `scripts/sao_luu.py` |
+| Giám sát | canh gác trong tiến trình + `scripts/canh_gac_ngoai.py`, báo qua webhook |
+| Chống dò mật khẩu | khoá tạm sau 8 lần sai trong 15 phút |
+| Hàng đợi trực | xếp chờ-lâu-nhất-trước, báo động khi có người chờ quá 30 phút |
+| Giờ làm việc | ngoài giờ không hứa suông với khách, không báo động vô ích |
 
 ---
 
@@ -106,19 +110,28 @@ Business Verification + App Review, 1–4 tuần, có thể bị từ chối. Tr
 chờ, bài đăng đi qua hàng đợi thủ công — không phải giải pháp tạm bợ mà là
 con đường thật, và nó đã được làm cho nhanh.
 
-### Chưa có giám sát và báo động
+### Chưa có chăm sóc chủ động
 
-Hệ thống ghi nhật ký đầy đủ vào bảng `events`, nhưng **không ai được báo
-khi có sự cố**. Agent chết lúc 2 giờ sáng thì tới sáng mới biết.
+Agent chỉ trả lời khi được hỏi. Không theo khách im lặng, không hỏi thăm
+sau khi giao hàng, không nhắc hết hạn dùng.
 
-Cần: một tiến trình hỏi `/healthz` vài phút một lần và nhắn Zalo cho người
-trực khi hỏng.
+**Không được làm mảng này trước khi chuyển sang Zalo OA.** Trả lời khi
+khách nhắn trước thì còn giống người dùng thật; chủ động gửi đi hàng trăm
+tin từ một nick cá nhân thì đúng định nghĩa hành vi mà Zalo dò tìm. Và nick
+khoá thì mất luôn toàn bộ lịch sử hội thoại — mất chính tài sản mà hồ sơ
+khách đang gây dựng.
 
-### Chưa có giới hạn tần suất đăng nhập
+### Bộ đo nhiều lượt đã có, nhưng CHƯA CHẠY LẦN NÀO
 
-Người dò mật khẩu hiện thử được không giới hạn. scrypt làm mỗi lần thử tốn
-khoảng 100ms, nên dò một mật khẩu mạnh vẫn không kinh tế — nhưng đó là
-chậm lại, không phải chặn.
+`scripts/eval_nhieu_luot.py` + 12 kịch bản · 43 lượt đã sẵn sàng, và bộ
+chấm của nó có 29 test canh. Nhưng chạy thật thì gọi model thật — tốn tiền
+và mất 8-12 phút — nên **chưa có con số nào**. Cho tới khi chạy, khả năng
+tư vấn nhiều lượt của agent vẫn là một ẩn số.
+
+```bash
+python -m scripts.eval_nhieu_luot --kho   # kiểm bộ khung, không tốn tiền
+python -m scripts.eval_nhieu_luot         # chạy thật
+```
 
 ### Một máy, không có phương án khi máy hỏng
 

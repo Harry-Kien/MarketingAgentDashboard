@@ -69,6 +69,10 @@ def test_referer_tro_vao_proxy_thi_nhan_dung_app():
         "http://localhost:8000/tich-hop/chatwoot/app/accounts/1") == "chatwoot"
     assert tich_hop.ung_dung_tu_referer(
         "http://localhost:8000/tich-hop/zalocrm/") == "zalocrm"
+    assert tich_hop.ung_dung_tu_referer(
+        "http://localhost:8000/tich-hop/n8n/workflow/1") == "n8n"
+    assert tich_hop.ung_dung_tu_referer(
+        "http://localhost:8000/tich-hop/minio/browser") == "minio"
 
 
 def test_referer_khong_phai_proxy_thi_khong_chuyen_di_dau():
@@ -191,3 +195,41 @@ def test_websocket_mang_theo_cookie():
     bắt tay xong là bị đá ra ngay."""
     src = inspect.getsource(tich_hop.cau_websocket)
     assert "cookie" in src.lower()
+
+
+# =====================================================================
+#  Bốn ứng dụng, và chỉ bốn
+# =====================================================================
+
+def test_dung_bon_ung_dung():
+    assert set(tich_hop.UNG_DUNG) == {"zalocrm", "chatwoot", "n8n", "minio"}
+
+
+def test_moi_ung_dung_deu_co_dia_chi():
+    for ten in tich_hop.UNG_DUNG:
+        assert tich_hop._dich(ten).startswith("http"), ten
+
+
+def test_danh_sach_trang_va_referer_dung_chung_mot_nguon():
+    """
+    Hai chỗ kiểm tên app phải đọc cùng một danh sách. Lệch nhau thì một tên
+    qua được cửa này mà chặn ở cửa kia — và cái lệch đó chính là loại lỗ
+    hổng người ta chỉ phát hiện sau khi bị lợi dụng.
+    """
+    src = inspect.getsource(tich_hop.ung_dung_tu_referer)
+    assert "UNG_DUNG" in src
+
+
+def test_dich_vu_khai_nhung_duoc():
+    """
+    Màn Hệ thống quyết định mở trong dashboard hay mở tab mới dựa vào cờ
+    này. Thiếu cờ thì mặc định mở tab mới — thận trọng đúng hướng, vì một
+    iframe trắng khó lần ra hơn một tab mới.
+    """
+    from agent.he_thong import DICH_VU
+
+    theo_ma = {d["ma"]: d for d in DICH_VU}
+    for ten in tich_hop.UNG_DUNG:
+        assert theo_ma[ten].get("nhung_duoc") is True, ten
+    # Chính dashboard KHÔNG được tự nhúng vào chính nó.
+    assert not theo_ma["dashboard"].get("nhung_duoc")

@@ -1,18 +1,26 @@
 """
 Cổng vào duy nhất — mọi hệ thống con nhìn từ một chỗ.
 
-VÌ SAO KHÔNG PROXY THẲNG
-------------------------
-Ý tưởng hiển nhiên là dựng proxy để mọi thứ nằm dưới `localhost:8000/zalo/`,
-`localhost:8000/chatwoot/`. Đã kiểm và KHÔNG làm được một cách vững:
+PROXY: TỪNG KẾT LUẬN LÀ KHÔNG LÀM ĐƯỢC, NAY LÀM ĐƯỢC
+----------------------------------------------------
+Bản đầu của file này viết rằng proxy "đã kiểm và KHÔNG làm được một cách
+vững", vì các app dùng đường dẫn TUYỆT ĐỐI:
 
     ZaloCRM  ->  href="/brand/zalocrm.ico"
     n8n      ->  src="/static/base-path.js"
 
-Cả hai dùng đường dẫn TUYỆT ĐỐI. Đặt sau tiền tố thì trình duyệt đi tìm
-`localhost:8000/brand/...` và hỏng sạch giao diện. Muốn chạy phải viết lại
-HTML, CSS, JS đang bay qua — và mỗi lần thượng nguồn cập nhật là hỏng lại.
-Đổi một địa chỉ đẹp lấy một thứ vỡ sau mỗi lần nâng cấp là đổi sai.
+Kết luận ấy đúng với cách làm hồi đó: viết lại HTML/CSS/JS đang bay qua để
+thêm tiền tố. Cách đó thật sự vỡ sau mỗi lần thượng nguồn nâng cấp.
+
+`agent/api/tich_hop.py` giải bằng đường khác: không viết lại gì cả, mà bám
+`Referer` để biết một request vào đường tuyệt đối thuộc về app nào. Thượng
+nguồn đổi đường dẫn thì vẫn chạy, vì lớp proxy không hề biết đường dẫn nào
+là hợp lệ.
+
+Nên nay có HAI cách mở, và mỗi dịch vụ khai rõ mình theo cách nào qua
+`nhung_duoc`: mở ngay trong dashboard, hoặc mở tab mới. Dịch vụ nào chưa
+kiểm được thì để `False` — mặc định thận trọng, vì một iframe trắng khó
+lần ra hơn một tab mới.
 
 VÌ SAO KHÔNG GỘP MÃ NGUỒN
 -------------------------
@@ -53,6 +61,7 @@ DICH_VU = [
         "url": "http://localhost:3080",
         "kiem": "http://localhost:3080/",
         "can_dang_nhap": True,
+        "nhung_duoc": True,
     },
     {
         "ma": "chatwoot",
@@ -61,6 +70,7 @@ DICH_VU = [
         "url": "http://localhost:3200",
         "kiem": "http://localhost:3200/",
         "can_dang_nhap": True,
+        "nhung_duoc": True,
     },
     {
         "ma": "n8n",
@@ -69,6 +79,7 @@ DICH_VU = [
         "url": "http://localhost:5678",
         "kiem": "http://localhost:5678/",
         "can_dang_nhap": True,
+        "nhung_duoc": True,
     },
     {
         "ma": "minio",
@@ -77,6 +88,7 @@ DICH_VU = [
         "url": "http://localhost:9001",
         "kiem": "http://localhost:9000/minio/health/live",
         "can_dang_nhap": True,
+        "nhung_duoc": True,
     },
 ]
 

@@ -7,11 +7,13 @@ Cả hai ứng dụng tự CẤM bị nhúng, và cấm theo hai cách khác nha
 
     ZaloCRM  :3080   X-Frame-Options: DENY        cấm nhúng vào bất kỳ đâu
     Chatwoot :3200   X-Frame-Options: SAMEORIGIN  chỉ cho nhúng nếu cùng origin
+    n8n      :5678   (không đặt header nào)       nhúng thoải mái
+    MinIO    :9001   DENY + CSP default-src self  chặn hai lớp
 
 Với Chatwoot, proxy qua cổng 8000 làm nó THÀNH cùng origin — nhúng được một
-cách hợp lệ, không phá vỡ biện pháp bảo vệ nào. Với ZaloCRM thì `DENY` nghĩa
-là nhà phát triển nói "đừng bao giờ nhúng tôi", nên lớp này phải XOÁ header
-đó đi.
+cách hợp lệ, không phá vỡ biện pháp bảo vệ nào. n8n không đặt gì, nên cũng
+không có gì để phá. Với ZaloCRM và MinIO thì `DENY` nghĩa là nhà phát triển
+nói "đừng bao giờ nhúng tôi", nên lớp này phải XOÁ header đó đi.
 
 NÓI RÕ CÁI GIÁ CỦA VIỆC XOÁ HEADER ẤY
 -------------------------------------
@@ -69,12 +71,26 @@ _BO_QUA = {"content-encoding", "content-length", "transfer-encoding",
            "connection", "keep-alive", "upgrade"}
 
 
+# Danh sách TRẮNG. Không phải để cho gọn — nếu tên app lấy thẳng từ URL rồi
+# ghép vào địa chỉ đích, thì `/tich-hop/evil.com/` biến dashboard thành máy
+# chuyển tiếp mù, đúng định nghĩa SSRF. Bốn tên này, không hơn.
+_MAC_DINH = {
+    "zalocrm": "http://127.0.0.1:3080",
+    "chatwoot": "http://127.0.0.1:3200",
+    "n8n": "http://127.0.0.1:5678",
+    "minio": "http://127.0.0.1:9001",
+}
+UNG_DUNG = tuple(_MAC_DINH)
+
+
 def _dich(ten: str) -> str:
     """Địa chỉ gốc của một app. Tên lạ thì 404, không đoán."""
-    if ten == "zalocrm":
-        return (settings.zalocrm_base_url or "http://127.0.0.1:3080").rstrip("/")
-    if ten == "chatwoot":
-        return (settings.chatwoot_base_url or "http://127.0.0.1:3200").rstrip("/")
+    if ten == "zalocrm" and settings.zalocrm_base_url:
+        return settings.zalocrm_base_url.rstrip("/")
+    if ten == "chatwoot" and settings.chatwoot_base_url:
+        return settings.chatwoot_base_url.rstrip("/")
+    if ten in _MAC_DINH:
+        return _MAC_DINH[ten]
     raise HTTPException(404, f"Không biết ứng dụng {ten!r}")
 
 
@@ -89,7 +105,7 @@ def ung_dung_tu_referer(referer: str) -> str | None:
         return None
     sau = referer.split(TIEN_TO + "/", 1)[-1]
     ten = sau.split("/", 1)[0].split("?", 1)[0]
-    return ten if ten in ("zalocrm", "chatwoot") else None
+    return ten if ten in UNG_DUNG else None
 
 
 def _sua_location(gia_tri: str, ten: str, goc: str) -> str:

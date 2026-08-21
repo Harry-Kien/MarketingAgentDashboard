@@ -751,11 +751,19 @@ async function loadHeThong() {
         <div class="row__main">
           <b>${esc(x.ten)}${x.chinh ? " · trang bạn đang xem" : ""}</b>
           <span class="row__sub">${esc(x.mo_ta)}
-            ${x.can_dang_nhap ? "· cần đăng nhập riêng" : ""}</span>
+            ${x.nhung_duoc ? "· mở ngay trong đây"
+              : x.can_dang_nhap ? "· cần đăng nhập riêng" : ""}</span>
         </div>
-        ${x.song
-          ? `<a class="btn btn--sm" href="${esc(x.url)}" target="_blank" rel="noopener">Mở</a>`
-          : `<span class="tag tag--halt">không chạy</span>`}
+        ${!x.song
+          ? `<span class="tag tag--halt">không chạy</span>`
+          : x.nhung_duoc
+            /* Nhúng được thì mở NGAY TRONG dashboard. Nút mở tab mới vẫn
+               giữ bên cạnh: iframe hỏng thì người vận hành phải còn một
+               đường vào, nếu không một lỗi giao diện thành mất quyền
+               truy cập cả hệ thống con. */
+            ? `<button type="button" class="btn btn--sm" data-mo-trong="${esc(x.ma)}">Mở</button>
+               <a class="btn btn--sm btn--ghost" href="${esc(x.url)}" target="_blank" rel="noopener" title="Mở tab mới">↗</a>`
+            : `<a class="btn btn--sm" href="${esc(x.url)}" target="_blank" rel="noopener">Mở</a>`}
       </div>`).join("");
     $("#hethongvisao").textContent = d.vi_sao_tach;
   } catch (e) {
@@ -766,6 +774,15 @@ async function loadHeThong() {
 }
 
 $("#hethongrun")?.addEventListener("click", loadHeThong);
+
+/* Bấm "Mở" ở màn Hệ thống -> nhảy sang màn Kết nối và mở đúng app đó.
+   Gắn trên vùng chứa chứ không trên từng nút: danh sách dựng lại sau mỗi
+   lần Kiểm tra, và listener gắn trên nút cũ thì chết theo nút cũ. */
+$("#hethong")?.addEventListener("click", (e) => {
+  const nut = e.target.closest("[data-mo-trong]");
+  if (!nut) return;
+  moManKetNoi(nut.dataset.moTrong);
+});
 
 /* ---------------- sức khoẻ hệ thống ---------------- */
 
@@ -1473,6 +1490,8 @@ kiemPhien().then((co) => {
 const KN_APP = {
   zalocrm: { nhan: "Quét QR trong đây để thêm nick Zalo. Nick mới hiện ngay ở mục Hệ thống." },
   chatwoot: { nhan: "Hộp thư gộp Facebook · Instagram · WhatsApp · chat web." },
+  n8n: { nhan: "Định tuyến báo động và đăng bài. Dán webhook vào CANH_GAC_WEBHOOK." },
+  minio: { nhan: "Kho file đính kèm của ZaloCRM." },
 };
 let knHienTai = null;
 const knFrames = {};
@@ -1514,6 +1533,16 @@ $("#knreload").addEventListener("click", () => {
   const f = knFrames[knHienTai];
   if (f) f.src = f.src;   /* nạp lại đúng app đang xem, không đụng app kia */
 });
+
+/* Từ màn Hệ thống nhảy sang đây và mở đúng app. Đổi cả `state.view` lẫn
+   lớp is-active của thanh bên — chỉ đổi một trong hai thì thanh bên sáng
+   một mục còn màn hình hiện mục khác. */
+function moManKetNoi(app) {
+  state.view = "ketnoi";
+  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "ketnoi"));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "ketnoi"));
+  knMo(app);
+}
 
 function loadKetNoi() {
   /* Chỉ nạp khi người dùng thật sự mở màn hình này. Nạp sẵn lúc khởi động

@@ -492,6 +492,12 @@ svg { flex: none; }
 .row__num { font-size: 12px; font-weight: 500; }
 .row__time { font-size: 11px; color: hsl(var(--muted-foreground)); }
 
+/* Thời gian chờ trong hàng đợi trực. Ở khung này con số quan trọng hơn chi
+   phí, nên nó thế chỗ `row__num`: người trực cần biết ai đợi lâu nhất,
+   không cần biết hội thoại đó tốn bao nhiêu tiền. */
+.row__wait { font-size: 12px; font-weight: 600; color: hsl(var(--muted-foreground)); }
+.row__wait--lau { color: hsl(var(--warning)); }
+
 .tag {
   display: inline-block;
   font-size: 11px;

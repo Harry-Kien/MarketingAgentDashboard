@@ -187,9 +187,14 @@ async function loadOverview() {
          null, "auto"),
   ].join("");
 
-  const waiting = await api("/conversations?status=can_nguoi&limit=12");
+  /* limit=200, không phải 12. Khung này là HÀNG ĐỢI, không phải bản tin:
+     cắt ở 12 nghĩa là khi có 20 khách chờ thì 8 người biến mất khỏi màn
+     hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
+     lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
+     API đã xếp sẵn ai chờ lâu nhất lên đầu. */
+  const waiting = await api("/conversations?status=can_nguoi&limit=200");
   $("#queue").innerHTML = waiting.length
-    ? waiting.map(convRow).join("")
+    ? waiting.map((c) => convRow(c, true)).join("")
     : '<p class="empty">Không có hội thoại nào đang chờ. Ca trực êm.</p>';
   wireConvRows("#queue");
 
@@ -247,7 +252,20 @@ function srcBadge(ch, nenTang) {
   return `<span class="src src--${esc(key)}">${esc(CHANNEL_LABEL[key] || key)}</span>`;
 }
 
-function convRow(c) {
+/* Ngưỡng để một ô chờ chuyển sang màu cảnh báo. Khớp với
+   `cho_nguoi_toi_da_phut` trong config — cùng một con số thì thứ người
+   trực nhìn thấy trên màn hình và thứ canh gác nhắn cho họ là một. */
+const CHO_LAU_PHUT = 30;
+
+function choBadge(phut) {
+  if (phut === undefined || phut === null) return "";
+  const nhan = phut < 60 ? `chờ ${phut}p`
+             : `chờ ${Math.floor(phut / 60)}h${String(phut % 60).padStart(2, "0")}`;
+  const lop = phut >= CHO_LAU_PHUT ? " row__wait--lau" : "";
+  return `<span class="row__wait${lop}">${nhan}</span>`;
+}
+
+function convRow(c, hangDoi) {
   const sig = SIGNAL[c.status] || "plain";
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
@@ -259,7 +277,7 @@ function convRow(c) {
       ${sub}
     </span>
     <span class="row__side">
-      <span class="row__num">${usd(c.cost)}</span>
+      ${hangDoi ? choBadge(c.cho_bao_lau_phut) : `<span class="row__num">${usd(c.cost)}</span>`}
       <span class="row__time">${clock(c.updated_at)}</span>
     </span>
   </button>`;

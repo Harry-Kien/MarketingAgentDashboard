@@ -231,7 +231,21 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
     elif status and status != "all":
         sql += " WHERE c.status = $1"
         args.append(status)
-    sql += f" ORDER BY c.updated_at DESC LIMIT {int(limit)}"
+
+    # THỨ TỰ: hàng đợi trực xếp NGƯỢC với mọi màn hình khác.
+    #
+    # Mọi chỗ khác trong dashboard là dòng thời gian — mới nhất lên đầu,
+    # đúng như người ta mong đợi. Nhưng "Chờ người xử lý" không phải dòng
+    # thời gian, nó là HÀNG ĐỢI. Xếp mới-nhất-trước ở đây có nghĩa: khách
+    # vừa nhắn xong được phục vụ trước, còn người đã ngồi đợi bốn mươi phút
+    # bị đẩy xuống đáy màn hình — và khi có nhiều hơn một trang thì rơi hẳn
+    # khỏi danh sách.
+    #
+    # Đây đúng là cách bảy khách biến mất khỏi khung trực lần trước, chỉ
+    # khác nguyên nhân: lần đó do lọc thiếu trạng thái, lần này do thứ tự
+    # và mức cắt. Ai chờ lâu nhất phải nằm trên cùng.
+    thu_tu = "ASC" if status == "can_nguoi" else "DESC"
+    sql += f" ORDER BY c.updated_at {thu_tu} LIMIT {int(limit)}"
 
     rows = await db.fetch(sql, *args)
     return [
@@ -247,6 +261,13 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
             "cost": round(_num(r["cost_usd"]), 6),
             "messages": r["msg_count"],
             "updated_at": r["updated_at"].isoformat(),
+            # Chờ bao lâu rồi, tính sẵn ở đây thay vì để trình duyệt tự trừ:
+            # máy của người trực có thể lệch giờ, và một hàng đợi mà con số
+            # chờ sai thì tệ hơn một hàng đợi không có con số nào.
+            "cho_bao_lau_phut": max(
+                0,
+                int((datetime.now(timezone.utc) - r["updated_at"]).total_seconds() // 60),
+            ),
             "last_message": r["last_message"],
             "typing": runtime.is_busy(r["id"]),
         }
@@ -1421,6 +1442,18 @@ async def pdpd_don() -> dict:
 async def dang_nhap(body: DangNhapIn, response: Response) -> dict:
     token = await xac_thuc.dang_nhap(body.ten_dang_nhap, body.mat_khau)
     if token is None:
+        # Đang bị khoá tạm thì PHẢI nói ra, kèm thời gian chờ. Giấu đi
+        # không làm người dò khó hơn chút nào — họ tự thấy mình bị chặn
+        # qua việc thử mãi không được — nhưng lại làm nhân viên thật ngồi
+        # gõ lại mật khẩu đúng và không hiểu vì sao hệ thống nói mình sai.
+        #
+        # Câu này không lộ tên nào có thật, vì tên KHÔNG tồn tại cũng bị
+        # đếm và cũng bị khoá y hệt.
+        if (con := xac_thuc.bi_khoa_tam(body.ten_dang_nhap)) > 0:
+            raise HTTPException(
+                429,
+                f"Sai quá nhiều lần. Thử lại sau {max(1, con // 60)} phút.",
+            )
         # KHÔNG nói sai tên hay sai mật khẩu. Nói rõ là chỉ ra tên nào có
         # tồn tại, và đó là nửa đầu của việc dò tài khoản.
         raise HTTPException(401, "Tên đăng nhập hoặc mật khẩu không đúng")

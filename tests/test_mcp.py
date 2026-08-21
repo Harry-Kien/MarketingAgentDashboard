@@ -146,3 +146,89 @@ def test_khong_con_nhac_ten_nhom_hang_bi_cam():
         assert "Đặc trị" not in json.dumps(t, ensure_ascii=False), (
             f"Mô tả công cụ {t['name']} còn nhắc nhóm hàng cũ"
         )
+
+
+# =====================================================================
+#  MCP trên chính cổng 8000
+# =====================================================================
+# Trước đây MCP qua HTTP là một tiến trình RIÊNG ở cổng 8765, không có xác
+# thực nào, chỉ an toàn nhờ nghe 127.0.0.1 — tức là an toàn cho tới đúng
+# ngày ai đó đổi host. Nay nó mount vào app chính và đi qua đúng lớp bảo vệ
+# của dashboard.
+
+import inspect as _inspect  # noqa: E402
+
+from agent import main as _app_main  # noqa: E402
+from agent.config import settings as _settings  # noqa: E402
+
+
+def test_khong_co_token_thi_mcp_tat_han():
+    """
+    Fail-closed có chủ đích. Máy chủ MCP mở ra toàn bộ danh mục, đơn hàng và
+    kho tri thức cho bất kỳ client nào gọi được — một tính năng như vậy
+    không được bật theo mặc định chỉ vì nó tiện.
+    """
+    src = _inspect.getsource(_app_main.chan_neu_chua_dang_nhap)
+    assert "if not khoa:" in src
+    assert "404" in src.split("if not khoa:")[1][:120]
+
+
+def test_mac_dinh_la_tat():
+    """
+    Máy vừa clone về không được tự phơi MCP ra.
+
+    Kiểm giá trị mặc định TRONG MÃ, không dựng  — dựng thì
+    pydantic đọc  của máy đang chạy, và test hoá ra chỉ đo cấu hình
+    cá nhân của người chạy nó.
+    """
+    assert _settings.__class__.model_fields["mcp_token"].default == ""
+
+
+def test_nhan_ca_token_lan_phien_dashboard():
+    """
+    Client MCP là ứng dụng khác (Claude Desktop), không đăng nhập bằng form
+    được — nên phải có đường token. Nhưng người đang mở dashboard thì cũng
+    phải gọi thử được mà không cần dán token.
+    """
+    src = _inspect.getsource(_app_main.chan_neu_chua_dang_nhap)
+    assert "Bearer" in src
+    assert "doc_phien" in src.split('duong.startswith("/mcp")')[1][:600]
+
+
+def test_chan_khi_khong_co_gi():
+    src = _inspect.getsource(_app_main.chan_neu_chua_dang_nhap)
+    assert "401" in src.split('duong.startswith("/mcp")')[1][:700]
+
+
+def test_mcp_khong_nam_trong_danh_sach_mo():
+    assert not any("mcp" in d for d in _app_main._MO)
+
+
+def test_thieu_gach_cheo_van_chay():
+    """
+    Mount ASGI chỉ nhận đúng đường có gạch chéo cuối; POST vào `/mcp` trả
+    405. Người cấu hình Claude Desktop gõ thiếu một ký tự sẽ nhận đúng lỗi
+    đó, và 405 không gợi ra được là thiếu gạch chéo.
+    """
+    duong = {getattr(r, "path", "") for r in _app_main.app.routes}
+    assert "/mcp" in duong
+
+
+def test_chuyen_huong_307_giu_nguyen_method():
+    """
+    302 biến POST thành GET và mọi lời gọi công cụ mất sạch tham số. Chỉ
+    307 mới giữ nguyên method lẫn thân request.
+    """
+    src = _inspect.getsource(_app_main._mcp_them_gach_cheo)
+    assert "307" in src
+
+
+def test_vong_doi_mcp_chay_trong_vong_doi_app():
+    """
+    Mount KHÔNG tự chạy lifespan của app con. Bỏ bước này thì request đầu
+    tiên ném "Task group is not initialized" — và lỗi đó chỉ hiện khi có
+    client thật gọi tới, tức hỏng im lặng cho tới đúng lúc cần dùng.
+    """
+    src = _inspect.getsource(_app_main.lifespan)
+    assert "lifespan_context" in src
+    assert "__aexit__" in src

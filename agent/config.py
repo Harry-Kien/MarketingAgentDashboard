@@ -169,6 +169,15 @@ class Settings(BaseSettings):
     # Cookie phiên chỉ gửi qua HTTPS. Bật cứng thì đăng nhập trên
     # http://localhost hỏng, nên để theo cấu hình — và BẮT BUỘC bật khi
     # đưa lên server thật.
+    # --- MCP qua HTTP ---
+    # Đặt token là BẬT; để rỗng là TẮT hẳn. Fail-closed có chủ đích: máy chủ
+    # MCP mở ra toàn bộ danh mục, đơn hàng và kho tri thức cho bất kỳ client
+    # nào gọi được. Một tính năng như vậy không được bật theo mặc định chỉ
+    # vì nó tiện.
+    #
+    # Sinh token: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    mcp_token: str = ""
+
     cookie_bao_mat: bool = False
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25

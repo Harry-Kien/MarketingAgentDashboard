@@ -522,6 +522,20 @@ Claude Desktop / Claude Code hỏi thẳng được:
 .venv/Scripts/python.exe -m scripts.mcp_thu
 ```
 
+**Hai đường vào, cùng một máy chủ:**
+
+| Đường | Dùng cho | Bật thế nào |
+|---|---|---|
+| stdio | Claude Desktop trên cùng máy | luôn có |
+| HTTP `localhost:8000/mcp` | client HTTP bất kỳ | đặt `MCP_TOKEN` trong `.env` |
+
+Đường HTTP nằm trên **chính cổng 8000**, không còn tiến trình riêng ở 8765,
+nên nó đi qua đúng lớp bảo vệ của dashboard: nhận **hoặc** `Authorization:
+Bearer <MCP_TOKEN>` **hoặc** phiên đăng nhập dashboard.
+
+`MCP_TOKEN` để rỗng thì `/mcp` trả 404 — **tắt hẳn**, không phải mở sẵn chờ
+ai đó nhớ ra mà khoá lại.
+
 **Ranh giới an toàn:** MCP chỉ có công cụ ĐỌC và soạn bài nháp. Không có
 công cụ đăng bài, chốt đơn hay nhắn tin cho khách — client MCP là một model
 khác, không đi qua chốt tuân thủ nào của hệ thống này. Ràng buộc đó được
@@ -537,7 +551,7 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-330 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+378 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
 tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
 trực, giới hạn đăng nhập.
 

@@ -162,10 +162,23 @@ async def lifespan(app: FastAPI):
     # thái dở, không ai nhặt lại và không dòng lỗi nào.
     video_workers = await video_worker.start()
     backuper = asyncio.create_task(backup_loop())
+
+    # Vòng đời của MCP phải chạy TRONG vòng đời app, không tự chạy được.
+    # Bỏ bước này thì mount xong vẫn ném "Task group is not initialized" ở
+    # request đầu tiên — mà lỗi đó chỉ hiện khi có client thật gọi tới, tức
+    # là hỏng im lặng cho tới đúng lúc cần dùng.
+    mcp_ctx = None
+    if settings.mcp_token and (_m := getattr(app.state, "mcp_app", None)):
+        mcp_ctx = _m.router.lifespan_context(_m)
+        await mcp_ctx.__aenter__()
     if poller:
         await db.log_event("poll.start", every_s=settings.zalocrm_poll_seconds)
 
     yield
+
+    if mcp_ctx is not None:
+        with suppress(Exception):
+            await mcp_ctx.__aexit__(None, None, None)
 
     backuper.cancel()
     with suppress(asyncio.CancelledError):
@@ -225,6 +238,22 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
     # XOÁ header chống nhúng của chúng. Để nó ngoài chốt đăng nhập là biến
     # cổng 8000 thành cửa sau vào cả hai hệ thống — nên nó phải nằm TRONG,
     # cùng một danh sách với /api.
+    # MCP: nhận HOẶC phiên dashboard HOẶC bearer token. Client MCP là một
+    # ứng dụng khác (Claude Desktop), nó không đăng nhập bằng form được —
+    # nhưng để nó vào tự do thì cổng 8000 phát toàn bộ danh mục, đơn hàng
+    # và kho tri thức cho bất cứ ai gọi tới.
+    if duong.startswith("/mcp"):
+        khoa = settings.mcp_token
+        if not khoa:
+            return JSONResponse({"error": "MCP chưa bật"}, status_code=404)
+        cho_phep = request.headers.get("authorization", "") == f"Bearer {khoa}"
+        if not cho_phep:
+            cho_phep = await xac_thuc.doc_phien(
+                request.cookies.get(TEN_COOKIE, "")) is not None
+        if not cho_phep:
+            return JSONResponse({"error": "Cần token MCP"}, status_code=401)
+        return await call_next(request)
+
     if (duong.startswith("/api/") or duong.startswith("/tich-hop"))             and duong not in _MO:
         nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
         if nguoi is None:
@@ -648,6 +677,40 @@ _VIDEO_DIR = settings.video_out_path
 if _VIDEO_DIR.exists():
     app.mount("/media/videos",
               StaticFiles(directory=str(_VIDEO_DIR)), name="media-videos")
+
+@app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
+async def _mcp_them_gach_cheo(request: Request):
+    """
+    `/mcp` và `/mcp/` phải chạy như nhau.
+
+    Mount ASGI chỉ nhận đúng đường có gạch chéo cuối; POST vào `/mcp` trả
+    405 Method Not Allowed. Người cấu hình Claude Desktop gõ thiếu một ký
+    tự sẽ nhận đúng lỗi đó, và 405 không gợi ra được là thiếu gạch chéo.
+
+    307 chứ không phải 302: chỉ 307 mới giữ nguyên method và thân request.
+    302 biến POST thành GET và mọi lời gọi công cụ mất sạch tham số.
+    """
+    from fastapi.responses import RedirectResponse
+
+    duoi = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(f"/mcp/{duoi}", status_code=307)
+
+
+# MCP trên CHÍNH cổng 8000 — không còn tiến trình riêng ở 8765.
+#
+# `agent/mcp_server.py` vẫn chạy độc lập được bằng stdio cho Claude Desktop;
+# lối này là cho client HTTP, và nó đi qua đúng lớp bảo vệ của dashboard
+# thay vì tự phơi ra một cổng không có xác thực nào.
+#
+# Mount TRƯỚC "/" vì mount "/" nuốt hết.
+if settings.mcp_token:
+    from agent.mcp_server import mcp as _mcp
+
+    _mcp_app = _mcp.streamable_http_app(streamable_http_path="/", stateless_http=True)
+    app.mount("/mcp", _mcp_app, name="mcp")
+    # Cất lại để `lifespan` khởi động được nó. Mount không tự chạy lifespan
+    # của app con — đây là chỗ mọi lần mount ASGI lồng nhau bị vấp.
+    app.state.mcp_app = _mcp_app
 
 if DASHBOARD_DIR.exists():
     app.mount("/", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")

@@ -18,7 +18,12 @@ video-studio/
 # Tài liệu công ty, bảng giá, tồn kho, bộ eval và kết quả chạy đều là dữ
 # liệu vận hành, không phải mã nguồn. Repo này công khai.
 data/knowledge/
-data/eval/
+data/eval/*
+# Ngoại lệ: bộ kịch bản MẪU là hiện vật kiểm thử, không phải dữ liệu doanh
+# nghiệp — hội thoại hư cấu, thương hiệu hư cấu, không có số liệu thật nào.
+# Nó PHẢI lên repo, vì tests/test_eval_nhieu_luot.py đọc nó: máy vừa clone
+# mà thiếu file này thì CI đỏ ngay ở bước thu thập.
+!data/eval/kich_ban.example.jsonl
 data/test_img/
 data/videos/
 

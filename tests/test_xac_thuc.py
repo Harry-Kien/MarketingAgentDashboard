@@ -256,3 +256,135 @@ def test_khong_co_trang_tao_tai_khoan_dau_tien_tren_web():
     src = inspect.getsource(routes)
     assert "bootstrap" not in src.lower()
     assert (ROOT / "scripts" / "tao_tai_khoan.py").exists()
+
+
+# =====================================================================
+#  Giới hạn tần suất đăng nhập
+# =====================================================================
+# scrypt chỉ LÀM CHẬM việc dò mật khẩu (~100ms mỗi lần), không CHẶN nó.
+# Không có lớp này thì người dò có thời gian vô hạn.
+
+def _sach_bo_dem():
+    xac_thuc._that_bai.clear()
+
+
+def test_duoi_nguong_thi_van_duoc_thu():
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA - 1):
+        xac_thuc.ghi_that_bai("admin")
+    assert xac_thuc.bi_khoa_tam("admin") == 0
+
+
+def test_dat_nguong_thi_bi_khoa():
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("admin")
+    assert xac_thuc.bi_khoa_tam("admin") > 0
+
+
+def test_khoa_het_han_sau_khi_cua_so_troi_qua():
+    """Khoá là tạm thời. Người thật gõ nhầm không bị chặn vĩnh viễn."""
+    _sach_bo_dem()
+    t = 1000.0
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("admin", t)
+    assert xac_thuc.bi_khoa_tam("admin", t + 1) > 0
+    assert xac_thuc.bi_khoa_tam("admin", t + xac_thuc.DANG_NHAP_CUA_SO + 1) == 0
+
+
+def test_dang_nhap_dung_thi_xoa_lich_su_sai():
+    """
+    Gõ nhầm bảy lần rồi nhớ ra mật khẩu thì lần sau phải được bắt đầu lại
+    từ đầu — nếu không, một người hay quên sẽ tích dần tới ngưỡng và bị
+    khoá vì một chuỗi lỗi trải suốt cả ngày.
+    """
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA - 1):
+        xac_thuc.ghi_that_bai("lan")
+    xac_thuc.xoa_that_bai("lan")
+    assert xac_thuc.bi_khoa_tam("lan") == 0
+
+
+def test_dem_rieng_tung_tai_khoan():
+    """Người dò khoá được `admin` không có nghĩa là khoá được cả tiệm."""
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("admin")
+    assert xac_thuc.bi_khoa_tam("admin") > 0
+    assert xac_thuc.bi_khoa_tam("lan") == 0
+
+
+def test_ten_khong_ton_tai_cung_bi_dem():
+    """
+    Bỏ qua tên lạ thì người dò chỉ cần đổi tên mỗi lượt là thoát chốt. Tệ
+    hơn: "tên này bị khoá, tên kia không" chính là chỉ ra tên nào có thật.
+    """
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("khong-ton-tai-bao-gio")
+    assert xac_thuc.bi_khoa_tam("khong-ton-tai-bao-gio") > 0
+
+
+def test_ten_khong_phan_biet_hoa_thuong_va_khoang_trang():
+    """`dang_nhap()` chuẩn hoá tên trước khi tra; bộ đếm phải chuẩn hoá y hệt,
+    nếu không người dò đổi `Admin` / ` admin ` là có bộ đếm mới."""
+    _sach_bo_dem()
+    for _ in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("  ADMIN  ")
+    assert xac_thuc.bi_khoa_tam("admin") > 0
+
+
+def test_chot_tan_suat_chan_truoc_khi_cham_csdl():
+    """
+    Chốt phải nằm TRƯỚC truy vấn CSDL và trước lần băm scrypt. Đặt sau thì
+    chính chốt chống dò trở thành đường làm nghẽn máy chủ: mỗi lần thử vẫn
+    tốn một lần đọc bảng và 100ms CPU.
+    """
+    src = inspect.getsource(xac_thuc.dang_nhap)
+    assert src.index("bi_khoa_tam") < src.index("db.fetchrow")
+
+
+def test_moi_nhanh_that_bai_deu_ghi_vao_bo_dem():
+    """
+    Ba đường ra thất bại: không có tài khoản, tài khoản bị khoá, sai mật
+    khẩu. Bỏ sót một đường là để hở đúng đường đó cho người dò.
+    """
+    src = inspect.getsource(xac_thuc.dang_nhap)
+    assert src.count("ghi_that_bai(") == 3
+    assert src.count('log_event("auth.that_bai"') == 3
+
+
+def test_bo_dem_khong_phinh_vo_han():
+    """
+    Bộ đếm chỉ tự dọn khi chính tên đó bị chạm lại. Người dò đổi tên mỗi
+    lượt thì không tên nào bị chạm lần hai — và chốt chống dò tự biến thành
+    đường làm cạn bộ nhớ máy chủ.
+    """
+    _sach_bo_dem()
+    t = 1000.0
+    for i in range(xac_thuc._TOI_DA_TEN_THEO_DOI + 50):
+        xac_thuc.ghi_that_bai(f"ten-gia-{i}", t)
+    assert len(xac_thuc._that_bai) <= xac_thuc._TOI_DA_TEN_THEO_DOI + 1
+
+    # Bỏ mục cũ nhất, không bỏ mục mới nhất: tên đang bị nhắm liên tục
+    # được chạm nên luôn nằm trong nhóm mới, và bộ đếm của nó không bị
+    # người dò xoá đi bằng cách bắn tên rác.
+    assert "ten-gia-0" not in xac_thuc._that_bai
+    assert f"ten-gia-{xac_thuc._TOI_DA_TEN_THEO_DOI + 49}" in xac_thuc._that_bai
+    _sach_bo_dem()
+
+
+def test_khong_the_xoa_bo_dem_cua_nguoi_dang_bi_nham_bang_ten_rac():
+    """
+    Nếu dọn theo kiểu bỏ bừa, người dò chỉ cần bắn đủ tên rác là xoá được
+    bộ đếm của `admin` rồi dò tiếp từ đầu — chốt trở thành đồ trang trí.
+    """
+    _sach_bo_dem()
+    t = 1000.0
+    for i in range(xac_thuc.DANG_NHAP_TOI_DA):
+        xac_thuc.ghi_that_bai("admin", t + i)      # nạn nhân, bị chạm liên tục
+    for i in range(xac_thuc._TOI_DA_TEN_THEO_DOI + 100):
+        xac_thuc.ghi_that_bai(f"rac-{i}", t + 1)   # tên rác, cũ hơn
+        xac_thuc.ghi_that_bai("admin", t + 2 + i)  # người dò vẫn đang thử admin
+    assert xac_thuc.bi_khoa_tam("admin", t + 200) > 0
+    _sach_bo_dem()

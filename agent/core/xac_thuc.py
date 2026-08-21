@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 from .. import db
@@ -144,9 +145,135 @@ async def doi_mat_khau(ten_dang_nhap: str, mat_khau_moi: str) -> bool:
 #  Phiên
 # ---------------------------------------------------------------
 
+# ---------------------------------------------------------------
+#  Giới hạn tần suất đăng nhập
+# ---------------------------------------------------------------
+# VẤN ĐỀ
+# ------
+# scrypt làm mỗi lần thử tốn khoảng 100ms. Đó là LÀM CHẬM, không phải
+# CHẶN: một tiến trình dò chạy liên tục vẫn thử được ~860.000 lần mỗi
+# ngày, và mật khẩu do người tự đặt thì rất nhiều cái nằm trong khoảng
+# đó. Không có lớp này thì người dò có thời gian vô hạn.
+#
+# ĐẾM TRONG BỘ NHỚ, KHÔNG ĐẾM TRONG CSDL
+# --------------------------------------
+# Nhật ký `auth.that_bai` đã nằm trong bảng `events`, nên đếm từ đó là
+# cách gọn nhất về mặt mã. Nhưng nó bắt mỗi lần đăng nhập phải quét một
+# bảng đang lớn dần theo ngày, và biến chốt bảo mật thành thứ hỏng theo
+# khi bảng phình. Đếm trong bộ nhớ thì hằng số, không phụ thuộc CSDL, và
+# kiểm thử được mà không cần Postgres.
+#
+# GIỚI HẠN PHẢI NÓI RÕ: khởi động lại tiến trình là xoá sạch bộ đếm, và
+# nếu sau này chạy nhiều worker thì mỗi worker đếm riêng. Với triển khai
+# hiện tại — một máy, một tiến trình — điều đó chấp nhận được. Ngày nào
+# chạy nhiều tiến trình thì bộ đếm này phải chuyển sang Redis.
+#
+# KHOÁ THEO TÊN ĐĂNG NHẬP — VÀ CÁI GIÁ CỦA NÓ
+# -------------------------------------------
+# Khoá theo tên nghĩa là kẻ xấu gõ sai 8 lần vào tài khoản `admin` sẽ
+# khoá luôn `admin` thật trong 15 phút. Đó là một dạng quấy rối, và ta
+# chấp nhận có chủ đích: 15 phút chờ khó chịu hơn nhiều so với mất toàn
+# bộ dữ liệu khách hàng. Cửa sổ ngắn để cái giá đó không quá đắt.
+#
+# Đếm CẢ tên không tồn tại. Bỏ qua tên lạ thì người dò chỉ cần đổi tên
+# mỗi lượt là thoát — và tệ hơn, việc "tên này bị khoá, tên kia không"
+# lại chỉ ra đúng tên nào có thật.
+
+DANG_NHAP_TOI_DA = 8        # số lần sai cho phép trong một cửa sổ
+DANG_NHAP_CUA_SO = 15 * 60  # độ dài cửa sổ, tính bằng giây
+
+# ten_dang_nhap -> các mốc thời gian thất bại còn trong cửa sổ
+_that_bai: dict[str, list[float]] = {}
+
+
+def _bay_gio(t: float | None = None) -> float:
+    return time.monotonic() if t is None else t
+
+
+def _con_trong_cua_so(ten: str, t: float) -> list[float]:
+    """Bỏ các lần sai đã quá cũ, trả về phần còn lại."""
+    moc = [m for m in _that_bai.get(ten, []) if t - m < DANG_NHAP_CUA_SO]
+    if moc:
+        _that_bai[ten] = moc
+    else:
+        _that_bai.pop(ten, None)
+    return moc
+
+
+# Bộ đếm chỉ tự dọn khi CHÍNH tên đó bị chạm lại. Người dò đổi tên mỗi
+# lượt thì không tên nào bị chạm lần hai, và cái dict này phình mãi — chốt
+# chống dò tự biến thành đường làm cạn bộ nhớ. Quá mức này thì quét dọn
+# một lượt toàn bộ.
+_TOI_DA_TEN_THEO_DOI = 4096
+
+
+def _don_toan_bo(t: float) -> None:
+    """
+    Dọn về dưới mức trần. Hai bước, và bước hai là bước bắt buộc.
+
+    Chỉ bỏ mục hết hạn là KHÔNG đủ: người dò bắn 5.000 tên khác nhau trong
+    vòng một phút thì chẳng mục nào hết hạn cả, và dict vẫn phình. Nên khi
+    dọn xong mà vẫn quá trần thì bỏ tiếp các mục CŨ NHẤT cho tới khi vừa.
+
+    Bỏ mục cũ nhất có làm mất bộ đếm của ai đó không? Có — nhưng không mất
+    của người đang bị nhắm. Kẻ dò `admin` khiến `admin` liên tục được chạm,
+    nên `admin` luôn nằm trong nhóm mới nhất và không bị bỏ. Thứ bị bỏ là
+    các tên rác họ vừa bắn ra, tức đúng thứ nên bỏ.
+    """
+    for ten in [k for k, v in _that_bai.items()
+                if all(t - m >= DANG_NHAP_CUA_SO for m in v)]:
+        _that_bai.pop(ten, None)
+
+    if len(_that_bai) < _TOI_DA_TEN_THEO_DOI:
+        return
+    theo_tuoi = sorted(_that_bai.items(), key=lambda kv: kv[1][-1])
+    for ten, _ in theo_tuoi[: len(_that_bai) - _TOI_DA_TEN_THEO_DOI + 1]:
+        _that_bai.pop(ten, None)
+
+
+def ghi_that_bai(ten_dang_nhap: str, t: float | None = None) -> None:
+    """Ghi một lần đăng nhập sai."""
+    ten = (ten_dang_nhap or "").strip().lower()
+    t = _bay_gio(t)
+    if len(_that_bai) >= _TOI_DA_TEN_THEO_DOI:
+        _don_toan_bo(t)
+    moc = _con_trong_cua_so(ten, t)
+    _that_bai[ten] = [*moc, t]
+
+
+def xoa_that_bai(ten_dang_nhap: str) -> None:
+    """Đăng nhập đúng thì xoá lịch sử sai — người thật gõ nhầm vài lần
+    rồi nhớ ra không đáng bị tính tiếp vào lần sau."""
+    _that_bai.pop((ten_dang_nhap or "").strip().lower(), None)
+
+
+def bi_khoa_tam(ten_dang_nhap: str, t: float | None = None) -> int:
+    """
+    Còn phải chờ bao nhiêu GIÂY nữa mới được thử lại. 0 nghĩa là được thử.
+    """
+    ten = (ten_dang_nhap or "").strip().lower()
+    t = _bay_gio(t)
+    moc = _con_trong_cua_so(ten, t)
+    if len(moc) < DANG_NHAP_TOI_DA:
+        return 0
+    # Mở khoá khi lần sai thứ (n - TOI_DA + 1) tính từ cuối trôi khỏi cửa sổ.
+    som_nhat = moc[-DANG_NHAP_TOI_DA]
+    return max(1, int(DANG_NHAP_CUA_SO - (t - som_nhat)) + 1)
+
+
 async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
     """Trả token phiên, hoặc None nếu sai. KHÔNG nói sai ở đâu."""
     ten_dang_nhap = (ten_dang_nhap or "").strip().lower()
+
+    # Chốt tần suất đứng TRƯỚC cả truy vấn CSDL: đang bị khoá thì không
+    # tốn một lần đọc bảng nào, và cũng không tốn 100ms băm scrypt. Nếu
+    # đặt sau, chính chốt chống dò lại trở thành đường làm nghẽn máy chủ.
+    if (con := bi_khoa_tam(ten_dang_nhap)) > 0:
+        await db.log_event("auth.khoa_tam", actor=ten_dang_nhap[:40],
+                           ly_do=f"quá {DANG_NHAP_TOI_DA} lần sai",
+                           con_giay=con)
+        return None
+
     nd = await db.fetchrow(
         "SELECT id, mat_khau_bam, vai_tro, khoa FROM nguoi_dung "
         "WHERE ten_dang_nhap = $1", ten_dang_nhap,
@@ -158,18 +285,22 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
         kiem_mat_khau(mat_khau, bam_mat_khau("khong-co-that"))
         await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
                            ly_do="không có tài khoản")
+        ghi_that_bai(ten_dang_nhap)
         return None
 
     if nd["khoa"]:
         await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
                            ly_do="tài khoản bị khoá")
+        ghi_that_bai(ten_dang_nhap)
         return None
 
     if not kiem_mat_khau(mat_khau, nd["mat_khau_bam"]):
         await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
                            ly_do="sai mật khẩu")
+        ghi_that_bai(ten_dang_nhap)
         return None
 
+    xoa_that_bai(ten_dang_nhap)
     token = secrets.token_urlsafe(32)
     await db.execute(
         "INSERT INTO phien (token, nguoi_dung_id, het_han) VALUES ($1,$2,$3)",

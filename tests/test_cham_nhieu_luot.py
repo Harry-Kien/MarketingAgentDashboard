@@ -148,3 +148,65 @@ def test_mot_loi_bat_ky_cung_lam_truot():
 
 def test_hoi_thoai_rong_khong_no():
     assert cham.cham([])["dat"]
+
+
+# =====================================================================
+#  Hồi quy từ DỮ LIỆU CHẠY THẬT
+# =====================================================================
+# Lần chạy đầu tiên của bộ nhiều lượt báo 5/12 ca "bỏ rơi khách". Đọc lại
+# câu trả lời thật thì 3 trong 5 là bộ đo báo nhầm, không phải agent hỏng.
+#
+# Một bộ đo báo nhầm tệ hơn không có bộ đo: nó chỉ sai chỗ, và người ta đi
+# sửa prompt đang đúng. Các ca dưới đây là câu chữ NGUYÊN VĂN từ lần chạy
+# đó, giữ lại để lần sửa sau không làm hỏng lại.
+
+def test_that_hua_kiem_tra_roi_bao_khong_phai_bo_roi():
+    """kb-01, lượt cuối. Có gợi bước tiếp rõ ràng."""
+    t = "Em kiểm tra giá sản phẩm rồi báo tổng tiền để mình xác nhận luôn nha."
+    assert not cham.hoi_thoai_chet(t)
+
+
+def test_xin_them_thong_tin_khong_phai_bo_roi():
+    """kb-12, lượt cuối. Đang xin thông tin để lên đơn, không phải dừng."""
+    t = ("Dạ vâng ạ. Chị Hương cho em xin tên sản phẩm kem chống nắng chị "
+         "muốn lấy nhé.")
+    assert not cham.hoi_thoai_chet(t)
+
+
+def test_tra_loi_xong_roi_dung_han_la_bo_roi():
+    """kb-06, lượt cuối. Đây mới là lỗi thật — nhân viên thật sẽ xoay sang
+    hỏi khách cần gì cho da, chứ không đóng cửa cuộc trò chuyện."""
+    t = ("Dạ hiện tại Aurora Skin chưa có sản phẩm son môi ạ. Bên em chuyên "
+         "về các sản phẩm chăm sóc da thôi ạ.")
+    assert cham.hoi_thoai_chet(t)
+
+
+def test_giai_thich_xong_khong_dan_tiep_la_bo_roi():
+    """kb-02, lượt cuối."""
+    t = ("Dạ mình dùng sữa rửa mặt trước để làm sạch da, rồi sau đó mới đến "
+         "kem dưỡng nha chị. Sữa rửa mặt là bước đầu tiên để loại bỏ bụi bẩn, "
+         "dầu thừa, giúp da sạch thoáng ạ.")
+    assert cham.hoi_thoai_chet(t)
+
+
+def test_xac_nhan_truoc_khi_len_don_khong_phai_hoi_lai():
+    """
+    kb-12, lượt 3. Prompt BẮT BUỘC tóm tắt cho khách xác nhận trước khi gọi
+    `tao_don_hang`. Bộ đo phạt đúng cái prompt yêu cầu thì nó không đo agent
+    nữa — nó đang cãi nhau với chính hệ thống.
+    """
+    luot = [
+        {"khach": "em tên Hương, sđt 0901234567", "agent": "Dạ vâng ạ"},
+        {"khach": "lấy cho em 1 cái", "agent":
+         "Chị xác nhận lại giúp em họ tên đầy đủ và số điện thoại nhận hàng nha"},
+    ]
+    assert cham.hoi_lai_da_biet(luot) == []
+
+
+def test_hoi_lai_that_su_van_bi_bat():
+    """Nới cho xác nhận không được nới luôn cho đãng trí."""
+    luot = [
+        {"khach": "em tên Hương, sđt 0901234567", "agent": "Dạ vâng ạ"},
+        {"khach": "lấy cho em 1 cái", "agent": "Dạ chị cho em xin số điện thoại ạ"},
+    ]
+    assert [t for _, t in cham.hoi_lai_da_biet(luot)] == ["số điện thoại"]

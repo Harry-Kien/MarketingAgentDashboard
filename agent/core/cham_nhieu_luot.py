@@ -86,6 +86,22 @@ _DA_BIET: tuple[tuple[str, re.Pattern, re.Pattern], ...] = (
 )
 
 
+# XÁC NHẬN KHÔNG PHẢI HỎI LẠI.
+#
+# Prompt BẮT BUỘC agent tóm tắt lại cho khách xác nhận trước khi gọi
+# `tao_don_hang`: sản phẩm gì, mấy cái, giao cho ai, số nào, địa chỉ nào.
+# Một bộ đo phạt đúng cái prompt yêu cầu thì nó không đo agent nữa — nó
+# chỉ đang cãi nhau với chính hệ thống.
+#
+# Đã bắt nhầm thật ở lần chạy đầu: agent viết "chị xác nhận lại giúp em họ
+# tên đầy đủ và số điện thoại nhận hàng" — đúng nghiệp vụ, bị chấm là đãng
+# trí.
+_XAC_NHAN = re.compile(
+    r"(xac nhan|xac minh|kiem tra lai|nhac lai|dung khong|co dung|chinh xac chua"
+    r"|em ghi (lai )?(the )?nay|thong tin (giao hang|don hang))"
+)
+
+
 def hoi_lai_da_biet(luot: list[dict]) -> list[tuple[int, str]]:
     """
     Các lần agent hỏi lại điều khách đã nói ở lượt TRƯỚC đó.
@@ -103,8 +119,9 @@ def hoi_lai_da_biet(luot: list[dict]) -> list[tuple[int, str]]:
     da_noi: set[str] = set()
     for i, l in enumerate(luot):
         agent = khong_dau(l.get("agent", ""))
+        dang_xac_nhan = bool(_XAC_NHAN.search(agent))
         for ten, _, mau_hoi in _DA_BIET:
-            if ten in da_noi and mau_hoi.search(agent):
+            if ten in da_noi and mau_hoi.search(agent) and not dang_xac_nhan:
                 loi.append((i, ten))
         khach = khong_dau(l.get("khach", ""))
         for ten, mau_noi, _ in _DA_BIET:
@@ -137,9 +154,22 @@ def hoi_don_dap(tra_loi: str, toi_da: int = 2) -> int:
 #
 # KHÔNG tính là chết khi agent vừa chuyển người: lúc đó bước tiếp theo là
 # một con người, và giục thêm là sai.
+# Ba cách một lượt KHÔNG chết, học từ dữ liệu chạy thật:
+#
+#   hỏi          "...không ạ?"
+#   xin thông tin "cho em xin tên sản phẩm", "chị xác nhận lại giúp em"
+#   hứa việc     "em kiểm tra giá rồi báo tổng tiền"
+#
+# Bản đầu chỉ bắt cách thứ nhất và vài cụm của cách thứ ba, nên báo nhầm 3
+# trong 5 ca ở lần chạy đầu tiên. Một bộ đo báo nhầm thì tệ hơn không có —
+# nó chỉ sai chỗ, và người ta đi sửa prompt đang đúng.
 _MOI_TIEP = re.compile(
-    r"(\?|minh (co )?muon|anh chi (co )?muon|em (gui|tu van|len don|dat)"
-    r"|de em|minh lay|chot don|dat hang|xem (them|thu)|can em)",
+    r"(\?"
+    r"|cho em xin|xin phep|giup em|xac nhan"
+    r"|(minh|anh|chi|ban) cho em"
+    r"|de em|em (se )?(gui|bao|kiem tra|tu van|len don|dat|lay|chuan bi)"
+    r"|(minh|anh chi) (co )?muon|minh lay|chot don|dat hang|xem (them|thu)"
+    r"|can em)",
 )
 
 

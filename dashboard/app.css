@@ -1197,3 +1197,24 @@ svg { flex: none; }
   color: hsl(var(--foreground));
   font-weight: 600;
 }
+
+/* Ảnh khách gửi trong hội thoại. Giới hạn chiều cao chứ không giới hạn
+   chiều rộng: ảnh chụp da thường dựng đứng, và một tấm ảnh dọc không bị
+   chặn sẽ đẩy toàn bộ hội thoại xuống dưới màn hình. */
+.msg__anh { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.msg__anh img {
+  max-height: 200px;
+  max-width: 100%;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid hsl(var(--border));
+  display: block;
+  cursor: zoom-in;
+}
+.msg__file {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  text-decoration: none;
+}

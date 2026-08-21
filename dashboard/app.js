@@ -329,8 +329,23 @@ async function loadThread(id) {
       (m.sources || []).length ? "nguồn: " + m.sources.join(", ") : "",
     ].filter(Boolean).join(" · ");
 
+    /* Ảnh khách gửi. Đường dẫn đã trỏ qua proxy từ lúc đọc webhook, nên
+       hiện được bằng chính phiên dashboard — người trực không phải đăng
+       nhập Chatwoot lần nữa chỉ để xem một tấm ảnh.
+
+       Ảnh nằm TRÊN bong bóng chữ: khách gửi ảnh trước rồi mới gõ chú
+       thích, và đảo thứ tự làm người đọc hiểu ngược ý họ. */
+    const anh = (m.attachments || []).length
+      ? `<div class="msg__anh">${m.attachments.map((a) =>
+          a.loai === "image"
+            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="ảnh khách gửi" loading="lazy"></a>`
+            : `<a class="msg__file" href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.loai)}</a>`
+        ).join("")}</div>`
+      : "";
+
     return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""}">
-      <div class="msg__bubble">${esc(m.content)}</div>
+      ${anh}
+      ${m.content ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
         ${draft ? `<button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}

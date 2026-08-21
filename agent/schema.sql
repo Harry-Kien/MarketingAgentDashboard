@@ -240,6 +240,14 @@ CREATE INDEX IF NOT EXISTS idx_metric_post ON post_metrics (post_id, thu_thap_lu
 -- NULL = dùng nick mặc định đang chọn trên dashboard.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS zalo_account_id TEXT;
 
+-- Ảnh và file khách gửi kèm. Trước cột này, tin nhắn chỉ có ảnh bị BỎ HẲN
+-- ngay ở bộ đọc webhook: không hội thoại, không bản ghi, không ai biết —
+-- khách gửi ảnh vùng da đang có vấn đề rồi ngồi chờ mãi.
+--
+-- JSONB chứ không phải TEXT[]: mỗi ảnh mang theo loại file và cả hai đường
+-- dẫn (ảnh gốc + ảnh thu nhỏ), và mảng chuỗi thì không giữ nổi.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]';
+
 -- --- Trí nhớ về khách hàng ------------------------------------
 -- Ranh giới giữa chatbot và agent: một chatbot trả lời rồi quên, agent giữ
 -- lại hiểu biết về từng người và dùng ở lần sau.

@@ -401,9 +401,11 @@ async def handle_inbound(msg: InboundMessage) -> None:
     cid: uuid.UUID = conv["id"]
 
     await db.execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES ($1,'customer',$2)",
+        "INSERT INTO messages (conversation_id, role, content, attachments) "
+        "VALUES ($1,'customer',$2,$3)",
         cid,
         msg.text,
+        msg.attachments,   # codec JSONB tự mã hoá
     )
     await db.execute(
         "UPDATE conversations SET msg_count = msg_count + 1, updated_at = now() "
@@ -420,6 +422,28 @@ async def handle_inbound(msg: InboundMessage) -> None:
         )
         return
 
+    # KHÁCH GỬI ẢNH KHÔNG KÈM CHỮ -> CHUYỂN NGƯỜI, KHÔNG ĐOÁN
+    # -------------------------------------------------------
+    # Model đang chạy nhìn được ảnh, nhưng đó không phải lý do để nó trả
+    # lời. Người ta chụp chỗ da đang có vấn đề thay vì tả bằng lời — và
+    # nhìn ảnh da rồi khuyên dùng gì chính là chẩn đoán, đúng việc mà
+    # prompt đã cấm và `_bat_buoc_chuyen` đã chặn khi khách MÔ TẢ bằng chữ.
+    # Chặn chữ mà bỏ lọt ảnh thì chốt tuân thủ chỉ là hình thức: khách nào
+    # gửi ảnh là đi vòng qua được.
+    #
+    # Ảnh CÓ kèm chữ thì đi đường thường: câu chữ cho agent đủ căn cứ để
+    # biết mình có đủ thẩm quyền hay không, và các lớp lưới cũ vẫn chạy.
+    if msg.attachments and not msg.text.strip():
+        await db.execute(
+            "UPDATE conversations SET status = 'escalated', "
+            "outcome = 'escalated', updated_at = now() WHERE id = $1", cid,
+        )
+        await db.log_event("conversation.escalated", ref_id=cid,
+                           reason="khách gửi ảnh không kèm chữ")
+        with suppress(Exception):
+            await adapter_bao_nguoi(msg, cid)
+        return
+
     history = await _history(cid)
 
     runtime.mark_busy(cid)          # dashboard vẽ bong bóng "đang soạn tin"
@@ -430,8 +454,15 @@ async def handle_inbound(msg: InboundMessage) -> None:
     with suppress(Exception):
         await adapter.bao_dang_go(msg.conversation_ref, True)
     try:
+        # Agent phải BIẾT là có ảnh. Không nói thì nó trả lời câu chữ như
+        # thể ảnh không tồn tại — khách gửi ảnh kèm "cái này còn hàng
+        # không ạ?" mà nhận về câu hỏi lại "mình muốn hỏi sản phẩm nào ạ?".
+        cau_hoi = msg.text
+        if msg.attachments:
+            cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} ảnh — bạn KHÔNG "
+                       f"xem được nội dung ảnh] {msg.text}")
         reply = await brain.respond(
-            conversation_id=cid, history=history, question=msg.text,
+            conversation_id=cid, history=history, question=cau_hoi,
             customer_ref=msg.customer_ref, channel=msg.channel,
         )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
@@ -557,6 +588,28 @@ async def handle_inbound(msg: InboundMessage) -> None:
                 msg.conversation_ref,
                 reply.escalate_reason or "agent không xử lý được",
                 tom_tat=msg.text[:200],
+            )
+
+
+async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
+    """
+    Báo cả hai phía khi chuyển người: khách nhận một câu, nhân viên nhận
+    ghi chú trong hộp thư của kênh.
+
+    Tách ra dùng chung vì nhánh "ảnh không kèm chữ" thoát sớm, không đi qua
+    đoạn báo chuyển người ở cuối `handle_inbound`. Không gọi ở đây thì khách
+    gửi ảnh xong nhận lại đúng sự im lặng — tức là vẫn bị bỏ rơi, chỉ khác
+    là nay có bản ghi trong CSDL để sau này truy ra.
+    """
+    adapter = channels.get(msg.channel)
+    with suppress(Exception):
+        await adapter.bao_chuyen_nguoi(
+            msg.conversation_ref, "khách gửi ảnh, cần người xem"
+        )
+    if runtime.mode() == "auto" and await adapter.can_send_now(msg.conversation_ref):
+        with suppress(Exception):
+            await adapter.send_text(
+                msg.conversation_ref, gio_lam_viec.tin_chuyen_nguoi()
             )
 
 

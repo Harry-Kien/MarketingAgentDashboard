@@ -44,6 +44,38 @@ from agent.config import settings
 NHAN_CHO_NGUOI = "can-nguoi-ho-tro"
 
 
+def _doc_dinh_kem(payload: dict) -> list[dict]:
+    """
+    Ảnh và file khách gửi kèm.
+
+    ĐƯỜNG DẪN ĐI QUA PROXY, KHÔNG TRỎ THẲNG VÀO CHATWOOT
+    ----------------------------------------------------
+    Chatwoot trả `data_url` trỏ vào chính nó (`http://localhost:3200/...`),
+    và đường đó đòi phiên đăng nhập CỦA CHATWOOT. Nhét thẳng vào dashboard
+    thì người trực thấy toàn ô ảnh vỡ, trừ khi họ tình cờ cũng đang đăng
+    nhập Chatwoot ở tab khác.
+
+    Đổi sang đường proxy `/tich-hop/chatwoot/...` thì ảnh đi qua phiên
+    dashboard — một lần đăng nhập, xem được mọi thứ.
+    """
+    ra = []
+    for a in payload.get("attachments") or []:
+        if not isinstance(a, dict):
+            continue
+        url = str(a.get("data_url") or a.get("thumb_url") or "")
+        if not url:
+            continue
+        # Chỉ giữ phần đường dẫn; phần gốc do lớp proxy quyết định.
+        duong = url.split("://", 1)[-1]
+        duong = duong[duong.index("/"):] if "/" in duong else "/"
+        ra.append({
+            "loai": str(a.get("file_type") or "file"),
+            "url": f"/tich-hop/chatwoot{duong}",
+            "goc": url,
+        })
+    return ra
+
+
 class ChatwootAdapter(ChannelAdapter):
     name = "chatwoot"
 
@@ -71,9 +103,22 @@ class ChatwootAdapter(ChannelAdapter):
         if payload.get("message_type") != "incoming":
             return None
 
+        # ẢNH VÀ FILE — TỪNG BỊ BỎ HẲN Ở ĐÂY
+        # -----------------------------------
+        # Bản cũ: `if not text.strip(): return None`, kèm chú thích "ảnh,
+        # file, tin hệ thống — chưa xử lý". Hậu quả không phải "chưa xử lý"
+        # mà là BIẾN MẤT: khách gửi ảnh vùng da đang nổi mụn, không kèm
+        # chữ nào, và tin đó không tạo hội thoại, không vào CSDL, không ai
+        # trong hệ thống biết nó từng tồn tại. Khách ngồi chờ một câu trả
+        # lời sẽ không bao giờ tới.
+        #
+        # Trớ trêu là đúng những khách cần giúp nhất lại gửi kiểu đó —
+        # người ta chụp chỗ da có vấn đề thay vì tả bằng lời.
+        anh = _doc_dinh_kem(payload)
         text = payload.get("content")
-        if not isinstance(text, str) or not text.strip():
-            return None      # ảnh, file, tin hệ thống — chưa xử lý
+        text = text.strip() if isinstance(text, str) else ""
+        if not text and not anh:
+            return None      # tin hệ thống thật sự rỗng — bỏ đúng
 
         conv = payload.get("conversation") or {}
         conv_id = str(conv.get("id") or "")
@@ -90,9 +135,10 @@ class ChatwootAdapter(ChannelAdapter):
             conversation_ref=conv_id,
             customer_ref=str(sender.get("id") or conv_id),
             customer_name=str(sender.get("name") or "Khách"),
-            text=text.strip(),
+            text=text,
             dedupe_key=f"{self.name}:{payload.get('id')}",
             received_at=_thoi_diem(payload.get("created_at")),
+            attachments=anh,
             meta={"nen_tang_goc": goc},
         )
 

@@ -304,6 +304,11 @@ async def conversation_detail(conv_id: str) -> dict:
                 "grounded": m["grounded"],
                 "confidence": m["confidence"],
                 "sources": m["sources"],
+                # Ảnh khách gửi. Đường dẫn đã trỏ qua proxy `/tich-hop/
+                # chatwoot/...` ngay từ lúc đọc webhook, nên dashboard hiện
+                # được bằng chính phiên đăng nhập của nó — người trực không
+                # phải đăng nhập Chatwoot lần nữa chỉ để xem một tấm ảnh.
+                "attachments": m.get("attachments") or [],
                 "cost": round(_num(m["cost_usd"]), 6),
                 "latency_ms": m["latency_ms"],
                 "at": m["created_at"].isoformat(),

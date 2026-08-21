@@ -1440,6 +1440,7 @@ async function refresh() {
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
+    if (state.view === "ketnoi") loadKetNoi();
     if (state.view === "sohieu") {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
@@ -1458,3 +1459,65 @@ kiemPhien().then((co) => {
   refresh();
   state.timer = setInterval(refresh, 6000);
 });
+
+/* ---------------- Kết nối: ZaloCRM + Chatwoot nhúng thẳng ----------------
+
+   Hai app đi qua lớp proxy ở `agent/api/tich_hop.py`, KHÔNG trỏ thẳng vào
+   :3080 và :3200. Trỏ thẳng thì trình duyệt từ chối hiển thị: cả hai đặt
+   X-Frame-Options (DENY và SAMEORIGIN) để cấm bị nhúng.
+
+   Đổi tab KHÔNG tải lại iframe đang mở sẵn. Mỗi lần đặt lại `src` là một
+   lần đăng nhập lại và mất chỗ đang làm dở — người trực đang gõ nửa câu
+   trả lời cho khách thì mất câu đó. Nên giữ hai iframe riêng, ẩn/hiện. */
+
+const KN_APP = {
+  zalocrm: { nhan: "Quét QR trong đây để thêm nick Zalo. Nick mới hiện ngay ở mục Hệ thống." },
+  chatwoot: { nhan: "Hộp thư gộp Facebook · Instagram · WhatsApp · chat web." },
+};
+let knHienTai = null;
+const knFrames = {};
+
+function knMo(app) {
+  if (!KN_APP[app]) return;
+  knHienTai = app;
+  const wrap = $(".frame__wrap");
+
+  /* Iframe dựng một lần rồi giữ lại. Iframe gốc trong index.html dùng cho
+     app đầu tiên; các app sau tạo thêm. */
+  if (!knFrames[app]) {
+    const f = Object.keys(knFrames).length === 0
+      ? $("#knframe")
+      : Object.assign(document.createElement("iframe"), {
+          className: "frame",
+          title: app,
+        });
+    if (!f.parentNode) {
+      f.setAttribute("allow", "camera; microphone; clipboard-write");
+      wrap.appendChild(f);
+    }
+    f.src = `/tich-hop/${app}/`;
+    knFrames[app] = f;
+  }
+  Object.entries(knFrames).forEach(([ten, f]) => {
+    f.style.display = ten === app ? "block" : "none";
+  });
+
+  $$("#kntabs .tab").forEach((b) => b.classList.toggle("is-on", b.dataset.app === app));
+  $("#knhint").textContent = KN_APP[app].nhan;
+  $("#knmoi").href = `/tich-hop/${app}/`;
+}
+
+$$("#kntabs .tab").forEach((b) =>
+  b.addEventListener("click", () => knMo(b.dataset.app)));
+
+$("#knreload").addEventListener("click", () => {
+  const f = knFrames[knHienTai];
+  if (f) f.src = f.src;   /* nạp lại đúng app đang xem, không đụng app kia */
+});
+
+function loadKetNoi() {
+  /* Chỉ nạp khi người dùng thật sự mở màn hình này. Nạp sẵn lúc khởi động
+     là kéo hai ứng dụng Rails nặng về cho một người có thể không bao giờ
+     bấm vào đây. */
+  if (!knHienTai) knMo("zalocrm");
+}

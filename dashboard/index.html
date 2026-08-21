@@ -93,6 +93,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
       <span>Hệ thống</span><b id="c-hethong" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="ketnoi">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.8"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.8-1.8"/></svg>
+      <span>Kết nối</span><b class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="nhatky">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
       <span>Nhật ký</span><b class="rail__count"></b>
@@ -421,6 +425,29 @@
     </section>
 
     <!-- ============ HỆ THỐNG ============ -->
+    <!-- Kết nối: ZaloCRM và Chatwoot chạy THẲNG trong đây, không phải link
+         mở tab mới. Cả hai tự cấm bị nhúng bằng X-Frame-Options, nên chúng
+         đi qua lớp proxy `agent/api/tich_hop.py` — đọc phần đầu file đó
+         trước khi sửa gì ở đây, nhất là đoạn nói về cái giá của việc xoá
+         header chống nhúng. -->
+    <section class="view" data-view="ketnoi">
+      <section class="panel panel--full">
+        <h2 class="panel__head">
+          <span class="tabs" id="kntabs">
+            <button type="button" class="tab is-on" data-app="zalocrm">ZaloCRM — thêm nick Zalo</button>
+            <button type="button" class="tab" data-app="chatwoot">Chatwoot — Facebook · Instagram · WhatsApp</button>
+          </span>
+          <span class="panel__note" id="knhint">đăng nhập ngay tại đây</span>
+          <button type="button" id="knreload" class="btn btn--sm">Tải lại</button>
+          <a id="knmoi" class="btn btn--sm" target="_blank" rel="noopener">Mở tab mới</a>
+        </h2>
+        <div class="frame__wrap">
+          <iframe id="knframe" class="frame" title="Hệ thống kết nối"
+                  allow="camera; microphone; clipboard-write"></iframe>
+        </div>
+      </section>
+    </section>
+
     <section class="view" data-view="hethong">
       <section class="panel">
         <h2 class="panel__head">Các hệ thống đang chạy

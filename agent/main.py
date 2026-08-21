@@ -12,13 +12,14 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import db, runtime
 from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
+from agent.api import tich_hop
 from agent.channels.base import InboundMessage
 from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
@@ -220,7 +221,11 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
     `/healthz` để mở để công cụ giám sát hỏi được mà không cần tài khoản.
     """
     duong = request.url.path
-    if duong.startswith("/api/") and duong not in _MO:
+    # `/tich-hop/*` chuyển thẳng vào ZaloCRM và Chatwoot, và lớp proxy đó
+    # XOÁ header chống nhúng của chúng. Để nó ngoài chốt đăng nhập là biến
+    # cổng 8000 thành cửa sau vào cả hai hệ thống — nên nó phải nằm TRONG,
+    # cùng một danh sách với /api.
+    if (duong.startswith("/api/") or duong.startswith("/tich-hop"))             and duong not in _MO:
         nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
         if nguoi is None:
             return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)
@@ -230,7 +235,55 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def bat_duong_tuyet_doi(request: Request, call_next):
+    """
+    SPA nhúng xin asset bằng đường dẫn TUYỆT ĐỐI — chỗ mọi proxy SPA chết.
+
+    Trang Chatwoot tải từ `/tich-hop/chatwoot/` nhưng bên trong nó xin
+    `/packs/js/app.js`, đập thẳng vào gốc cổng 8000 nơi `StaticFiles` của
+    dashboard đang đợi. Kết quả: 404 hàng loạt, iframe trắng.
+
+    Bám theo `Referer` để biết request lạc thuộc về app nào. Chỉ nhận khi
+    Referer trỏ ĐÚNG vào `/tich-hop/<app>/` — không thì đây là request của
+    chính dashboard và tuyệt đối không được chuyển đi đâu.
+
+    Đường của hệ thống này (`/api`, `/webhook`, `/healthz`, `/media`) luôn
+    được ưu tiên, kể cả khi Referer trỏ vào proxy: dashboard nằm ngoài
+    iframe vẫn phải gọi API của chính nó trong lúc iframe đang mở.
+    """
+    duong = request.url.path
+    cua_minh = (duong.startswith(("/api", "/webhook", "/healthz", "/media",
+                                  "/tich-hop"))
+                or duong == "/" or duong.startswith("/app."))
+    if not cua_minh:
+        ten = tich_hop.ung_dung_tu_referer(request.headers.get("referer", ""))
+        if ten:
+            nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
+            if nguoi is None:
+                return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)
+            return await tich_hop.chuyen_tiep(request, ten, duong)
+    return await call_next(request)
+
+
+@app.websocket("/tich-hop/{ten}/{duong:path}")
+async def ws_tich_hop(ws: WebSocket, ten: str, duong: str):
+    await tich_hop.cau_websocket(ws, ten, duong)
+
+
+@app.websocket("/cable")
+async def ws_cable(ws: WebSocket):
+    """
+    Hộp thư Chatwoot sống nhờ ActionCable ở `/cable` — và nó mở WebSocket
+    bằng đường TUYỆT ĐỐI, y như asset. Không có đường này thì giao diện vẫn
+    mở, vẫn đăng nhập được, nhưng tin nhắn mới KHÔNG bao giờ tự hiện: người
+    trực phải bấm F5. Đó là kiểu hỏng tệ nhất — trông như đang chạy.
+    """
+    await tich_hop.cau_websocket(ws, "chatwoot", "cable")
+
+
 app.include_router(api_router)
+app.include_router(tich_hop.router)
 
 
 @app.get("/healthz")

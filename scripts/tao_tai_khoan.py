@@ -3,6 +3,16 @@ Tạo tài khoản đăng nhập cho dashboard.
 
     python -m scripts.tao_tai_khoan admin "Mật khẩu mạnh" --quan-tri
     python -m scripts.tao_tai_khoan lan "Mật khẩu khác"
+    python -m scripts.tao_tai_khoan admin "Mật khẩu mới" --doi-mat-khau
+
+VÌ SAO ĐỔI MẬT KHẨU PHẢI CÓ CỜ RIÊNG
+------------------------------------
+Không có cờ thì gõ nhầm tên một tài khoản đang có là ghi đè mật khẩu của
+người khác — im lặng, không hỏi lại. Người bị mất quyền truy cập sẽ không
+hiểu chuyện gì xảy ra, và nhật ký chỉ ghi "đổi mật khẩu" chứ không ghi
+"do gõ nhầm".
+
+Bắt gõ thêm `--doi-mat-khau` biến một tai nạn thành một hành động có chủ ý.
 
 VÌ SAO LÀ SCRIPT CHỨ KHÔNG PHẢI TRANG "TẠO TÀI KHOẢN ĐẦU TIÊN"
 --------------------------------------------------------------
@@ -38,6 +48,17 @@ async def main(argv: list[str]) -> int:
 
     await db.init_db()
     try:
+        if "--doi-mat-khau" in argv:
+            if not await xac_thuc.doi_mat_khau(ten, mat_khau):
+                print(f"Không có tài khoản {ten!r}. Bỏ --doi-mat-khau để tạo mới.")
+                return 1
+            print(f"Đã đổi mật khẩu cho {ten}.")
+            # Vai trò KHÔNG đổi theo. Đổi mật khẩu và nâng quyền là hai việc
+            # khác nhau; gộp lại thì một lệnh đặt lại mật khẩu quên gõ cờ có
+            # thể lặng lẽ hạ quyền quản trị xuống nhân viên.
+            print("Vai trò giữ nguyên. Đăng nhập tại http://127.0.0.1:8000")
+            return 0
+
         dau_tien = not await xac_thuc.co_nguoi_dung_nao_chua()
         if dau_tien and vai_tro != "quan_tri":
             # Tài khoản đầu tiên phải là quản trị, nếu không hệ thống có
@@ -47,6 +68,10 @@ async def main(argv: list[str]) -> int:
         nd = await xac_thuc.tao_nguoi_dung(ten, mat_khau, vai_tro=vai_tro)
     except ValueError as exc:
         print(f"Không tạo được: {exc}")
+        if "tồn tại" in str(exc):
+            print("Đặt lại mật khẩu cho tài khoản đang có:")
+            print(f'  python -m scripts.tao_tai_khoan {ten} '
+                  f'"mật khẩu mới" --doi-mat-khau')
         return 1
     finally:
         await db.close_db()

@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agent import db, runtime
+from agent.core import gio_lam_viec
 from agent.config import ROOT, settings
 
 TOT, CANH_BAO, HONG = "tot", "canh_bao", "hong"
@@ -185,6 +186,59 @@ async def _kiem_khach_gan_nhat() -> dict:
     return _muc("Tin khách gần nhất", TOT, ghi)
 
 
+async def _kiem_khach_cho_lau() -> dict:
+    """
+    Có ai đã được chuyển cho người mà vẫn đang ngồi chờ quá lâu không.
+
+    Tám phép kiểm còn lại đều hỏi "hệ thống có sống không". Phép này hỏi
+    một câu khác hẳn: "có khách nào đang bị bỏ quên không". Hai câu đó
+    không thay thế nhau — hệ thống có thể xanh toàn bộ trong khi bảy người
+    ngồi chờ từ tối hôm trước, vì lúc đó không có mã nào đang chạy sai;
+    chỉ là không có ai vào trả lời.
+
+    `assist` và `escalated` gộp làm một, đúng như khung trực trên
+    dashboard: hai trạng thái khác nhau nhưng CÙNG một việc phải làm —
+    một người phải vào trả lời khách.
+    """
+    # NGOÀI GIỜ TRỰC THÌ IM. Không phải vì khách chờ ban đêm không quan
+    # trọng, mà vì báo động lúc 2 giờ sáng cho một việc không ai làm được
+    # tới 8 giờ sáng là cách nhanh nhất khiến người ta tắt thông báo — rồi
+    # lần hỏng thật tiếp theo không ai đọc. Đúng 8 giờ, phép kiểm này sống
+    # lại và báo ngay những người đã chờ suốt đêm.
+    if not gio_lam_viec.dang_trong_gio():
+        return _muc("Khách chờ người", TOT, "ngoài giờ trực")
+
+    nguong = max(1, int(settings.cho_nguoi_toi_da_phut))
+    try:
+        row = await db.fetchrow(
+            """
+            SELECT count(*) AS so, min(updated_at) AS lau_nhat
+            FROM conversations
+            WHERE status IN ('assist', 'escalated')
+              AND updated_at < now() - ($1 || ' minutes')::interval
+            """,
+            str(nguong),
+        ) or {}
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Khách chờ người", HONG, f"{type(exc).__name__}"[:100])
+
+    so = int(row.get("so") or 0)
+    if so == 0:
+        return _muc("Khách chờ người", TOT, f"không ai chờ quá {nguong} phút")
+
+    lau = row.get("lau_nhat")
+    phut = int((datetime.now(timezone.utc) - lau).total_seconds() / 60) if lau else nguong
+    ghi = f"{so} khách chờ quá {nguong} phút — lâu nhất {phut} phút"
+
+    # CẢNH BÁO chứ không HỎNG, và đây là lựa chọn có chủ đích. `hong` kéo
+    # trạng thái tổng xuống và trong hệ thống này nghĩa là "không phục vụ
+    # được" — nhưng khách chờ lâu thường là do người trực đang bận hoặc
+    # đang ngoài giờ, không phải do máy hỏng. Gắn nhãn `hong` cho chuyện
+    # bình thường của buổi tối là cách nhanh nhất khiến người ta ngừng đọc
+    # báo động.
+    return _muc("Khách chờ người", CANH_BAO, ghi, so_khach=so, lau_nhat_phut=phut)
+
+
 async def tong_kiem() -> dict:
     """
     Chạy mọi phép kiểm song song. Trả trạng thái tổng + chi tiết từng mục.
@@ -196,7 +250,7 @@ async def tong_kiem() -> dict:
     muc = await asyncio.gather(
         _kiem_db(), _kiem_model(), _kiem_giong_doc(), _kiem_kenh(),
         _kiem_hang_doi_video(), _kiem_sao_luu(), _kiem_kho_anh(),
-        _kiem_khach_gan_nhat(),
+        _kiem_khach_gan_nhat(), _kiem_khach_cho_lau(),
         return_exceptions=True,
     )
 

@@ -133,7 +133,11 @@ def test_cau_bao_la_co_dinh_khong_phai_loi_model():
     # đúng chỗ ấy. Phạm vi rộng hơn nghĩa là phép kiểm CHẶT hơn, không lỏng
     # hơn: `reply.text` xuất hiện ở bất cứ đâu trong nhánh đều bị bắt.
     khoi = src.split("elif reply.escalate", 1)[1].split("await db.execute", 1)[0]
-    assert "settings.tin_chuyen_nguoi" in khoi
+    # Câu báo nay đi qua `gio_lam_viec.tin_chuyen_nguoi()` để đổi theo giờ
+    # trực. Nó VẪN là chuỗi cố định trong cấu hình — hàm đó chỉ chọn giữa
+    # hai chuỗi có sẵn, không sinh chữ nào. Bảo đảm giữ nguyên, chỉ nguồn
+    # lấy chuỗi là đổi; xem tests/test_gio_lam_viec.py.
+    assert "gio_lam_viec.tin_chuyen_nguoi()" in khoi
     assert "reply.text" not in khoi, "đang gửi lời model sinh ra, không phải câu cố định"
 
 

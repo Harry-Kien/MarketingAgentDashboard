@@ -25,7 +25,7 @@ from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent import canh_gac
-from agent.core import du_lieu_ca_nhan, xac_thuc
+from agent.core import du_lieu_ca_nhan, gio_lam_viec, xac_thuc
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -432,8 +432,11 @@ async def handle_inbound(msg: InboundMessage) -> None:
         # dấu vết để người trực còn biết mà nhắn tay.
         try:
             if await adapter.can_send_now(msg.conversation_ref):
+                # Câu đổi theo giờ: trong giờ thì "sẽ nhắn lại sớm" là
+                # thật; ngoài giờ thì phải nói rõ mấy giờ có người, vì lúc
+                # 2 giờ sáng chữ "sớm" là một lời hứa không ai giữ được.
                 kq = await adapter.send_text(
-                    msg.conversation_ref, settings.tin_chuyen_nguoi
+                    msg.conversation_ref, gio_lam_viec.tin_chuyen_nguoi()
                 )
                 if not getattr(kq, "ok", True):
                     await db.log_event(

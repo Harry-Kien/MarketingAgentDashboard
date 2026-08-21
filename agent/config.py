@@ -133,6 +133,12 @@ class Settings(BaseSettings):
     # nơi nhận là việc của doanh nghiệp, và n8n đã chạy sẵn để định tuyến.
     # Để rỗng thì chỉ ghi vào nhật ký.
     canh_gac_webhook: str = ""
+    # Khách đã được chuyển cho người mà chờ quá số phút này thì canh gác
+    # báo động. Đây là phép kiểm DUY NHẤT hướng ra phía khách: tám phép
+    # còn lại hỏi "hệ thống có sống không", phép này hỏi "có ai đang bị bỏ
+    # quên không". Hệ thống sống nguyên vẹn mà khách ngồi chờ hai tiếng thì
+    # vẫn là hỏng, chỉ là hỏng ở phía không có mã nào chạy.
+    cho_nguoi_toi_da_phut: int = 30
 
     # --- Vận hành ---
     agent_enabled: bool = True
@@ -146,6 +152,19 @@ class Settings(BaseSettings):
     tin_chuyen_nguoi: str = (
         "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc "
         "ạ. Bạn ấy sẽ nhắn lại cho mình sớm nhé."
+    )
+    # Ngoài giờ trực, câu trên là một lời nói dối: không ai đang ngồi đó, và
+    # "sớm" nghĩa là sáu tiếng nữa. Cả hệ thống được xây quanh nguyên tắc
+    # không phát ngôn không có căn cứ; đây là chỗ hở cuối cùng trong nguyên
+    # tắc đó. Nói rõ mấy giờ có người thì khách chờ được — không nói thì
+    # khách bỏ đi.
+    gio_lam_viec_bat: bool = True
+    gio_lam_viec_bat_dau: int = 8       # giờ Việt Nam, UTC+7
+    gio_lam_viec_ket_thuc: int = 21     # 20:59 còn trong giờ, 21:00 thì hết
+    tin_chuyen_nguoi_ngoai_gio: str = (
+        "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc ạ. "
+        "Giờ này bên em ngoài giờ làm việc rồi, bạn ấy sẽ nhắn lại cho mình "
+        "từ {gio_mo} sáng mai nhé."
     )
     # Cookie phiên chỉ gửi qua HTTPS. Bật cứng thì đăng nhập trên
     # http://localhost hỏng, nên để theo cấu hình — và BẮT BUỘC bật khi

@@ -381,6 +381,25 @@ thật.
 
 ---
 
+## Tài liệu cho báo cáo
+
+| Tài liệu | Nội dung | Sinh ra từ |
+|---|---|---|
+| [docs/kien-truc.md](docs/kien-truc.md) | sơ đồ khối · luồng tin · use case · ERD 16 bảng | `agent/schema.sql` |
+| [docs/thuc-nghiem.md](docs/thuc-nghiem.md) | phương pháp đo · kết quả 13 lần chạy · giới hạn | `data/eval/*.json` |
+
+```bash
+.venv/Scripts/python.exe -m scripts.sinh_so_do --ghi
+.venv/Scripts/python.exe -m scripts.sinh_thuc_nghiem --ghi
+```
+
+Cả hai **sinh từ mã và dữ liệu thật**, không gõ tay — và có test canh việc
+file trong repo khớp với thứ bộ sinh tạo ra. Con số gõ tay là con số sẽ
+sai: README từng ghi bộ vàng "55/56 (98%)", tài liệu doanh nghiệp ghi
+"56/56", trong khi lịch sử 13 lần chạy cho dải **50–56**.
+
+---
+
 ## Kiến trúc — sơ đồ
 
 [docs/kien-truc.md](docs/kien-truc.md): sơ đồ khối, luồng một tin nhắn,
@@ -568,7 +587,7 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-388 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+397 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
 tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
 trực, giới hạn đăng nhập.
 

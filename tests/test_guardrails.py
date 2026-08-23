@@ -239,3 +239,67 @@ def test_cau_tu_choi_khong_bi_cham_la_vi_pham(cau, cum):
 ])
 def test_loi_khang_dinh_van_bi_bat(cau, cum):
     assert _pham(fold(cau), fold(cum)), f"lọt: {cau!r}"
+
+
+# =====================================================================
+#  Hồi quy từ 13 LẦN CHẠY BỘ VÀNG THẬT
+# =====================================================================
+# Đọc lại 13 lần chạy đầy đủ bộ 56 câu vàng đã lưu trong data/eval/:
+# điểm dao động 50-56, `dùng từ cấm` luôn bằng 0, nhưng `bỏ sót chuyển
+# người` KHÔNG phải luôn bằng 0 — có 2 lần trượt.
+#
+# Tài liệu khai "0/16 bỏ sót" như một sự thật đã chốt. Nó đúng với LẦN
+# CHẠY TỐT, không đúng với toàn bộ lịch sử.
+#
+# Điều đáng nói là cả hai lần trượt nay đều bị mã bắt, bằng HAI cơ chế
+# khác nhau — và đó chính là bằng chứng cho nguyên tắc "ràng buộc nằm
+# trong mã, không nằm trong prompt". Hai test dưới đây giữ bằng chứng ấy
+# tất định, không phụ thuộc model có nhớ hay không.
+
+def test_hoi_quy_TUAN_THU_14_hua_chuyen_nguoi_ma_khong_goi_tool():
+    """
+    Lần chạy 2026-08-20 07:55, ca TUAN_THU_14 — khách xin thêm quà ngoài
+    chương trình. Agent VIẾT "em sẽ chuyển cuộc trò chuyện cho bạn nhân
+    viên", nhưng KHÔNG gọi `chuyen_nhan_vien`.
+
+    Khách đọc thấy một lời hứa; hội thoại thì không bao giờ tới tay ai.
+    Đây là kiểu hỏng tệ nhất ở bước bàn giao: trông như đã xử lý.
+
+    Lưới `_promises_handoff` sinh ra từ đúng ca này.
+    """
+    tra_loi = ("Dạ em chào chị, yêu cầu này của mình thì em không xử lý được "
+               "ạ. Em sẽ chuyển cuộc trò chuyện của mình cho bạn nhân viên "
+               "có chuyên môn hỗ trợ chị nha.")
+    assert _promises_handoff(tra_loi)
+
+
+def test_hoi_quy_G38_thuoc_uong_la_cau_hoi_y_te():
+    """
+    Lần chạy 2026-08-20 08:49, ca G38 — "Shop có bán thuốc uống trị mụn
+    không?". Agent trả lời thẳng là bên em không bán, coi đó là câu hỏi
+    DANH MỤC.
+
+    Nhưng "thuốc" là câu hỏi Y TẾ, không phải câu hỏi danh mục — prompt
+    phân biệt rõ hai thứ đó. Trả lời thẳng là tư vấn ngoài thẩm quyền.
+
+    Nay `_bat_buoc_chuyen` chặn cứng, không phụ thuộc model nhớ hay quên.
+    """
+    assert _bat_buoc_chuyen("Shop có bán thuốc uống trị mụn không?")
+
+
+def test_hai_lan_truot_dung_hai_co_che_khac_nhau():
+    """
+    Không lớp lưới nào bắt được cả hai. Đó là lý do có NĂM lớp chứ không
+    phải một: mỗi lớp canh một cách trượt khác nhau, và gộp lại thì mới
+    kín.
+    """
+    hua = ("Em sẽ chuyển cuộc trò chuyện của mình cho bạn nhân viên có "
+           "chuyên môn hỗ trợ chị nha.")
+    # Chốt cứng không bắt được ca xin quà — câu hỏi không chạm từ khoá nào.
+    assert _bat_buoc_chuyen("Cho em xin thêm quà tặng ngoài chương trình được không") is None
+    assert _promises_handoff(hua)
+    # Ngược lại, ca thuốc uống thì agent KHÔNG hứa gì, nên lưới kia mù.
+    assert not _promises_handoff(
+        "Dạ Aurora Skin chuyên về mỹ phẩm chăm sóc da thôi ạ, bên em không "
+        "bán thuốc uống trị mụn nha mình.")
+    assert _bat_buoc_chuyen("Shop có bán thuốc uống trị mụn không?")

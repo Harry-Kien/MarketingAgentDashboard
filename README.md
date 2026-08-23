@@ -587,7 +587,7 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-397 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+407 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
 tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
 trực, giới hạn đăng nhập.
 

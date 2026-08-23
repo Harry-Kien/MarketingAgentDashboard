@@ -13,7 +13,7 @@ mới là thứ gây tai nạn.
 | Chất lượng tư vấn | 51–55/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
-| Kiểm thử | 397 ca, dưới 2 giây, chạy tự động mỗi push |
+| Kiểm thử | 407 ca, dưới 2 giây, chạy tự động mỗi push |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |
@@ -23,6 +23,24 @@ mới là thứ gây tai nạn.
 | Chống dò mật khẩu | khoá tạm sau 8 lần sai trong 15 phút |
 | Hàng đợi trực | xếp chờ-lâu-nhất-trước, báo động khi có người chờ quá 30 phút |
 | Giờ làm việc | ngoài giờ không hứa suông với khách, không báo động vô ích |
+
+---
+
+## Kiểm bằng máy, đừng kiểm bằng trí nhớ
+
+```bash
+python -m scripts.san_sang
+```
+
+Bảy việc dưới đây là văn xuôi, và văn xuôi thì người ta đọc một lần rồi tin
+là mình đã làm. Đúng chuyện đó đã xảy ra ngay trong dự án này: bảng "Đã đủ"
+ghi *sao lưu: `scripts/sao_luu.py`* trong khi **không có lịch nào gọi nó**,
+và `CANH_GAC_WEBHOOK` để trống nhiều ngày — tức là toàn bộ hệ thống báo
+động ghi vào hư không.
+
+Lệnh trên kiểm từng việc và trả về ba mức: **CHẶN** (chạy thật là gây hại)
+· **cảnh báo** (chạy được nhưng sẽ đau) · **đủ**. Nó không bao giờ báo xanh
+vì "không kiểm được" — dịch vụ đang tắt thì nó nói rõ là chưa kiểm.
 
 ---
 

@@ -1,3 +1,22 @@
+# GHIM ẢNH BẰNG DIGEST, KHÔNG DÙNG THẺ
+# ------------------------------------
+# Trước đây Chatwoot dùng `chatwoot/chatwoot:latest`. Thẻ `latest` không
+# phải một phiên bản — nó là con trỏ, và nó DI CHUYỂN. Nghĩa là hai máy
+# chạy cùng file này, cùng một ngày, có thể chạy hai bản Chatwoot khác
+# nhau; và `docker compose pull` bất kỳ lúc nào cũng có thể kéo về một bản
+# mới mang theo DI TRÚ CSDL KHÔNG LÙI ĐƯỢC.
+#
+# Với một ứng dụng đang giữ toàn bộ hộp thư khách hàng, đó không phải rủi
+# ro chấp nhận được.
+#
+# Digest `sha256:...` thì bất biến: cùng chuỗi ấy là cùng đúng những byte
+# ấy, mãi mãi. Thẻ cũ giữ lại trong chú thích vì digest không đọc được
+# bằng mắt, mà người vận hành cần biết mình đang chạy phiên bản nào.
+#
+# Nâng cấp là việc CÓ CHỦ Ý: đọc changelog, sao lưu, đổi digest, thử.
+#   docker pull chatwoot/chatwoot:latest
+#   docker image inspect chatwoot/chatwoot:latest --format '{{index .RepoDigests 0}}'
+#
 # Chatwoot — hộp thư đa nền tảng (Facebook, Instagram, WhatsApp, web, email)
 #
 # Tách khỏi docker-compose.yml chính vì đây là hệ thống độc lập, có CSDL và
@@ -16,7 +35,7 @@ name: chatwoot
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b   # pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB: chatwoot
@@ -33,7 +52,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2   # redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "chatwoot_local_pw"]
     volumes:
@@ -49,7 +68,7 @@ services:
   # Chạy migration rồi thoát. Các service khác chờ nó xong mới khởi động —
   # nếu không, rails và sidekiq cùng chạy migration một lúc và giẫm lên nhau.
   migrate:
-    image: chatwoot/chatwoot:latest
+    image: chatwoot/chatwoot@sha256:f85da9b40ebe81d7f4b1a138c7d857cd7a71762f3c75a2c858ed4d9a46e5f4b1   # chatwoot/chatwoot:latest
     command: ["bundle", "exec", "rails", "db:chatwoot_prepare"]
     env_file: .env.chatwoot
     depends_on:
@@ -60,7 +79,7 @@ services:
     restart: "no"
 
   rails:
-    image: chatwoot/chatwoot:latest
+    image: chatwoot/chatwoot@sha256:f85da9b40ebe81d7f4b1a138c7d857cd7a71762f3c75a2c858ed4d9a46e5f4b1   # chatwoot/chatwoot:latest
     command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     env_file: .env.chatwoot
     ports:
@@ -73,7 +92,7 @@ services:
   # Sidekiq xử lý việc nền: gửi tin ra nền tảng, gửi email, chạy automation.
   # Thiếu nó thì giao diện vẫn lên nhưng tin nhắn không bao giờ đi.
   sidekiq:
-    image: chatwoot/chatwoot:latest
+    image: chatwoot/chatwoot@sha256:f85da9b40ebe81d7f4b1a138c7d857cd7a71762f3c75a2c858ed4d9a46e5f4b1   # chatwoot/chatwoot:latest
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
     env_file: .env.chatwoot
     depends_on:

@@ -1,3 +1,22 @@
+# GHIM ẢNH BẰNG DIGEST, KHÔNG DÙNG THẺ
+# ------------------------------------
+# Trước đây Chatwoot dùng `chatwoot/chatwoot:latest`. Thẻ `latest` không
+# phải một phiên bản — nó là con trỏ, và nó DI CHUYỂN. Nghĩa là hai máy
+# chạy cùng file này, cùng một ngày, có thể chạy hai bản Chatwoot khác
+# nhau; và `docker compose pull` bất kỳ lúc nào cũng có thể kéo về một bản
+# mới mang theo DI TRÚ CSDL KHÔNG LÙI ĐƯỢC.
+#
+# Với một ứng dụng đang giữ toàn bộ hộp thư khách hàng, đó không phải rủi
+# ro chấp nhận được.
+#
+# Digest `sha256:...` thì bất biến: cùng chuỗi ấy là cùng đúng những byte
+# ấy, mãi mãi. Thẻ cũ giữ lại trong chú thích vì digest không đọc được
+# bằng mắt, mà người vận hành cần biết mình đang chạy phiên bản nào.
+#
+# Nâng cấp là việc CÓ CHỦ Ý: đọc changelog, sao lưu, đổi digest, thử.
+#   docker pull chatwoot/chatwoot:latest
+#   docker image inspect chatwoot/chatwoot:latest --format '{{index .RepoDigests 0}}'
+#
 # ============================================================
 #  Hạ tầng phụ trợ cho Marketing Agent
 #  ZaloCRM chạy compose RIÊNG của nó (không sửa, giữ AGPL tách bạch).
@@ -8,7 +27,7 @@ name: marketing-agent
 services:
   # --- Postgres + pgvector: RAG, hội thoại, chi phí, video ----
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b   # pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: agent
@@ -35,7 +54,7 @@ services:
   # xem GET /api/cost.
   langfuse_db:
     profiles: ["trace"]
-    image: postgres:16-alpine
+    image: postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685   # postgres:16-alpine
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: langfuse
@@ -50,7 +69,7 @@ services:
 
   langfuse:
     profiles: ["trace"]
-    image: langfuse/langfuse:2
+    image: langfuse/langfuse@sha256:85c278dcab96c15db94191a5c1664f85aba2d7fb6771a00e99681c902c4b7015   # langfuse/langfuse:2
     depends_on:
       langfuse_db:
         condition: service_healthy

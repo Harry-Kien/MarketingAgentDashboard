@@ -61,11 +61,24 @@ def _tu_khoa_loai_da() -> tuple[str, ...]:
     global _TU_KHOA_DA
     if _TU_KHOA_DA:
         return _TU_KHOA_DA
-    import json
 
-    from ..config import ROOT
+    # Dùng CHUNG bộ đọc danh mục với `tools`, không tự mở file.
+    #
+    # Bản trước tự đọc thẳng `data/catalog.json` và không có đường lui sang
+    # `catalog.example.json`. Trên máy vừa clone repo — nơi chỉ có bản mẫu —
+    # hàm này trả về RỖNG, và cả nguồn "quét chính lời khách" của hồ sơ
+    # ngừng hoạt động trong im lặng: khách gõ "em da dầu" mà hồ sơ không ghi
+    # gì, rồi lượt sau agent hỏi lại đúng câu đó.
+    #
+    # Chính docstring của module này nói nguồn ấy là cần thiết vì nguồn tool
+    # quá hẹp. Nó hỏng mà không ai biết, vì không có gì nổ — chỉ là hồ sơ
+    # trống hơn lẽ ra phải có.
+    #
+    # Hai chỗ đọc cùng một file theo hai cách khác nhau thì sớm muộn cũng
+    # lệch. Nay chỉ còn một chỗ.
+    from . import tools
     try:
-        data = json.loads((ROOT / "data" / "catalog.json").read_text(encoding="utf-8"))
+        data = tools._catalog()
     except (OSError, ValueError):
         return ()
     tu = set()

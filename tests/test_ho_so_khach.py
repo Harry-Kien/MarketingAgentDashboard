@@ -169,3 +169,44 @@ def test_go_dai_tu_khong_lam_hong_cau_khac():
     assert hs._go_dai_tu("da em khô") == "da khô"
     assert hs._go_dai_tu("em muốn mua kem dưỡng da") == "em muốn mua kem dưỡng da"
     assert hs._go_dai_tu("da dầu") == "da dầu"
+
+
+# =====================================================================
+#  Máy vừa clone repo — chỉ có catalog.example.json
+# =====================================================================
+
+def test_quet_loai_da_van_chay_khi_chi_co_ban_mau(monkeypatch, tmp_path):
+    """
+    LỖI NÀY ĐÃ XẢY RA THẬT, và chỉ lộ ra khi clone repo về thư mục trắng
+    rồi chạy test: 7 ca đỏ trên bản clone, xanh trên máy phát triển.
+
+    `_tu_khoa_loai_da` tự đọc thẳng `data/catalog.json`, không có đường lui
+    sang bản mẫu. Máy vừa cài chỉ có `catalog.example.json` nên hàm trả về
+    RỖNG — và cả nguồn "quét chính lời khách" của hồ sơ ngừng hoạt động
+    trong im lặng. Khách gõ "em da dầu", hồ sơ không ghi gì, lượt sau agent
+    hỏi lại đúng câu đó.
+
+    Không có gì nổ. Không dòng nhật ký nào. Chỉ là hồ sơ trống hơn lẽ ra.
+    """
+    from agent.core import tools
+
+    # Giả lập đúng máy vừa clone: catalog.json KHÔNG tồn tại.
+    monkeypatch.setattr(tools, "CATALOG_PATH", tmp_path / "khong-co.json")
+    monkeypatch.setattr(hs, "_TU_KHOA_DA", ())
+
+    tu = hs._tu_khoa_loai_da()
+    assert tu, "máy chỉ có bản mẫu thì bộ quét loại da chết câm"
+    assert "da dầu" in tu
+
+
+def test_doc_danh_muc_dung_chung_mot_cho_voi_tools():
+    """
+    Hai chỗ đọc cùng một file theo hai cách khác nhau thì sớm muộn cũng
+    lệch — và cái lệch đó chính là lỗi ở trên.
+    """
+    src = inspect.getsource(hs._tu_khoa_loai_da)
+    assert "tools._catalog()" in src
+    # Bỏ chú thích trước khi soi: chú thích trong file này giải thích VÌ SAO
+    # không tự mở `catalog.json`, nên chính nó chứa chuỗi đang bị cấm.
+    ma = chr(10).join(d for d in src.splitlines() if not d.strip().startswith("#"))
+    assert "read_text" not in ma, "vẫn đang tự mở file"

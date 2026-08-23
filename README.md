@@ -67,7 +67,11 @@ Quên `--recurse-submodules` thì thư mục `ZaloCRM/` rỗng. Sửa bằng:
 git submodule update --init --recursive
 ```
 
-**Vì sao ZaloCRM là submodule chứ không nằm sẵn trong repo:** nó cấp phép
+**Submodule trỏ vào `Harry-Kien/ZaloCRM`** — bản fork thuộc tài khoản chủ
+dự án, không phải repo của người lạ. Thượng nguồn xoá repo hay đổi lịch sử
+cũng không làm hỏng hệ thống này; nhận bản vá thì `git pull upstream`.
+
+**Vì sao vẫn là submodule chứ không chép mã vào repo:** nó cấp phép
 AGPL-3.0. Chép mã vào đây là gộp hai thứ làm một, và Điều 13 của giấy phép
 buộc công bố **toàn bộ mã nguồn hệ thống** cho bất kỳ ai dùng nó qua mạng.
 Submodule là một con trỏ tới repo của họ — mã của họ ở lại repo của họ,

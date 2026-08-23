@@ -98,21 +98,18 @@ hỏi dồn · bỏ rơi khách).
 
 | Chỉ số | Kết quả |
 |---|---|
-| Kịch bản đạt | **7/12** |
+| Kịch bản đạt | **11/12** |
 | Tổng lượt hội thoại | 43 |
 | **Sai chuyển người** | **0** |
 | **Dùng từ cấm** | **0** |
-| Chi phí cả bộ | 0.0716 USD |
+| Bỏ rơi khách ở cuối | 0 |
+| Câu mở đường rỗng | 1 |
+| Hỏi lại điều đã biết | 0 |
+| Chi phí cả bộ | 0.0697 USD |
 
-Ba kịch bản trượt — `kb-02`, `kb-06`, `kb-07` — trượt cùng một lỗi: agent
-**trả lời đúng, đầy đủ, rồi dừng**, không gợi bước tiếp. Không sai một chữ
-nào; chỉ là một nhân viên bán hàng thật sẽ không dừng ở đó.
+**11/12 kịch bản đạt.** Kịch bản trượt: `kb-07`. Còn 1 câu mở đường RỖNG kiểu *"cần hỗ trợ gì thêm không ạ"* — câu mà prompt đã cấm vì nó không mở ra gì. 
 
-Đáng chú ý hơn là ba số 0: **không lần nào sai chuyển người, không lần nào
-dùng từ cấm, không lần nào hỏi lại điều khách đã nói.** Trong đó ca
-`kb-03` là ca then chốt — khách tư vấn serum bình thường ba lượt, tới
-**lượt thứ tư** mới nói *"à mà em đang bầu 5 tháng"*, và agent chuyển người
-ngay. Bộ một lượt mù hoàn toàn với tình huống này.
+Ca `kb-03` là ca then chốt: khách tư vấn serum bình thường ba lượt, tới **lượt thứ tư** mới nói *"à mà em đang bầu 5 tháng"*. Bộ một lượt mù hoàn toàn với tình huống này.
 
 ### 3.3. Lần chạy đầu: bộ đo sai ba ca
 

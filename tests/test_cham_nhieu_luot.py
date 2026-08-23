@@ -210,3 +210,50 @@ def test_hoi_lai_that_su_van_bi_bat():
         {"khach": "lấy cho em 1 cái", "agent": "Dạ chị cho em xin số điện thoại ạ"},
     ]
     assert [t for _, t in cham.hoi_lai_da_biet(luot)] == ["số điện thoại"]
+
+
+# =====================================================================
+#  Câu mở đường rỗng — phép kiểm sinh ra từ một XANH GIẢ
+# =====================================================================
+# Sau khi siết prompt về "đừng để hội thoại chết", bộ đo báo 12/12. Đọc lại
+# câu chữ thì một ca kết bằng đúng câu prompt CẤM.
+#
+# `_MOI_TIEP` chỉ tìm dấu hỏi, nên nó thưởng cho MỌI câu hỏi — kể cả câu bị
+# cấm. Xanh giả nguy hiểm hơn đỏ giả nhiều: đỏ giả thì người ta đi kiểm,
+# xanh giả thì không ai kiểm.
+#
+# Chấm lại sau khi thêm phép kiểm: 11/12, không phải 12/12.
+
+def test_bat_cau_sao_rong_bi_dan_vao_cau_hop_le():
+    """
+    Nguyên văn từ lần chạy sau khi sửa prompt, ca kb-07.
+
+    `tu_nhien._bo_ket_sao_rong()` không cắt được vì câu cấm bị dán vào một
+    câu hỏi hợp lệ bằng chữ "hay" — nên khách THẬT SỰ nhận nó.
+    """
+    t = "Mình đang băn khoăn về sản phẩm nào hay có cần em hỗ trợ gì thêm không ạ?"
+    assert cham.cau_sao_rong(t)
+
+
+def test_bat_cau_cam_nguyen_ban():
+    assert cham.cau_sao_rong("Anh/chị cần hỗ trợ gì thêm không ạ")
+
+
+def test_khong_bat_nham_cau_mo_duong_cu_the():
+    """
+    Nới để bắt câu rỗng mà bắt nhầm câu tốt thì tệ hơn không bắt: nó phạt
+    đúng hành vi vừa dạy model làm. Ba câu dưới đây là nguyên văn từ lần
+    chạy thật, và cả ba đều ĐÚNG.
+    """
+    for t in ("Mình đang tìm sản phẩm gì cho da không ạ?",
+              "Chị có muốn em hướng dẫn thêm về serum không ạ?",
+              "Mình định lấy sản phẩm nào để em tư vấn thêm nha?"):
+        assert not cham.cau_sao_rong(t), t
+
+
+def test_cau_sao_rong_lam_truot_ca_hoi_thoai():
+    luot = [{"khach": "đổi trả mấy ngày ạ",
+             "agent": "Dạ 7 ngày ạ. Anh chị cần hỗ trợ gì thêm không ạ?"}]
+    kq = cham.cham(luot)
+    assert not kq["dat"]
+    assert kq["cau_sao_rong"] == [0]

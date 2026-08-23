@@ -109,9 +109,42 @@ def _bang_mot_luot(day: list) -> str:
 | Chi phí mỗi lần chạy | {min(chi_phi):.4f} – {max(chi_phi):.4f} USD |"""
 
 
+def _cham_lai(kq: list) -> tuple[int, list[str], dict]:
+    """
+    Chấm LẠI từ hội thoại đã lưu, không tin trường `dat` trong file.
+
+    Trường `dat` được tính lúc chạy, bằng bộ chấm CỦA LÚC ĐÓ. Bộ chấm tiến
+    hoá — phép kiểm "câu mở đường rỗng" thêm vào sau một lần chạy — nên đọc
+    lại điểm cũ là báo cáo một phép đo không còn tồn tại.
+
+    Đã xảy ra thật: file lưu ghi 12/12, chấm lại bằng bộ hiện tại ra 11/12.
+    Hội thoại là DỮ LIỆU và không đổi; điểm là kết quả SUY RA và phải suy
+    lại mỗi lần.
+    """
+    from agent.core import cham_nhieu_luot
+
+    dat, truot = 0, []
+    dem = {"chet": 0, "rong": 0, "hoi_lai": 0, "chao_lai": 0}
+    for k in kq:
+        h = cham_nhieu_luot.cham(
+            k["luot"],
+            da_chuyen_nguoi=any(l.get("chuyen_nguoi_thuc") for l in k["luot"]),
+        )
+        tung_luot = all(l.get("dat") for l in k["luot"])
+        if tung_luot and h["dat"]:
+            dat += 1
+        else:
+            truot.append(k["id"])
+        dem["chet"] += int(h["hoi_thoai_chet"])
+        dem["rong"] += len(h.get("cau_sao_rong") or [])
+        dem["hoi_lai"] += len(h["hoi_lai_da_biet"])
+        dem["chao_lai"] += len(h["chao_lai"])
+    return dat, truot, dem
+
+
 def _bang_nhieu_luot(kq: list) -> str:
     n = len(kq)
-    dat = sum(1 for k in kq if k["dat"])
+    dat, _, dem = _cham_lai(kq)
     chi_phi = sum(k["chi_phi"] for k in kq)
     luot = sum(len(k["luot"]) for k in kq)
     sai_esc = sum(1 for k in kq for l in k["luot"] if not l.get("dung_escalate", True))
@@ -122,7 +155,33 @@ def _bang_nhieu_luot(kq: list) -> str:
 | Tổng lượt hội thoại | {luot} |
 | **Sai chuyển người** | **{sai_esc}** |
 | **Dùng từ cấm** | **{cam}** |
+| Bỏ rơi khách ở cuối | {dem['chet']} |
+| Câu mở đường rỗng | {dem['rong']} |
+| Hỏi lại điều đã biết | {dem['hoi_lai']} |
 | Chi phí cả bộ | {chi_phi:.4f} USD |"""
+
+
+def _nhan_xet(kq: list) -> str:
+    dat, truot, dem = _cham_lai(kq)
+    n = len(kq)
+    dong = []
+    if truot:
+        dong.append(f"Kịch bản trượt: {', '.join(f'`{t}`' for t in truot)}.")
+    else:
+        dong.append("Không kịch bản nào trượt.")
+    if dem["chet"]:
+        dong.append(f"Còn {dem['chet']} lượt cuối bỏ rơi khách — agent trả lời "
+                    "đúng, đầy đủ, rồi dừng, không gợi bước tiếp.")
+    if dem["rong"]:
+        dong.append(f"Còn {dem['rong']} câu mở đường RỖNG kiểu *\"cần hỗ trợ gì "
+                    "thêm không ạ\"* — câu mà prompt đã cấm vì nó không mở ra gì.")
+
+    dong.append(
+        "\n\nCa `kb-03` là ca then chốt: khách tư vấn serum bình thường ba "
+        "lượt, tới **lượt thứ tư** mới nói *\"à mà em đang bầu 5 tháng\"*. "
+        "Bộ một lượt mù hoàn toàn với tình huống này."
+    )
+    return f"**{dat}/{n} kịch bản đạt.** " + " ".join(dong)
 
 
 def dung() -> str:
@@ -136,15 +195,7 @@ def dung() -> str:
 
 {_bang_nhieu_luot(nl)}
 
-Ba kịch bản trượt — `kb-02`, `kb-06`, `kb-07` — trượt cùng một lỗi: agent
-**trả lời đúng, đầy đủ, rồi dừng**, không gợi bước tiếp. Không sai một chữ
-nào; chỉ là một nhân viên bán hàng thật sẽ không dừng ở đó.
-
-Đáng chú ý hơn là ba số 0: **không lần nào sai chuyển người, không lần nào
-dùng từ cấm, không lần nào hỏi lại điều khách đã nói.** Trong đó ca
-`kb-03` là ca then chốt — khách tư vấn serum bình thường ba lượt, tới
-**lượt thứ tư** mới nói *"à mà em đang bầu 5 tháng"*, và agent chuyển người
-ngay. Bộ một lượt mù hoàn toàn với tình huống này."""
+{_nhan_xet(nl)}"""
         if nl else
         "### 3.2. Kết quả\n\n*(chưa chạy — `python -m scripts.eval_nhieu_luot`)*"
     )

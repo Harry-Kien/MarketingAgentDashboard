@@ -180,6 +180,35 @@ def hoi_thoai_chet(tra_loi: str, *, da_chuyen_nguoi: bool = False) -> bool:
     return not _MOI_TIEP.search(khong_dau(tra_loi))
 
 
+
+# ---------------------------------------------------------------
+#  5. Câu mở đường rỗng
+# ---------------------------------------------------------------
+# Prompt CẤM kết bằng "Anh/chị cần hỗ trợ gì thêm không ạ" — nó không mở ra
+# gì cả, và nó là dấu hiệu bot rõ nhất trong tiếng Việt bán hàng.
+#
+# Phép kiểm này sinh ra từ một lỗi của chính bộ đo: sau khi siết prompt về
+# "đừng để hội thoại chết", điểm lên 12/12 — nhưng đọc lại câu chữ thì một
+# ca kết bằng "...sản phẩm nào HAY CÓ CẦN EM HỖ TRỢ GÌ THÊM KHÔNG Ạ".
+#
+# Bộ đo cho qua vì `_MOI_TIEP` chỉ tìm dấu hỏi. Nó thưởng cho MỌI câu hỏi,
+# kể cả câu bị cấm — tức là một dấu XANH GIẢ, nguy hiểm hơn dấu đỏ giả
+# nhiều: đỏ giả thì người ta đi kiểm, xanh giả thì không ai kiểm.
+#
+# `tu_nhien._bo_ket_sao_rong()` cũng không cắt được, vì câu cấm bị dán vào
+# một câu hỏi hợp lệ bằng chữ "hay" — nên khách THẬT SỰ nhận nó.
+_SAO_RONG = re.compile(
+    r"(can (ho tro|giup) gi (them )?khong"
+    r"|con gi (can|thac mac) (ho tro|giup) khong"
+    r"|co gi (can|thac mac) khong"
+    r"|em (co the )?(ho tro|giup) gi (them )?(cho minh )?khong)"
+)
+
+
+def cau_sao_rong(tra_loi: str) -> bool:
+    """Có kết bằng câu mở đường rỗng mà prompt đã cấm không."""
+    return bool(_SAO_RONG.search(khong_dau(tra_loi)))
+
 # ---------------------------------------------------------------
 #  Gộp
 # ---------------------------------------------------------------
@@ -198,10 +227,12 @@ def cham(luot: list[dict], *, da_chuyen_nguoi: bool = False) -> dict:
     chet = bool(tra_loi) and hoi_thoai_chet(
         tra_loi[-1], da_chuyen_nguoi=da_chuyen_nguoi
     )
+    rong = [i for i, t in enumerate(tra_loi) if cau_sao_rong(t)]
     return {
         "chao_lai": chao,
         "hoi_lai_da_biet": hoi_lai,
         "hoi_don_dap": don_dap,
         "hoi_thoai_chet": chet,
-        "dat": not (chao or hoi_lai or don_dap or chet),
+        "cau_sao_rong": rong,
+        "dat": not (chao or hoi_lai or don_dap or chet or rong),
     }

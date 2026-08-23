@@ -389,6 +389,7 @@ thật.
 
 | Tài liệu | Nội dung | Sinh ra từ |
 |---|---|---|
+| [docs/co-so-ly-thuyet.md](docs/co-so-ly-thuyet.md) | 10 kỹ thuật hệ thống thực sự dùng, kèm nguồn gốc | viết tay |
 | [docs/kien-truc.md](docs/kien-truc.md) | sơ đồ khối · luồng tin · use case · ERD 16 bảng | `agent/schema.sql` |
 | [docs/thuc-nghiem.md](docs/thuc-nghiem.md) | phương pháp đo · kết quả 13 lần chạy · giới hạn | `data/eval/*.json` |
 
@@ -591,7 +592,7 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-412 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+419 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
 tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
 trực, giới hạn đăng nhập.
 

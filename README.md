@@ -381,6 +381,23 @@ thật.
 
 ---
 
+## Kiến trúc — sơ đồ
+
+[docs/kien-truc.md](docs/kien-truc.md): sơ đồ khối, luồng một tin nhắn,
+trường hợp sử dụng, và ERD 16 bảng.
+
+Phần ERD **sinh ra từ `agent/schema.sql`**, không vẽ tay — sơ đồ vẽ tay
+đúng đúng một ngày, ngày người ta vẽ nó:
+
+```bash
+.venv/Scripts/python.exe -m scripts.sinh_so_do --ghi
+```
+
+Có test canh việc file trong repo khớp với thứ bộ sinh tạo ra, nên tài
+liệu không thể lệch khỏi schema mà không ai biết.
+
+---
+
 ## Cấu trúc
 
 ```
@@ -551,7 +568,7 @@ Chi tiết + cấu hình Claude Desktop: [docs/mcp.md](docs/mcp.md)
 .venv/Scripts/python.exe -m pytest tests/ -q
 ```
 
-380 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
+388 ca, chạy dưới 2 giây, không gọi API. Đo phần logic quanh model — chốt
 tuân thủ, lưới an toàn, bộ làm-tự-nhiên, chấm điểm, khớp sản phẩm, hàng đợi
 trực, giới hạn đăng nhập.
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 import re
 from contextlib import suppress
 
-import json
 import uuid
 from dataclasses import dataclass, field
 

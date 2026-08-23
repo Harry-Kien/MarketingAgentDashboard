@@ -282,6 +282,13 @@ async def ingest(title: str, source: str, text: str) -> int:
         await conn.executemany(
             "INSERT INTO chunks (document_id, ord, content, embedding) "
             "VALUES ($1,$2,$3,$4::vector)",
-            [(doc_id, i, c, _vec(v)) for i, (c, v) in enumerate(zip(pieces, vectors))],
+            # strict=True: `zip` mặc định CẮT NGẦM về danh sách ngắn hơn.
+            # Ở đây hai danh sách là đoạn văn bản và vector của chính
+            # chúng — lệch nhau nghĩa là API nhúng trả thiếu, và cắt ngầm
+            # thì vài đoạn tri thức lặng lẽ không vào kho. Agent sau đó
+            # trả lời "chưa có thông tin" cho câu mà tài liệu CÓ nói, và
+            # không có gì trong hệ thống chỉ ra vì sao.
+            [(doc_id, i, c, _vec(v))
+             for i, (c, v) in enumerate(zip(pieces, vectors, strict=True))],
         )
     return len(pieces)

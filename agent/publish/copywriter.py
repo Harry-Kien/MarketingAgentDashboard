@@ -18,7 +18,6 @@ Facebook viết dài hơn được, Instagram sống bằng hashtag.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from ..config import ROOT
 from ..core import llm

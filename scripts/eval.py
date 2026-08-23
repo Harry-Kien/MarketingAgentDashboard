@@ -233,13 +233,13 @@ async def main(loc: str | None = None) -> int:
 
     if co_loi:
         n_loi = len(co_loi)
-        print(f"\n  --- Giọng văn ---")
-        print(f"  Văn bản model sinh ra:")
+        print("\n  --- Giọng văn ---")
+        print("  Văn bản model sinh ra:")
         print(f"    dấu hiệu lộ bot   {tong_dau_hieu / n_loi:.2f} / câu"
               f"   |  sạch {len(sach)}/{n_loi} ({len(sach) / n_loi:.0%})")
         print(f"    độ dài trung bình {dai_tb:.0f} ký tự"
               f"   (ngưỡng tin nhắn: {tu_nhien.DAI_TOI_DA})")
-        print(f"  KHÁCH THẬT SỰ NHẬN (sau khi tách tin, bỏ markdown):")
+        print("  KHÁCH THẬT SỰ NHẬN (sau khi tách tin, bỏ markdown):")
         print(f"    dấu hiệu lộ bot   {tong_sau / n_loi:.2f} / câu"
               f"   |  sạch {len(sach_sau)}/{n_loi} ({len(sach_sau) / n_loi:.0%})"
               f"   <-- con số thật")

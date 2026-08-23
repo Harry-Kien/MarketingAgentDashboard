@@ -17,7 +17,6 @@ import re
 from pathlib import Path
 
 from .. import db
-from ..config import settings
 from . import registry
 from .base import PublishTarget
 

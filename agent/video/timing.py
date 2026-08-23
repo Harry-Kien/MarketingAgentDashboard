@@ -57,7 +57,11 @@ async def measure_scenes(scenes: list[dict], audio_paths: list[Path | None]) -> 
     Ưu tiên số đo từ ffprobe; chỉ rơi về ước lượng khi cảnh đó không có audio.
     """
     total = 0.0
-    for scene, audio in zip(scenes, audio_paths):
+    # strict=True: lệch số cảnh và số file giọng đọc thì phải NỔ, không
+    # được cắt ngầm. Cả module này tồn tại vì nguyên tắc 'âm thanh trước,
+    # hình sau'; cắt ngầm ở đây là lặng lẽ bỏ mất mấy cảnh cuối của video
+    # mà vẫn báo dựng xong.
+    for scene, audio in zip(scenes, audio_paths, strict=True):
         measured = await probe_duration(audio) if audio else None
         if measured:
             scene["duration"] = round(measured + PAUSE_AFTER_SCENE_S, 3)

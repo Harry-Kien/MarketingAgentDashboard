@@ -747,7 +747,6 @@ class KiemKeIn(BaseModel):
 @router.get("/kho")
 async def kho_tong_quan() -> dict:
     """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
-    import json as _json
     from agent.core.tools import _catalog
 
     danh_muc = {p["ma"]: p for p in _catalog().get("san_pham", [])}

@@ -54,7 +54,7 @@ async def main() -> int:
     print(f"Gọi model nhìn {len(saved)} ảnh...\n")
     rows, cost = await vision.analyse_all(saved)
 
-    for row, src in zip(rows, paths):
+    for row, src in zip(rows, paths, strict=True):
         a = row["analysis"]
         mark = "DÙNG ĐƯỢC" if row["usable"] else "LOẠI"
         print(f"[{row['ord']}] {src.name}  ->  {mark}   ({a['nguon']})")

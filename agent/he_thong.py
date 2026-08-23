@@ -40,7 +40,6 @@ import asyncio
 
 import httpx
 
-from agent.config import settings
 
 # `can_dang_nhap`: mở ra là gặp màn hình đăng nhập của chính nó, không phải
 # lỗi. Ghi rõ để người vận hành không tưởng là hỏng.
@@ -113,7 +112,7 @@ async def kiem_tat_ca() -> dict:
     ket = await asyncio.gather(*(_song(d["kiem"]) for d in DICH_VU))
 
     ra = []
-    for d, (song, ghi_chu) in zip(DICH_VU, ket):
+    for d, (song, ghi_chu) in zip(DICH_VU, ket, strict=True):
         ra.append({**{k: v for k, v in d.items() if k != "kiem"},
                    "song": song, "ghi_chu": ghi_chu})
 

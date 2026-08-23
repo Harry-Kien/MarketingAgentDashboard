@@ -1,0 +1,25 @@
+# Chỉ bắt LỖI, không bắt phong cách.
+#
+# Repo này viết theo một lối rất riêng: chú thích tiếng Việt dài, giải thích
+# VÌ SAO chứ không phải LÀM GÌ. Bật bộ quy tắc phong cách vào đây là hàng
+# nghìn cảnh báo về độ dài dòng, và người ta sẽ tắt linter đi — rồi mất luôn
+# phần bắt lỗi thật.
+#
+# Chọn đúng ba nhóm:
+#   F   pyflakes  — biến chưa định nghĩa, import thừa, f-string hỏng
+#   E9  lỗi cú pháp và lỗi chạy
+#   B   bugbear   — bẫy thật, ví dụ `zip()` cắt ngầm
+line-length = 100
+
+[lint]
+select = ["F", "E9", "B"]
+
+# B008: "đừng gọi hàm trong giá trị mặc định của tham số". Đúng với Python
+# thường, SAI với FastAPI — `Depends()` và `File()` bắt buộc phải nằm đúng
+# chỗ đó. Giữ lại quy tắc này là 7 cảnh báo vĩnh viễn không sửa được, và
+# một linter luôn đỏ thì không ai đọc.
+ignore = ["B008"]
+
+[lint.per-file-ignores]
+# Test soi mã nguồn bằng inspect.getsource và cố tình import để kiểm.
+"tests/*" = ["F401"]

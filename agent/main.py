@@ -10,7 +10,6 @@ import json
 import secrets
 import uuid
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse

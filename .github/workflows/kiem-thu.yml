@@ -80,3 +80,73 @@ jobs:
             exit 1
           fi
           echo "Không có file bí mật nào bị theo dõi"
+
+      - name: Soi lỗi tĩnh (ruff)
+        # Chỉ bắt LỖI, không bắt phong cách — xem ruff.toml. Bật bộ phong
+        # cách vào đây là hàng nghìn cảnh báo, người ta tắt linter đi, rồi
+        # mất luôn phần bắt lỗi thật.
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Dò lỗ hổng đã biết trong thư viện
+        # 17 thư viện ghim cứng bằng ==. Ghim là tốt cho tính lặp lại, nhưng
+        # nó cũng nghĩa là một CVE công bố hôm nay sẽ nằm im trong repo cho
+        # tới khi có người tình cờ nâng cấp. Bước này bắt CI nói ra.
+        #
+        # continue-on-error: một CVE mới công bố không được làm đỏ CI của
+        # người đang sửa việc khác. Nó phải HIỆN RA, không phải CHẶN LẠI.
+        continue-on-error: true
+        #
+        # Quét MÔI TRƯỜNG ĐÃ CÀI, không quét `requirements.txt`. Hai lý do:
+        # nó bao luôn thư viện phụ thuộc gián tiếp (chỗ CVE hay nằm), và bộ
+        # đọc requirements của pip-audit vấp chú thích tiếng Việt trên máy
+        # có locale không phải UTF-8.
+        run: |
+          pip install pip-audit
+          pip-audit --desc
+
+  # ===============================================================
+  #  Máy vừa clone repo có chạy được không
+  # ===============================================================
+  # Job RIÊNG, checkout SẠCH, không dùng lại gì của job trên.
+  #
+  # VÌ SAO CẦN: đã xảy ra thật. `_tu_khoa_loai_da()` đọc thẳng
+  # `data/catalog.json` — file KHÔNG lên repo. Trên máy phát triển nó có,
+  # nên 380 test xanh. Trên máy vừa clone nó không có, và 7 test đỏ kèm một
+  # tính năng chết câm: hồ sơ khách ngừng ghi loại da.
+  #
+  # Lỗi loại này vô hình với người viết mã, vì máy họ luôn có sẵn dữ liệu
+  # thật. Chỉ một lần clone sạch mới lộ ra.
+  clone-sach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false   # submodule không cần cho test của repo này
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cài thư viện
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Không được có dữ liệu thật trong bản clone
+        # Nếu một trong các file này lọt lên repo thì job này mất hết ý
+        # nghĩa — nó sẽ chạy trên máy CÓ dữ liệu, y như máy phát triển.
+        run: |
+          for f in data/catalog.json data/knowledge; do
+            if [ -e "$f" ]; then
+              echo "LỖI: $f có trong repo — job clone sạch thành vô nghĩa"
+              exit 1
+            fi
+          done
+          echo "Bản clone đúng là sạch: chỉ có dữ liệu mẫu"
+
+      - name: Chạy kiểm thử trên bản clone sạch
+        run: python -m pytest tests/ -q
+

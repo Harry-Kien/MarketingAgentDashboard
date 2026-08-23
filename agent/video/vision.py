@@ -151,7 +151,7 @@ async def analyse_all(asset_rows: list[dict]) -> tuple[list[dict], float]:
     )
 
     out, total = [], 0.0
-    for row, (analysis, cost) in zip(asset_rows, pairs):
+    for row, (analysis, cost) in zip(asset_rows, pairs, strict=True):
         total += cost
         do = huong_tu_kich_thuoc(row.get("width"), row.get("height"))
         if do:

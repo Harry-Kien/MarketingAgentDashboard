@@ -1,0 +1,7 @@
+
+# --- Chốt chất lượng (chỉ dùng khi phát triển, CI tự cài) ---
+# ruff: soi lỗi tĩnh. pip-audit: dò CVE trong thư viện.
+# KHÔNG ghim cứng hai cái này: chúng là công cụ kiểm, không phải thư viện
+# chạy — bản mới hơn biết thêm lỗ hổng mới, và đó chính là điều ta muốn.
+ruff
+pip-audit

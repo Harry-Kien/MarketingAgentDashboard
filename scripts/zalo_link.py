@@ -13,7 +13,6 @@ Script này CHỈ ĐỌC cấu hình của ZaloCRM, không sửa mã nguồn c�
 """
 from __future__ import annotations
 
-import re
 import secrets
 import subprocess
 import sys

@@ -282,6 +282,10 @@ def test_khach_cho_ra_canh_bao_chu_khong_phai_hong(monkeypatch):
         return {"so": 3,
                 "lau_nhat": datetime.now(timezone.utc) - timedelta(minutes=95)}
 
+    # GHIM giờ trực. Không ghim thì test đỏ sau 21 giờ — `_kiem_khach_cho_lau`
+    # thoát sớm khi ngoài giờ, trước cả khi chạm CSDL. Test phụ thuộc
+    # đồng hồ là test làm CI đỏ ngẫu nhiên, và người ta sẽ ngừng đọc CI.
+    monkeypatch.setattr(suc_khoe.gio_lam_viec, "dang_trong_gio", lambda *_: True)
     monkeypatch.setattr(suc_khoe.db, "fetchrow", fetchrow_gia)
     muc = asyncio.run(suc_khoe._kiem_khach_cho_lau())
     assert muc["trang_thai"] == suc_khoe.CANH_BAO
@@ -293,6 +297,10 @@ def test_khong_ai_cho_thi_bao_tot(monkeypatch):
     async def fetchrow_gia(sql, *args):
         return {"so": 0, "lau_nhat": None}
 
+    # GHIM giờ trực. Không ghim thì test đỏ sau 21 giờ — `_kiem_khach_cho_lau`
+    # thoát sớm khi ngoài giờ, trước cả khi chạm CSDL. Test phụ thuộc
+    # đồng hồ là test làm CI đỏ ngẫu nhiên, và người ta sẽ ngừng đọc CI.
+    monkeypatch.setattr(suc_khoe.gio_lam_viec, "dang_trong_gio", lambda *_: True)
     monkeypatch.setattr(suc_khoe.db, "fetchrow", fetchrow_gia)
     assert asyncio.run(suc_khoe._kiem_khach_cho_lau())["trang_thai"] == suc_khoe.TOT
 
@@ -302,6 +310,10 @@ def test_csdl_hong_thi_bao_hong_chu_khong_no(monkeypatch):
     async def fetchrow_gia(sql, *args):
         raise RuntimeError("mat ket noi")
 
+    # GHIM giờ trực. Không ghim thì test đỏ sau 21 giờ — `_kiem_khach_cho_lau`
+    # thoát sớm khi ngoài giờ, trước cả khi chạm CSDL. Test phụ thuộc
+    # đồng hồ là test làm CI đỏ ngẫu nhiên, và người ta sẽ ngừng đọc CI.
+    monkeypatch.setattr(suc_khoe.gio_lam_viec, "dang_trong_gio", lambda *_: True)
     monkeypatch.setattr(suc_khoe.db, "fetchrow", fetchrow_gia)
     assert asyncio.run(suc_khoe._kiem_khach_cho_lau())["trang_thai"] == suc_khoe.HONG
 

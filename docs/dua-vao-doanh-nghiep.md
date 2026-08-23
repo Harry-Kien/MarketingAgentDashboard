@@ -13,7 +13,7 @@ mới là thứ gây tai nạn.
 | Chất lượng tư vấn | 51–55/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
-| Kiểm thử | 423 ca, dưới 2 giây, chạy tự động mỗi push |
+| Kiểm thử | 431 ca, dưới 2 giây, chạy tự động mỗi push |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |
@@ -49,7 +49,19 @@ vì "không kiểm được" — dịch vụ đang tắt thì nó nói rõ là c
 ### 1. Đổi mọi bí mật mặc định
 
 ```bash
-grep -nE "doi-chuoi|thay-doi|changeme|password" .env
+python -m scripts.sinh_token MCP_TOKEN
+python -m scripts.sinh_token WEBHOOK_SECRET
+```
+
+Hai lệnh trên sinh bí mật và ghi **thẳng vào `.env`, không in ra màn hình
+lần nào**. Cách quen thuộc `python -c "...print(token)"` để lại bí mật
+trong lịch sử cuộn terminal, lịch sử lệnh ghi ra đĩa, và — đã xảy ra hai
+lần trong chính dự án này — trong ảnh chụp màn hình rồi gửi đi.
+
+Kiểm còn giá trị mặc định nào không:
+
+```bash
+python -m scripts.san_sang
 ```
 
 Bắt buộc đổi: `WEBHOOK_SECRET`, mật khẩu Postgres, mật khẩu Chatwoot,

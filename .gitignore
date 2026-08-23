@@ -1,4 +1,11 @@
 .env
+# Bản sao lưu .env do `scripts/sinh_token.py` tạo trước khi thay bí mật.
+# KHÔNG chặn dòng này thì một lần `git add -A` là đẩy nguyên bí mật CŨ lên
+# repo công khai — và bí mật cũ vẫn là bí mật, vì nó có thể còn hiệu lực ở
+# nơi khác. Đã suýt xảy ra thật ngay ở lần chạy đầu của script đó.
+.env.bak
+.env.*.bak
+.env.env.bak
 .venv/
 __pycache__/
 *.pyc

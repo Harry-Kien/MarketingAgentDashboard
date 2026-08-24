@@ -19,6 +19,7 @@ Hai điều kiện đó là lời hứa, và lời hứa thì phải có ngườ
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -28,6 +29,8 @@ sys.path.insert(0, str(ROOT))
 
 from agent import main as app_main  # noqa: E402
 from agent.api import tich_hop  # noqa: E402
+from agent.api.routes import TEN_COOKIE  # noqa: E402
+from agent.core import xac_thuc  # noqa: E402
 
 
 # =====================================================================
@@ -195,6 +198,97 @@ def test_websocket_mang_theo_cookie():
     bắt tay xong là bị đá ra ngay."""
     src = inspect.getsource(tich_hop.cau_websocket)
     assert "cookie" in src.lower()
+
+
+# ---------------------------------------------------------------------
+#  Điều kiện 1, VẾ WEBSOCKET — chỗ chốt đăng nhập KHÔNG với tới
+# ---------------------------------------------------------------------
+
+class _WSGia:
+    """WebSocket giả, đủ dùng cho phần `cau_websocket` chạm tới."""
+
+    def __init__(self, cookies=None, query=""):
+        self.cookies = cookies or {}
+        self.headers = {}
+        self.url = type("U", (), {"query": query})()
+        self.da_accept = False
+        self.ma_dong = None
+
+    async def accept(self):
+        self.da_accept = True
+
+    async def close(self, code=1000):
+        self.ma_dong = code
+
+
+def test_middleware_http_KHONG_cham_toi_websocket():
+    """
+    Ca này canh một sự thật của THƯ VIỆN, không phải của mã ta viết.
+
+    Cả lớp bảo vệ `/tich-hop` dựa trên middleware trong `main.py`. Nếu
+    middleware đó cũng chặn WebSocket thì hàm `phien_hop_le` là thừa. Nó
+    KHÔNG chặn — và ngày nào Starlette đổi điều đó, ca này đỏ để ta biết mà
+    đọc lại, thay vì giữ mãi một lớp kiểm không còn cần.
+    """
+    from starlette.middleware.base import BaseHTTPMiddleware
+    src = inspect.getsource(BaseHTTPMiddleware.__call__)
+    assert 'scope["type"] != "http"' in src
+
+
+def test_websocket_khong_co_phien_bi_tu_choi():
+    """Không phiên dashboard thì không có kênh nào được mở."""
+    ws = _WSGia()
+    asyncio.run(tich_hop.cau_websocket(ws, "chatwoot", "cable"))
+    assert ws.da_accept is False, "đã accept trước khi kiểm phiên"
+    assert ws.ma_dong == 1008
+
+
+def test_websocket_phien_hong_cung_bi_tu_choi(monkeypatch):
+    """Cookie có mặt nhưng phiên hết hạn cũng phải bị chặn."""
+    async def het_han(_token):
+        return None
+    monkeypatch.setattr(xac_thuc, "doc_phien", het_han)
+
+    ws = _WSGia(cookies={TEN_COOKIE: "token-da-het-han"})
+    asyncio.run(tich_hop.cau_websocket(ws, "chatwoot", "cable"))
+    assert ws.da_accept is False
+    assert ws.ma_dong == 1008
+
+
+def test_websocket_co_phien_thi_di_tiep(monkeypatch):
+    """
+    Vế còn lại: siết chặt quá tay thì người trực mất hộp thư mà không ai
+    biết vì sao. Có phiên hợp lệ là phải đi qua được.
+    """
+    async def hop_le(_token):
+        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri"}
+    monkeypatch.setattr(xac_thuc, "doc_phien", hop_le)
+
+    ws = _WSGia(cookies={TEN_COOKIE: "token-tot"})
+    # Nối lên thượng nguồn sẽ hỏng (không có Chatwoot nào đang chạy) và
+    # `cau_websocket` nuốt lỗi đó — nhưng nó chỉ tới được chỗ ấy sau khi
+    # đã accept, nên `da_accept` là bằng chứng chốt phiên đã cho qua.
+    asyncio.run(tich_hop.cau_websocket(ws, "chatwoot", "cable"))
+    assert ws.da_accept is True
+    assert ws.ma_dong != 1008
+
+
+def test_websocket_ten_app_la_thi_tu_choi_chu_khong_no():
+    """
+    `_dich` ném HTTPException — hợp lý cho route HTTP, vô nghĩa cho
+    WebSocket: không có gì biến nó thành 404, nó chỉ thành lỗi chưa bắt.
+    """
+    async def hop_le(_token):
+        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri"}
+    tich_hop_xac_thuc = xac_thuc.doc_phien
+    xac_thuc.doc_phien = hop_le
+    try:
+        ws = _WSGia(cookies={TEN_COOKIE: "token-tot"})
+        asyncio.run(tich_hop.cau_websocket(ws, "evil.com", "cable"))
+    finally:
+        xac_thuc.doc_phien = tich_hop_xac_thuc
+    assert ws.da_accept is False
+    assert ws.ma_dong == 1008
 
 
 # =====================================================================

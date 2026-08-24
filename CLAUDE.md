@@ -62,7 +62,7 @@ ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
 
 ```bash
-docker compose up -d              # Postgres+pgvector (cổng 5433)
+docker compose up -d              # Postgres+pgvector (5433) + n8n (5678)
 python -m uvicorn agent.main:app --reload --port 8000
 ```
 

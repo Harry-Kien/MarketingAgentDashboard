@@ -40,6 +40,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV = ROOT / ".env"
+CHATWOOT_ENV = ROOT / ".env.chatwoot"
 
 # Chỉ cho đặt những khoá thật sự là bí mật sinh ngẫu nhiên được.
 # Không có danh sách này thì một lần gõ nhầm tên khoá sẽ ghi đè
@@ -47,6 +48,11 @@ ENV = ROOT / ".env"
 CHO_PHEP = {
     "MCP_TOKEN": "token cho ứng dụng ngoài gọi 9 công cụ MCP",
     "WEBHOOK_SECRET": "bí mật xác thực webhook Chatwoot",
+    # Chuỗi ta TỰ ĐẶT rồi dán y hệt sang ô "Verify Token" bên Meta. Chỉ
+    # dùng cho lần bắt tay đầu tiên, nhưng vẫn phải ngẫu nhiên: đoán được
+    # nó là người lạ nối được webhook của họ vào endpoint của ta.
+    "MESSENGER_VERIFY_TOKEN": "chuỗi bắt tay webhook Facebook Messenger",
+    "CHATWOOT_WEBHOOK_SECRET": "bí mật ký HMAC cho webhook Chatwoot",
 }
 
 
@@ -75,11 +81,30 @@ def dat(khoa: str, dai: int = 32) -> str:
         viec = "đã thêm"
     ENV.write_text(moi, encoding="utf-8")
 
+    dong_bo = ""
+    if khoa == "CHATWOOT_WEBHOOK_SECRET" and CHATWOOT_ENV.exists():
+        # Chatwoot ký bằng CW_WEBHOOK_SECRET, còn Agent kiểm bằng
+        # CHATWOOT_WEBHOOK_SECRET. Hai tên khác nhau nhưng bắt buộc cùng
+        # giá trị; bắt người vận hành copy tay là tạo một lỗi 401 rất khó
+        # nhìn ra, và còn khuyến khích mở secret trên màn hình.
+        sao_luu_cw = CHATWOOT_ENV.with_name(".env.chatwoot.bak")
+        shutil.copyfile(CHATWOOT_ENV, sao_luu_cw)
+        noi_dung_cw = CHATWOOT_ENV.read_text(encoding="utf-8")
+        mau_url = re.compile(r"^(CW_WEBHOOK_URL=[^?\r\n]+)(?:\?[^\r\n]*)?$", re.M)
+        noi_dung_cw = mau_url.sub(r"\1", noi_dung_cw)
+        mau_cw = re.compile(r"^CW_WEBHOOK_SECRET=.*$", re.M)
+        if mau_cw.search(noi_dung_cw):
+            moi_cw = mau_cw.sub(f"CW_WEBHOOK_SECRET={gia_tri}", noi_dung_cw, count=1)
+        else:
+            moi_cw = noi_dung_cw.rstrip("\n") + f"\nCW_WEBHOOK_SECRET={gia_tri}\n"
+        CHATWOOT_ENV.write_text(moi_cw, encoding="utf-8")
+        dong_bo = "\nĐã đồng bộ an toàn sang .env.chatwoot; giá trị không được in."
+
     return (f"{viec} {khoa} ({dai} byte ngẫu nhiên) — "
             f"{CHO_PHEP[khoa]}.\n"
             f"Giá trị KHÔNG được in ra. Đọc bằng cách mở .env, "
             f"và đừng chụp màn hình chỗ đó.\n"
-            f"Bản sao lưu file cũ: .env.bak (đã bị .gitignore chặn)")
+            f"Bản sao lưu file cũ: .env.bak (đã bị .gitignore chặn){dong_bo}")
 
 
 def main() -> int:

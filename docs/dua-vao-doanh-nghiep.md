@@ -8,12 +8,21 @@ mới là thứ gây tai nạn.
 
 ## Đã đủ
 
+> **Đừng gõ số vào bảng này.** Con số thật nằm ở
+> [`thuc-nghiem.md`](thuc-nghiem.md), được **sinh ra** từ `data/eval/`. Bảng
+> dưới chỉ trỏ sang đó.
+>
+> Repo này đã có bằng chứng vì sao: đã từng có ba con số khác nhau cho cùng
+> một phép đo, nằm ở ba file khác nhau, và không con nào khớp với lịch sử
+> các lần chạy mà chính file đó kể lại. Có `tests/test_dua_vao_doanh_nghiep.py`
+> canh việc này — gõ điểm bộ vàng vào đây là test đỏ.
+
 | | Bằng chứng |
 |---|---|
-| Chất lượng tư vấn | 51–55/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
+| Chất lượng tư vấn | xem [`thuc-nghiem.md` mục 2](thuc-nghiem.md) — 13 lần chạy, 0 từ cấm ở mọi lần |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
-| Kiểm thử | 440 ca, dưới 2 giây, chạy tự động mỗi push |
+| Kiểm thử | `pytest -q` — chạy tự động mỗi push, có cả job trên bản clone sạch |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |
@@ -151,16 +160,18 @@ tin từ một nick cá nhân thì đúng định nghĩa hành vi mà Zalo dò t
 khoá thì mất luôn toàn bộ lịch sử hội thoại — mất chính tài sản mà hồ sơ
 khách đang gây dựng.
 
-### Bộ đo nhiều lượt đã có, nhưng CHƯA CHẠY LẦN NÀO
+### Chất lượng tư vấn chỉ đo được "không sai", chưa đo được "khuyên hay"
 
-`scripts/eval_nhieu_luot.py` + 12 kịch bản · 43 lượt đã sẵn sàng, và bộ
-chấm của nó có 29 test canh. Nhưng chạy thật thì gọi model thật — tốn tiền
-và mất 8-12 phút — nên **chưa có con số nào**. Cho tới khi chạy, khả năng
-tư vấn nhiều lượt của agent vẫn là một ẩn số.
+Bộ nhiều lượt **đã chạy** — kết quả ở [`thuc-nghiem.md` mục 3](thuc-nghiem.md).
+Nhưng cả hai tầng đo đều chấm bằng **khớp từ khoá**, trên **dữ liệu hư cấu**,
+và trên **một model tại một thời điểm**. Chúng chứng minh agent không gây tai
+nạn; chúng không chứng minh agent tư vấn giỏi. Lời khuyên có hợp với da khách
+hay không thì phải người trong nghề đọc mới biết — và chưa có số liệu nào từ
+khách hàng thật.
 
 ```bash
 python -m scripts.eval_nhieu_luot --kho   # kiểm bộ khung, không tốn tiền
-python -m scripts.eval_nhieu_luot         # chạy thật
+python -m scripts.eval_nhieu_luot         # chạy thật, tốn tiền
 ```
 
 ### Một máy, không có phương án khi máy hỏng

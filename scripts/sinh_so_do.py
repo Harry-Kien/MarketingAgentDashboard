@@ -51,7 +51,7 @@ NHOM = {
     "Bán hàng": ["orders", "ton_kho", "kho_bien_dong"],
     "Tri thức (RAG)": ["documents", "chunks"],
     "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],
-    "Vận hành": ["nguoi_dung", "phien", "events"],
+    "Vận hành": ["nguoi_dung", "phien", "events", "zalo_oa_token"],
 }
 
 # Cột nào đáng hiện trên sơ đồ. Vẽ đủ 20 cột mỗi bảng thì sơ đồ thành bảng

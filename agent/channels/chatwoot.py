@@ -29,6 +29,7 @@ HỢP ĐỒNG API
 """
 from __future__ import annotations
 
+import json
 import os
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -42,6 +43,49 @@ from agent.config import settings
 # Nhãn gắn lên hội thoại cần người xử lý. Đặt một chỗ để trưởng nhóm lọc
 # được, và để đổi tên không phải đi tìm khắp nơi.
 NHAN_CHO_NGUOI = "can-nguoi-ho-tro"
+
+# Mọi tin do Marketing Agent tạo đều mang dấu này trong `content_attributes`.
+# Chatwoot phát webhook cho cả tin vừa được gửi qua API; nếu không có dấu,
+# webhook vọng bị hiểu là nhân viên vừa giành hội thoại và Agent tự khoá
+# chính mình sau mỗi câu trả lời.
+DAU_TIN_AGENT = "marketing_agent"
+
+
+def la_tin_do_agent_gui(payload: dict) -> bool:
+    """Nhận ra webhook vọng từ chính Marketing Agent."""
+    attrs = payload.get("content_attributes") or {}
+    return isinstance(attrs, dict) and attrs.get(DAU_TIN_AGENT) is True
+
+
+def la_tin_nhan_vien(payload: dict) -> bool:
+    """
+    Tin công khai do người trực gửi trong Chatwoot.
+
+    Automation, campaign và bot cũng sinh `outgoing`; nhận nhầm chúng là
+    người thật sẽ khoá Agent mà không ai chủ động tiếp quản hội thoại.
+    """
+    if payload.get("event") != "message_created":
+        return False
+    if payload.get("message_type") != "outgoing" or payload.get("private"):
+        return False
+    if la_tin_do_agent_gui(payload):
+        return False
+
+    content_attrs = payload.get("content_attributes") or {}
+    additional_attrs = payload.get("additional_attributes") or {}
+    if isinstance(content_attrs, dict) and content_attrs.get("automation_rule_id"):
+        return False
+    if isinstance(additional_attrs, dict) and additional_attrs.get("campaign_id"):
+        return False
+
+    sender = payload.get("sender") or {}
+    return str(sender.get("type") or "") not in {"AgentBot", "Captain::Assistant"}
+
+
+def ma_hoi_thoai(payload: dict) -> str:
+    """Chatwoot dùng display id trong cả message và lifecycle webhook."""
+    conversation = payload.get("conversation") or {}
+    return str(conversation.get("id") or payload.get("id") or "")
 
 
 def _doc_dinh_kem(payload: dict) -> list[dict]:
@@ -155,7 +199,11 @@ class ChatwootAdapter(ChannelAdapter):
             r = await self._client.post(
                 f"/api/v1/accounts/{settings.chatwoot_account_id}"
                 f"/conversations/{conversation_ref}/messages",
-                json={"content": text, "message_type": "outgoing"},
+                json={
+                    "content": text,
+                    "message_type": "outgoing",
+                    "content_attributes": {DAU_TIN_AGENT: True},
+                },
             )
         except httpx.HTTPError as exc:
             return Delivery(False, str(exc)[:200])
@@ -174,7 +222,14 @@ class ChatwootAdapter(ChannelAdapter):
                 r = await self._client.post(
                     f"/api/v1/accounts/{settings.chatwoot_account_id}"
                     f"/conversations/{conversation_ref}/messages",
-                    data={"content": caption, "message_type": "outgoing"},
+                    # Multipart không tự mã hoá object. MessageBuilder phía
+                    # Chatwoot hỗ trợ chuỗi JSON và đưa nguyên dấu này vào
+                    # webhook trả về.
+                    data={
+                        "content": caption,
+                        "message_type": "outgoing",
+                        "content_attributes": json.dumps({DAU_TIN_AGENT: True}),
+                    },
                     files={"attachments[]": (os.path.basename(path), fh)},
                 )
         except httpx.HTTPError as exc:
@@ -226,7 +281,12 @@ class ChatwootAdapter(ChannelAdapter):
         with suppress(httpx.HTTPError):
             await self._client.post(
                 f"{goc}/messages",
-                json={"content": ghi_chu, "message_type": "outgoing", "private": True},
+                json={
+                    "content": ghi_chu,
+                    "message_type": "outgoing",
+                    "private": True,
+                    "content_attributes": {DAU_TIN_AGENT: True},
+                },
             )
         with suppress(httpx.HTTPError):
             await self._client.post(f"{goc}/labels", json={"labels": [NHAN_CHO_NGUOI]})

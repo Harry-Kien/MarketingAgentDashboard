@@ -325,3 +325,19 @@ CREATE TABLE IF NOT EXISTS phien (
 );
 CREATE INDEX IF NOT EXISTS idx_phien_nd ON phien (nguoi_dung_id);
 CREATE INDEX IF NOT EXISTS idx_phien_han ON phien (het_han);
+
+-- --- Token Zalo OA -------------------------------------------
+-- MỘT dòng cho mỗi OA, và nó là thứ MÁY ghi chứ không phải người.
+--
+-- Vì sao không để trong .env như mọi khoá khác: refresh token của Zalo
+-- XOAY VÒNG. Mỗi lần đổi lấy access token mới, Zalo trả về một refresh
+-- token mới và vô hiệu cái cũ. Access token sống khoảng một giờ, nên việc
+-- này xảy ra mỗi giờ, cả đêm. Không có chỗ bền để ghi thì sau lần khởi
+-- động lại đầu tiên, adapter cầm một refresh token đã chết — và kênh ngừng
+-- gửi được trong im lặng: tin khách vẫn vào, agent vẫn soạn, chỉ có câu
+-- trả lời là không tới nơi.
+CREATE TABLE IF NOT EXISTS zalo_oa_token (
+    app_id        TEXT PRIMARY KEY,
+    refresh_token TEXT NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

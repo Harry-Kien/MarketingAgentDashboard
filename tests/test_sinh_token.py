@@ -112,3 +112,54 @@ def test_khong_dat_khoa_la(monkeypatch, tmp_path):
 def test_khong_co_env_thi_bao_ro(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "ENV", tmp_path / "khong-co")
     assert "cp .env.example" in st.dat("MCP_TOKEN")
+
+
+def test_moi_khoa_tai_lieu_bao_sinh_deu_dat_duoc():
+    """
+    Ca này canh một lỗi đã xảy ra thật: `.env.example` bảo người dùng chạy
+    `python -m scripts.sinh_token MESSENGER_VERIFY_TOKEN`, nhưng khoá ấy
+    không có trong danh sách cho phép — lệnh trả về "Không đặt được", và
+    người đang cài dừng lại giữa chừng không hiểu vì sao.
+
+    Tài liệu hướng dẫn một lệnh thì lệnh đó phải chạy được. Quét ngược từ
+    `.env.example` để lần sau thêm hướng dẫn mà quên mở khoá là đỏ ngay.
+    """
+    import re
+    mau = re.compile(r"scripts\.sinh_token\s+([A-Z0-9_]+)")
+    khai = set(mau.findall((ROOT / ".env.example").read_text(encoding="utf-8")))
+    khai |= set(mau.findall((ROOT / "CLAUDE.md").read_text(encoding="utf-8")))
+    thieu = sorted(k for k in khai if k not in st.CHO_PHEP)
+    assert not thieu, f"tài liệu bảo sinh {thieu} nhưng script từ chối"
+
+
+def test_khoa_la_van_bi_tu_choi():
+    """Nới danh sách mà nới quá tay thì một lần gõ nhầm ghi đè
+    GCP_PROJECT_ID bằng chuỗi ngẫu nhiên."""
+    assert "Không đặt được" in st.dat("GCP_PROJECT_ID")
+
+
+def test_secret_chatwoot_duoc_dong_bo_ma_khong_lo(monkeypatch, tmp_path):
+    """Hai tiến trình dùng hai tên biến; giá trị phải giống tuyệt đối."""
+    env = _env_gia(tmp_path, "CHATWOOT_WEBHOOK_SECRET=cu\n")
+    env_cw = tmp_path / ".env.chatwoot"
+    env_cw.write_text(
+        "CW_WEBHOOK_URL=http://agent/webhook/chatwoot?token=lo\n"
+        "CW_WEBHOOK_SECRET=cu-khac\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(st, "ENV", env)
+    monkeypatch.setattr(st, "CHATWOOT_ENV", env_cw)
+
+    thong_bao = st.dat("CHATWOOT_WEBHOOK_SECRET")
+    agent_secret = env.read_text(encoding="utf-8").split("=", 1)[1].strip()
+    cw_values = dict(
+        line.split("=", 1)
+        for line in env_cw.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    chatwoot_secret = cw_values["CW_WEBHOOK_SECRET"]
+
+    assert agent_secret == chatwoot_secret
+    assert agent_secret not in thong_bao
+    assert (tmp_path / ".env.chatwoot.bak").exists()
+    assert "đồng bộ" in thong_bao
+    assert cw_values["CW_WEBHOOK_URL"] == "http://agent/webhook/chatwoot"

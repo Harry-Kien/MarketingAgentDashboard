@@ -82,6 +82,8 @@ services:
     image: chatwoot/chatwoot@sha256:f85da9b40ebe81d7f4b1a138c7d857cd7a71762f3c75a2c858ed4d9a46e5f4b1   # chatwoot/chatwoot:latest
     command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     env_file: .env.chatwoot
+    volumes:
+      - chatwoot_storage:/app/storage
     ports:
       - "127.0.0.1:3200:3000"
     depends_on:
@@ -95,6 +97,8 @@ services:
     image: chatwoot/chatwoot@sha256:f85da9b40ebe81d7f4b1a138c7d857cd7a71762f3c75a2c858ed4d9a46e5f4b1   # chatwoot/chatwoot:latest
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
     env_file: .env.chatwoot
+    volumes:
+      - chatwoot_storage:/app/storage
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -114,3 +118,5 @@ volumes:
     name: chatwoot_chatwoot_pg
   chatwoot_redis:
     name: chatwoot_chatwoot_redis
+  chatwoot_storage:
+    name: chatwoot_chatwoot_storage

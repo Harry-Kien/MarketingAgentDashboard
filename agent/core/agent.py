@@ -130,15 +130,58 @@ def _promises_handoff(text: str) -> bool:
     return bool(_HANDOFF_RE.search(text or ""))
 
 
-def _confidence(passages: list[rag.Passage], used_tool: bool) -> float:
+def _confidence(passages: list[rag.Passage], co_du_lieu: bool) -> float:
     """
-    Ước lượng độ tin cậy thô: điểm khớp RAG cao nhất, cộng thưởng nếu
-    câu trả lời dựa trên dữ liệu hệ thống (tool) thay vì tài liệu.
+    Ước lượng độ tin cậy thô: điểm khớp RAG cao nhất, cộng thưởng nếu câu
+    trả lời dựa trên dữ liệu hệ thống (tool) thay vì tài liệu.
+
+    `co_du_lieu` KHÔNG phải "đã gọi tool" — nó là "tool đã trả về dữ liệu
+    thật". Phân biệt này quan trọng từ khi có `tim_kien_thuc`: một lời gọi
+    tra cứu KHÔNG TÌM THẤY GÌ mà vẫn được cộng thưởng thì agent tra hụt lại
+    trông tự tin hơn agent không thèm tra — và chốt chuyển người vì độ tin
+    cậy thấp sẽ không bao giờ nổ nữa.
+
+    Đó đúng là xanh giả: thưởng cho hành vi mình muốn ngăn.
     """
     base = max((p.score for p in passages), default=0.0)
-    if used_tool:
+    if co_du_lieu:
         base = max(base, 0.8)
     return round(min(base, 0.99), 3)
+
+
+# Tool trả về TÀI LIỆU, không trả về dữ liệu hệ thống. Đoạn tìm được đi
+# thẳng vào `passages` và tự nâng độ tin cậy qua điểm khớp của chính nó —
+# không cần, và không được, cộng thưởng thêm lần nữa.
+_TOOL_TRA_TAI_LIEU = {"tim_kien_thuc"}
+
+
+async def _ghi_ho_so(viec, conversation_id: uuid.UUID, buoc: str) -> None:
+    """
+    Cập nhật hồ sơ khách. Hỏng thì KHÔNG chặn câu trả lời, nhưng phải kêu.
+
+    VÌ SAO KHÔNG DÙNG `suppress(Exception)` NHƯ TRƯỚC
+    -------------------------------------------------
+    Hồ sơ khách là thứ tách agent này khỏi một con chatbot: nó nhớ da dầu,
+    nhớ đang mang thai, nhớ đã mua gì. Khi việc ghi hồ sơ hỏng — đổi lược
+    đồ, CSDL kẹt, kiểu dữ liệu lạ — agent vẫn trả lời trơn tru, giọng vẫn
+    tự nhiên, chỉ là nó bắt đầu hỏi lại những điều khách đã nói. Không ai
+    nhìn màn hình mà đoán ra được.
+
+    Đúng họ với `_tu_khoa_loai_da()`: một tính năng chết câm, không nổ,
+    không nhật ký, không ai biết. Nuốt lỗi vẫn là lựa chọn đúng ở đây — trí
+    nhớ hỏng không đáng để khách mất câu trả lời — nhưng nuốt IM LẶNG thì
+    không.
+    """
+    try:
+        await viec
+    except Exception as exc:  # noqa: BLE001 — trí nhớ hỏng không được chặn câu trả lời
+        # Nhật ký đi qua CSDL, mà CSDL có thể chính là thứ vừa hỏng. Bọc
+        # thêm một lớp để việc BÁO lỗi không tự nó thành lỗi mới.
+        with suppress(Exception):
+            await db.log_event(
+                "ho_so.loi", ref_id=conversation_id, buoc=buoc,
+                ly_do=f"{type(exc).__name__}: {exc}"[:200],
+            )
 
 
 async def respond(
@@ -190,8 +233,10 @@ async def respond(
     if customer_ref:
         # Quét lời khách TRƯỚC khi dựng ngữ cảnh, để điều vừa nói có mặt
         # ngay trong lượt này chứ không phải chờ tới lượt sau.
-        with suppress(Exception):
-            await ho_so_khach.tu_tin_nhan(customer_ref, channel, question)
+        await _ghi_ho_so(
+            ho_so_khach.tu_tin_nhan(customer_ref, channel, question),
+            conversation_id, "tu_tin_nhan",
+        )
         if (ngu_canh_khach := await ho_so_khach.lam_ngu_canh(customer_ref, channel)):
             context = f"{ngu_canh_khach}\n\n{context}" if context else ngu_canh_khach
 
@@ -200,7 +245,8 @@ async def respond(
     messages = [*history, {"role": "user", "content": phong_thu.boc(question)}]
     total_cost = 0.0
     tok_in = tok_out = cache_read = latency = 0
-    used_tool = False
+    used_tool = False      # đã gọi tool nào chưa — dùng cho lưới "hứa mà không làm"
+    co_du_lieu = False     # tool đã trả về DỮ LIỆU THẬT chưa — dùng cho độ tin cậy
     da_thuc = False   # đã nhắc model gọi công cụ chưa (chỉ nhắc một lần)
     escalate = False
     escalate_reason = ""
@@ -257,10 +303,26 @@ async def respond(
             # đồng nào và quan trọng hơn: không bịa nổi, vì agent chỉ gọi
             # goi_y_san_pham(loai_da="da dầu") khi khách đã nói điều đó.
             if customer_ref:
-                with suppress(Exception):
-                    await ho_so_khach.tu_tool(
+                await _ghi_ho_so(
+                    ho_so_khach.tu_tool(
                         customer_ref, channel, call["name"], call["input"]
-                    )
+                    ),
+                    conversation_id, "tu_tool",
+                )
+
+            # Đoạn agent TỰ tra được phải nhập vào cùng một rổ căn cứ với
+            # đoạn tra sẵn đầu lượt. Không nhập thì `sources` thiếu trích
+            # dẫn, `grounded` sai, và độ tin cậy không phản ánh việc agent
+            # vừa tìm ra đúng tài liệu cần — tức là nó tra xong rồi bị phạt.
+            if call["name"] == "tim_kien_thuc" and out.get("tim_thay"):
+                for d in out.get("doan") or []:
+                    passages.append(rag.Passage(
+                        doc_title=d.get("tai_lieu", ""),
+                        content=d.get("noi_dung", ""),
+                        score=float(d.get("diem") or 0.0),
+                    ))
+            elif call["name"] not in _TOOL_TRA_TAI_LIEU:
+                co_du_lieu = True
 
             if call["name"] == "chuyen_nhan_vien":
                 escalate = True
@@ -292,8 +354,8 @@ async def respond(
         escalate = True
         escalate_reason = "Vượt số vòng gọi công cụ cho phép"
 
-    confidence = _confidence(passages, used_tool)
-    if confidence < settings.confidence_floor and not used_tool:
+    confidence = _confidence(passages, co_du_lieu)
+    if confidence < settings.confidence_floor and not co_du_lieu:
         escalate = True
         escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
 
@@ -317,9 +379,9 @@ async def respond(
         escalate=escalate,
         escalate_reason=escalate_reason,
         anh_can_gui=anh_can_gui,
-        grounded=bool(passages) or used_tool,
+        grounded=bool(passages) or co_du_lieu,
         confidence=confidence,
-        sources=[p.doc_title for p in passages],
+        sources=list(dict.fromkeys(p.doc_title for p in passages)),
         cost_usd=total_cost,
         tokens_in=tok_in,
         tokens_out=tok_out,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 
 @dataclass(slots=True)
@@ -44,6 +44,27 @@ class ChannelAdapter(ABC):
     @abstractmethod
     def parse(self, payload: dict) -> InboundMessage | None:
         """Chuyển payload webhook thô thành InboundMessage. None = bỏ qua."""
+
+    def parse_nhieu(self, payload: dict) -> list[InboundMessage]:
+        """
+        MỘT payload webhook có thể chứa NHIỀU tin. Trả về hết.
+
+        VÌ SAO PHẢI CÓ, KHI ĐÃ CÓ `parse()`
+        -----------------------------------
+        ZaloCRM và Chatwoot đẩy mỗi lần một tin, nên `parse()` trả một
+        `InboundMessage` là đủ. Meta thì KHÔNG: một POST của Messenger mang
+        `entry[]`, mỗi entry mang `messaging[]` — khách gõ ba tin liên tiếp
+        thì cả ba về trong cùng một request.
+
+        Ép hình dạng đó vào một hàm trả về đúng một tin nghĩa là hai tin sau
+        BIẾN MẤT: không lỗi, không nhật ký, không ai biết. Đúng họ với lỗi
+        bộ đọc webhook từng bỏ tin chỉ có ảnh.
+
+        Mặc định bọc `parse()` để hai kênh cũ không phải sửa gì. Kênh nào
+        gộp lô thì ghi đè.
+        """
+        m = self.parse(payload)
+        return [m] if m else []
 
     @abstractmethod
     async def send_text(self, conversation_ref: str, text: str) -> Delivery: ...
@@ -92,9 +113,48 @@ class ChannelAdapter(ABC):
         """
         Kênh có cho phép gửi chủ động lúc này không?
 
-        Zalo cá nhân (GĐ1): luôn True.
-        Zalo OA (GĐ2): chỉ True trong cửa sổ 48h kể từ tin cuối của khách;
-        ngoài cửa sổ phải dùng ZNS với template đã duyệt.
+        Zalo cá nhân: luôn True.
+        Zalo OA / Messenger: chỉ True trong cửa sổ kể từ tin cuối của khách;
+        ngoài cửa sổ phải dùng mẫu đã duyệt (ZNS, hoặc Message Tag của Meta).
         Toàn bộ phần trên chỉ cần hỏi hàm này, không cần biết luật của kênh.
         """
         return True
+
+
+async def con_trong_cua_so(channel: str, conversation_ref: str, gio: float) -> bool:
+    """
+    Tin cuối CỦA KHÁCH còn nằm trong `gio` giờ trở lại đây không?
+
+    MỘT BẢN DÙNG CHUNG CHO MỌI KÊNH CÓ CỬA SỔ. Zalo OA và Messenger áp
+    cùng một luật với hai con số khác nhau (7 ngày và 24 giờ). Viết hai
+    bản là tạo lại đúng lỗi đã phải đi sửa ở `agent/main.py`: hai bản sao
+    của một việc, rồi bản ít người đọc hơn mục đi.
+
+    BA QUYẾT ĐỊNH NẰM TRONG HÀM NÀY, VÀ CẢ BA ĐỀU CÓ THỂ SAI THEO KIỂU IM LẶNG:
+
+    1. Đo từ tin của KHÁCH, không phải tin cuối hội thoại. Nếu không thì
+       agent tự nhắn thêm là cửa sổ không bao giờ đóng — và tin thứ hai
+       trở đi bị nền tảng từ chối.
+    2. Chưa có tin nào của khách = chưa có cửa sổ nào mở, trả False.
+    3. CSDL hỏng thì trả False, không đoán bừa True. Chặn nhầm thì người
+       trực thấy `escalate.khong_gui_duoc` trong nhật ký và nhắn tay; đoán
+       bừa thì tin bay vào hư không và không ai biết.
+    """
+    if gio <= 0:
+        return True          # cấu hình tắt phép kiểm — chỉ dùng khi thử
+    from agent import db
+    try:
+        r = await db.fetchrow(
+            """
+            SELECT max(m.created_at) AS lan_cuoi
+            FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.channel = $1 AND c.external_id = $2 AND m.role = 'customer'
+            """,
+            channel, conversation_ref,
+        )
+    except Exception:  # noqa: BLE001 — CSDL hỏng thì im lặng an toàn hơn đoán
+        return False
+    lan_cuoi = r["lan_cuoi"] if r else None
+    if lan_cuoi is None:
+        return False
+    return datetime.now(timezone.utc) - lan_cuoi < timedelta(hours=gio)

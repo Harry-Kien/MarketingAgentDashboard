@@ -20,7 +20,7 @@
 # ============================================================
 #  Hạ tầng phụ trợ cho Marketing Agent
 #  ZaloCRM chạy compose RIÊNG của nó (không sửa, giữ AGPL tách bạch).
-#  File này chỉ dựng: Postgres+pgvector, Langfuse, viet-tts.
+#  File này dựng: Postgres+pgvector, n8n, Langfuse (tuỳ chọn).
 # ============================================================
 name: marketing-agent
 
@@ -41,6 +41,63 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # --- n8n: đường đăng bài mặc định + định tuyến báo động ------
+  # BẬT THEO MẶC ĐỊNH, khác Langfuse ngay bên dưới. Lý do khác nhau:
+  # Langfuse chỉ hiển thị lại số liệu đã có sẵn trong bảng `messages`, tắt
+  # đi không mất gì. n8n thì nằm trên đường đi của HAI chức năng chính —
+  # nó là nấc đầu trong chuỗi tụt bậc đăng bài (n8n -> API chính thức ->
+  # hàng đợi thủ công), và là nơi `CANH_GAC_WEBHOOK` trỏ tới để báo động
+  # đi được ra Zalo/Telegram. Không có nó thì bài luôn rơi xuống hàng đợi
+  # thủ công và báo động chỉ ghi vào nhật ký.
+  #
+  # VÌ SAO PHẢI THÊM VÀO ĐÂY: README và docs/phan-phoi-noi-dung.md đều viết
+  # "n8n đã chạy sẵn ở cổng 5678" và bảo người dùng mở trang đó ở bước đầu.
+  # Nhưng không có gì trong repo khởi động nó — trên máy vừa clone, cổng
+  # 5678 chết, hướng dẫn đứt ngay bước 1, và màn Sức khoẻ hệ thống hiện một
+  # ô đỏ vĩnh viễn. Một bảng giám sát luôn đỏ là bảng người ta ngừng đọc.
+  n8n:
+    # Digest lấy từ registry Docker Hub, không phải chép tay. Kiểm chứng:
+    #   docker image inspect n8nio/n8n:2.36.5 --format '{{index .RepoDigests 0}}'
+    #
+    # Bằng chứng sống cho luật ghim ở đầu file: lúc thêm dòng này, `latest`
+    # trỏ vào sha256:166d7e3c… còn `2.36.5` là sha256:2cf92b86… — HAI ảnh
+    # khác nhau. Ai dùng `latest` hôm nay và ai dùng `latest` tháng sau đang
+    # chạy hai hệ thống khác nhau mà không biết.
+    image: n8nio/n8n@sha256:2cf92b86cb9d36def87b6d7abc19f6ec882f397c4f489248f170e3b782a810fc   # n8nio/n8n:2.36.5
+    ports:
+      # BUỘC VỀ 127.0.0.1, không để "5678:5678".
+      #
+      # Docker bind `0.0.0.0` theo mặc định, nghĩa là mở ra CẢ MẠNG LAN —
+      # và nó đi vòng qua Windows Firewall, nên không có hộp thoại nào hỏi.
+      # Ai ngồi chung WiFi cũng mở được n8n, mà n8n giữ OAuth Facebook,
+      # Instagram, TikTok của cửa hàng.
+      #
+      # Chỉ cổng 8000 (lớp proxy có chốt đăng nhập) được ra ngoài; mọi dịch
+      # vụ nội bộ vào qua đó. `scripts/san_sang` canh đúng việc này và đã
+      # bắt được lỗi ngay lần chạy đầu sau khi thêm n8n.
+      - "127.0.0.1:5678:5678"
+    environment:
+      # Hẹn giờ đăng bài tính theo giờ Việt Nam. Để UTC thì bài hẹn 8 giờ
+      # sáng đi lúc 3 giờ chiều, và không có gì báo là sai.
+      GENERIC_TIMEZONE: Asia/Ho_Chi_Minh
+      TZ: Asia/Ho_Chi_Minh
+      # URL n8n in ra cho node Webhook. Sai thì Production URL người dùng
+      # copy về dán vào .env trỏ đi đâu không rõ.
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      # Ổ ĐĨA NÀY GIỮ OAUTH CỦA FACEBOOK/INSTAGRAM/TIKTOK, và cả khoá mã
+      # hoá mà n8n tự sinh để đọc chúng. Mất nó là phải nối lại quyền cho
+      # từng nền tảng bằng tay — thứ mất 1-4 tuần chờ duyệt để có.
+      # `scripts/sao_luu.py` KHÔNG sao lưu ổ đĩa Docker; nếu bạn đã nối
+      # OAuth thật thì phải sao lưu riêng volume này.
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   # --- Langfuse: trace, chi phí, dataset eval -----------------
   # --- Langfuse: TẮT theo mặc định ---------------------------------
@@ -86,6 +143,7 @@ services:
 volumes:
   db_data:
   langfuse_data:
+  n8n_data:
 
 # ------------------------------------------------------------
 #  viet-tts chạy riêng — theo README của repo, image/tag có thể

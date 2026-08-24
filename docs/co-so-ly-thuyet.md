@@ -24,11 +24,29 @@ với phần mở rộng `pgvector`, tìm kiếm **lai ghép**: vector cạnh t�
 dấu tiếng Việt, lọc từ đệm. Chỉ vector thì trượt tên riêng và mã sản phẩm;
 chỉ từ khoá thì trượt câu hỏi diễn đạt khác đi.
 
+**Truy xuất hai nhịp.** Nhịp một chạy trước khi mô hình nói câu đầu tiên,
+lấy theo câu hỏi mở lượt. Nhịp đó đóng băng ở đấy — khách hỏi serum ba lượt
+rồi lượt thứ tư quay sang *"shop đổi trả mấy ngày ạ"* thì tài liệu tham
+chiếu vẫn đang nói về serum. Nhịp hai là công cụ `tim_kien_thuc`: mô hình
+**tự quyết định** tra lại, bằng câu hỏi do chính nó diễn đạt lại. Đây là
+khác biệt giữa *truy xuất một lần rồi sinh* và *truy xuất theo nhu cầu*.
+
+**Cái giá của nhịp hai, và cách trả.** `_confidence()` cộng thưởng khi câu
+trả lời tựa trên dữ liệu hệ thống. Nếu `tim_kien_thuc` được tính vào khoản
+thưởng ấy thì một lần tra **không tìm thấy gì** cũng đẩy độ tin cậy lên
+0.8, và chốt chuyển người vì tin cậy thấp không bao giờ nổ nữa — agent tra
+hụt lại trông tự tin hơn agent không thèm tra. Nên nó bị tách ra
+(`_TOOL_TRA_TAI_LIEU`): đoạn tìm được nâng độ tin cậy qua **điểm khớp của
+chính chúng**, y như nhịp một, còn tra hụt thì không nâng gì cả.
+
 **Đo được.** `scripts/do_phu_kho.py` đo độ phủ kho tri thức; chỉ số
 `grounded` ghi vào từng tin nhắn cho biết câu trả lời có căn cứ hay không.
 
 > Lewis, P. và cộng sự (2020). *Retrieval-Augmented Generation for
 > Knowledge-Intensive NLP Tasks.* NeurIPS 33.
+>
+> Schick, T. và cộng sự (2023) đặt nền cho việc để mô hình tự gọi công cụ
+> truy xuất thay vì nhận ngữ cảnh dọn sẵn.
 
 ---
 
@@ -58,13 +76,17 @@ tham số mô hình, và cũng không nên nằm trong kho tri thức tĩnh.
 dữ liệu, nó phát ra lời gọi hàm thay vì tự trả lời, hệ thống thực thi rồi
 trả kết quả vào vòng hội thoại (Schick và cộng sự, 2023).
 
-**Trong hệ thống này.** 7 công cụ trong
+**Trong hệ thống này.** 8 công cụ trong
 [`agent/core/tools.py`](../agent/core/tools.py). Nguyên tắc kiến trúc: *giá,
 tồn kho, tình trạng đơn CHỈ đến từ công cụ* — thiếu căn cứ thì chuyển
 người, không suy đoán.
 
 `tao_don_hang` là công cụ **duy nhất gây hậu quả không đảo ngược**, nên nó
 được canh riêng.
+
+`tim_kien_thuc` khác bảy công cụ kia ở chỗ nó trả về **tài liệu**, không
+phải dữ liệu hệ thống — xem mục 1 về vì sao điều đó buộc phải tách khỏi
+phép tính độ tin cậy.
 
 > Schick, T. và cộng sự (2023). *Toolformer: Language Models Can Teach
 > Themselves to Use Tools.* NeurIPS 36.

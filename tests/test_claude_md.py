@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from conftest import duong_dan_con_song  # noqa: E402
+
 MD = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
 
 
@@ -29,9 +31,35 @@ def test_moi_script_duoc_dan_deu_ton_tai():
 
 
 def test_moi_file_duoc_dan_deu_ton_tai():
+    """
+    CLAUDE.md có hẳn một bảng liệt kê những file CỐ Ý không lên repo. Đòi
+    chúng tồn tại là đòi đúng thứ đã quyết định không mang theo — xanh trên
+    máy đã cấu hình, đỏ trên mọi bản clone sạch. Đã xảy ra thật: một commit
+    sửa CLAUDE.md làm job `clone-sach` đỏ, mà máy người viết không tái hiện
+    được. Nên phép kiểm chấp nhận bản `.example` đi thay.
+    """
     chet = [d for d in set(re.findall(r"`((?:agent|docs|data|scripts)/[\w./-]+)`", MD))
-            if not (ROOT / d).exists()]
+            if not duong_dan_con_song(d)]
     assert not chet, f"file không tồn tại: {chet}"
+
+
+def test_van_bat_duoc_duong_dan_chet_that():
+    """
+    Nới cho `.example` mà nới quá tay thì test thành vô dụng — nó sẽ nhận
+    mọi đường dẫn. Ca này canh phần còn lại vẫn cắn.
+    """
+    assert not duong_dan_con_song("agent/khong_he_ton_tai.py")
+    assert not duong_dan_con_song("data/khong_co_gi/")
+    assert not duong_dan_con_song("data/knowledge/khong-co-file-nay.md")
+
+
+def test_duong_lui_example_nhan_ca_ba_kieu():
+    """File có đuôi, thư mục không đuôi, và file NẰM TRONG thư mục `.example`."""
+    assert duong_dan_con_song("data/catalog.json")      # -> catalog.example.json
+    assert duong_dan_con_song("data/knowledge/")        # -> knowledge.example/
+    # Dạng thứ ba là dạng bản đầu tiên của hàm này bỏ sót, và nó chỉ lộ ra
+    # khi chạy trên bản clone sạch.
+    assert duong_dan_con_song("data/knowledge/chinh-sach-thuong-mai.md")
 
 
 def test_so_test_khai_trong_tai_lieu_khop_thuc_te():

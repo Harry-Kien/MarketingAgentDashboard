@@ -108,7 +108,9 @@ Bắt buộc điền `GCP_PROJECT_ID`. Các mục khác có thể để mặc đ
 docker compose up -d
 ```
 
-Dựng Postgres+pgvector (cổng **5433**), Langfuse (cổng **3001**).
+Dựng Postgres+pgvector (cổng **5433**) và n8n (cổng **5678**).
+Langfuse (cổng **3001**) nằm trong profile `trace`, bật riêng khi cần:
+`docker compose --profile trace up -d`.
 
 ### 4. Cài thư viện Python
 
@@ -197,17 +199,56 @@ Chatwoot gom Facebook Messenger, Instagram DM, WhatsApp, chat website và
 email về **một hộp thư**. Agent trả lời y hệt nhau ở mọi nơi; chỉ dashboard
 và thống kê là tách ra.
 
+Source custom là submodule trỏ vào fork
+[`Harry-Kien/chatwoot`](https://github.com/Harry-Kien/chatwoot), nhánh
+`codex/personal-customization`. Clone máy mới phải lấy cả submodule:
+
 ```bash
+git clone --recurse-submodules https://github.com/Harry-Kien/MarketingAgentDashboard.git
+```
+
+### Chạy ổn định bằng image đã ghim
+
+```bash
+cp .env.chatwoot.example .env.chatwoot
+python -m scripts.sinh_token CHATWOOT_WEBHOOK_SECRET
 docker compose -f docker-compose.chatwoot.yml up -d
 ```
 
-Rồi trong Chatwoot: **Settings › Integrations › Webhooks**, trỏ về
+Lệnh sinh token đặt cùng một giá trị vào `CHATWOOT_WEBHOOK_SECRET` của
+Agent và `CW_WEBHOOK_SECRET` của Chatwoot mà không in bí mật ra terminal.
+
+Dựng account, quản trị, API inbox và webhook một cách idempotent:
+
+```bash
+docker compose -f docker-compose.chatwoot.yml exec -T rails \
+  bundle exec rails runner - < scripts/chatwoot_setup.rb
+```
+
+Webhook dùng URL không chứa secret:
 
 ```
-http://host.docker.internal:8000/webhook/chatwoot?token=<WEBHOOK_SECRET>
+http://host.docker.internal:8000/webhook/chatwoot
 ```
 
-và chọn sự kiện `message_created`. Điền `CHATWOOT_*` vào `.env`.
+Script đăng ký cả `message_created` và `conversation_status_changed`,
+đồng thời bật chữ ký HMAC. Tin nhân viên được lưu vào lịch sử Agent; khi
+người trực trả lời, Agent tự đứng ngoài. `resolved` đóng việc, và lần
+`open` tiếp theo trả hội thoại lại cho Agent. Tin do chính Agent gửi có
+dấu riêng nên webhook vọng không bị hiểu nhầm thành người tiếp quản.
+
+### Chạy trực tiếp source fork để custom
+
+```bash
+docker compose -f docker-compose.chatwoot.yml \
+  -f docker-compose.chatwoot.custom.yml build
+docker compose -f docker-compose.chatwoot.yml \
+  -f docker-compose.chatwoot.custom.yml up -d
+```
+
+Cả Rails, migration và Sidekiq cùng dùng một image build từ
+`chatwoot-personal/`; không trộn source custom với worker upstream. Build
+production khá nặng, nên chế độ image ghim vẫn là mặc định cho vận hành.
 
 Mỗi hội thoại lưu **nền tảng gốc** riêng, nên huy hiệu ghi "Facebook" hay
 "Instagram" chứ không phải "Chatwoot", và mục *Số hiệu* tách từng nền tảng
@@ -220,13 +261,13 @@ Rails, Sidekiq, Postgres và Redis riêng dù nằm ở file nào.
 
 Đổi lại nó thêm một rủi ro thật. Docker đặt tên volume theo *tên project*,
 mà tên project lấy từ tên thư mục. Gộp file là đổi project, và volume
-`chatwoot_chatwoot_pg` thành `marketing_chatwoot_pg` — một volume RỖNG. Hộp
-thư, kết nối OAuth, toàn bộ lịch sử khách trông như biến mất.
+`chatwoot_chatwoot_pg` thành `marketing_chatwoot_pg` — một volume RỖNG.
+Hộp thư, kết nối OAuth, toàn bộ lịch sử khách trông như biến mất.
 
-Tên volume nay đã được **ghim tuyệt đối** trong `docker-compose.chatwoot.yml`
-nên dữ liệu bám vào volume chứ không bám vào tên thư mục. Nhưng hai file vẫn
-tách nhau, vì tách đúng ranh giới: Chatwoot là dịch vụ bên ngoài có vòng đời
-riêng, `docker compose down` của dự án này không được phép kéo nó theo.
+Các volume Postgres, Redis và file upload đều được **ghim tên tuyệt đối**
+trong `docker-compose.chatwoot.yml`. Hai compose vẫn tách nhau vì Chatwoot
+là dịch vụ có vòng đời riêng; `docker compose down` của Agent không được
+kéo hộp thư khách hàng theo.
 
 ---
 

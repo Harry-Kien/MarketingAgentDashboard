@@ -195,12 +195,53 @@ async def _bom(doc, ghi) -> None:
         return
 
 
+async def phien_hop_le(ws: WebSocket) -> bool:
+    """
+    Người mở WebSocket này đã đăng nhập dashboard chưa?
+
+    PHẢI KIỂM RIÊNG Ở ĐÂY, KHÔNG DỰA VÀO MIDDLEWARE
+    -----------------------------------------------
+    Chốt đăng nhập trong `main.py` là `@app.middleware("http")`, và
+    Starlette mở đầu `BaseHTTPMiddleware.__call__` bằng đúng hai dòng:
+
+        if scope["type"] != "http":
+            await self.app(scope, receive, send); return
+
+    Nghĩa là mọi kết nối WebSocket ĐI THẲNG qua chốt, không bị hỏi gì. Cơ
+    chế hỏng-đóng của middleware chỉ đóng cho HTTP; với WebSocket nó là
+    hỏng-MỞ, và không có gì trên màn hình nói ra điều đó.
+
+    Đó là lỗ hổng thật chứ không phải lo xa: docstring đầu file này nêu hai
+    điều kiện khiến việc xoá `X-Frame-Options` chấp nhận được, và điều kiện
+    thứ nhất là "proxy CHỈ chạy cho người đã đăng nhập". Thiếu hàm này thì
+    điều kiện ấy đúng với HTTP và sai với WebSocket — tức là nó nằm trong
+    chú thích chứ không nằm trong mã.
+    """
+    from ..core import xac_thuc
+    from .routes import TEN_COOKIE
+
+    return await xac_thuc.doc_phien(ws.cookies.get(TEN_COOKIE, "")) is not None
+
+
 async def cau_websocket(ws: WebSocket, ten: str, duong: str) -> None:
     import asyncio
 
     import websockets
 
-    goc = _dich(ten).replace("http://", "ws://").replace("https://", "wss://")
+    # Đóng TRƯỚC khi accept: bắt tay bị từ chối ngay ở tầng HTTP, kẻ gọi
+    # không bao giờ có một kênh mở để gửi gì vào.
+    if not await phien_hop_le(ws):
+        await ws.close(code=1008)     # 1008 = vi phạm chính sách
+        return
+
+    try:
+        goc = _dich(ten).replace("http://", "ws://").replace("https://", "wss://")
+    except HTTPException:
+        # `_dich` ném HTTPException — đúng cho route HTTP, vô nghĩa ở đây:
+        # không có chỗ nào biến nó thành 404 cho một WebSocket, nên nó sẽ
+        # nổi lên thành lỗi chưa bắt trong nhật ký server.
+        await ws.close(code=1008)
+        return
     url = f"{goc}/{duong.lstrip('/')}"
     if ws.url.query:
         url += "?" + ws.url.query

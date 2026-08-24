@@ -6,13 +6,16 @@ Chạy:  uvicorn agent.main:app --reload --port 8000
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import db, runtime
@@ -20,6 +23,7 @@ from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.api import tich_hop
 from agent.channels.base import InboundMessage
+from agent.channels import chatwoot, messenger
 from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
@@ -34,6 +38,39 @@ from agent.video import worker as video_worker
 DASHBOARD_DIR = ROOT / "dashboard"
 
 HISTORY_TURNS = 12
+
+CHATWOOT_SIGNATURE_MAX_AGE_S = 300
+
+
+def _chatwoot_signature_hop_le(
+    raw_body: bytes, headers, *, now: int | None = None
+) -> bool:
+    """
+    Xác minh chữ ký webhook do chính Chatwoot tạo.
+
+    Secret trong query string lọt vào access log, lịch sử trình duyệt và ảnh
+    chụp cấu hình. HMAC giữ secret ở hai đầu, đồng thời timestamp chặn việc
+    phát lại một webhook cũ sau khi kẻ khác lấy được payload.
+    """
+    secret = settings.chatwoot_webhook_secret
+    if not secret:
+        return True
+
+    timestamp = headers.get("x-chatwoot-timestamp", "")
+    supplied = headers.get("x-chatwoot-signature", "")
+    try:
+        ts = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    hien_tai = int(time.time()) if now is None else now
+    if abs(hien_tai - ts) > CHATWOOT_SIGNATURE_MAX_AGE_S:
+        return False
+
+    signed = timestamp.encode() + b"." + raw_body
+    expected = "sha256=" + hmac.new(
+        secret.encode(), signed, hashlib.sha256
+    ).hexdigest()
+    return secrets.compare_digest(supplied, expected)
 
 
 async def poll_loop() -> None:
@@ -323,6 +360,90 @@ async def healthz() -> dict:
 #  Webhook — cửa vào của mọi tin nhắn khách
 # ---------------------------------------------------------------
 
+@app.get("/webhook/messenger")
+async def webhook_messenger_xac_minh(request: Request):
+    """
+    Bắt tay lần đầu của Meta: GET kèm `hub.challenge`, chờ dội lại nguyên văn.
+
+    Đường RIÊNG cho Messenger vì Meta không cho thêm header tuỳ ý, nên chốt
+    `WEBHOOK_SECRET` chung của repo không áp được. Thay vào đó Meta dùng hai
+    cơ chế của riêng họ: verify token cho GET, và chữ ký HMAC cho POST.
+    """
+    thu_thach = messenger.tra_loi_xac_minh(request.query_params)
+    if thu_thach is None:
+        # Không dội lại thì Meta báo lỗi cấu hình ngay trên màn hình của họ.
+        # Hỏng ỒN ÀO là đúng thứ ta muốn ở bước bắt tay.
+        return JSONResponse({"ok": False, "error": "verify token sai"}, status_code=403)
+    return PlainTextResponse(thu_thach)
+
+
+@app.post("/webhook/messenger")
+async def webhook_messenger(request: Request, tasks: BackgroundTasks) -> JSONResponse:
+    """
+    Tin từ Messenger. Xác thực bằng chữ ký HMAC của Meta, không bằng secret chung.
+
+    Chữ ký tính trên THÂN THÔ — `json.dumps()` lại cho ra chuỗi khác về
+    khoảng trắng và thứ tự khoá, và HMAC sẽ không bao giờ khớp.
+    """
+    than = await request.body()
+    if not messenger.kiem_chu_ky(than, request.headers.get("x-hub-signature-256", "")):
+        # Thiếu app secret cũng rơi vào đây. Cố ý: bỏ qua phép kiểm nghĩa là
+        # bất kỳ ai biết địa chỉ này đều bơm được tin giả vào hộp thư cửa
+        # hàng, và agent sẽ trả lời chúng như tin thật.
+        return JSONResponse({"ok": False, "error": "sai chữ ký"}, status_code=401)
+
+    try:
+        payload = json.loads(than)
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"ok": False, "error": "payload không phải JSON"}, 400)
+
+    ad = channels.get("messenger")
+
+    # Đổi quyền hội thoại. Xử lý TRƯỚC tin nhắn: nếu cùng một lô vừa báo
+    # "quyền về tay ta" vừa mang tin mới, thì tin ấy phải được agent trả lời
+    # chứ không rơi vào nhánh `escalated` của trạng thái cũ.
+    for bg in ad.doc_ban_giao(payload):
+        tasks.add_task(_ban_giao_messenger, bg)
+
+    inbound = ad.parse_nhieu(payload)
+    for m in inbound:
+        tasks.add_task(handle_inbound, m)
+    # Luôn 200: Meta thử lại khi nhận mã khác, và thử lại một payload ta cố
+    # ý bỏ qua (tin vọng, sự kiện đã đọc) là vòng lặp không lối ra.
+    return JSONResponse({"ok": True, "queued": len(inbound)})
+
+
+async def _ban_giao_messenger(bg: dict) -> None:
+    """
+    Quyền hội thoại vừa đổi chủ phía Meta — đồng bộ lại trạng thái bên mình.
+
+    Chiều quan trọng nhất là NHẬN LẠI: nhân viên bấm "Xong" trong Page Inbox
+    thì Meta trả quyền về app này. Không nghe sự kiện ấy thì hội thoại nằm
+    `escalated` vĩnh viễn — khách nhắn tiếp không ai trả lời, vì nhân viên
+    tưởng đã xong còn agent thì tưởng vẫn có người phụ trách. Cả hai bên đều
+    tin là bên kia đang lo, và đó là cách khách bị bỏ rơi mà không ai sai.
+    """
+    conv = await db.fetchrow(
+        "SELECT id, status FROM conversations WHERE channel = 'messenger' "
+        "AND external_id = $1", bg["khach"],
+    )
+    if conv is None:
+        return
+    if bg["ve_tay_ta"]:
+        await db.execute(
+            "UPDATE conversations SET status = 'auto', updated_at = now() "
+            "WHERE id = $1", conv["id"],
+        )
+        await db.log_event("banGiao.nhan_lai", ref_id=conv["id"], boi="messenger")
+    else:
+        await db.execute(
+            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "WHERE id = $1", conv["id"],
+        )
+        await db.log_event("banGiao.trao_di", ref_id=conv["id"],
+                           loai=bg["loai"])
+
+
 @app.post("/webhook")
 @app.post("/webhook/{kenh}")
 async def webhook(
@@ -334,28 +455,143 @@ async def webhook(
     `/webhook` không có tên kênh vẫn về ZaloCRM để cấu hình cũ không hỏng.
     Chatwoot trỏ về `/webhook/chatwoot`.
     """
-    # Nhận secret ở header HOẶC ở tham số URL. Cần cả hai vì giao diện
-    # webhook của Chatwoot không cho thêm header tuỳ ý — bắt buộc header là
-    # khoá cửa luôn kênh đó. Dùng so sánh hằng thời gian để không rò rỉ
-    # secret qua thời gian phản hồi.
-    if settings.webhook_secret:
-        supplied = (request.headers.get("x-webhook-secret")
-                    or request.query_params.get("token", ""))
+    raw_body = await request.body()
+
+    # Bản Chatwoot hiện tại ký HMAC trên timestamp + raw body. Khi cấu hình
+    # secret riêng, bắt buộc chữ ký hợp lệ; query token cũ chỉ còn là đường
+    # tương thích trong lúc chưa chuyển cấu hình.
+    if kenh == "chatwoot" and settings.chatwoot_webhook_secret:
+        if not _chatwoot_signature_hop_le(raw_body, request.headers):
+            return JSONResponse(
+                {"ok": False, "error": "chữ ký Chatwoot không hợp lệ"},
+                status_code=401,
+            )
+    elif settings.webhook_secret:
+        supplied = (
+            request.headers.get("x-webhook-secret")
+            or request.query_params.get("token", "")
+        )
         if not secrets.compare_digest(supplied, settings.webhook_secret):
             return JSONResponse({"ok": False, "error": "sai secret"}, status_code=401)
 
     try:
-        payload = await request.json()
-    except (json.JSONDecodeError, ValueError):
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
         return JSONResponse({"ok": False, "error": "payload không phải JSON"}, 400)
 
-    inbound = channels.get(kenh).parse(payload)
-    if inbound is None:
+    # Hai sự kiện không phải tin khách nhưng quyết định ai đang chịu trách
+    # nhiệm: nhân viên vừa trả lời, hoặc hội thoại được mở/giải quyết.
+    if kenh == "chatwoot":
+        event = payload.get("event")
+        if chatwoot.la_tin_nhan_vien(payload) or event == "conversation_status_changed":
+            tasks.add_task(_xu_ly_su_kien_chatwoot, payload)
+            return JSONResponse({"ok": True, "queued": event})
+
+    # `parse_nhieu` chứ không `parse`: MỘT payload có thể mang NHIỀU tin.
+    # Messenger gói `entry[].messaging[]`, khách gõ ba tin liên tiếp thì cả
+    # ba về cùng một request. Lấy đúng một tin nghĩa là hai tin sau biến mất
+    # trong im lặng. Hai kênh cũ vẫn trả về danh sách một phần tử.
+    inbound = channels.get(kenh).parse_nhieu(payload)
+    if not inbound:
         return JSONResponse({"ok": True, "skipped": "không phải tin văn bản đến"})
 
     # Trả 200 ngay để kênh không retry; xử lý ở nền.
-    tasks.add_task(handle_inbound, inbound)
-    return JSONResponse({"ok": True, "queued": True})
+    for m in inbound:
+        tasks.add_task(handle_inbound, m)
+    return JSONResponse({"ok": True, "queued": len(inbound)})
+
+
+async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
+    """
+    Đồng bộ nửa còn lại của bàn giao người–Agent.
+
+    Agent chuyển việc sang Chatwoot đã có từ trước. Hàm này làm chiều ngược:
+    lưu lời nhân viên để lịch sử không đứt, khoá Agent ngay khi người thật
+    lên tiếng, và chỉ mở lại khi hội thoại đã resolved rồi được mở lần nữa.
+    """
+    conversation_ref = chatwoot.ma_hoi_thoai(payload)
+    if not conversation_ref:
+        await db.log_event("chatwoot.webhook_thieu_hoi_thoai")
+        return
+
+    event = payload.get("event")
+    if chatwoot.la_tin_nhan_vien(payload):
+        message_id = str(payload.get("id") or "")
+        if await db.seen_webhook(f"chatwoot:staff:{message_id}"):
+            return
+        conv = await db.fetchrow(
+            "SELECT id FROM conversations WHERE channel = 'chatwoot' "
+            "AND external_id = $1",
+            conversation_ref,
+        )
+        if conv is None:
+            await db.log_event(
+                "chatwoot.staff_khong_co_hoi_thoai",
+                external_id=conversation_ref,
+                message_id=message_id,
+            )
+            return
+
+        content = str(payload.get("content") or "").strip()
+        if not content and payload.get("attachments"):
+            content = f"[Nhân viên gửi {len(payload['attachments'])} tệp]"
+        if content:
+            await db.execute(
+                "INSERT INTO messages (conversation_id, role, content, delivered) "
+                "VALUES ($1,'staff',$2,TRUE)",
+                conv["id"],
+                content,
+            )
+        await db.execute(
+            "UPDATE conversations SET status = 'escalated', "
+            "outcome = 'escalated', msg_count = msg_count + $2, "
+            "updated_at = now() WHERE id = $1",
+            conv["id"],
+            1 if content else 0,
+        )
+        sender = payload.get("sender") or {}
+        await db.log_event(
+            "chatwoot.staff_takeover",
+            actor="staff",
+            ref_id=conv["id"],
+            ten=str(sender.get("name") or "")[:100],
+        )
+        return
+
+    if event != "conversation_status_changed":
+        return
+    status = str(payload.get("status") or "")
+    marker = payload.get("updated_at") or payload.get("timestamp") or ""
+    if await db.seen_webhook(
+        f"chatwoot:status:{conversation_ref}:{status}:{marker}"
+    ):
+        return
+
+    if status == "resolved":
+        conv = await db.fetchrow(
+            "UPDATE conversations SET status = 'closed', outcome = 'resolved', "
+            "updated_at = now() WHERE channel = 'chatwoot' AND external_id = $1 "
+            "RETURNING id",
+            conversation_ref,
+        )
+        if conv:
+            await db.log_event(
+                "chatwoot.resolved", actor="staff", ref_id=conv["id"]
+            )
+    elif status == "open":
+        # Chỉ hội thoại do người trực ĐÃ giải quyết mới tự trả về Agent.
+        # Một hội thoại đang escalated mà nhân viên chỉ mở ra xem vẫn phải
+        # nằm trong tay người; mở khoá ở đó sẽ tạo hai giọng nói cùng lúc.
+        conv = await db.fetchrow(
+            "UPDATE conversations SET status = 'auto', outcome = NULL, "
+            "updated_at = now() WHERE channel = 'chatwoot' AND external_id = $1 "
+            "AND status = 'closed' RETURNING id",
+            conversation_ref,
+        )
+        if conv:
+            await db.log_event(
+                "chatwoot.agent_nhan_lai", ref_id=conv["id"]
+            )
 
 
 async def _gui_nhu_nguoi(adapter, msg, cid, text: str) -> bool:
@@ -441,6 +677,22 @@ async def handle_inbound(msg: InboundMessage) -> None:
         cid,
     )
 
+    # TIN VỀ QUA `standby` — người thật đang phụ trách hội thoại này.
+    #
+    # Meta đã chuyển quyền cho Page Inbox, nghĩa là nhân viên đang trả lời
+    # khách ở đó. Tin vẫn phải LƯU để hồ sơ khách không đứt một đoạn, nhưng
+    # agent tuyệt đối không được nói chen vào.
+    #
+    # Đặt cờ `escalated` luôn: nếu hội thoại chưa được đánh dấu (ví dụ quyền
+    # bị app khác giành, không đi qua đường chuyển người của ta) thì đây là
+    # lần duy nhất hệ thống biết được điều đó.
+    if (msg.meta or {}).get("standby"):
+        await db.execute(
+            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "WHERE id = $1", cid,
+        )
+        return
+
     # Công tắc ngắt, hoặc hội thoại đã do người tiếp quản -> agent đứng ngoài.
     if not runtime.enabled() or conv["status"] == "escalated":
         await db.execute(
@@ -516,9 +768,25 @@ async def handle_inbound(msg: InboundMessage) -> None:
         # thì khách phải tự đoán; nhận lời trước rồi thấy ảnh là đúng thứ
         # tự nhiên của một người bán hàng.
         for anh in reply.anh_can_gui:
-            with suppress(Exception):
-                await adapter.send_file(
+            # Thất bại của kênh về bằng GIÁ TRỊ chứ không bằng ngoại lệ:
+            # `send_file` bắt `httpx.HTTPError` rồi trả `Delivery(False)`,
+            # và HTTP 500 cũng thành `Delivery(False)`. Nên chỉ bọc
+            # `suppress` là hụt đúng con đường hay hỏng nhất — phải kiểm
+            # `.ok` nữa. Không kiểm thì agent vừa nói "em gửi ảnh nhé",
+            # ảnh không tới, mà dashboard vẫn xanh.
+            try:
+                kq = await adapter.send_file(
                     msg.conversation_ref, anh["duong_dan"], caption=anh["ten"]
+                )
+                if not getattr(kq, "ok", True):
+                    await db.log_event(
+                        "anh.gui_that_bai", ref_id=cid, ten=anh.get("ten", ""),
+                        ly_do=str(getattr(kq, "detail", ""))[:200],
+                    )
+            except Exception as exc:  # noqa: BLE001 — một ảnh hỏng không được chặn ảnh sau
+                await db.log_event(
+                    "anh.gui_that_bai", ref_id=cid, ten=anh.get("ten", ""),
+                    ly_do=f"{type(exc).__name__}: {exc}"[:200],
                 )
 
     # Chuyển người mà không nói gì với khách là để họ ngồi im không biết có
@@ -533,38 +801,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Chỉ ở chế độ auto. Chế độ assist thì người duyệt mọi thứ, tự gửi thêm
     # một câu là đi ngược ý nghĩa của chế độ đó.
     elif reply.escalate and runtime.mode() == "auto":
-        # Câu báo chuyển người là tin QUAN TRỌNG NHẤT trong luồng này: khách
-        # vừa hỏi một chuyện agent không đủ thẩm quyền trả lời, và nếu không
-        # nhận được gì thì họ ngồi chờ trong im lặng. Đã bắt gặp thật trên
-        # Chatwoot: hai hội thoại về retinol khi mang thai, khách không nhận
-        # được dòng nào — chỉ có ghi chú nội bộ mà họ không nhìn thấy.
-        #
-        # Trước đây bọc trong `suppress(Exception)`: gửi hỏng thì nuốt luôn,
-        # không ai biết. Nay hỏng vẫn không làm sập luồng, nhưng PHẢI để lại
-        # dấu vết để người trực còn biết mà nhắn tay.
-        try:
-            if await adapter.can_send_now(msg.conversation_ref):
-                # Câu đổi theo giờ: trong giờ thì "sẽ nhắn lại sớm" là
-                # thật; ngoài giờ thì phải nói rõ mấy giờ có người, vì lúc
-                # 2 giờ sáng chữ "sớm" là một lời hứa không ai giữ được.
-                kq = await adapter.send_text(
-                    msg.conversation_ref, gio_lam_viec.tin_chuyen_nguoi()
-                )
-                if not getattr(kq, "ok", True):
-                    await db.log_event(
-                        "escalate.bao_that_bai", ref_id=cid,
-                        ly_do=str(getattr(kq, "error", ""))[:200],
-                    )
-            else:
-                await db.log_event(
-                    "escalate.khong_gui_duoc", ref_id=cid,
-                    ly_do="kênh từ chối gửi lúc này (ngoài cửa sổ cho phép)",
-                )
-        except Exception as exc:  # noqa: BLE001 — không được làm sập luồng
-            await db.log_event(
-                "escalate.bao_that_bai", ref_id=cid,
-                ly_do=f"{type(exc).__name__}: {exc}"[:200],
-            )
+        await bao_khach_dang_chuyen_nguoi(adapter, msg.conversation_ref, cid)
 
     await db.execute(
         """
@@ -607,16 +844,11 @@ async def handle_inbound(msg: InboundMessage) -> None:
         await db.log_event(
             "conversation.escalated", ref_id=cid, reason=reply.escalate_reason
         )
-        # Bàn giao NHÌN THẤY ĐƯỢC ở phía kênh. Ghi vào CSDL của mình thôi
-        # thì nhân viên đang làm việc trong hộp thư của kênh không thấy gì:
-        # hội thoại trông như đã xử lý xong, khách ngồi chờ, không ai biết.
-        # Bàn giao chỉ là bàn giao khi bên nhận nhìn thấy.
-        with suppress(Exception):
-            await adapter.bao_chuyen_nguoi(
-                msg.conversation_ref,
-                reply.escalate_reason or "agent không xử lý được",
-                tom_tat=msg.text[:200],
-            )
+        await bao_nhan_vien_tiep_quan(
+            adapter, msg.conversation_ref, cid,
+            reply.escalate_reason or "agent không xử lý được",
+            tom_tat=msg.text[:200],
+        )
 
 
 async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
@@ -630,15 +862,83 @@ async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
     là nay có bản ghi trong CSDL để sau này truy ra.
     """
     adapter = channels.get(msg.channel)
-    with suppress(Exception):
-        await adapter.bao_chuyen_nguoi(
-            msg.conversation_ref, "khách gửi ảnh, cần người xem"
-        )
-    if runtime.mode() == "auto" and await adapter.can_send_now(msg.conversation_ref):
-        with suppress(Exception):
-            await adapter.send_text(
-                msg.conversation_ref, gio_lam_viec.tin_chuyen_nguoi()
+    await bao_nhan_vien_tiep_quan(
+        adapter, msg.conversation_ref, cid, "khách gửi ảnh, cần người xem"
+    )
+    if runtime.mode() == "auto":
+        await bao_khach_dang_chuyen_nguoi(adapter, msg.conversation_ref, cid)
+
+
+async def bao_khach_dang_chuyen_nguoi(adapter, conversation_ref: str, cid) -> None:
+    """
+    Nói với KHÁCH rằng việc đang được chuyển cho người. MỘT bản, hai lối gọi.
+
+    VÌ SAO GỘP LẠI THAY VÌ VÁ TỪNG CHỖ
+    ----------------------------------
+    Trước đây hai nhánh tự viết lấy đoạn này: nhánh tin có chữ, và nhánh tin
+    CHỈ CÓ ẢNH. Nhánh có chữ từng gửi hỏng mà nuốt luôn — bắt gặp thật trên
+    Chatwoot, hai hội thoại hỏi retinol khi mang thai, khách không nhận được
+    dòng nào — nên nó được sửa để ghi nhật ký. Nhánh ảnh thì KHÔNG ai sửa,
+    và nó nằm im với `suppress(Exception)` câm thêm một thời gian nữa.
+
+    Đó không phải lỗi của người sửa. Đó là điều luôn xảy ra với hai bản sao
+    của cùng một việc: bản ít người đọc hơn sẽ mục. Nên cách sửa đúng không
+    phải vá bản thứ hai, mà là bỏ nó đi.
+
+    Câu gửi đi là câu CỐ ĐỊNH trong cấu hình, không phải lời model vừa sinh:
+    lúc chuyển người là lúc agent đã tự nhận không đủ thẩm quyền, nên đó
+    chính là lúc không nên để nó tự chọn chữ. Câu cố định không thể chứa lời
+    khuyên, không thể hứa gì, không thể vi phạm luật quảng cáo.
+
+    Hỏng thì KHÔNG làm sập luồng, nhưng PHẢI để lại dấu vết — người trực còn
+    biết mà nhắn tay. Im lặng ở đây nghĩa là khách ngồi chờ một câu trả lời
+    không bao giờ tới, và không ai trong nhà biết điều đó đang xảy ra.
+    """
+    try:
+        if not await adapter.can_send_now(conversation_ref):
+            await db.log_event(
+                "escalate.khong_gui_duoc", ref_id=cid,
+                ly_do="kênh từ chối gửi lúc này (ngoài cửa sổ cho phép)",
             )
+            return
+        # Câu đổi theo giờ: trong giờ thì "sẽ nhắn lại sớm" là thật; ngoài
+        # giờ phải nói rõ mấy giờ có người, vì lúc 2 giờ sáng chữ "sớm" là
+        # một lời hứa không ai giữ được.
+        kq = await adapter.send_text(conversation_ref, gio_lam_viec.tin_chuyen_nguoi())
+        # `.detail` chứ không phải `.error` — `Delivery` chỉ có hai trường
+        # `ok` và `detail`. Đọc nhầm tên thì nhật ký vẫn ghi, nhưng ghi một
+        # lý do RỖNG: có dấu vết mà không có manh mối.
+        if not getattr(kq, "ok", True):
+            await db.log_event(
+                "escalate.bao_that_bai", ref_id=cid,
+                ly_do=str(getattr(kq, "detail", ""))[:200],
+            )
+    except Exception as exc:  # noqa: BLE001 — không được làm sập luồng
+        await db.log_event(
+            "escalate.bao_that_bai", ref_id=cid,
+            ly_do=f"{type(exc).__name__}: {exc}"[:200],
+        )
+
+
+async def bao_nhan_vien_tiep_quan(
+    adapter, conversation_ref: str, cid, ly_do: str, tom_tat: str = ""
+) -> None:
+    """
+    Bàn giao nhìn thấy được ở phía kênh — và biết được khi nó hỏng.
+
+    Ghi 'escalated' vào CSDL của mình thôi thì nhân viên đang làm việc trong
+    hộp thư của kênh không thấy gì: hội thoại trông như đã xử lý xong, khách
+    ngồi chờ, không ai biết. Bàn giao chỉ là bàn giao khi bên nhận nhìn
+    thấy — nên khi bước này hỏng, đó là hàng chờ đang rò rỉ, không phải một
+    chi tiết trang trí.
+    """
+    try:
+        await adapter.bao_chuyen_nguoi(conversation_ref, ly_do, tom_tat=tom_tat)
+    except Exception as exc:  # noqa: BLE001 — không được làm sập luồng
+        await db.log_event(
+            "escalate.bao_kenh_that_bai", ref_id=cid,
+            ly_do=f"{type(exc).__name__}: {exc}"[:200],
+        )
 
 
 async def _history(cid: uuid.UUID) -> list[dict]:

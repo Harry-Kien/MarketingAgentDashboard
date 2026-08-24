@@ -25,6 +25,13 @@ httpx==0.28.1
 # trực tiếp ở đâu, nhưng thiếu là endpoint upload trả 500.
 python-multipart==0.0.32
 python-dotenv==1.2.1
+# `agent/api/tich_hop.py` import THẲNG thư viện này để bắc cầu WebSocket cho
+# hộp thư Chatwoot. Hiện nó vẫn về máy nhờ đi kèm `uvicorn[standard]` — tức
+# là một phụ thuộc thật đang núp sau phụ thuộc của người khác. Ngày uvicorn
+# đổi danh sách extra của họ, cầu WebSocket đứt và hộp thư ngừng tự cập
+# nhật; giao diện vẫn mở nên không ai đoán ra nguyên nhân. Cái gì mình
+# import thì mình khai.
+websockets==16.1.1
 
 # --- Dữ liệu và RAG -------------------------------------------
 asyncpg==0.31.0

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from .base import ChannelAdapter
 from .chatwoot import ChatwootAdapter
+from .messenger import MessengerAdapter
+from .zalo_oa import ZaloOAAdapter
 from .zalocrm import ZaloCRMAdapter
 
 _ADAPTERS: dict[str, ChannelAdapter] = {}
@@ -26,6 +28,15 @@ def _dung() -> dict[str, ChannelAdapter]:
     if not _ADAPTERS:
         _ADAPTERS["zalocrm"] = ZaloCRMAdapter()
         _ADAPTERS["chatwoot"] = ChatwootAdapter()
+        # Zalo OA dựng sẵn nhưng chưa có khoá: `dang_bat()` không liệt kê
+        # nó, nên dashboard không hiện và không có gì gọi tới. Vẫn đăng ký ở
+        # đây để `/webhook/zalo_oa` tồn tại sẵn — lúc nối OA chỉ cần điền
+        # khoá vào .env, không phải sửa mã và triển khai lại.
+        _ADAPTERS["zalo_oa"] = ZaloOAAdapter()
+        # Messenger đi THẲNG Meta Graph API. Cùng tồn tại với đường qua
+        # Chatwoot có chủ ý — hai cách tới cùng một nền tảng, chọn theo
+        # việc. Cũng tắt cho tới khi có Page token.
+        _ADAPTERS["messenger"] = MessengerAdapter()
     return _ADAPTERS
 
 
@@ -50,9 +61,10 @@ def dang_bat() -> list[str]:
     bat = []
     if settings.zalocrm_api_key:
         bat.append("zalocrm")
-    cw = _dung()["chatwoot"]
-    if getattr(cw, "cau_hinh_du", lambda: False)():
-        bat.append("chatwoot")
+    for ten in ("chatwoot", "zalo_oa", "messenger"):
+        ad = _dung()[ten]
+        if getattr(ad, "cau_hinh_du", lambda: False)():
+            bat.append(ten)
     return bat
 
 

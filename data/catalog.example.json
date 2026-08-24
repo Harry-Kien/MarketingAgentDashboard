@@ -1,5 +1,6 @@
 {
   "_ghi_chu": "DỮ LIỆU MẪU. Danh mục mô phỏng thương hiệu mỹ phẩm Việt Nam, dùng để chạy thử hệ thống ngay sau khi clone. Dữ liệu thật đặt ở data/catalog.json (file đó nằm trong .gitignore nên không bị đẩy lên repo). Lên production thì thay bằng lời gọi ERP/KiotViet — chỉ sửa thân hàm trong agent/core/tools.py, agent và RAG không đổi.",
+  "du_lieu_mau": true,
   "thuong_hieu": "Aurora Skin",
   "san_pham": [
     {

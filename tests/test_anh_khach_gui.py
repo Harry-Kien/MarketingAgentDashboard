@@ -156,14 +156,45 @@ def test_chuyen_nguoi_vi_anh_van_bao_cho_khach():
 def test_bao_nguoi_cham_ca_hai_phia():
     """Nhân viên cần ghi chú trong hộp thư của kênh; khách cần một câu."""
     src = inspect.getsource(app_main.adapter_bao_nguoi)
-    assert "bao_chuyen_nguoi" in src
-    assert "send_text" in src
+    assert "bao_nhan_vien_tiep_quan" in src
+    assert "bao_khach_dang_chuyen_nguoi" in src
+
+
+def test_nhanh_anh_dung_CHUNG_duong_bao_voi_nhanh_chu():
+    """
+    Ca này canh đúng cái lỗi đã xảy ra, chứ không canh một dòng chữ.
+
+    Hai nhánh — tin có chữ và tin CHỈ CÓ ẢNH — từng tự viết lấy đoạn báo
+    chuyển người. Nhánh có chữ được sửa để ghi nhật ký khi gửi hỏng; nhánh
+    ảnh thì không, và nó nằm im với `suppress(Exception)` câm. Bản sao ít
+    người đọc hơn luôn là bản mục trước.
+
+    Chừng nào cả hai còn gọi CÙNG một hàm thì lỗi ấy không tái phát được.
+    Tách ra lần nữa là ca này đỏ.
+    """
+    anh = inspect.getsource(app_main.adapter_bao_nguoi)
+    chu = inspect.getsource(app_main.handle_inbound)
+    for ham in ("bao_nhan_vien_tiep_quan", "bao_khach_dang_chuyen_nguoi"):
+        assert ham in anh and ham in chu, f"{ham} không dùng chung cho cả hai nhánh"
+    # Và không nhánh nào được tự gọi thẳng xuống adapter nữa.
+    assert "adapter.send_text" not in anh
+    assert "adapter.bao_chuyen_nguoi" not in anh
 
 
 def test_cau_bao_van_theo_gio_lam_viec():
     """Ngoài giờ thì không được hứa 'sẽ nhắn lại sớm' ở đây nữa."""
-    src = inspect.getsource(app_main.adapter_bao_nguoi)
+    src = inspect.getsource(app_main.bao_khach_dang_chuyen_nguoi)
     assert "gio_lam_viec.tin_chuyen_nguoi()" in src
+
+
+def test_nhanh_anh_khong_con_nuot_loi_im_lang():
+    """
+    `suppress(Exception)` ở nhánh này nghĩa là: khách gửi ảnh, câu báo gửi
+    hỏng, khách nhận lại đúng sự im lặng mà docstring của hàm nói là phải
+    tránh — và không ai biết.
+    """
+    src = inspect.getsource(app_main.adapter_bao_nguoi)
+    assert "suppress(Exception)" not in src
 
 
 # =====================================================================

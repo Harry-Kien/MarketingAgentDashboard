@@ -21,12 +21,16 @@ require 'securerandom'
 EMAIL = ENV.fetch('CW_ADMIN_EMAIL')
 PASSWORD = ENV.fetch('CW_ADMIN_PASSWORD')
 WEBHOOK = ENV.fetch('CW_WEBHOOK_URL')
+WEBHOOK_SECRET = ENV.fetch('CW_WEBHOOK_SECRET')
+ACCOUNT_NAME = ENV.fetch('CW_ACCOUNT_NAME', 'Aurora Skin')
+ADMIN_NAME = ENV.fetch('CW_ADMIN_NAME', 'Quản trị')
+API_INBOX_NAME = ENV.fetch('CW_API_INBOX_NAME', "#{ACCOUNT_NAME} - API")
 
-account = Account.find_by(name: 'Aurora Skin') || Account.create!(name: 'Aurora Skin')
+account = Account.find_by(name: ACCOUNT_NAME) || Account.create!(name: ACCOUNT_NAME)
 
 user = User.find_by(email: EMAIL)
 if user.nil?
-  user = User.new(name: 'Quan tri', email: EMAIL,
+  user = User.new(name: ADMIN_NAME, email: EMAIL,
                   password: PASSWORD, password_confirmation: PASSWORD)
   user.skip_confirmation! if user.respond_to?(:skip_confirmation!)
   user.save!
@@ -37,25 +41,28 @@ unless AccountUser.exists?(account_id: account.id, user_id: user.id)
                       role: :administrator)
 end
 
-inbox = account.inboxes.find_by(name: 'Aurora Skin - API')
+inbox = account.inboxes.find_by(name: API_INBOX_NAME)
 if inbox.nil?
   channel = Channel::Api.create!(account: account, webhook_url: '')
   inbox = Inbox.create!(account: account, channel: channel,
-                        name: 'Aurora Skin - API')
+                        name: API_INBOX_NAME)
 end
 InboxMember.find_or_create_by!(inbox_id: inbox.id, user_id: user.id)
 
 hook = account.webhooks.find_by(url: WEBHOOK)
-if hook.nil?
-  account.webhooks.create!(url: WEBHOOK, webhook_type: :account_type,
-                           subscriptions: %w[message_created])
-end
+hook ||= account.webhooks.find { |item| item.url.start_with?("#{WEBHOOK}?") }
+hook ||= account.webhooks.new(url: WEBHOOK)
+hook.url = WEBHOOK
+hook.update!(
+  webhook_type: :account_type,
+  subscriptions: %w[message_created conversation_status_changed],
+  secret: WEBHOOK_SECRET
+)
 
-token = user.access_token&.token || AccessToken.find_by(owner: user)&.token
 
 puts '=== CHATWOOT SAN SANG ==='
 puts "ACCOUNT_ID=#{account.id}"
 puts "INBOX_ID=#{inbox.id}"
 puts "INBOX_IDENTIFIER=#{inbox.channel.try(:identifier)}"
-puts "API_TOKEN=#{token}"
-puts "WEBHOOK=#{WEBHOOK}"
+puts 'API token: lấy trong Chatwoot > Profile settings > Access Token'
+puts 'Webhook HMAC đã được cấu hình; URL và secret không được in.'

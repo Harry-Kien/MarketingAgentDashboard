@@ -12,6 +12,7 @@ Bàn giao chỉ là bàn giao khi CẢ HAI bên nhìn thấy:
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -20,7 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agent import main as app_main  # noqa: E402
-from agent.channels.base import ChannelAdapter  # noqa: E402
+from agent.channels.base import ChannelAdapter, Delivery  # noqa: E402
+from agent.core import gio_lam_viec  # noqa: E402
 from agent.channels.chatwoot import NHAN_CHO_NGUOI, ChatwootAdapter  # noqa: E402
 from agent.channels.zalocrm import ZaloCRMAdapter  # noqa: E402
 from agent.config import settings  # noqa: E402
@@ -108,37 +110,112 @@ def test_moi_loi_goi_deu_duoc_boc_loi_rieng():
 #  Phía khách
 # =====================================================================
 
-def test_khach_duoc_bao_khi_chuyen_nguoi():
-    src = inspect.getsource(app_main.handle_inbound)
-    assert "tin_chuyen_nguoi" in src, (
-        "chuyển người mà không nói gì là để khách ngồi im không biết có ai "
-        "thấy tin của mình chưa"
-    )
+class _KenhGia:
+    """Adapter giả, ghi lại đã gửi gì thay vì gọi ra ngoài."""
+
+    def __init__(self, gui_duoc=True, ket_qua=None, no=None):
+        self.gui_duoc = gui_duoc
+        self.ket_qua = ket_qua if ket_qua is not None else Delivery(True)
+        self.no = no
+        self.da_gui: list[str] = []
+        self.da_bao_kenh: list[tuple] = []
+
+    async def can_send_now(self, _ref):
+        return self.gui_duoc
+
+    async def send_text(self, _ref, text):
+        if self.no:
+            raise self.no
+        self.da_gui.append(text)
+        return self.ket_qua
+
+    async def bao_chuyen_nguoi(self, ref, ly_do, tom_tat=""):
+        if self.no:
+            raise self.no
+        self.da_bao_kenh.append((ref, ly_do, tom_tat))
 
 
-def test_cau_bao_la_co_dinh_khong_phai_loi_model():
+def _bat_nhat_ky(monkeypatch) -> list[tuple]:
+    """Giữ lại `log_event` thay vì gọi CSDL — test này không cần Postgres."""
+    ghi: list[tuple] = []
+
+    async def gia(kind, **kw):
+        ghi.append((kind, kw))
+
+    monkeypatch.setattr(app_main.db, "log_event", gia)
+    return ghi
+
+
+def test_khach_duoc_bao_khi_chuyen_nguoi(monkeypatch):
+    """Chuyển người mà không nói gì là để khách ngồi im, không biết có ai
+    thấy tin của mình chưa."""
+    _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia()
+    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    assert kenh.da_gui, "không gửi cho khách câu nào"
+
+
+def test_cau_bao_la_co_dinh_khong_phai_loi_model(monkeypatch):
     """
     Lúc chuyển người là lúc agent đã tự nhận không đủ thẩm quyền — đó chính
     là lúc KHÔNG nên để nó tự chọn chữ. Câu cố định không thể chứa lời
     khuyên, không thể hứa gì, không thể vi phạm quảng cáo.
+
+    Đây là ca ĐO HÀNH VI chứ không soi văn bản mã nữa. Bản cũ cắt chuỗi
+    `inspect.getsource` rồi tìm chữ trong đó — nó đỏ ngay khi hai nhánh
+    trùng lặp được gộp về một hàm, dù hành vi tốt lên chứ không xấu đi. Một
+    test vỡ vì dọn dẹp là test dạy người ta đừng dọn dẹp.
     """
-    src = inspect.getsource(app_main.handle_inbound)
-    # Soi CẢ NHÁNH escalate, không phải 400 ký tự đầu.
-    #
-    # Cửa sổ cố định là phép cắt giòn: chỉ cần thêm vài dòng chú thích là
-    # dòng cần kiểm bị đẩy ra ngoài, và test đỏ dù mã vẫn đúng. Đã xảy ra
-    # thật khi bổ sung xử lý lỗi cho lời gửi câu báo.
-    #
-    # Nhánh kết thúc ở lệnh ghi tin nhắn xuống DB ngay sau đó, nên lấy tới
-    # đúng chỗ ấy. Phạm vi rộng hơn nghĩa là phép kiểm CHẶT hơn, không lỏng
-    # hơn: `reply.text` xuất hiện ở bất cứ đâu trong nhánh đều bị bắt.
-    khoi = src.split("elif reply.escalate", 1)[1].split("await db.execute", 1)[0]
-    # Câu báo nay đi qua `gio_lam_viec.tin_chuyen_nguoi()` để đổi theo giờ
-    # trực. Nó VẪN là chuỗi cố định trong cấu hình — hàm đó chỉ chọn giữa
-    # hai chuỗi có sẵn, không sinh chữ nào. Bảo đảm giữ nguyên, chỉ nguồn
-    # lấy chuỗi là đổi; xem tests/test_gio_lam_viec.py.
-    assert "gio_lam_viec.tin_chuyen_nguoi()" in khoi
-    assert "reply.text" not in khoi, "đang gửi lời model sinh ra, không phải câu cố định"
+    _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia()
+    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    # Chuỗi gửi đi phải là MỘT TRONG hai câu cố định của cấu hình.
+    assert kenh.da_gui[0] in (settings.tin_chuyen_nguoi,
+                              gio_lam_viec.tin_chuyen_nguoi())
+
+
+def test_gui_hong_thi_phai_de_lai_dau_vet(monkeypatch):
+    """
+    Thất bại của kênh về bằng GIÁ TRỊ, không bằng ngoại lệ: `send_text` bắt
+    `httpx.HTTPError` rồi trả `Delivery(False)`, và HTTP 500 cũng vậy. Chỉ
+    bọc `try/except` là hụt đúng con đường hay hỏng nhất.
+    """
+    ghi = _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia(ket_qua=Delivery(False, "500 Internal Server Error"))
+    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+
+    loai = [k for k, _ in ghi]
+    assert "escalate.bao_that_bai" in loai, "gửi hỏng mà không ai biết"
+    ly_do = [kw.get("ly_do", "") for k, kw in ghi if k == "escalate.bao_that_bai"][0]
+    # Dấu vết RỖNG cũng gần như không có dấu vết. Bản cũ đọc `kq.error`
+    # trong khi `Delivery` chỉ có `ok` và `detail`, nên nhật ký luôn ghi
+    # một lý do trống — có bản ghi mà không có manh mối.
+    assert ly_do, "ghi nhật ký nhưng lý do trống"
+    assert "500" in ly_do
+
+
+def test_kenh_no_thi_khong_lam_sap_luong(monkeypatch):
+    ghi = _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia(no=RuntimeError("mạng đứt"))
+    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    assert "escalate.bao_that_bai" in [k for k, _ in ghi]
+
+
+def test_ngoai_cua_so_gui_thi_van_ghi_nhat_ky(monkeypatch):
+    """Không gửi được vì hết cửa sổ 24h cũng là khách không nhận được gì."""
+    ghi = _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia(gui_duoc=False)
+    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    assert not kenh.da_gui
+    assert "escalate.khong_gui_duoc" in [k for k, _ in ghi]
+
+
+def test_bao_nhan_vien_hong_cung_phai_keu(monkeypatch):
+    """Hàng chờ rò rỉ là chuyện lớn, không phải chi tiết trang trí."""
+    ghi = _bat_nhat_ky(monkeypatch)
+    kenh = _KenhGia(no=RuntimeError("chatwoot sập"))
+    asyncio.run(app_main.bao_nhan_vien_tiep_quan(kenh, "c1", None, "vượt thẩm quyền"))
+    assert "escalate.bao_kenh_that_bai" in [k for k, _ in ghi]
 
 
 def test_cau_bao_khong_hua_hen_gi():

@@ -15,21 +15,27 @@
 #
 # Idempotent: chạy lại không tạo trùng.
 
-account = Account.find_by(name: 'Aurora Skin') or abort('Chưa có tổ chức Aurora Skin')
+account_name = ENV.fetch('CW_ACCOUNT_NAME', 'Aurora Skin')
+inbox_name = ENV.fetch('CW_WEB_INBOX_NAME', "#{account_name} - Website")
+widget_color = ENV.fetch('CW_WIDGET_COLOR', '#0068FF')
+welcome_title = ENV.fetch('CW_WELCOME_TITLE', "#{account_name} xin chào")
+welcome_tagline = ENV.fetch('CW_WELCOME_TAGLINE', 'Bạn cần hỗ trợ gì ạ?')
+
+account = Account.find_by(name: account_name) or abort("Chưa có tổ chức #{account_name}")
 user = User.find_by(email: ENV.fetch('CW_ADMIN_EMAIL'))
 
-inbox = account.inboxes.find_by(name: 'Aurora Skin - Website')
+inbox = account.inboxes.find_by(name: inbox_name)
 if inbox.nil?
   channel = Channel::WebWidget.create!(
     account: account,
     website_url: ENV.fetch('CW_WEBSITE_URL', 'http://localhost:8000'),
-    widget_color: '#0068FF',
-    welcome_title: 'Aurora Skin xin chào',
-    welcome_tagline: 'Bạn cần tư vấn về da hay sản phẩm nào ạ?',
+    widget_color: widget_color,
+    welcome_title: welcome_title,
+    welcome_tagline: welcome_tagline,
     reply_time: 'in_a_few_minutes'
   )
   inbox = Inbox.create!(account: account, channel: channel,
-                        name: 'Aurora Skin - Website')
+                        name: inbox_name)
 end
 InboxMember.find_or_create_by!(inbox_id: inbox.id, user_id: user.id) if user
 

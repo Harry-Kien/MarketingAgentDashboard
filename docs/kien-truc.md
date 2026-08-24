@@ -125,7 +125,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-16 bảng, chia theo phần nghiệp vụ:
+17 bảng, chia theo phần nghiệp vụ:
 
 | Nhóm | Bảng |
 |---|---|
@@ -133,7 +133,7 @@ flowchart LR
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` |
 
 ```mermaid
 erDiagram
@@ -271,6 +271,10 @@ erDiagram
         UUID nguoi_dung_id
         TIMESTAMPTZ tao_luc
         TIMESTAMPTZ het_han
+    }
+    zalo_oa_token {
+        TEXT app_id
+        TEXT refresh_token
     }
     documents ||--o{ chunks : ""
     conversations ||--o{ messages : ""

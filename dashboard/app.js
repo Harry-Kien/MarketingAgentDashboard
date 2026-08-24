@@ -44,9 +44,13 @@ function clock(iso) {
 const hhmm = (iso) =>
   new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
+// Thoát cả `'` dù mọi thuộc tính trong file này đều dùng nháy kép. Lý do là
+// người sửa sau: đổi một chỗ sang nháy đơn là chuyện vô hại ở mọi dự án
+// khác, và ở đây nó lặng lẽ mở đường cho XSS. Tên khách và nội dung tin đến
+// thẳng từ Zalo/Chatwoot — người lạ gõ gì vào cũng được.
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 /* Trạng thái -> lớp màu tín hiệu. Một chỗ duy nhất định nghĩa ánh xạ này. */

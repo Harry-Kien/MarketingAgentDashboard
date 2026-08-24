@@ -105,6 +105,54 @@ def test_chua_co_danh_muc_that_cung_chan(monkeypatch, tmp_path):
     assert ss.kiem_du_lieu_that()["muc"] == ss.CHAN
 
 
+def test_du_lieu_mau_MANG_TEN_THAT_van_bi_chan(monkeypatch, tmp_path):
+    """
+    Ca này canh đúng cái bẫy vừa suýt sập.
+
+    Bản đầu của phép kiểm dò chuỗi "aurora". Nó đúng đúng một lần — với
+    đúng bộ dữ liệu mẫu ban đầu. Người tập dùng hệ thống rất hay dựng dữ
+    liệu mẫu MANG TÊN THƯƠNG HIỆU THẬT của mình, và lúc đó phép kiểm báo
+    XANH cho một danh mục vẫn hoàn toàn bịa: giá bịa, tồn kho bịa, số công
+    bố bịa — nhưng `san_sang` nói "đã sẵn sàng chạy với khách thật".
+
+    Xanh giả nguy hiểm hơn đỏ giả: đỏ giả thì người ta đi kiểm, xanh giả
+    thì không ai kiểm.
+    """
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "catalog.json").write_text(
+        '{"thuong_hieu": "Blanica", "du_lieu_mau": true, "san_pham": []}',
+        encoding="utf-8")
+    (tmp_path / "data" / "knowledge").mkdir()
+    (tmp_path / "data" / "knowledge" / "x.md").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(ss, "ROOT", tmp_path)
+    m = ss.kiem_du_lieu_that()
+    assert m["muc"] == ss.CHAN, "tên thật + dữ liệu bịa mà báo xanh"
+    assert "MẪU" in m["ghi"]
+
+
+def test_go_co_du_lieu_mau_thi_qua(monkeypatch, tmp_path):
+    """Vế còn lại: gỡ cờ rồi mà vẫn chặn thì không ai chạy thật được."""
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "catalog.json").write_text(
+        '{"thuong_hieu": "Blanica", "san_pham": []}', encoding="utf-8")
+    (tmp_path / "data" / "knowledge").mkdir()
+    (tmp_path / "data" / "knowledge" / "x.md").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(ss, "ROOT", tmp_path)
+    assert ss.kiem_du_lieu_that()["muc"] == ss.DU
+
+
+def test_danh_muc_mau_di_theo_repo_luon_mang_co():
+    """
+    `data/catalog.example.json` là thứ mã tự dùng khi chưa có danh mục
+    thật. Thiếu cờ ở đó thì mọi bản clone sạch đều báo xanh sai.
+    """
+    import json
+    from pathlib import Path
+    goc = Path(__file__).resolve().parent.parent
+    d = json.loads((goc / "data" / "catalog.example.json").read_text(encoding="utf-8"))
+    assert d.get("du_lieu_mau") is True, "danh mục mẫu thiếu cờ du_lieu_mau"
+
+
 # =====================================================================
 #  Ba mức, không phải hai
 # =====================================================================

@@ -1,3 +1,7 @@
 [submodule "ZaloCRM"]
 	path = ZaloCRM
 	url = https://github.com/Harry-Kien/ZaloCRM.git
+[submodule "chatwoot-personal"]
+	path = chatwoot-personal
+	url = https://github.com/Harry-Kien/chatwoot.git
+	branch = codex/personal-customization

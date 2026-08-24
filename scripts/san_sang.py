@@ -202,7 +202,21 @@ def kiem_du_lieu_that() -> dict:
     else:
         try:
             d = json.loads(cat.read_text(encoding="utf-8"))
-            if "aurora" in str(d.get("thuong_hieu", "")).lower():
+            # CỜ CHUNG, không dò tên thương hiệu.
+            #
+            # Bản cũ tìm chuỗi "aurora". Nó đúng đúng một lần — với đúng bộ
+            # dữ liệu mẫu ban đầu. Ai dựng dữ liệu mẫu mang tên thương hiệu
+            # THẬT của mình (chuyện rất hay làm khi tập dùng hệ thống) là
+            # phép kiểm báo XANH cho một danh mục vẫn hoàn toàn bịa.
+            #
+            # Xanh giả nguy hiểm hơn đỏ giả: đỏ giả thì người ta đi kiểm,
+            # xanh giả thì không ai kiểm. Nên dấu hiệu phải do người TẠO dữ
+            # liệu tự khai, không phải do người kiểm đoán từ cái tên.
+            if d.get("du_lieu_mau") is True:
+                thieu.append("catalog.json vẫn là DỮ LIỆU MẪU "
+                             "(có cờ du_lieu_mau: true)")
+            elif "aurora" in str(d.get("thuong_hieu", "")).lower():
+                # Giữ lại cho các file cũ chưa có cờ.
                 thieu.append("catalog.json vẫn là thương hiệu hư cấu Aurora Skin")
         except ValueError:
             thieu.append("catalog.json không đọc được")
@@ -244,9 +258,55 @@ def kiem_kenh() -> dict:
     return _muc("Kênh nhận tin", DU, "đang bật: " + ", ".join(bat))
 
 
+def kiem_messenger() -> dict:
+    """
+    Nối Messenger cần bốn khoá và một địa chỉ công khai. Thiếu bất kỳ thứ
+    nào là kênh chết CÂM: Meta không gọi tới được, hoặc gọi tới thì bị chặn
+    ở phép kiểm chữ ký — và không ai biết cho tới lúc khách nhắn mà không
+    được trả lời.
+
+    Mục này chỉ CẢNH BÁO chứ không CHẶN: chưa nối Messenger là một lựa chọn
+    hoàn toàn hợp lệ, không phải lỗi.
+    """
+    from agent.config import settings
+
+    thieu = [
+        ten for ten, gia_tri in (
+            ("MESSENGER_PAGE_TOKEN", settings.messenger_page_token),
+            ("MESSENGER_APP_SECRET", settings.messenger_app_secret),
+            ("MESSENGER_VERIFY_TOKEN", settings.messenger_verify_token),
+            ("MESSENGER_APP_ID", settings.messenger_app_id),
+        ) if not gia_tri
+    ]
+    if len(thieu) == 4:
+        return _muc("Messenger", CANH_BAO, "chưa nối — bốn khoá đều trống",
+                    "Chưa cần Messenger thì bỏ qua mục này. "
+                    "Cần thì xem khối MESSENGER_* trong .env.example")
+
+    if thieu:
+        # Nối MỘT NỬA là trạng thái tệ nhất: trông như đã cấu hình, nhưng
+        # hỏng theo cách không ai đoán ra. Thiếu APP_SECRET thì mọi webhook
+        # bị trả 401; thiếu APP_ID thì hội thoại kẹt `escalated` vĩnh viễn
+        # sau lần chuyển người đầu tiên.
+        return _muc("Messenger", CANH_BAO, "nối DỞ — thiếu: " + ", ".join(thieu),
+                    "Nối một nửa hỏng câm hơn là chưa nối. "
+                    "Thiếu APP_SECRET: mọi webhook bị chặn ở chữ ký. "
+                    "Thiếu APP_ID: hội thoại kẹt escalated sau khi chuyển người")
+
+    cong_khai = settings.webhook_public_url or ""
+    if not cong_khai.startswith("https://"):
+        return _muc("Messenger", CANH_BAO,
+                    "đủ khoá nhưng địa chỉ webhook chưa phải HTTPS công khai",
+                    "Meta BẮT BUỘC HTTPS và gọi từ máy chủ của họ — "
+                    "localhost hay host.docker.internal đều không vào được. "
+                    "Mở đường: cloudflared tunnel --url http://127.0.0.1:8000")
+
+    return _muc("Messenger", DU, "đủ khoá, webhook công khai qua HTTPS")
+
+
 async def chay() -> int:
     muc = [
-        kiem_bi_mat(), kiem_du_lieu_that(), kiem_kenh(),
+        kiem_bi_mat(), kiem_du_lieu_that(), kiem_kenh(), kiem_messenger(),
         await kiem_tai_khoan(), kiem_sao_luu(), kiem_bao_dong(),
         kiem_cookie(), kiem_cong(),
     ]

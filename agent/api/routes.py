@@ -386,15 +386,38 @@ async def takeover(conv_id: str) -> dict:
 
 @router.post("/conversations/{conv_id}/release")
 async def release(conv_id: str) -> dict:
-    """Trả hội thoại lại cho agent."""
+    """
+    Trả hội thoại lại cho agent.
+
+    VỚI MESSENGER, ĐỔI CỜ TRONG CSDL THÔI LÀ CHƯA ĐỦ. Nếu hội thoại đã được
+    trao cho Page Inbox bằng `pass_thread_control`, tin của khách vẫn đi vào
+    `standby[]` cho tới khi có ai giành quyền lại — nghĩa là agent bật mà
+    câm, và trên màn hình nó trông như đang chạy.
+
+    Phải xin quyền lại từ Meta. Hỏng thì nói thẳng ra trong phản hồi thay vì
+    báo `ok: True` cho một việc chưa xong.
+    """
     cid = uuid.UUID(conv_id)
+    conv = await db.fetchrow(
+        "SELECT channel, external_id FROM conversations WHERE id = $1", cid
+    )
     await db.execute(
         "UPDATE conversations SET status = 'auto', outcome = NULL, "
         "updated_at = now() WHERE id = $1",
         cid,
     )
     await db.log_event("conversation.release", actor="staff", ref_id=cid)
-    return {"ok": True}
+
+    ghi_chu = ""
+    if conv and conv["channel"] == "messenger":
+        ad = channels.get("messenger")
+        if (lay := getattr(ad, "nhan_lai_quyen", None)) is not None:
+            kq = await lay(conv["external_id"])
+            if not getattr(kq, "ok", True):
+                ghi_chu = f"đã bật agent, nhưng chưa giành lại được quyền từ Meta: {kq.detail}"
+                await db.log_event("banGiao.nhan_lai_that_bai", ref_id=cid,
+                                   ly_do=str(kq.detail)[:200])
+    return {"ok": True, "ghi_chu": ghi_chu} if ghi_chu else {"ok": True}
 
 
 # ---------------------------------------------------------------

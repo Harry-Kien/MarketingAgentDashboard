@@ -18,7 +18,39 @@ from agent.core import kho
 
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 
+# Số đoạn và độ dài mỗi đoạn khi agent TỰ đi tra. Nhỏ hơn lượt tra sẵn đầu
+# lượt (k=5, nguyên văn) vì đây là lần tra THÊM: nó cộng vào ngữ cảnh đã có
+# chứ không thay thế, và mỗi vòng lặp thêm đều tính tiền.
+TIM_K = 4
+TIM_DAI_TOI_DA = 700
+
 TOOLS: list[dict] = [
+    {
+        "name": "tim_kien_thuc",
+        "description": (
+            "Tìm trong kho tài liệu công ty: chính sách đổi trả, bảo hành, vận "
+            "chuyển, chống chỉ định, cách phối hoạt chất, hướng dẫn dùng, quy "
+            "trình chăm sóc da. "
+            "DÙNG KHI ngữ cảnh có sẵn đầu lượt KHÔNG đủ để trả lời — ví dụ "
+            "khách hỏi sang một chuyện khác giữa chừng, hoặc câu hỏi cần một "
+            "khía cạnh mà đoạn tài liệu đang có chưa nói tới. "
+            "Đặt câu hỏi tra cứu NGẮN và CỤ THỂ, không chép nguyên lời khách: "
+            "khách hỏi 'em mở nắp rồi thấy không hợp thì trả lại được không "
+            "ạ' thì tra 'đổi trả hàng đã mở nắp'. "
+            "Không tìm thấy thì NÓI KHÔNG BIẾT hoặc chuyển nhân viên — tuyệt "
+            "đối không đoán. Đây KHÔNG phải nơi tra giá, tồn kho hay đơn hàng."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cau_hoi": {
+                    "type": "string",
+                    "description": "Câu hỏi tra cứu ngắn gọn, đã được diễn đạt lại",
+                }
+            },
+            "required": ["cau_hoi"],
+        },
+    },
     {
         "name": "tra_cuu_san_pham",
         "description": (
@@ -313,6 +345,42 @@ def _tom_tat(sp: dict) -> dict:
 
 
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
+    # ---------- tra kho tri thức ----------
+    # Đặt TRƯỚC lời gọi danh mục: câu hỏi chính sách không cần đọc catalog,
+    # và nạp catalog cho một câu hỏi về đổi trả là công vô ích mỗi lượt.
+    if name == "tim_kien_thuc":
+        from agent.core import rag
+
+        cau_hoi = (args.get("cau_hoi") or "").strip()
+        if not cau_hoi:
+            return {"tim_thay": False, "ghi_chu": "Thiếu câu hỏi tra cứu."}
+
+        passages = await rag.retrieve(cau_hoi, k=TIM_K)
+        if not passages:
+            # Nói rõ phải làm gì tiếp. Trả về một dict rỗng thì model tự bịa
+            # ra đường đi, và đường nó hay chọn là đoán bừa.
+            return {
+                "tim_thay": False,
+                "ghi_chu": (
+                    "Kho tài liệu không có căn cứ cho câu này. KHÔNG được đoán. "
+                    "Hãy nói thẳng là mình chưa có thông tin, hoặc gọi "
+                    "chuyen_nhan_vien nếu khách cần câu trả lời chắc chắn. "
+                    "Đừng tra lại cùng một câu hỏi."
+                ),
+            }
+        return {
+            "tim_thay": True,
+            "doan": [
+                {
+                    "tai_lieu": p.doc_title,
+                    "noi_dung": p.content.strip()[:TIM_DAI_TOI_DA],
+                    "diem": round(p.score, 3),
+                }
+                for p in passages
+            ],
+            "ghi_chu": "Chỉ trả lời dựa trên các đoạn trên. Nêu tên tài liệu khi trích.",
+        }
+
     catalog = await _catalog_song()
     products = catalog.get("san_pham", [])
 

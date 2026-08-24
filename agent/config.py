@@ -49,6 +49,44 @@ class Settings(BaseSettings):
     chatwoot_base_url: str = ""
     chatwoot_api_token: str = ""
     chatwoot_account_id: str = ""
+    chatwoot_webhook_secret: str = ""
+
+    # --- Zalo OA (cổng chính thức, GĐ2) ---
+    # Dựng sẵn và TẮT: thiếu ba khoá dưới thì registry không bật kênh. Đây
+    # là đường đúng để thay Zalo cá nhân — nick cá nhân vi phạm điều khoản
+    # Zalo, và khoá nick là mất luôn lịch sử hội thoại với khách.
+    zalo_oa_app_id: str = ""
+    zalo_oa_secret_key: str = ""
+    # Chỉ là hạt giống cho lần làm mới ĐẦU TIÊN. Zalo xoay vòng refresh
+    # token mỗi lần đổi, nên bản đang dùng nằm ở bảng `zalo_oa_token` trong
+    # CSDL — máy tự ghi mỗi giờ, không phải thứ người sửa tay trong .env.
+    zalo_oa_refresh_token: str = ""
+    zalo_oa_api_base: str = "https://openapi.zalo.me/v3.0/oa"
+    zalo_oa_oauth_url: str = "https://oauth.zaloapp.com/v4/oa/access_token"
+    # Cửa sổ được nhắn tự do, tính từ tin CUỐI của khách. Để trong cấu hình
+    # chứ không gõ vào mã vì Zalo đã đổi con số này ít nhất một lần — và
+    # một hằng số sai nằm trong mã thì phải sửa mã mới chữa được.
+    # 0 = tắt phép kiểm, CHỈ dùng khi thử.
+    zalo_oa_cua_so_gio: float = 168.0     # 7 ngày
+
+    # --- Facebook Messenger (nối THẲNG, không qua Chatwoot) ---
+    # Đường thứ hai tới Messenger, cùng tồn tại với Chatwoot có chủ ý: đi
+    # thẳng thì bớt một Rails + một Postgres + một Redis phải nuôi, đi qua
+    # Chatwoot thì được hộp thư gộp cho người trực. Chọn theo việc.
+    # KHÔNG bỏ qua được App Review của Meta — đó là luật của họ, không phải
+    # hệ quả kiến trúc.
+    messenger_page_id: str = ""
+    # App ID của chính app này. Dùng để nhận ra 'nhân viên đã xong,
+    # quyền vừa được trả về cho ta' trong sự kiện pass_thread_control.
+    messenger_app_id: str = ""
+    messenger_page_token: str = ""        # Page access token dài hạn
+    messenger_app_secret: str = ""        # ký X-Hub-Signature-256
+    messenger_verify_token: str = ""      # dội lại hub.challenge lần bắt tay
+    messenger_api_base: str = "https://graph.facebook.com/v21.0"
+    # Cửa sổ tiêu chuẩn của Meta, tính từ tin CUỐI của khách. Ngoài cửa sổ
+    # phải dùng Message Tag hoặc quảng cáo — cơ chế khác, không phải việc
+    # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.
+    messenger_cua_so_gio: float = 24.0
 
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"

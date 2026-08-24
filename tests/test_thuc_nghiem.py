@@ -18,7 +18,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import pytest  # noqa: E402
+
 from scripts import sinh_thuc_nghiem as stn  # noqa: E402
+
+# `data/eval/ket-qua-*.json` là dữ liệu VẬN HÀNH, bị .gitignore chặn — máy
+# vừa clone repo không có file nào.
+#
+# Hai test dưới kiểm NỘI DUNG tài liệu sinh ra từ dữ liệu đó. Không có dữ
+# liệu thì chúng không kiểm được gì: bắt chúng đỏ là CI đỏ trên mọi máy mới
+# vì một lý do không phải lỗi, và người ta sẽ ngừng đọc CI.
+#
+# Bỏ qua CÓ ĐIỀU KIỆN, không nới lỏng phép kiểm. Trên máy đã chạy eval —
+# tức là máy của người thật sự sửa tài liệu này — chúng vẫn chạy đủ.
+CAN_DU_LIEU = pytest.mark.skipif(
+    not stn._lan_chay_day_du(),
+    reason="chưa chạy eval trên máy này (data/eval/ không đi theo repo)",
+)
 
 
 def test_chi_lay_lan_chay_day_du_56_ca():
@@ -48,6 +64,7 @@ def test_thieu_truong_thi_bo_qua_chu_khong_dien_khong():
     assert "trên" in bang and "lần)" in bang
 
 
+@CAN_DU_LIEU
 def test_bao_ca_dai_khong_bao_moi_lan_tot_nhat():
     """
     Doanh nghiệp dùng thật gặp mức SÀN, không gặp kỷ lục. Một tài liệu chỉ
@@ -73,6 +90,7 @@ def test_khong_gia_vo_da_chay_bo_nhieu_luot():
     assert "chưa chạy" in src
 
 
+@CAN_DU_LIEU
 def test_file_tai_lieu_da_duoc_sinh_lai():
     """Lệch nghĩa là có lần chạy mới mà quên sinh lại — đúng kiểu tài liệu
     bắt đầu nói dối."""
@@ -80,3 +98,18 @@ def test_file_tai_lieu_da_duoc_sinh_lai():
     assert ra.exists(), "chưa chạy: python -m scripts.sinh_thuc_nghiem --ghi"
     assert ra.read_text(encoding="utf-8") == stn.dung(), \
         "docs/thuc-nghiem.md đã cũ — chạy lại: python -m scripts.sinh_thuc_nghiem --ghi"
+
+
+def test_khong_co_du_lieu_thi_noi_ro_chua_chay(monkeypatch):
+    """
+    Máy vừa clone repo phải sinh được tài liệu, và tài liệu phải NÓI RÕ là
+    chưa có số — không được để trống cho người đọc tưởng đã đo và kết quả
+    rỗng.
+
+    Bản trước ném `ValueError: min() iterable argument is empty` — bộ sinh
+    chết trên MỌI máy mới. Đây là lần thứ hai cùng một lỗi trong repo này:
+    giả định dữ liệu không đi theo repo vẫn có mặt.
+    """
+    monkeypatch.setattr(stn, "_lan_chay_day_du", list)
+    md = stn.dung()
+    assert "Chưa chạy lần nào" in md

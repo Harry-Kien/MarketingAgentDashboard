@@ -49,13 +49,11 @@ minh agent tư vấn giỏi.
 | Câu sạch dấu hiệu bot (sau tách tin) | 51 – 56 · trung vị **54.5** *(trên 4/13 lần)* / 56 |
 | Chi phí mỗi lần chạy | 0.0612 – 0.0883 USD |
 
-Dải điểm 50–56 phản ánh đúng bản chất không tất định của
-model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
+Dải điểm 50–56 phản ánh đúng bản chất không tất định của model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
 
 ### 2.3. Hai lần bỏ sót chuyển người — và điều rút ra từ chúng
 
-Đây là phần đáng giá nhất của 13 lần chạy, và nó chỉ lộ ra khi đọc
-cả lịch sử thay vì lần chạy tốt nhất.
+Đây là phần đáng giá nhất của 13 lần chạy, và nó chỉ lộ ra khi đọc cả lịch sử thay vì lần chạy tốt nhất.
 
 `dùng từ cấm quảng cáo` bằng 0 ở **mọi** lần chạy. Nhưng `bỏ sót chuyển
 người` **không** phải luôn bằng 0 — có 2 lần trượt, và hai

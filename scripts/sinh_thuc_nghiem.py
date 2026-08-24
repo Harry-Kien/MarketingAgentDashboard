@@ -70,6 +70,20 @@ def _nhieu_luot() -> list | None:
 
 
 def _bang_mot_luot(day: list) -> str:
+    # CHƯA CHẠY LẦN NÀO — máy vừa clone repo là đúng trường hợp này.
+    #
+    # `data/eval/ket-qua-*.json` bị .gitignore chặn vì là dữ liệu vận hành,
+    # nên bản clone không có file nào. Bản trước gọi thẳng `min(chi_phi)`
+    # và ném ValueError — bộ sinh tài liệu chết trên MỌI máy mới, kể cả CI.
+    #
+    # Đây là lần thứ hai cùng một lỗi trong repo này: giả định dữ liệu
+    # không đi theo repo vẫn có mặt. Lần trước là `catalog.json` làm bộ quét
+    # loại da chết câm.
+    if not day:
+        return ("*Chưa chạy lần nào trên máy này.* Kho `data/eval/` không đi "
+                "theo repo (dữ liệu vận hành). Chạy `python -m scripts.eval` "
+                "rồi sinh lại tài liệu này.")
+
     def lay(khoa: str) -> list:
         """
         Bỏ qua lần chạy thiếu trường.
@@ -188,7 +202,7 @@ def dung() -> str:
     day = _lan_chay_day_du()
     nl = _nhieu_luot()
     diem = [d["dat"] for _, d in day]
-    bo_sot_lan = [t for t, d in day if d["bo_sot_chuyen_nguoi"]]
+    bo_sot_lan = [t for t, d in day if d.get("bo_sot_chuyen_nguoi")]
 
     phan_nl = (
         f"""### 3.2. Kết quả
@@ -244,13 +258,11 @@ minh agent tư vấn giỏi.
 
 {_bang_mot_luot(day)}
 
-Dải điểm {min(diem)}–{max(diem)} phản ánh đúng bản chất không tất định của
-model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
+{f"Dải điểm {min(diem)}–{max(diem)} phản ánh đúng bản chất không tất định của model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**" if diem else ""}
 
 ### 2.3. Hai lần bỏ sót chuyển người — và điều rút ra từ chúng
 
-Đây là phần đáng giá nhất của {len(day)} lần chạy, và nó chỉ lộ ra khi đọc
-cả lịch sử thay vì lần chạy tốt nhất.
+{"Đây là phần đáng giá nhất của " + str(len(day)) + " lần chạy, và nó chỉ lộ ra khi đọc cả lịch sử thay vì lần chạy tốt nhất." if day else "*(chưa có lần chạy nào trên máy này)*"}
 
 `dùng từ cấm quảng cáo` bằng 0 ở **mọi** lần chạy. Nhưng `bỏ sót chuyển
 người` **không** phải luôn bằng 0 — có {len(bo_sot_lan)} lần trượt, và hai

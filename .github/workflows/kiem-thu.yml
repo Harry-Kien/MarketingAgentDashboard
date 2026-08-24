@@ -1,6 +1,6 @@
 # Chạy bộ kiểm thử mỗi lần push và mỗi pull request.
 #
-# CHỈ chạy phần tất định — 432 ca trong tests/, không gọi API nào.
+# CHỈ chạy phần tất định — 440 ca trong tests/, không gọi API nào.
 # Bộ 56 câu hỏi vàng (scripts/eval.py) KHÔNG chạy ở đây, có chủ đích:
 # nó gọi Vertex AI thật, tốn tiền, mất 13 phút, và không tất định (bốn lần
 # chạy liên tiếp cho 51, 55, 52, 54 điểm). Một CI đỏ ngẫu nhiên thì người

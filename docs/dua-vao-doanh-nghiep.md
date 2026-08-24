@@ -13,7 +13,7 @@ mới là thứ gây tai nạn.
 | Chất lượng tư vấn | 51–55/56 bộ câu hỏi vàng · 0/16 bỏ sót chuyển người · 0 từ cấm |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
-| Kiểm thử | 432 ca, dưới 2 giây, chạy tự động mỗi push |
+| Kiểm thử | 440 ca, dưới 2 giây, chạy tự động mỗi push |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |

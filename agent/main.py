@@ -444,6 +444,26 @@ async def _ban_giao_messenger(bg: dict) -> None:
                            loai=bg["loai"])
 
 
+@app.post("/webhook/shipping/{hang}")
+@app.post("/webhook/shipping")
+async def webhook_shipping(request: Request, hang: str = "ghn") -> JSONResponse:
+    """
+    Webhook tiếp nhận cập nhật trạng thái vận đơn từ đối tác vận chuyển (GHN/GHTK/Mock).
+    Ánh xạ về 4 trạng thái cốt lõi và tự động thông báo khách hàng / hoàn kho.
+    """
+    from agent.shipping import xu_ly_webhook_van_chuyen
+
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return JSONResponse({"ok": False, "error": "payload không phải JSON"}, status_code=400)
+
+    headers = dict(request.headers)
+    result = await xu_ly_webhook_van_chuyen(hang, payload, headers)
+    return JSONResponse(result)
+
+
 @app.post("/webhook")
 @app.post("/webhook/{kenh}")
 async def webhook(

@@ -29,7 +29,30 @@ class Passage:
         return f"[{self.doc_title}]"
 
 
+def _embed_openai_sync(texts: list[str]) -> list[list[float]]:
+    import httpx
+    api_key = settings.openai_api_key
+    base_url = settings.openai_base_url.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "text-embedding-3-small",
+        "input": texts,
+        "dimensions": EMBED_DIM,
+    }
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{base_url}/embeddings", headers=headers, json=payload)
+        r.raise_for_status()
+        data = r.json()
+        return [item["embedding"] for item in data["data"]]
+
+
 def _embed_sync(texts: list[str], task: str) -> list[list[float]]:
+    if settings.openai_api_key and (settings.llm_provider == "openai" or not settings.gcp_project_id):
+        return _embed_openai_sync(texts)
+
     from vertexai.language_models import TextEmbeddingInput, TextEmbeddingModel
     import vertexai
 

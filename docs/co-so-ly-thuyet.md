@@ -76,7 +76,7 @@ tham số mô hình, và cũng không nên nằm trong kho tri thức tĩnh.
 dữ liệu, nó phát ra lời gọi hàm thay vì tự trả lời, hệ thống thực thi rồi
 trả kết quả vào vòng hội thoại (Schick và cộng sự, 2023).
 
-**Trong hệ thống này.** 8 công cụ trong
+**Trong hệ thống này.** 9 công cụ trong
 [`agent/core/tools.py`](../agent/core/tools.py). Nguyên tắc kiến trúc: *giá,
 tồn kho, tình trạng đơn CHỈ đến từ công cụ* — thiếu căn cứ thì chuyển
 người, không suy đoán.
@@ -84,7 +84,7 @@ người, không suy đoán.
 `tao_don_hang` là công cụ **duy nhất gây hậu quả không đảo ngược**, nên nó
 được canh riêng.
 
-`tim_kien_thuc` khác bảy công cụ kia ở chỗ nó trả về **tài liệu**, không
+`tim_kien_thuc` khác tám công cụ kia ở chỗ nó trả về **tài liệu**, không
 phải dữ liệu hệ thống — xem mục 1 về vì sao điều đó buộc phải tách khỏi
 phép tính độ tin cậy.
 

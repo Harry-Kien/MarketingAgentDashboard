@@ -13,6 +13,7 @@ import json
 import pathlib
 import unicodedata
 
+from agent import db
 from agent.config import ROOT, settings
 from agent.core import kho
 
@@ -121,13 +122,35 @@ TOOLS: list[dict] = [
     {
         "name": "tra_cuu_don_hang",
         "description": (
-            "Tra tình trạng đơn hàng theo mã đơn. Gọi khi khách hỏi đơn của họ "
-            "tới đâu rồi, bao giờ nhận được."
+            "Tra cứu tình trạng đơn hàng và lộ trình giao hàng thời gian thực từ hãng "
+            "vận chuyển (GHN/GHTK) theo mã đơn (ví dụ AS...) hoặc mã vận đơn (ví dụ MOCK.../GHN...). "
+            "Gọi khi khách hỏi đơn của họ tới đâu rồi, bao giờ nhận được."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "ma_don": {"type": "string", "description": "Mã đơn hàng"}
+                "ma_don": {
+                    "type": "string",
+                    "description": "Mã đơn hàng hoặc mã vận đơn của khách",
+                }
+            },
+            "required": ["ma_don"],
+        },
+    },
+    {
+        "name": "tao_van_don",
+        "description": (
+            "Tạo vận đơn giao hàng với hãng vận chuyển (GHN) cho một đơn hàng đã chốt. "
+            "Tự động chạy qua 4 chốt kiểm duyệt: đơn hợp lệ, đủ thông tin giao nhận, "
+            "đã trừ tồn kho, và chống tạo trùng."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ma_don": {
+                    "type": "string",
+                    "description": "Mã đơn hàng nội bộ cần tạo vận đơn",
+                }
             },
             "required": ["ma_don"],
         },
@@ -482,13 +505,54 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             ),
         }
 
-    # ---------- đơn hàng ----------
+    # ---------- đơn hàng & vận chuyển ----------
     if name == "tra_cuu_don_hang":
-        ma = _norm(args.get("ma_don", ""))
+        from agent.shipping import tra_cuu_van_don
+        ma = str(args.get("ma_tra_cuu") or args.get("ma_don") or args.get("ma_van_don") or "").strip()
+        if not ma:
+            return {"tim_thay": False, "ly_do": "Chưa cung cấp mã đơn hoặc mã vận đơn để tra cứu."}
+
+        db_order = await db.fetchrow(
+            "SELECT * FROM orders WHERE ma_don = $1 OR ma_van_don = $1", ma
+        )
+        if db_order:
+            track = await tra_cuu_van_don(ma)
+            return {
+                "tim_thay": True,
+                "ma_don": db_order["ma_don"],
+                "ma_van_don": db_order.get("ma_van_don") or "",
+                "khach_ten": db_order.get("khach_ten"),
+                "tong_tien": int(db_order.get("tong_tien") or 0),
+                "trang_thai_don": db_order.get("trang_thai"),
+                "trang_thai_giao_hang": track.trang_thai_noi_bo.value if track else "delivering",
+                "vi_tri_hien_tai": track.vi_tri_hien_tai if track else "Kho hàng",
+                "ngay_du_kien_giao": track.ngay_du_kien_giao.strftime("%d/%m/%Y") if track and track.ngay_du_kien_giao else None,
+                "lich_su": [
+                    {"thoi_gian": str(it.thoi_gian), "mo_ta": it.mo_ta, "dia_diem": it.dia_diem}
+                    for it in (track.lich_su if track else [])
+                ],
+            }
+
         for dh in catalog.get("don_hang", []):
-            if _norm(dh.get("ma", "")) == ma:
+            if _norm(dh.get("ma", "")) == _norm(ma):
                 return {"tim_thay": True, **dh}
-        return {"tim_thay": False, "ghi_chu": "Không có mã đơn này trong hệ thống."}
+        return {"tim_thay": False, "ghi_chu": f"Không có mã đơn '{ma}' trong hệ thống."}
+
+    if name == "tao_van_don":
+        from agent.shipping import tao_van_don_cho_don
+        ma_don = str(args.get("ma_don", "")).strip()
+        res = await tao_van_don_cho_don(ma_don)
+        if res.ok:
+            return {
+                "tao_duoc": True,
+                "ma_don": ma_don,
+                "ma_van_don": res.ma_van_don,
+                "don_vi": res.don_vi,
+                "phi_van_chuyen": res.phi_van_chuyen,
+                "trang_thai": res.trang_thai_noi_bo.value,
+                "ngay_du_kien_giao": res.ngay_du_kien_giao.strftime("%d/%m/%Y") if res.ngay_du_kien_giao else None,
+            }
+        return {"tao_duoc": False, "ly_do": res.loi}
 
     # ---------- lên đơn: tool DUY NHẤT có hậu quả không đảo ngược ----------
     if name == "tao_don_hang":
@@ -680,16 +744,35 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
         tong_tien=tong, trang_thai=trang_thai,
     )
+
+    # --- Chốt 8: Tự động đẩy sang Hãng Vận Chuyển khi đơn đã chốt ---
+    ma_van_don = None
+    if tu_chot:
+        from agent.shipping import tao_van_don_cho_don
+        wb_res = await tao_van_don_cho_don(row["ma_don"])
+        if wb_res.ok and wb_res.ma_van_don:
+            ma_van_don = wb_res.ma_van_don
+
     return {
         "tao_duoc": True,
         "ma_don": row["ma_don"],
+        "ma_van_don": ma_van_don,
         "items": lines,
         "tong_tien": tong,
         "trang_thai": trang_thai,
         "ghi_chu_cho_agent": (
-            "Đơn đã chốt. Báo mã đơn và tổng tiền cho khách."
+            (
+                f"Đơn đã chốt. Báo mã đơn #{row['ma_don']}"
+                + (f" và mã vận đơn {ma_van_don}" if ma_van_don else "")
+                + f", tổng tiền {tong:,}đ cho khách."
+            )
             if tu_chot else
             "Đơn giá trị lớn nên đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "
             "nhận và sẽ có người gọi xác nhận, KHÔNG nói là đã chốt xong."
         ),
     }
+
+
+# Bí danh tương thích
+execute = run_tool
+

@@ -41,7 +41,7 @@ import httpx
 from agent.config import settings
 
 # Giá niêm yết USD / 1 triệu token (input, output).
-# Claude: giá chính thức. Gemini: xấp xỉ — kiểm tra lại trên bảng giá GCP.
+# Claude: giá chính thức. Gemini & OpenAI: giá niêm yết chính thức.
 PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-4-8": (5.00, 25.00),
@@ -51,6 +51,10 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-2.5-pro": (1.25, 10.00),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4.1-mini": (0.15, 0.60),
+    "text-embedding-3-small": (0.02, 0.02),
 }
 MAX_RETRIES = 4          # cho 429/503 tam thoi cua Vertex
 CACHE_READ_RATE = 0.10
@@ -489,6 +493,151 @@ async def _complete_claude(
 
 
 # ===============================================================
+#  OpenAI trực tiếp
+# ===============================================================
+
+def _to_openai_tools(tools: list[dict] | None) -> list[dict] | None:
+    if not tools:
+        return None
+    out = []
+    for t in tools:
+        out.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+            },
+        })
+    return out
+
+
+def _to_openai_messages(system: dict, messages: list[dict]) -> list[dict]:
+    out = []
+    sys_text = (system.get("stable", "") + "\n\n" + system.get("volatile", "")).strip()
+    if sys_text:
+        out.append({"role": "system", "content": sys_text})
+
+    for m in messages:
+        role = m.get("role")
+        if role == "user":
+            content = m.get("content", "")
+            if isinstance(content, str):
+                out.append({"role": "user", "content": content})
+            elif isinstance(content, list):
+                parts = []
+                for blk in content:
+                    if blk.get("type") == "image":
+                        media_type = blk.get("media_type", "image/jpeg")
+                        b64 = blk["data"]
+                        parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{media_type};base64,{b64}"},
+                        })
+                    elif blk.get("text"):
+                        parts.append({"type": "text", "text": blk["text"]})
+                out.append({"role": "user", "content": parts})
+        elif role == "assistant":
+            msg: dict[str, Any] = {"role": "assistant"}
+            if m.get("content"):
+                msg["content"] = m["content"]
+            else:
+                msg["content"] = None
+            if m.get("tool_calls"):
+                msg["tool_calls"] = [
+                    {
+                        "id": call["id"],
+                        "type": "function",
+                        "function": {
+                            "name": call["name"],
+                            "arguments": json.dumps(call["input"], ensure_ascii=False) if isinstance(call["input"], dict) else str(call["input"]),
+                        },
+                    }
+                    for call in m["tool_calls"]
+                ]
+            out.append(msg)
+        elif role == "tool":
+            for r in m.get("results") or []:
+                out.append({
+                    "role": "tool",
+                    "tool_call_id": r["id"],
+                    "content": json.dumps(r["output"], ensure_ascii=False) if isinstance(r["output"], (dict, list)) else str(r["output"]),
+                })
+    return out
+
+
+async def _complete_openai(
+    *, system: dict, messages: list[dict], model: str, max_tokens: int,
+    tools: list[dict] | None, effort: str = "medium",
+) -> LLMResult:
+    import uuid
+
+    api_key = settings.openai_api_key
+    if not api_key:
+        raise RuntimeError("Chưa cấu hình OPENAI_API_KEY trong .env")
+
+    base_url = settings.openai_base_url.rstrip("/")
+    url = f"{base_url}/chat/completions"
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": _to_openai_messages(system, messages),
+        "max_tokens": max_tokens,
+    }
+    openai_tools = _to_openai_tools(tools)
+    if openai_tools:
+        payload["tools"] = openai_tools
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    started = time.perf_counter()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"OpenAI error {resp.status_code}: {resp.text}")
+        data = resp.json()
+
+    choice = data.get("choices", [{}])[0]
+    msg = choice.get("message", {})
+    text = msg.get("content") or ""
+
+    tool_calls = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function", {})
+        name = fn.get("name", "")
+        args_raw = fn.get("arguments", "{}")
+        try:
+            inp = json.loads(args_raw)
+        except Exception:
+            inp = {"raw": args_raw}
+        tool_calls.append({
+            "id": tc.get("id", str(uuid.uuid4())),
+            "name": name,
+            "input": inp,
+        })
+
+    usage = data.get("usage", {})
+    t_in = usage.get("prompt_tokens", 0)
+    t_out = usage.get("completion_tokens", 0)
+
+    return LLMResult(
+        text=text.strip(),
+        model=model,
+        tokens_in=t_in,
+        tokens_out=t_out,
+        cache_read=0,
+        cache_write=0,
+        cost_usd=price(model, t_in, t_out),
+        latency_ms=int((time.perf_counter() - started) * 1000),
+        tool_calls=tool_calls,
+        stop_reason=choice.get("finish_reason") or "",
+    )
+
+
+# ===============================================================
 #  Cửa vào duy nhất
 # ===============================================================
 
@@ -504,6 +653,11 @@ async def complete(
     p = provider()
     model = model or settings.model_chat
 
+    if p == "openai":
+        return await _complete_openai(
+            system=system, messages=messages, model=model,
+            max_tokens=max_tokens, tools=tools, effort=effort,
+        )
     if p == "gemini":
         return await _complete_gemini(
             system=system, messages=messages, model=model,
@@ -515,5 +669,5 @@ async def complete(
             max_tokens=max_tokens, tools=tools, effort=effort,
         )
     raise RuntimeError(
-        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: gemini | vertex | anthropic."
+        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: openai | gemini | vertex | anthropic."
     )

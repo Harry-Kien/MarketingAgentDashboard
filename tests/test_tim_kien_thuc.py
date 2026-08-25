@@ -167,7 +167,7 @@ def test_moi_tool_khac_deu_la_tool_du_lieu():
     du_lieu = ten - ag._TOOL_TRA_TAI_LIEU
     assert du_lieu == {
         "tra_cuu_san_pham", "goi_y_san_pham", "gui_anh_san_pham",
-        "tra_cuu_don_hang", "tao_video", "tao_don_hang", "chuyen_nhan_vien",
+        "tra_cuu_don_hang", "tao_van_don", "tao_video", "tao_don_hang", "chuyen_nhan_vien",
     }, "danh sách tool đổi — hãy xác nhận tool mới có trả về DỮ LIỆU THẬT không"
 
 

@@ -183,11 +183,31 @@ CREATE TABLE IF NOT EXISTS orders (
     trang_thai      TEXT NOT NULL DEFAULT 'cho_duyet',
     tao_boi         TEXT NOT NULL DEFAULT 'agent',
     ghi_chu         TEXT,
+    -- Thông tin vận chuyển
+    ma_van_don      TEXT,
+    don_vi_van_chuyen TEXT,                      -- ghn | ghtk | mock
+    trang_thai_giao_hang TEXT,                   -- delivering | delivered | delivery_failed | returned
+    phi_van_chuyen  BIGINT NOT NULL DEFAULT 0,
+    lich_su_giao_hang JSONB NOT NULL DEFAULT '[]',
+    ngay_du_kien_giao TIMESTAMPTZ,
+    cap_nhat_van_chuyen_luc TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_order_created ON orders (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_status  ON orders (trang_thai);
+
+-- Di chuyển cho CSDL đã có trước lớp này
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ma_van_don TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS don_vi_van_chuyen TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS trang_thai_giao_hang TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS phi_van_chuyen BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS lich_su_giao_hang JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ngay_du_kien_giao TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cap_nhat_van_chuyen_luc TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_order_waybill ON orders (ma_van_don);
+CREATE INDEX IF NOT EXISTS idx_order_ship_status ON orders (trang_thai_giao_hang);
 
 -- Chống tạo trùng: khách nhắn "ok" hai lần không được ra hai đơn.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_order_dedupe

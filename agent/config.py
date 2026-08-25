@@ -13,19 +13,23 @@ class Settings(BaseSettings):
     )
 
     # --- Nhà cung cấp model ---
+    # openai    = OpenAI API trực tiếp (gpt-4o-mini, gpt-4o)
     # vertex    = Claude qua Vertex AI (GCP ADC, không cần API key)
     # anthropic = Claude qua API trực tiếp của Anthropic (cần API key)
+    # gemini    = Gemini trên Vertex AI
     # Cùng model, cùng giá. Đổi giá trị này là đổi đường đi, không đụng mã.
-    llm_provider: str = "gemini"
+    llm_provider: str = "openai"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
     anthropic_api_key: str = ""
 
     # --- Vertex AI ---
     gcp_project_id: str = ""
     gcp_region: str = "global"          # cho Claude trên Vertex
     gemini_region: str = "us-central1"  # cho Gemini trên Vertex
-    model_chat: str = "gemini-2.5-flash"
-    model_hard: str = "gemini-2.5-pro"
-    model_cheap: str = "gemini-2.5-flash-lite"
+    model_chat: str = "gpt-4o-mini"
+    model_hard: str = "gpt-4o"
+    model_cheap: str = "gpt-4o-mini"
 
     # --- ZaloCRM ---
     zalocrm_base_url: str = "http://localhost:3000"
@@ -87,6 +91,13 @@ class Settings(BaseSettings):
     # phải dùng Message Tag hoặc quảng cáo — cơ chế khác, không phải việc
     # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.
     messenger_cua_so_gio: float = 24.0
+
+    # --- Vận chuyển (GHN / GHTK / Mock) ---
+    shipping_provider: str = "mock"
+    ghn_api_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api/v2"
+    ghn_token: str = ""
+    ghn_shop_id: str = ""
+    shipping_webhook_secret: str = ""
 
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"

@@ -1,11 +1,16 @@
-.env
-# Bản sao lưu .env do `scripts/sinh_token.py` tạo trước khi thay bí mật.
-# KHÔNG chặn dòng này thì một lần `git add -A` là đẩy nguyên bí mật CŨ lên
-# repo công khai — và bí mật cũ vẫn là bí mật, vì nó có thể còn hiệu lực ở
-# nơi khác. Đã suýt xảy ra thật ngay ở lần chạy đầu của script đó.
-.env.bak
-.env.*.bak
-.env.env.bak
+# Chặn CẢ HỌ .env, không liệt kê từng biến thể.
+#
+# Trước đây chỗ này liệt kê `.env`, `.env.bak`, `.env.*.bak`, `.env.env.bak`
+# — và vẫn để lọt. Một script sao lưu dùng `Path(".env").with_suffix()`, hàm
+# đó NỐI THÊM đuôi chứ không thay, sinh ra `.env.env.truoc-credential-key`.
+# Tên ấy không khớp mẫu nào, nên git nhìn thấy một bản sao đầy đủ của .env
+# — có bí mật — ở dạng untracked.
+#
+# Đoán trước từng biến thể là trò đuổi bắt không bao giờ thắng. Chặn cả họ,
+# rồi mở ngoại lệ cho đúng những bản mẫu PHẢI đi theo repo.
+.env*
+!.env.example
+!.env.chatwoot.example
 .venv/
 __pycache__/
 *.pyc
@@ -41,7 +46,6 @@ data/catalog.json
 # Ảnh mẫu tổng hợp (do script sinh ra) thì GIỮ LẠI — lệnh test trong README
 # cần chúng, và chúng không chứa thông tin thật nào.
 !data/mau/
-.env.chatwoot
 
 # Log của server chạy nền
 data/uvicorn.log
@@ -52,3 +56,18 @@ data/backup/
 
 # Trạng thái người canh bên ngoài — dữ liệu chạy, không phải mã.
 data/.canh_gac_ngoai
+
+# --- Thư mục sinh ra khi chạy, KHÔNG bao giờ vào repo ---
+# node_modules của sidecar có hàng nghìn file. Lỡ commit một lần là lịch sử
+# repo phình vĩnh viễn: git không quên được, và `git rm` sau đó chỉ thêm một
+# commit nữa chứ không xoá được quá khứ.
+node_modules/
+.playwright-cli/
+output/
+.ruff_cache/
+
+# Verify token đọc ra từ vault để dán vào Meta. Đọc xong nên xoá.
+data/verify-token.txt
+
+# Bộ nhớ làm việc của công cụ Serena — trạng thái máy, không phải mã nguồn.
+.serena/

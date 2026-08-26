@@ -31,6 +31,7 @@ Muốn bắt cả trường hợp đó thì cần một tiến trình BÊN NGOÀ
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 
@@ -62,6 +63,53 @@ def _tom_tat(kq: dict) -> str:
     return " · ".join(f"{m['ten']}: {m.get('ghi_chu', '')}"[:90] for m in xau)
 
 
+def dung_goi_bao_dong(truong: dict, mau: str = "") -> dict:
+    """
+    Dựng gói tin gửi tới webhook báo động, theo mẫu khai trong cấu hình.
+
+    VÌ SAO CẦN MẪU
+    --------------
+    Mỗi nơi nhận đòi một dạng khác: chỗ này cần `text`, chỗ kia cần
+    `content`, chỗ khác cần thêm định danh phòng chat. Gắn cứng một hãng vào
+    đây là nhốt quyết định VẬN HÀNH vào mã — cùng lý do với PublishAdapter,
+    và có test canh đúng điều đó.
+
+    Bắt người dùng dựng thêm một dịch vụ trung gian chỉ để đổi tên ba trường
+    cũng không đúng: đó là thêm một tiến trình nữa có thể chết, ngay trên
+    đường báo động.
+
+    Mẫu là chuỗi JSON có chỗ trống `{muc_do}`, `{tieu_de}`, `{chi_tiet}`,
+    `{trang_thai}`. Trung lập với mọi nhà cung cấp.
+
+    HỎNG THÌ RƠI VỀ DẠNG CŨ, KHÔNG NÉM LỖI
+    --------------------------------------
+    Mẫu gõ sai mà ta ném lỗi thì đúng lúc hệ thống chết cũng là lúc báo động
+    chết theo. Gửi sai dạng còn có cơ hội ai đó nhìn thấy; im lặng thì không.
+    """
+    if not mau.strip():
+        return dict(truong)
+    try:
+        # KHÔNG dùng str.format: mẫu là JSON, mà JSON đầy dấu ngoặc nhọn —
+        # `{"chat_id":"1"}` bị format hiểu thành một chỗ trống tên
+        # `"chat_id":"1"`. Chỉ thay đúng những khoá mình biết, mọi ngoặc
+        # khác để nguyên.
+        #
+        # Thoát theo chuẩn JSON trước khi chèn: chi tiết báo động có thể
+        # chứa dấu nháy kép, xuống dòng, tiếng Việt. Chèn thô là gói tin vỡ
+        # và nơi nhận từ chối đúng lúc cần nhất.
+        ra = mau
+        for khoa, gia_tri in truong.items():
+            cho_trong = "{" + str(khoa) + "}"
+            if cho_trong in ra:
+                an_toan = json.dumps(str(gia_tri), ensure_ascii=False)[1:-1]
+                ra = ra.replace(cho_trong, an_toan)
+        return json.loads(ra)
+    except (ValueError, TypeError) as exc:
+        # Mẫu gõ sai KHÔNG được làm mất báo động — xem docstring.
+        del exc
+        return dict(truong)
+
+
 async def _bao(muc_do: str, tieu_de: str, chi_tiet: str, kq: dict) -> None:
     """
     Gửi báo động. Luôn ghi nhật ký; gửi ra ngoài nếu có cấu hình.
@@ -79,13 +127,19 @@ async def _bao(muc_do: str, tieu_de: str, chi_tiet: str, kq: dict) -> None:
         return
     try:
         async with httpx.AsyncClient(timeout=15.0) as http:
-            await http.post(settings.canh_gac_webhook, json={
-                "muc_do": muc_do,
-                "tieu_de": tieu_de,
-                "chi_tiet": chi_tiet,
-                "trang_thai": kq.get("trang_thai"),
-                "muc": kq.get("muc", []),
-            })
+            await http.post(
+                settings.canh_gac_webhook,
+                json=dung_goi_bao_dong(
+                    {
+                        "muc_do": muc_do,
+                        "tieu_de": tieu_de,
+                        "chi_tiet": chi_tiet,
+                        "trang_thai": kq.get("trang_thai"),
+                        "muc": kq.get("muc", []),
+                    },
+                    mau=settings.canh_gac_goi_tin,
+                ),
+            )
     except httpx.HTTPError as exc:
         # Báo động gửi hỏng thì ghi lại, KHÔNG ném lên — vòng canh gác chết
         # là mất luôn khả năng biết mọi thứ khác đang hỏng.

@@ -27,9 +27,18 @@ class Settings(BaseSettings):
     model_hard: str = "gemini-2.5-pro"
     model_cheap: str = "gemini-2.5-flash-lite"
 
-    # --- ZaloCRM ---
+    # Vai của tiến trình: "tat_ca" | "api" | "worker".
+    # Chạy nhiều bản API phải đặt "api" cho chúng và dựng ĐÚNG MỘT tiến
+    # trình "worker" — xem agent.main.nen_chay_vong_nen.
+    vai_tro_tien_trinh: str = "tat_ca"
+
+    # --- ZaloCRM (DI SẢN — chỉ còn cho migration/canary) ---
     zalocrm_base_url: str = "http://localhost:3000"
     zalocrm_api_key: str = ""
+    # Công tắc TƯỜNG MINH cho đường nạp tin cũ. Mặc định tắt, kể cả khi
+    # `zalocrm_api_key` còn giá trị — xem `agent.main.nen_chay_poller_legacy`.
+    # Bật đồng thời với connector native là sinh hội thoại trùng.
+    legacy_polling_bat: bool = False
     webhook_public_url: str = "http://host.docker.internal:8000/webhook"
     webhook_secret: str = ""
     # Id tài khoản Zalo dùng để GỬI. Lấy sau khi quét QR:
@@ -88,8 +97,45 @@ class Settings(BaseSettings):
     # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.
     messenger_cua_so_gio: float = 24.0
 
+    # --- Meta OAuth: nối Trang bằng ĐĂNG NHẬP thay vì dán token ---
+    # Đây là thông tin của ỨNG DỤNG Meta, KHÁC token của từng Trang. App
+    # secret chỉ dùng phía máy chủ khi đổi code lấy token; nó không bao giờ
+    # được đưa vào URL trình duyệt. Để trống thì rơi về messenger_app_*.
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+
+    # --- Zalo cá nhân: bí mật CỦA MÁY CHỦ, không hỏi người dùng ---
+    # Mọi tài khoản Zalo cá nhân dùng chung đúng hai giá trị này. Trước đây
+    # form kết nối bắt người dùng tự mở `.env` chép `ZALO_SIDECAR_SECRET`
+    # sang — bất khả thi khi hệ thống chạy trên tên miền cho nhiều người,
+    # và chép tay chuỗi 32 ký tự thì sai một byte là HMAC hỏng câm.
+    # Xem agent/omnichannel/bi_mat_may_chu.py
+    zalo_sidecar_secret: str = ""
+    zalo_sidecar_url: str = "http://127.0.0.1:3210"
+
+    # --- Vận chuyển ---
+    # `mock` là mặc định CÓ CHỦ Ý: nó không gọi mạng, không tốn phí, không
+    # tạo vận đơn thật. Đổi sang `ghn` là hành động có hậu quả tiền bạc, nên
+    # nó phải là một quyết định rõ ràng của người vận hành.
+    shipping_provider: str = "mock"
+    # Mặc định trỏ SANDBOX của GHN. Lên thật thì đổi sang
+    # https://online-gateway.ghn.vn/shiip/public-api/v2
+    ghn_api_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api/v2"
+    ghn_token: str = ""
+    ghn_shop_id: str = ""
+    # Bí mật nằm trong URL webhook. TRỐNG = TỪ CHỐI mọi webhook vận chuyển,
+    # không phải chấp nhận tất cả — xem agent/shipping/service.py
+    shipping_webhook_secret: str = ""
+
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"
+
+    # --- Kho bí mật của tài khoản kênh ---
+    # Danh sách `version:base64-key-32-byte`, phân cách bằng dấu phẩy. Cho
+    # phép giữ key cũ để giải mã trong lúc xoay vòng và mã hóa mới bằng bản
+    # active. Không in hai giá trị này ra log hoặc readiness report.
+    credential_master_keys: str = ""
+    credential_active_key_version: int = 1
 
     # --- TTS ---
     # auto = thử viet-tts trước, không có thì dùng Google Cloud TTS.
@@ -216,7 +262,27 @@ class Settings(BaseSettings):
     # Sinh token: python -c "import secrets; print(secrets.token_urlsafe(32))"
     mcp_token: str = ""
 
+    # Mẫu gói tin gửi tới CANH_GAC_WEBHOOK. Để trống là dùng dạng mặc định.
+    #
+    # Chỗ trống dùng được: {muc_do} {tieu_de} {chi_tiet} {trang_thai}
+    # Ví dụ cho Telegram (một dòng, dùng \n để xuống dòng trong tin nhắn):
+    #   {"chat_id":"<chat id>","text":"[{muc_do}] {tieu_de} — {chi_tiet}"}
+    #
+    # Trung lập với nhà cung cấp CÓ CHỦ Ý: nơi nhận báo động là quyết định
+    # vận hành của doanh nghiệp, không phải hằng số trong mã.
+    canh_gac_goi_tin: str = ""
+
     cookie_bao_mat: bool = False
+    # Nhịp hỏi CSDL của luồng realtime (SSE) trên dashboard.
+    #
+    # Đây là TOÀN BỘ độ trễ người trực cảm nhận: tin khách đã nằm trong CSDL
+    # từ trước, dashboard chỉ chưa biết cho tới lượt hỏi kế tiếp. 1 giây làm
+    # giao diện có cảm giác chậm hơn hẳn Zalo dù phía sau đã xong việc.
+    #
+    # Truy vấn đằng sau là một lần quét chỉ mục trên `inbox_events.
+    # sequence_id`, rất rẻ. Nới lên chỉ khi có RẤT nhiều người trực cùng mở
+    # dashboard, và biết rằng đổi lại là giao diện chậm đi đúng chừng ấy.
+    sse_poll_seconds: float = 0.25
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.

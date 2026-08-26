@@ -395,6 +395,10 @@ async function loadThread(id) {
       <span class="convo__spacer"></span>
       ${srcBadge(c.account_channel, c.nen_tang)}<span class="msg__meta">${esc(c.account_name || "")}</span>
       ${c.contact_id ? `<button type="button" class="btn btn--sm" id="open-contact" data-contact="${c.contact_id}">Customer 360</button>` : ""}
+      ${!taken ? `<button type="button" class="btn btn--sm ${c.mode === "auto" ? "" : "btn--go"}" id="btn-chedo"
+        data-chedo="${c.mode === "auto" ? "assist" : "auto"}">
+        ${c.mode === "auto" ? "Duyệt trước khi gửi" : "Để agent tự trả lời"}
+      </button>` : ""}
       <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
         ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
       </button>
@@ -467,6 +471,40 @@ async function loadThread(id) {
 
   const openContact = $("#open-contact");
   if (openContact) openContact.addEventListener("click", () => openCustomer(openContact.dataset.contact));
+
+  /* Trả hội thoại VỀ cho agent, hoặc bắt duyệt trước khi gửi.
+   *
+   * Trước khi có nút này, hội thoại rơi xuống "Chờ duyệt" hay "Đã chuyển
+   * người" là KẸT ở đó vĩnh viễn: chỉ có nút đi xuống, không có nút đi lên.
+   * Ô xanh "Agent xử lý" trên chú giải là một lời hứa hệ thống không giữ
+   * được, và mọi hội thoại cũ dồn dần vào hàng chờ duyệt.
+   *
+   * Không hiện khi đang có người tiếp quản: phải "Kết thúc tiếp quản" trước.
+   * Bật auto sau lưng người đang giữ là để AI nhắn chen vào giữa cuộc họ
+   * đang xử lý. */
+  const nutCheDo = $("#btn-chedo");
+  if (nutCheDo) nutCheDo.addEventListener("click", async () => {
+    const sang = nutCheDo.dataset.chedo;
+    const ly_do = sang === "auto"
+      ? "Người trực trả hội thoại về cho agent"
+      : "Người trực bật duyệt trước khi gửi";
+    nutCheDo.disabled = true;
+    try {
+      await api(`/inbox/conversations/${id}/che-do`, {
+        method: "POST",
+        body: JSON.stringify({
+          che_do: sang, expected_version: c.version || 1, reason: ly_do,
+        }),
+      });
+      toast(sang === "auto"
+        ? "Agent sẽ tự trả lời hội thoại này."
+        : "Từ giờ AI soạn xong sẽ chờ bạn duyệt.");
+      refresh();
+    } catch (e) {
+      toast(e.message, true);
+      nutCheDo.disabled = false;
+    }
+  });
 
   $("#btn-take").addEventListener("click", async () => {
     try {

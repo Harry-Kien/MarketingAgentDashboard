@@ -7,12 +7,12 @@ import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agent import db
 from agent.config import settings
@@ -330,6 +330,36 @@ class ReleaseIn(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class DatCheDoIn(BaseModel):
+    """
+    Đổi giữa `auto` và `assist`.
+
+    KHÔNG nhận `human`: chuyển sang human là GIAO VIỆC cho một người cụ thể,
+    cần biết giao cho ai và mở bản ghi phân công — `takeover` làm việc đó.
+    Nhận cả ba ở đây là hai đường cùng đổi một trường theo hai luật khác nhau.
+    """
+
+    che_do: Literal["auto", "assist"]
+    expected_version: int = Field(ge=1)
+    # Cùng luật với takeover/release: nhật ký ghi "ai đó bật auto lúc 2 giờ
+    # sáng" mà không có lý do thì nó không dùng được khi cần truy.
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _ly_do_khong_duoc_toan_khoang_trang(cls, v: str) -> str:
+        """
+        `min_length` đếm cả khoảng trắng, nên "   " lọt qua.
+
+        Một lý do toàn dấu cách ghi vào nhật ký kiểm toán trông y hệt một lý
+        do thật cho tới lúc có người mở ra đọc — và lúc đó thì đã cần nó rồi.
+        """
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("lý do phải có ít nhất 3 ký tự thực")
+        return v
+
+
 def _routing_response(state) -> dict[str, Any]:
     return {
         "conversation_id": str(state.conversation_id),
@@ -459,6 +489,38 @@ async def release_conversation(
             reason=body.reason,
             actor_is_admin=is_admin,
         )
+    except RoutingError as exc:
+        _raise_routing(exc)
+    return _routing_response(state)
+
+
+@router.post("/conversations/{conversation_id}/che-do")
+async def dat_che_do_conversation(
+    conversation_id: UUID,
+    body: DatCheDoIn,
+    user: dict = Depends(bat_buoc_dang_nhap),
+    service: ConversationRoutingService = Depends(get_routing_service),
+) -> dict[str, Any]:
+    """
+    Trả hội thoại về cho agent tự xử lý, hoặc bắt duyệt trước khi gửi.
+
+    Trước khi có đường này, hội thoại rơi xuống `assist` hoặc `human` là KẸT
+    ở đó vĩnh viễn: chỉ có nút đi xuống, không có nút đi lên. Người trực xử
+    lý xong một ca khó rồi muốn trả lại cho agent — không có cách nào. Mọi
+    hội thoại cũ dồn dần vào hàng chờ duyệt.
+    """
+    actor_id, is_admin = _user_scope(user)
+    try:
+        state = await service.dat_che_do(
+            conversation_id=conversation_id,
+            actor_id=actor_id,
+            che_do=body.che_do,
+            expected_version=body.expected_version,
+            reason=body.reason,
+            actor_is_admin=is_admin,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     except RoutingError as exc:
         _raise_routing(exc)
     return _routing_response(state)

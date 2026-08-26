@@ -45,6 +45,8 @@ class RoutingTransaction(Protocol):
 
     async def can_release(self, **kwargs) -> bool: ...
 
+    async def apply_che_do(self, **kwargs): ...
+
     async def apply_release(self, **kwargs): ...
 
 
@@ -141,6 +143,63 @@ class ConversationRoutingService:
                 conversation_id=conversation_id,
                 account_id=conversation["account_id"],
                 actor_id=actor_id,
+                reason=reason,
+            )
+        return _state(updated)
+
+
+    async def dat_che_do(
+        self,
+        *,
+        conversation_id: UUID,
+        actor_id: UUID,
+        che_do: str,
+        expected_version: int,
+        reason: str,
+        actor_is_admin: bool = False,
+    ) -> ConversationRoutingState:
+        """
+        Đổi giữa `auto` (AI gửi thẳng) và `assist` (AI soạn, người duyệt).
+
+        VÌ SAO `human` KHÔNG ĐI QUA ĐÂY
+        --------------------------------
+        Chuyển sang `human` là GIAO VIỆC cho một người cụ thể — nó cần biết
+        giao cho ai, kiểm quyền của người đó, và mở một bản ghi phân công.
+        `takeover` đã làm đúng việc ấy. Hai đường cùng đổi một trường theo
+        hai luật khác nhau là chỗ để chúng lệch nhau.
+
+        VÌ SAO PHẢI RELEASE TRƯỚC KHI BẬT AUTO
+        ---------------------------------------
+        Hội thoại `human` đang có người giữ. Bật auto sau lưng họ là để AI
+        nhắn chen vào giữa cuộc họ đang xử lý — khách thấy hai giọng khác
+        nhau trong cùng một mạch.
+        """
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("đổi chế độ bắt buộc có lý do")
+        if che_do not in ("auto", "assist"):
+            raise ValueError("chế độ chỉ nhận 'auto' hoặc 'assist'")
+
+        async with self._repository.transaction() as tx:
+            # Cùng fence với outbox worker: đợi job AI đang gửi kết thúc rồi
+            # mới đổi, nếu không một tin soạn ở chế độ cũ lọt qua chế độ mới.
+            conversation = await tx.lock_conversation(conversation_id)
+            if conversation is None:
+                raise ConversationNotFound("không tìm thấy hội thoại")
+            if int(conversation["version"]) != expected_version:
+                raise ConversationConflict(
+                    "hội thoại đã thay đổi; tải lại trước khi đổi chế độ")
+            if conversation.get("state") in {"resolved", "closed"}:
+                raise ConversationConflict("hội thoại đã đóng")
+            if conversation.get("mode") == "human":
+                raise ConversationConflict(
+                    "hội thoại đang có người tiếp quản — bấm "
+                    "'Kết thúc tiếp quản' trước")
+            updated = await tx.apply_che_do(
+                conversation_id=conversation_id,
+                account_id=conversation["account_id"],
+                actor_id=actor_id,
+                che_do=che_do,
                 reason=reason,
             )
         return _state(updated)
@@ -301,6 +360,46 @@ class PostgresRoutingTransaction:
                 actor_id,
             )
         )
+
+    async def apply_che_do(
+        self,
+        *,
+        conversation_id: UUID,
+        account_id: UUID,
+        actor_id: UUID,
+        che_do: str,
+        reason: str,
+    ):
+        """
+        Ghi chế độ mới.
+
+        `status` đi theo `mode` chứ không giữ nguyên: một hội thoại từng
+        `escalated` mà bật lại auto nghĩa là người đã xem và quyết cho agent
+        tiếp tục. Giữ `escalated` thì nó nằm mãi trong hàng chờ người, và
+        không ai biết vì sao nó vẫn ở đó.
+        """
+        updated = await self._connection.fetchrow(
+            """
+            UPDATE conversations
+            SET mode = $2, status = $2, version = version + 1, updated_at = now()
+            WHERE id = $1
+            RETURNING *
+            """,
+            conversation_id, che_do,
+        )
+        await self._connection.execute(
+            "INSERT INTO inbox_events (account_id, topic, ref_id, payload) "
+            "VALUES ($1,'conversation.che_do',$2,$3)",
+            account_id, conversation_id, {"che_do": che_do, "reason": reason},
+        )
+        # Bật auto là cho AI gửi thẳng cho khách, KHÔNG ai duyệt. Nhật ký
+        # kiểm toán phải ghi ai đã quyết và vì sao.
+        await self._connection.execute(
+            "INSERT INTO events (kind, actor, ref_id, detail) "
+            "VALUES ('conversation.che_do',$1,$2,$3)",
+            str(actor_id), conversation_id, {"che_do": che_do, "reason": reason},
+        )
+        return updated
 
     async def apply_release(
         self,

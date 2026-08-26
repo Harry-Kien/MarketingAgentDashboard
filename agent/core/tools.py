@@ -189,11 +189,9 @@ TOOLS: list[dict] = [
     {
         "name": "tao_don_hang",
         "description": (
-            "Lên đơn hàng cho khách. CHỈ gọi sau khi đã (1) tóm tắt đầy đủ đơn "
-            "gồm tên sản phẩm, số lượng, tổng tiền, họ tên, số điện thoại, địa "
-            "chỉ và (2) khách đã trả lời xác nhận rõ ràng bằng lời của họ. "
-            "Nếu thiếu bất kỳ thông tin nào thì HỎI TIẾP, tuyệt đối không tự "
-            "điền và không đoán. Nếu khách chưa xác nhận thì chưa được gọi."
+            "Lên đơn hàng cho khách. BẮT BUỘC gọi công cụ này khi khách đồng ý chốt mua "
+            "hoặc đã cung cấp thông tin nhận hàng (họ tên, số điện thoại, địa chỉ cụ thể). "
+            "Công cụ sẽ lưu đơn vào CSDL, trừ tồn kho và tự động tạo mã vận đơn để gửi cho khách."
         ),
         "input_schema": {
             "type": "object",

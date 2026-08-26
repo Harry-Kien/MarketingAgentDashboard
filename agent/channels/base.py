@@ -10,12 +10,22 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid5
+
+
+LEGACY_ACCOUNT_NAMESPACE = UUID("d5a0f4ad-cb42-4a70-a035-c1249fc71f78")
+
+
+def legacy_account_id(channel: str) -> UUID:
+    """UUID ổn định, trùng với backfill SQL cho connector giai đoạn cũ."""
+    return uuid5(LEGACY_ACCOUNT_NAMESPACE, f"legacy:{channel}")
 
 
 @dataclass(slots=True)
 class InboundMessage:
     """Tin nhắn đã chuẩn hoá, không còn dấu vết của kênh gốc."""
 
+    account_id: UUID                 # tài khoản nguồn để reply đúng nick
     channel: str
     conversation_ref: str          # id hội thoại phía kênh
     customer_ref: str              # id khách phía kênh
@@ -23,7 +33,7 @@ class InboundMessage:
     text: str
     dedupe_key: str                # để chống xử lý trùng
     received_at: datetime
-    attachments: list[str] = field(default_factory=list)
+    attachments: list[dict] = field(default_factory=list)
     # Thông tin riêng của kênh mà lớp trên KHÔNG được phụ thuộc vào — chỉ
     # dùng để hiển thị. Ví dụ Chatwoot cho biết tin tới từ Facebook hay
     # Instagram; agent trả lời y hệt nhau, chỉ dashboard gắn huy hiệu khác.
@@ -34,12 +44,24 @@ class InboundMessage:
 class Delivery:
     ok: bool
     detail: str = ""
+    provider_message_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionCheck:
+    ok: bool
+    code: str
+    external_account_id: str | None = None
+    detail: dict = field(default_factory=dict)
 
 
 class ChannelAdapter(ABC):
     """Hợp đồng mà mọi kênh phải tuân thủ."""
 
     name: str = "base"
+
+    def __init__(self, *, account_id: UUID | None = None) -> None:
+        self.account_id = account_id or legacy_account_id(self.name)
 
     @abstractmethod
     def parse(self, payload: dict) -> InboundMessage | None:
@@ -83,6 +105,10 @@ class ChannelAdapter(ABC):
         """
         return []
 
+    async def verify_connection(self) -> ConnectionCheck:
+        """Probe không gửi tin; connector phải override để được kích hoạt."""
+        return ConnectionCheck(False, "provider.verification_not_supported")
+
     async def bao_dang_go(self, conversation_ref: str, bat: bool) -> None:
         """
         Bật/tắt dấu hiệu "đang gõ" phía kênh.
@@ -121,7 +147,13 @@ class ChannelAdapter(ABC):
         return True
 
 
-async def con_trong_cua_so(channel: str, conversation_ref: str, gio: float) -> bool:
+async def con_trong_cua_so(
+    channel: str,
+    conversation_ref: str,
+    gio: float,
+    *,
+    account_id: UUID | None = None,
+) -> bool:
     """
     Tin cuối CỦA KHÁCH còn nằm trong `gio` giờ trở lại đây không?
 
@@ -148,9 +180,11 @@ async def con_trong_cua_so(channel: str, conversation_ref: str, gio: float) -> b
             """
             SELECT max(m.created_at) AS lan_cuoi
             FROM messages m JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.channel = $1 AND c.external_id = $2 AND m.role = 'customer'
+            WHERE c.account_id = $1 AND c.external_id = $2
+              AND m.role = 'customer'
             """,
-            channel, conversation_ref,
+            account_id or legacy_account_id(channel),
+            conversation_ref,
         )
     except Exception:  # noqa: BLE001 — CSDL hỏng thì im lặng an toàn hơn đoán
         return False

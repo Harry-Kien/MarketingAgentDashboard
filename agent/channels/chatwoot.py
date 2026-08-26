@@ -33,6 +33,7 @@ import json
 import os
 from contextlib import suppress
 from datetime import datetime, timezone
+from uuid import UUID
 
 import httpx
 
@@ -123,7 +124,8 @@ def _doc_dinh_kem(payload: dict) -> list[dict]:
 class ChatwootAdapter(ChannelAdapter):
     name = "chatwoot"
 
-    def __init__(self) -> None:
+    def __init__(self, *, account_id: UUID | None = None) -> None:
+        super().__init__(account_id=account_id)
         self._client = httpx.AsyncClient(
             base_url=settings.chatwoot_base_url.rstrip("/"),
             headers={"api_access_token": settings.chatwoot_api_token},
@@ -175,6 +177,7 @@ class ChatwootAdapter(ChannelAdapter):
         goc = str(conv.get("channel") or "").replace("Channel::", "") or "Chatwoot"
 
         return InboundMessage(
+            account_id=self.account_id,
             channel=self.name,
             conversation_ref=conv_id,
             customer_ref=str(sender.get("id") or conv_id),

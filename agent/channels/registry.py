@@ -15,13 +15,19 @@ Hai kênh đang chạy theo hai cơ chế ngược nhau:
 """
 from __future__ import annotations
 
+from agent.omnichannel.account_repository import PostgresAccountRepository
+from agent.omnichannel.credential_loader import VaultCredentialLoader
+from agent.security.credential_vault import CredentialVault, parse_master_keys
+
 from .base import ChannelAdapter
 from .chatwoot import ChatwootAdapter
+from .factory import AccountAdapterFactory
 from .messenger import MessengerAdapter
 from .zalo_oa import ZaloOAAdapter
 from .zalocrm import ZaloCRMAdapter
 
 _ADAPTERS: dict[str, ChannelAdapter] = {}
+_ACCOUNT_ADAPTERS: dict[str, ChannelAdapter] = {}
 
 
 def _dung() -> dict[str, ChannelAdapter]:
@@ -51,6 +57,31 @@ def get(name: str) -> ChannelAdapter:
     return _dung().get(name, _dung()["zalocrm"])
 
 
+async def get_for_account(account_id) -> ChannelAdapter:
+    """Resolve nghiêm ngặt theo account; ID sai không rơi về nick mặc định."""
+    key = str(account_id)
+    if key not in _ACCOUNT_ADAPTERS:
+        repository = PostgresAccountRepository()
+        credential_loader = None
+        try:
+            from agent.config import settings
+
+            credential_loader = VaultCredentialLoader(
+                repository,
+                CredentialVault(
+                    parse_master_keys(settings.credential_master_keys),
+                    active_version=settings.credential_active_key_version,
+                ),
+            )
+        except ValueError:
+            # Legacy account không cần vault; native account sẽ fail closed
+            # trong factory thay vì rơi về token dùng chung.
+            credential_loader = None
+        factory = AccountAdapterFactory(repository, credential_loader)
+        _ACCOUNT_ADAPTERS[key] = await factory.create(account_id)
+    return _ACCOUNT_ADAPTERS[key]
+
+
 def tat_ca() -> dict[str, ChannelAdapter]:
     return dict(_dung())
 
@@ -78,6 +109,7 @@ async def keo_tin_moi() -> list:
 
 
 async def dong_tat_ca() -> None:
-    for ad in _dung().values():
+    for ad in [*_dung().values(), *_ACCOUNT_ADAPTERS.values()]:
         await ad.aclose()
     _ADAPTERS.clear()
+    _ACCOUNT_ADAPTERS.clear()

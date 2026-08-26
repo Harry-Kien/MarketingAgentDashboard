@@ -43,13 +43,16 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
 
 import httpx
 
 from agent import db
-from agent.channels.base import (ChannelAdapter, Delivery, InboundMessage,
-                                 con_trong_cua_so)
+from agent.channels.base import (ChannelAdapter, ConnectionCheck, Delivery,
+                                 InboundMessage, con_trong_cua_so)
 from agent.config import settings
 
 # Sự kiện webhook mang tin của KHÁCH. Zalo còn đẩy nhiều loại khác (khách
@@ -106,9 +109,43 @@ def _doc_dinh_kem(payload: dict) -> list[dict]:
 class ZaloOAAdapter(ChannelAdapter):
     name = "zalo_oa"
 
-    def __init__(self) -> None:
-        self._client = httpx.AsyncClient(
-            base_url=settings.zalo_oa_api_base.rstrip("/"), timeout=20.0
+    def __init__(
+        self,
+        *,
+        account_id: UUID | None = None,
+        credentials: Mapping[str, Any] | None = None,
+        on_credentials_rotated: (
+            Callable[[Mapping[str, Any]], Awaitable[None]] | None
+        ) = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        super().__init__(account_id=account_id)
+        self._credentials_supplied = credentials is not None
+        self._credentials = dict(credentials or {})
+        self._app_id = str(
+            self._credentials.get("app_id") or settings.zalo_oa_app_id
+        )
+        self._secret_key = str(
+            self._credentials.get("secret_key") or settings.zalo_oa_secret_key
+        )
+        self._refresh_token = str(
+            self._credentials.get("refresh_token")
+            or settings.zalo_oa_refresh_token
+        )
+        self._oauth_url = str(
+            self._credentials.get("oauth_url") or settings.zalo_oa_oauth_url
+        )
+        self._window_hours = float(
+            self._credentials.get("window_hours")
+            or settings.zalo_oa_cua_so_gio
+            or 0
+        )
+        self._on_credentials_rotated = on_credentials_rotated
+        api_base = str(
+            self._credentials.get("api_base") or settings.zalo_oa_api_base
+        )
+        self._client = client or httpx.AsyncClient(
+            base_url=api_base.rstrip("/"), timeout=20.0
         )
         # Token nằm trong bộ nhớ tiến trình; bản bền nằm trong CSDL. Giữ
         # cả hai vì mỗi lượt gửi mà hỏi CSDL một lần là công vô ích.
@@ -117,9 +154,9 @@ class ZaloOAAdapter(ChannelAdapter):
 
     def cau_hinh_du(self) -> bool:
         return bool(
-            settings.zalo_oa_app_id
-            and settings.zalo_oa_secret_key
-            and (settings.zalo_oa_refresh_token or self._token)
+            self._app_id
+            and self._secret_key
+            and (self._refresh_token or self._token)
         )
 
     # ---------------- token ----------------
@@ -139,18 +176,18 @@ class ZaloOAAdapter(ChannelAdapter):
         if self._token and time.time() < self._het_han - _DEM_TRUOC_GIAY:
             return self._token
 
-        refresh = await self._doc_refresh_da_luu() or settings.zalo_oa_refresh_token
+        refresh = await self._doc_refresh_da_luu() or self._refresh_token
         if not refresh:
             return ""
 
         r = await self._client.post(
-            settings.zalo_oa_oauth_url,
+            self._oauth_url,
             data={
-                "app_id": settings.zalo_oa_app_id,
+                "app_id": self._app_id,
                 "refresh_token": refresh,
                 "grant_type": "refresh_token",
             },
-            headers={"secret_key": settings.zalo_oa_secret_key},
+            headers={"secret_key": self._secret_key},
         )
         r.raise_for_status()
         d = r.json()
@@ -167,13 +204,21 @@ class ZaloOAAdapter(ChannelAdapter):
         return token
 
     async def _doc_refresh_da_luu(self) -> str:
+        if self._credentials_supplied:
+            return self._refresh_token
         r = await db.fetchrow(
             "SELECT refresh_token FROM zalo_oa_token WHERE app_id = $1",
-            settings.zalo_oa_app_id,
+            self._app_id,
         )
         return str(r["refresh_token"]) if r else ""
 
     async def _luu_refresh(self, token: str) -> None:
+        self._refresh_token = token
+        self._credentials["refresh_token"] = token
+        if self._credentials_supplied:
+            if self._on_credentials_rotated is not None:
+                await self._on_credentials_rotated(self._credentials)
+            return
         await db.execute(
             """
             INSERT INTO zalo_oa_token (app_id, refresh_token, updated_at)
@@ -181,7 +226,7 @@ class ZaloOAAdapter(ChannelAdapter):
             ON CONFLICT (app_id) DO UPDATE
                 SET refresh_token = EXCLUDED.refresh_token, updated_at = now()
             """,
-            settings.zalo_oa_app_id, token,
+            self._app_id, token,
         )
 
     # ---------------- vào ----------------
@@ -211,6 +256,7 @@ class ZaloOAAdapter(ChannelAdapter):
         # OA không có khái niệm "hội thoại" tách khỏi người gửi: mỗi khách là
         # một luồng. Dùng luôn id khách làm conversation_ref.
         return InboundMessage(
+            account_id=self.account_id,
             channel=self.name,
             conversation_ref=khach,
             customer_ref=khach,
@@ -318,8 +364,36 @@ class ZaloOAAdapter(ChannelAdapter):
         bừa là True thì tin bay vào hư không và không ai biết.
         """
         return await con_trong_cua_so(
-            self.name, conversation_ref, float(settings.zalo_oa_cua_so_gio or 0)
+            self.name,
+            conversation_ref,
+            self._window_hours,
+            account_id=self.account_id,
         )
+
+    async def verify_connection(self) -> ConnectionCheck:
+        if not self.cau_hinh_du():
+            return ConnectionCheck(False, "provider.unauthorized")
+        try:
+            token = await self._lay_token()
+            response = await self._client.get(
+                "/getoa",
+                headers={"access_token": token},
+            )
+        except (httpx.HTTPError, RuntimeError) as exc:
+            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+        if response.status_code in {401, 403}:
+            return ConnectionCheck(False, "provider.unauthorized")
+        try:
+            payload = response.json()
+        except ValueError:
+            return ConnectionCheck(False, "provider.invalid_response")
+        if response.is_error or payload.get("error") not in {0, None}:
+            return ConnectionCheck(False, "provider.rejected", detail={"provider_code": payload.get("error")})
+        data = payload.get("data") or {}
+        provider_id = str(data.get("oa_id") or data.get("id") or "").strip()
+        if not provider_id:
+            return ConnectionCheck(False, "provider.identity_missing")
+        return ConnectionCheck(True, "provider.ok", provider_id, {"name": str(data.get("name") or "")[:120]})
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -339,7 +413,13 @@ def _doc_ket_qua(r: httpx.Response) -> Delivery:
         return Delivery(False, f"phản hồi không phải JSON: {r.text[:200]}")
     ma = d.get("error")
     if ma in (0, None):
-        return Delivery(True)
+        data = d.get("data") or {}
+        provider_id = ""
+        if isinstance(data, dict):
+            provider_id = str(
+                data.get("message_id") or data.get("msg_id") or ""
+            )
+        return Delivery(True, provider_message_id=provider_id)
     return Delivery(False, f"error={ma} {str(d.get('message') or '')[:180]}")
 
 

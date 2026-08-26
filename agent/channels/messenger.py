@@ -57,11 +57,15 @@ import hashlib
 import hmac
 import os
 from datetime import datetime, timezone
+from collections.abc import Mapping
+from typing import Any
+from uuid import UUID
 
 import httpx
 
-from agent.channels.base import (ChannelAdapter, Delivery, InboundMessage,
-                                 con_trong_cua_so)
+from agent.channels.base import (ChannelAdapter, ConnectionCheck, Delivery,
+                                 InboundMessage, con_trong_cua_so)
+from agent.channels.ten_khach import ghep_ten
 from agent.config import settings
 
 
@@ -93,7 +97,7 @@ def _doc_dinh_kem(tin: dict) -> list[dict]:
     return ra
 
 
-def kiem_chu_ky(than: bytes, chu_ky: str) -> bool:
+def kiem_chu_ky(than: bytes, chu_ky: str, app_secret: str | None = None) -> bool:
     """
     Xác minh `X-Hub-Signature-256` của Meta.
 
@@ -105,7 +109,7 @@ def kiem_chu_ky(than: bytes, chu_ky: str) -> bool:
     là bất kỳ ai biết địa chỉ webhook đều bơm được tin giả vào hộp thư của
     cửa hàng — và tin giả đó sẽ được agent trả lời như tin thật.
     """
-    khoa = settings.messenger_app_secret
+    khoa = app_secret if app_secret is not None else settings.messenger_app_secret
     if not khoa or not chu_ky:
         return False
     mong_doi = "sha256=" + hmac.new(
@@ -114,7 +118,7 @@ def kiem_chu_ky(than: bytes, chu_ky: str) -> bool:
     return hmac.compare_digest(mong_doi, chu_ky)
 
 
-def tra_loi_xac_minh(params) -> str | None:
+def tra_loi_xac_minh(params, verify_token: str | None = None) -> str | None:
     """
     Bắt tay lần đầu: Meta gọi GET kèm `hub.challenge` và chờ dội lại nguyên văn.
 
@@ -123,7 +127,9 @@ def tra_loi_xac_minh(params) -> str | None:
     """
     if params.get("hub.mode") != "subscribe":
         return None
-    mong_doi = settings.messenger_verify_token
+    mong_doi = (
+        verify_token if verify_token is not None else settings.messenger_verify_token
+    )
     if not mong_doi or params.get("hub.verify_token") != mong_doi:
         return None
     return params.get("hub.challenge")
@@ -132,13 +138,49 @@ def tra_loi_xac_minh(params) -> str | None:
 class MessengerAdapter(ChannelAdapter):
     name = "messenger"
 
-    def __init__(self) -> None:
-        self._client = httpx.AsyncClient(
-            base_url=settings.messenger_api_base.rstrip("/"), timeout=20.0
+    def __init__(
+        self,
+        *,
+        account_id: UUID | None = None,
+        credentials: Mapping[str, Any] | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        super().__init__(account_id=account_id)
+        self._credentials_supplied = credentials is not None
+        creds = dict(credentials or {})
+        self._page_token = str(
+            creds.get("access_token")
+            or creds.get("page_token")
+            or settings.messenger_page_token
+        )
+        self._app_secret = str(
+            creds.get("app_secret") or settings.messenger_app_secret
+        )
+        self._verify_token = str(
+            creds.get("verify_token") or settings.messenger_verify_token
+        )
+        self._app_id = str(creds.get("app_id") or settings.messenger_app_id)
+        self._external_account_id = str(creds.get("external_account_id") or "")
+        self._window_hours = float(
+            creds.get("window_hours") or settings.messenger_cua_so_gio or 0
+        )
+        api_base = str(creds.get("api_base") or settings.messenger_api_base)
+        self._client = client or httpx.AsyncClient(
+            base_url=api_base.rstrip("/"), timeout=20.0
         )
 
     def cau_hinh_du(self) -> bool:
-        return bool(settings.messenger_page_token and settings.messenger_app_secret)
+        if not self._credentials_supplied:
+            return bool(
+                settings.messenger_page_token and settings.messenger_app_secret
+            )
+        return bool(self._page_token and self._app_secret)
+
+    def verify_signature(self, raw_body: bytes, signature: str) -> bool:
+        return kiem_chu_ky(raw_body, signature, self._app_secret)
+
+    def verify_challenge(self, params) -> str | None:
+        return tra_loi_xac_minh(params, self._verify_token)
 
     # ---------------- vào ----------------
 
@@ -216,7 +258,7 @@ class MessengerAdapter(ChannelAdapter):
                         "ve_tay_ta": bool(
                             loai == "pass_thread_control"
                             and chu_moi
-                            and chu_moi == str(settings.messenger_app_id or "")
+                            and chu_moi == self._app_id
                         ),
                     })
         return ra
@@ -247,6 +289,7 @@ class MessengerAdapter(ChannelAdapter):
             return None
 
         return InboundMessage(
+            account_id=self.account_id,
             channel=self.name,
             conversation_ref=khach,     # Messenger: mỗi khách một luồng
             customer_ref=khach,
@@ -264,12 +307,51 @@ class MessengerAdapter(ChannelAdapter):
         try:
             r = await self._client.post(
                 "/me/messages",
-                params={"access_token": settings.messenger_page_token},
+                params={"access_token": self._page_token},
                 json=body,
             )
         except httpx.HTTPError as exc:
             return Delivery(False, str(exc)[:200])
         return _doc_ket_qua(r)
+
+    async def lay_ten_khach(self, psid: str) -> str:
+        """
+        Tên thật của khách, lấy từ Graph API.
+
+        Webhook Meta CHỈ gửi mã người dùng, không gửi tên — mã cũ đã ghi chú
+        đúng điều này. Muốn hiện tên trên dashboard thì phải hỏi riêng.
+
+        XIN ĐÚNG BA TRƯỜNG TÊN, KHÔNG HƠN
+        ---------------------------------
+        `name` là tên Facebook đang hiển thị — thứ ta muốn. `first_name`,
+        `last_name` đi kèm làm dự phòng cho hồ sơ không trả `name`; xin
+        chung một lượt vì phát hiện thiếu rồi gọi lại là thêm một chặng
+        mạng nữa nằm trên đường trả lời khách.
+
+        Không xin ảnh đại diện, giới tính hay múi giờ: đó là thu thập dữ
+        liệu cá nhân không dùng tới — và App Review sẽ hỏi vì sao.
+
+        HỎNG THÌ TRẢ RỖNG, KHÔNG NÉM LỖI
+        --------------------------------
+        Tên chỉ là thứ hiển thị cho đẹp; tin nhắn của khách mới là việc
+        chính. Để lỗi lấy tên làm hỏng việc nhận tin là đánh đổi sai hoàn
+        toàn.
+        """
+        if not psid or not self._page_token:
+            return ""
+        try:
+            r = await self._client.get(
+                f"/{psid}",
+                params={
+                    "fields": "name,first_name,last_name",
+                    "access_token": self._page_token,
+                },
+            )
+            if getattr(r, "status_code", 200) >= 400:
+                return ""
+            return ghep_ten(r.json() or {})
+        except Exception:  # noqa: BLE001 — xem docstring
+            return ""
 
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
         if not self.cau_hinh_du():
@@ -301,7 +383,7 @@ class MessengerAdapter(ChannelAdapter):
             with open(path, "rb") as fh:
                 up = await self._client.post(
                     "/me/message_attachments",
-                    params={"access_token": settings.messenger_page_token},
+                    params={"access_token": self._page_token},
                     data={"message": '{"attachment":{"type":"image",'
                                      '"payload":{"is_reusable":true}}}'},
                     files={"filedata": (os.path.basename(path), fh)},
@@ -399,7 +481,7 @@ class MessengerAdapter(ChannelAdapter):
         try:
             r = await self._client.post(
                 f"/me/{hanh_dong}",
-                params={"access_token": settings.messenger_page_token},
+                params={"access_token": self._page_token},
                 json={"recipient": {"id": khach}, **them},
             )
         except httpx.HTTPError as exc:
@@ -415,11 +497,59 @@ class MessengerAdapter(ChannelAdapter):
         sửa ở `agent/main.py`.
         """
         return await con_trong_cua_so(
-            self.name, conversation_ref, float(settings.messenger_cua_so_gio or 0)
+            self.name,
+            conversation_ref,
+            self._window_hours,
+            account_id=self.account_id,
         )
+
+    async def verify_connection(self) -> ConnectionCheck:
+        if not self._page_token:
+            return ConnectionCheck(False, "provider.unauthorized")
+        target = self._external_account_id
+        if not target or target.startswith("pending:"):
+            target = "me"
+        try:
+            response = await self._client.get(
+                f"/{target}",
+                params={"fields": "id,name"},
+                headers={"Authorization": f"Bearer {self._page_token}"},
+            )
+        except httpx.HTTPError as exc:
+            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+        if response.status_code in {401, 403}:
+            return ConnectionCheck(False, "provider.unauthorized")
+        if response.is_error:
+            return ConnectionCheck(False, "provider.rejected", detail={"http_status": response.status_code})
+        try:
+            data = response.json()
+        except ValueError:
+            return ConnectionCheck(False, "provider.invalid_response")
+        provider_id = str(data.get("id") or "").strip()
+        if not provider_id:
+            return ConnectionCheck(False, "provider.identity_missing")
+        return ConnectionCheck(True, "provider.ok", provider_id, {"name": str(data.get("name") or "")[:120]})
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+class FacebookAdapter(MessengerAdapter):
+    """Facebook Page native; dùng cùng Graph transport nhưng tên kênh rõ ràng."""
+
+    name = "facebook"
+
+    def parse_nhieu(self, payload: dict) -> list[InboundMessage]:
+        if self._external_account_id:
+            payload = {
+                **payload,
+                "entry": [
+                    entry
+                    for entry in (payload.get("entry") or [])
+                    if str(entry.get("id") or "") == self._external_account_id
+                ],
+            }
+        return super().parse_nhieu(payload)
 
 
 def _doc_ket_qua(r: httpx.Response) -> Delivery:
@@ -439,7 +569,7 @@ def _doc_ket_qua(r: httpx.Response) -> Delivery:
         return Delivery(False, f"error={ma} {str(loi.get('message') or '')[:180]}")
     if r.status_code >= 400:
         return Delivery(False, f"{r.status_code} {r.text[:200]}")
-    return Delivery(True)
+    return Delivery(True, provider_message_id=str(d.get("message_id") or ""))
 
 
 def _thoi_diem(value) -> datetime:

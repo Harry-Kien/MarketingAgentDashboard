@@ -456,6 +456,21 @@ svg { flex: none; }
 .row:hover { background: hsl(var(--muted) / .7); }
 .row.is-on { background: hsl(var(--accent)); }
 
+/* Dòng có AVATAR thay cho thanh trạng thái.
+ *
+ * `.row` mặc định để cột đầu rộng 3px — vừa đúng cho `.row__flag`, thanh màu
+ * mảnh chạy dọc mép trái. Danh sách Khách hàng lại đặt `.avatar` rộng 32px
+ * vào chính ô đó; avatar có `flex: 0 0 auto` nên không co, nó tràn ra và nằm
+ * ĐÈ LÊN TÊN KHÁCH.
+ *
+ * Không nới cột đầu của `.row` vì thanh 3px ở màn hình Hội thoại và Đơn hàng
+ * sẽ co về 0 và biến mất — sửa một chỗ, hỏng hai chỗ.
+ */
+.row--avatar {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-left: 14px;
+}
+
 .row__flag { align-self: stretch; border-radius: 0 3px 3px 0; background: hsl(var(--border)); }
 .row__flag--auto { background: hsl(var(--success)); }
 .row__flag--assist { background: hsl(var(--warning)); }
@@ -1110,7 +1125,7 @@ svg { flex: none; }
   background: hsl(var(--background)); color: hsl(var(--foreground));
 }
 
-/* Nền tảng đến qua Chatwoot — mỗi nơi một màu để người trực nhận ra ngay
+/* Nền tảng đến qua connector tương thích — mỗi nơi một màu để người trực nhận ra ngay
    mà không phải đọc chữ. Màu lấy đúng màu thương hiệu của từng nền tảng. */
 .src--whatsapp { color:#25D366; background:#25D36614; border-color:#25D36633; }
 .src--whatsapp::before { background:#25D366; }
@@ -1164,7 +1179,7 @@ svg { flex: none; }
   font-family: ui-monospace, "Cascadia Code", monospace;
 }
 
-/* ---------------- Kết nối: ZaloCRM + Chatwoot nhúng thẳng ----------------
+/* ---------------- Kết nối tương thích trong giai đoạn migration ----------------
    Hai app này là ứng dụng đầy đủ, không phải một khung nhỏ trong trang. Cho
    chúng gần hết chiều cao màn hình, nếu không thì người dùng phải cuộn hai
    lớp — cuộn trang rồi lại cuộn trong iframe — và đó là trải nghiệm tệ nhất
@@ -1218,3 +1233,212 @@ svg { flex: none; }
   color: hsl(var(--muted-foreground));
   text-decoration: none;
 }
+
+@media (max-width: 560px) {
+  html, body { overflow-x: hidden; }
+  .masthead {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "id" "controls" "tape";
+    gap: 9px;
+    padding: 11px 12px 0;
+  }
+  .masthead__id { min-width: 0; }.masthead__title { white-space: nowrap; }.masthead__sub { margin-left: auto; font-size: 9.5px; }
+  .masthead__controls { min-width: 0; justify-content: flex-start; gap: 7px; }
+  .modeswitch { flex: 1; }.modeswitch__opt { flex: 1; padding-inline: 8px; }
+  .killswitch { padding-inline: 10px; }.killswitch #killswitch-label { max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tape__legend { gap: 9px; overflow-x: auto; padding-bottom: 7px; }.tape__legend > span { white-space: nowrap; }.tape__now { display: none; }
+  .rail { width: 100%; max-width: 100vw; scroll-snap-type: x proximity; scrollbar-width: thin; }
+  .rail__item { flex: 0 0 auto; scroll-snap-align: start; padding: 8px 10px; gap: 7px; }
+  .stage { width: 100%; max-width: 100vw; padding: 14px 12px 36px; overflow-x: hidden; }
+  .rail, .tape__legend { scrollbar-width: none; }.rail::-webkit-scrollbar, .tape__legend::-webkit-scrollbar { display: none; }
+}
+
+/* ---------- Native omnichannel surfaces ---------- */
+.is-hidden { display: none !important; }
+.eyebrow { margin: 0 0 4px; font: 600 10px/1.2 "JetBrains Mono", monospace; letter-spacing: .14em; color: hsl(var(--primary)); }
+.unread { display: grid; place-items: center; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 999px; background: hsl(var(--primary)); color: white; font-size: 11px; font-weight: 700; }
+.opsbar { display: flex; gap: 7px; flex-wrap: wrap; padding: 8px 13px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35); }
+.opsbar span { font-size: 10.5px; color: hsl(var(--muted-foreground)); padding: 4px 7px; border: 1px solid hsl(var(--border)); border-radius: 999px; }
+.opsbar b { color: hsl(var(--foreground)); }
+
+.customer360 { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: 12px; height: calc(100vh - 116px); }
+.customer360 > .panel { min-height: 0; overflow: auto; margin: 0; }
+.customer360__list { display: flex; flex-direction: column; }
+.customer360__list .rows { overflow: auto; }
+.searchline { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid hsl(var(--border)); }
+.searchline input { flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.avatar { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: linear-gradient(145deg, hsl(var(--primary) / .16), hsl(var(--primary) / .05)); border: 1px solid hsl(var(--primary) / .25); color: hsl(var(--primary)); font-weight: 700; }
+.avatar--lg { width: 54px; height: 54px; border-radius: 16px; font-size: 19px; }
+.profile-head { display: flex; align-items: center; gap: 13px; padding-bottom: 16px; border-bottom: 1px solid hsl(var(--border)); }
+.profile-head h2, .connections-head h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+.profile-head p:not(.eyebrow), .connections-head p { margin: 4px 0 0; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.privacy-pill { margin-left: auto; align-self: flex-start; padding: 5px 8px; border-radius: 999px; border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 10px; }
+.profile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.profile-grid > div { padding: 10px; background: hsl(var(--muted) / .35); border-radius: 8px; }
+.profile-grid span, .identity-card small { display: block; font-size: 10px; color: hsl(var(--muted-foreground)); }
+.profile-grid b { font-size: 12px; }
+.identity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 7px; }
+.identity-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.identity-card > span:last-child { font-size: 10px; color: hsl(var(--muted-foreground)); }
+.consent-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.consent { padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 999px; font-size: 10.5px; }
+.consent--granted { color: hsl(var(--success)); border-color: hsl(var(--success) / .3); }
+.consent--withdrawn, .consent--denied { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .3); }
+.profile-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.profile-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.profile-tag { padding: 4px 7px; border-radius: 999px; background: hsl(var(--primary) / .1); color: hsl(var(--primary)); font-size: 10px; font-weight: 600; }
+.inline-action, .consent-form, .note-form { display: flex; gap: 6px; align-items: center; }
+.inline-action input, .consent-form input, .consent-form select, .note-form textarea, .note-form select { min-width: 0; padding: 7px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 11px; }
+.inline-action input { width: 190px; }.consent-form input { flex: 1; }.consent-form select { width: 105px; }
+.contact-notes { display: grid; gap: 6px; margin-bottom: 7px; }.contact-note { padding: 8px 10px; border-left: 2px solid hsl(var(--primary)); background: hsl(var(--muted) / .35); border-radius: 0 7px 7px 0; }
+.contact-note p { margin: 0 0 3px; font-size: 11.5px; white-space: pre-wrap; }.contact-note small { color: hsl(var(--muted-foreground)); font-size: 9.5px; }
+.note-form textarea { flex: 1; min-height: 54px; resize: vertical; }.note-form select { width: 90px; }
+.timeline { display: grid; gap: 5px; }
+.timeline-item { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.timeline-item:hover { background: hsl(var(--muted) / .45); }
+.timeline-item time { font-size: 10px; color: hsl(var(--muted-foreground)); }
+
+.connections-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin: 2px 0 14px; padding: 4px; }
+.connections-head > div { max-width: 680px; }
+.connection-create { margin-bottom: 12px; }
+.connection-form { grid-template-columns: repeat(3, minmax(170px, 1fr)); }
+.connection-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.channel-card { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); overflow: hidden; }
+.channel-card__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; padding: 12px; border-bottom: 1px solid hsl(var(--border)); }
+.channel-card__head h3, .channel-card__head p { margin: 0; }
+.channel-card__head h3 { font-size: 13px; }.channel-card__head p { margin-top: 2px; font-size: 10px; color: hsl(var(--muted-foreground)); }
+.channel-card__count { font: 600 15px/1 "JetBrains Mono", monospace; color: hsl(var(--muted-foreground)); }
+.channel-card__body { padding: 5px 10px; }
+.account-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px 2px; border-bottom: 1px solid hsl(var(--border)); }
+.account-line:last-child { border-bottom: 0; }.account-line b, .account-line small { display: block; }.account-line b { font-size: 12px; }.account-line small { font-size: 10px; color: hsl(var(--muted-foreground)); }
+.health-dot { width: 8px; height: 8px; border-radius: 99px; background: #94a3b8; box-shadow: 0 0 0 3px #94a3b822; }
+.health-dot--active { background: #20b486; box-shadow: 0 0 0 3px #20b48622; }.health-dot--degraded { background: #f5a524; }.health-dot--reauth_required { background: #f04438; }
+.status-pill { padding: 4px 6px; border: 1px solid hsl(var(--border)); border-radius: 999px; font-size: 9px; color: hsl(var(--muted-foreground)); }
+.status-pill--active { color: #159570; border-color: #20b48655; }.status-pill--degraded, .status-pill--pending { color: #b56a00; border-color: #f5a52455; }
+.callback { display: block; margin-top: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: hsl(var(--muted-foreground)); font-size: 9px; }
+.account-actions { grid-column: 2 / -1; display: flex; justify-content: flex-end; gap: 5px; }
+.connection-guide { margin-top: 10px; }.guide-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px; }
+.guide-steps span { display: flex; align-items: center; gap: 7px; font-size: 11px; color: hsl(var(--muted-foreground)); }.guide-steps b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.src--zalo_personal, .src--webchat { color:#0068FF; background:#0068FF14; border-color:#0068FF33; }.src--zalo_personal::before, .src--webchat::before { background:#0068FF; }
+
+@media (max-width: 900px) {
+  .customer360 { grid-template-columns: 1fr; height: auto; }.customer360__list { max-height: 42vh; }.customer360__detail { min-height: 45vh !important; }
+  .connection-grid { grid-template-columns: 1fr; }.connection-form { grid-template-columns: repeat(2, 1fr); }.profile-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .connections-head { flex-direction: column; }.connection-form { grid-template-columns: 1fr; }.guide-steps { grid-template-columns: 1fr 1fr; }
+  .profile-head { align-items: flex-start; flex-wrap: wrap; }.privacy-pill { margin-left: 0; }.profile-grid { grid-template-columns: 1fr 1fr; }
+  .inline-action, .consent-form, .note-form { align-items: stretch; flex-direction: column; }.inline-action input, .consent-form input, .consent-form select, .note-form select { width: 100%; }
+}
+
+/* ---------- khung quét QR Zalo cá nhân ---------- */
+/* Nền mờ chứ không phải nền đặc như `.cong`: người dùng cần thấy mình vẫn
+   đang ở màn Kết nối, khung QR chỉ là một bước tạm. */
+
+.qrbox {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center;
+  background: hsl(var(--background) / .82);
+  padding: 24px;
+}
+.qrbox__panel {
+  width: 100%; max-width: 340px; text-align: center;
+  display: flex; flex-direction: column; gap: 14px; align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card, var(--background)));
+  padding: 26px 24px 22px;
+}
+.qrbox__panel h3 {
+  margin: 0; font-size: 17px; font-weight: 600;
+  color: hsl(var(--foreground));
+}
+/* Nền trắng cố định cho ảnh QR: ở chế độ tối, mã QR trên nền tối thì máy
+   quét không đọc được — tương phản là yêu cầu kỹ thuật, không phải thẩm mỹ. */
+.qrbox__panel img {
+  width: 260px; height: 260px; object-fit: contain;
+  background: #fff; padding: 10px; border-radius: 8px;
+}
+.qrbox__hint {
+  margin: 0; font-size: 13px; color: hsl(var(--muted-foreground));
+}
+
+/* ---------- chỉ dẫn trong form kết nối ---------- */
+/* Người vận hành không thuộc lòng chỗ lấy Page token trong Meta Dashboard.
+   Không có dòng chỉ dẫn thì họ rời dashboard đi tìm, quay lại dán nhầm ô —
+   hoặc bỏ dở giữa chừng. */
+
+.field__goiy {
+  font-size: 12px; line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.form__ketiep {
+  grid-column: 1 / -1;
+  margin: 0; font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 10px;
+}
+.form__ketiep:empty { display: none; }
+
+/* ---------- nút kết nối bằng đăng nhập ---------- */
+/* Đặt NGAY trên form dán token, không giấu trong menu: người dùng gặp form
+   trước, và nếu không thấy đường dễ hơn ngay tại đó thì họ sẽ dán tay. */
+
+.oauth-row {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding: 14px 0 4px;
+  border-bottom: 1px dashed hsl(var(--border));
+  margin-bottom: 14px;
+}
+.oauth-row__note {
+  font-size: 13px; color: hsl(var(--muted-foreground));
+}
+
+/* ---------- ô hiện verify token ---------- */
+/* Trống cho tới khi người dùng bấm: màn hình Kết nối hay bị chụp lại để hỏi
+   nhau, và một chuỗi bí mật nằm sẵn ở đó sẽ đi theo mọi ảnh chụp. */
+
+.token-slot:empty { display: none; }
+.token-slot {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px;
+}
+.token-hien {
+  font-family: ui-monospace, monospace; font-size: 12px;
+  padding: 4px 8px; border-radius: 4px;
+  background: hsl(var(--muted)); color: hsl(var(--foreground));
+  user-select: all;
+  word-break: break-all;
+}
+
+/* Khách xin huỷ — phải đập vào mắt người đóng gói, không phải một dòng chữ nhỏ.
+   Đây là dòng duy nhất trên màn hình Đơn hàng đòi DỪNG TAY. */
+.row--xinhuy { border-left: 3px solid var(--halt, #c0392b); background: rgba(192, 57, 43, .05); }
+.order__xinhuy { display: block; margin: 4px 0; padding: 6px 8px; border-radius: 4px;
+                 font-size: .82rem; line-height: 1.45;
+                 color: var(--halt, #c0392b); background: rgba(192, 57, 43, .08); }
+
+/* Việc CHUNG của cả một kênh — một URL callback, một verify token, một nút
+   đăng ký hàng loạt. Tách khỏi danh sách tài khoản bằng nền và viền để mắt
+   không nhầm nó là dòng tài khoản thứ nhất. */
+.channel-card__chung { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+                       padding: 8px 12px; border-bottom: 1px solid var(--line, #e5e7eb);
+                       background: var(--surface-2, rgba(0,0,0,.03)); }
+.channel-card__chung .callback { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere;
+                                 font-size: .78rem; }
+.channel-card__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Thu gọn danh sách tài khoản khi một kênh có quá nhiều.
+   Cắt bằng chiều cao chứ không ẩn từng dòng: dòng thứ sáu ló ra một nửa là
+   tín hiệu thị giác nói "còn nữa ở dưới" — rõ hơn mọi dòng chữ. */
+.channel-card__body.is-thu-gon { max-height: 268px; overflow: hidden;
+                                 -webkit-mask-image: linear-gradient(#000 72%, transparent);
+                                 mask-image: linear-gradient(#000 72%, transparent); }
+.channel-card__them { width: 100%; padding: 9px; border: 0; cursor: pointer;
+                      background: var(--surface-2, rgba(0,0,0,.03));
+                      border-top: 1px solid var(--line, #e5e7eb);
+                      font-size: 13px; color: inherit; }
+.channel-card__them:hover { background: var(--surface-3, rgba(0,0,0,.06)); }

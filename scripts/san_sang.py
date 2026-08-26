@@ -131,7 +131,7 @@ def kiem_cong() -> dict:
     một dấu xanh vì lý do đó tệ hơn không kiểm: nó khiến người ta bật dịch
     vụ lên rồi tưởng đã kiểm rồi.
     """
-    ho = [(3080, "ZaloCRM"), (5678, "n8n"), (9000, "MinIO"), (8000, "Dashboard")]
+    ho = [(3210, "Zalo sidecar"), (5678, "n8n"), (5433, "PostgreSQL"), (8000, "Dashboard")]
     chay = [(c, t) for c, t in ho if _dang_chay(c)]
     if not chay:
         return _muc("Cổng ra mạng LAN", CANH_BAO,
@@ -217,7 +217,7 @@ def kiem_du_lieu_that() -> dict:
                              "(có cờ du_lieu_mau: true)")
             elif "aurora" in str(d.get("thuong_hieu", "")).lower():
                 # Giữ lại cho các file cũ chưa có cờ.
-                thieu.append("catalog.json vẫn là thương hiệu hư cấu Aurora Skin")
+                thieu.append("catalog.json vẫn là thương hiệu mẫu cũ")
         except ValueError:
             thieu.append("catalog.json không đọc được")
 
@@ -248,66 +248,234 @@ def kiem_bao_dong() -> dict:
                 "Agent chết lúc 2 giờ sáng thì tới sáng mới biết.")
 
 
-def kiem_kenh() -> dict:
-    """Có kênh nào thật sự nhận được tin của khách không."""
-    from agent.channels import registry
-    bat = registry.dang_bat()
-    if not bat:
-        return _muc("Kênh nhận tin", CHAN, "chưa cấu hình kênh nào",
-                    "Điền ZALOCRM_API_KEY hoặc CHATWOOT_* trong .env")
-    return _muc("Kênh nhận tin", DU, "đang bật: " + ", ".join(bat))
+async def kiem_kho_bi_mat_tai_khoan() -> dict:
+    """Mọi key version đang dùng phải còn khả năng giải mã sau khi restart."""
+    from agent import db
+    from agent.security.credential_vault import (
+        CredentialVault,
+        InvalidMasterKeyConfiguration,
+        parse_master_keys,
+    )
+
+    try:
+        await db.init_db()
+        rows = await db.fetch(
+            "SELECT DISTINCT key_version FROM credential_secrets ORDER BY key_version"
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _muc(
+            "Kho bí mật tài khoản",
+            CANH_BAO,
+            f"không hỏi được CSDL ({type(exc).__name__})",
+            "Khởi động PostgreSQL và chạy lại readiness",
+        )
+
+    required = {int(row["key_version"]) for row in rows}
+    try:
+        keys = parse_master_keys(settings.credential_master_keys)
+        CredentialVault(
+            keys,
+            active_version=settings.credential_active_key_version,
+        )
+    except InvalidMasterKeyConfiguration:
+        if required:
+            return _muc(
+                "Kho bí mật tài khoản",
+                CHAN,
+                "thiếu master key version đang dùng: "
+                + ", ".join(str(version) for version in sorted(required)),
+                "Khôi phục đúng key version từ kho bí mật; không tạo key mới đè lên",
+            )
+        return _muc(
+            "Kho bí mật tài khoản",
+            CANH_BAO,
+            "chưa cấu hình master key; hiện chưa có credential đã lưu",
+            "Sinh key AES-256 theo hướng dẫn trong .env.example trước khi nối kênh",
+        )
+
+    missing = required - set(keys)
+    if missing:
+        return _muc(
+            "Kho bí mật tài khoản",
+            CHAN,
+            "thiếu master key version đang dùng: "
+            + ", ".join(str(version) for version in sorted(missing)),
+            "Khôi phục đúng key version từ backup kho bí mật",
+        )
+    return _muc(
+        "Kho bí mật tài khoản",
+        DU,
+        f"đọc được {len(required)} key version đang dùng",
+    )
 
 
-def kiem_messenger() -> dict:
+async def kiem_outbox() -> dict:
+    """Outbox có thoát hàng hay đang chất tin mà worker đã chết."""
+    from datetime import datetime, timedelta, timezone
+    from agent import db
+
+    try:
+        await db.init_db()
+        row = await db.fetchrow(
+            """
+            SELECT
+                count(*) FILTER (
+                    WHERE status IN ('pending','retry','processing')
+                ) AS pending,
+                count(*) FILTER (WHERE status = 'dead') AS dead,
+                (SELECT last_seen_at FROM worker_heartbeats
+                 WHERE worker_name = 'outbox') AS last_seen_at
+            FROM outbox_jobs
+            """
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _muc(
+            "Outbox gửi tin",
+            CANH_BAO,
+            f"không hỏi được CSDL ({type(exc).__name__})",
+            "Khởi động PostgreSQL và ứng dụng rồi chạy lại readiness",
+        )
+
+    pending = int((row or {}).get("pending") or 0)
+    dead = int((row or {}).get("dead") or 0)
+    heartbeat = (row or {}).get("last_seen_at")
+    stale = heartbeat is None
+    if heartbeat is not None:
+        if heartbeat.tzinfo is None:
+            heartbeat = heartbeat.replace(tzinfo=timezone.utc)
+        stale = datetime.now(timezone.utc) - heartbeat > timedelta(minutes=2)
+
+    if pending and stale:
+        return _muc(
+            "Outbox gửi tin",
+            CHAN,
+            f"{pending} job đang chờ nhưng worker không có heartbeat mới",
+            "Khởi động lại FastAPI worker và kiểm tra /api/outbox/jobs",
+        )
+    if dead:
+        return _muc(
+            "Outbox gửi tin",
+            CANH_BAO,
+            f"có {dead} dead-letter cần xử lý",
+            "Quản trị xem lỗi rồi retry/cancel qua API outbox",
+        )
+    if stale:
+        return _muc(
+            "Outbox gửi tin",
+            CANH_BAO,
+            "worker chưa có heartbeat; hiện không có job tồn",
+            "Khởi động ứng dụng và chạy lại readiness",
+        )
+    return _muc("Outbox gửi tin", DU, "worker sống, không có dead-letter")
+
+
+async def kiem_kenh() -> dict:
+    """Chỉ coi account native đã có provider health xanh là kênh thật."""
+    from agent import db
+    try:
+        await db.init_db()
+        rows = await db.fetch(
+            """
+            SELECT account.channel, count(*) AS total
+            FROM channel_accounts account
+            WHERE NOT account.is_legacy
+              AND account.status = 'active'
+              AND EXISTS (
+                  SELECT 1 FROM account_health_events health
+                  WHERE health.account_id = account.id
+                    AND health.status = 'active'
+              )
+            GROUP BY account.channel ORDER BY account.channel
+            """
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _muc(
+            "Kênh nhận tin", CHAN,
+            f"không kiểm được account native ({type(exc).__name__})",
+            "Khởi động PostgreSQL, tạo account trong màn Kết nối và bấm Xác minh provider",
+        )
+    if not rows:
+        return _muc(
+            "Kênh nhận tin", CHAN, "chưa có account native được provider xác minh",
+            "Mở Kết nối, đăng nhập/cấp quyền rồi chạy Xác minh provider cho ít nhất một account",
+        )
+    labels = {
+        "zalo_personal": "Zalo cá nhân", "zalo_oa": "Zalo OA",
+        "facebook": "Facebook", "instagram": "Instagram",
+        "whatsapp": "WhatsApp", "webchat": "Web chat",
+    }
+    enabled = [f"{labels.get(row['channel'], row['channel'])} ({row['total']})" for row in rows]
+    return _muc("Kênh nhận tin", DU, "provider đã xác minh: " + ", ".join(enabled))
+
+
+def kiem_callback_cong_khai() -> dict:
+    url = settings.webhook_public_url or ""
+    if not url.startswith("https://"):
+        return _muc(
+            "Callback provider", CANH_BAO,
+            "chưa có HTTPS công khai cho webhook",
+            "Tạo hostname/tunnel HTTPS trỏ về cổng 8000 rồi cấu hình callback riêng của từng account",
+        )
+    return _muc("Callback provider", DU, "đã có HTTPS công khai")
+
+
+async def kiem_ton_kho() -> dict:
     """
-    Nối Messenger cần bốn khoá và một địa chỉ công khai. Thiếu bất kỳ thứ
-    nào là kênh chết CÂM: Meta không gọi tới được, hoặc gọi tới thì bị chặn
-    ở phép kiểm chữ ký — và không ai biết cho tới lúc khách nhắn mà không
-    được trả lời.
+    Mã trong danh mục có dòng tồn kho không — nếu không thì KHÔNG LÊN ĐƠN ĐƯỢC.
 
-    Mục này chỉ CẢNH BÁO chứ không CHẶN: chưa nối Messenger là một lựa chọn
-    hoàn toàn hợp lệ, không phải lỗi.
+    `giu_hang` từ chối mã không có dòng trong `ton_kho`, nên thiếu một mã là
+    hỏng đúng những đơn chứa mã đó, thiếu hết là hỏng mọi đơn. Đã xảy ra
+    thật: hàm nạp tồn kho tồn tại nhưng không ai gọi, bảng trống suốt, và
+    mọi đơn agent lên đều trả "Mã X không có trong kho".
+
+    Không có gì nổ, không có dòng nhật ký nào, và mục này lúc đó chưa tồn
+    tại nên `san_sang` vẫn báo đủ. Đó là lý do phải có nó.
     """
-    from agent.config import settings
+    from agent import db
+    from agent.core import tools
 
-    thieu = [
-        ten for ten, gia_tri in (
-            ("MESSENGER_PAGE_TOKEN", settings.messenger_page_token),
-            ("MESSENGER_APP_SECRET", settings.messenger_app_secret),
-            ("MESSENGER_VERIFY_TOKEN", settings.messenger_verify_token),
-            ("MESSENGER_APP_ID", settings.messenger_app_id),
-        ) if not gia_tri
-    ]
-    if len(thieu) == 4:
-        return _muc("Messenger", CANH_BAO, "chưa nối — bốn khoá đều trống",
-                    "Chưa cần Messenger thì bỏ qua mục này. "
-                    "Cần thì xem khối MESSENGER_* trong .env.example")
+    ma_danh_muc = {
+        str(sp.get("ma")) for sp in tools._catalog().get("san_pham", [])
+        if sp.get("ma")
+    }
+    if not ma_danh_muc:
+        return _muc("Tồn kho", CANH_BAO, "danh mục chưa có sản phẩm nào",
+                    "Nạp danh mục trước: python -m scripts.ingest")
 
-    if thieu:
-        # Nối MỘT NỬA là trạng thái tệ nhất: trông như đã cấu hình, nhưng
-        # hỏng theo cách không ai đoán ra. Thiếu APP_SECRET thì mọi webhook
-        # bị trả 401; thiếu APP_ID thì hội thoại kẹt `escalated` vĩnh viễn
-        # sau lần chuyển người đầu tiên.
-        return _muc("Messenger", CANH_BAO, "nối DỞ — thiếu: " + ", ".join(thieu),
-                    "Nối một nửa hỏng câm hơn là chưa nối. "
-                    "Thiếu APP_SECRET: mọi webhook bị chặn ở chữ ký. "
-                    "Thiếu APP_ID: hội thoại kẹt escalated sau khi chuyển người")
+    try:
+        await db.init_db()
+        rows = await db.fetch("SELECT ma FROM ton_kho")
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Tồn kho", CANH_BAO,
+                    f"không hỏi được CSDL ({type(exc).__name__})",
+                    "Khởi động PostgreSQL rồi chạy lại")
 
-    cong_khai = settings.webhook_public_url or ""
-    if not cong_khai.startswith("https://"):
-        return _muc("Messenger", CANH_BAO,
-                    "đủ khoá nhưng địa chỉ webhook chưa phải HTTPS công khai",
-                    "Meta BẮT BUỘC HTTPS và gọi từ máy chủ của họ — "
-                    "localhost hay host.docker.internal đều không vào được. "
-                    "Mở đường: cloudflared tunnel --url http://127.0.0.1:8000")
+    thieu = ma_danh_muc - {str(r["ma"]) for r in rows}
+    if not thieu:
+        return _muc("Tồn kho", DU,
+                    f"đủ {len(ma_danh_muc)} mã có dòng tồn kho")
 
-    return _muc("Messenger", DU, "đủ khoá, webhook công khai qua HTTPS")
+    vi_du = ", ".join(sorted(thieu)[:3])
+    if len(thieu) == len(ma_danh_muc):
+        return _muc(
+            "Tồn kho", CHAN,
+            f"KHÔNG mã nào có dòng tồn kho ({len(thieu)}/{len(ma_danh_muc)})",
+            "Agent sẽ báo 'không có trong kho' cho MỌI đơn. "
+            "Khởi động lại ứng dụng để nạp, hoặc chạy python -m scripts.ingest",
+        )
+    return _muc(
+        "Tồn kho", CANH_BAO,
+        f"{len(thieu)}/{len(ma_danh_muc)} mã chưa có dòng tồn kho ({vi_du}...)",
+        "Đơn chứa những mã này sẽ hỏng. Khởi động lại ứng dụng để nạp",
+    )
 
 
 async def chay() -> int:
     muc = [
-        kiem_bi_mat(), kiem_du_lieu_that(), kiem_kenh(), kiem_messenger(),
-        await kiem_tai_khoan(), kiem_sao_luu(), kiem_bao_dong(),
+        kiem_bi_mat(), kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
+        await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
+        await kiem_outbox(), await kiem_ton_kho(),
+        kiem_sao_luu(), kiem_bao_dong(),
         kiem_cookie(), kiem_cong(),
     ]
 

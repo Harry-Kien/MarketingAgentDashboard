@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts import sinh_so_do  # noqa: E402
 
-SQL = (ROOT / "agent" / "schema.sql").read_text(encoding="utf-8")
+SQL = sinh_so_do.doc_sql()
 BANG, KHOA_NGOAI = sinh_so_do.doc_schema()
 
 
@@ -39,6 +39,18 @@ def test_doc_du_moi_bang_trong_schema():
     """
     trong_sql = set(re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SQL))
     assert set(BANG) == trong_sql, f"lệch: {trong_sql ^ set(BANG)}"
+
+
+def test_bo_sinh_doc_ca_bang_va_cot_tu_migration():
+    """Đọc mỗi baseline sẽ làm tài liệu bỏ sót toàn bộ schema mới."""
+    for table in (
+        "channel_accounts",
+        "credential_secrets",
+        "account_memberships",
+        "account_health_events",
+    ):
+        assert table in BANG
+    assert ("account_id", "UUID") in BANG["conversations"]
 
 
 def test_doc_du_moi_khoa_ngoai():

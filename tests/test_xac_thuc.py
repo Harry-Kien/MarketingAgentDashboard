@@ -96,11 +96,45 @@ def test_chan_bang_middleware_khong_phai_gan_tung_endpoint():
     assert 'duong.startswith("/api/")' in src
 
 
+# Mỗi đường mở phải có tên và một CHỐT KHÁC gánh thay chỗ đăng nhập.
+# Thêm dòng vào đây là việc phải cân nhắc, không phải thao tác dọn dẹp.
+_DUONG_MO_DUOC_PHEP = {
+    "/api/dang-nhap": "phải vào được mới đăng nhập được",
+    "/api/dang-xuat": "đăng xuất phải chạy kể cả khi phiên đã hỏng",
+    # Meta gọi vào và không mang cookie của ta. Chốt thay thế là `state`
+    # dùng một lần, sinh ở /start — nơi VẪN đòi quyền quản trị.
+    "/api/connect/meta/callback": "state dùng một lần thay cho cookie",
+}
+
+
 def test_danh_sach_duong_mo_ngan_va_co_chu_dich():
-    """Mỗi mục trong danh sách mở là một lỗ hổng tiềm năng."""
-    assert len(app_main._MO) <= 3, "danh sách đường mở đang phình ra"
+    """
+    Mỗi mục trong danh sách mở là một lỗ hổng tiềm năng.
+
+    Phép kiểm cũ chỉ đòi tên bắt đầu bằng `/api/dang-`. Quy tắc đó chặt về
+    hình thức nhưng không nói được điều thật sự quan trọng: đường này được
+    mở VÌ CÁI GÌ, và cái gì gánh thay chỗ đăng nhập.
+
+    Nay mỗi đường mở phải có tên trong bảng trên kèm lý do — người thêm
+    đường mới buộc phải viết ra chốt thay thế, thay vì đặt tên khéo cho lọt.
+    """
+    assert len(app_main._MO) <= 4, "danh sách đường mở đang phình ra"
+    la = set(app_main._MO) - set(_DUONG_MO_DUOC_PHEP)
+    assert not la, f"đường mở chưa được biện minh: {sorted(la)}"
+
+
+def test_moi_duong_mo_deu_thuc_su_ton_tai():
+    """
+    Đường mở trỏ vào endpoint đã bị xoá là rác — và rác trong danh sách bảo
+    vệ khiến người đọc sau tưởng nó vẫn có ý nghĩa.
+    """
+    # Đọc từ OpenAPI chứ không từ `app.routes`: router gắn bằng
+    # `include_router` không được trải phẳng vào `app.routes`, nên duyệt
+    # danh sách đó sẽ thấy RỖNG và test xanh giả — nó sẽ không bao giờ bắt
+    # được đường mở trỏ vào hư không.
+    duong_that = set(app_main.app.openapi().get("paths", {}))
     for d in app_main._MO:
-        assert d.startswith("/api/dang-"), f"đường mở lạ: {d}"
+        assert d in duong_that, f"đường mở {d} không còn endpoint nào"
 
 
 def test_webhook_khong_di_qua_lop_dang_nhap():

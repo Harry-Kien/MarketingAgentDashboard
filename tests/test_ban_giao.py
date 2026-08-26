@@ -151,8 +151,15 @@ def test_khach_duoc_bao_khi_chuyen_nguoi(monkeypatch):
     thấy tin của mình chưa."""
     _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia()
+    da_queue = []
+
+    async def queue(_cid, text):
+        da_queue.append(text)
+
+    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
     asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
-    assert kenh.da_gui, "không gửi cho khách câu nào"
+    assert da_queue, "không xếp câu báo khách vào outbox"
+    assert not kenh.da_gui, "đã gọi provider trước khi outbox commit"
 
 
 def test_cau_bao_la_co_dinh_khong_phai_loi_model(monkeypatch):
@@ -168,10 +175,16 @@ def test_cau_bao_la_co_dinh_khong_phai_loi_model(monkeypatch):
     """
     _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia()
+    da_queue = []
+
+    async def queue(_cid, text):
+        da_queue.append(text)
+
+    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
     asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
     # Chuỗi gửi đi phải là MỘT TRONG hai câu cố định của cấu hình.
-    assert kenh.da_gui[0] in (settings.tin_chuyen_nguoi,
-                              gio_lam_viec.tin_chuyen_nguoi())
+    assert da_queue[0] in (settings.tin_chuyen_nguoi,
+                           gio_lam_viec.tin_chuyen_nguoi())
 
 
 def test_gui_hong_thi_phai_de_lai_dau_vet(monkeypatch):
@@ -182,6 +195,11 @@ def test_gui_hong_thi_phai_de_lai_dau_vet(monkeypatch):
     """
     ghi = _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia(ket_qua=Delivery(False, "500 Internal Server Error"))
+
+    async def queue(_cid, _text):
+        raise RuntimeError("500 Internal Server Error")
+
+    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
     asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
 
     loai = [k for k, _ in ghi]

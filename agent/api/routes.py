@@ -15,6 +15,19 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.omnichannel.outbound_service import (
+    ConversationNotFound,
+    OutboundMessageNotFound,
+    OutboundService,
+    PostgresOutboundRepository,
+)
+from agent.omnichannel.routing import (
+    AssignmentDenied,
+    ConversationConflict,
+    ConversationNotFound as RoutingConversationNotFound,
+    ConversationRoutingService,
+    PostgresRoutingRepository,
+)
 from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
@@ -189,6 +202,12 @@ async def overview() -> dict:
             "seconds": round(_num(vid.get("seconds")), 1),
         },
         "runtime": dict(runtime.STATE),
+        # Địa chỉ CÔNG KHAI để dashboard dựng URL callback cho Meta.
+        # Trình duyệt chỉ biết `location.origin` — tức 127.0.0.1 khi
+        # người vận hành mở dashboard tại chỗ. Copy địa chỉ đó dán vào
+        # Meta là Meta không bao giờ gọi vào được, mà không có gì nói
+        # ra nguyên nhân. Chỉ máy chủ biết địa chỉ thật.
+        "public_base_url": settings.public_base_url.rstrip("/"),
         "tape": [
             {
                 "id": str(t["id"]),
@@ -320,72 +339,117 @@ async def conversation_detail(conv_id: str) -> dict:
 
 class SendBody(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
+    key = body.idempotency_key or f"staff:{uuid.uuid4()}"
+    return await OutboundService(PostgresOutboundRepository()).queue_text(
+        conversation_id=cid,
+        role="staff",
+        text=body.text,
+        idempotency_key=key,
+    )
 
 
 @router.post("/conversations/{conv_id}/send")
 async def staff_send(conv_id: str, body: SendBody) -> dict:
-    """Nhân viên gửi tin trực tiếp (hoặc gửi bản đã sửa của agent)."""
+    """Ghi tin nhân viên vào outbox; worker mới là nơi gọi provider."""
     cid = uuid.UUID(conv_id)
-    conv = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", cid)
-    if not conv:
-        raise HTTPException(404, "Không thấy hội thoại")
+    try:
+        queued = await _queue_staff_reply(cid, body)
+    except ConversationNotFound as exc:
+        raise HTTPException(404, "Không thấy hội thoại") from exc
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }
 
-    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], body.text)
-    await db.execute(
-        "INSERT INTO messages (conversation_id, role, content, delivered) "
-        "VALUES ($1,'staff',$2,$3)",
-        cid,
-        body.text,
-        delivery.ok,
+
+async def _queue_approved_draft(mid: uuid.UUID):
+    message = await db.fetchrow(
+        """
+        SELECT id, conversation_id, content, delivered, delivery_status
+        FROM messages WHERE id = $1
+        """,
+        mid,
     )
-    await db.execute(
-        "UPDATE conversations SET msg_count = msg_count + 1, updated_at = now() "
-        "WHERE id = $1",
-        cid,
+    if message is None:
+        raise OutboundMessageNotFound("không tìm thấy bản nháp")
+    if message["delivered"] or message.get("delivery_status") in {
+        "sent",
+        "delivered",
+        "read",
+    }:
+        return None
+    return await OutboundService(PostgresOutboundRepository()).queue_existing_text(
+        conversation_id=message["conversation_id"],
+        message_id=message["id"],
+        text=message["content"],
+        idempotency_key=f"approve:{message['id']}",
     )
-    await db.log_event("staff.send", actor="staff", ref_id=cid, ok=delivery.ok)
-    return {"ok": delivery.ok, "detail": delivery.detail}
 
 
 @router.post("/messages/{message_id}/approve")
 async def approve_draft(message_id: str) -> dict:
-    """Chế độ assist: người duyệt bản nháp của agent rồi mới gửi đi."""
+    """Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API."""
     mid = uuid.UUID(message_id)
-    msg = await db.fetchrow("SELECT * FROM messages WHERE id = $1", mid)
-    if not msg:
-        raise HTTPException(404, "Không thấy tin nhắn")
-    if msg["delivered"]:
+    try:
+        queued = await _queue_approved_draft(mid)
+    except OutboundMessageNotFound as exc:
+        raise HTTPException(404, "Không thấy tin nhắn") from exc
+    if queued is None:
         return {"ok": True, "detail": "đã gửi trước đó"}
-
-    conv = await db.fetchrow(
-        "SELECT * FROM conversations WHERE id = $1", msg["conversation_id"]
-    )
-    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], msg["content"])
-    if delivery.ok:
-        await db.execute("UPDATE messages SET delivered = TRUE WHERE id = $1", mid)
-        await db.execute(
-            "UPDATE conversations SET status = 'auto', updated_at = now() WHERE id = $1",
-            conv["id"],
-        )
-    await db.log_event("draft.approve", actor="staff", ref_id=mid, ok=delivery.ok)
-    return {"ok": delivery.ok, "detail": delivery.detail}
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }
 
 
 @router.post("/conversations/{conv_id}/takeover")
-async def takeover(conv_id: str) -> dict:
+async def takeover(
+    conv_id: str,
+    nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
     """Người giành lại quyền. Agent ngừng trả lời hội thoại này."""
     cid = uuid.UUID(conv_id)
-    await db.execute(
-        "UPDATE conversations SET status = 'escalated', outcome = 'escalated', "
-        "updated_at = now() WHERE id = $1",
-        cid,
+    current = await db.fetchrow(
+        "SELECT version FROM conversations WHERE id = $1", cid
     )
-    await db.log_event("conversation.takeover", actor="staff", ref_id=cid)
-    return {"ok": True}
+    if current is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    actor_id = uuid.UUID(str(nguoi["id"]))
+    try:
+        state = await ConversationRoutingService(
+            PostgresRoutingRepository()
+        ).takeover(
+            conversation_id=cid,
+            actor_id=actor_id,
+            assignee_id=actor_id,
+            expected_version=int(current["version"]),
+            reason="Nhân viên nhận từ dashboard legacy",
+            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+        )
+    except RoutingConversationNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ConversationConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AssignmentDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"ok": True, "mode": state.mode, "version": state.version}
 
 
 @router.post("/conversations/{conv_id}/release")
-async def release(conv_id: str) -> dict:
+async def release(
+    conv_id: str,
+    nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
     """
     Trả hội thoại lại cho agent.
 
@@ -399,25 +463,42 @@ async def release(conv_id: str) -> dict:
     """
     cid = uuid.UUID(conv_id)
     conv = await db.fetchrow(
-        "SELECT channel, external_id FROM conversations WHERE id = $1", cid
+        "SELECT account_id, channel, external_id, version "
+        "FROM conversations WHERE id = $1", cid
     )
-    await db.execute(
-        "UPDATE conversations SET status = 'auto', outcome = NULL, "
-        "updated_at = now() WHERE id = $1",
-        cid,
-    )
-    await db.log_event("conversation.release", actor="staff", ref_id=cid)
+    if conv is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    actor_id = uuid.UUID(str(nguoi["id"]))
+    try:
+        state = await ConversationRoutingService(
+            PostgresRoutingRepository()
+        ).release(
+            conversation_id=cid,
+            actor_id=actor_id,
+            expected_version=int(conv["version"]),
+            reason="Nhân viên release từ dashboard legacy",
+            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+        )
+    except RoutingConversationNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ConversationConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AssignmentDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
 
     ghi_chu = ""
     if conv and conv["channel"] == "messenger":
-        ad = channels.get("messenger")
+        ad = await channels.get_for_account(conv["account_id"])
         if (lay := getattr(ad, "nhan_lai_quyen", None)) is not None:
             kq = await lay(conv["external_id"])
             if not getattr(kq, "ok", True):
                 ghi_chu = f"đã bật agent, nhưng chưa giành lại được quyền từ Meta: {kq.detail}"
                 await db.log_event("banGiao.nhan_lai_that_bai", ref_id=cid,
                                    ly_do=str(kq.detail)[:200])
-    return {"ok": True, "ghi_chu": ghi_chu} if ghi_chu else {"ok": True}
+    result = {"ok": True, "mode": state.mode, "version": state.version}
+    if ghi_chu:
+        result["ghi_chu"] = ghi_chu
+    return result
 
 
 # ---------------------------------------------------------------

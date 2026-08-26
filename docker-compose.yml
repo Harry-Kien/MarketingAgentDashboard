@@ -33,7 +33,18 @@ services:
       POSTGRES_PASSWORD: agent
       POSTGRES_DB: marketing_agent
     ports:
-      - "5433:5432"          # 5433 để không đụng Postgres của ZaloCRM
+      # BUỘC VỀ 127.0.0.1 — cùng lý do đã ghi ở khối n8n bên dưới.
+      #
+      # Trước đây dòng này là "5433:5432", tức bind 0.0.0.0, tức mở CSDL ra
+      # cả mạng LAN — với `agent/agent` làm đăng nhập, và đi vòng qua
+      # Windows Firewall nên không hộp thoại nào hỏi. Bảng này giữ toàn bộ
+      # hội thoại khách, đơn hàng và hồ sơ Customer 360.
+      #
+      # `scripts/san_sang` bắt được ngay lần đầu CSDL chạy thật. Test canh
+      # việc này: tests/test_cong_khong_ra_lan.py
+      #
+      # 5433 (thay vì 5432) để không đụng Postgres của ZaloCRM.
+      - "127.0.0.1:5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -131,7 +142,9 @@ services:
       langfuse_db:
         condition: service_healthy
     ports:
-      - "3001:3000"
+      # Buộc về localhost như mọi dịch vụ nội bộ khác. Langfuse giữ toàn bộ
+      # nội dung hội thoại đã gửi cho model — đó là dữ liệu khách hàng.
+      - "127.0.0.1:3001:3000"
     environment:
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse_db:5432/langfuse
       NEXTAUTH_URL: http://localhost:3001

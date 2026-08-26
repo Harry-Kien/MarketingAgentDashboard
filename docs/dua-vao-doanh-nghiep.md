@@ -197,3 +197,23 @@ gì lên trang công khai khi chưa có người duyệt.
 
 Một hệ thống biết dừng đúng lúc đáng tin hơn một hệ thống làm được nhiều
 việc hơn.
+# Vận hành tài khoản kênh và kho bí mật
+
+Trước khi nối tài khoản Zalo/Meta/WhatsApp thật, phải cấu hình
+`CREDENTIAL_MASTER_KEYS` và `CREDENTIAL_ACTIVE_KEY_VERSION`. Master key không
+được lưu trong PostgreSQL, log, ảnh chụp màn hình hoặc git. Sao lưu key vào kho
+bí mật của doanh nghiệp và kiểm phục hồi trên môi trường thử.
+
+Quy trình xoay key:
+
+1. thêm version mới vào `CREDENTIAL_MASTER_KEYS`, vẫn giữ mọi version cũ;
+2. đổi `CREDENTIAL_ACTIVE_KEY_VERSION` sang version mới và khởi động lại;
+3. rotate/reencrypt credential từng account, kiểm `python -m scripts.san_sang`;
+4. chỉ bỏ key cũ khi truy vấn `credential_secrets.key_version` không còn dòng
+   nào dùng version đó và backup/restore drill đã qua.
+
+Nếu account chuyển `reauth_required`, dừng tự động gửi, yêu cầu quản trị đăng
+nhập lại và chỉ bật sau health check. Disable account không xóa lịch sử; nó chỉ
+chặn adapter gửi/nhận để audit và Customer 360 còn nguyên.
+
+---

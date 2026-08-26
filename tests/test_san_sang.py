@@ -11,6 +11,8 @@ bật dịch vụ lên rồi tưởng đã kiểm rồi.
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 import sys
 from pathlib import Path
 
@@ -40,10 +42,10 @@ def test_dich_vu_chay_va_dong_kin_thi_moi_la_du(monkeypatch):
 
 def test_cong_mo_ra_lan_thi_canh_bao(monkeypatch):
     monkeypatch.setattr(ss, "_dang_chay", lambda _: True)
-    monkeypatch.setattr(ss, "_cong_mo_ra_ngoai", lambda c: c == 3080)
+    monkeypatch.setattr(ss, "_cong_mo_ra_ngoai", lambda c: c == 3210)
     m = ss.kiem_cong()
     assert m["muc"] == ss.CANH_BAO
-    assert "ZaloCRM" in m["ghi"]
+    assert "Zalo sidecar" in m["ghi"]
 
 
 # =====================================================================
@@ -96,7 +98,7 @@ def test_thuong_hieu_hu_cau_thi_chan(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "ROOT", tmp_path)
     m = ss.kiem_du_lieu_that()
     assert m["muc"] == ss.CHAN
-    assert "Aurora" in m["ghi"]
+    assert "thương hiệu mẫu cũ" in m["ghi"]
 
 
 def test_chua_co_danh_muc_that_cung_chan(monkeypatch, tmp_path):
@@ -170,3 +172,85 @@ def test_bao_dong_trong_thi_canh_bao(monkeypatch):
     m = ss.kiem_bao_dong()
     assert m["muc"] == ss.CANH_BAO
     assert "KHÔNG ai nhận được tin" in m["ghi"]
+
+
+def test_co_credential_ma_thieu_master_key_thi_chan(monkeypatch):
+    """Ciphertext không có key giải mã là mất quyền vận hành mọi account."""
+    from agent import db
+
+    async def init_db():
+        return None
+
+    async def fetch(sql, *args):
+        return [{"key_version": 1}]
+
+    monkeypatch.setattr(db, "init_db", init_db)
+    monkeypatch.setattr(db, "fetch", fetch)
+    monkeypatch.setattr(ss.settings, "credential_master_keys", "")
+    monkeypatch.setattr(ss.settings, "credential_active_key_version", 1)
+
+    result = asyncio.run(ss.kiem_kho_bi_mat_tai_khoan())
+
+    assert result["muc"] == ss.CHAN
+    assert "key version" in result["ghi"]
+    assert "ciphertext" not in result["ghi"]
+
+
+def test_master_key_du_phien_ban_thi_vault_san_sang(monkeypatch):
+    from agent import db
+
+    async def init_db():
+        return None
+
+    async def fetch(sql, *args):
+        return [{"key_version": 1}]
+
+    key = base64.b64encode(bytes.fromhex("01" * 32)).decode()
+    monkeypatch.setattr(db, "init_db", init_db)
+    monkeypatch.setattr(db, "fetch", fetch)
+    monkeypatch.setattr(ss.settings, "credential_master_keys", f"1:{key}")
+    monkeypatch.setattr(ss.settings, "credential_active_key_version", 1)
+
+    result = asyncio.run(ss.kiem_kho_bi_mat_tai_khoan())
+
+    assert result["muc"] == ss.DU
+    assert key not in result["ghi"]
+
+
+def test_outbox_co_queue_ma_worker_khong_heartbeat_thi_chan(monkeypatch):
+    from agent import db
+
+    async def init_db():
+        return None
+
+    async def fetchrow(sql, *args):
+        return {"pending": 4, "dead": 0, "last_seen_at": None}
+
+    monkeypatch.setattr(db, "init_db", init_db)
+    monkeypatch.setattr(db, "fetchrow", fetchrow)
+
+    result = asyncio.run(ss.kiem_outbox())
+
+    assert result["muc"] == ss.CHAN
+    assert "4" in result["ghi"]
+    assert "heartbeat" in result["ghi"]
+
+
+def test_outbox_worker_song_va_queue_khong_tac_thi_du(monkeypatch):
+    from datetime import datetime, timezone
+    from agent import db
+
+    async def init_db():
+        return None
+
+    async def fetchrow(sql, *args):
+        return {
+            "pending": 0,
+            "dead": 0,
+            "last_seen_at": datetime.now(timezone.utc),
+        }
+
+    monkeypatch.setattr(db, "init_db", init_db)
+    monkeypatch.setattr(db, "fetchrow", fetchrow)
+
+    assert asyncio.run(ss.kiem_outbox())["muc"] == ss.DU

@@ -71,3 +71,6 @@ data/verify-token.txt
 
 # Bộ nhớ làm việc của công cụ Serena — trạng thái máy, không phải mã nguồn.
 .serena/
+
+# Log của tunnel — trạng thái chạy, đổi mỗi lần khởi động.
+data/tunnel.log

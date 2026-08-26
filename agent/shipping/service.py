@@ -4,7 +4,6 @@ Bộ điều phối nghiệp vụ vận chuyển: 4 chốt kiểm duyệt, xử 
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from typing import Any
 

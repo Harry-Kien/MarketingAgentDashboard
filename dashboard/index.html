@@ -464,12 +464,18 @@
             <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
           </select></label>
           <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
+          <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
+          <details class="nhap-tay" id="nhap-tay">
+            <summary>Nhập thủ công</summary>
+            <div class="nhap-tay__o">
           <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
           <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
           <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
           <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
           <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
           <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
+            </div>
+          </details>
           <p class="form__ketiep" id="connection-ketiep"></p>
           <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
         </form>

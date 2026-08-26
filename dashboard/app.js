@@ -2133,6 +2133,7 @@ const KENH_TRUONG = {
     ke_tiep: "Cần URL HTTPS công khai để Zalo gọi webhook vào.",
   },
   facebook: {
+    dang_nhap: true,
     truong: [
       { o: "external_account_id", nhan: "Page ID", bat_buoc: true,
         goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang" },
@@ -2146,6 +2147,7 @@ const KENH_TRUONG = {
     ke_tiep: "Cần URL HTTPS công khai, rồi đăng ký webhook trong Meta App Dashboard.",
   },
   instagram: {
+    dang_nhap: true,
     truong: [
       { o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
         goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID" },
@@ -2216,6 +2218,49 @@ function veFormKenh(kenh) {
     goi_y.textContent = dung.goi_y;
   }
 
+  /* Kênh nối được bằng đăng nhập thì ĐỪNG đòi dán token.
+   *
+   * Màn hình cũ có nút "Kết nối bằng đăng nhập" ở trên và ngay dưới là bốn ô
+   * token bắt buộc cho đúng kênh đó — hai thứ nói ngược nhau, và người dùng
+   * làm theo cái dễ đọc hơn là form trước mắt.
+   *
+   * Đi đường dán tay không chỉ mất thời gian: token dán tay KHÔNG tự gia
+   * hạn, nên vài tuần sau kênh chết câm mà không ai biết cho tới khi khách
+   * kêu. Và `app_secret` phải đi qua trình duyệt, trong khi đường đăng nhập
+   * giữ nó ở máy chủ suốt.
+   *
+   * Không xoá hẳn ô nhập tay: vẫn có ca cần khi app Meta chưa được duyệt,
+   * hoặc khi gỡ lỗi. Nó thành đường phụ, đóng sẵn.
+   */
+  const khoi_tay = $("#nhap-tay");
+  const nhac = $("#khuyen-dang-nhap");
+  if (khoi_tay && nhac) {
+    if (cau_hinh.dang_nhap) {
+      khoi_tay.open = false;
+      khoi_tay.querySelector("summary").textContent =
+        "Nhập thủ công (nâng cao — chỉ khi không dùng được đăng nhập)";
+      nhac.textContent = "Kênh này nối bằng nút \"Kết nối Facebook / Instagram "
+        + "bằng đăng nhập\" ở trên: chọn Trang, hệ thống tự nhận token và tự "
+        + "gia hạn. Chỉ mở phần nhập thủ công khi bạn có lý do riêng.";
+      nhac.classList.remove("is-hidden");
+    } else {
+      khoi_tay.open = true;
+      khoi_tay.querySelector("summary").textContent = "Thông tin kết nối";
+      nhac.classList.add("is-hidden");
+    }
+  }
+
+  /* Ô `required` nằm trong `<details>` đang ĐÓNG thì trình duyệt chặn gửi
+   * form mà không hiện được lỗi ở đâu — người dùng bấm Lưu và không có gì
+   * xảy ra. Kênh có đường đăng nhập thì bỏ `required` hết; phần kiểm thiếu
+   * trường vẫn chạy ở `luuKetNoi`, nơi báo được bằng toast. */
+  if (cau_hinh.dang_nhap) {
+    for (const ten of O_CREDENTIAL) {
+      const input = document.querySelector(`#connectionform [name="${ten}"]`);
+      if (input) input.required = false;
+    }
+  }
+
   const chan = $("#connection-ketiep");
   if (chan) chan.textContent = cau_hinh.ke_tiep || "";
 }
@@ -2238,7 +2283,12 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
     .filter((t) => t.bat_buoc && !form[t.o])
     .map((t) => t.nhan);
   if (thieu.length) {
-    toast("Còn thiếu: " + thieu.join(", "), true);
+    /* Kênh có đường đăng nhập mà người dùng bấm Lưu với ô trống thì gần như
+     * chắc chắn họ đang ở nhầm chỗ. Liệt kê bốn token còn thiếu là đẩy họ đi
+     * tìm những chuỗi mà hệ thống tự lấy được. */
+    toast(cau_hinh?.dang_nhap
+      ? 'Kênh này nối bằng nút "Kết nối Facebook / Instagram bằng đăng nhập" ở trên.'
+      : "Còn thiếu: " + thieu.join(", "), true);
     return;
   }
 

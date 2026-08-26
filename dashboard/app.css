@@ -1442,3 +1442,19 @@ svg { flex: none; }
                       border-top: 1px solid var(--line, #e5e7eb);
                       font-size: 13px; color: inherit; }
 .channel-card__them:hover { background: var(--surface-3, rgba(0,0,0,.06)); }
+
+/* Nhắc dùng đường đăng nhập thay vì dán token.
+   Nền vàng nhạt vì đây là chỉ dẫn, không phải lỗi — lỗi mới dùng đỏ. */
+.khuyen-dang-nhap { grid-column: 1 / -1; margin: 0; padding: 10px 13px;
+                    border-left: 3px solid var(--warning, #f59e0b);
+                    border-radius: 4px; font-size: 13px; line-height: 1.55;
+                    background: rgba(245, 158, 11, .08); }
+
+/* Nhập thủ công: đóng sẵn với kênh có đăng nhập, mở sẵn với kênh không có. */
+.nhap-tay { grid-column: 1 / -1; border: 1px solid var(--line, #e5e7eb);
+            border-radius: 8px; padding: 4px 12px 2px; }
+.nhap-tay > summary { cursor: pointer; padding: 7px 0; font-size: 13px;
+                      color: var(--muted-foreground, #6b7280); }
+.nhap-tay[open] > summary { margin-bottom: 6px; }
+.nhap-tay__o { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+               gap: 12px; padding-bottom: 10px; }

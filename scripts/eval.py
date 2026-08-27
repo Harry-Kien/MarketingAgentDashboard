@@ -146,6 +146,73 @@ async def run_case(case: dict, conv_id) -> dict:
     }
 
 
+async def _hoi_thoai_eval():
+    """
+    Dựng một hội thoại để chạy bộ đo, hợp lệ với lược đồ HIỆN TẠI.
+
+    VÌ SAO PHẢI VIẾT LẠI PHẦN NÀY
+    -----------------------------
+    Bản trước chèn thẳng `conversations` với `ON CONFLICT (channel,
+    external_id)`. Ràng buộc đó không còn: các migration account-aware đã đổi
+    nó thành `(account_id, external_id)`, và thêm `account_id`, `contact_id`,
+    `contact_point_id` vào nhóm NOT NULL.
+
+    Nên `python -m scripts.eval` chết ngay ở dòng đầu với
+    `InvalidColumnReferenceError` — bộ đo chất lượng KHÔNG chạy được lần nào
+    kể từ khi lược đồ đổi, và không có gì báo: `CLAUDE.md` vẫn ghi lệnh đó
+    như thể nó chạy được.
+
+    Dùng lại tài khoản `webchat` sẵn có thay vì tạo kênh giả: eval đo AGENT,
+    không đo lớp kênh, và thêm một kênh ma vào bảng chỉ làm bẩn dữ liệu thật.
+    """
+    tk = await db.fetchrow(
+        "SELECT id FROM channel_accounts WHERE channel = 'webchat' "
+        "ORDER BY created_at LIMIT 1"
+    )
+    if tk is None:
+        raise SystemExit(
+            "Chưa có tài khoản kênh webchat để chạy bộ đo. "
+            "Tạo một tài khoản Website chat trong mục Kết nối rồi chạy lại."
+        )
+    account_id = tk["id"]
+
+    lien_he = await db.fetchrow(
+        "SELECT c.id FROM contacts c JOIN contact_points p ON p.contact_id = c.id "
+        "WHERE p.external_user_id = 'eval' AND p.channel_account_id = $1 LIMIT 1",
+        account_id,
+    )
+    if lien_he is None:
+        lien_he = await db.fetchrow(
+            "INSERT INTO contacts (display_name) VALUES ('Bo cau hoi vang') "
+            "RETURNING id"
+        )
+    contact_id = lien_he["id"]
+
+    diem = await db.fetchrow(
+        """
+        INSERT INTO contact_points (contact_id, channel_account_id, external_user_id)
+        VALUES ($1, $2, 'eval')
+        ON CONFLICT (channel_account_id, external_user_id)
+        DO UPDATE SET last_seen = now()
+        RETURNING id
+        """,
+        contact_id, account_id,
+    )
+
+    conv = await db.fetchrow(
+        """
+        INSERT INTO conversations (account_id, contact_id, contact_point_id,
+                                   channel, external_id, customer_name, customer_ref)
+        VALUES ($1, $2, $3, 'webchat', 'eval-run', 'Bo cau hoi vang', 'eval')
+        ON CONFLICT (account_id, external_id)
+        DO UPDATE SET updated_at = now()
+        RETURNING id
+        """,
+        account_id, contact_id, diem["id"],
+    )
+    return conv["id"]
+
+
 async def main(loc: str | None = None) -> int:
     cases = [
         json.loads(line)
@@ -159,12 +226,7 @@ async def main(loc: str | None = None) -> int:
         return 1
 
     await db.init_db()
-    conv = await db.fetchrow(
-        "INSERT INTO conversations (channel, external_id, customer_name, customer_ref) "
-        "VALUES ('eval','eval-run','Bo cau hoi vang','eval') "
-        "ON CONFLICT (channel, external_id) DO UPDATE SET updated_at = now() RETURNING id"
-    )
-    cid = conv["id"]
+    cid = await _hoi_thoai_eval()
 
     print(f"Chạy {len(cases)} ca...\n")
     results = []
@@ -188,7 +250,8 @@ async def main(loc: str | None = None) -> int:
             if res.get("dung_tu_cam"):
                 print(f"           DUNG TU CAM: {res['dung_tu_cam']}")
 
-    await db.execute("DELETE FROM conversations WHERE external_id = 'eval-run'")
+    await db.execute(
+        "DELETE FROM conversations WHERE external_id = 'eval-run' AND customer_ref = 'eval'")
 
     # ---------------- tổng kết ----------------
     n = len(results)

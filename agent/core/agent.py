@@ -67,6 +67,31 @@ _BUOC_CHUYEN = (
     "dị ứng", "kích ứng nặng",
     # da đang phản ứng
     "đỏ rát", "ngứa rát", "nổi sẩn", "sưng đỏ", "bong tróc", "phồng rộp",
+
+    # TRẺ EM — bổ sung sau khi bộ 56 câu vàng bắt được ca trượt.
+    #
+    # `data/knowledge/an-toan-va-chong-chi-dinh.md` ghi rõ: "với trẻ nhỏ,
+    # luôn chuyển cho nhân viên thay vì tự tư vấn". Nhưng không từ khoá nào
+    # canh, nên câu "Con em 8 tuổi dùng kem chống nắng này được không?" đi
+    # thẳng vào agent, và nó hỏi lại tên sản phẩm thay vì chuyển người.
+    #
+    # Dùng cụm HAI TỪ chứ không dùng "con" hay "bé" trần: hai chữ đó quá
+    # phổ biến trong tiếng Việt và sẽ chuyển người cho hàng loạt câu vô hại.
+    "con em", "con tôi", "con mình", "con gái", "con trai", "cho bé",
+    "bé nhà", "em bé", "trẻ em", "trẻ nhỏ", "cháu nhà", "cho con",
+
+    # ĐÒI CAM KẾT KHỎI BỆNH — cũng do bộ vàng bắt được.
+    #
+    # `an-toan-va-chong-chi-dinh.md` xếp "hết mụn sau N ngày" và "cam kết
+    # khỏi" vào nhóm TUYỆT ĐỐI không được nói (Thông tư 06/2011/TT-BYT).
+    # Khách hỏi thẳng "bao lâu thì hết mụn hẳn, shop cam kết đi" là đòi đúng
+    # thứ đó — và agent trả lời vòng vo thay vì chuyển người.
+    #
+    # KHÔNG bắt "cam kết" trần: shop CÓ mục "bảo hành và cam kết chất
+    # lượng", và chặn từ đó là agent chuyển người khi khách hỏi bảo hành.
+    "cam kết hết", "cam kết khỏi", "cam kết trị", "đảm bảo hết",
+    "đảm bảo khỏi", "bao lâu thì hết", "bao lâu hết", "hết mụn hẳn",
+    "hết hẳn", "khỏi hẳn", "hết nám hẳn",
 )
 
 

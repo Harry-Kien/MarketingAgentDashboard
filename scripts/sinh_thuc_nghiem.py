@@ -40,6 +40,37 @@ RA = ROOT / "docs" / "thuc-nghiem.md"
 TONG_CA_VANG = 56
 
 
+def _phan_bo_bo_vang() -> tuple[str, int]:
+    """
+    Phân bố nhóm, đọc THẲNG từ `golden.jsonl`.
+
+    Dòng này từng được gõ tay — và nó đã nói dối: mô tả bộ 56 ca cũ trong
+    khi bộ hiện tại có phân bố khác hẳn. Đúng thứ chính tài liệu này cấm ở
+    dòng đầu tiên: "con số gõ tay là con số sẽ sai".
+
+    Thiếu file thì trả chuỗi rỗng chứ không nổ: máy vừa clone chưa dựng bộ
+    vàng vẫn phải sinh được tài liệu.
+    """
+    from collections import Counter
+
+    f = ROOT / "data" / "eval" / "golden.jsonl"
+    if not f.exists():
+        return "chưa dựng bộ câu vàng", 0
+
+    ten = {"tuan_thu": "tuân thủ", "tri_thuc": "tri thức chính sách",
+           "cong_cu": "cần số liệu thật", "ban_hang": "bán hàng"}
+    dem = Counter()
+    so_chuyen = 0
+    for dong in f.read_text(encoding="utf-8").splitlines():
+        if not dong.strip():
+            continue
+        c = json.loads(dong)
+        dem[c.get("nhom", "khac")] += 1
+        so_chuyen += bool(c.get("chuyen_nguoi"))
+    mo_ta = " · ".join(f"{n} ca {ten.get(k, k)}" for k, n in dem.most_common())
+    return mo_ta, so_chuyen
+
+
 def _lan_chay_day_du() -> list[tuple[str, dict]]:
     """
     Chỉ lấy lần chạy trên bộ ĐẦY ĐỦ 56 ca.
@@ -201,6 +232,8 @@ def _nhan_xet(kq: list) -> str:
 def dung() -> str:
     day = _lan_chay_day_du()
     nl = _nhieu_luot()
+    PHAN_BO, SO_TUAN_THU = _phan_bo_bo_vang()
+    TONG_CA = TONG_CA_VANG
     diem = [d["dat"] for _, d in day]
     bo_sot_lan = [t for t, d in day if d.get("bo_sot_chuyen_nguoi")]
 
@@ -247,12 +280,11 @@ một chỗ là hỏng cả hai: một CI đỏ ngẫu nhiên thì người ta n
 theo ba tiêu chí đồng thời: có chuyển người đúng lúc không, có đủ từ khoá
 bắt buộc không, có dùng từ cấm quảng cáo không.
 
-Phân bố: 11 ca tuân thủ · 5 thẩm quyền · 4 ngoài danh mục · 14 RAG chính
-sách · 9 tư vấn da và thành phần · 11 giá/tồn kho/đơn hàng · 2 không dấu.
+Phân bố: {PHAN_BO}.
 
-**20/56 ca — hơn một phần ba — thuộc loại "đừng nói bậy"**, không phải
-"tư vấn hay". Bộ này chứng minh agent không gây tai nạn; nó không chứng
-minh agent tư vấn giỏi.
+**{SO_TUAN_THU}/{TONG_CA} ca thuộc loại "đừng nói bậy"**, không phải "tư vấn
+hay". Bộ này chứng minh agent không gây tai nạn; nó không chứng minh agent
+tư vấn giỏi.
 
 ### 2.2. Kết quả
 

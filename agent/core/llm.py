@@ -53,6 +53,10 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash-lite": (0.10, 0.40),
 }
 MAX_RETRIES = 4          # cho 429/503 tam thoi cua Vertex
+
+# Mã HTTP đáng thử lại: lỗi thoáng qua phía máy chủ và giới hạn tốc độ.
+# Xem chú thích trong `_goi_gemini` về vì sao 502 phải có mặt ở đây.
+MA_THU_LAI = frozenset({429, 500, 502, 503, 504})
 CACHE_READ_RATE = 0.10
 CACHE_WRITE_RATE = 1.25
 
@@ -308,8 +312,15 @@ async def _complete_gemini(
         body["tools"] = gem_tools
 
     started = time.perf_counter()
-    # 429/503 trên Vertex là giới hạn tốc độ tạm thời, không phải hết hạn mức.
-    # Thử lại có giãn cách thay vì để cả lượt trả lời của khách thất bại.
+    # Mã tạm thời -> thử lại có giãn cách, thay vì để cả lượt trả lời hỏng.
+    #
+    # Bản trước chỉ thử lại 429 và 503. Nhưng chính lượt chạy bộ 56 câu vàng
+    # gặp một **502** từ frontend của Google — cùng loại lỗi thoáng qua, mà
+    # không được thử lại, nên hội thoại rơi thẳng sang người.
+    #
+    # 500/502/504 đều là lỗi phía máy chủ và đều đáng thử lại. Mã 4xx khác
+    # thì KHÔNG: 400 là body sai, 401/403 là hỏng xác thực, 404 là sai model
+    # — thử lại chỉ làm khách chờ lâu hơn rồi vẫn hỏng.
     delay = 2.0
     last = ""
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -325,7 +336,7 @@ async def _complete_gemini(
             if r.status_code < 400:
                 break
             last = f"Gemini {r.status_code}: {r.text[:300]}"
-            if r.status_code not in (429, 503) or attempt == MAX_RETRIES - 1:
+            if r.status_code not in MA_THU_LAI or attempt == MAX_RETRIES - 1:
                 raise RuntimeError(last)
             await asyncio.sleep(delay)
             delay *= 2

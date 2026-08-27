@@ -77,10 +77,19 @@ python -m scripts.sinh_thuc_nghiem --ghi
 Đo chất lượng — **gọi API thật, tốn tiền**, hỏi chủ dự án trước khi chạy:
 
 ```bash
+python -m scripts.sinh_bo_cau_vang     # dựng bộ 56 câu, KHÔNG tốn tiền
 python -m scripts.eval                 # 56 câu vàng, một lượt
+python -m scripts.eval tuan_thu        # chỉ nhóm tuân thủ — rẻ hơn nhiều
 python -m scripts.eval_nhieu_luot      # 12 kịch bản nhiều lượt
 python -m scripts.eval_nhieu_luot --kho  # kiểm bộ khung, KHÔNG tốn tiền
 ```
+
+**Chạy `sinh_bo_cau_vang` TRƯỚC.** `data/eval/golden.jsonl` bị `.gitignore`
+chặn — đúng, vì khi thay danh mục mẫu bằng hàng thật thì nó chứa giá thật.
+Nhưng vì thế nó không đi theo repo, và `scripts.eval` chết ngay dòng đầu.
+
+Sửa xong `_BUOC_CHUYEN` hay prompt thì **chạy lại nhóm tuân thủ** rồi sinh
+lại `docs/thuc-nghiem.md` — có test canh việc tài liệu đã cũ.
 
 ---
 

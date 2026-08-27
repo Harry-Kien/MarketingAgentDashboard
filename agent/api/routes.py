@@ -1655,3 +1655,136 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True,
     await db.log_event("auth.khoa_nguoi_dung", actor=nguoi["ten_dang_nhap"],
                        ten=ten, khoa=khoa)
     return {"ok": True, "ten_dang_nhap": ten, "khoa": khoa}
+
+
+# ===============================================================
+#  Nhân viên gửi ảnh và tài liệu — như mọi công cụ chat thật
+# ===============================================================
+#
+# `OutboundService.queue_file` đã có từ trước: agent dùng nó gửi ảnh sản
+# phẩm và đường đó chạy được. Nhưng không có route nào cho NGƯỜI, nên khung
+# soạn tin chỉ có ô chữ.
+#
+# Nghĩa là agent gửi được ảnh còn người trực thì không — khách hỏi "cho xem
+# ảnh thật cái đã mở nắp" thì họ phải mở Zalo riêng ra gửi, và tin đó nằm
+# ngoài hội thoại, không ai truy được về sau.
+
+# Danh sách CHO PHÉP, không phải danh sách cấm.
+#
+# `image/svg+xml` trông như ảnh nhưng SVG CHẠY ĐƯỢC MÃ trong trình duyệt
+# người xem. `text/html` cũng vậy. Danh sách cấm thì luôn thiếu một mục, và
+# mục thiếu đó là mục bị khai thác.
+MIME_GUI_DUOC: dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "application/pdf": ".pdf",
+}
+
+# Zalo và Meta đều chặn tệp lớn hơn mức này ở phía họ. Chặn sớm để người
+# trực biết ngay, thay vì chờ outbox thử ba lần rồi mới báo hỏng.
+TOI_DA_BYTE_GUI = 10 * 1024 * 1024
+
+THU_MUC_TAI_LEN = Path(__file__).resolve().parents[2] / "data" / "uploads"
+
+
+def _ten_file_an_toan(ten_goc: str, mime: str) -> str:
+    """
+    Sinh tên file MỚI. Không bao giờ dùng tên client gửi lên.
+
+    VÌ SAO KHÔNG LỌC TÊN XẤU MÀ VỨT HẲN
+    -----------------------------------
+    Tên như `../../../.env` nối vào đường dẫn là ghi đè file bí mật của
+    chính hệ thống. Lọc từng mẫu xấu là trò đuổi bắt không bao giờ thắng:
+    `..\`, `....//`, ký tự đã mã hoá URL, ký tự Unicode trông giống dấu gạch.
+
+    Sinh tên mới thì cả lớp lỗ hổng đó biến mất — không còn gì của client
+    trong đường dẫn.
+
+    Đuôi lấy theo MIME chứ không theo tên: `virus.exe` gửi kèm
+    `Content-Type: image/png` thì tin MIME. Kiểu tệp là quyết định của máy
+    chủ, không phải của người gửi.
+    """
+    return f"{uuid.uuid4().hex}{MIME_GUI_DUOC.get(mime, '.bin')}"
+
+
+@router.post("/conversations/{conv_id}/send-file")
+async def staff_send_file(
+    conv_id: str,
+    ma_san_pham: str = Form(""),
+    chu_thich: str = Form(""),
+    tep: UploadFile | None = File(None),
+    _nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
+    """
+    Gửi ảnh sản phẩm theo mã, hoặc tải một tệp lên rồi gửi.
+
+    HAI ĐƯỜNG, VÀ VÌ SAO CẢ HAI
+    ---------------------------
+    Theo MÃ SẢN PHẨM là việc người trực làm nhiều nhất — ảnh đã nằm sẵn
+    trong kho, không tải lên gì cả, không mở thêm bề mặt tấn công nào.
+
+    TẢI TỆP LÊN cần cho ảnh chụp thật, hoá đơn, hướng dẫn dùng. Nhưng mỗi
+    lần nhận tệp từ trình duyệt là một lần phải tự bảo vệ — xem
+    `_ten_file_an_toan` và `MIME_GUI_DUOC`.
+
+    Đi qua outbox như mọi tin khác. Gọi thẳng provider ở đây là mất hết thứ
+    outbox đang giữ: thử lại, chống trùng, dead-letter, và thứ tự tin.
+    """
+    from agent.core.tools import _anh_san_pham
+
+    cid = uuid.UUID(conv_id)
+
+    if ma_san_pham.strip():
+        duong = _anh_san_pham(ma_san_pham.strip())
+        if duong is None:
+            raise HTTPException(404, f"Không có ảnh cho mã {ma_san_pham}")
+        khoa = f"staff-file:{uuid.uuid4()}"
+        ten_hien = chu_thich or ma_san_pham.strip()
+    else:
+        if tep is None:
+            raise HTTPException(422, "Cần chọn mã sản phẩm hoặc một tệp")
+        mime = (tep.content_type or "").split(";")[0].strip().lower()
+        if mime not in MIME_GUI_DUOC:
+            raise HTTPException(
+                415,
+                f"Không gửi được kiểu tệp này ({mime or 'không rõ'}). "
+                "Chỉ nhận ảnh JPG/PNG/WEBP/GIF và PDF.",
+            )
+        noi_dung = await tep.read()
+        if not noi_dung:
+            raise HTTPException(422, "Tệp rỗng")
+        if len(noi_dung) > TOI_DA_BYTE_GUI:
+            raise HTTPException(
+                413,
+                f"Tệp {len(noi_dung) // 1024 // 1024}MB, vượt mức "
+                f"{TOI_DA_BYTE_GUI // 1024 // 1024}MB.",
+            )
+
+        THU_MUC_TAI_LEN.mkdir(parents=True, exist_ok=True)
+        duong = THU_MUC_TAI_LEN / _ten_file_an_toan(tep.filename or "", mime)
+        duong.write_bytes(noi_dung)
+        khoa = f"staff-file:{duong.name}"
+        ten_hien = chu_thich or (tep.filename or "tệp đính kèm")[:80]
+
+    try:
+        queued = await OutboundService(PostgresOutboundRepository()).queue_file(
+            conversation_id=cid,
+            role="staff",
+            path=str(duong),
+            caption=ten_hien,
+            idempotency_key=khoa,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(404, "Không thấy hội thoại") from exc
+
+    await db.log_event("staff.gui_file", ref_id=cid,
+                       ten=ten_hien[:80], ma_san_pham=ma_san_pham or None)
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }

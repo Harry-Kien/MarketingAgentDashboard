@@ -77,3 +77,6 @@ data/tunnel.log
 
 # Log sidecar Zalo — trạng thái chạy, không phải mã nguồn.
 data/sidecar.log
+
+# Ảnh và tài liệu nhân viên gửi cho khách — dữ liệu vận hành, không phải mã.
+data/uploads/

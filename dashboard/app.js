@@ -413,6 +413,10 @@ async function loadThread(id) {
     </div>
     <form class="convo__bar" id="replyform">
       <textarea name="text" placeholder="Nhắn trực tiếp cho khách…" required></textarea>
+      <span class="convo__dinhkem">
+        <button type="button" class="btn btn--sm" data-dinhkem title="Gửi ảnh hoặc tài liệu">📎</button>
+        <input type="file" id="tep-dinhkem" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>
+      </span>
       <button type="submit" class="btn btn--primary">Gửi</button>
     </form>`;
 
@@ -516,6 +520,59 @@ async function loadThread(id) {
       refresh();
     } catch (e) { toast(e.message, true); }
   });
+
+  /* Đính kèm ảnh hoặc tài liệu — như mọi công cụ chat thật.
+   *
+   * Trước đây agent gửi được ảnh sản phẩm còn NGƯỜI TRỰC thì không. Khách
+   * hỏi "cho xem ảnh thật cái đã mở nắp" thì họ phải mở Zalo riêng ra gửi,
+   * và tin đó nằm ngoài hội thoại — không ai truy được về sau.
+   *
+   * Gửi ngay khi chọn tệp, không đợi bấm Gửi: người dùng quen với Messenger
+   * và Zalo, cả hai đều gửi ngay. Bắt bấm thêm một nút là bước thừa mà
+   * không ai nhớ.
+   */
+  const nutKem = $("[data-dinhkem]");
+  const oTep = $("#tep-dinhkem");
+  if (nutKem && oTep) {
+    nutKem.addEventListener("click", () => oTep.click());
+    oTep.addEventListener("change", async () => {
+      const f = oTep.files && oTep.files[0];
+      if (!f) return;
+      nutKem.disabled = true;
+      const chu = nutKem.textContent;
+      nutKem.textContent = "⏳";
+      try {
+        const fd = new FormData();
+        fd.append("tep", f);
+        // Chú thích lấy từ ô soạn tin nếu người trực đã gõ sẵn — họ thường
+        // viết "ảnh thật bên em nè" rồi mới chọn ảnh.
+        const oChu = $('#replyform [name="text"]');
+        if (oChu && oChu.value.trim()) fd.append("chu_thich", oChu.value.trim());
+
+        // KHÔNG đặt Content-Type: trình duyệt phải tự sinh boundary cho
+        // multipart. Đặt tay là máy chủ không tách được phần tệp.
+        const r = await fetch(`/api/conversations/${id}/send-file`, {
+          method: "POST", body: fd, credentials: "same-origin",
+        });
+        if (!r.ok) {
+          const loi = await r.json().catch(() => ({}));
+          throw new Error(loi.detail || `Không gửi được (HTTP ${r.status})`);
+        }
+        toast("Đã gửi tệp cho khách.");
+        if (oChu) {
+          oChu.value = "";
+          if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[id];
+        }
+        refresh();
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        oTep.value = "";
+        nutKem.disabled = false;
+        nutKem.textContent = chu;
+      }
+    });
+  }
 
   $("#replyform").addEventListener("submit", async (ev) => {
     ev.preventDefault();

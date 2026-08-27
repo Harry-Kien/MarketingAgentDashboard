@@ -1458,3 +1458,8 @@ svg { flex: none; }
 .nhap-tay[open] > summary { margin-bottom: 6px; }
 .nhap-tay__o { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
                gap: 12px; padding-bottom: 10px; }
+
+/* Nút đính kèm trong khung soạn tin. Đặt sát ô chữ, trước nút Gửi — cùng
+   chỗ Messenger và Zalo để mắt không phải tìm. */
+.convo__dinhkem { display: flex; align-items: center; }
+.convo__dinhkem .btn { font-size: 17px; line-height: 1; padding: 7px 10px; }

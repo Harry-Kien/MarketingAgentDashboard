@@ -43,6 +43,22 @@ docker compose up -d
 Sidecar Zalo cá nhân chạy bằng tiến trình Node riêng, đọc `ZALO_SIDECAR_SECRET`
 và `ZALO_CONTROL_PLANE_URL` từ `.env`.
 
+Sidecar KHÔNG tự đọc `.env` — phải xuất biến ra môi trường trước khi chạy,
+nếu không nó thoát ngay ở dòng đầu. Lệnh đầy đủ nằm ở README.
+
+### Agent không gửi được ảnh cho khách Zalo
+
+Dấu hiệu: hàng đợi có job `dead`, lý do
+`Missing imageMetadataGetter`. Trên dashboard không có gì bất thường — chỉ
+khách là không nhận được ảnh.
+
+`zca-js` cần width/height/size để dựng khung xem trước. Trên trình duyệt nó
+tự đọc từ thẻ `<img>`; ở Node không có DOM nên sidecar phải tự cấp qua
+`imageMetadataGetter` — xem `connectors/zalo-personal-sidecar/src/anh-metadata.mjs`.
+
+Sau khi sửa, đưa job về hàng chờ bằng API outbox rồi worker gửi lại; không
+phải bảo khách nhắn lại.
+
 **Không cần đăng nhập Zalo lại.** Phiên đã mã hoá trong vault, và
 `giu_phien_zalo_loop` tự khôi phục trong vòng 60 giây sau khi sidecar lên.
 Chỉ phải quét QR lại khi Zalo tự vô hiệu phiên — lúc đó nhật ký ghi

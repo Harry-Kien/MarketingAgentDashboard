@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { Zalo } from 'zca-js';
 
 import { verifyRequest } from './auth.mjs';
+import { layMetadataAnh } from './anh-metadata.mjs';
 import { SessionManager } from './session-manager.mjs';
 
 const host = process.env.ZALO_SIDECAR_HOST ?? '127.0.0.1';
@@ -34,7 +35,18 @@ async function callback(accountId, event, data) {
 }
 
 const manager = new SessionManager({
-  zaloFactory: () => new Zalo({ logging: false, selfListen: true }),
+  zaloFactory: () => new Zalo({
+    logging: false,
+    selfListen: true,
+    // BẮT BUỘC để gửi được ảnh từ Node.
+    //
+    // Trên trình duyệt `zca-js` tự đọc kích thước từ thẻ <img>; ở Node không
+    // có DOM nên nó ném `Missing imageMetadataGetter` và MỌI lần gửi ảnh đều
+    // hỏng. Đã xảy ra thật: một tin gửi ảnh sản phẩm thử 8 lần rồi chết
+    // trong hàng đợi, khách không nhận được gì, và không có gì trên dashboard
+    // nói ra lý do.
+    imageMetadataGetter: layMetadataAnh,
+  }),
   onEvent: callback,
 });
 const nonceStore = new Map();

@@ -109,6 +109,10 @@ Zalo cá nhân sidecar:
 Set-Location connectors\zalo-personal-sidecar
 npm ci
 npm test
+# Sidecar đọc bí mật từ BIẾN MÔI TRƯỜNG, không tự đọc .env. Thiếu bước này
+# thì nó thoát ngay với "ZALO_SIDECAR_SECRET phải dài ít nhất 32 ký tự".
+$env:ZALO_SIDECAR_SECRET = (Select-String '^ZALO_SIDECAR_SECRET=' ..\..\.env).Line.Split('=',2)[1]
+$env:ZALO_CONTROL_PLANE_URL = (Select-String '^ZALO_CONTROL_PLANE_URL=' ..\..\.env).Line.Split('=',2)[1]
 npm start
 ```
 

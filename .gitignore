@@ -74,3 +74,6 @@ data/verify-token.txt
 
 # Log của tunnel — trạng thái chạy, đổi mỗi lần khởi động.
 data/tunnel.log
+
+# Log sidecar Zalo — trạng thái chạy, không phải mã nguồn.
+data/sidecar.log

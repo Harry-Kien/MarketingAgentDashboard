@@ -254,6 +254,30 @@ async def canh_han_token_meta_loop() -> None:
         await asyncio.sleep(KIEM_TOKEN_META_MOI_GIAY)
 
 
+# Dọn phiên đăng nhập hết hạn mỗi sáu giờ.
+#
+# `xac_thuc.don_phien_het_han` đã có từ trước và KHÔNG AI GỌI. Phiên hết hạn
+# vẫn bị chặn ở SQL (`WHERE het_han > now()`) nên đó không phải lỗ hổng —
+# nhưng bảng `phien` phình mãi, và những dòng ấy là chứng chỉ cũ nằm lại
+# trong CSDL mà không còn lý do gì để tồn tại.
+DON_PHIEN_MOI_GIAY = 6 * 3600
+
+
+async def don_phien_loop() -> None:
+    """Xoá phiên đã hết hạn. Chạy ngay lần đầu rồi mới ngủ."""
+    from agent.core import xac_thuc
+
+    while True:
+        try:
+            n = await xac_thuc.don_phien_het_han()
+            if n:
+                await db.log_event("phien.don_het_han", actor="system", so_dong=n)
+        except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+            await db.log_event("phien.don_loi", actor="system",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(DON_PHIEN_MOI_GIAY)
+
+
 GIU_PHIEN_ZALO_MOI_GIAY = 60
 
 
@@ -519,6 +543,7 @@ async def lifespan(app: FastAPI):
     # nó chết theo. Xem scripts/canh_gac_ngoai.py cho trường hợp ấy.
     _nen(canh_gac.vong_canh_gac())
     _nen(canh_han_token_meta_loop())
+    _nen(don_phien_loop())
     # Giữ kênh Zalo sống qua mọi lần restart — xem giu_phien_zalo_loop.
     _nen(giu_phien_zalo_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
@@ -1046,7 +1071,15 @@ async def _gui_nhu_nguoi(
     phải ``delivered``.
     """
     lan_dau = await _la_tin_dau(cid)
-    tins = tu_nhien.lam_tu_nhien(text, lan_dau=lan_dau)
+    # Công tắc `NHIP_NGUOI_THAT` phải THẬT SỰ tắt được.
+    #
+    # Trước đây nó được khai trong `config.py` kèm chú thích "tắt đi thì gửi
+    # một cục" — nhưng không ai đọc, nên tắt cũng không có tác dụng gì. Một
+    # công tắc nói dối tệ hơn không có công tắc: người vận hành tưởng đã tắt
+    # rồi đi tìm nguyên nhân ở chỗ khác.
+    tins = (tu_nhien.lam_tu_nhien(text, lan_dau=lan_dau)
+            if settings.nhip_nguoi_that else [text.strip()])
+    tins = [t for t in tins if t]
     if not tins:
         return []
 

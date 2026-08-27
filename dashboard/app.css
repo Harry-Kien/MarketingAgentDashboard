@@ -1497,3 +1497,16 @@ svg { flex: none; }
             flex: 0 0 auto; background: var(--muted, #f4f4f5); cursor: zoom-in; }
 .kho__anh--trong { display: grid; place-items: center; cursor: default;
                    color: var(--muted-foreground, #9ca3af); font-size: 13px; }
+
+/* Ô nội dung của dòng danh sách kiểu KHỐI (màn hình Số hiệu).
+   `.row` là lưới ba cột; phần tử nằm ở cột giữa mà thiếu `min-width: 0` thì
+   chữ dài đẩy tràn cả hàng — cùng gốc với lỗi avatar đè tên khách. */
+.row__main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* Nút phụ: cùng kích thước nút chính nhưng lùi lại về thị giác.
+   Dùng cho hành động thay thế đứng cạnh hành động chính — như "↗ mở tab
+   mới" bên cạnh "Mở". Không có kiểu riêng thì hai nút trông y hệt nhau và
+   người dùng không biết cái nào là cái chính. */
+.btn--ghost { background: transparent; border-color: transparent;
+              color: hsl(var(--muted-foreground)); }
+.btn--ghost:hover { background: hsl(var(--muted)); color: inherit; }

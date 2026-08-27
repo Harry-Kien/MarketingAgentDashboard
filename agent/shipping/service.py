@@ -37,6 +37,54 @@ def get_provider(name: str | None = None) -> BaseShippingProvider:
     return _PROVIDERS[key]
 
 
+async def _bao_khach(conversation_id, text: str, khoa: str) -> None:
+    """
+    Gửi tin cho khách QUA OUTBOX. Không bao giờ gọi thẳng adapter.
+
+    VÌ SAO
+    ------
+    Bản trước gọi `adapter.send_text(...)` rồi `except Exception: pass`. Bốn
+    thứ mất cùng lúc:
+
+        thử lại      provider lỗi một giây là tin bay mất
+        chống trùng  webhook GHN phát lại là khách nhận hai lần
+        lưu vết      tin KHÔNG vào bảng `messages`, nên nó không hiện trong
+                     khung chat, Customer 360 không thấy, kiểm toán không có
+        báo lỗi      `except: pass` nuốt im
+
+    Mọi tin khác trong hệ thống đều đi qua outbox. Không có lý do gì để tin
+    vận chuyển là ngoại lệ.
+
+    Mục đích để mặc định `transactional`: báo mã đơn cho khách vừa đặt hàng
+    là tin giao dịch, không phải quảng cáo. Xếp nhầm sang `marketing` là
+    chốt chặn consent chặn luôn, và khách không nhận được mã đơn của chính
+    mình.
+    """
+    if not conversation_id:
+        return
+    from agent.omnichannel.outbound_service import (
+        OutboundService, PostgresOutboundRepository,
+    )
+
+    try:
+        await OutboundService(PostgresOutboundRepository()).queue_text(
+            conversation_id=conversation_id,
+            role="system",
+            text=text,
+            idempotency_key=khoa,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Vận đơn ĐÃ tạo ở phía hãng. Để lỗi gửi tin làm cả hàm ném là hàng
+        # vẫn đi mà hệ thống tưởng chưa tạo — rồi có người tạo vận đơn thứ
+        # hai cho cùng một đơn.
+        #
+        # Nhưng KHÔNG nuốt im: ghi lại để người trực báo khách bằng tay.
+        await db.log_event(
+            "shipping.bao_khach_that_bai", khoa=khoa[:80],
+            error=f"{type(exc).__name__}: {exc}"[:200],
+        )
+
+
 async def tao_van_don_cho_don(
     ma_don: str, provider_name: str | None = None
 ) -> CreateWaybillResult:
@@ -189,6 +237,25 @@ async def tao_van_don_cho_don(
             phi=result.phi_van_chuyen,
         )
 
+        # BÁO MÃ CHO KHÁCH.
+        #
+        # Bản trước lưu mã vào bảng rồi dừng. Khách chỉ nghe tin khi hàng ĐÃ
+        # giao — tức suốt hai tới bốn ngày chờ, họ không biết đơn đã đi chưa
+        # và không có mã để tự tra. Đó đúng là câu hỏi phổ biến nhất sau bán.
+        #
+        # KHÔNG hứa ngày giao: hệ thống đọc sổ cửa hàng, không đọc vị trí
+        # kiện hàng theo thời gian thực. Đưa mã cho khách tự tra trên ứng
+        # dụng hãng mới là thông tin chính xác.
+        await _bao_khach(
+            order.get("conversation_id"),
+            f"Dạ đơn {ma_don} của mình đã được bàn giao cho "
+            f"{provider.name} rồi ạ.\n\n"
+            f"Mã vận đơn: {result.ma_van_don}\n"
+            "Mình tra mã này trên ứng dụng của hãng để xem hàng đang ở đâu "
+            "nha. Có gì cần hỗ trợ mình cứ nhắn em ạ.",
+            f"vandon-tao:{result.ma_van_don}",
+        )
+
     return result
 
 
@@ -299,8 +366,6 @@ async def xu_ly_webhook_van_chuyen(
       3. Cập nhật đơn hàng trong DB.
       4. Kích hoạt thông báo cho khách hoặc hoàn kho nếu đơn bị hoàn về.
     """
-    from agent.channels import registry as channels
-
     cho_qua, ly_do_chan = kiem_bi_mat_webhook(headers, query_token)
     if not cho_qua:
         await db.log_event(
@@ -381,21 +446,15 @@ async def xu_ly_webhook_van_chuyen(
             "UPDATE orders SET trang_thai = 'da_giao', updated_at = now() WHERE id = $1",
             order["id"],
         )
-        # Gửi tin nhắn thông báo cho khách qua Zalo/Chatwoot
-        conv_id = order.get("conversation_id")
-        if conv_id:
-            conv = await db.fetchrow("SELECT channel, external_id FROM conversations WHERE id = $1", conv_id)
-            if conv:
-                adapter = channels.get(conv["channel"])
-                if adapter:
-                    msg_text = (
-                        f"Dạ shop thông báo đơn hàng #{ma_don} (Mã vận đơn: {ma_van_don}) "
-                        f"đã được giao thành công đến bạn ạ! Cảm ơn bạn đã ủng hộ shop nha ❤️"
-                    )
-                    try:
-                        await adapter.send_text(conv["external_id"], msg_text)
-                    except Exception:
-                        pass
+        # Khoá gắn theo MÃ VẬN ĐƠN và trạng thái: GHN phát lại webhook là
+        # chuyện thường, và lần phát thứ hai không được sinh tin thứ hai.
+        await _bao_khach(
+            order.get("conversation_id"),
+            f"Dạ đơn {ma_don} đã giao thành công tới mình rồi ạ. "
+            "Cảm ơn mình đã tin tưởng shop nha. Sản phẩm có gì cần hỗ trợ "
+            "mình cứ nhắn em ạ.",
+            f"vandon-dagiao:{ma_van_don}",
+        )
 
     # 2. HOÀN VỀ (RETURNED): Tự động cộng lại hàng vào kho (Restock) & Ghi nhật ký
     elif st_noi_bo == InternalShippingStatus.RETURNED:

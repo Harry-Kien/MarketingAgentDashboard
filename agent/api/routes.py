@@ -605,6 +605,28 @@ async def list_video_assets(video_id: str) -> list[dict]:
     ]
 
 
+@router.get("/san-pham/{ma}/anh")
+async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)):
+    """
+    Ảnh sản phẩm cho màn hình Kho và cho ô chọn khi nhân viên gửi ảnh.
+
+    ĐƯỜNG DẪN DO MÁY CHỦ DỰNG, KHÔNG DO CLIENT
+    ------------------------------------------
+    `_anh_san_pham` tra mã trong danh mục rồi trả đường dẫn tương ứng. Client
+    chỉ gửi MÃ, không gửi đường dẫn — nên một mã dạng `../../.env` không đi
+    tới đâu cả: nó đơn giản không có trong danh mục.
+
+    Đòi đăng nhập: ảnh sản phẩm không phải bí mật, nhưng mọi thứ dưới `/api`
+    đều sau cổng đăng nhập, và mở một ngoại lệ là mở một đường để dò.
+    """
+    from agent.core.tools import _anh_san_pham
+
+    duong = _anh_san_pham(ma)
+    if duong is None or not duong.exists():
+        raise HTTPException(404, f"Không có ảnh cho mã {ma}")
+    return FileResponse(str(duong), media_type="image/jpeg")
+
+
 @router.get("/videos/{video_id}/assets/{ord}/file")
 async def video_asset_file(video_id: str, ord: int):
     row = await db.fetchrow(
@@ -851,7 +873,7 @@ class KiemKeIn(BaseModel):
 @router.get("/kho")
 async def kho_tong_quan() -> dict:
     """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
-    from agent.core.tools import _catalog
+    from agent.core.tools import _anh_san_pham, _catalog
 
     danh_muc = {p["ma"]: p for p in _catalog().get("san_pham", [])}
     ton = await db.fetch("SELECT ma, so_luong, cap_nhat_luc FROM ton_kho ORDER BY ma")
@@ -866,6 +888,12 @@ async def kho_tong_quan() -> dict:
             "so_luong": int(t["so_luong"]),
             "sap_het": int(t["so_luong"]) <= kho.NGUONG_SAP_HET,
             "cap_nhat_luc": t["cap_nhat_luc"].isoformat(),
+            # Người trực cần thấy ẢNH để đối chiếu khi khách mô tả sản phẩm
+            # bằng lời — "cái chai xanh xanh ấy" — thay vì mở thư mục ra tìm.
+            "co_anh": _anh_san_pham(t["ma"]) is not None,
+            "dung_tich": sp.get("dung_tich", ""),
+            "da_phu_hop": sp.get("da_phu_hop", []),
+            "van_de_ho_tro": sp.get("van_de_ho_tro", []),
         })
     het = [x for x in ra if x["so_luong"] == 0]
     sap = [x for x in ra if 0 < x["so_luong"] <= kho.NGUONG_SAP_HET]

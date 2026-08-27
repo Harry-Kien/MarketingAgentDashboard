@@ -823,13 +823,28 @@ async function loadKho() {
 
   $("#khoRows").innerHTML = ds.length ? ds.map((x) => {
     const tone = x.so_luong === 0 ? "halt" : x.sap_het ? "assist" : "auto";
-    return `<div class="row">
+    /* Ảnh sản phẩm ngay trên dòng kho.
+     *
+     * Người trực cần đối chiếu khi khách mô tả bằng lời — "cái chai xanh
+     * xanh ấy" — thay vì mở thư mục ảnh ra tìm. Và cùng tấm ảnh đó là thứ
+     * agent gửi cho khách, nên nhìn thấy nó ở đây là biết khách sẽ thấy gì.
+     *
+     * `loading="lazy"`: màn hình có thể hàng trăm mã, tải hết cùng lúc là
+     * mở hàng trăm kết nối cho một lần cuộn. */
+    const anh = x.co_anh
+      ? `<img class="kho__anh" src="/api/san-pham/${encodeURIComponent(x.ma)}/anh"
+             alt="" loading="lazy" data-xemanh="${esc(x.ma)}">`
+      : '<span class="kho__anh kho__anh--trong">—</span>';
+    const them = [x.dung_tich, ...(x.da_phu_hop || []).slice(0, 2)]
+      .filter(Boolean).join(" · ");
+    return `<div class="row row--kho">
       <span class="row__flag row__flag--${tone}"></span>
+      ${anh}
       <span class="row__body">
         <span class="row__title">${esc(x.ma)} · ${esc(x.ten)}
           ${x.so_luong === 0 ? '<span class="tag tag--huy">Hết hàng</span>'
             : x.sap_het ? '<span class="tag tag--duyet">Sắp hết</span>' : ""}</span>
-        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}</span>
+        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}${them ? " · " + esc(them) : ""}</span>
       </span>
       <span class="row__side">
         <span class="row__num">${num(x.so_luong)}</span>

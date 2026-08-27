@@ -1463,3 +1463,12 @@ svg { flex: none; }
    chỗ Messenger và Zalo để mắt không phải tìm. */
 .convo__dinhkem { display: flex; align-items: center; }
 .convo__dinhkem .btn { font-size: 17px; line-height: 1; padding: 7px 10px; }
+
+/* Ảnh sản phẩm trên dòng kho.
+   Cột riêng chứ không nhét vào cột thanh trạng thái 3px — đó đúng lỗi đè
+   chữ đã sửa ở danh sách Khách hàng. */
+.row--kho { grid-template-columns: 3px auto minmax(0, 1fr) auto; }
+.kho__anh { width: 46px; height: 46px; border-radius: 8px; object-fit: cover;
+            flex: 0 0 auto; background: var(--muted, #f4f4f5); cursor: zoom-in; }
+.kho__anh--trong { display: grid; place-items: center; cursor: default;
+                   color: var(--muted-foreground, #9ca3af); font-size: 13px; }

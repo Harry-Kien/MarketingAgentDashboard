@@ -38,6 +38,7 @@ from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent.core import anh_khach
 from agent import canh_gac
 from agent.core import du_lieu_ca_nhan, gio_lam_viec, xac_thuc
 from agent.core import tu_nhien
@@ -1060,13 +1061,32 @@ async def handle_inbound(msg: InboundMessage) -> None:
         # Agent phải BIẾT là có ảnh. Không nói thì nó trả lời câu chữ như
         # thể ảnh không tồn tại — khách gửi ảnh kèm "cái này còn hàng
         # không ạ?" mà nhận về câu hỏi lại "mình muốn hỏi sản phẩm nào ạ?".
+        # Agent NHÌN ĐƯỢC ảnh khách gửi.
+        #
+        # Bản trước nói thẳng với model "[bạn KHÔNG xem được nội dung ảnh]" —
+        # trung thực và đúng lúc đó, nhưng nghĩa là mọi ca khách gửi ảnh đều
+        # phải chuyển người: ảnh sản phẩm muốn mua, ảnh hàng nhận được bị vỡ,
+        # ảnh màn hình chuyển khoản.
+        #
+        # Tải ảnh hỏng thì rơi về đúng hành vi cũ, không làm đứt lượt trả
+        # lời: tin nhắn của khách mới là việc chính.
         cau_hoi = msg.text
+        khoi_anh: list[dict] = []
         if msg.attachments:
-            cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} ảnh — bạn KHÔNG "
-                       f"xem được nội dung ảnh] {msg.text}")
+            async def _ghi_loi_anh(ly_do: str) -> None:
+                await db.log_event("anh_khach.tai_that_bai", ref_id=cid,
+                                   ly_do=ly_do)
+
+            khoi_anh = await anh_khach.lay_khoi_anh(
+                msg.attachments, ghi_loi=_ghi_loi_anh)
+            if not khoi_anh:
+                cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} tệp nhưng "
+                           f"hệ thống KHÔNG tải về xem được] {msg.text}")
+
         reply = await brain.respond(
             conversation_id=cid, history=history, question=cau_hoi,
             customer_ref=msg.customer_ref, channel=msg.channel,
+            anh=khoi_anh or None,
         )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
         await db.execute(

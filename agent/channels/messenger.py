@@ -164,7 +164,13 @@ class MessengerAdapter(ChannelAdapter):
         self._window_hours = float(
             creds.get("window_hours") or settings.messenger_cua_so_gio or 0
         )
-        api_base = str(creds.get("api_base") or settings.messenger_api_base)
+        # `settings.graph_base` là nguồn DUY NHẤT của phiên bản Graph.
+        # `api_base` trong credential vẫn được tôn trọng để ghim riêng một
+        # tài khoản khi cần, nhưng mặc định thì cả hệ thống đi cùng phiên bản.
+        api_base = str(
+            creds.get("api_base") or settings.messenger_api_base
+            or settings.graph_base
+        )
         self._client = client or httpx.AsyncClient(
             base_url=api_base.rstrip("/"), timeout=20.0
         )

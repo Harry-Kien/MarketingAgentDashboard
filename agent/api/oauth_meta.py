@@ -27,6 +27,8 @@ import time
 import urllib.parse
 from typing import Any
 
+from agent.config import settings
+
 # Quyền tối thiểu để nhận và trả lời tin nhắn Trang.
 #
 # Thiếu `pages_messaging` là nối xong nhưng không nhắn được — và lỗi ấy chỉ
@@ -43,7 +45,9 @@ QUYEN = (
 # Phiên bản Graph API dùng cho luồng OAuth. Ghim tường minh: Meta ngừng hỗ
 # trợ phiên bản cũ theo lịch, và một URL không ghi phiên bản sẽ lặng lẽ
 # nhảy sang bản mới nhất — đổi hành vi mà không ai đổi mã.
-GRAPH_VERSION = "v21.0"
+# Lấy từ cấu hình chung: bốn chỗ tự khai và lệch nhau là cách một nửa hệ
+# thống nói chuyện với Meta bằng hợp đồng khác nửa kia.
+GRAPH_VERSION = settings.graph_version
 
 # Đủ lâu để người dùng đọc màn hình cấp quyền của Meta, đủ ngắn để một
 # `state` bị lộ không dùng lại được sau đó.

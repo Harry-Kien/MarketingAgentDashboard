@@ -91,7 +91,22 @@ class Settings(BaseSettings):
     messenger_page_token: str = ""        # Page access token dài hạn
     messenger_app_secret: str = ""        # ký X-Hub-Signature-256
     messenger_verify_token: str = ""      # dội lại hub.challenge lần bắt tay
-    messenger_api_base: str = "https://graph.facebook.com/v21.0"
+    # --- Graph API: MỘT phiên bản cho toàn hệ thống ---
+    #
+    # Trước đây bốn chỗ tự khai, và chúng LỆCH NHAU: adapter gửi/nhận tin
+    # dùng v23.0 trong khi OAuth và đăng ký webhook dùng v21.0. Hai phiên bản
+    # Graph có thể khác nhau ở tên trường và ở hành vi — nên một nửa hệ thống
+    # nói chuyện với Meta bằng một hợp đồng, nửa kia bằng hợp đồng khác.
+    #
+    # Meta ngừng hỗ trợ từng phiên bản theo lịch. Gom về một chỗ để nâng cấp
+    # là sửa một dòng, không phải đi tìm bốn chỗ và bỏ sót một.
+    graph_version: str = "v23.0"
+
+    @property
+    def graph_base(self) -> str:
+        return f"https://graph.facebook.com/{self.graph_version}"
+
+    messenger_api_base: str = ""
     # Cửa sổ tiêu chuẩn của Meta, tính từ tin CUỐI của khách. Ngoài cửa sổ
     # phải dùng Message Tag hoặc quảng cáo — cơ chế khác, không phải việc
     # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.

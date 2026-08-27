@@ -36,8 +36,10 @@ from typing import Any
 
 import httpx
 
-GRAPH_VERSION = "v21.0"
-GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_VERSION}"
+from agent.config import settings
+
+GRAPH_VERSION = settings.graph_version
+GRAPH_BASE = settings.graph_base
 
 # Xem docstring: chỉ những trường bộ đọc thật sự xử lý được.
 TRUONG_THEO_DOI = ("messages",)

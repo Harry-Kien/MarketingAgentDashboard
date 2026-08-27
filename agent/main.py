@@ -173,6 +173,87 @@ async def poll_loop() -> None:
 
 # Chu kỳ kiểm phiên Zalo cá nhân. Đủ thưa để không quấy sidecar, đủ dày để
 # một lần restart không làm kênh chết quá lâu.
+# Hỏi Meta về hạn token mỗi ngày một lần.
+#
+# Dày hơn là phí: hạn token đo bằng tuần, không đo bằng phút. Thưa hơn là có
+# ngày mất cả một cửa sổ cảnh báo.
+KIEM_TOKEN_META_MOI_GIAY = 24 * 3600
+
+
+async def canh_han_token_meta_loop() -> None:
+    """
+    Báo TRƯỚC khi Page token hết hạn, thay vì phát hiện sau khi tin ngừng về.
+
+    VÌ SAO KHÔNG THỂ BIẾT NẾU KHÔNG HỎI
+    -----------------------------------
+    Đo trên tài khoản thật: token dài hạn nên `expires_at = 0` — vĩnh viễn.
+    Nhưng `data_access_expires_at` thì CÓ hạn, và sau mốc đó app mất quyền
+    đọc dữ liệu trừ khi chủ Trang cấp quyền lại.
+
+    Khi tới hạn, Trang vẫn hiện xanh trên dashboard, webhook vẫn đăng ký —
+    chỉ có Graph bắt đầu trả `OAuthException`, tin khách không về nữa, và tin
+    gửi đi thì hỏng. Tất cả cùng lúc, không báo trước.
+
+    VÌ SAO CHẠY NGAY LẦN ĐẦU RỒI MỚI NGỦ
+    -------------------------------------
+    Khởi động lại app là lúc người vận hành đang nhìn màn hình. Ngủ 24 giờ
+    trước lần kiểm đầu tiên nghĩa là một token sắp chết vẫn im lặng suốt một
+    ngày nữa.
+    """
+    from agent.channels.suc_khoe_token_meta import NGAY_BAO_TRUOC, hoi_meta
+    from agent.omnichannel.account_repository import PostgresAccountRepository
+    from agent.omnichannel.accounts import Channel
+    from agent.omnichannel.credential_loader import VaultCredentialLoader
+    from agent.security.credential_vault import CredentialVault, parse_master_keys
+
+    while True:
+        try:
+            repo = PostgresAccountRepository()
+            vault = CredentialVault(
+                parse_master_keys(settings.credential_master_keys),
+                active_version=settings.credential_active_key_version,
+            )
+            loader = VaultCredentialLoader(repo, vault)
+            app_id = settings.meta_app_id or settings.messenger_app_id
+
+            for kenh in (Channel.FACEBOOK, Channel.INSTAGRAM):
+                for acc in await repo.list_active_by_channel(kenh):
+                    creds = await loader.load(acc.id) or {}
+                    kq = await hoi_meta(
+                        token=str(creds.get("access_token") or ""),
+                        app_id=app_id,
+                        app_secret=str(creds.get("app_secret") or ""),
+                    )
+                    # None = không hỏi được. Im lặng có chủ ý: mạng hỏng biến
+                    # thành báo động giả thì lần sau người ta bỏ qua cảnh báo
+                    # thật.
+                    if kq is None or kq["muc"] == "on":
+                        continue
+
+                    con = kq.get("ngay_con_lai")
+                    await db.log_event(
+                        "meta.token_sap_het" if kq["muc"] == "sap_het"
+                        else "meta.token_chet",
+                        actor="system",
+                        tai_khoan=acc.display_name[:80],
+                        kenh=kenh.value,
+                        ngay_con_lai=round(con, 1) if con is not None else None,
+                    )
+                    await canh_gac.bao_dong(
+                        tieu_de="Token Meta sắp hết hạn",
+                        muc_do="chan" if kq["muc"] != "sap_het" else "canh_bao",
+                        chi_tiet=f"Token Meta của '{acc.display_name[:60]}' "
+                        + (f"còn {con:.0f} ngày — chủ Trang cần cấp quyền lại "
+                           f"(báo trước {NGAY_BAO_TRUOC} ngày)"
+                           if kq["muc"] == "sap_het"
+                           else "ĐÃ HẾT HẠN — Trang này không nhận/gửi tin được nữa"),
+                    )
+        except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+            await db.log_event("meta.canh_han_token_loi", actor="system",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(KIEM_TOKEN_META_MOI_GIAY)
+
+
 GIU_PHIEN_ZALO_MOI_GIAY = 60
 
 
@@ -437,6 +518,7 @@ async def lifespan(app: FastAPI):
     # lưu cũ). KHÔNG phát hiện được chính tiến trình này chết — lúc đó
     # nó chết theo. Xem scripts/canh_gac_ngoai.py cho trường hợp ấy.
     _nen(canh_gac.vong_canh_gac())
+    _nen(canh_han_token_meta_loop())
     # Giữ kênh Zalo sống qua mọi lần restart — xem giu_phien_zalo_loop.
     _nen(giu_phien_zalo_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.

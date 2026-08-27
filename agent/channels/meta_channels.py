@@ -12,6 +12,7 @@ from uuid import UUID
 
 import httpx
 
+from agent.config import settings
 from agent.channels.base import (
     ChannelAdapter,
     ConnectionCheck,
@@ -59,7 +60,7 @@ class _MetaAdapter(ChannelAdapter):
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=str(
-                creds.get("api_base") or "https://graph.facebook.com/v23.0"
+                creds.get("api_base") or settings.graph_base
             ).rstrip("/"),
             timeout=20,
         )

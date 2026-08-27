@@ -153,6 +153,21 @@ def _muc_khach_cho(kq: dict) -> dict | None:
     return None
 
 
+async def bao_dong(chi_tiet: str, *, tieu_de: str = "Cảnh báo hệ thống",
+                   muc_do: str = "canh_bao") -> None:
+    """
+    Cửa CÔNG KHAI để phần khác của hệ thống phát báo động.
+
+    Trước đây chỉ có `_bao` — hàm riêng, bốn tham số, trong đó một tham số là
+    dict kết quả của vòng canh gác. Chỗ khác muốn báo động phải hoặc gọi vào
+    hàm riêng, hoặc dựng một dict giả cho vừa chữ ký.
+
+    Cả hai cách đều dẫn tới cùng một chỗ: người ta ngại, rồi thôi không báo
+    động nữa — và hệ thống mất đi đúng thứ nó cần nhất.
+    """
+    await _bao(muc_do, tieu_de, chi_tiet, {})
+
+
 async def kiem_mot_lan() -> dict:
     """Kiểm một lượt và báo nếu trạng thái đổi. Trả kết quả chẩn đoán."""
     global _truoc, _cho_truoc

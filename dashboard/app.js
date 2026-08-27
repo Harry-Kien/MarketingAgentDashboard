@@ -346,17 +346,41 @@ async function loadThread(id) {
 
        Ảnh nằm TRÊN bong bóng chữ: khách gửi ảnh trước rồi mới gõ chú
        thích, và đảo thứ tự làm người đọc hiểu ngược ý họ. */
+    /* Nguồn ảnh: URL của nhà cung cấp nếu có, còn không thì đường phục vụ
+     * tệp của chính hệ thống.
+     *
+     * Tin NHÂN VIÊN gửi không có `url` — `queue_file` chỉ lưu `storage_key`,
+     * tức đường dẫn trên máy chủ. Vẽ thẳng `url` cho ra ảnh vỡ: người trực
+     * gửi ảnh cho khách xong, nhìn lại khung chat thì thấy biểu tượng hỏng.
+     */
+    const nguonAnh = (a) => a.url || (a.id ? `/api/attachments/${a.id}/file` : "");
+
     const anh = (m.attachments || []).length
-      ? `<div class="msg__anh">${m.attachments.map((a) =>
-          (a.kind || a.loai) === "image"
-            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="ảnh khách gửi" loading="lazy"></a>`
-            : `<a class="msg__file" href="${esc(a.url || "#")}" target="_blank" rel="noopener">📎 ${esc(a.kind || a.loai || "file")}</a>`
-        ).join("")}</div>`
+      ? `<div class="msg__anh">${m.attachments.map((a) => {
+          const src = nguonAnh(a);
+          const ten = (a.metadata && a.metadata.caption) || "";
+          if (!src) return "";
+          return (a.kind || a.loai) === "image"
+            ? `<a href="${esc(src)}" target="_blank" rel="noopener" title="${esc(ten)}">
+                 <img src="${esc(src)}" alt="${esc(ten || "ảnh")}" loading="lazy"></a>`
+            : `<a class="msg__file" href="${esc(src)}" target="_blank" rel="noopener">
+                 📎 ${esc(ten || a.kind || "tệp đính kèm")}</a>`;
+        }).join("")}</div>`
       : "";
+
+    /* Không lặp lại tên tệp dưới ảnh.
+     *
+     * `queue_file` đặt nội dung tin BẰNG chú thích, và chú thích mặc định là
+     * tên tệp. Vẽ cả hai thì khung chat hiện ảnh rồi ngay dưới là một bong
+     * bóng xanh ghi "WIN_20241105_22_45_28_Pro.jpg" — Messenger và Zalo đều
+     * không làm vậy: ảnh tự nói lên nó là gì. */
+    const tenTep = (m.attachments || [])
+      .map((a) => (a.metadata && a.metadata.caption) || "").filter(Boolean);
+    const chuTrung = m.content && tenTep.includes(m.content.trim());
 
     return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""}">
       ${anh}
-      ${m.content ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
+      ${m.content && !chuTrung ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
         ${draft ? `<button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}

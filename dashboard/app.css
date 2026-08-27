@@ -1218,13 +1218,20 @@ svg { flex: none; }
    chặn sẽ đẩy toàn bộ hội thoại xuống dưới màn hình. */
 .msg__anh { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .msg__anh img {
-  max-height: 200px;
+  /* Bo góc 14px khớp `.msg__bubble`: ảnh và chữ là hai dạng của cùng một
+     tin, nên chúng phải trông cùng một họ. Messenger và Zalo đều vậy. */
+  max-height: 260px;
   max-width: 100%;
-  border-radius: calc(var(--radius) - 2px);
+  border-radius: 14px;
   border: 1px solid hsl(var(--border));
   display: block;
   cursor: zoom-in;
+  background: hsl(var(--muted));
 }
+/* Góc nhọn phía người gửi, y như bong bóng chữ ngay dưới nó. */
+.msg--agent .msg__anh img,
+.msg--staff .msg__anh img { border-bottom-right-radius: 4px; }
+.msg--customer .msg__anh img { border-bottom-left-radius: 4px; }
 .msg__file {
   font-size: 12px;
   padding: 6px 10px;

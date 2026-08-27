@@ -605,6 +605,62 @@ async def list_video_assets(video_id: str) -> list[dict]:
     ]
 
 
+# Kiểu tệp suy từ đuôi. Danh sách CHO PHÉP — thứ lạ trả về
+# `application/octet-stream`, tức trình duyệt tải xuống thay vì mở, và không
+# có gì chạy được trong tab của người xem.
+_MIME_THEO_DUOI = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
+}
+
+
+@router.get("/attachments/{attachment_id}/file")
+async def attachment_file(
+    attachment_id: str, _nguoi: dict = Depends(bat_buoc_dang_nhap),
+):
+    """
+    Phục vụ tệp đính kèm cho khung chat.
+
+    VÌ SAO CẦN ĐƯỜNG NÀY
+    --------------------
+    `queue_file` lưu `storage_key` — đường dẫn TRÊN MÁY CHỦ — và để `url`
+    rỗng. Dashboard vẽ `url` nên ra ảnh vỡ: người trực gửi ảnh cho khách
+    xong, nhìn lại khung chat thì thấy một biểu tượng hỏng.
+
+    KHÔNG NHẬN ĐƯỜNG DẪN TỪ CLIENT
+    ------------------------------
+    Client gửi ID của bản ghi; đường dẫn lấy từ CSDL. Nếu nhận đường dẫn thì
+    `?path=../../.env` đọc được mọi tệp trên máy chủ.
+
+    Và vẫn kiểm lần nữa rằng tệp nằm TRONG `data/`: một bản ghi hỏng hoặc bị
+    sửa tay không được biến thành đường đọc toàn ổ đĩa.
+    """
+    try:
+        aid = uuid.UUID(attachment_id)
+    except ValueError as exc:
+        raise HTTPException(404, "Không có tệp") from exc
+
+    row = await db.fetchrow(
+        "SELECT storage_key, mime_type, metadata FROM attachments WHERE id = $1",
+        aid,
+    )
+    if row is None or not row["storage_key"]:
+        raise HTTPException(404, "Không có tệp")
+
+    duong = Path(str(row["storage_key"])).resolve()
+    goc_du_lieu = (Path(__file__).resolve().parents[2] / "data").resolve()
+    if goc_du_lieu not in duong.parents:
+        await db.log_event("attachment.ngoai_thu_muc_du_lieu",
+                           attachment_id=str(aid))
+        raise HTTPException(404, "Không có tệp")
+    if not duong.is_file():
+        raise HTTPException(404, "Tệp không còn trên máy chủ")
+
+    mime = str(row["mime_type"] or "") or _MIME_THEO_DUOI.get(
+        duong.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(duong), media_type=mime)
+
+
 @router.get("/san-pham/{ma}/anh")
 async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)):
     """

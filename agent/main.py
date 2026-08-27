@@ -841,7 +841,23 @@ async def webhook(
                 {"ok": False, "error": "chữ ký Chatwoot không hợp lệ"},
                 status_code=401,
             )
-    elif settings.webhook_secret:
+    else:
+        # CHƯA CẤU HÌNH THÌ TỪ CHỐI, KHÔNG PHẢI CHO QUA.
+        #
+        # Bản trước viết `elif settings.webhook_secret:` — bí mật trống thì
+        # bỏ qua kiểm tra hoàn toàn, và cửa này mở toang cho mọi người trên
+        # Internet đẩy tin giả vào hộp thư.
+        #
+        # Đây là lần thứ BA cùng một khuôn trong repo này: `doc_thach_thuc`
+        # của webhook Meta và `kiem_bi_mat_webhook` của vận chuyển đều từng
+        # như vậy. Cả ba giờ cùng một luật: danh sách rỗng nghĩa là TỪ CHỐI.
+        if not settings.webhook_secret:
+            return JSONResponse(
+                {"ok": False,
+                 "error": "WEBHOOK_SECRET chưa cấu hình — từ chối mọi webhook. "
+                          "Sinh bằng: python -m scripts.sinh_token WEBHOOK_SECRET"},
+                status_code=503,
+            )
         supplied = (
             request.headers.get("x-webhook-secret")
             or request.query_params.get("token", "")

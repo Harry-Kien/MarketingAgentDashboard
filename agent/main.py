@@ -547,6 +547,12 @@ async def lifespan(app: FastAPI):
     _nen(don_phien_loop())
     # Giữ kênh Zalo sống qua mọi lần restart — xem giu_phien_zalo_loop.
     _nen(giu_phien_zalo_loop())
+    # Thử lại đơn kẹt `cho_dong_bo`. Vòng này tự bỏ qua khi ERP_GHI_DON tắt,
+    # nên dựng nó vô điều kiện là an toàn — và có nó ngay từ đầu nghĩa là
+    # ngày bật ghi đơn không phải nhớ bật thêm thứ gì.
+    from agent.erp.vong_dong_bo import vong_dong_bo_loop
+
+    _nen(vong_dong_bo_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
     # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
     # thái dở, không ai nhặt lại và không dòng lỗi nào.

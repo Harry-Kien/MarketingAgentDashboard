@@ -62,7 +62,7 @@ async def chay() -> int:
 
     if loai == "tep":
         _in("chặn", "Cấu hình", "ERP_LOAI vẫn là 'tep' (đọc file trên đĩa)",
-            "Đặt ERP_LOAI=erpnext trong .env rồi chạy lại")
+            "Đặt ERP_LOAI=erpnext hoặc odoo trong .env rồi chạy lại")
         return 1
 
     from agent.erp import nha_may
@@ -77,13 +77,15 @@ async def chay() -> int:
         _in("chặn", "Cấu hình", str(exc))
         return 1
 
-    _in("đủ", "Nguồn", f"{nguon.ten} → {settings.erpnext_url or '(chưa đặt)'}")
+    goc = {"erpnext": settings.erpnext_url, "odoo": settings.odoo_url}.get(loai, "")
+    _in("đủ", "Nguồn", f"{nguon.ten} → {goc or '(chưa đặt)'}")
 
     # --- 1. Nối được không -------------------------------------------
     song, tre = await _do_do_tre(nguon.suc_khoe)
     if not song:
         _in("chặn", "Kết nối", f"không xác thực được ({tre:.0f}ms)",
-            "Kiểm ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET")
+            "ERPNext: kiểm ERPNEXT_URL/API_KEY/API_SECRET · "
+            "Odoo: kiểm ODOO_URL/DB/DANG_NHAP/API_KEY")
         return 1
     _in("đủ", "Kết nối", f"xác thực OK, {tre:.0f}ms")
 
@@ -92,20 +94,22 @@ async def chay() -> int:
         ds, tre_ds = await _do_do_tre(nguon.danh_sach_san_pham)
     except LoiERP as exc:
         _in("chặn", "Danh mục", str(exc),
-            "Tài khoản API cần quyền đọc DocType 'Item'")
+            "Tài khoản API cần quyền đọc Item (ERPNext) / "
+            "product.product (Odoo)")
         return 1
 
     if not ds:
         _in("chặn", "Danh mục", "đọc được nhưng RỖNG",
-            "Không có Item nào thoả disabled=0 và is_sales_item=1")
+            "ERPNext: không Item nào thoả disabled=0 và is_sales_item=1 · "
+            "Odoo: không product.product nào thoả active và sale_ok")
         return 1
     _in("đủ", "Danh mục", f"{len(ds)} sản phẩm bán được, {tre_ds:.0f}ms")
 
     # Cắt cụt do phân trang trông y hệt cửa hàng nhỏ. Con số tròn trịa của
     # Frappe là dấu hiệu đáng ngờ nhất.
-    if len(ds) in (20, 100, 500):
+    if len(ds) in (20, 80, 100, 500):
         _in("cảnh báo", "Phân trang",
-            f"đúng {len(ds)} — trùng mức phân trang mặc định của Frappe",
+            f"đúng {len(ds)} — trùng một mức phân trang mặc định",
             "Kiểm xem cửa hàng có đúng chừng ấy SKU không")
 
     mau = ds[0]
@@ -114,13 +118,15 @@ async def chay() -> int:
     # --- 3. Giá lấy đúng bảng nào ------------------------------------
     g, tre_gia = await _do_do_tre(nguon.gia, mau.ma)
     if g is None:
-        _in("chặn", "Giá", f"{mau.ma} không có giá trong '{settings.erp_pricelist}'",
-            "ERP_PRICELIST có thể đang trỏ sai bảng giá")
+        _in("chặn", "Giá", f"{mau.ma} không tra được giá",
+            "ERPNext: ERP_PRICELIST có thể trỏ sai bảng giá · "
+            "Odoo: sản phẩm chưa đặt list_price")
         return 1
     _in("đủ", "Giá", f"{g.gia_ban:,} {g.don_vi} từ '{g.nguon}', {tre_gia:.0f}ms")
     _in("cảnh báo", "Bảng giá",
-        f"NGƯỜI phải xác nhận '{g.nguon}' đúng là bảng giá BÁN LẺ",
-        "Sai bảng giá thì agent báo giá sỉ cho khách lẻ, rất tự tin")
+        f"NGƯỜI phải xác nhận '{g.nguon}' đúng là giá BÁN LẺ",
+        "Sai bảng giá thì agent báo giá sỉ cho khách lẻ, rất tự tin. "
+        "Với Odoo đây là list_price, CHƯA qua pricelist.")
 
     # --- 4. Tồn kho lấy đúng kho nào ---------------------------------
     t, tre_ton = await _do_do_tre(nguon.ton_kho, mau.ma)

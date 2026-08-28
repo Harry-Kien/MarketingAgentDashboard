@@ -325,6 +325,13 @@ class Settings(BaseSettings):
     erpnext_api_key: str = ""
     erpnext_api_secret: str = ""
 
+    # --- Odoo (khi erp_loai = "odoo") ---
+    # ERP_MA_KHO ở đây nhận mã kho (`stock.warehouse.code`) hoặc id dạng số.
+    odoo_url: str = ""
+    odoo_db: str = ""
+    odoo_dang_nhap: str = ""
+    odoo_api_key: str = ""
+
     @property
     def studio_path(self) -> Path:
         p = Path(self.video_studio_dir)

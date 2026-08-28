@@ -23,6 +23,7 @@ import pytest
 from agent.erp import nha_may
 from agent.erp.erpnext import NguonErpNext
 from agent.erp.hop_dong import Gia, LoiERP, NguonERP, SanPhamERP, TonKho
+from agent.erp.odoo import NguonOdoo
 from agent.erp.tep import NguonTep
 from tests.erp_gia import chay
 
@@ -93,8 +94,46 @@ def _dung_erpnext(_tmp_path, rong: bool = False, hong: bool = False):
     )
 
 
+def _dung_odoo(_tmp_path, rong: bool = False, hong: bool = False):
+    def xu_ly(req: httpx.Request) -> httpx.Response:
+        if hong:
+            return httpx.Response(200, json={"jsonrpc": "2.0", "error": {
+                "code": 200, "message": "Odoo Server Error",
+                "data": {"message": "hỏng"}}})
+        than = json.loads(req.content)
+        p = than["params"]
+        if p["service"] == "common":
+            # `authenticate` trả uid; `version` trả dict. Cả hai đều hợp lệ
+            # ở đây vì bộ giả không phân biệt — adapter mới là bên phân biệt.
+            return httpx.Response(200, json={"jsonrpc": "2.0", "result": 7})
+        model, args = p["args"][3], p["args"][5]
+        if model == "stock.warehouse":
+            return httpx.Response(200, json={"jsonrpc": "2.0",
+                                             "result": [{"id": 3}]})
+        ma_hoi = None
+        for dk in args[0]:
+            if isinstance(dk, list) and dk[0] == "default_code":
+                ma_hoi = dk[2]
+        if rong or (ma_hoi is not None and ma_hoi != _MA):
+            return httpx.Response(200, json={"jsonrpc": "2.0", "result": []})
+        return httpx.Response(200, json={"jsonrpc": "2.0", "result": [{
+            "default_code": _MA, "name": _TEN,
+            "categ_id": False, "uom_id": False,
+            "list_price": float(_GIA), "free_qty": float(_BAN_DUOC),
+            "sale_ok": True,
+        }]})
+
+    return NguonOdoo(
+        goc="https://odoo.thu", db="thu", dang_nhap="a@b.vn", api_key="k",
+        ma_kho="KHO-HN",
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(xu_ly), base_url="https://odoo.thu"
+        ),
+    )
+
+
 # Mỗi adapter một hàm dựng. Thêm adapter mới thì thêm một dòng ở đây.
-NHA_MAY_THU = {"tep": _dung_tep, "erpnext": _dung_erpnext}
+NHA_MAY_THU = {"tep": _dung_tep, "erpnext": _dung_erpnext, "odoo": _dung_odoo}
 
 
 @pytest.fixture(params=sorted(NHA_MAY_THU))

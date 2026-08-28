@@ -13,8 +13,8 @@ from agent.config import settings
 from agent.erp.cong import Cong
 from agent.erp.hop_dong import NguonERP
 
-# Thêm "odoo", "mcp" ở giai đoạn 3.
-_LOAI_HOP_LE = ("tep", "erpnext")
+# Thêm "mcp" khi có ERP nào ship sẵn máy chủ MCP.
+_LOAI_HOP_LE = ("tep", "erpnext", "odoo")
 
 _cong: Cong | None = None
 
@@ -31,6 +31,10 @@ def tao_nguon() -> NguonERP:
         # Adapter tự kiểm cấu hình và NÉM ngay lúc dựng nếu thiếu. Để nó nổ
         # ở đây, lúc khởi động, chứ không bắt lại thành đường lui im lặng.
         return NguonErpNext()
+    if loai == "odoo":
+        from agent.erp.odoo import NguonOdoo
+
+        return NguonOdoo()
     raise ValueError(
         f"ERP_LOAI={loai!r} không nhận ra. Hợp lệ: {', '.join(_LOAI_HOP_LE)}"
     )

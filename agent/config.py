@@ -313,14 +313,17 @@ class Settings(BaseSettings):
     erp_ttl_ton: float = 60.0
     erp_ngat_mach_so_lan: int = 5
     erp_ngat_mach_giay: float = 30.0
-    # CỐ Ý CHƯA KHAI `erp_ma_kho` và `erp_pricelist` ở đây.
-    #
-    # Cả hai đều cần khi cắm ERP thật — Bin của ERPNext và stock.quant của
-    # Odoo đều theo TỪNG KHO, và giá phụ thuộc bảng giá. Nhưng adapter đọc
-    # chúng mãi giai đoạn 2 mới có. Khai trước là dựng một CÔNG TẮC NÓI DỐI:
-    # người vận hành đặt ERP_MA_KHO, không có gì xảy ra, rồi đi tìm nguyên
-    # nhân ở chỗ khác. `test_moi_cau_hinh_deu_co_noi_doc` canh đúng việc này
-    # và đã bắt được đúng lỗi đó ở lần thử đầu tiên.
+    # Bắt buộc khi erp_loai != "tep". `Bin` của ERPNext và `stock.quant` của
+    # Odoo đều theo TỪNG KHO, nên "còn bao nhiêu" là câu hỏi không có đáp án
+    # nếu không nói kho nào — adapter NÉM ngay lúc dựng nếu thiếu, chứ không
+    # lặng lẽ cộng tồn của mọi kho lại thành một con số trông rất hợp lý.
+    erp_ma_kho: str = ""
+    erp_pricelist: str = ""
+
+    # --- ERPNext (khi erp_loai = "erpnext") ---
+    erpnext_url: str = ""
+    erpnext_api_key: str = ""
+    erpnext_api_secret: str = ""
 
     @property
     def studio_path(self) -> Path:

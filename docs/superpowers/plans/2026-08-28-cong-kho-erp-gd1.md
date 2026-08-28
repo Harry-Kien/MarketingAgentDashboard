@@ -16,7 +16,7 @@
 - Chú thích giải thích **VÌ SAO**, không giải thích LÀM GÌ — nhất là lý do không làm theo cách hiển nhiên hơn.
 - **Mỗi ràng buộc phải có test canh.** Không có test thì nó sẽ bị gỡ trong một lần dọn dẹp nào đó.
 - **Repo KHÔNG cài `pytest-asyncio`.** Viết `async def test_...` là hỏng ngay lúc chạy: *"Failed: async def functions are not natively supported"*. Mọi test bất đồng bộ phải là hàm **đồng bộ** gọi `asyncio.run(...)`, đúng như 117 file test hiện có. Helper `chay()` dựng ở Task 2 và dùng cho toàn bộ các task sau.
-- Toàn bộ `pytest -q` phải chạy **dưới 4 giây và không gọi API nào**. Cấm `asyncio.sleep` trong test — thời gian tiêm vào bằng đồng hồ giả.
+- Toàn bộ `pytest -q` phải chạy **không gọi API nào**, và không được làm bộ test chậm thêm đáng kể (đo được: 1257 test, ~22 giây — con số "440 test, dưới 4 giây" trong CLAUDE.md đã cũ). Cấm `asyncio.sleep` trong test — thời gian tiêm vào bằng đồng hồ giả.
 - `ruff check .` phải sạch sau mỗi commit.
 - `ERP_LOAI` mặc định là `tep`. Máy vừa clone về, không có `.env`, không có `catalog.json` vẫn phải chạy được (rơi về `catalog.example.json`).
 - `agent/core/tools.py::_catalog()` **giữ nguyên chữ ký `-> dict`** và giữ nguyên các khoá `san_pham` / `don_hang`.
@@ -1439,7 +1439,7 @@ git commit -m "Hợp nhất hai nửa: ERP giữ giá và tồn, kho nội bộ 
   - `agent.erp.nha_may.tao_nguon() -> NguonERP`
   - `agent.erp.nha_may.cong() -> Cong` (nhớ kết quả, dựng một lần)
   - `agent.erp.nha_may.dat_lai() -> None` (chỉ cho test)
-  - Trường `Settings`: `erp_loai: str = "tep"`, `erp_ttl_gia: float = 900.0`, `erp_ttl_ton: float = 60.0`, `erp_ngat_mach_so_lan: int = 5`, `erp_ngat_mach_giay: float = 30.0`, `erp_ma_kho: str = ""`, `erp_pricelist: str = ""`
+  - Trường `Settings`: `erp_loai: str = "tep"`, `erp_ttl_gia: float = 900.0`, `erp_ttl_ton: float = 60.0`, `erp_ngat_mach_so_lan: int = 5`, `erp_ngat_mach_giay: float = 30.0`. **KHÔNG khai `erp_ma_kho` / `erp_pricelist`** ở giai đoạn này — xem ghi chú trong Step 3
 
 - [ ] **Step 1: Viết test hỏng trước**
 
@@ -1451,7 +1451,7 @@ Tạo `tests/test_cong_erp_noi_vao_tools.py`:
 Giữ chữ ký `-> dict` là điều kiện để 440 test hiện có vẫn là lưới an toàn
 thật, chứ không phải lưới đã bị tháo trong lúc thay nguồn dữ liệu.
 """
-import inspect
+import typing
 
 import pytest
 
@@ -1493,7 +1493,10 @@ def test_cong_dung_lai_mot_lan():
 
 
 def test_chu_ky_catalog_khong_doi():
-    assert inspect.signature(tools._catalog).return_annotation is dict
+    # `get_type_hints` chứ không phải `signature`: tools.py có
+    # `from __future__ import annotations` nên annotation là chuỗi "dict",
+    # và so sánh `is dict` sẽ luôn sai bất kể mã đúng hay hỏng.
+    assert typing.get_type_hints(tools._catalog)["return"] is dict
 
 
 def test_catalog_van_tra_ve_san_pham():
@@ -1529,12 +1532,16 @@ Trong `agent/config.py`, chèn ngay TRƯỚC dòng `nguong_tu_chot_vnd: int = 1_
     erp_ttl_ton: float = 60.0
     erp_ngat_mach_so_lan: int = 5
     erp_ngat_mach_giay: float = 30.0
-    # Bắt buộc khi erp_loai != "tep": Bin của ERPNext và stock.quant của Odoo
-    # đều theo từng kho, nên "còn bao nhiêu" là câu hỏi không có đáp án nếu
-    # không nói kho nào. `scripts/san_sang.py` kiểm ở giai đoạn 2.
-    erp_ma_kho: str = ""
-    erp_pricelist: str = ""
+    # CỐ Ý CHƯA KHAI `erp_ma_kho` và `erp_pricelist` ở đây.
+    #
+    # Cả hai đều cần khi cắm ERP thật — Bin của ERPNext và stock.quant của
+    # Odoo đều theo TỪNG KHO, và giá phụ thuộc bảng giá. Nhưng adapter đọc
+    # chúng mãi giai đoạn 2 mới có. Khai trước là dựng một CÔNG TẮC NÓI DỐI:
+    # người vận hành đặt ERP_MA_KHO, không có gì xảy ra, rồi đi tìm nguyên
+    # nhân ở chỗ khác. `test_moi_cau_hinh_deu_co_noi_doc` canh đúng việc này.
 ```
+
+**Bài học đã trả giá:** bản đầu có khai hai trường đó, và `tests/test_ra_soat_ma_chet.py::test_moi_cau_hinh_deu_co_noi_doc` đỏ ngay — nó quét `agent/config.py` rồi đếm số lần mỗi tên xuất hiện trong `agent/` và `scripts/`; đúng một lần nghĩa là khai mà không ai đọc. **Đừng thêm chúng vào `MIEN` để test xanh** — đó là tháo lưới.
 
 Tạo `agent/erp/nha_may.py`:
 
@@ -1617,10 +1624,9 @@ ERP_TTL_GIA=900
 ERP_TTL_TON=60
 ERP_NGAT_MACH_SO_LAN=5
 ERP_NGAT_MACH_GIAY=30
-# Bắt buộc khi ERP_LOAI khác "tep"
-ERP_MA_KHO=
-ERP_PRICELIST=
 ```
+
+`ERP_MA_KHO` và `ERP_PRICELIST` thêm vào ở giai đoạn 2, cùng lúc với adapter đọc chúng.
 
 - [ ] **Step 4: Chạy test cho chắc là nó xanh**
 

@@ -303,6 +303,25 @@ class Settings(BaseSettings):
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.
     nguong_tu_chot_vnd: int = 1_000_000
 
+    # --- Kho / ERP ---
+    # tep = đọc data/catalog.json (MẶC ĐỊNH — giữ clone sạch chạy được).
+    # Đổi giá trị này là đổi nguồn dữ liệu sản phẩm, không đụng agent.
+    erp_loai: str = "tep"
+    # Tuổi thọ của số liệu. Quá hạn mà gọi ERP hỏng thì cổng trả None chứ
+    # KHÔNG trả số cũ — xem agent/erp/cong.py.
+    erp_ttl_gia: float = 900.0
+    erp_ttl_ton: float = 60.0
+    erp_ngat_mach_so_lan: int = 5
+    erp_ngat_mach_giay: float = 30.0
+    # CỐ Ý CHƯA KHAI `erp_ma_kho` và `erp_pricelist` ở đây.
+    #
+    # Cả hai đều cần khi cắm ERP thật — Bin của ERPNext và stock.quant của
+    # Odoo đều theo TỪNG KHO, và giá phụ thuộc bảng giá. Nhưng adapter đọc
+    # chúng mãi giai đoạn 2 mới có. Khai trước là dựng một CÔNG TẮC NÓI DỐI:
+    # người vận hành đặt ERP_MA_KHO, không có gì xảy ra, rồi đi tìm nguyên
+    # nhân ở chỗ khác. `test_moi_cau_hinh_deu_co_noi_doc` canh đúng việc này
+    # và đã bắt được đúng lỗi đó ở lần thử đầu tiên.
+
     @property
     def studio_path(self) -> Path:
         p = Path(self.video_studio_dir)

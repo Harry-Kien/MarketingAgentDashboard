@@ -311,7 +311,16 @@ async def _catalog_song() -> dict:
     Hỏng đường CSDL thì rơi về số trong file — thà cũ còn hơn không có gì,
     và chốt tồn kho lúc chốt đơn vẫn chặn được bán quá.
     """
-    data = _catalog()
+    from agent.erp import nha_may
+    from agent.erp.hop_dong import LoiERP
+
+    try:
+        data = await nha_may.cong().danh_muc()
+    except LoiERP:
+        # Cổng hỏng hoàn toàn thì rơi về file. Ở ĐÂY thì được, vì đây là nửa
+        # tham chiếu (tên, thành phần) — giá và tồn đã bị cổng chặn ở tầng
+        # dưới nếu quá hạn mà gọi không được, nên không có số cũ nào lọt lên.
+        data = _catalog()
     try:
         from agent.core import kho
         song = await kho.lay_tat_ca()

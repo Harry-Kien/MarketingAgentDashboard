@@ -683,8 +683,22 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         sp = ranked[0][1]
         sl = max(1, int(it.get("so_luong") or 1))
 
-        # --- Chốt 4: kiểm tồn kho ngay trước khi chốt ---
-        ton = int(sp.get("ton_kho") or 0)
+        # --- Chốt 4: tồn kho đọc SỐNG, bỏ qua cache ---
+        # Con số trong `products` đến từ danh mục đã cache tối đa ERP_TTL_TON
+        # giây. Ở mọi chỗ khác thì đủ tốt; ở đúng khoảnh khắc chốt thì không,
+        # vì giữa lúc tư vấn và lúc khách gật, món cuối có thể đã bán mất.
+        from agent.erp import nha_may
+
+        ton_song = await nha_may.cong().ton_kho(sp["ma"], bo_qua_cache=True)
+        if ton_song is None:
+            # Không biết còn bao nhiêu thì KHÔNG chốt. Chốt liều là bán món
+            # có thể đã hết, và khách chỉ biết khi không nhận được hàng.
+            return {
+                "tao_duoc": False,
+                "ly_do": f"Chưa tra được tồn kho của {sp['ten']}. "
+                         "Hãy báo khách chờ một chút và chuyển cho nhân viên.",
+            }
+        ton = ton_song.ban_duoc
         if ton <= 0:
             return {
                 "tao_duoc": False,

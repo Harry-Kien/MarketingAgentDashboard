@@ -125,6 +125,17 @@ class Cong:
             "hong_lien_tiep": self._hong_lien_tiep,
         }
 
+    async def suc_khoe(self) -> bool:
+        """Nguồn còn sống không.
+
+        Có mặt ở đây để tầng trên không phải chọc vào `_nguon` — bọc nguồn
+        lại rồi để lộ nó ra là chưa bọc.
+        """
+        try:
+            return bool(await self._nguon.suc_khoe())
+        except Exception:  # noqa: BLE001
+            return False
+
     def _ho_so_tu_van(self) -> tuple[dict[str, dict], list]:
         """Nửa tư vấn: đọc từ kho nội bộ, KHÔNG từ ERP.
 

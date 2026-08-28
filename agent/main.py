@@ -23,6 +23,7 @@ from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
+from agent.api.erp import router as erp_router
 from agent.api.routing_admin import router as routing_admin_router
 from agent.api.retention import router as retention_router
 from agent.api.inbox import router as inbox_router
@@ -737,6 +738,7 @@ async def ws_cable(ws: WebSocket):
 app.include_router(api_router)
 app.include_router(channel_accounts_router)
 app.include_router(contacts_router)
+app.include_router(erp_router)
 app.include_router(routing_admin_router)
 app.include_router(retention_router)
 app.include_router(inbox_router)

@@ -57,15 +57,21 @@ Không mặc định về tệp thì máy vừa clone chết ngay dòng đầu �
 `agent/core/tools.py::_catalog()` **giữ nguyên chữ ký `-> dict`**. Đây là
 điều kiện để 440 test hiện có vẫn là lưới an toàn thật.
 
-### 4.1 Không xây outbox thứ hai
+### 4.1 Hàng đợi đồng bộ đơn — SỬA so với bản đầu
 
-`agent/omnichannel/outbox.py` đã là transactional outbox tổng quát: sáu trạng
-thái, `retry_decision`, dead-letter, ánh xạ trạng thái job sang trạng thái
-người dùng thấy. Đẩy đơn sang ERP dùng **chính** nó, thêm loại job
-`erp.tao_don`.
+**Bản đầu của mục này SAI.** Nó viết: "dùng chính `agent/omnichannel/outbox.py`,
+thêm loại job `erp.tao_don`" — kết luận rút ra từ tên file và docstring, chưa
+đọc schema.
 
-Xây cái thứ hai là tạo hai nguồn sự thật cho cùng một việc — đúng lỗi mà
-chính docstring của file đó đã ghi lại bài học.
+Đọc kỹ thì outbox đó gắn chặt `account_id`, `conversation_id`, `message_id`,
+và ánh xạ trạng thái job sang `messages.delivery_status`. Nó là outbox **gửi
+tin nhắn**, không phải hàng đợi việc tổng quát. Nhét việc ERP vào là bẻ nó,
+và làm một đơn "tồn tại" ở hai nơi.
+
+**Thiết kế đúng, đơn giản hơn: chính bảng `orders` là hàng đợi.** Đơn
+`trang_thai='cho_dong_bo'` là việc chưa xong. Migration `0008` thêm
+`erp_ma_don`, `erp_dong_bo_luc`, `erp_so_lan_thu`, `erp_loi`. Một nguồn sự
+thật cho đơn, không hai.
 
 ---
 

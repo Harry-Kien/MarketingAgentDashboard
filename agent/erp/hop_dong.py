@@ -32,6 +32,18 @@ class LoiERP(RuntimeError):
     """Gọi ERP không thành. Cổng bắt lỗi này để quyết định trả `None`."""
 
 
+class TuChoiERP(LoiERP):
+    """ERP HIỂU yêu cầu và từ chối nó.
+
+    Khác `LoiERP` ở một điểm quyết định cách xử lý: từ chối là một CÂU TRẢ
+    LỜI, thử lại bao nhiêu lần cũng vẫn thế. Mất mạng hay 5xx thì ngược lại —
+    ta không biết ERP đã ghi hay chưa, và phải thử lại.
+
+    Gộp hai thứ này làm một là hoặc thử lại vô ích một đơn ERP sẽ luôn từ
+    chối, hoặc bỏ mất một đơn chỉ vì mạng chớp.
+    """
+
+
 @dataclass(frozen=True)
 class Gia:
     """Giá bán một sản phẩm, kèm nguồn để truy vết."""
@@ -89,3 +101,45 @@ class NguonERP(Protocol):
     async def ton_kho(self, ma: str) -> TonKho | None: ...
 
     async def suc_khoe(self) -> bool: ...
+
+
+@dataclass(frozen=True)
+class DongDon:
+    """Một dòng hàng trong đơn gửi sang ERP."""
+
+    ma: str
+    so_luong: int
+    don_gia: int
+
+
+@runtime_checkable
+class NguonGhiERP(Protocol):
+    """Ba việc thêm, CHỈ cho adapter được phép ghi vào ERP.
+
+    VÌ SAO TÁCH KHỎI `NguonERP` CHỨ KHÔNG GỘP VÀO
+    ---------------------------------------------
+    Đọc và ghi có mức rủi ro khác hẳn nhau. Đọc sai thì agent trả lời sai —
+    sửa được. Ghi sai thì đơn trùng và bản ghi khách rác nằm vĩnh viễn trong
+    ERP của cửa hàng — không rút lại được.
+
+    Tách ra thì `isinstance(nguon, NguonGhiERP)` là một câu hỏi có nghĩa, và
+    adapter `tep` (đọc file trên đĩa) KHÔNG vô tình mang theo khả năng ghi
+    chỉ vì nó nằm chung một hợp đồng.
+
+    VÌ SAO CÓ `tim_don`
+    -------------------
+    ERP có thể đã nhận đơn nhưng mạng đứt trước khi ta thấy phản hồi. Lần
+    thử lại sẽ tạo đơn thứ hai nếu không tra trước. Đây là lưới đầu tiên
+    trong bốn lưới chống đơn trùng; lưới cuối là ràng buộc UNIQUE trên
+    `orders.erp_ma_don`.
+    """
+
+    async def bao_dam_khach(
+        self, ten: str, sdt: str, dia_chi: str
+    ) -> str: ...
+
+    async def tim_don(self, khoa: str) -> str | None: ...
+
+    async def tao_don(
+        self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
+    ) -> KetQuaDon: ...

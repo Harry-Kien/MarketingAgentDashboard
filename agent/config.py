@@ -320,6 +320,13 @@ class Settings(BaseSettings):
     erp_ma_kho: str = ""
     erp_pricelist: str = ""
 
+    # Đẩy đơn agent chốt sang ERP. MẶC ĐỊNH TẮT, theo đúng khuôn
+    # `shipping_provider="mock"` ở trên: bật lên tạo dữ liệu KHÔNG XOÁ ĐƯỢC
+    # trong ERP của cửa hàng, nên nó phải là quyết định rõ ràng của người
+    # vận hành, không phải hệ quả của việc cập nhật mã.
+    # Tắt thì đơn vẫn lưu Postgres như trước — ERP chỉ là không biết.
+    erp_ghi_don: bool = False
+
     # --- ERPNext (khi erp_loai = "erpnext") ---
     erpnext_url: str = ""
     erpnext_api_key: str = ""

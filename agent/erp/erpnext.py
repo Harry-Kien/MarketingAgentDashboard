@@ -33,7 +33,8 @@ import json
 import httpx
 
 from agent.config import settings
-from agent.erp.hop_dong import Gia, LoiERP, SanPhamERP, TonKho
+from agent.erp.hop_dong import (DongDon, Gia, KetQuaDon, LoiERP, SanPhamERP,
+                                TonKho, TuChoiERP)
 
 # Frappe mặc định phân trang 20. Xem bẫy số 1 ở đầu file.
 KHONG_PHAN_TRANG = "0"
@@ -42,6 +43,30 @@ _TRUONG_ITEM = ["item_code", "item_name", "item_group", "stock_uom",
                 "is_sales_item"]
 _TRUONG_GIA = ["price_list_rate", "currency", "price_list", "valid_upto"]
 _TRUONG_BIN = ["actual_qty", "reserved_qty", "warehouse"]
+
+
+def _thong_diep_loi(res: httpx.Response) -> str:
+    """Bóc thông điệp người đọc được ra khỏi lỗi của Frappe.
+
+    Frappe nhét lỗi thật vào `exception` hoặc `_server_messages` (một chuỗi
+    JSON lồng trong JSON). Trả nguyên `res.text` là ném cả trang HTML lỗi
+    vào ghi chú đơn, và người trực không đọc nổi.
+    """
+    try:
+        goi = res.json()
+    except ValueError:
+        return f"ERPNext {res.status_code}"
+    if goi.get("exception"):
+        return str(goi["exception"])
+    tin = goi.get("_server_messages")
+    if tin:
+        try:
+            trong = json.loads(tin)
+            if trong:
+                return str(json.loads(trong[0]).get("message") or trong[0])
+        except (ValueError, TypeError, KeyError):
+            return str(tin)
+    return str(goi.get("message") or f"ERPNext {res.status_code}")
 
 
 class NguonErpNext:
@@ -197,3 +222,74 @@ class NguonErpNext:
         except Exception:  # noqa: BLE001
             return False
         return res.status_code == 200
+
+    # --- đường GHI ----------------------------------------------------
+    #
+    # Mọi thứ dưới đây tạo dữ liệu KHÔNG XOÁ ĐƯỢC trong ERP của cửa hàng.
+    # Chúng chỉ chạy khi `ERP_GHI_DON=true` — xem agent/erp/day_don.py.
+
+    async def _tao(self, doctype: str, than: dict) -> dict:
+        try:
+            res = await self._client.post(
+                f"/api/resource/{doctype}",
+                json=than,
+                headers={**self._headers, "content-type": "application/json"},
+            )
+        except httpx.HTTPError as exc:
+            # NÉM, không trả thất bại. Mất mạng giữa chừng nghĩa là KHÔNG
+            # BIẾT ERP đã nhận hay chưa — tầng trên phải thử lại, và bước tra
+            # trước khi tạo sẽ chặn đơn thứ hai.
+            raise LoiERP(f"Mất kết nối khi tạo {doctype}: {exc}") from exc
+
+        if res.status_code in (200, 201):
+            return res.json().get("data", {})
+        if res.status_code >= 500:
+            # 5xx cũng là KHÔNG BIẾT: ERP có thể đã ghi xong rồi mới ngã.
+            raise LoiERP(f"ERPNext {res.status_code} khi tạo {doctype}")
+        # 4xx là ERP hiểu và TỪ CHỐI. Đây là câu trả lời, không phải sự cố.
+        raise TuChoiERP(_thong_diep_loi(res))
+
+    async def bao_dam_khach(self, ten: str, sdt: str, dia_chi: str) -> str:
+        # Tra theo số điện thoại TRƯỚC. Tạo mới mỗi đơn thì một người thành
+        # mười bản ghi, và báo cáo bán hàng bên ERP thành vô nghĩa.
+        co = await self._lay(
+            "Customer", [["mobile_no", "=", sdt]], ["name"]
+        )
+        if co:
+            return str(co[0]["name"])
+        moi = await self._tao("Customer", {
+            "customer_name": ten,
+            "mobile_no": sdt,
+            "customer_type": "Individual",
+            "customer_group": "All Customer Groups",
+            "territory": "All Territories",
+            "primary_address": dia_chi,
+        })
+        return str(moi.get("name") or "")
+
+    async def tim_don(self, khoa: str) -> str | None:
+        co = await self._lay("Sales Order", [["po_no", "=", khoa]], ["name"])
+        return str(co[0]["name"]) if co else None
+
+    async def tao_don(
+        self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
+    ) -> KetQuaDon:
+        if not dong:
+            raise ValueError("Đơn không có dòng hàng nào")
+        try:
+            kq = await self._tao("Sales Order", {
+                "customer": khach_id,
+                # `po_no` mang khoá idempotency. Nó cũng là thứ `tim_don`
+                # tra, nên hai bên phải dùng ĐÚNG một trường.
+                "po_no": khoa,
+                "set_warehouse": self._ma_kho,
+                "selling_price_list": self._pricelist,
+                "items": [
+                    {"item_code": d.ma, "qty": d.so_luong, "rate": d.don_gia}
+                    for d in dong
+                ],
+                "remarks": ghi_chu,
+            })
+        except TuChoiERP as exc:
+            return KetQuaDon(thanh_cong=False, ly_do=str(exc))
+        return KetQuaDon(thanh_cong=True, erp_ma_don=str(kq.get("name") or ""))

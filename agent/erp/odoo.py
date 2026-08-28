@@ -45,7 +45,8 @@ from typing import Any
 import httpx
 
 from agent.config import settings
-from agent.erp.hop_dong import Gia, LoiERP, SanPhamERP, TonKho
+from agent.erp.hop_dong import (DongDon, Gia, KetQuaDon, LoiERP, SanPhamERP,
+                                TonKho, TuChoiERP)
 
 _TRUONG_SP = ["default_code", "name", "categ_id", "uom_id", "list_price",
               "sale_ok"]
@@ -133,7 +134,16 @@ class NguonOdoo:
             # Odoo nhét thông điệp thật vào `error.data.message`; `error.message`
             # chỉ là "Odoo Server Error", vô dụng khi đi dò lỗi.
             loi = goi["error"]
-            chi_tiet = (loi.get("data") or {}).get("message") or loi.get("message")
+            data = loi.get("data") or {}
+            chi_tiet = data.get("message") or loi.get("message")
+            # Phân biệt TỪ CHỐI với SỰ CỐ. Odoo đặt tên ngoại lệ ở
+            # `data.name`; ValidationError/UserError nghĩa là nó HIỂU yêu cầu
+            # và không đồng ý — thử lại bao nhiêu lần cũng thế. Gộp chung là
+            # thử lại vô ích một đơn sẽ luôn bị từ chối.
+            ten_loi = str(data.get("name") or "")
+            if any(k in ten_loi or k in str(chi_tiet)
+                   for k in ("ValidationError", "UserError", "AccessError")):
+                raise TuChoiERP(f"Odoo từ chối: {chi_tiet}")
             raise LoiERP(f"Odoo báo lỗi: {chi_tiet}")
         return goi.get("result")
 
@@ -246,3 +256,83 @@ class NguonOdoo:
         except Exception:  # noqa: BLE001
             return False
         return True
+
+    # --- đường GHI ----------------------------------------------------
+    #
+    # Mọi thứ dưới đây tạo dữ liệu KHÔNG XOÁ ĐƯỢC trong Odoo của cửa hàng.
+    # Chúng chỉ chạy khi `ERP_GHI_DON=true` — xem agent/erp/day_don.py.
+
+    async def _ghi(self, model: str, method: str, args: list) -> Any:
+        uid = await self._dam_bao_uid()
+        return await self._rpc(
+            "object", "execute_kw",
+            [self._db, uid, self._api_key, model, method, args],
+        )
+
+    async def bao_dam_khach(self, ten: str, sdt: str, dia_chi: str) -> str:
+        # Tra theo số điện thoại TRƯỚC. Odoo không có ràng buộc duy nhất trên
+        # `phone`, nên tạo mới mỗi đơn là một người thành mười `res.partner`.
+        co = await self._doc(
+            "res.partner", ["|", ["phone", "=", sdt], ["mobile", "=", sdt]],
+            ["id"],
+        )
+        if co:
+            return str(co[0]["id"])
+        moi = await self._ghi("res.partner", "create", [{
+            "name": ten,
+            "phone": sdt,
+            "street": dia_chi,
+            "company_type": "person",
+        }])
+        return str(moi)
+
+    async def tim_don(self, khoa: str) -> str | None:
+        co = await self._doc(
+            "sale.order", [["client_order_ref", "=", khoa]], ["name"]
+        )
+        return str(co[0]["name"]) if co else None
+
+    async def tao_don(
+        self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
+    ) -> KetQuaDon:
+        if not dong:
+            raise ValueError("Đơn không có dòng hàng nào")
+
+        # Odoo nối dòng đơn bằng ID nội bộ, không bằng `default_code`. Phải
+        # dịch trước, và mã nào không dịch được thì DỪNG — tạo đơn thiếu dòng
+        # là bán thiếu hàng cho khách mà không ai thấy.
+        ids: dict[str, int] = {}
+        for d in dong:
+            row = await self._doc(
+                "product.product", [["default_code", "=", d.ma]], ["id"]
+            )
+            if not row:
+                return KetQuaDon(
+                    thanh_cong=False,
+                    ly_do=f"Odoo không có sản phẩm mã {d.ma}",
+                )
+            ids[d.ma] = int(row[0]["id"])
+
+        try:
+            don_id = await self._ghi("sale.order", "create", [{
+                "partner_id": int(khach_id),
+                # `client_order_ref` mang khoá idempotency, và cũng là thứ
+                # `tim_don` tra — hai bên phải dùng ĐÚNG một trường.
+                "client_order_ref": khoa,
+                "note": ghi_chu,
+                "order_line": [
+                    (0, 0, {"product_id": ids[d.ma],
+                            "product_uom_qty": d.so_luong,
+                            "price_unit": d.don_gia})
+                    for d in dong
+                ],
+            }])
+        except TuChoiERP as exc:
+            return KetQuaDon(thanh_cong=False, ly_do=str(exc))
+
+        # `create` trả id dạng số; mã đơn người đọc được nằm ở `name`.
+        ten_don = await self._ghi("sale.order", "read", [[don_id], ["name"]])
+        ma_don = ""
+        if ten_don:
+            ma_don = str(ten_don[0].get("name") or don_id)
+        return KetQuaDon(thanh_cong=True, erp_ma_don=ma_don or str(don_id))

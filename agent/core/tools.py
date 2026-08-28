@@ -760,6 +760,66 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
         tong_tien=tong, trang_thai=trang_thai,
     )
+
+    # --- Chốt 8: đẩy sang ERP (chỉ khi ERP_GHI_DON bật) ---
+    # Đặt SAU chốt 7 có chủ ý: hàng phải được giữ trước đã. Đẩy sang ERP
+    # rồi mới phát hiện không đủ hàng là tạo một đơn bên ERP phải đi huỷ tay.
+    #
+    # Chỉ chạy cho đơn đã chốt. Đơn `cho_duyet` chưa phải là đơn — người còn
+    # chưa duyệt, đẩy sang ERP là ghi nhận một thứ có thể bị bỏ.
+    if trang_thai == "da_chot":
+        from agent.erp import day_don as _day_don
+
+        kq_erp = await _day_don.day_don(
+            ma_don=row["ma_don"],
+            khach_ten=str(args["khach_ten"]).strip(),
+            khach_sdt=sdt,
+            khach_dia_chi=str(args["khach_dia_chi"]).strip(),
+            items=lines,
+            ghi_chu=str(args.get("ghi_chu") or ""),
+        )
+        if kq_erp.ket_cuc == "tu_choi":
+            # ERP hiểu và không đồng ý. Trả hàng, huỷ đơn — thà không có đơn
+            # còn hơn có đơn mà kho không bao giờ xuất.
+            await kho.tra_hang(row["ma_don"], ly_do="erp_tu_choi")
+            await db.execute(
+                "UPDATE orders SET trang_thai='da_huy', erp_loi=$2 "
+                "WHERE id = $1", row["id"], kq_erp.ly_do,
+            )
+            return {
+                "tao_duoc": False,
+                "ly_do": f"Kho từ chối đơn: {kq_erp.ly_do}. Báo khách là chưa "
+                         "lên đơn được và chuyển cho nhân viên.",
+            }
+        if kq_erp.ket_cuc == "cho_lai":
+            # KHÔNG BIẾT ERP đã ghi hay chưa. Giữ hàng, giữ đơn, đổi trạng
+            # thái để vòng nền thử lại — và KHÔNG nói với khách là đã chốt.
+            trang_thai = "cho_dong_bo"
+            await db.execute(
+                "UPDATE orders SET trang_thai='cho_dong_bo', erp_loi=$2, "
+                "erp_so_lan_thu = erp_so_lan_thu + 1 WHERE id = $1",
+                row["id"], kq_erp.ly_do,
+            )
+        elif kq_erp.erp_ma_don:
+            await db.execute(
+                "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now() "
+                "WHERE id = $1", row["id"], kq_erp.erp_ma_don,
+            )
+
+    if trang_thai == "cho_dong_bo":
+        return {
+            "tao_duoc": True,
+            "ma_don": row["ma_don"],
+            "items": lines,
+            "tong_tien": tong,
+            "trang_thai": trang_thai,
+            "ghi_chu_cho_agent": (
+                "Đơn ĐÃ GHI NHẬN nhưng chưa đồng bộ được sang kho. Báo khách "
+                "là đã nhận thông tin và sẽ có người gọi xác nhận. TUYỆT ĐỐI "
+                "KHÔNG nói là đã chốt xong."
+            ),
+        }
+
     return {
         "tao_duoc": True,
         "ma_don": row["ma_don"],

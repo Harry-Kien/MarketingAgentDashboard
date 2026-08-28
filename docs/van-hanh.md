@@ -17,6 +17,16 @@ Khác `docs/dua-vao-doanh-nghiep.md` — ở đó là cách đưa hệ thống v
 | App (uvicorn) | 127.0.0.1:8000 | Mất tất cả trừ dữ liệu đã lưu |
 | Sidecar Zalo (Node) | 127.0.0.1:3210 | Chỉ mất kênh Zalo cá nhân |
 | n8n (Docker) | 127.0.0.1:5678 | Mất đường đăng bài tự động |
+| **Kho / ERP** (Odoo hoặc ERPNext) | máy khác | Agent **không nói được giá và tồn kho** — nó chuyển hết cho người thay vì đoán bừa |
+
+Dòng cuối khác ba dòng trên ở một chỗ quan trọng: ERP **không phải tiến
+trình của ta**. Nó chết thì hệ thống vẫn nhận tin, vẫn trả lời chính sách,
+vẫn tra kho tri thức — chỉ mất khả năng nói về giá và hàng. Đó là thiết kế,
+không phải suy giảm: cổng thà im còn hơn đọc số cũ.
+
+Chạy bằng `ERP_LOAI=tep` thì dòng này không áp dụng — nhưng khi đó agent
+đang tư vấn bằng một file JSON trên đĩa, và dashboard sẽ hiện cảnh báo
+"CHƯA nối ERP thật".
 
 Kiểm nhanh cả bốn:
 
@@ -89,6 +99,9 @@ và triệu chứng là "sửa cấu hình rồi mà không thấy đổi gì".
 | `[phuc_hoi] Agent đã sống lại` | Đã tự hồi phục | Không cần làm gì |
 | `[hong] Hệ thống đang hỏng` | App sống nhưng một thành phần hỏng | Chạy `san_sang` xem mục nào đỏ |
 | `[khach_cho] Có khách đang chờ người` | Có hội thoại đã chuyển người mà chưa ai nhận | Mở dashboard, vào mục Hội thoại |
+
+Cổng ERP không gửi Telegram — nó hiện trên **dashboard mục Sức khoẻ**, hai
+dòng `Kho / ERP` và `Đơn chờ đồng bộ ERP`. Bấm *Kiểm sức khoẻ* để chạy thật.
 
 Báo động **chỉ gửi khi ĐỔI trạng thái**, không gửi lặp mỗi 5 phút. Im lặng
 kéo dài nghĩa là mọi thứ ổn — hoặc người canh cũng chết.
@@ -190,12 +203,104 @@ khoản có đúng `own_id` thật không, hay còn `pending:`.
 
 ---
 
+## Bật cổng ERP — thứ tự bắt buộc
+
+Cổng mặc định **tắt hai lần**: `ERP_LOAI=tep` (đọc file) và
+`ERP_GHI_DON=false` (không đẩy đơn). Bật sai thứ tự là ghi dữ liệu hỏng vào
+ERP thật, mà ERP thì không có nút hoàn tác.
+
+**Bước 1 — điền cấu hình, chưa bật ghi.**
+
+```
+ERP_LOAI=erpnext        # hoặc odoo
+ERP_MA_KHO=KHO-HN       # mã kho, KHÔNG bỏ trống
+ERP_PRICELIST=Bán lẻ    # ERPNext; Odoo hiện đọc list_price
+ERP_GHI_DON=false       # vẫn TẮT ở bước này
+```
+
+**Bước 2 — gọi thật và đọc kết quả.**
+
+```bash
+python -m scripts.thu_erp
+```
+
+Lệnh này CHỈ ĐỌC. Nó trả lời bốn câu mà không gọi thật thì không ai biết:
+tên trường có đúng bản ERP của bạn không, bao nhiêu mã nội bộ khớp mã ERP,
+bảng giá nào đang được dùng, và ERP chậm bao nhiêu ms.
+
+Phải **xanh hết** mới đi tiếp. Ba đèn đỏ hay gặp:
+
+| Đèn | Nghĩa | Chữa |
+|---|---|---|
+| Ánh xạ mã | Mã nội bộ không khớp mã ERP | Lập `data/anh_xa_ma.json` |
+| Giá | Không tra được giá | `ERP_PRICELIST` trỏ sai bảng |
+| Danh mục RỖNG | Đọc được nhưng không món nào | Quyền tài khoản API, hoặc chưa có hàng nào bật bán |
+
+**Bước 3 — người xác nhận bảng giá.** Máy không tự biết bảng nào là bảng
+bán lẻ. `thu_erp` in tên bảng nó dùng; bạn phải nhìn và gật. Sai bảng giá
+thì agent báo giá sỉ cho khách lẻ, rất tự tin.
+
+**Bước 4 — chạy vài ngày ở chế độ chỉ đọc.** Agent tư vấn bằng giá và tồn
+thật, đơn vẫn chỉ nằm trong Postgres. Đây là lúc phát hiện lệch mà chưa phải
+trả giá.
+
+**Bước 5 — bật ghi đơn.**
+
+```
+ERP_GHI_DON=true
+```
+
+Đơn đầu tiên phải **mở ERP xem tận mắt**: đúng khách, đúng kho, đúng giá,
+đúng số lượng. Rồi mới để nó chạy.
+
+---
+
+## Dấu hiệu cổng ERP đang hỏng
+
+Khác mục trên, đây là các kiểu hỏng **đã lường trước và có lưới chặn**, chưa
+phải chuyện đã xảy ra thật. Ghi ra để khi gặp thì nhận ra ngay.
+
+### Agent đột nhiên chuyển người rất nhiều
+
+Dashboard mục Sức khoẻ, dòng `Kho / ERP`. Thấy `NGẮT MẠCH đang mở` nghĩa là
+cổng đã gọi hỏng liên tiếp và tự ngắt — mọi câu hỏi về giá và tồn đang trả
+"không biết", và agent chuyển người là **đúng thiết kế**.
+
+Mạch tự đóng lại sau 30 giây nếu ERP sống lại. Không đóng thì ERP vẫn đang
+chết.
+
+### Khách xác nhận đơn xong mới bị báo hết hàng
+
+Chốt đơn đọc tồn **sống**, bỏ qua cache. Nên nếu tư vấn nói còn mà chốt nói
+hết, có ba khả năng: (1) món cuối vừa bán mất thật trong lúc tư vấn — đúng
+và không sửa được; (2) `ERP_MA_KHO` trỏ sai kho; (3) tồn kho hai bên lệch.
+Khả năng (3) sẽ có `erp.lech_ton_kho` trong nhật ký.
+
+### Có đơn "đã ghi nhận" mà không ai gọi khách
+
+Dashboard, dòng `Đơn chờ đồng bộ ERP`. Đơn `cho_dong_bo` nghĩa là khách đã
+được hứa "sẽ có người gọi xác nhận". Vòng nền thử lại 8 lần với giãn cách
+tăng dần; quá số đó nó **dừng và đưa đơn về `cho_duyet`** — máy bỏ cuộc,
+người quyết định.
+
+Đơn kẹt quá 30 phút hiện thành **đỏ**, vì đó là một lời hứa đang bị bỏ.
+
+### Agent giới thiệu một sản phẩm nghe rất chung chung
+
+ERP có SKU mới mà chưa ai viết hồ sơ tư vấn cho nó. Cổng gắn cờ
+`duoc_gioi_thieu=false` và ghi `erp.thieu_ho_so`. Viết bổ sung phần tư vấn
+vào `data/catalog.json` — nửa đó **không** nằm trong ERP, và cố ý như vậy.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |
 |---|---|
 | Hằng ngày | Liếc dashboard mục *Ca trực* xem có khách chờ |
 | Hằng tuần | `python -m scripts.san_sang` — đèn đỏ mới xuất hiện? |
+| Hằng tuần | Dashboard → *Kiểm sức khoẻ*: hai dòng ERP còn xanh không |
+| Sau khi đổi danh mục bên ERP | `python -m scripts.thu_erp` — mã mới có khớp không |
 | Hằng tháng | **Diễn tập phục hồi** sao lưu, đếm bảng |
 | Khi đổi schema | `python -m scripts.sinh_so_do --ghi` |
 | Trước khi báo xong việc gì | `pytest -q` và `ruff check .` |

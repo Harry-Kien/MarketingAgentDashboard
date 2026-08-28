@@ -34,8 +34,10 @@ SO_LAN_TOI_DA = 8
 # Giãn dần: 2^n phút, chặn ở 30 phút.
 TRE_TOI_DA_GIAY = 1800
 
-# Đơn kẹt lâu hơn mức này là chuyện của người, không phải của máy.
-CANH_BAO_SAU_PHUT = 30
+# Đối soát tồn kho mỗi bao nhiêu lượt quét. Nó đọc cả danh mục, và tồn kho
+# lệch là chuyện của giờ chứ không phải của phút — quét nó mỗi phút là đốt
+# hạn mức gọi ERP cho một câu hỏi đổi rất chậm.
+DOI_SOAT_MOI_LAN = 15
 
 
 def tre_lan_sau(so_lan_da_thu: int) -> float:
@@ -179,6 +181,57 @@ class PostgresKhoDon:
         )
 
 
+async def doi_soat_ton_kho(
+    ton_noi_bo: dict[str, int],
+    hoi_erp,
+    ghi_nhat_ky: Callable[..., Awaitable[None]] | None = None,
+    nguong_lech: int = 0,
+) -> dict:
+    """So tồn kho nội bộ với ERP. Lệch thì KÊU.
+
+    VÌ SAO CẦN
+    ----------
+    Bảng `ton_kho` nội bộ giờ chỉ là chỗ giữ tạm; ERP là sổ cái. Nhưng "chỉ
+    là chỗ giữ tạm" là một ý định, không phải một sự thật được kiểm. Giữ chỗ
+    không tan, đơn huỷ ngoài hệ thống, nhập kho tay bên ERP — mỗi thứ đều
+    làm hai bên lệch, và không thứ nào tự báo.
+
+    KHÔNG TỰ SỬA
+    ------------
+    Chỉ báo, không ghi đè. Máy tự "chữa" một con số nó không hiểu vì sao
+    lệch là xoá mất bằng chứng của lỗi thật, và lần sau lệch lại.
+
+    `hoi_erp(ma)` trả `TonKho | None`. `None` nghĩa là chưa tra được — bỏ
+    qua mã đó, KHÔNG tính là lệch. Coi "không biết" thành "lệch 0" là báo
+    động giả hàng loạt mỗi khi ERP chậm.
+    """
+    lech: list[dict] = []
+    khong_tra_duoc = 0
+
+    for ma, so_noi_bo in ton_noi_bo.items():
+        try:
+            t = await hoi_erp(ma)
+        except Exception:  # noqa: BLE001
+            khong_tra_duoc += 1
+            continue
+        if t is None:
+            khong_tra_duoc += 1
+            continue
+        if abs(int(t.ban_duoc) - int(so_noi_bo)) > nguong_lech:
+            lech.append({"ma": ma, "noi_bo": int(so_noi_bo),
+                         "erp": int(t.ban_duoc)})
+
+    if lech:
+        await _kêu(ghi_nhat_ky, "erp.lech_ton_kho",
+                   so_ma=len(lech), chi_tiet=lech[:20])
+
+    return {
+        "da_soat": len(ton_noi_bo),
+        "lech": lech,
+        "khong_tra_duoc": khong_tra_duoc,
+    }
+
+
 async def vong_dong_bo_loop() -> None:
     """Chạy mãi. Chỉ làm gì khi `ERP_GHI_DON` bật."""
     from agent import db
@@ -197,7 +250,9 @@ async def vong_dong_bo_loop() -> None:
             ghi_chu=str(don.get("ghi_chu") or ""),
         )
 
+    lan = 0
     while True:
+        lan += 1
         if settings.erp_ghi_don:
             try:
                 await quet_mot_luot(kho_don, _day, db.log_event)
@@ -206,4 +261,23 @@ async def vong_dong_bo_loop() -> None:
                     "erp.vong_dong_bo_loi",
                     error=f"{type(exc).__name__}: {exc}"[:200],
                 )
+
+        # Đối soát thưa hơn nhiều lần đẩy đơn: nó quét cả danh mục, và tồn
+        # kho lệch là chuyện của giờ chứ không phải của phút.
+        if settings.erp_loai != "tep" and lan % DOI_SOAT_MOI_LAN == 1:
+            try:
+                from agent.core import kho as _kho
+                from agent.erp import nha_may
+
+                await doi_soat_ton_kho(
+                    await _kho.lay_tat_ca(),
+                    lambda ma: nha_may.cong().ton_kho(ma, bo_qua_cache=True),
+                    db.log_event,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await db.log_event(
+                    "erp.doi_soat_loi",
+                    error=f"{type(exc).__name__}: {exc}"[:200],
+                )
+
         await asyncio.sleep(MOI_GIAY)

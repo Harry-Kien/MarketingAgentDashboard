@@ -176,3 +176,79 @@ def test_danh_sach_rong_thi_khong_lam_gi():
     kho, tk, _ = _quet([])
     assert tk == {"da_xet": 0, "xong": 0, "bo_cuoc": 0, "con_cho": 0,
                   "hoan": 0}
+
+
+# =====================================================================
+#  Đối soát tồn kho
+# =====================================================================
+
+from agent.erp.hop_dong import TonKho  # noqa: E402
+from agent.erp.vong_dong_bo import doi_soat_ton_kho  # noqa: E402
+
+
+def _soat(noi_bo, erp, **kw):
+    nhat_ky: list = []
+
+    async def ghi(loai, **ct):
+        nhat_ky.append((loai, ct))
+
+    async def hoi(ma):
+        v = erp(ma) if callable(erp) else erp.get(ma)
+        if isinstance(v, Exception):
+            raise v
+        return v
+
+    return chay(doi_soat_ton_kho(noi_bo, hoi, ghi, **kw)), nhat_ky
+
+
+def test_khop_thi_khong_keu():
+    kq, nhat_ky = _soat({"A": 5}, {"A": TonKho(ban_duoc=5)})
+    assert kq["lech"] == []
+    assert nhat_ky == []
+
+
+def test_lech_thi_keu_kem_ca_hai_con_so():
+    # Chỉ báo "có lệch" mà không kèm số thì người đi chữa vẫn phải tự tra
+    # lại từ đầu.
+    kq, nhat_ky = _soat({"A": 5}, {"A": TonKho(ban_duoc=2)})
+    assert kq["lech"] == [{"ma": "A", "noi_bo": 5, "erp": 2}]
+    assert nhat_ky[0][0] == "erp.lech_ton_kho"
+    assert nhat_ky[0][1]["chi_tiet"][0]["erp"] == 2
+
+
+def test_KHONG_tu_sua():
+    # Máy tự "chữa" một con số nó không hiểu vì sao lệch là xoá mất bằng
+    # chứng của lỗi thật, và lần sau lệch lại.
+    noi_bo = {"A": 5}
+    _soat(noi_bo, {"A": TonKho(ban_duoc=2)})
+    assert noi_bo == {"A": 5}
+
+
+def test_erp_khong_tra_duoc_thi_KHONG_tinh_la_lech():
+    # Coi "không biết" thành "lệch" là báo động giả hàng loạt mỗi khi ERP
+    # chậm — và báo động giả nhiều thì người ta tắt báo động.
+    kq, nhat_ky = _soat({"A": 5}, {"A": None})
+    assert kq["lech"] == []
+    assert kq["khong_tra_duoc"] == 1
+    assert nhat_ky == []
+
+
+def test_erp_nem_cung_khong_tinh_la_lech():
+    kq, _ = _soat({"A": 5}, {"A": RuntimeError("đứt")})
+    assert kq["lech"] == []
+    assert kq["khong_tra_duoc"] == 1
+
+
+def test_mot_ma_hong_khong_lam_dung_ca_luot():
+    kq, _ = _soat(
+        {"A": 5, "B": 9, "C": 1},
+        {"A": RuntimeError("x"), "B": TonKho(ban_duoc=9),
+         "C": TonKho(ban_duoc=4)},
+    )
+    assert kq["da_soat"] == 3
+    assert [d["ma"] for d in kq["lech"]] == ["C"]
+
+
+def test_nguong_lech_cho_phep_sai_so_nho():
+    kq, _ = _soat({"A": 5}, {"A": TonKho(ban_duoc=4)}, nguong_lech=1)
+    assert kq["lech"] == []

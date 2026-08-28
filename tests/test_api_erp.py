@@ -124,13 +124,108 @@ def test_phai_dang_nhap(tmp_path):
     nha_may.dat_lai()
 
 
-def test_vo_rest_khong_co_duong_nao_ghi():
-    # Client gọi vào đây là một hệ khác, không đi qua năm lớp lưới tuân thủ
-    # trong agent/core/agent.py, không có trần chi phí, không có lưới chuyển
-    # người. Cho nó quyền tạo đơn là giao chìa khoá cho một người lạ.
-    phuong_thuc = {
-        m for r in router.routes for m in getattr(r, "methods", set())
-    }
-    assert phuong_thuc <= {"GET", "HEAD", "OPTIONS"}, (
-        f"Vỏ REST của ERP chỉ được ĐỌC, thấy: {sorted(phuong_thuc)}"
+def test_vo_rest_khong_co_duong_nao_ghi_vao_erp():
+    """Không endpoint nào tạo đơn, trừ kho, hay sửa gì bên ERP.
+
+    Client gọi vào đây là một hệ khác: không đi qua năm lớp lưới tuân thủ
+    trong `agent/core/agent.py`, không có trần chi phí, không có lưới chuyển
+    người. Cho nó quyền tạo đơn là giao chìa khoá cho một người lạ.
+
+    VÌ SAO KHÔNG CÒN LÀ "CHỈ GET"
+    -----------------------------
+    Bản đầu của test này khẳng định router chỉ có GET/HEAD/OPTIONS. Đúng
+    tinh thần nhưng sai phép đo: `/kiem-ket-noi` là POST mà vẫn chỉ đọc —
+    nó là POST để trình duyệt và bộ nhớ đệm không tự kích hoạt sáu lượt gọi
+    ERP.
+
+    Nên phép kiểm đúng là NGƯỠNG GHI VÀO ERP, không phải động từ HTTP. Mọi
+    POST phải nằm trong danh sách trắng, và mã nguồn không được chứa lời gọi
+    ghi nào.
+    """
+    from pathlib import Path
+
+    POST_DUOC_PHEP = {"/api/erp/kiem-ket-noi"}
+    la = {
+        r.path for r in router.routes
+        if getattr(r, "methods", set()) - {"GET", "HEAD", "OPTIONS"}
+    } - POST_DUOC_PHEP
+    assert not la, f"Endpoint ghi không nằm trong danh sách trắng: {sorted(la)}"
+
+    ma = (Path(__file__).resolve().parent.parent / "agent" / "api" / "erp.py"
+          ).read_text(encoding="utf-8")
+    for cam in ("tao_don", "bao_dam_khach", "day_don"):
+        assert cam not in ma, f"vỏ REST không được ghi vào ERP, thấy: {cam}"
+
+
+# =====================================================================
+#  Kiểm kết nối từ dashboard
+# =====================================================================
+
+def test_kiem_ket_noi_tra_bao_cao(tmp_path):
+    r = _client(_nguon(), tmp_path).post("/api/erp/kiem-ket-noi")
+    assert r.status_code == 200
+    d = r.json()
+    assert "muc" in d and "san_sang" in d and "trang_thai" in d
+    nha_may.dat_lai()
+
+
+def test_kiem_ket_noi_khong_bao_gio_500(tmp_path):
+    # Người vận hành phải nhận BÁO CÁO nói mình thiếu gì, không phải một
+    # trang lỗi 500 không nói gì cả.
+    r = _client(_nguon(hong=True), tmp_path).post("/api/erp/kiem-ket-noi")
+    assert r.status_code == 200
+    assert r.json()["san_sang"] is False
+    nha_may.dat_lai()
+
+
+def test_kiem_ket_noi_phai_dang_nhap(tmp_path):
+    ho_so = tmp_path / "catalog.json"
+    ho_so.write_text('{"san_pham": []}', encoding="utf-8")
+    nha_may.dat_lai()
+    nha_may._cong = Cong(_nguon(), duong_dan_tu_van=ho_so)
+    app = FastAPI()
+    app.include_router(router)
+    assert TestClient(app).post("/api/erp/kiem-ket-noi").status_code == 401
+    nha_may.dat_lai()
+
+
+def test_kiem_ket_noi_khong_lo_bi_mat(tmp_path, monkeypatch):
+    from agent.config import settings
+
+    monkeypatch.setattr(settings, "erpnext_api_key", "khoa-bi-mat-xyz")
+    monkeypatch.setattr(settings, "erpnext_api_secret", "secret-bi-mat-xyz")
+    r = _client(_nguon(), tmp_path).post("/api/erp/kiem-ket-noi")
+    assert "khoa-bi-mat-xyz" not in r.text
+    assert "secret-bi-mat-xyz" not in r.text
+    nha_may.dat_lai()
+
+
+def test_kiem_ket_noi_la_POST_chu_khong_phai_GET(tmp_path):
+    # Nó GỌI THẬT ra ERP. Để là GET thì trình duyệt, trình quét link và bộ
+    # nhớ đệm đều có thể tự kích hoạt — đốt hạn mức gọi ERP của cửa hàng.
+    c = _client(_nguon(), tmp_path)
+    assert c.get("/api/erp/kiem-ket-noi").status_code == 405
+    nha_may.dat_lai()
+
+
+def test_dashboard_co_panel_ket_noi_erp():
+    """Màn Kho phải có panel kết nối ERP, và app.js phải nối vào nó.
+
+    Endpoint không có ai gọi thì cũng như không có. Đã xảy ra một lần: cổng
+    ERP ghi log_event đầy đủ mà không màn hình nào đọc bảng `events`.
+    """
+    from pathlib import Path
+
+    goc = Path(__file__).resolve().parent.parent
+    html = (goc / "dashboard" / "index.html").read_text(encoding="utf-8")
+    js = (goc / "dashboard" / "app.js").read_text(encoding="utf-8")
+
+    for pt in ("erpthu", "erpcauhinh", "erpketqua"):
+        assert f'id="{pt}"' in html, f"index.html thiếu #{pt}"
+        assert f"#{pt}" in js, f"app.js không dùng #{pt}"
+
+    assert "/erp/kiem-ket-noi" in js, "app.js chưa gọi endpoint kiểm kết nối"
+    assert '"POST"' in js or "'POST'" in js, (
+        "phải gọi bằng POST — GET thì trình duyệt và bộ nhớ đệm tự kích "
+        "hoạt sáu lượt gọi ERP"
     )

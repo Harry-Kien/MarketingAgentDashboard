@@ -102,3 +102,32 @@ def test_json_doc_duoc_app_js_khong_co_loi_cu_phap_object():
     for ten in ("ORDER_LABEL", "ORDER_TONE"):
         assert _khoa(ten), f"{ten} rỗng — có thể vừa hỏng cú pháp"
     assert json.dumps(sorted(TRANG_THAI_DON))
+
+
+# =====================================================================
+#  Thanh lọc đơn phải lọc được mọi trạng thái
+# =====================================================================
+
+def test_moi_trang_thai_deu_loc_duoc_tren_dashboard():
+    """Thanh chip lọc đơn phải có đủ mọi trạng thái.
+
+    Thiếu một chip thì người trực KHÔNG CÓ CÁCH NÀO xem riêng nhóm đơn đó.
+    Đã xảy ra với `cho_dong_bo` — đúng nhóm cần chú ý nhất, vì khách đã được
+    hứa sẽ có người gọi.
+
+    `all` không tính: nó lọc tất cả, không phải một trạng thái.
+    """
+    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    co = set(re.findall(r'data-ostatus="(\w+)"', html)) - {"all"}
+    thieu = sorted(set(TRANG_THAI_DON) - co)
+    assert not thieu, (
+        f"Thanh lọc đơn thiếu chip cho {thieu}. Người trực không xem riêng "
+        "được nhóm đơn đó."
+    )
+
+
+def test_khong_co_chip_loc_cho_trang_thai_khong_ton_tai():
+    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    co = set(re.findall(r'data-ostatus="(\w+)"', html)) - {"all"}
+    thua = sorted(co - set(TRANG_THAI_DON))
+    assert not thua, f"Chip lọc cho trạng thái backend không có: {thua}"

@@ -185,6 +185,8 @@
           <button type="button" class="chip is-on" data-ostatus="all">Tất cả</button>
           <button type="button" class="chip" data-ostatus="cho_duyet">Chờ duyệt</button>
           <button type="button" class="chip" data-ostatus="da_chot">Đã chốt</button>
+          <button type="button" class="chip" data-ostatus="cho_dong_bo">Chờ đồng bộ kho</button>
+          <button type="button" class="chip" data-ostatus="da_giao">Đã giao</button>
           <button type="button" class="chip" data-ostatus="da_huy">Đã huỷ</button>
         </div>
         <div id="orders" class="rows"></div>
@@ -194,6 +196,15 @@
     <!-- ============ KHO ============ -->
     <section class="view" data-view="kho">
       <div class="readout" id="khoCards"></div>
+
+      <section class="panel">
+        <h2 class="panel__head">Kết nối kho / ERP
+          <span class="panel__note">nguồn của giá và tồn kho agent nói với khách</span>
+          <button type="button" id="erpthu" class="btn btn--sm">Thử kết nối</button></h2>
+        <div id="erpcauhinh" class="rows"></div>
+        <div id="erpketqua" class="rows"></div>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Tồn kho
           <span class="panel__note">số sống — trừ khi chốt đơn, trả khi huỷ</span></h2>

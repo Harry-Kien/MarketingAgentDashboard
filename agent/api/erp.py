@@ -69,3 +69,29 @@ async def ton_kho(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
 async def suc_khoe(_nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
     cong = nha_may.cong()
     return {**cong.trang_thai(), "song": await cong.suc_khoe()}
+
+
+@router.post("/kiem-ket-noi")
+async def kiem_ket_noi_endpoint(
+    _nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
+    """Chạy toàn bộ phép kiểm kết nối và trả báo cáo cho dashboard.
+
+    VÌ SAO POST DÙ NÓ CHỈ ĐỌC
+    -------------------------
+    Nó GỌI THẬT ra ERP — sáu lượt gọi. Để là GET thì trình duyệt, trình quét
+    liên kết, bộ nhớ đệm và nút "mở lại tab" đều có thể tự kích hoạt, và
+    hạn mức gọi ERP của cửa hàng bị đốt vì những thứ không ai bấm.
+
+    POST ở đây KHÔNG có nghĩa là ghi. Toàn bộ phép kiểm nằm ở
+    `agent/erp/kiem_ket_noi.py`, và có test quét mã nguồn canh rằng nó không
+    chứa lời gọi ghi nào.
+
+    LUÔN 200
+    --------
+    Kể cả khi ERP chết. Người vận hành cần một BÁO CÁO nói mình thiếu chỗ
+    nào, không phải một trang lỗi 500 không nói gì cả.
+    """
+    from agent.erp import kiem_ket_noi
+
+    return await kiem_ket_noi.kiem_tat_ca()

@@ -849,7 +849,68 @@ $$("#khofilter .chip").forEach((chip) =>
   })
 );
 
+/* ---------------- kết nối kho / ERP ---------------- */
+
+/* Mức của bộ kiểm khác mức của bộ sức khoẻ: ở đây "chan" nghĩa là CHƯA DÙNG
+   ĐƯỢC, không phải "đang hỏng". Dùng chung bảng màu nhưng đổi tên cho khớp. */
+const ERP_TONE  = { tot: "auto", canh_bao: "assist", chan: "halt" };
+const ERP_LABEL = { tot: "Đủ", canh_bao: "Cảnh báo", chan: "CHẶN" };
+
+async function loadErpCauHinh() {
+  const box = $("#erpcauhinh");
+  if (!box) return;
+  try {
+    const d = await api("/erp/suc-khoe");
+    const chuaNoi = d.nguon === "tep";
+    box.innerHTML = `<div class="row">
+      <span class="row__flag row__flag--${chuaNoi ? "assist" : d.mach_mo ? "halt" : "auto"}"></span>
+      <div class="row__main">
+        <b>Nguồn: ${esc(d.nguon)}</b>
+        <span class="row__sub">${chuaNoi
+          ? "Đang đọc tệp data/catalog.json trên đĩa — CHƯA nối ERP thật. Đặt ERP_LOAI=erpnext hoặc odoo trong .env rồi khởi động lại."
+          : (d.mach_mo
+              ? "NGẮT MẠCH đang mở — giá và tồn kho đang trả “không biết”"
+              : "đang trả lời bình thường")}</span>
+      </div>
+      <span class="tag tag--${chuaNoi ? "assist" : d.song ? "auto" : "halt"}">${
+        chuaNoi ? "chưa nối" : d.song ? "sống" : "không gọi được"}</span>
+    </div>`;
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không đọc được cấu hình: ${esc(e.message)}</p>`;
+  }
+}
+
+$("#erpthu")?.addEventListener("click", async () => {
+  const box = $("#erpketqua");
+  const btn = $("#erpthu");
+  btn.disabled = true;
+  /* Nói rõ nó GỌI THẬT. Người bấm cần biết mình đang tiêu hạn mức API của
+     cửa hàng, không phải đọc một con số đã lưu sẵn. */
+  box.innerHTML = '<p class="empty">Đang gọi thật vào ERP…</p>';
+  try {
+    const d = await api("/erp/kiem-ket-noi", { method: "POST" });
+    const dau = `<div class="row"><span class="row__flag row__flag--${ERP_TONE[d.trang_thai]}"></span>
+      <div class="row__main"><b>${d.san_sang ? "SẴN SÀNG đọc" : "CHƯA DÙNG ĐƯỢC"}</b>
+      <span class="row__sub">ERP_LOAI=${esc(d.erp_loai)} · đẩy đơn ${
+        d.ghi_don ? "BẬT" : "tắt"}${d.ma_kho ? " · kho " + esc(d.ma_kho) : ""}</span></div></div>`;
+    box.innerHTML = dau + d.muc.map((m) => `<div class="row">
+        <span class="row__flag row__flag--${ERP_TONE[m.trang_thai] || "plain"}"></span>
+        <div class="row__main"><b>${esc(m.ten)}</b>
+          <span class="row__sub">${esc(m.ghi_chu)}</span>
+          ${m.goi_y ? `<span class="row__sub">└─ ${esc(m.goi_y)}</span>` : ""}</div>
+        <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
+          ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
+      </div>`).join("");
+    loadErpCauHinh();
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function loadKho() {
+  loadErpCauHinh();
   const k = await api("/kho");
   $("#c-kho").textContent = (k.het_hang + k.sap_het) || "";
 

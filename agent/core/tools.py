@@ -321,6 +321,18 @@ async def _catalog_song() -> dict:
         # tham chiếu (tên, thành phần) — giá và tồn đã bị cổng chặn ở tầng
         # dưới nếu quá hạn mà gọi không được, nên không có số cũ nào lọt lên.
         data = _catalog()
+    # CHỈ chồng tồn kho nội bộ khi nguồn là TỆP.
+    #
+    # Với nguồn `tep`, bảng `ton_kho` chính là số sống — file JSON chỉ giữ
+    # con số của ngày ai đó sửa nó.
+    #
+    # Với ERP thật thì ngược hẳn: ERP là SỔ CÁI, và bảng nội bộ chỉ còn vai
+    # giữ chỗ tạm (thiết kế mục 7.2). Chồng nó lên là xoá mất số vừa lấy về
+    # từ ERP — và lỗi đó không nổ, nó LỆCH: agent tư vấn bằng số nội bộ rồi
+    # chốt đơn bằng số ERP, nên khách xác nhận xong mới bị báo hết hàng.
+    if (settings.erp_loai or "tep").strip().lower() != "tep":
+        return data
+
     try:
         from agent.core import kho
         song = await kho.lay_tat_ca()

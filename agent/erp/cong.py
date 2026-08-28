@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ from typing import Any
 
 from agent.erp.anh_xa import AnhXa, doc_anh_xa
 from agent.erp.hop_dong import Gia, LoiERP, NguonERP, TonKho
+
+
+# Trần số lời gọi ERP chạy cùng lúc khi nạp danh mục. Bắn 100 lời gọi một
+# lượt vào một ERP đang phục vụ người thật là tự gây ra sự cố mình đi chữa.
+_SONG_SONG_TOI_DA = 8
 
 
 @dataclass
@@ -174,10 +180,25 @@ class Cong:
         thieu: list[str] = []
         ket_qua: list[dict] = []
 
-        for sp in ds:
+        # Hỏi giá và tồn của MỌI sản phẩm SONG SONG.
+        #
+        # Bản đầu gọi nối tiếp, và đo thật thì 22 SKU với độ trễ 150ms/lời
+        # gọi mất 6,9 giây cho một lần nạp — lặp lại mỗi khi cache tồn kho
+        # hết hạn. Ở contact center nghĩa là cứ mỗi phút có một khách phải
+        # chờ chừng ấy, và cửa hàng 100 SKU thì chờ 31 giây.
+        #
+        # Chặn ở `_SONG_SONG_TOI_DA`: bắn 100 lời gọi cùng lúc vào một ERP
+        # đang phục vụ người thật là tự gây ra sự cố mình đi chữa.
+        chan = asyncio.Semaphore(_SONG_SONG_TOI_DA)
+
+        async def _hoi(ma: str):
+            async with chan:
+                return await asyncio.gather(self.gia(ma), self.ton_kho(ma))
+
+        cap = await asyncio.gather(*(_hoi(sp.ma) for sp in ds))
+
+        for sp, (g, t) in zip(ds, cap, strict=True):
             ma_noi_bo = self._anh_xa.ve_noi_bo(sp.ma)
-            g = await self.gia(sp.ma)
-            t = await self.ton_kho(sp.ma)
             if g is None or t is None:
                 # Không có giá hoặc không biết tồn thì đừng đưa ra. Đưa ra là
                 # mời khách hỏi rồi trả lời bằng số bịa.

@@ -73,10 +73,47 @@ class Cong:
             o = cache.get(ma)
             if o is not None and bay_gio - o.luc < ttl:
                 return o.gia_tri
+
+        # Mạch đang mở: không gọi, trả `None` ngay. Gọi tiếp là bắt mỗi khách
+        # đang chờ phải ăn trọn thời gian timeout của ERP.
+        if bay_gio < self._mo_mach_den:
+            return None
+
         try:
             gia_tri = await ham(ma)
         except Exception:  # noqa: BLE001
-            # Không trả ô cache cũ ở đây. Xem QUY TẮC TRUNG TÂM ở đầu file.
+            self._hong_lien_tiep += 1
+            if self._hong_lien_tiep >= self._ngat_mach_so_lan:
+                self._mo_mach_den = bay_gio + self._ngat_mach_giay
+                await self._bao_ngat_mach()
+            # Không trả ô cache cũ. Xem QUY TẮC TRUNG TÂM ở đầu file.
             return None
+
+        self._hong_lien_tiep = 0
+        self._mo_mach_den = 0.0
         cache[ma] = _O(gia_tri, bay_gio)
         return gia_tri
+
+    async def _bao_ngat_mach(self) -> None:
+        """Ngắt mạch phải để lại dấu vết.
+
+        Không có nhật ký thì ERP hỏng cả buổi mà biểu hiện duy nhất ra ngoài
+        là 'hôm nay agent chuyển người nhiều hơn mọi khi'.
+        """
+        try:
+            from agent import db
+
+            await db.log_event(
+                "erp.ngat_mach",
+                nguon=getattr(self._nguon, "ten", "?"),
+                hong_lien_tiep=self._hong_lien_tiep,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def trang_thai(self) -> dict:
+        return {
+            "nguon": getattr(self._nguon, "ten", "?"),
+            "mach_mo": self._dong_ho() < self._mo_mach_den,
+            "hong_lien_tiep": self._hong_lien_tiep,
+        }

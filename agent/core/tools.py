@@ -17,6 +17,21 @@ from agent import db
 from agent.config import ROOT, settings
 from agent.core import kho
 
+# Năm trạng thái một đơn có thể mang. MỘT chỗ khai, vì dashboard cũng phải
+# biết chúng để hiện nhãn — và hai danh sách rời nhau thì sớm muộn lệch.
+# `tests/test_nhan_trang_thai_don.py` canh việc đó.
+#
+#   cho_duyet    vượt ngưỡng giá trị, chờ người xác nhận
+#   da_chot      agent tự chốt trong hạn mức
+#   cho_dong_bo  đã ghi nhận, CHƯA vào được kho/ERP — đang thử lại
+#   da_giao      hãng vận chuyển báo đã giao (agent/shipping/service.py)
+#   da_huy       người huỷ, hoặc ERP từ chối
+#
+# `da_giao` được thêm vào đây SAU: nó đã bị ghi vào CSDL từ lâu mà dashboard
+# chưa bao giờ có nhãn cho nó, nên đơn giao xong hiện ra chữ trần "da_giao".
+# Không ai báo, vì `ORDER_LABEL[x] || x` là một đường lui im lặng.
+TRANG_THAI_DON = ("cho_duyet", "da_chot", "cho_dong_bo", "da_giao", "da_huy")
+
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 
 # Số đoạn và độ dài mỗi đoạn khi agent TỰ đi tra. Nhỏ hơn lượt tra sẵn đầu

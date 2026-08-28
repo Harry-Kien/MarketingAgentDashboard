@@ -738,8 +738,17 @@ async function loadContactDetail(id) {
 
 /* ---------------- đơn hàng ---------------- */
 
-const ORDER_LABEL = { cho_duyet: "Chờ duyệt", da_chot: "Đã chốt", da_huy: "Đã huỷ" };
-const ORDER_TONE  = { cho_duyet: "duyet", da_chot: "chot", da_huy: "huy" };
+/* Khớp `agent/core/tools.py::TRANG_THAI_DON`. Có test canh hai bên không
+   trôi xa nhau — thiếu một nhãn ở đây thì dòng đơn hiện ra chữ kỹ thuật
+   trần, thẻ xám, và người trực không hiểu đang nhìn cái gì. */
+const ORDER_LABEL = {
+  cho_duyet: "Chờ duyệt", da_chot: "Đã chốt", da_huy: "Đã huỷ",
+  cho_dong_bo: "Chờ đồng bộ kho", da_giao: "Đã giao",
+};
+const ORDER_TONE  = {
+  cho_duyet: "duyet", da_chot: "chot", da_huy: "huy",
+  cho_dong_bo: "duyet", da_giao: "chot",
+};
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 $$("#orderfilter .chip").forEach((chip) =>
@@ -760,6 +769,14 @@ async function loadOrders() {
       .map((i) => `<span class="order__line">${esc(i.ten)} &times;${i.so_luong} — ${vnd(i.thanh_tien)}</span>`)
       .join("");
     const cho_duyet = o.trang_thai === "cho_duyet";
+    /*
+     * Đơn `cho_dong_bo`: đã ghi nhận nhưng CHƯA vào được kho/ERP.
+     *
+     * Khách đã được agent hứa "sẽ có người gọi xác nhận". Máy đang tự thử
+     * lại, nhưng nếu nó bỏ cuộc thì lời hứa đó rơi vào khoảng không. Nên
+     * dòng này phải NHÌN THẤY ĐƯỢC, không được lẫn vào đám đơn đã xong.
+     */
+    const cho_dong_bo = o.trang_thai === "cho_dong_bo";
 
     /*
      * Khách xin huỷ: phải NHÌN THẤY NGAY trên dòng đơn.
@@ -779,13 +796,17 @@ async function loadOrders() {
       : "";
 
     return `<div class="row${xin_huy ? " row--xinhuy" : ""}">
-      <span class="row__flag row__flag--${xin_huy ? "halt" : cho_duyet ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
+      <span class="row__flag row__flag--${xin_huy ? "halt" : (cho_duyet || cho_dong_bo) ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
           <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
           ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
           ${srcBadge(o.channel, o.nen_tang)}</span>
         ${bang_xin_huy}
+        ${cho_dong_bo ? `<span class="order__xinhuy"><b>Chưa vào được kho/ERP</b>${
+            o.erp_loi ? " — " + esc(o.erp_loi) : ""
+          }${o.erp_so_lan_thu ? " · đã thử " + o.erp_so_lan_thu + " lần" : ""
+          }<br>Khách đã được hứa sẽ có người gọi xác nhận. Máy đang tự thử lại.</span>` : ""}
         <span class="order__items">${items}</span>
         <span class="order__ship">${esc(o.khach_sdt)} · ${esc(o.khach_dia_chi)}</span>
       </span>

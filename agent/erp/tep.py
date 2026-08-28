@@ -21,11 +21,8 @@ from __future__ import annotations
 import json
 import pathlib
 
-from agent.config import ROOT
+from agent.erp import ho_so
 from agent.erp.hop_dong import Gia, LoiERP, SanPhamERP, TonKho
-
-CATALOG = ROOT / "data" / "catalog.json"
-CATALOG_MAU = ROOT / "data" / "catalog.example.json"
 
 
 class NguonTep:
@@ -35,13 +32,8 @@ class NguonTep:
         self._duong_dan = duong_dan
 
     def _duong(self) -> pathlib.Path:
-        # Bỏ qua `duong_dan` khi file đó KHÔNG tồn tại là có chủ ý: đó là
-        # đường lui về bản mẫu. Nhưng file tồn tại mà hỏng thì vẫn phải nổ —
-        # xem `_doc`.
-        dd = self._duong_dan
-        if dd is not None and dd.exists():
-            return dd
-        return CATALOG if CATALOG.exists() else CATALOG_MAU
+        # Cùng quy tắc chọn file với nửa tư vấn — một chỗ khai, ở `ho_so`.
+        return ho_so.duong_dan(self._duong_dan)
 
     def _doc(self) -> dict:
         dd = self._duong()

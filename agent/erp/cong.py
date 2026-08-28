@@ -20,7 +20,6 @@ VÌ SAO ĐỒNG HỒ TIÊM VÀO
 """
 from __future__ import annotations
 
-import json
 import pathlib
 import asyncio
 import time
@@ -28,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from agent.erp import ho_so as ho_so_tu_van
 from agent.erp.anh_xa import AnhXa, doc_anh_xa
 from agent.erp.hop_dong import Gia, LoiERP, NguonERP, TonKho
 
@@ -142,29 +142,6 @@ class Cong:
         except Exception:  # noqa: BLE001
             return False
 
-    def _ho_so_tu_van(self) -> tuple[dict[str, dict], list]:
-        """Nửa tư vấn: đọc từ kho nội bộ, KHÔNG từ ERP.
-
-        Chín trên mười bốn trường của bản ghi sản phẩm (da_phu_hop,
-        thanh_phan_chinh, so_cong_bo...) không tồn tại trong Odoo hay ERPNext.
-        Nhét chúng vào ERP là dùng sai công cụ, và mất sạch khi đổi ERP.
-        """
-        from agent.erp.tep import CATALOG, CATALOG_MAU
-
-        dd = self._duong_dan_tu_van
-        if dd is None or not dd.exists():
-            dd = CATALOG if CATALOG.exists() else CATALOG_MAU
-        if not dd.exists():
-            return {}, []
-        try:
-            data = json.loads(dd.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            return {}, []
-        return (
-            {sp["ma"]: sp for sp in data.get("san_pham", []) if sp.get("ma")},
-            data.get("don_hang", []),
-        )
-
     async def danh_muc(self) -> dict:
         """Danh mục hợp nhất, đúng hình dạng `tools._catalog()` đang trả."""
         try:
@@ -176,7 +153,7 @@ class Cong:
                 f"Không lấy được danh mục từ nguồn {getattr(self._nguon, 'ten', '?')}"
             ) from exc
 
-        ho_so, don_hang = self._ho_so_tu_van()
+        ho_so, don_hang = ho_so_tu_van.doc(self._duong_dan_tu_van)
         thieu: list[str] = []
         ket_qua: list[dict] = []
 

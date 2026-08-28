@@ -1,0 +1,25 @@
+{
+  "_ghi_chu": "Tệp kê khai DÙNG CHUNG giữa plugin TypeScript và test Python. Plugin đọc nó để biết phơi công cụ nào; tests/test_plugin_dsh_erp.py đối chiếu nó với danh sách công cụ thật của agent/mcp_server.py. Đổi tên công cụ bên Python mà quên sửa đây thì đỏ ngay, thay vì hỏng lặng lẽ ở máy người dùng.",
+  "ten": "dsh-erp",
+  "mo_ta": "Hỏi kho/ERP của hệ thống Marketing Agent từ trong DeepSeek Harness. CHỈ ĐỌC.",
+  "mcp": {
+    "duong_dan": "/mcp/",
+    "cong_mac_dinh": 8000,
+    "xac_thuc": "Bearer <MCP_TOKEN>",
+    "_ghi_chu_xac_thuc": "Sinh token bằng `python -m scripts.sinh_token MCP_TOKEN`. Không in token ra màn hình, không dán vào chat."
+  },
+  "cong_cu": [
+    "tra_cuu_san_pham",
+    "goi_y_san_pham",
+    "ton_kho_realtime",
+    "suc_khoe_erp",
+    "tra_cuu_don_hang",
+    "tim_trong_kho_tri_thuc"
+  ],
+  "da_kiem_chung": false,
+  "can_xac_minh": [
+    "Chữ ký hàm plugin của Cordis và tên service dùng để đăng ký công cụ — chưa xác minh được: trang tài liệu deepseek-harness.github.io là SPA không đọc được bằng fetch, và raw README trả 404.",
+    "dsh có sẵn plugin MCP client hay không. Nếu có thì phần lớn thư mục này là thừa: chỉ cần khai báo máy chủ MCP trong cấu hình dsh là xong.",
+    "Phiên bản dsh mà cấu trúc package.json này nhắm tới. dsh đang ở developer preview, API sẽ đổi."
+  ]
+}

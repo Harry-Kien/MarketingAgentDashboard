@@ -856,9 +856,20 @@ $$("#khofilter .chip").forEach((chip) =>
 const ERP_TONE  = { tot: "auto", canh_bao: "assist", chan: "halt" };
 const ERP_LABEL = { tot: "Đủ", canh_bao: "Cảnh báo", chan: "CHẶN" };
 
-async function loadErpCauHinh() {
+/* Dòng cấu hình ERP gần như không đổi, nhưng đọc nó thì CHẠM VÀO ERP THẬT.
+   `loadKho()` nằm trong vòng làm mới 6 giây, nên không có phanh thì mở tab
+   Kho rồi đi ăn trưa là 600 lượt gọi ERP mỗi giờ.
+
+   `ep = true` cho lúc người vừa bấm Thử kết nối — họ cần thấy ngay. */
+const ERP_CAUHINH_MOI_MS = 60000;
+let erpCauHinhLuc = 0;
+
+async function loadErpCauHinh(ep = false) {
   const box = $("#erpcauhinh");
   if (!box) return;
+  if (!ep && box.innerHTML.trim()
+      && Date.now() - erpCauHinhLuc < ERP_CAUHINH_MOI_MS) return;
+  erpCauHinhLuc = Date.now();
   try {
     const d = await api("/erp/suc-khoe");
     const chuaNoi = d.nguon === "tep";
@@ -901,7 +912,7 @@ $("#erpthu")?.addEventListener("click", async () => {
         <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
           ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
       </div>`).join("");
-    loadErpCauHinh();
+    loadErpCauHinh(true);
   } catch (e) {
     box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
   } finally {
@@ -1186,11 +1197,18 @@ async function loadAnalyticsKhach() {
 /* Màn vận hành chỉ hiển thị các dịch vụ thuộc sản phẩm hiện tại. Connector
    tương thích cũ vẫn có thể chạy ở backend trong giai đoạn chuyển đổi nhưng
    không được biến thành một ứng dụng con hay thương hiệu trên dashboard. */
-async function loadHeThong() {
+/* `dangCho` = NGƯỜI vừa bấm nút, đang đợi và cần phản hồi ngay.
+   Vòng làm mới 6 giây gọi hàm này KHÔNG kèm cờ, và phải vẽ đè im lặng.
+
+   Bản đầu gán ô chờ vô điều kiện: cứ 6 giây panel trắng xoá rồi hiện lại
+   sau khi dò xong 5 dịch vụ. Đó là cái nhấp nháy người dùng nhìn thấy. */
+async function loadHeThong(dangCho = false) {
   const box = $("#hethong");
   const btn = $("#hethongrun");
   if (btn) btn.disabled = true;
-  box.innerHTML = '<p class="empty">Đang hỏi từng dịch vụ…</p>';
+  if (dangCho || !box.innerHTML.trim()) {
+    box.innerHTML = '<p class="empty">Đang hỏi từng dịch vụ…</p>';
+  }
   try {
     const d = await api("/he-thong");
     const visible = d.dich_vu.filter((x) => !["zalocrm", "chatwoot"].includes(x.ma));
@@ -1223,7 +1241,10 @@ async function loadHeThong() {
   }
 }
 
-$("#hethongrun")?.addEventListener("click", loadHeThong);
+/* Bọc trong arrow function, KHÔNG gán thẳng `loadHeThong`: gán thẳng thì
+   tham số đầu là đối tượng Event — truthy, nên nó vô tình chạy đúng. Dựa
+   vào tình cờ là thứ hỏng ở lần refactor sau. */
+$("#hethongrun")?.addEventListener("click", () => loadHeThong(true));
 
 /* Bấm "Mở" ở màn Hệ thống -> nhảy sang màn Kết nối và mở đúng app đó.
    Gắn trên vùng chứa chứ không trên từng nút: danh sách dựng lại sau mỗi

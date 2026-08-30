@@ -181,6 +181,47 @@ class PostgresKhoDon:
         )
 
 
+    async def don_da_day(self, gioi_han: int = 50) -> list[dict]:
+        """Đơn đã vào ERP nhưng chưa tới trạng thái cuối.
+
+        Cột là `trang_thai_giao_hang`, KHÔNG phải `trang_thai_giao`. Cột
+        sau đã bị migration 0007 xoá và thay bằng cột trước, kèm đổi luôn từ
+        vựng tiếng Việt sang giá trị `InternalShippingStatus`. Bản đầu của
+        hàm này đọc tên cột cũ — câu SQL sẽ nổ lúc chạy thật, trong một vòng
+        nền không ai nhìn.
+
+        Bỏ qua `delivered` và `returned`: chúng là trạng thái CUỐI, hỏi lại
+        ERP về chúng mỗi phút là đốt hạn mức cho một câu trả lời không bao
+        giờ đổi nữa.
+        """
+        from agent import db
+
+        rows = await db.fetch(
+            """
+            SELECT id, ma_don, erp_ma_don,
+                   trang_thai_giao_hang AS trang_thai_giao
+            FROM orders
+            WHERE erp_ma_don IS NOT NULL
+              AND (trang_thai_giao_hang IS NULL
+                   OR trang_thai_giao_hang NOT IN ('delivered', 'returned'))
+              AND trang_thai <> 'da_huy'
+            ORDER BY updated_at
+            LIMIT $1
+            """,
+            gioi_han,
+        )
+        return [dict(r) for r in rows]
+
+    async def ghi_trang_thai_giao(self, id_don, trang_thai: str) -> None:
+        from agent import db
+
+        await db.execute(
+            "UPDATE orders SET trang_thai_giao_hang=$2, "
+            "cap_nhat_van_chuyen_luc=now(), updated_at=now() WHERE id=$1",
+            id_don, trang_thai,
+        )
+
+
 async def doi_soat_ton_kho(
     ton_noi_bo: dict[str, int],
     hoi_erp,
@@ -306,6 +347,26 @@ async def vong_dong_bo_loop() -> None:
             except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
                 await db.log_event(
                     "erp.vong_dong_bo_loi",
+                    error=f"{type(exc).__name__}: {exc}"[:200],
+                )
+
+            # Kéo trạng thái giao hàng NGƯỢC từ ERP về. Không có bước này
+            # thì đơn đẩy sang ERP xong là hết đường một chiều: kho xuất
+            # hàng mà bên này vẫn thấy `da_chot` mãi mãi.
+            try:
+                from agent.erp import nha_may as _nm
+
+                nguon = _nm.tao_nguon()
+                if hasattr(nguon, "trang_thai_giao"):
+                    await keo_trang_thai_giao(
+                        await kho_don.don_da_day(),
+                        nguon.trang_thai_giao,
+                        kho_don.ghi_trang_thai_giao,
+                        db.log_event,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                await db.log_event(
+                    "erp.keo_trang_thai_loi",
                     error=f"{type(exc).__name__}: {exc}"[:200],
                 )
 

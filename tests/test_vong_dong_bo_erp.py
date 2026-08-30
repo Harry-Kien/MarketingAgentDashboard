@@ -328,3 +328,100 @@ def test_keo_danh_sach_rong_thi_khong_lam_gi():
     tk, ghi, nk = _keo([], {})
     assert ghi == [] and nk == []
     assert tk["da_xet"] == 0
+
+
+# =====================================================================
+#  Không được có việc nào viết ra rồi quên nối
+# =====================================================================
+
+def test_moi_viec_cua_vong_nen_deu_duoc_vong_nen_goi():
+    """Mọi hàm việc trong module này phải được `vong_dong_bo_loop` gọi.
+
+    ĐÃ XẢY RA THẬT: `keo_trang_thai_giao` được viết, được test, được commit
+    — và không nối vào vòng nền. Không ai gọi nó. Test vẫn xanh vì test gọi
+    thẳng hàm.
+
+    Đó là mã chết đội lốt tính năng: nhìn vào repo thì thấy có, nhìn vào hệ
+    thống đang chạy thì không. Và không có gì báo, vì mã chết không nổ.
+    """
+    import inspect
+    import re
+
+    from agent.erp import vong_dong_bo as v
+
+    than_loop = inspect.getsource(v.vong_dong_bo_loop)
+
+    # Hàm VIỆC = coroutine công khai, trừ chính vòng lặp và các tiện ích.
+    MIEN = {"vong_dong_bo_loop"}
+    viec = {
+        ten for ten, o in vars(v).items()
+        if inspect.iscoroutinefunction(o) and not ten.startswith("_")
+        and ten not in MIEN and o.__module__ == v.__name__
+    }
+    assert viec, "không tìm thấy hàm việc nào — phép kiểm có thể đã mục"
+
+    chua_noi = sorted(t for t in viec if not re.search(rf"\b{t}\(", than_loop))
+    assert not chua_noi, (
+        f"Hàm {chua_noi} có trong module nhưng vòng nền KHÔNG gọi. "
+        "Mã chết đội lốt tính năng: repo thì có, hệ thống chạy thì không."
+    )
+
+
+def test_kho_don_co_du_phuong_thuc_cho_moi_viec():
+    # Nối vào vòng nền mà thiếu phương thức đọc/ghi thì nó nổ lúc chạy thật,
+    # ở một vòng nền không ai nhìn.
+    from agent.erp.vong_dong_bo import PostgresKhoDon
+
+    for ten in ("don_cho_dong_bo", "danh_dau_da_day", "danh_dau_that_bai",
+                "danh_dau_bo_cuoc", "don_da_day", "ghi_trang_thai_giao"):
+        assert hasattr(PostgresKhoDon, ten), f"PostgresKhoDon thiếu {ten}()"
+
+
+def test_khong_dung_cot_da_bi_xoa():
+    """`trang_thai_giao` đã bị migration 0007 xoá, thay bằng
+    `trang_thai_giao_hang`.
+
+    ĐÃ XẢY RA THẬT: bản đầu của `don_da_day()` đọc tên cột cũ. Câu SQL đó
+    chỉ nổ lúc CHẠY, trong một vòng nền không ai nhìn — không test nào bắt
+    được vì test không chạm CSDL.
+    """
+    import re
+    from pathlib import Path
+
+    ma = (Path(__file__).resolve().parent.parent / "agent" / "erp"
+          / "vong_dong_bo.py").read_text(encoding="utf-8")
+
+    # Chỉ soi DÒNG SQL. Chữ `trang_thai_giao` trong docstring và trong khoá
+    # dict (`don.get("trang_thai_giao")` — bí danh SELECT trả về) đều hợp lệ.
+    # Bản đầu của test này đếm trên cả file nên đỏ khi mã đã đúng.
+    SQL = re.compile(r"\b(SELECT|UPDATE|WHERE|FROM|SET|AND|OR|IN)\b")
+    xau = []
+    for dong in ma.splitlines():
+        if not SQL.search(dong):
+            continue
+        # Bỏ `AS trang_thai_giao` — đó là bí danh, không phải tên cột.
+        con_lai = re.sub(r"AS\s+trang_thai_giao\b", "", dong)
+        if re.search(r"\btrang_thai_giao\b(?!_hang)", con_lai):
+            xau.append(dong.strip()[:80])
+
+    assert not xau, (
+        "Câu SQL đang dùng cột `trang_thai_giao` — cột này KHÔNG còn tồn "
+        "tại. Migration 0007 đổi sang `trang_thai_giao_hang`.\n"
+        + "\n".join(xau)
+    )
+
+
+def test_chi_dung_gia_tri_thuoc_bo_trang_thai_noi_bo():
+    # Migration 0007 cũng đổi từ vựng: tiếng Việt -> giá trị
+    # InternalShippingStatus. Lọc bằng từ cũ là lọc trượt mọi đơn.
+    from pathlib import Path
+
+    from agent.shipping.models import InternalShippingStatus
+
+    ma = (Path(__file__).resolve().parent.parent / "agent" / "erp"
+          / "vong_dong_bo.py").read_text(encoding="utf-8")
+    for tu_cu in ("'da_giao'", "'hoan_ve'", "'dang_giao'", "'giao_that_bai'"):
+        assert tu_cu not in ma, (
+            f"{tu_cu} là từ vựng CŨ trước migration 0007. Bộ hiện tại là "
+            f"{[s.value for s in InternalShippingStatus]}"
+        )

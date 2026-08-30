@@ -725,7 +725,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
         msg.customer_ref,
         (msg.meta or {}).get("nen_tang_goc"),
     )
-    cid: uuid.UUID = conv["id"]
+    # Chống vòng lặp dội tin (Echo Loop): không bao giờ xử lý tin nhắn trùng với lời Agent vừa gửi
+    last_agent_msg = await db.fetchrow(
+        "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'agent' ORDER BY created_at DESC LIMIT 1",
+        cid,
+    )
+    if last_agent_msg and last_agent_msg["content"].strip() == msg.text.strip():
+        return
 
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content, attachments) "

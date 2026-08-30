@@ -125,22 +125,43 @@ class ZaloCRMAdapter(ChannelAdapter):
                 )
         return out
 
-    # `parse` giữ lại cho đường webhook (Zalo OA ở giai đoạn 2).
+    # `parse` xử lý payload webhook từ ZaloCRM
     def parse(self, payload: dict) -> InboundMessage | None:
         body = payload.get("data", payload)
+        if not isinstance(body, dict):
+            return None
+
+        # Bỏ qua tin nhắn do chính mình gửi đi (outbound / self / ai_assistant)
+        sender_type = str(body.get("senderType") or body.get("sender_type") or "")
+        if sender_type and sender_type != INBOUND_SENDER:
+            return None
+        if body.get("isSelf") is True or body.get("direction") == "outbound":
+            return None
+
         text = body.get("content") or body.get("text")
         if not isinstance(text, str) or not text.strip():
             return None
+
+        t_clean = text.strip()
+        # Bỏ qua tin hệ thống của Zalo (bỏ ghim, chia sẻ nhóm, v.v.)
+        if t_clean.startswith("{") and any(k in t_clean for k in ("actionlist", "highLights", "recommened.user", "gUid", "topicId", "msginfo")):
+            return None
+
         conv_id = str(body.get("conversationId") or body.get("threadId") or "")
         if not conv_id:
             return None
+
+        msg_id = body.get("messageId") or body.get("id") or body.get("msgId")
+        if not msg_id:
+            msg_id = __import__("hashlib").md5(f"{conv_id}:{t_clean}:{body.get('sentAt')}".encode()).hexdigest()
+
         return InboundMessage(
             channel=self.name,
             conversation_ref=conv_id,
             customer_ref=str(body.get("contactId") or conv_id),
             customer_name=str(body.get("senderName") or "Khách"),
-            text=text.strip(),
-            dedupe_key=f"{self.name}:{body.get('messageId') or body.get('id')}",
+            text=t_clean,
+            dedupe_key=f"{self.name}:{msg_id}",
             received_at=_parse_time(body.get("sentAt")),
         )
 

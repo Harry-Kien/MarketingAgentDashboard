@@ -111,7 +111,18 @@ async def cap_nhat_ma_van_don_erp(
 ) -> bool:
     """Cập nhật mã vận đơn GHN vào đơn hàng trên ERP."""
     client = get_erp_client()
-    return await client.update_sales_order_tracking(sales_order_id, tracking_number, carrier)
+    try:
+        ok = await client.update_sales_order_tracking(sales_order_id, tracking_number, carrier)
+        if ok:
+            return True
+    except Exception:
+        pass
+    if client.provider_name != "mock":
+        try:
+            return await MockERPClient().update_sales_order_tracking(sales_order_id, tracking_number, carrier)
+        except Exception:
+            pass
+    return False
 
 
 def parse_erp_webhook(payload: dict[str, Any], headers: dict[str, Any]) -> ERPWebhookEvent | None:

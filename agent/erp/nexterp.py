@@ -211,17 +211,23 @@ class NextERPClient(BaseERPClient):
             "tracking_number": tracking_number,
             "carrier": carrier,
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.put(url, headers=self._headers(), json=payload)
-            return resp.status_code in (200, 201)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.put(url, headers=self._headers(), json=payload)
+                return resp.status_code in (200, 201)
+        except Exception:
+            return False
 
     async def get_sales_order(self, sales_order_id: str) -> ERPSalesOrder | None:
         url = f"{self._base_url}/api/resource/Sales Order/{sales_order_id}"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=self._headers())
-            if resp.status_code != 200:
-                return None
-            data = resp.json().get("data", {})
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=self._headers())
+                if resp.status_code != 200:
+                    return None
+                data = resp.json().get("data", {})
+        except Exception:
+            return None
 
         return ERPSalesOrder(
             name=data.get("name", sales_order_id),

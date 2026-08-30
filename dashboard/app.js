@@ -82,13 +82,17 @@ const SIGNAL_LABEL = {
 
 /* ---------------- điều hướng ---------------- */
 
+/* MỘT chỗ đổi màn. Trước đây logic này bị chép lại ở `moManKetNoi`, và mỗi
+   bản chép là một chỗ có thể quên cập nhật khi thanh điều hướng đổi. */
+function doiMan(ten) {
+  state.view = ten;
+  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === ten));
+  refresh();
+}
+
 $$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    state.view = btn.dataset.view;
-    $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b === btn));
-    $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === state.view));
-    refresh();
-  })
+  btn.addEventListener("click", () => doiMan(btn.dataset.view))
 );
 
 /* ---------------- sáng / tối ---------------- */
@@ -1242,7 +1246,13 @@ async function loadHeThong(dangCho = false) {
             ${x.nhung_duoc ? "· mở ngay trong đây"
               : x.can_dang_nhap ? "· cần đăng nhập riêng" : ""}</span>
         </div>
-        ${!x.song
+        ${x.di_toi_man
+          /* Chưa nối được thì KHÔNG có gì để "Mở". Đưa người dùng tới màn
+             làm được việc, và nói đúng việc nút làm. Bản đầu render <a href>
+             trỏ về chính dashboard: bấm vào trang quay về trang chính, nhìn
+             như nút hỏng. */
+          ? `<button type="button" class="btn btn--sm" data-di-toi="${esc(x.di_toi_man)}">Cấu hình</button>`
+          : !x.song
           ? `<span class="tag tag--halt">không chạy</span>`
           : x.nhung_duoc
             /* Nhúng được thì mở NGAY TRONG dashboard. Nút mở tab mới vẫn
@@ -1269,7 +1279,16 @@ $("#hethongrun")?.addEventListener("click", () => loadHeThong(true));
 /* Bấm "Mở" ở màn Hệ thống -> nhảy sang màn Kết nối và mở đúng app đó.
    Gắn trên vùng chứa chứ không trên từng nút: danh sách dựng lại sau mỗi
    lần Kiểm tra, và listener gắn trên nút cũ thì chết theo nút cũ. */
+/* Nút "Cấu hình" của mục chưa nối: chuyển sang màn tương ứng trong chính
+   dashboard, không mở tab mới. Gắn trên vùng chứa vì danh sách được dựng
+   lại sau mỗi lần làm mới. */
 $("#hethong")?.addEventListener("click", (e) => {
+  const diToi = e.target.closest("[data-di-toi]");
+  if (diToi) {
+    e.preventDefault();
+    doiMan(diToi.dataset.diToi);
+    return;
+  }
   const nut = e.target.closest("[data-mo-trong]");
   if (!nut) return;
   moManKetNoi(nut.dataset.moTrong);
@@ -1948,10 +1967,7 @@ kiemPhien().then((co) => {
 /* Trung tâm kết nối native. Secret chỉ đi từ form tới vault; response không
    chứa credential nên DOM cũng không có gì để vô tình làm lộ. */
 function moManKetNoi() {
-  state.view = "ketnoi";
-  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "ketnoi"));
-  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "ketnoi"));
-  loadKetNoi();
+  doiMan("ketnoi");
 }
 
 $("#connection-add-toggle")?.addEventListener("click", () => {

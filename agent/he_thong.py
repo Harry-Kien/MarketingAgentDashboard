@@ -120,9 +120,16 @@ def muc_erp() -> dict:
             "ten": "Kho / ERP",
             "mo_ta": ("CHƯA nối ERP — agent đang đọc giá và tồn kho từ tệp "
                       "data/catalog.json trên đĩa"),
-            # URL trỏ về chính dashboard: không có ERP để mở, và một liên kết
-            # gãy còn tệ hơn không có liên kết.
-            "url": "http://localhost:8000",
+            # Chưa có ERP để mở. Bản đầu trỏ `url` về chính dashboard với lý
+            # do "liên kết gãy còn tệ hơn không có liên kết" — nhưng bấm vào
+            # thì trang quay về trang chính, không lời giải thích, nhìn như
+            # nút hỏng. Đó là lựa chọn TỆ NHẤT trong ba.
+            #
+            # Lựa chọn đúng: đưa người dùng sang màn Kho, nơi có panel Kết
+            # nối kho/ERP và nút Thử kết nối. Nút chỉ có nghĩa khi bấm xong
+            # người dùng ở GẦN VIỆC hơn trước.
+            "di_toi_man": "kho",
+            "url": "",
             "kiem": "http://127.0.0.1:8000/healthz",
             "can_dang_nhap": False,
         }

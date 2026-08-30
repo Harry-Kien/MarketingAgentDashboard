@@ -1528,5 +1528,36 @@ if settings.mcp_token:
     # của app con — đây là chỗ mọi lần mount ASGI lồng nhau bị vấp.
     app.state.mcp_app = _mcp_app
 
+class _GiaoDienLuonHoiLai(StaticFiles):
+    """`StaticFiles` nhưng bắt trình duyệt hỏi lại trước khi dùng bản đệm.
+
+    VÌ SAO CẦN
+    ----------
+    `StaticFiles` gửi `ETag` và `Last-Modified` nhưng KHÔNG gửi
+    `Cache-Control`. Thiếu header đó, trình duyệt tự suy diễn thời gian sống
+    (thường là 10% khoảng cách từ `Last-Modified`) và phục vụ `app.js` từ bộ
+    đệm mà không hỏi lại máy chủ.
+
+    Đã gặp thật: máy chủ phục vụ bản mới, đĩa có bản mới, mà trình duyệt vẫn
+    chạy bản cũ kể cả sau `location.reload()`. Nghĩa là mọi bản vá đều không
+    tới tay người trực cho tới khi họ tình cờ Ctrl+F5 — sửa xong một lỗi rồi
+    tưởng đã xong, trong khi người dùng vẫn đang gặp đúng lỗi đó.
+
+    `no-cache` KHÔNG phải "đừng lưu đệm". Nó là "lưu được, nhưng phải hỏi lại
+    trước khi dùng". ETag vẫn còn nên lần hỏi lại trả 304 rỗng — gần như
+    miễn phí, và luôn đúng bản.
+
+    Video KHÔNG đi qua lớp này: chúng bất biến sau khi dựng và nặng hàng
+    megabyte, bắt hỏi lại mỗi lần là đốt băng thông cho một câu trả lời luôn
+    giống nhau.
+    """
+
+    def file_response(self, *args, **kwargs):  # noqa: D102
+        res = super().file_response(*args, **kwargs)
+        res.headers["Cache-Control"] = "no-cache"
+        return res
+
+
 if DASHBOARD_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")
+    app.mount("/", _GiaoDienLuonHoiLai(directory=str(DASHBOARD_DIR), html=True),
+              name="dashboard")

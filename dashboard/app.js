@@ -13,6 +13,26 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
+
+  /* 401 KHÁC mọi lỗi khác, và phải xử lý riêng.
+   *
+   * Ở contact center người trực mở tab suốt ca, nên phiên hết hạn là chuyện
+   * CHẮC CHẮN xảy ra — hết hạn thật, hoặc máy chủ khởi động lại.
+   *
+   * Trước đây không có nhánh này. Hệ quả: mọi panel hiện chữ "Unauthorized"
+   * (tiếng Anh, giữa giao diện tiếng Việt), vòng làm mới 6 giây vẫn chạy nên
+   * toast lỗi bắn lại mỗi 6 giây mãi mãi, và không chỗ nào bảo người dùng
+   * đăng nhập lại — màn đăng nhập vẫn ẩn. Họ nhìn một dashboard chết trong
+   * khi khách vẫn đang nhắn tới.
+   */
+  if (res.status === 401) {
+    $("#cong")?.classList.remove("is-off");
+    // Dừng vòng làm mới: không dừng thì cứ 6 giây một toast lỗi, và mỗi
+    // lần là một request vô ích tới máy chủ.
+    if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    throw new Error("Phiên đăng nhập đã hết hạn — đăng nhập lại để tiếp tục");
+  }
+
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch { /* giữ nguyên */ }

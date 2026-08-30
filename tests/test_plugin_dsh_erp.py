@@ -1,15 +1,26 @@
-"""Plugin dsh: danh sách công cụ nó phơi ra phải khớp máy chủ MCP thật.
+"""Danh sách công cụ MCP dành cho client ngoài phải khớp máy chủ thật.
 
 VÌ SAO TEST NÀY TỒN TẠI
 -----------------------
-Plugin viết bằng TypeScript, nằm ngoài bộ test Python, và gọi máy chủ MCP
-qua HTTP. Nghĩa là khi ai đó đổi tên một công cụ trong `agent/mcp_server.py`,
-plugin KHÔNG hỏng lúc build — nó hỏng lúc chạy, ở máy người dùng, với thông
-báo "tool not found" mà không ai ở đây nhìn thấy.
+`plugins/dsh-erp/cong-cu.json` và `README.md` nói cho người cài biết nối vào
+thì thấy công cụ gì. Đổi tên một công cụ trong `agent/mcp_server.py` mà quên
+sửa hai file đó thì tài liệu nói dối, và người dùng chỉ phát hiện khi client
+báo "tool not found" — ở máy họ, không ai ở đây nhìn thấy.
 
-Nên hai bên đọc chung MỘT tệp kê khai `plugins/dsh-erp/cong-cu.json`, và test
-này đối chiếu tệp đó với danh sách công cụ thật. Đổi tên bên Python mà quên
-sửa kê khai thì đỏ ngay tại đây.
+VÌ SAO KHÔNG CÒN TEST MÃ TYPESCRIPT
+-----------------------------------
+Bản đầu của thư mục này có một plugin tự viết (`src/index.ts`,
+`src/mcp-client.ts`, `kiem.mjs`) và các test canh chúng. Đã xoá hết, vì đọc
+gói `@deepseek-ai/dsh` thật thì thấy hai điều:
+
+  1. `@deepseek-ai/dsh-mcp-client` là plugin MCP client CHÍNH THỨC. Plugin
+     tự viết là thừa.
+  2. Plugin Cordis của dsh được định nghĩa LÚC CHẠY qua `cordis_define` /
+     `cordis_run`, không phải file tĩnh xuất `apply(ctx)` — mô hình mà bản
+     đầu đoán sai.
+
+Xoá mã thừa thì cũng xoá test canh mã đó. Giữ lại đúng phần còn canh một
+thứ có thật: tài liệu không được trôi khỏi máy chủ MCP.
 """
 from __future__ import annotations
 
@@ -21,11 +32,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import pytest  # noqa: E402
-
 from agent import mcp_server  # noqa: E402
 
-KE_KHAI = ROOT / "plugins" / "dsh-erp" / "cong-cu.json"
+THU_MUC = ROOT / "plugins" / "dsh-erp"
+KE_KHAI = THU_MUC / "cong-cu.json"
+DOC = THU_MUC / "README.md"
 
 
 def _kê_khai() -> dict:
@@ -43,68 +54,67 @@ def test_ke_khai_ton_tai():
 def test_moi_cong_cu_khai_bao_deu_co_that_ben_mcp():
     thieu = sorted(set(_kê_khai()["cong_cu"]) - _ten_cong_cu_that())
     assert not thieu, (
-        "Plugin dsh khai công cụ không tồn tại bên máy chủ MCP: "
-        f"{thieu}. Đổi tên bên agent/mcp_server.py thì phải sửa cả "
-        "plugins/dsh-erp/cong-cu.json — nếu không plugin hỏng ở máy người "
-        "dùng chứ không hỏng ở đây."
+        f"Kê khai nhắc công cụ không tồn tại bên máy chủ MCP: {thieu}. "
+        "Đổi tên bên agent/mcp_server.py thì phải sửa cả cong-cu.json và "
+        "README — nếu không tài liệu nói dối và người dùng chỉ phát hiện "
+        "khi client báo 'tool not found'."
     )
 
 
-def test_plugin_khong_khai_cong_cu_ghi():
-    # Plugin chạy trong dsh — một agent runtime khác, không đi qua năm lớp
-    # lưới tuân thủ trong agent/core/agent.py. Nó chỉ được đọc.
-    cam = {
-        "soan_bai_dang", "dua_bai_vao_hang_doi", "tao_don_hang",
-        "chuyen_nhan_vien", "tao_video", "dieu_chinh_kho",
+def test_README_khong_nhac_cong_cu_khong_ton_tai():
+    # README có bảng công cụ để người đọc biết nối vào thì thấy gì. Bảng đó
+    # trôi khỏi máy chủ cũng là tài liệu nói dối.
+    doc = DOC.read_text(encoding="utf-8")
+    that = _ten_cong_cu_that()
+    import re
+
+    nhac = set(re.findall(r"`(\w+)`", doc)) & {
+        t for t in re.findall(r"`(\w+)`", doc) if "_" in t
     }
+    la = sorted(t for t in nhac
+                if t not in that
+                and t.islower()
+                and t.startswith(("tra_", "goi_", "ton_", "suc_", "tim_",
+                                  "soan_", "dua_", "kiem_", "hieu_", "danh_")))
+    assert not la, f"README nhắc công cụ MCP không tồn tại: {la}"
+
+
+def test_khong_khai_cong_cu_ghi():
+    # dsh là một agent runtime KHÁC: không đi qua năm lớp lưới tuân thủ
+    # trong agent/core/agent.py, không có trần chi phí, không có lưới chuyển
+    # người. Cho nó quyền chốt đơn là giao chìa khoá cho một người lạ.
+    cam = {"tao_don_hang", "chuyen_nhan_vien", "tao_video", "dieu_chinh_kho",
+           "gui_tin_nhan", "dang_bai"}
     lo = sorted(set(_kê_khai()["cong_cu"]) & cam)
-    assert not lo, f"Plugin dsh chỉ được ĐỌC, đang khai công cụ ghi: {lo}"
+    assert not lo, f"Kê khai cho client ngoài chỉ được ĐỌC, thấy: {lo}"
 
 
-def test_ke_khai_noi_ro_dau_la_phan_chua_kiem_chung():
-    # Khuôn plugin Cordis của dsh chưa xác minh được (trang tài liệu là SPA,
-    # README trả 404). Tệp kê khai phải nói thẳng điều đó, để người cài không
-    # tưởng đây là mã đã chạy thật.
-    d = _kê_khai()
-    assert d.get("da_kiem_chung") is False
-    assert d.get("can_xac_minh"), "Phải liệt kê rõ những gì còn phải kiểm"
+def test_plugin_tu_viet_da_bi_xoa():
+    """Không được viết lại plugin tự chế.
+
+    `@deepseek-ai/dsh-mcp-client` làm đúng việc đó và là gói chính thức.
+    Viết lại là dựng một bản sao kém hơn của thứ đã có, và phải nuôi nó.
+    """
+    for ten in ("src", "kiem.mjs", "package.json", "tsconfig.json"):
+        assert not (THU_MUC / ten).exists(), (
+            f"{ten} đã quay lại. dsh có plugin MCP client chính thức — "
+            "xem phần đầu README của thư mục này."
+        )
+
+
+def test_README_chi_dung_goi_chinh_thuc():
+    doc = DOC.read_text(encoding="utf-8")
+    assert "@deepseek-ai/dsh-mcp-client" in doc, (
+        "README phải chỉ người dùng tới plugin MCP client chính thức"
+    )
+    assert "release candidate" in doc.lower() or "rc" in doc, (
+        "Phải nói rõ dsh đang ở bản rc — API còn đổi, đừng đặt vào đường "
+        "chạy của khách thật"
+    )
 
 
 def test_plugin_khong_nam_trong_requirements():
-    # dsh đang ở developer preview. Không cho nó thành phụ thuộc bắt buộc
-    # của hệ thống chạy thật.
+    # dsh là công cụ NGƯỜI DÙNG chạy, không phải phụ thuộc của hệ thống.
     req = (ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
     assert "deepseek-harness" not in req
     assert "dsh" not in req.split()
-
-
-def test_ma_typescript_cua_plugin_van_dung():
-    """Chạy `plugins/dsh-erp/kiem.mjs` qua node.
-
-    BỎ QUA khi máy không có node — CI Python không nên đỏ vì thiếu runtime
-    JavaScript. Nhưng máy nào có node thì mã TypeScript vẫn được canh, thay
-    vì mục dần trong im lặng vì nằm ngoài pytest.
-    """
-    import shutil
-    import subprocess
-
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Không có node — bỏ qua phần kiểm mã TypeScript")
-
-    thu_muc = ROOT / "plugins" / "dsh-erp"
-    # `encoding="utf-8"` tường minh, KHÔNG để `text=True` tự chọn.
-    # Trên Windows bảng mã hệ thống ở đây là cp1258; `kiem.mjs` in tiếng
-    # Việt, nên mặc định sẽ nổ UnicodeDecodeError trong luồng đọc — đúng
-    # vào lúc test đỏ và người ta cần đọc thông báo nhất.
-    kq = subprocess.run(
-        [node, "kiem.mjs"],
-        cwd=thu_muc,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-    )
-    assert kq.returncode == 0, (
-        f"kiem.mjs đỏ:\n{kq.stdout}\n{kq.stderr}"
-    )

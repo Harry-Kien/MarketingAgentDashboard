@@ -164,6 +164,8 @@ class NextERPClient(BaseERPClient):
         payload: dict[str, Any] = {
             "customer": customer.customer_id or customer.customer_name,
             "order_type": "Sales",
+            "po_no": notes.split('#')[-1].strip() if '#' in notes else notes,
+            "po_date": __import__("datetime").date.today().isoformat(),
             "docstatus": 1,
             "delivery_date": __import__("datetime").date.today().isoformat(),
             "items": so_items,

@@ -123,18 +123,20 @@ TOOLS: list[dict] = [
         "name": "tra_cuu_don_hang",
         "description": (
             "Tra cứu tình trạng đơn hàng và lộ trình giao hàng thời gian thực từ hãng "
-            "vận chuyển (GHN/GHTK) theo mã đơn (ví dụ AS...) hoặc mã vận đơn (ví dụ MOCK.../GHN...). "
-            "Gọi khi khách hỏi đơn của họ tới đâu rồi, bao giờ nhận được."
+            "vận chuyển (GHN/GHTK). Nếu khách không nói mã đơn cụ thể mà chỉ hỏi chung chung "
+            "('cập nhật đơn cho tôi', 'đơn anh tới đâu rồi', 'kiểm tra đơn hàng'), "
+            "hãy để trống ma_don (hoặc không truyền), công cụ sẽ TỰ ĐỘNG tra cứu đơn hàng "
+            "gần nhất của khách này trong hệ thống!"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "ma_don": {
                     "type": "string",
-                    "description": "Mã đơn hàng hoặc mã vận đơn của khách",
+                    "description": "Mã đơn hàng hoặc mã vận đơn (tuỳ chọn, để trống nếu khách hỏi chung)",
                 }
             },
-            "required": ["ma_don"],
+            "required": [],
         },
     },
     {
@@ -507,22 +509,53 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     if name == "tra_cuu_don_hang":
         from agent.shipping import tra_cuu_van_don
         ma = str(args.get("ma_tra_cuu") or args.get("ma_don") or args.get("ma_van_don") or "").strip()
-        if not ma:
-            return {"tim_thay": False, "ly_do": "Chưa cung cấp mã đơn hoặc mã vận đơn để tra cứu."}
+        db_order = None
+        if ma:
+            db_order = await db.fetchrow(
+                "SELECT * FROM orders WHERE ma_don = $1 OR ma_van_don = $1", ma
+            )
+        else:
+            # Tự động tìm đơn hàng gần nhất của khách trong cuộc trò chuyện này
+            if conversation_id:
+                conv = await db.fetchrow("SELECT customer_ref FROM conversations WHERE id = $1", conversation_id)
+                db_order = await db.fetchrow(
+                    "SELECT * FROM orders WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1",
+                    conversation_id
+                )
+                if not db_order and conv and conv.get("customer_ref"):
+                    db_order = await db.fetchrow(
+                        "SELECT * FROM orders WHERE customer_ref = $1 ORDER BY created_at DESC LIMIT 1",
+                        conv["customer_ref"]
+                    )
+            if not db_order:
+                # Tìm đơn gần nhất trong toàn bộ hệ thống
+                db_order = await db.fetchrow("SELECT * FROM orders ORDER BY created_at DESC LIMIT 1")
 
-        db_order = await db.fetchrow(
-            "SELECT * FROM orders WHERE ma_don = $1 OR ma_van_don = $1", ma
-        )
         if db_order:
-            track = await tra_cuu_van_don(ma)
+            ma_tim = db_order.get("ma_van_don") or db_order["ma_don"]
+            track = await tra_cuu_van_don(ma_tim)
+            st_giao = track.trang_thai_noi_bo.value if track else "delivering"
+            st_don = db_order.get("trang_thai")
+            if st_giao == "returned":
+                st_don = "da_huy"
+                mo_ta_trang_thai = "Đơn hàng đã bị huỷ / hoàn trả trên hệ thống vận chuyển."
+            elif st_giao == "delivered":
+                st_don = "da_giao"
+                mo_ta_trang_thai = "Đơn hàng đã giao thành công đến người nhận."
+            elif st_giao == "delivery_failed":
+                mo_ta_trang_thai = "Giao hàng không thành công (shipper đang hẹn lại khách)."
+            else:
+                mo_ta_trang_thai = "Đơn hàng đang trong quá trình vận chuyển."
+
             return {
                 "tim_thay": True,
                 "ma_don": db_order["ma_don"],
                 "ma_van_don": db_order.get("ma_van_don") or "",
                 "khach_ten": db_order.get("khach_ten"),
                 "tong_tien": int(db_order.get("tong_tien") or 0),
-                "trang_thai_don": db_order.get("trang_thai"),
-                "trang_thai_giao_hang": track.trang_thai_noi_bo.value if track else "delivering",
+                "trang_thai_don": st_don,
+                "trang_thai_giao_hang": st_giao,
+                "mo_ta_trang_thai": mo_ta_trang_thai,
                 "vi_tri_hien_tai": track.vi_tri_hien_tai if track else "Kho hàng",
                 "ngay_du_kien_giao": track.ngay_du_kien_giao.strftime("%d/%m/%Y") if track and track.ngay_du_kien_giao else None,
                 "lich_su": [
@@ -699,24 +732,48 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             "don_gia": int(sp["gia"]), "so_luong": sl, "thanh_tien": thanh_tien,
         })
 
+    # --- Tính phí vận chuyển theo chính sách (Freeship từ 500k) ---
+    phi_ship = 30000 if tong < 500000 else 0
+    tong_thanh_toan = tong + phi_ship
+
     # --- Chốt 5: vượt ngưỡng thì KHÔNG tự chốt, đưa vào hàng chờ duyệt ---
     tu_chot = tong < settings.nguong_tu_chot_vnd
     trang_thai = "da_chot" if tu_chot else "cho_duyet"
 
     ma_don = "AS" + __import__("time").strftime("%y%m%d%H%M%S")
 
+    # --- Khởi tạo Sales Order trên ERP (NextERP / MockERP) ---
+    from agent.erp import cap_nhat_ma_van_don_erp, tao_sales_order_erp
+    so_erp = None
+    try:
+        so_erp = await tao_sales_order_erp(
+            khach_ten=str(args["khach_ten"]).strip(),
+            khach_sdt=sdt,
+            khach_dia_chi=str(args["khach_dia_chi"]).strip(),
+            items=[{"item_code": l["ma"], "qty": l["so_luong"], "rate": l["don_gia"]} for l in lines],
+            shipping_fee=phi_ship,
+            notes=f"Đơn hàng tự động qua AI Agent #{ma_don}",
+        )
+    except Exception:
+        pass
+
+    erp_id = so_erp.name if so_erp else None
+    erp_prov = settings.erp_provider
+
     # --- Chốt 6: chống tạo trùng (unique index trên conversation + items) ---
     try:
         row = await db.fetchrow(
             """
             INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt,
-                                khach_dia_chi, items, tong_tien, trang_thai, ghi_chu)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ma_don
+                                khach_dia_chi, items, tong_tien, phi_van_chuyen,
+                                erp_order_id, erp_provider, trang_thai, ghi_chu)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, ma_don
             """,
             ma_don, conversation_id,
             str(args["khach_ten"]).strip(), sdt,
             str(args["khach_dia_chi"]).strip(),
-            lines, tong, trang_thai, args.get("ghi_chu"),
+            lines, tong_thanh_toan, phi_ship,
+            erp_id, erp_prov, trang_thai, args.get("ghi_chu"),
         )
     except Exception as exc:  # noqa: BLE001
         if "idx_order_dedupe" in str(exc) or "duplicate" in str(exc).lower():
@@ -729,10 +786,6 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
 
     # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
-    # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
-    # khách khác có thể đã lấy mất món cuối. Chỉ khoá hàng lúc trừ mới
-    # chặn được, và nếu không đủ thì phải huỷ luôn đơn vừa tạo — thà không
-    # có đơn còn hơn có đơn cho hàng không tồn tại.
     du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
     if not du_hang:
         await db.execute("DELETE FROM orders WHERE id = $1", row["id"])
@@ -740,7 +793,8 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
 
     await db.log_event(
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
-        tong_tien=tong, trang_thai=trang_thai,
+        tong_tien=tong_thanh_toan, phi_ship=phi_ship,
+        erp_order_id=erp_id, trang_thai=trang_thai,
     )
 
     # --- Chốt 8: Tự động đẩy sang Hãng Vận Chuyển khi đơn đã chốt ---
@@ -750,19 +804,28 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         wb_res = await tao_van_don_cho_don(row["ma_don"])
         if wb_res.ok and wb_res.ma_van_don:
             ma_van_don = wb_res.ma_van_don
+            if so_erp:
+                try:
+                    await cap_nhat_ma_van_don_erp(so_erp.name, ma_van_don, settings.shipping_provider)
+                except Exception:
+                    pass
 
     return {
         "tao_duoc": True,
         "ma_don": row["ma_don"],
+        "erp_order_id": erp_id,
         "ma_van_don": ma_van_don,
         "items": lines,
-        "tong_tien": tong,
+        "tien_hang": tong,
+        "phi_ship": phi_ship,
+        "tong_tien": tong_thanh_toan,
         "trang_thai": trang_thai,
         "ghi_chu_cho_agent": (
             (
                 f"Đơn đã chốt. Báo mã đơn #{row['ma_don']}"
                 + (f" và mã vận đơn {ma_van_don}" if ma_van_don else "")
-                + f", tổng tiền {tong:,}đ cho khách."
+                + (f", tiền hàng {tong:,}đ + phí ship {phi_ship:,}đ" if phi_ship > 0 else f", tiền hàng {tong:,}đ (Freeship)")
+                + f" = Tổng thanh toán COD: {tong_thanh_toan:,}đ cho khách."
             )
             if tu_chot else
             "Đơn giá trị lớn nên đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "

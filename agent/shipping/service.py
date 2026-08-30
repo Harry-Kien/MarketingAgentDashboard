@@ -210,16 +210,26 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
 
     # Cập nhật lại vị trí / trạng thái vào CSDL nếu có thay đổi
     if result.ok:
+        st_noi_bo = result.trang_thai_noi_bo
+        new_trang_thai = order.get("trang_thai")
+        if st_noi_bo == InternalShippingStatus.RETURNED and order.get("trang_thai") != "da_huy":
+            new_trang_thai = "da_huy"
+            await kho.tra_hang(order["ma_don"], ly_do="huy_tren_hang")
+        elif st_noi_bo == InternalShippingStatus.DELIVERED and order.get("trang_thai") != "da_giao":
+            new_trang_thai = "da_giao"
+
         await db.execute(
             """
             UPDATE orders
-            SET trang_thai_giao_hang = $1,
+            SET trang_thai = $1,
+                trang_thai_giao_hang = $2,
                 cap_nhat_van_chuyen_luc = now(),
                 updated_at = now()
-            WHERE ma_van_don = $2
+            WHERE id = $3
             """,
-            result.trang_thai_noi_bo.value,
-            ma_van_don,
+            new_trang_thai,
+            st_noi_bo.value,
+            order["id"],
         )
 
     return result

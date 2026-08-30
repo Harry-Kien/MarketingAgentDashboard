@@ -107,6 +107,11 @@ class ZaloCRMAdapter(ChannelAdapter):
                 if not isinstance(text, str) or not text.strip():
                     continue  # MVP chỉ xử lý tin văn bản
 
+                t_clean = text.strip()
+                # Bỏ qua các tin nhắn sự kiện hệ thống của Zalo (bỏ ghim, danh thiếp, chia sẻ nhóm, v.v.)
+                if t_clean.startswith("{") and any(k in t_clean for k in ("actionlist", "highLights", "recommened.user", "gUid", "topicId", "msginfo")):
+                    continue
+
                 out.append(
                     InboundMessage(
                         channel=self.name,
@@ -160,13 +165,10 @@ class ZaloCRMAdapter(ChannelAdapter):
 
     async def _nick_gui(self, conversation_ref: str) -> str:
         """
-        Chọn nick Zalo để gửi, theo thứ tự:
-            nick đã ghim cho hội thoại này  ->  nick đang chọn trên
-            dashboard  ->  nick trong .env
-
-        Ghim theo hội thoại là bắt buộc khi doanh nghiệp chạy nhiều nick:
-        khách nhắn vào nick A mà trả lời đi ra từ nick B thì với khách đó
-        là một người lạ nhắn tin, không phải câu trả lời.
+        Nick Zalo được chọn để gửi:
+          1. Lấy từ hội thoại nếu lúc nhận tin đã gắn account_id.
+          2. Không có thì lấy nick đang chọn trên dashboard / config.
+          3. Nếu chưa có thì tự động tra nick đang connected từ ZaloCRM.
         """
         row = await db.fetchrow(
             "SELECT zalo_account_id FROM conversations "
@@ -175,8 +177,20 @@ class ZaloCRMAdapter(ChannelAdapter):
         )
         if row and row["zalo_account_id"]:
             return str(row["zalo_account_id"])
-        return str(runtime.STATE.get("zalo_account_id") or
+        nick = str(runtime.STATE.get("zalo_account_id") or
                    settings.zalocrm_account_id or "")
+        if not nick:
+            try:
+                r = await self._client.get("/api/public/accounts")
+                if r.status_code == 200:
+                    accs = r.json().get("accounts", [])
+                    connected = [a for a in accs if a.get("status") == "connected"]
+                    if connected:
+                        nick = connected[0]["id"]
+                        runtime.STATE["zalo_account_id"] = nick
+            except Exception:
+                pass
+        return nick
 
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
         account_id = await self._nick_gui(conversation_ref)

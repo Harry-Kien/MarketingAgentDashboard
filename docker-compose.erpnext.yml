@@ -1,0 +1,74 @@
+name: nexterp
+
+services:
+  erpnext-db:
+    image: mariadb:10.6
+    container_name: erpnext-db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: erpnext_root_password
+      MYSQL_DATABASE: _erpnext
+      MYSQL_USER: erpnext_user
+      MYSQL_PASSWORD: erpnext_password
+    volumes:
+      - erpnext_db_data:/var/lib/mysql
+    networks:
+      - erpnext-net
+
+  erpnext-redis-cache:
+    image: redis:6.2-alpine
+    container_name: erpnext-redis-cache
+    restart: unless-stopped
+    networks:
+      - erpnext-net
+
+  erpnext-redis-queue:
+    image: redis:6.2-alpine
+    container_name: erpnext-redis-queue
+    restart: unless-stopped
+    networks:
+      - erpnext-net
+
+  erpnext-web:
+    image: frappe/erpnext:v15
+    container_name: erpnext-web
+    restart: unless-stopped
+    environment:
+      DB_HOST: erpnext-db
+      DB_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: erpnext_root_password
+    volumes:
+      - erpnext_sites_data:/home/frappe/frappe-bench/sites
+    depends_on:
+      - erpnext-db
+      - erpnext-redis-cache
+      - erpnext-redis-queue
+    networks:
+      - erpnext-net
+
+  erpnext-proxy:
+    image: nginx:alpine
+    container_name: erpnext-proxy
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - erpnext_sites_data:/var/www/html/sites:ro
+      - ./nginx.erpnext.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - erpnext-web
+    networks:
+      - erpnext-net
+
+networks:
+  erpnext-net:
+    driver: bridge
+
+volumes:
+  erpnext_db_data:
+  erpnext_sites_data:

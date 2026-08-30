@@ -94,10 +94,17 @@ class Settings(BaseSettings):
 
     # --- Vận chuyển (GHN / GHTK / Mock) ---
     shipping_provider: str = "mock"
-    ghn_api_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api/v2"
+    ghn_api_url: str = "https://online-gateway.ghn.vn/shiip/public-api/v2"
     ghn_token: str = ""
     ghn_shop_id: str = ""
     shipping_webhook_secret: str = ""
+
+    # --- Quản trị Doanh nghiệp ERP (nexterp / mock / internal) ---
+    erp_provider: str = "nexterp"
+    nexterp_base_url: str = "http://localhost:8080"
+    nexterp_api_key: str = ""
+    nexterp_api_secret: str = ""
+    erp_cache_ttl_seconds: int = 300
 
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"

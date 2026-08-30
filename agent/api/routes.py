@@ -711,9 +711,15 @@ async def list_orders(status: str | None = None, limit: int = 60) -> list[dict]:
             "khach_dia_chi": r["khach_dia_chi"],
             "items": r["items"],
             "tong_tien": int(r["tong_tien"]),
+            "phi_van_chuyen": int(r.get("phi_van_chuyen") or 0),
             "trang_thai": r["trang_thai"],
             "channel": r["channel"],
             "ghi_chu": r["ghi_chu"],
+            "ma_van_don": r.get("ma_van_don"),
+            "don_vi_van_chuyen": r.get("don_vi_van_chuyen"),
+            "trang_thai_giao_hang": r.get("trang_thai_giao_hang"),
+            "erp_order_id": r.get("erp_order_id"),
+            "erp_provider": r.get("erp_provider"),
             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
             "created_at": r["created_at"].isoformat(),
         }
@@ -734,22 +740,29 @@ async def approve_order(order_id: str) -> dict:
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str) -> dict:
     """
-    Huỷ đơn và TRẢ HÀNG VỀ KHO.
-
-    Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
-    huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
+    Huỷ đơn, TRẢ HÀNG VỀ KHO và hủy trên NextERP.
     """
     oid = uuid.UUID(order_id)
     don = await db.fetchrow(
         "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
-        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don", oid,
+        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don, erp_order_id", oid,
     )
     if don is None:
         return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
 
     so_dong = await kho.tra_hang(don["ma_don"])
+
+    if don.get("erp_order_id"):
+        from agent.erp import get_erp_client
+        try:
+            client = get_erp_client()
+            await client.cancel_sales_order(don["erp_order_id"], reason="Nhân viên huỷ trên Dashboard")
+        except Exception:
+            pass
+
     await db.log_event("order.cancel", actor="staff", ref_id=oid,
-                       ma_don=don["ma_don"], so_mat_hang_tra_kho=so_dong)
+                       ma_don=don["ma_don"], erp_order_id=don.get("erp_order_id"),
+                       so_mat_hang_tra_kho=so_dong)
     return {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
 
 

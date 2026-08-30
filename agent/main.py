@@ -444,6 +444,47 @@ async def _ban_giao_messenger(bg: dict) -> None:
                            loai=bg["loai"])
 
 
+@app.post("/webhook/erp/{event_type}")
+@app.post("/webhook/erp")
+async def webhook_erp(request: Request, event_type: str = "general") -> JSONResponse:
+    """
+    Webhook tiếp nhận sự kiện từ NextERP / ERPNext:
+      - Cập nhật tồn kho (Stock Entry / Adjustment)
+      - Thay đổi trạng thái Sales Order (Cancelled / Completed / Delivered)
+    """
+    from agent.core import kho
+    from agent.erp import parse_erp_webhook
+
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return JSONResponse({"ok": False, "error": "payload không phải JSON"}, status_code=400)
+
+    headers = dict(request.headers)
+    event = parse_erp_webhook(payload, headers)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Không đọc được sự kiện ERP"}, status_code=400)
+
+    await db.log_event(
+        "erp.webhook_received",
+        event_type=event.event_type,
+        doc_type=event.doc_type,
+        doc_name=event.doc_name,
+    )
+
+    # Nếu sự kiện là cập nhật đơn hàng trên ERP
+    if event.doc_type == "Sales Order":
+        status = str(event.data.get("status") or "").lower()
+        if "cancel" in status and event.doc_name:
+            order = await db.fetchrow("SELECT * FROM orders WHERE erp_order_id = $1", event.doc_name)
+            if order and order.get("trang_thai") != "da_huy":
+                await db.execute("UPDATE orders SET trang_thai = 'da_huy', updated_at = now() WHERE id = $1", order["id"])
+                await kho.tra_hang(order["ma_don"], ly_do="huy_tren_erp")
+
+    return JSONResponse({"ok": True, "event": event.event_type, "doc_name": event.doc_name})
+
+
 @app.post("/webhook/shipping/{hang}")
 @app.post("/webhook/shipping")
 async def webhook_shipping(request: Request, hang: str = "ghn") -> JSONResponse:
@@ -466,6 +507,8 @@ async def webhook_shipping(request: Request, hang: str = "ghn") -> JSONResponse:
 
 @app.post("/webhook")
 @app.post("/webhook/{kenh}")
+@app.post("/webhooks")
+@app.post("/webhooks/{kenh}")
 async def webhook(
     request: Request, tasks: BackgroundTasks, kenh: str = "zalocrm"
 ) -> JSONResponse:

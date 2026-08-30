@@ -191,6 +191,9 @@ CREATE TABLE IF NOT EXISTS orders (
     lich_su_giao_hang JSONB NOT NULL DEFAULT '[]',
     ngay_du_kien_giao TIMESTAMPTZ,
     cap_nhat_van_chuyen_luc TIMESTAMPTZ,
+    -- Thông tin ERP
+    erp_order_id    TEXT,                       -- Mã đơn hàng trên ERP (ví dụ SO-2026-00001)
+    erp_provider    TEXT,                       -- nexterp | mock | odoo
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -205,9 +208,12 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS phi_van_chuyen BIGINT NOT NULL DEFAU
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS lich_su_giao_hang JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS ngay_du_kien_giao TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS cap_nhat_van_chuyen_luc TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS erp_order_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS erp_provider TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_order_waybill ON orders (ma_van_don);
 CREATE INDEX IF NOT EXISTS idx_order_ship_status ON orders (trang_thai_giao_hang);
+CREATE INDEX IF NOT EXISTS idx_order_erp_id ON orders (erp_order_id);
 
 -- Chống tạo trùng: khách nhắn "ok" hai lần không được ra hai đơn.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_order_dedupe

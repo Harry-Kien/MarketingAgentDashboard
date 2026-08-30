@@ -127,11 +127,17 @@ class ZaloCRMAdapter(ChannelAdapter):
 
     # `parse` xử lý payload webhook từ ZaloCRM
     def parse(self, payload: dict) -> InboundMessage | None:
+        # Kiểm tra sự kiện webhook: chỉ tiếp nhận 'message.received'
+        # Tuyệt đối bỏ qua 'message.sent' (tin nhắn do chính mình gửi đi)
+        event = str(payload.get("event") or "")
+        if event and event != "message.received":
+            return None
+
         body = payload.get("data", payload)
         if not isinstance(body, dict):
             return None
 
-        # Bỏ qua tin nhắn do chính mình gửi đi (outbound / self / ai_assistant)
+        # Bỏ qua tin nhắn outbound / self
         sender_type = str(body.get("senderType") or body.get("sender_type") or "")
         if sender_type and sender_type != INBOUND_SENDER:
             return None

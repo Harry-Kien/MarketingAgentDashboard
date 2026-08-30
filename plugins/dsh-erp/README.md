@@ -63,13 +63,60 @@ dsh plugin add @deepseek-ai/dsh-mcp-client
 
 ### 3. Trỏ nó vào đây
 
-| | |
-|---|---|
-| Địa chỉ | `http://127.0.0.1:8000/mcp/` |
-| Xác thực | `Authorization: Bearer <MCP_TOKEN>` |
+Chép [`cordis.patch.mau.yml`](cordis.patch.mau.yml) vào profile của bạn:
 
-Chỗ khai báo nằm trong cấu hình của `dsh-mcp-client` — đọc README của chính
-gói đó, vì nó là gói của người khác và tôi không đoán thay.
+```
+%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml
+```
+
+Rồi đặt token vào môi trường TRƯỚC khi bật dsh:
+
+```powershell
+$env:MCP_TOKEN = "<token trong .env của dự án>"
+```
+
+**Token không nằm trong file cấu hình** — nó đọc từ biến môi trường lúc
+chạy. Nhúng thẳng là để một bí mật nằm trong file dễ bị chép, dễ bị chụp
+màn hình, và không xoay vòng được.
+
+Công cụ sẽ hiện trong dsh dưới tên `mcp__marketing__<tên gốc>`.
+
+#### Hai cái bẫy đã vấp — ghi lại để bạn khỏi vấp
+
+**Một: `dsh plugin add` KHÔNG kích hoạt plugin này.** Nó in cảnh báo rồi đi
+tiếp:
+
+```
+@deepseek-ai/dsh-mcp-client declares no dsh.bundle — installed as a plain
+dependency, not a profile layer
+```
+
+Nghĩa là gói đã tải về nhưng không được nạp. Phải chèn tay qua
+`cordis.patch.yml`. Bản sau của gói có `dsh.bundle` thì dsh tự kích hoạt.
+
+**Hai: entry vá có `id` là để SỬA, không phải để THÊM.** Viết
+`- id: ... name: ...` ở cấp ngoài thì dsh báo `patch: entry "..." not found`
+rồi **bỏ qua trong im lặng** — cấu hình trông như đã vào mà thực ra không.
+Phải dùng `- insert:` không kèm `id`.
+
+Kiểm bằng lệnh này, thấy `mcp-marketing-agent` trong cây là đúng:
+
+```bash
+dsh --profile web --dump-config
+```
+
+#### Cần khoá API DeepSeek
+
+dsh là một agent runtime — nó cần LLM để chạy:
+
+```
+MISSING_CREDENTIAL: llm-deepseek: no API key for provider route
+"deepseek-official"
+```
+
+Đặt `DEEPSEEK_API_KEY` trong môi trường, hoặc nhập qua trang Models của
+giao diện web dsh. Đây là khoản chi riêng, không liên quan tới hạn mức
+Gemini/Vertex mà agent chăm sóc khách đang dùng.
 
 ---
 
@@ -107,6 +154,23 @@ Muốn lên đơn thì đi qua agent, hoặc qua dashboard nơi có người th�
 **`suc_khoe_erp` trả `mach_mo: true`** — cổng đã ngắt mạch sau nhiều lần gọi
 hỏng. Mọi câu hỏi về giá và tồn kho sẽ trả "không biết" cho tới khi mạch
 đóng lại. Đây là hành vi đúng, không phải lỗi.
+
+---
+
+## Trạng thái đã cài trên máy này
+
+```
+@deepseek-ai/dsh              0.1.1-rc.2   cài toàn cục qua npm
+@deepseek-ai/dsh-mcp-client   0.0.1-rc.1   trong profile `web`
+cordis.patch.yml                           đã chèn, dump-config xác nhận
+DEEPSEEK_API_KEY                           CHƯA có — người dùng tự đặt
+```
+
+Đã xác minh tới đâu: cấu hình được dsh phân tích và ghép vào cây plugin
+đúng chỗ. Chưa xác minh: dsh gọi thật vào MCP — bước đó cần khoá API.
+
+Phía máy chủ thì đã kiểm thật: `POST /mcp/` với Bearer token trả HTTP 200
+kèm đủ 11 công cụ.
 
 ---
 

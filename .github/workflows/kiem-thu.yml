@@ -56,6 +56,8 @@ jobs:
               "agent.publish.copywriter", "agent.publish.chien_dich",
               "agent.publish.n8n", "agent.publish.meta", "agent.publish.tiktok",
               "agent.publish.manual",
+              "agent.erp.base", "agent.erp.models", "agent.erp.nexterp",
+              "agent.erp.mock", "agent.erp.service",
               "agent.video.pipeline", "agent.video.worker",
               "agent.api.routes", "agent.mcp_server",
           ]

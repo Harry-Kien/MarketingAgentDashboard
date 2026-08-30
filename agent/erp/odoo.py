@@ -55,6 +55,9 @@ _TRUONG_GIA = ["default_code", "list_price"]
 
 NGUON_GIA = "list_price (giá bán công khai, chưa qua bảng giá)"
 
+# Khớp `agent/core/du_lieu_ca_nhan.AN_DANH`.
+AN_DANH = "[đã ẩn danh theo yêu cầu]"
+
 
 def _nhan(v: Any) -> str:
     """Trường many2one của Odoo trả `[id, "nhãn"]`, hoặc `False` khi trống."""
@@ -336,3 +339,23 @@ class NguonOdoo:
         if ten_don:
             ma_don = str(ten_don[0].get("name") or don_id)
         return KetQuaDon(thanh_cong=True, erp_ma_don=ma_don or str(don_id))
+
+    async def an_danh_khach(self, sdt: str) -> int:
+        """Xoá thông tin nhận dạng khỏi res.partner, GIỮ bản ghi.
+
+        Odoo chặn xoá `res.partner` đã gắn với `sale.order`, và cũng không
+        nên xoá: chứng từ kế toán phải còn. Ẩn danh giữ chứng từ mà không
+        giữ người.
+        """
+        co = await self._doc(
+            "res.partner", ["|", ["phone", "=", sdt], ["mobile", "=", sdt]],
+            ["id"],
+        )
+        if not co:
+            return 0
+        ids = [int(r["id"]) for r in co]
+        await self._ghi("res.partner", "write", [ids, {
+            "name": AN_DANH, "phone": False, "mobile": False,
+            "email": False, "street": False, "street2": False,
+        }])
+        return len(ids)

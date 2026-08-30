@@ -44,6 +44,10 @@ _TRUONG_ITEM = ["item_code", "item_name", "item_group", "stock_uom",
 _TRUONG_GIA = ["price_list_rate", "currency", "price_list", "valid_upto"]
 _TRUONG_BIN = ["actual_qty", "reserved_qty", "warehouse"]
 
+# Nhãn thay cho thông tin nhận dạng sau khi khách yêu cầu xoá. Khớp
+# `agent/core/du_lieu_ca_nhan.AN_DANH` để hai bên đọc ra cùng một thứ.
+AN_DANH = "[đã ẩn danh theo yêu cầu]"
+
 
 def _thong_diep_loi(res: httpx.Response) -> str:
     """Bóc thông điệp người đọc được ra khỏi lỗi của Frappe.
@@ -293,3 +297,29 @@ class NguonErpNext:
         except TuChoiERP as exc:
             return KetQuaDon(thanh_cong=False, ly_do=str(exc))
         return KetQuaDon(thanh_cong=True, erp_ma_don=str(kq.get("name") or ""))
+
+    async def an_danh_khach(self, sdt: str) -> int:
+        """Xoá thông tin nhận dạng khỏi Customer, GIỮ bản ghi.
+
+        ERPNext không cho xoá `Customer` đã có Sales Order — và cũng không
+        nên: chứng từ kế toán phải còn. Ẩn danh giữ chứng từ mà không giữ
+        người.
+
+        `customer_name` là trường bắt buộc nên không để rỗng được; ghi một
+        nhãn nói rõ vì sao nó trống nghĩa hơn là một chuỗi vô nghĩa.
+        """
+        co = await self._lay("Customer", [["mobile_no", "=", sdt]], ["name"])
+        for kh in co:
+            try:
+                res = await self._client.put(
+                    f"/api/resource/Customer/{kh['name']}",
+                    json={"customer_name": AN_DANH, "mobile_no": "",
+                          "email_id": "", "primary_address": ""},
+                    headers={**self._headers,
+                             "content-type": "application/json"},
+                )
+            except httpx.HTTPError as exc:
+                raise LoiERP(f"Không ẩn danh được khách bên ERPNext: {exc}") from exc
+            if res.status_code not in (200, 201):
+                raise LoiERP(_thong_diep_loi(res))
+        return len(co)

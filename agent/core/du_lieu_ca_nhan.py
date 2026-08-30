@@ -127,6 +127,60 @@ async def tra_cuu(sdt: str) -> dict:
 #  Quyền được xoá (Điều 9.1.đ)
 # ---------------------------------------------------------------
 
+async def an_danh_ben_erp(sdt: str) -> dict:
+    """Ẩn danh khách bên kho/ERP.
+
+    VÌ SAO CẦN
+    ----------
+    Từ khi bật đẩy đơn, tên — số điện thoại — địa chỉ khách được tạo thành
+    `Customer` (ERPNext) hoặc `res.partner` (Odoo) và nằm đó VĨNH VIỄN.
+    Không có bước này thì hệ thống báo "đã xoá", nhật ký ghi
+    `pdpd.xoa_du_lieu` làm bằng chứng tuân thủ — mà dữ liệu vẫn còn nguyên
+    ở ERP. Đó là một bản ghi SAI SỰ THẬT về nghĩa vụ pháp lý.
+
+    BA KẾT CỤC, KHÔNG PHẢI HAI
+    --------------------------
+      ap_dung=False   ERP chưa từng nhận dữ liệu khách (chưa bật ghi đơn,
+                      hoặc nguồn là tệp). Không phải lỗi.
+      da_lam=True     Đã ẩn danh xong.
+      da_lam=False    ERP không với tới được. NGƯỜI VẬN HÀNH PHẢI BIẾT —
+                      thời hạn đáp ứng yêu cầu xoá là do luật đặt, không
+                      phải do hệ thống đặt.
+
+    Không bao giờ ném: một lỗi ERP không được làm hỏng việc xoá dữ liệu ở
+    những nơi khác vốn đã chạy đúng.
+    """
+    from agent.erp.hop_dong import NguonGhiERP
+
+    if not settings.erp_ghi_don:
+        return {"ap_dung": False, "da_lam": False, "so_ban_ghi": 0,
+                "ghi_chu": "ERP_GHI_DON đang tắt — ERP chưa từng nhận dữ "
+                           "liệu khách nào."}
+    try:
+        from agent.erp import nha_may
+
+        nguon = nha_may.tao_nguon()
+    except Exception as exc:  # noqa: BLE001
+        return {"ap_dung": True, "da_lam": False, "so_ban_ghi": 0,
+                "ly_do": f"{type(exc).__name__}: {exc}"[:200],
+                "ghi_chu": "CHƯA ẩn danh được bên ERP — cần làm tay."}
+
+    if not isinstance(nguon, NguonGhiERP):
+        return {"ap_dung": False, "da_lam": False, "so_ban_ghi": 0,
+                "ghi_chu": f"Nguồn {getattr(nguon, 'ten', '?')!r} không ghi "
+                           "được — ERP chưa từng nhận dữ liệu khách nào."}
+
+    try:
+        n = await nguon.an_danh_khach(chuan_hoa_sdt(sdt))
+    except Exception as exc:  # noqa: BLE001
+        return {"ap_dung": True, "da_lam": False, "so_ban_ghi": 0,
+                "ly_do": f"{exc}"[:200],
+                "ghi_chu": "CHƯA ẩn danh được bên ERP — cần làm tay."}
+
+    return {"ap_dung": True, "da_lam": True, "so_ban_ghi": int(n),
+            "ghi_chu": f"Đã ẩn danh {n} bản ghi khách bên ERP."}
+
+
 async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
     """
     Thực hiện yêu cầu xoá dữ liệu của một khách.
@@ -168,26 +222,43 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
     #    dữ liệu cá nhân ngoài tầm kiểm soát.
     ho_so = await ho_so_khach.xoa(sdt=so)
 
-    # 4. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
+    # 4. Ẩn danh khách bên kho/ERP — nơi lưu THỨ BA, ngoài Postgres và hồ sơ
+    #    ghi nhớ. Bỏ qua bước này là báo "đã xoá" trong khi ERP còn nguyên.
+    erp = await an_danh_ben_erp(so)
+
+    # 5. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
+    #    Ghi CẢ phần chưa làm được: một bằng chứng tuân thủ che giấu phần
+    #    còn thiếu thì tệ hơn không có bằng chứng nào.
     await db.log_event(
         "pdpd.xoa_du_lieu", actor="nguoi",
         dau_van_tay=_dau_van_tay(so),
         so_don_an_danh=truoc["so_don_hang"],
         so_hoi_thoai_xoa=hoi_thoai,
         so_ho_so_xoa=ho_so,
+        erp_ap_dung=erp["ap_dung"],
+        erp_da_lam=erp["da_lam"],
+        erp_so_ban_ghi=erp["so_ban_ghi"],
+        erp_ly_do=erp.get("ly_do", ""),
         ly_do=ly_do,
         can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
     )
+    con_thieu = erp["ap_dung"] and not erp["da_lam"]
     return {
         "so_dien_thoai": so,
-        "da_xoa": True,
+        # `da_xoa` chỉ True khi MỌI nơi lưu đã xong. ERP còn nguyên mà báo
+        # True là nói dối về một nghĩa vụ pháp lý.
+        "da_xoa": not con_thieu,
+        "con_viec_chua_xong": con_thieu,
         "don_hang_an_danh": truoc["so_don_hang"],
         "hoi_thoai_da_xoa": hoi_thoai,
         "ho_so_ghi_nho_da_xoa": ho_so,
+        "erp": erp,
         "ghi_chu": (
             f"Đã ẩn danh {truoc['so_don_hang']} đơn hàng (giữ mã đơn và số "
             f"tiền cho sổ sách kế toán) và xoá hẳn {hoi_thoai} hội thoại "
-            f"cùng toàn bộ tin nhắn. Không hoàn tác được."
+            f"cùng toàn bộ tin nhắn. Không hoàn tác được. "
+            + ("CHƯA XONG: " + erp["ghi_chu"] + " Phải vào ERP ẩn danh tay "
+               "rồi ghi nhận lại." if con_thieu else erp["ghi_chu"])
         ),
         "chi_tiet_don": don,
     }

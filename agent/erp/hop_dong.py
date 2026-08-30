@@ -126,6 +126,16 @@ class NguonGhiERP(Protocol):
     adapter `tep` (đọc file trên đĩa) KHÔNG vô tình mang theo khả năng ghi
     chỉ vì nó nằm chung một hợp đồng.
 
+    VÌ SAO CÓ `an_danh_khach`
+    -------------------------
+    Từ lúc đẩy đơn, tên — số điện thoại — địa chỉ khách nằm trong ERP VĨNH
+    VIỄN. Khách có quyền yêu cầu xoá (Nghị định 13/2023), và không có đường
+    này thì hệ thống báo "đã xoá" trong khi dữ liệu còn nguyên ở đó.
+
+    ẨN DANH chứ không xoá hẳn: ERP không cho xoá bản ghi đã có chứng từ, và
+    nghĩa vụ lưu sổ sách kế toán vẫn còn. Ẩn danh giữ được chứng từ mà không
+    giữ người — cùng cách đơn hàng nội bộ đang làm.
+
     VÌ SAO CÓ `tim_don`
     -------------------
     ERP có thể đã nhận đơn nhưng mạng đứt trước khi ta thấy phản hồi. Lần
@@ -143,3 +153,5 @@ class NguonGhiERP(Protocol):
     async def tao_don(
         self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
     ) -> KetQuaDon: ...
+
+    async def an_danh_khach(self, sdt: str) -> int: ...

@@ -44,13 +44,28 @@ agent/erp/
   tep.py         adapter đọc catalog.json      <- MẶC ĐỊNH
   erpnext.py     REST /api/resource/{Item,Bin,Item Price,Sales Order}
   odoo.py        XML-RPC execute_kw
-  mcp_client.py  cho ERP đã ship sẵn MCP server
   anh_xa.py      ánh xạ mã nội bộ <-> mã ERP + phép kiểm khởi động
   cong.py        chọn adapter, cache, ngắt mạch, hợp nhất nửa tư vấn
   day_don.py     xử lý job `erp.tao_don` của outbox có sẵn
 ```
 
-Chọn adapter bằng `.env`: `ERP_LOAI=tep|erpnext|odoo|mcp`, **mặc định `tep`**.
+Chọn adapter bằng `.env`: `ERP_LOAI=tep|erpnext|odoo`, **mặc định `tep`**.
+
+> **SỬA so với bản đầu.** Bản đầu liệt kê thêm `mcp_client.py` và
+> `ERP_LOAI=mcp` — "cho ERP đã ship sẵn MCP server". **Chưa xây, và cố ý
+> chưa xây.**
+>
+> MCP chuẩn hoá *cách gọi* và *cách liệt kê công cụ*, KHÔNG chuẩn hoá *ý
+> nghĩa*. Một ERP ship MCP server sẽ đặt tên công cụ theo ý họ —
+> `get_stock`, `inventory_lookup`, `warehouse.query`… Không có hợp đồng
+> chung nào để viết adapter dựa vào.
+>
+> Nên adapter đó chỉ viết được khi biết ERP CỤ THỂ nào và nó phơi ra công cụ
+> tên gì. Viết trước là đoán tên hàm của một hệ thống chưa tồn tại — đúng
+> thứ mục 12 dặn không làm.
+>
+> Một spec liệt kê file không có thật là một spec nói dối về mã. Xoá đi
+> đúng hơn là để đó rồi quên.
 Không mặc định về tệp thì máy vừa clone chết ngay dòng đầu — đúng cái bẫy mà
 `catalog.example.json` sinh ra để tránh.
 

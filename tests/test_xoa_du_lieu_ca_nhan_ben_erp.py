@@ -54,6 +54,9 @@ class NguonGhiGia:
     async def tao_don(self, khoa, khach_id, dong, ghi_chu=""):
         raise AssertionError("xoá dữ liệu không được tạo đơn")
 
+    async def trang_thai_giao(self, erp_ma_don: str) -> str | None:
+        return None
+
     async def an_danh_khach(self, sdt: str) -> int:
         self.da_goi.append(sdt)
         if self.nem:

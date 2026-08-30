@@ -48,6 +48,20 @@ _TRUONG_BIN = ["actual_qty", "reserved_qty", "warehouse"]
 # `agent/core/du_lieu_ca_nhan.AN_DANH` để hai bên đọc ra cùng một thứ.
 AN_DANH = "[đã ẩn danh theo yêu cầu]"
 
+# Trạng thái Delivery Note của ERPNext -> bộ trạng thái NỘI BỘ.
+#
+# Ánh xạ TƯỜNG MINH, không suy đoán: ERP mỗi bản một bộ trạng thái, và gặp
+# giá trị lạ thì phải nói không biết. Đoán bừa là báo khách "đã giao" khi
+# hàng còn trong kho.
+_TRANG_THAI_GIAO = {
+    "To Deliver": "delivering",
+    "To Deliver and Bill": "delivering",
+    "To Bill": "delivered",          # đã giao xong, chỉ còn xuất hoá đơn
+    "Completed": "delivered",
+    "Return Issued": "returned",
+    "Closed": "delivered",
+}
+
 
 def _thong_diep_loi(res: httpx.Response) -> str:
     """Bóc thông điệp người đọc được ra khỏi lỗi của Frappe.
@@ -297,6 +311,24 @@ class NguonErpNext:
         except TuChoiERP as exc:
             return KetQuaDon(thanh_cong=False, ly_do=str(exc))
         return KetQuaDon(thanh_cong=True, erp_ma_don=str(kq.get("name") or ""))
+
+    async def trang_thai_giao(self, erp_ma_don: str) -> str | None:
+        """Đơn này đã xuất kho chưa, tới đâu rồi.
+
+        Trả `None` khi CHƯA CÓ phiếu giao, hoặc khi ERP trả một trạng thái
+        không nằm trong bảng ánh xạ. Cả hai đều là "chưa biết" — và chưa
+        biết KHÁC "đang giao". Nói bừa là báo khách hàng đã đi trong khi nó
+        còn nằm trong kho.
+        """
+        rows = await self._lay(
+            "Delivery Note",
+            # `docstatus=1` là đã submit. Bản nháp chưa xuất kho gì cả.
+            [["po_no", "=", erp_ma_don], ["docstatus", "=", 1]],
+            ["name", "status"],
+        )
+        if not rows:
+            return None
+        return _TRANG_THAI_GIAO.get(str(rows[0].get("status") or ""))
 
     async def an_danh_khach(self, sdt: str) -> int:
         """Xoá thông tin nhận dạng khỏi Customer, GIỮ bản ghi.

@@ -252,3 +252,79 @@ def test_mot_ma_hong_khong_lam_dung_ca_luot():
 def test_nguong_lech_cho_phep_sai_so_nho():
     kq, _ = _soat({"A": 5}, {"A": TonKho(ban_duoc=4)}, nguong_lech=1)
     assert kq["lech"] == []
+
+
+# =====================================================================
+#  Kéo trạng thái giao hàng từ ERP về
+# =====================================================================
+
+from agent.erp.vong_dong_bo import keo_trang_thai_giao  # noqa: E402
+
+
+def _keo(don, erp, ):
+    ghi_lai, nhat_ky = [], []
+
+    async def hoi(ma):
+        v = erp(ma) if callable(erp) else erp.get(ma)
+        if isinstance(v, Exception):
+            raise v
+        return v
+
+    async def ghi(id_don, tt):
+        ghi_lai.append((id_don, tt))
+
+    async def nk(loai, **ct):
+        nhat_ky.append((loai, ct))
+
+    return chay(keo_trang_thai_giao(don, hoi, ghi, nk)), ghi_lai, nhat_ky
+
+
+def test_trang_thai_moi_thi_ghi_va_keu():
+    tk, ghi, nk = _keo(
+        [{"id": 1, "ma_don": "AS1", "erp_ma_don": "SO-1",
+          "trang_thai_giao": None}],
+        {"SO-1": "delivering"},
+    )
+    assert ghi == [(1, "delivering")]
+    assert tk["cap_nhat"] == 1
+    assert nk[0][0] == "erp.trang_thai_giao_moi"
+
+
+def test_khong_doi_thi_khong_ghi_lai():
+    # Ghi lại một giá trị không đổi là một lượt UPDATE vô ích mỗi phút, và
+    # một dòng nhật ký giả làm loãng những dòng thật.
+    tk, ghi, _ = _keo(
+        [{"id": 1, "erp_ma_don": "SO-1", "trang_thai_giao": "delivering"}],
+        {"SO-1": "delivering"},
+    )
+    assert ghi == []
+    assert tk["cap_nhat"] == 0
+
+
+def test_chua_biet_thi_KHONG_ghi_de():
+    # `None` nghĩa là chưa có phiếu giao, hoặc ERP trả trạng thái lạ. Ghi đè
+    # trạng thái đang đúng bằng "chưa biết" là xoá mất thông tin thật.
+    tk, ghi, _ = _keo(
+        [{"id": 1, "erp_ma_don": "SO-1", "trang_thai_giao": "delivering"}],
+        {"SO-1": None},
+    )
+    assert ghi == []
+    assert tk["chua_biet"] == 1
+
+
+def test_mot_don_hong_khong_lam_dung_ca_luot():
+    tk, ghi, _ = _keo(
+        [{"id": 1, "erp_ma_don": "A", "trang_thai_giao": None},
+         {"id": 2, "erp_ma_don": "B", "trang_thai_giao": None},
+         {"id": 3, "erp_ma_don": "C", "trang_thai_giao": None}],
+        {"A": RuntimeError("đứt"), "B": "delivered", "C": "returned"},
+    )
+    assert tk["da_xet"] == 3
+    assert tk["hong"] == 1
+    assert [i for i, _ in ghi] == [2, 3]
+
+
+def test_keo_danh_sach_rong_thi_khong_lam_gi():
+    tk, ghi, nk = _keo([], {})
+    assert ghi == [] and nk == []
+    assert tk["da_xet"] == 0

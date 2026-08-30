@@ -58,6 +58,18 @@ NGUON_GIA = "list_price (giá bán công khai, chưa qua bảng giá)"
 # Khớp `agent/core/du_lieu_ca_nhan.AN_DANH`.
 AN_DANH = "[đã ẩn danh theo yêu cầu]"
 
+# `stock.picking.state` của Odoo -> bộ trạng thái NỘI BỘ. Tường minh, và
+# giá trị lạ thì trả None chứ không đoán.
+#
+# `draft` và `waiting` KHÔNG ánh xạ: hàng chưa sẵn sàng thì chưa phải "đang
+# giao", và nói với khách là đang giao lúc đó là hứa sớm.
+_TRANG_THAI_GIAO = {
+    "confirmed": "delivering",
+    "assigned": "delivering",
+    "done": "delivered",
+    "cancel": "returned",
+}
+
 
 def _nhan(v: Any) -> str:
     """Trường many2one của Odoo trả `[id, "nhãn"]`, hoặc `False` khi trống."""
@@ -339,6 +351,21 @@ class NguonOdoo:
         if ten_don:
             ma_don = str(ten_don[0].get("name") or don_id)
         return KetQuaDon(thanh_cong=True, erp_ma_don=ma_don or str(don_id))
+
+    async def trang_thai_giao(self, erp_ma_don: str) -> str | None:
+        """Phiếu xuất kho của đơn này tới đâu rồi.
+
+        `None` khi chưa có phiếu, hoặc khi Odoo trả một `state` ngoài bảng
+        ánh xạ. Cả hai là "chưa biết", và chưa biết KHÁC "đang giao".
+        """
+        rows = await self._doc(
+            "stock.picking",
+            [["sale_id.client_order_ref", "=", erp_ma_don]],
+            ["id", "state"],
+        )
+        if not rows:
+            return None
+        return _TRANG_THAI_GIAO.get(str(rows[0].get("state") or ""))
 
     async def an_danh_khach(self, sdt: str) -> int:
         """Xoá thông tin nhận dạng khỏi res.partner, GIỮ bản ghi.

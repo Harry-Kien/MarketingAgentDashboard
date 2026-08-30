@@ -46,6 +46,9 @@ class NguonGhiGia:
         self.da_goi.append("an_danh_khach")
         return 0
 
+    async def trang_thai_giao(self, erp_ma_don: str) -> str | None:
+        return None
+
     async def tao_don(self, khoa, khach_id, dong, ghi_chu=""):
         self.da_goi.append("tao_don")
         if self._nem and self._nem[0] == "tao_don":

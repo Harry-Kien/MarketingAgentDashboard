@@ -136,3 +136,50 @@ def test_cham_ca_hoi_thoai_chu_khong_chi_tung_luot():
     assert "hoi_thoai" in kq
     for khoa in ("chao_lai", "hoi_lai_da_biet", "hoi_don_dap", "hoi_thoai_chet"):
         assert khoa in kq["hoi_thoai"], khoa
+
+
+# =====================================================================
+#  Phần dựng CSDL — đoạn KHÔNG test nào chạm tới suốt một thời gian dài
+# =====================================================================
+#
+# Mọi test ở trên gọi thẳng `chay_kich_ban(kb, None, kho=True)`, tức bỏ qua
+# hoàn toàn `main()`. Nên khi migration 0001 bỏ ràng buộc `(channel,
+# external_id)` và đặt `account_id` vào nhóm NOT NULL, câu INSERT trong
+# `main()` chết mà cả bộ test vẫn xanh.
+#
+# Hỏng im lặng ngay bên trong bộ đo dựng ra để bắt hỏng im lặng — và triệu
+# chứng duy nhất là dòng "(chưa chạy)" trong `docs/thuc-nghiem.md`, đọc y
+# như một lựa chọn thay vì một lỗi.
+
+def test_khong_dung_rang_buoc_da_bi_bo():
+    """
+    `conversations_channel_external_id_key` bị migration 0001 DROP.
+
+    Bắt theo chuỗi thay vì hỏi CSDL là có chủ ý: test này phải chạy được
+    trên bản clone sạch chưa dựng Postgres, đúng như phần còn lại của file.
+    """
+    for ten in ("eval.py", "eval_nhieu_luot.py"):
+        src = (ROOT / "scripts" / ten).read_text(encoding="utf-8")
+        assert "ON CONFLICT (channel, external_id)" not in src, ten
+
+
+def test_dung_chung_phep_dung_hoi_thoai_voi_bo_vang():
+    """
+    Hai bộ đo phải đi qua CÙNG một hàm dựng hội thoại.
+
+    Bản chép riêng chính là thứ đã mục: nó không được sửa khi lược đồ đổi.
+    Cách chặn tái diễn không phải là nhớ sửa cả hai chỗ, mà là chỉ còn một.
+    """
+    src = inspect.getsource(ev.main)
+    assert "hoi_thoai_eval(" in src
+    assert "INSERT INTO conversations" not in src
+
+
+def test_hai_bo_do_khong_dung_chung_mot_ban_ghi():
+    """
+    Chung `external_id` thì hai bộ đo ghi đè hội thoại của nhau, và trần chi
+    phí của bộ này sẽ chặn bộ kia — một kết quả sai trông y như thật.
+    """
+    src = inspect.getsource(ev.main)
+    assert 'external_id="eval-nhieu-luot"' in src
+    assert 'customer_ref="eval-nl"' in src

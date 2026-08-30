@@ -232,6 +232,53 @@ async def doi_soat_ton_kho(
     }
 
 
+async def keo_trang_thai_giao(
+    don_da_day: list[dict],
+    hoi_erp,
+    ghi,
+    ghi_nhat_ky: Callable[..., Awaitable[None]] | None = None,
+) -> dict:
+    """Kéo trạng thái giao hàng từ ERP về cho các đơn đã đẩy.
+
+    VÌ SAO CẦN
+    ----------
+    Đơn đẩy sang ERP xong là hết đường một chiều. Kho xuất hàng, ERP ghi
+    phiếu giao — còn bên này vẫn thấy `da_chot` mãi mãi. Khách hỏi "đơn tới
+    đâu rồi", agent tra sổ nội bộ và trả lời bằng thứ nó không biết.
+
+    KHÔNG GHI ĐÈ BẰNG `None`
+    ------------------------
+    `None` nghĩa là CHƯA BIẾT — chưa có phiếu giao, hoặc ERP trả trạng thái
+    lạ. Ghi đè trạng thái đang có bằng "chưa biết" là xoá mất thông tin
+    đúng, và lần sau lại phải hỏi lại từ đầu.
+
+    Không bao giờ ném: một đơn hỏng không được làm dừng cả lượt.
+    """
+    tk = {"da_xet": 0, "cap_nhat": 0, "chua_biet": 0, "hong": 0}
+
+    for don in don_da_day:
+        tk["da_xet"] += 1
+        try:
+            tt = await hoi_erp(don["erp_ma_don"])
+        except Exception:  # noqa: BLE001
+            tk["hong"] += 1
+            continue
+
+        if tt is None:
+            tk["chua_biet"] += 1
+            continue
+        if tt == don.get("trang_thai_giao"):
+            continue
+
+        await ghi(don["id"], tt)
+        await _kêu(ghi_nhat_ky, "erp.trang_thai_giao_moi",
+                   ma_don=don.get("ma_don"), erp_ma_don=don["erp_ma_don"],
+                   tu=don.get("trang_thai_giao"), sang=tt)
+        tk["cap_nhat"] += 1
+
+    return tk
+
+
 async def vong_dong_bo_loop() -> None:
     """Chạy mãi. Chỉ làm gì khi `ERP_GHI_DON` bật."""
     from agent import db

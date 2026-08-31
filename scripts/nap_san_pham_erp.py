@@ -6,7 +6,6 @@ Cách dùng:
 """
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -79,7 +78,7 @@ async def main():
             payload = {
                 "item_code": ma,
                 "item_name": ten,
-                "item_group": "Mỹ phẩm",
+                "item_group": loai,
                 "stock_uom": "Unit",
                 "is_stock_item": 1,
                 "standard_rate": gia,

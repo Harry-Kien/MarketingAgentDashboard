@@ -90,27 +90,18 @@ NEXTERP_API_SECRET=dán_api_secret_vào_đây
 
 ---
 
-### Bước 5: Tự động nạp 13 Sản phẩm BLANICA lên NextERP
+### Bước 5: Quản lý & Nhập/Xuất Sản phẩm 100% trên Giao diện Web NextERP
 
-Dự án đã chuẩn bị sẵn kịch bản tự động đồng bộ từ file dữ liệu [`data/catalog.json`](file:///Users/huynhlehoaibao/Documents/AIAgent_mar/data/catalog.json). Bạn chỉ cần chạy lệnh sau:
+Người quản lý hoặc Dev có thể quản lý sản phẩm hoàn toàn trực quan qua giao diện web:
 
-```bash
-# Kích hoạt môi trường ảo (nếu chưa kích hoạt)
-source .venv/bin/activate
-
-# Chạy script nạp sản phẩm
-python scripts/nap_san_pham_erp.py
-```
-
-**Kết quả thành công sẽ hiển thị:**
-```text
-📦 Tìm thấy 13 sản phẩm trong catalog.
-✅ Đã kết nối NextERP thành công với tài khoản: Administrator
-  ✨ Tạo mới: BLA-BODY-WAX-120G - Kem Tẩy Lông BLANICA Hair Removal Cream 120g (290,000đ)
-  ✨ Tạo mới: BLA-FACE-SERUM-30ML - Serum Dưỡng Trắng & Làm Dịu BLANICA Whitening & Soothing Serum 30ml (440,000đ)
-  ...
-🎉 Hoàn tất! Đã đồng bộ 13/13 sản phẩm lên NextERP.
-```
+1. **Xem danh sách sản phẩm:**
+   * Truy cập: **[http://localhost:8080/app/item](http://localhost:8080/app/item)**.
+2. **Xuất danh sách sản phẩm ra Excel / CSV:**
+   * Tích chọn các sản phẩm (hoặc tích chọn tất cả ở ô trên cùng).
+   * Nhìn lên góc trên bên phải, bấm nút **`Thao tác` (Actions)** hoặc **`...`** ➔ Chọn **`Xuất dữ liệu` (Export)** ➔ Chọn định dạng **Excel / CSV** ➔ Bấm **`Tải xuống` (Download)**.
+3. **Nhập dữ liệu hàng loạt (Data Import):**
+   * Truy cập: **[http://localhost:8080/app/data-import](http://localhost:8080/app/data-import)**.
+   * Chọn Doctype là `Item` ➔ Tải file mẫu Excel về điền thông tin và tải lên để hệ thống tự động nạp hàng trăm sản phẩm.
 
 ---
 

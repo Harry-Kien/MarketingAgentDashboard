@@ -55,6 +55,7 @@ class ZaloCRMAdapter(ChannelAdapter):
         # conversation id -> (externalThreadId, threadType). Nạp dần khi polling,
         # dùng lúc gửi vì API gửi cần thread id phía Zalo, không phải id nội bộ.
         self._threads: dict[str, tuple[str, str]] = {}
+        self._contact_names: dict[str, str] = {}
 
     # ---------------- vào: polling ----------------
 
@@ -87,6 +88,8 @@ class ZaloCRMAdapter(ChannelAdapter):
             )
             contact = conv.get("contact") or {}
             customer_name = contact.get("fullName") or "Khách"
+            if customer_name != "Khách":
+                self._contact_names[conv_id] = customer_name
             customer_ref = str(contact.get("id") or conv_id)
 
             try:

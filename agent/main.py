@@ -712,7 +712,11 @@ async def handle_inbound(msg: InboundMessage) -> None:
             (channel, external_id, customer_name, customer_ref, nen_tang)
         VALUES ($1,$2,$3,$4,$5)
         ON CONFLICT (channel, external_id) DO UPDATE
-            SET customer_name = EXCLUDED.customer_name,
+            SET customer_name = CASE
+                    WHEN EXCLUDED.customer_name <> 'Khách' AND EXCLUDED.customer_name <> ''
+                    THEN EXCLUDED.customer_name
+                    ELSE conversations.customer_name
+                END,
                 -- Chỉ ghi đè khi tin mới CÓ nền tảng. Kênh nào không biết
                 -- nền tảng gốc thì để nguyên giá trị cũ, không xoá mất.
                 nen_tang = coalesce(EXCLUDED.nen_tang, conversations.nen_tang),

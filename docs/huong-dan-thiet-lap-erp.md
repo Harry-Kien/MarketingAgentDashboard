@@ -142,10 +142,17 @@ ports:
 Sau đó cập nhật trong `.env`: `NEXTERP_BASE_URL=http://localhost:8085`.
 
 ### 2. Quên mật khẩu `Administrator` trong Docker:
-Bạn có thể đặt lại mật khẩu Admin trực tiếp qua lệnh container:
+Bạn có thể đặt lại mật khẩu Admin trực tiếp qua lệnh:
 ```bash
-docker exec -it erpnext-web bench --site frontend set-admin-password mat_khau_moi_123
+docker exec -it erpnext-web bench --site localhost set-admin-password mat_khau_moi_123
 ```
+
+### 3. Trang NextERP bị mất CSS (Vỡ giao diện HTML thô):
+Nếu bạn vừa tạo mới lại volume Docker từ đầu và thấy trang bị mất định dạng CSS, chỉ cần chạy đúng 1 lệnh để đồng bộ lại file tĩnh:
+```bash
+docker exec erpnext-web cp -rL /home/frappe/frappe-bench/assets /home/frappe/frappe-bench/sites/assets
+```
+Sau đó F5 lại trang trình duyệt là giao diện sẽ đẹp mắt trở lại ngay lập tức.
 
 ---
 

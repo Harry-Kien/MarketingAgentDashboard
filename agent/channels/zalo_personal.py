@@ -26,6 +26,28 @@ def _received_at(value: Any) -> datetime:
         return datetime.now(timezone.utc)
 
 
+def _kem_boi_canh(
+    delivery: Delivery, thread_id: str, loai: int, do_dai: int
+) -> Delivery:
+    """
+    Gắn bối cảnh vào lý do gửi hỏng.
+
+    VÌ SAO: Zalo trả về những câu như "Tham số không hợp lệ" — đúng ngữ
+    pháp và vô dụng, vì nó không nói THAM SỐ NÀO. Một job đã chết trong
+    outbox với đúng câu đó, và truy ra nguyên nhân mất nhiều thời gian hơn
+    hẳn mức đáng phải mất.
+
+    Ba thứ dưới đây là ba nghi phạm thường gặp, và in kèm chúng không tốn
+    gì. KHÔNG in nội dung tin nhắn: nhật ký lỗi không phải chỗ chứa lời
+    khách, chỉ in độ dài là đủ để loại trừ nghi phạm "tin quá dài".
+    """
+    return Delivery(
+        False,
+        f"{delivery.detail} "
+        f"[thread_id={thread_id!r} thread_type={loai} do_dai={do_dai}]"[:400],
+    )
+
+
 class ZaloPersonalAdapter(ChannelAdapter):
     name = "zalo_personal"
 
@@ -37,6 +59,22 @@ class ZaloPersonalAdapter(ChannelAdapter):
         client: httpx.AsyncClient | None = None,
     ) -> None:
         super().__init__(account_id=account_id)
+        # Loại thread của từng hội thoại, nhớ lại từ tin ĐẾN.
+        #
+        # VÌ SAO CẦN: Zalo phân biệt nhắn cho MỘT NGƯỜI (type 0) với nhắn
+        # vào NHÓM (type 1). `parse()` đã đọc đúng giá trị này từ lâu và cất
+        # vào `meta`, nhưng `send_text`/`send_file` lại gán cứng 0 — nên mọi
+        # câu trả lời vào nhóm đều gửi sai loại và bị Zalo từ chối với
+        # "Tham số không hợp lệ", một câu không nói được tham số nào sai.
+        #
+        # Adapter cũ `zalocrm.py:205` mang đúng `threadType` đi; bản native
+        # này đánh rơi nó.
+        #
+        # GIỚI HẠN PHẢI NÓI RÕ: bộ nhớ này nằm trong tiến trình. Sau khi
+        # khởi động lại, câu trả lời ĐẦU TIÊN vào một nhóm sẽ lại rơi về 0
+        # cho tới khi có tin mới từ nhóm đó. Vẫn không tệ hơn hôm nay — hôm
+        # nay nó luôn là 0 — nhưng đừng nhầm đây là bản vá kín.
+        self._loai_thread: dict[str, int] = {}
         self._secret = str(credentials.get("sidecar_secret") or "")
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
@@ -71,6 +109,10 @@ class ZaloPersonalAdapter(ChannelAdapter):
         text = str(message.get("text") or "").strip()
         if not text and not attachments:
             return None
+        # Nhớ loại thread NGAY khi đọc tin đến, để câu trả lời đi ra đúng
+        # loại. Ghi ở đây chứ không ghi ở tầng trên vì đây là chỗ duy nhất
+        # còn nhìn thấy payload gốc của sidecar.
+        self._loai_thread[thread_id] = int(message.get("thread_type") or 0)
         return InboundMessage(
             account_id=self.account_id,
             channel=self.name,
@@ -129,24 +171,30 @@ class ZaloPersonalAdapter(ChannelAdapter):
             return Delivery(False, str(data.get("error") or "sidecar từ chối")[:200]), data
         return Delivery(True), data
 
+    def _loai(self, conversation_ref: str) -> int:
+        """Loại thread đã nhớ, mặc định 0 (nhắn riêng) khi chưa biết."""
+        return self._loai_thread.get(conversation_ref, 0)
+
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
+        loai = self._loai(conversation_ref)
         delivery, data = await self._request(
             "send-text",
-            {"thread_id": conversation_ref, "thread_type": 0, "text": text},
+            {"thread_id": conversation_ref, "thread_type": loai, "text": text},
         )
         if delivery.ok:
             return Delivery(
                 True,
                 provider_message_id=str(data.get("message_id") or ""),
             )
-        return delivery
+        return _kem_boi_canh(delivery, conversation_ref, loai, len(text))
 
     async def send_file(self, conversation_ref: str, path: str, caption: str = "") -> Delivery:
+        loai = self._loai(conversation_ref)
         delivery, data = await self._request(
             "send-file",
             {
                 "thread_id": conversation_ref,
-                "thread_type": 0,
+                "thread_type": loai,
                 "path": path,
                 "caption": caption,
             },
@@ -156,7 +204,7 @@ class ZaloPersonalAdapter(ChannelAdapter):
                 True,
                 provider_message_id=str(data.get("message_id") or ""),
             )
-        return delivery
+        return _kem_boi_canh(delivery, conversation_ref, loai, len(caption))
 
     async def start_qr(self) -> dict[str, Any]:
         delivery, data = await self._request("login-qr", {})

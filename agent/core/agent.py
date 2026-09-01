@@ -433,6 +433,23 @@ async def respond(
                 escalate = True
                 escalate_reason = call["input"].get("ly_do", "")
 
+            # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
+            # nhớ gọi thêm `chuyen_nhan_vien`.
+            #
+            # `xin_huy_don` và `xin_doi_tra` đều trả `can_chuyen_nhan_vien:
+            # True` rồi dặn model trong `ghi_chu`. Nhưng dặn là dặn, và model
+            # thì trượt — đó chính là lý do lưới thứ năm tồn tại.
+            #
+            # Ở đây tệ hơn một lời hứa suông: khách vừa xin huỷ hoặc xin đổi
+            # trả, cờ ĐÃ được ghi lên đơn, mà hội thoại không tới tay ai. Đơn
+            # nằm im mang một yêu cầu chưa ai nhận, và chính sách đổi trả thì
+            # có hạn số ngày.
+            elif out.get("can_chuyen_nhan_vien"):
+                escalate = True
+                escalate_reason = escalate_reason or (
+                    f"Công cụ {call['name']} yêu cầu người xử lý"
+                )
+
             if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
                 anh_can_gui.append(
                     {"duong_dan": out["duong_dan"], "ten": out["ten"]}

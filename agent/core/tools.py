@@ -203,6 +203,51 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "xin_doi_tra",
+        "description": (
+            "Khách đã NHẬN hàng và muốn ĐỔI sang mẫu khác hoặc TRẢ lại. Ghi "
+            "nhận yêu cầu lên đơn rồi chuyển nhân viên xử lý.\n\n"
+            "Khác `xin_huy_don`: huỷ là trước khi giao, đổi trả là sau khi "
+            "khách đã cầm hàng trên tay.\n\n"
+            "CÔNG CỤ NÀY KHÔNG DUYỆT ĐỔI TRẢ và không hoàn tiền. Nó chỉ ghi "
+            "nhận để nhân viên gọi lại. Việc đơn có đủ điều kiện đổi trả hay "
+            "không là do người quyết định, dựa trên chính sách và tình trạng "
+            "hàng thực tế.\n\n"
+            "TUYỆT ĐỐI KHÔNG nói với khách là 'đã được đổi', 'đã hoàn tiền' "
+            "hay 'đơn đủ điều kiện'. Nói đúng sự thật: đã ghi nhận, đã "
+            "chuyển bộ phận xử lý, nhân viên sẽ liên hệ lại.\n\n"
+            "Nếu khách nói hàng gây kích ứng da hay bất kỳ phản ứng cơ thể "
+            "nào thì đó là tình huống y tế — gọi `chuyen_nhan_vien` thay vì "
+            "công cụ này."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ma_don": {
+                    "type": "string",
+                    "description": "Mã đơn khách muốn đổi hoặc trả",
+                },
+                "loai": {
+                    "type": "string",
+                    "enum": ["doi", "tra"],
+                    "description": (
+                        "doi = đổi sang mẫu/size khác; tra = trả lại hàng. "
+                        "Khách chưa nói rõ thì HỎI, không tự chọn — hai việc "
+                        "này người xử lý làm khác nhau."
+                    ),
+                },
+                "ly_do": {
+                    "type": "string",
+                    "description": (
+                        "Lý do khách nêu, ghi nguyên văn ý khách. Nhân viên "
+                        "cần biết để chuẩn bị trước khi gọi lại."
+                    ),
+                },
+            },
+            "required": ["ma_don", "loai"],
+        },
+    },
+    {
         "name": "tao_video",
         "description": (
             "Đặt hàng sản xuất một video marketing. Gọi khi khách hoặc nhân "
@@ -492,6 +537,16 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
                 }
             out = {"tim_thay": True, **best}
             out["con_hang"] = (best.get("ton_kho") or 0) > 0
+            # Khách hỏi ĐÍCH DANH thì vẫn trả giá và tồn — hai số ấy có
+            # thật, đến từ ERP. Nhưng phải nói rõ là KHÔNG có nửa tư vấn,
+            # nếu không model sẽ lấp chỗ trống bằng suy đoán từ tên hàng.
+            if not best.get("duoc_gioi_thieu", True):
+                out["ghi_chu"] = (
+                    "Mặt hàng này CHƯA có hồ sơ tư vấn: giá và tồn kho là "
+                    "thật, nhưng không có căn cứ nào về loại da phù hợp, "
+                    "thành phần hay cách dùng. Chỉ được nói giá và còn hàng "
+                    "hay không. Khách hỏi thêm thì gọi chuyen_nhan_vien."
+                )
             return out
         return {
             "tim_thay": False,
@@ -537,12 +592,51 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
                 "ghi_chu": "Không có sản phẩm nào khớp tiêu chí. Hỏi thêm khách "
                            "để thu hẹp, không được bịa sản phẩm.",
             }
-        con_hang = [h for h in hits if (h.get("ton_kho") or 0) > 0]
-        return {
-            "so_luong": len(hits),
-            "san_pham": [_tom_tat(h) for h in (con_hang or hits)[:6]],
-            "het_hang": [h.get("ten") for h in hits if (h.get("ton_kho") or 0) == 0],
+        # SKU CHƯA CÓ HỒ SƠ TƯ VẤN THÌ KHÔNG ĐƯỢC GỢI Ý
+        #
+        # `agent/erp/cong.py:193` gắn cờ `duoc_gioi_thieu=False` cho mặt hàng
+        # có bên ERP mà chưa ai viết nửa tư vấn, và ghi `erp.thieu_ho_so`.
+        # Nhưng KHÔNG mã nào đọc cờ đó — đã tìm khắp repo: chỉ có nơi đặt,
+        # tài liệu, và test. Cảnh báo có, chặn thì không.
+        #
+        # Hậu quả đúng như `docs/van-hanh.md` mô tả: "agent giới thiệu một
+        # sản phẩm nghe rất chung chung". Nó biết tên và giá, không biết hợp
+        # loại da nào — và vẫn đem ra khuyên. Đó là phát ngôn không có căn cứ,
+        # đúng thứ cả hệ thống dựng lên để ngăn.
+        #
+        # Cờ VẮNG MẶT thì coi như được giới thiệu: nguồn `tep` không gắn cờ
+        # này, và mặc định chặn sẽ làm câm toàn bộ gợi ý trên bản chạy file.
+        du_can_cu = [h for h in hits if h.get("duoc_gioi_thieu", True)]
+        thieu_ho_so = [h.get("ten") for h in hits if not h.get("duoc_gioi_thieu", True)]
+
+        if not du_can_cu:
+            return {
+                "so_luong": 0,
+                "thieu_ho_so_tu_van": thieu_ho_so,
+                "ghi_chu": (
+                    "Có mặt hàng khớp tiêu chí nhưng CHƯA có hồ sơ tư vấn, nên "
+                    "không đủ căn cứ để khuyên. Nói thẳng với khách là cần nhân "
+                    "viên tư vấn kỹ hơn rồi gọi chuyen_nhan_vien. Tuyệt đối "
+                    "không suy đoán công dụng từ tên sản phẩm."
+                ),
+            }
+
+        con_hang = [h for h in du_can_cu if (h.get("ton_kho") or 0) > 0]
+        ket_qua = {
+            "so_luong": len(du_can_cu),
+            "san_pham": [_tom_tat(h) for h in (con_hang or du_can_cu)[:6]],
+            "het_hang": [
+                h.get("ten") for h in du_can_cu if (h.get("ton_kho") or 0) == 0
+            ],
         }
+        if thieu_ho_so:
+            ket_qua["thieu_ho_so_tu_van"] = thieu_ho_so
+            ket_qua["ghi_chu"] = (
+                "Vài mặt hàng khác cũng khớp tiêu chí nhưng chưa có hồ sơ tư "
+                "vấn nên đã bị loại khỏi danh sách gợi ý. KHÔNG nhắc tên chúng "
+                "với khách."
+            )
+        return ket_qua
 
     # ---------- gửi ảnh sản phẩm ----------
     if name == "gui_anh_san_pham":
@@ -582,6 +676,9 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
 
     if name == "xin_huy_don":
         return await _xin_huy_don(args, conversation_id)
+
+    if name == "xin_doi_tra":
+        return await _xin_doi_tra(args, conversation_id)
 
     # ---------- lên đơn: tool DUY NHẤT có hậu quả không đảo ngược ----------
     if name == "tao_don_hang":
@@ -1035,6 +1132,112 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
     return {
         "da_ghi_nhan": da_ghi,
         "da_huy": False,
+        "can_chuyen_nhan_vien": True,
+        "ghi_chu": ghi_chu,
+    }
+
+
+async def _danh_dau_xin_doi_tra(
+    ma_don: str, conversation_id, loai: str, ly_do: str
+) -> bool:
+    """
+    Gắn cờ xin đổi/trả lên đơn. Trả True nếu có đúng một dòng được sửa.
+
+    Cùng khuôn `_danh_dau_xin_huy`, và cùng lý do cho từng ràng buộc:
+
+    - KHÔNG đụng `trang_thai`: duyệt đổi trả là việc của người.
+    - Chặn theo `conversation_id`: mã đơn đoán được, không chặn thì ai cũng
+      gắn cờ lên đơn của người lạ — phá hoại được từ xa.
+    - Loại đơn `da_huy`: đơn đã đóng thì không dựng cờ mới lên.
+
+    KHÔNG dùng `COALESCE` để giữ mốc thời gian đầu tiên như bên xin huỷ.
+    Khách đổi ý từ "đổi" sang "trả" là chuyện thường, và người xử lý cần
+    thấy yêu cầu MỚI NHẤT, không phải yêu cầu đầu tiên.
+    """
+    row = await db.fetchrow(
+        """
+        UPDATE orders
+           SET yeu_cau_doi_tra_luc   = now(),
+               yeu_cau_doi_tra_loai  = $3,
+               yeu_cau_doi_tra_ly_do = $4,
+               updated_at            = now()
+         WHERE ma_don = $1
+           AND conversation_id = $2
+           AND trang_thai <> 'da_huy'
+        RETURNING ma_don
+        """,
+        ma_don, conversation_id, loai, (ly_do or "")[:500],
+    )
+    return row is not None
+
+
+async def _xin_doi_tra(args: dict, conversation_id) -> dict:
+    """
+    Ghi nhận yêu cầu đổi/trả rồi chuyển người — không bao giờ tự duyệt.
+
+    VÌ SAO CẦN, KHI ĐÃ CÓ `chuyen_nhan_vien`
+    ----------------------------------------
+    Chuyển hội thoại là chưa đủ, đúng như với xin huỷ. Yêu cầu khi đó chỉ
+    nằm trong đoạn chat và trong một dòng lý do văn xuôi — không đếm được,
+    không truy được, không hiện lên màn hình Đơn hàng.
+
+    Với đổi trả thì hậu quả còn cụ thể hơn: chính sách có hạn số ngày. Yêu
+    cầu nằm im ba hôm trong hộp thư rồi mới có người đọc là khách hết hạn
+    đổi trả vì lý do không phải của họ.
+
+    VẪN CHUYỂN NGƯỜI KỂ CẢ KHI KHÔNG GẮN ĐƯỢC CỜ
+    ---------------------------------------------
+    Không tra được đơn thì khách vẫn đang muốn đổi trả một cái gì đó. Im
+    lặng bỏ qua là bỏ rơi khách ở đúng lúc họ đã không hài lòng sẵn.
+    """
+    ma = str(args.get("ma_don", "") or "").strip()
+    loai = str(args.get("loai", "") or "").strip().lower()
+    ly_do = str(args.get("ly_do", "") or "").strip()
+
+    # Giá trị lạ thì HỎI LẠI, không tự đoán. Đoán sai giữa đổi và trả là
+    # gửi người xử lý đi làm nhầm việc — bên cần kiểm tồn kho, bên cần
+    # duyệt hoàn tiền.
+    if loai not in ("doi", "tra"):
+        return {
+            "da_ghi_nhan": False,
+            "can_chuyen_nhan_vien": False,
+            "ghi_chu": (
+                "Chưa rõ khách muốn ĐỔI sang mẫu khác hay TRẢ lại lấy tiền. "
+                "Hỏi khách cho rõ rồi gọi lại công cụ này, đừng tự chọn."
+            ),
+        }
+
+    da_ghi = False
+    if ma and conversation_id is not None:
+        da_ghi = await _danh_dau_xin_doi_tra(ma, conversation_id, loai, ly_do)
+        if da_ghi:
+            await db.log_event(
+                "order.xin_doi_tra", actor="agent", ma_don=ma,
+                loai=loai, ly_do=ly_do[:200],
+            )
+
+    if da_ghi:
+        viec = "đổi sang mẫu khác" if loai == "doi" else "trả lại hàng"
+        ghi_chu = (
+            f"Đã ghi nhận yêu cầu {viec} lên đơn và chuyển nhân viên. "
+            "TUYỆT ĐỐI KHÔNG nói với khách là 'đã được đổi', 'đã hoàn tiền' "
+            "hay 'đơn đủ điều kiện' — chưa ai duyệt cả. Nói đúng: đã ghi "
+            "nhận, đã chuyển bộ phận xử lý, nhân viên sẽ liên hệ lại sớm. "
+            "Được phép nói lại CHÍNH SÁCH đổi trả nếu khách hỏi, nhưng "
+            "không được kết luận đơn này có thuộc diện đó hay không."
+        )
+    else:
+        ghi_chu = (
+            "KHÔNG tìm thấy đơn này trong hội thoại. Không đọc thông tin đơn "
+            "nào ra và không hứa gì về đổi trả. Xin lỗi khách, hỏi lại mã "
+            "đơn hoặc số điện thoại đã đặt, và cho biết nhân viên sẽ kiểm "
+            "tra giúp."
+        )
+
+    return {
+        "da_ghi_nhan": da_ghi,
+        "da_duyet": False,
+        "loai": loai,
         "can_chuyen_nhan_vien": True,
         "ghi_chu": ghi_chu,
     }

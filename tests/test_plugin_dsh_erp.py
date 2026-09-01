@@ -80,7 +80,7 @@ def test_README_khong_nhac_cong_cu_khong_ton_tai():
 
 
 def test_khong_khai_cong_cu_ghi():
-    # dsh là một agent runtime KHÁC: không đi qua năm lớp lưới tuân thủ
+    # dsh là một agent runtime KHÁC: không đi qua sáu lớp lưới tuân thủ
     # trong agent/core/agent.py, không có trần chi phí, không có lưới chuyển
     # người. Cho nó quyền chốt đơn là giao chìa khoá cho một người lạ.
     cam = {"tao_don_hang", "chuyen_nhan_vien", "tao_video", "dieu_chinh_kho",

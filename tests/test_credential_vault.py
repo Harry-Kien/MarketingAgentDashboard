@@ -42,7 +42,21 @@ def test_ciphertext_khong_the_giai_ma_bang_account_khac():
 def test_ciphertext_bi_sua_phai_fail_closed():
     account_id = uuid4()
     sealed = _vault().encrypt({"token": "secret"}, account_id=account_id)
-    sealed = replace(sealed, ciphertext=sealed.ciphertext[:-1] + b"0")
+    # LẬT MỘT BIT, không gán một giá trị cố định.
+    #
+    # Bản trước gán byte cuối bằng b"0" (0x30). Ciphertext là dữ liệu ngẫu
+    # nhiên, nên cứ 256 lần chạy lại có một lần byte cuối VỐN ĐÃ là 0x30 —
+    # "sửa" xong mà không sửa gì, giải mã thành công, và test này đỏ.
+    #
+    # Bắt gặp thật khi chạy cả bộ. Một test canh tính chất BẢO MẬT mà đỏ
+    # ngẫu nhiên là loại tệ nhất: người ta học được cách chạy lại cho xanh,
+    # rồi lần nó đỏ THẬT cũng bị chạy lại y như vậy.
+    #
+    # XOR 0x01 thì luôn đổi, bất kể giá trị gốc.
+    sealed = replace(
+        sealed,
+        ciphertext=sealed.ciphertext[:-1] + bytes([sealed.ciphertext[-1] ^ 0x01]),
+    )
 
     with pytest.raises(InvalidCredentialCiphertext):
         _vault().decrypt(sealed, account_id=account_id)

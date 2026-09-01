@@ -27,9 +27,9 @@ không được phép sai — luật quảng cáo mỹ phẩm, ranh giới tư v
 nội dung công khai — mỗi ràng buộc phải được hiện thực **hai lần**: một lần
 trong prompt, một lần trong mã để chặn khi mô hình trượt.
 
-`agent/core/agent.py` có **năm lớp lưới**, mỗi lớp canh một cách trượt khác
+`agent/core/agent.py` có **sáu lớp lưới**, mỗi lớp canh một cách trượt khác
 nhau. Đừng gỡ lớp nào mà không đọc `docs/co-so-ly-thuyet.md` mục 6 — có
-bằng chứng thực nghiệm giải thích vì sao cần cả năm.
+bằng chứng thực nghiệm giải thích vì sao cần cả sáu.
 
 ---
 
@@ -57,7 +57,7 @@ không ai kiểm.
 
 ```bash
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
-python -m pytest -q               # 440 test, dưới 4 giây, không gọi API
+python -m pytest -q               # ~1575 test, khoảng 1 phút, không gọi API
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
 

@@ -223,7 +223,7 @@ erDiagram
         TEXT khach_sdt
         TEXT khach_dia_chi
         JSONB items
-        _ con_21_cot_nua
+        _ con_24_cot_nua
     }
     posts {
         UUID id

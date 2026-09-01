@@ -4,7 +4,7 @@ Hai điều test canh, ngoài chuyện đọc được dữ liệu:
 
 1. **Chỉ ĐỌC.** Không có endpoint nào tạo đơn, trừ kho, hay sửa gì bên ERP.
    Cùng lý do đã ghi trong docstring của `agent/mcp_server.py`: thứ gọi vào
-   đây không đi qua năm lớp lưới tuân thủ trong `agent/core/agent.py`.
+   đây không đi qua sáu lớp lưới tuân thủ trong `agent/core/agent.py`.
 
 2. **Không biết thì trả 503, không trả số cũ.** Đây là quy tắc trung tâm của
    cổng, và nó phải sống sót qua tầng HTTP chứ không dừng ở tầng Python.
@@ -127,7 +127,7 @@ def test_phai_dang_nhap(tmp_path):
 def test_vo_rest_khong_co_duong_nao_ghi_vao_erp():
     """Không endpoint nào tạo đơn, trừ kho, hay sửa gì bên ERP.
 
-    Client gọi vào đây là một hệ khác: không đi qua năm lớp lưới tuân thủ
+    Client gọi vào đây là một hệ khác: không đi qua sáu lớp lưới tuân thủ
     trong `agent/core/agent.py`, không có trần chi phí, không có lưới chuyển
     người. Cho nó quyền tạo đơn là giao chìa khoá cho một người lạ.
 

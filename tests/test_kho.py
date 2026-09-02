@@ -161,12 +161,37 @@ def test_tool_khong_tu_gui_anh():
     assert "send_file" not in khoi and "adapter" not in khoi
 
 
-def test_moi_ma_trong_danh_muc_deu_co_anh():
-    """Hứa gửi ảnh rồi báo không có ảnh là tệ hơn không nhắc tới ảnh."""
+def test_ma_thieu_anh_phai_KHAI_ra_ly_do():
+    """
+    Hứa gửi ảnh rồi báo không có ảnh là tệ hơn không nhắc tới ảnh.
+
+    PHÂN BIỆT "QUÊN" VỚI "ĐÃ KHAI LÀ CHƯA CÓ"
+    -----------------------------------------
+    Bản trước đòi MỌI mã phải có ảnh. Nhưng có mã thiếu ảnh một cách CÓ CHỦ
+    Ý: `BLA-FACE-SCRUB-120G` từng chứa một banner quảng cáo mang huy hiệu
+    GMP/FDA — tôi giữ nó lại thay vì gửi cho khách, và ghi lý do vào
+    `manifest.json` với `nguon: "chua_co"`.
+
+    Bắt ca đó phải đỏ là ép người ta hoặc nhét đại một tấm ảnh vào, hoặc gỡ
+    phép kiểm. Cả hai đều tệ hơn hiện trạng.
+
+    Nên ràng buộc đúng không phải "mã nào cũng có ảnh", mà là "mã nào thiếu
+    ảnh thì phải khai ra trong manifest". Quên vẫn đỏ; biết và ghi lại thì
+    không.
+    """
     catalog = tools._catalog()
-    thieu = [p["ma"] for p in catalog.get("san_pham", [])
-             if tools._anh_san_pham(p["ma"]) is None]
-    assert not thieu, f"chưa có ảnh cho: {thieu}"
+    khong_khai = []
+    for p in catalog.get("san_pham", []):
+        ma = p["ma"]
+        if tools._anh_san_pham(ma) is not None:
+            continue
+        if tools._nguon_anh(ma) == "chua_co":
+            continue          # đã khai, có lý do ghi trong manifest
+        khong_khai.append(ma)
+    assert not khong_khai, (
+        f"thiếu ảnh mà KHÔNG khai lý do: {khong_khai} — "
+        'thêm manifest.json với nguon: "chua_co" và ghi_chu nói rõ vì sao'
+    )
 
 
 def test_khong_co_anh_thi_noi_that():

@@ -89,22 +89,44 @@ def test_khi_noi_ERP_thi_ton_kho_noi_bo_KHONG_duoc_ghi_de(monkeypatch, tmp_path)
 
 
 def test_khi_dung_tep_thi_van_chong_ton_kho_song_len(monkeypatch, tmp_path):
-    # Với nguồn `tep`, bảng nội bộ CHÍNH LÀ tồn kho sống — file JSON chỉ giữ
-    # con số của ngày ai đó sửa nó. Giữ nguyên hành vi cũ ở nhánh này.
-    from agent.core import tools
-    from agent.erp import nha_may
+    """
+    Với nguồn `tep`, bảng nội bộ CHÍNH LÀ tồn kho sống — file JSON chỉ giữ
+    con số của ngày ai đó sửa nó. Giữ nguyên hành vi cũ ở nhánh này.
 
+    DÙNG DANH MỤC DỰNG SẴN, KHÔNG ĐỌC HÀNG THẬT CỦA CỬA HÀNG
+    --------------------------------------------------------
+    Bản trước gắn cứng mã `AS-CL01` của danh mục MẪU. Ngày cửa hàng thay
+    bằng hàng thật, ca này đỏ — không phải vì mã hỏng mà vì mã đó không còn
+    tồn tại. Đỏ giả kiểu ấy dạy người ta bỏ qua màu đỏ.
+
+    Cùng họ với mấy ca đọc `.env` của máy đã sửa: test không được phụ thuộc
+    dữ liệu vận hành.
+    """
+    import json
+
+    from agent.core import tools
+    from agent.erp import ho_so, nha_may
+
+    ho_so_gia = tmp_path / "catalog.json"
+    ho_so_gia.write_text(
+        json.dumps({"san_pham": [
+            {"ma": "THU-01", "ten": "Hàng dựng sẵn", "gia": 1000,
+             "ton_kho": 999, "loai": "Thử"},
+        ]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ho_so, "CATALOG", ho_so_gia)
     monkeypatch.setattr(settings, "erp_loai", "tep")
     nha_may.dat_lai()
 
     async def _kho_noi_bo():
-        return {"AS-CL01": 7}
+        return {"THU-01": 7}
 
     monkeypatch.setattr("agent.core.kho.lay_tat_ca", _kho_noi_bo)
     d = chay(tools._catalog_song())
     nha_may.dat_lai()
 
-    sp = [x for x in d["san_pham"] if x["ma"] == "AS-CL01"]
+    sp = [x for x in d["san_pham"] if x["ma"] == "THU-01"]
     assert sp and sp[0]["ton_kho"] == 7
 
 

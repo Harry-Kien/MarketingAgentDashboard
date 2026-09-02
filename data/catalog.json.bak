@@ -1,0 +1,682 @@
+{
+  "_ghi_chu": "DỮ LIỆU MẪU. Danh mục mô phỏng thương hiệu mỹ phẩm Việt Nam, dùng để chạy thử hệ thống ngay sau khi clone. Dữ liệu thật đặt ở data/catalog.json (file đó nằm trong .gitignore nên không bị đẩy lên repo). Lên production thì thay bằng lời gọi ERP/KiotViet — chỉ sửa thân hàm trong agent/core/tools.py, agent và RAG không đổi.",
+  "du_lieu_mau": true,
+  "thuong_hieu": "Aurora Skin",
+  "san_pham": [
+    {
+      "ma": "AS-CL01",
+      "ten": "Sữa rửa mặt dịu nhẹ Aurora Gentle Cleanser",
+      "loai": "Làm sạch",
+      "gia": 245000,
+      "dung_tich": "150ml",
+      "ton_kho": 84,
+      "da_phu_hop": [
+        "da thường",
+        "da khô",
+        "da nhạy cảm",
+        "da hỗn hợp"
+      ],
+      "van_de_ho_tro": [
+        "da khô căng sau rửa",
+        "da dễ kích ứng"
+      ],
+      "thanh_phan_chinh": [
+        "Cica (Centella Asiatica)",
+        "Glycerin",
+        "Panthenol"
+      ],
+      "khong_chua": [
+        "cồn khô",
+        "hương liệu",
+        "sulfate"
+      ],
+      "do_pH": 5.5,
+      "cach_dung": "Lấy lượng bằng hạt đậu, tạo bọt với nước ấm, massage 30 giây rồi rửa sạch.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12345/22/CBMP-HN",
+      "hsd_thang": 36
+    },
+    {
+      "ma": "AS-CL02",
+      "ten": "Gel rửa mặt kiềm dầu Aurora Clear Foam",
+      "loai": "Làm sạch",
+      "gia": 265000,
+      "dung_tich": "150ml",
+      "ton_kho": 51,
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp thiên dầu",
+        "da dễ nổi mụn"
+      ],
+      "van_de_ho_tro": [
+        "da tiết nhiều dầu",
+        "lỗ chân lông có nhân mụn"
+      ],
+      "thanh_phan_chinh": [
+        "BHA 0.5%",
+        "Tea Tree",
+        "Zinc PCA"
+      ],
+      "khong_chua": [
+        "cồn khô",
+        "dầu khoáng"
+      ],
+      "do_pH": 5.5,
+      "cach_dung": "Dùng 1-2 lần/ngày. Da mới dùng BHA nên bắt đầu 1 lần/ngày vào buổi tối.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "luu_y": "Dùng kèm chống nắng ban ngày.",
+      "so_cong_bo": "12346/22/CBMP-HN",
+      "hsd_thang": 36
+    },
+    {
+      "ma": "AS-CL03",
+      "ten": "Dầu tẩy trang Aurora Cleansing Oil",
+      "loai": "Làm sạch",
+      "gia": 320000,
+      "dung_tich": "200ml",
+      "ton_kho": 0,
+      "da_phu_hop": [
+        "mọi loại da"
+      ],
+      "van_de_ho_tro": [
+        "tẩy trang lớp makeup dày",
+        "làm sạch kem chống nắng"
+      ],
+      "thanh_phan_chinh": [
+        "Dầu hạt nho",
+        "Vitamin E",
+        "Squalane thực vật"
+      ],
+      "cach_dung": "Thoa lên da khô, massage 45 giây, thêm nước để nhũ hoá rồi rửa sạch. Rửa mặt lại bằng sữa rửa mặt.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "so_cong_bo": "12347/22/CBMP-HN",
+      "hsd_thang": 24,
+      "ghi_chu_ton_kho": "Dự kiến có hàng lại sau 10-14 ngày."
+    },
+    {
+      "ma": "AS-CL04",
+      "ten": "Nước tẩy trang Aurora Micellar Water",
+      "loai": "Làm sạch",
+      "gia": 185000,
+      "dung_tich": "400ml",
+      "ton_kho": 120,
+      "da_phu_hop": [
+        "mọi loại da",
+        "da nhạy cảm"
+      ],
+      "van_de_ho_tro": [
+        "tẩy trang nhẹ hằng ngày"
+      ],
+      "thanh_phan_chinh": [
+        "Micelle",
+        "Chiết xuất hoa cúc",
+        "Panthenol"
+      ],
+      "khong_chua": [
+        "cồn",
+        "hương liệu"
+      ],
+      "cach_dung": "Thấm bông tẩy trang, lau nhẹ, không cần rửa lại nếu trang điểm mỏng.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "so_cong_bo": "12348/22/CBMP-HN",
+      "hsd_thang": 36
+    },
+    {
+      "ma": "AS-TN01",
+      "ten": "Toner cân bằng Aurora Balance Toner",
+      "loai": "Cân bằng",
+      "gia": 295000,
+      "dung_tich": "200ml",
+      "ton_kho": 63,
+      "da_phu_hop": [
+        "mọi loại da"
+      ],
+      "van_de_ho_tro": [
+        "da mất cân bằng sau rửa",
+        "da khô ráp"
+      ],
+      "thanh_phan_chinh": [
+        "Hyaluronic Acid",
+        "Glycerin",
+        "Chiết xuất trà xanh"
+      ],
+      "khong_chua": [
+        "cồn khô"
+      ],
+      "do_pH": 5.5,
+      "cach_dung": "Thấm bông hoặc vỗ trực tiếp lên da sau bước rửa mặt.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12349/22/CBMP-HN",
+      "hsd_thang": 36
+    },
+    {
+      "ma": "AS-TN02",
+      "ten": "Toner tẩy tế bào chết Aurora Renew Toner AHA/BHA",
+      "loai": "Cân bằng",
+      "gia": 355000,
+      "dung_tich": "150ml",
+      "ton_kho": 28,
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp",
+        "da không nhạy cảm"
+      ],
+      "van_de_ho_tro": [
+        "da sần",
+        "lỗ chân lông to",
+        "da xỉn"
+      ],
+      "thanh_phan_chinh": [
+        "AHA 5%",
+        "BHA 1%",
+        "Allantoin"
+      ],
+      "cach_dung": "Dùng 2-3 lần/tuần vào buổi tối. Không dùng cùng ngày với retinol.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "luu_y": "Bắt buộc dùng kem chống nắng ban ngày. Không dùng cho da đang kích ứng.",
+      "khong_dung_cho": [
+        "phụ nữ mang thai nên hỏi bác sĩ",
+        "da đang bong tróc"
+      ],
+      "so_cong_bo": "12350/22/CBMP-HN",
+      "hsd_thang": 24
+    },
+    {
+      "ma": "AS-SR01",
+      "ten": "Serum phục hồi Aurora Revitalizing Serum",
+      "loai": "Tinh chất chuyên sâu",
+      "gia": 690000,
+      "dung_tich": "30ml",
+      "ton_kho": 45,
+      "da_phu_hop": [
+        "mọi loại da",
+        "da nhạy cảm",
+        "da sau kích ứng"
+      ],
+      "van_de_ho_tro": [
+        "da yếu",
+        "hàng rào bảo vệ suy giảm",
+        "da khô mất nước"
+      ],
+      "thanh_phan_chinh": [
+        "Ceramide NP",
+        "Panthenol 5%",
+        "Madecassoside"
+      ],
+      "khong_chua": [
+        "hương liệu",
+        "cồn khô"
+      ],
+      "cach_dung": "2-3 giọt sau toner, vỗ nhẹ cho thấm.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12351/22/CBMP-HN",
+      "hsd_thang": 24,
+      "ban_chay": true
+    },
+    {
+      "ma": "AS-SR02",
+      "ten": "Serum Vitamin C Aurora Bright C15",
+      "loai": "Tinh chất chuyên sâu",
+      "gia": 780000,
+      "dung_tich": "30ml",
+      "ton_kho": 22,
+      "da_phu_hop": [
+        "da thường",
+        "da dầu",
+        "da hỗn hợp"
+      ],
+      "van_de_ho_tro": [
+        "da xỉn màu",
+        "đốm sạm sau mụn",
+        "da thiếu sức sống"
+      ],
+      "thanh_phan_chinh": [
+        "Vitamin C (L-Ascorbic Acid) 15%",
+        "Vitamin E",
+        "Ferulic Acid"
+      ],
+      "cach_dung": "3-4 giọt vào buổi sáng, trước kem dưỡng. Bắt buộc dùng kem chống nắng sau đó.",
+      "thoi_diem": [
+        "sáng"
+      ],
+      "luu_y": "Da nhạy cảm nên bắt đầu cách ngày. Bảo quản nơi tránh ánh sáng.",
+      "so_cong_bo": "12352/22/CBMP-HN",
+      "hsd_thang": 18
+    },
+    {
+      "ma": "AS-SR03",
+      "ten": "Serum Niacinamide Aurora Pore Refine 10%",
+      "loai": "Tinh chất chuyên sâu",
+      "gia": 520000,
+      "dung_tich": "30ml",
+      "ton_kho": 67,
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp",
+        "da dễ nổi mụn"
+      ],
+      "van_de_ho_tro": [
+        "lỗ chân lông to",
+        "da bóng dầu",
+        "vết thâm sau mụn"
+      ],
+      "thanh_phan_chinh": [
+        "Niacinamide 10%",
+        "Zinc PCA 1%"
+      ],
+      "cach_dung": "2-3 giọt sau toner, sáng hoặc tối.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "luu_y": "Da nhạy cảm nên thử ở vùng nhỏ trước.",
+      "so_cong_bo": "12353/22/CBMP-HN",
+      "hsd_thang": 24,
+      "ban_chay": true
+    },
+    {
+      "ma": "AS-SR04",
+      "ten": "Tinh chất Retinol Aurora Night Retinol 0.3%",
+      "loai": "Tinh chất chuyên sâu",
+      "gia": 850000,
+      "dung_tich": "30ml",
+      "ton_kho": 19,
+      "da_phu_hop": [
+        "da thường",
+        "da dầu",
+        "da không nhạy cảm"
+      ],
+      "van_de_ho_tro": [
+        "dấu hiệu lão hoá",
+        "kết cấu da không đều"
+      ],
+      "thanh_phan_chinh": [
+        "Retinol 0.3%",
+        "Squalane",
+        "Bisabolol"
+      ],
+      "cach_dung": "Chỉ dùng buổi tối. Tuần đầu 2 lần, tăng dần theo mức da chịu được.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "luu_y": "Không dùng chung buổi với AHA/BHA hoặc Vitamin C. Bắt buộc chống nắng ban ngày.",
+      "khong_dung_cho": [
+        "phụ nữ mang thai",
+        "phụ nữ cho con bú",
+        "da đang tổn thương"
+      ],
+      "so_cong_bo": "12354/22/CBMP-HN",
+      "hsd_thang": 18
+    },
+    {
+      "ma": "AS-SR05",
+      "ten": "Serum cấp ẩm Aurora Hydra B5",
+      "loai": "Tinh chất chuyên sâu",
+      "gia": 430000,
+      "dung_tich": "30ml",
+      "ton_kho": 0,
+      "da_phu_hop": [
+        "mọi loại da",
+        "da khô",
+        "da mất nước"
+      ],
+      "van_de_ho_tro": [
+        "da khô căng",
+        "da mất nước do điều hoà"
+      ],
+      "thanh_phan_chinh": [
+        "Hyaluronic Acid 3 phân tử",
+        "Vitamin B5",
+        "Trehalose"
+      ],
+      "cach_dung": "2-3 giọt lên da còn ẩm, sau toner.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12355/22/CBMP-HN",
+      "hsd_thang": 24,
+      "ghi_chu_ton_kho": "Hết hàng tạm thời, dự kiến về trong 7 ngày."
+    },
+    {
+      "ma": "AS-MT01",
+      "ten": "Kem dưỡng ẩm Aurora Daily Moisturizer",
+      "loai": "Dưỡng ẩm",
+      "gia": 385000,
+      "dung_tich": "50ml",
+      "ton_kho": 72,
+      "da_phu_hop": [
+        "da thường",
+        "da hỗn hợp"
+      ],
+      "van_de_ho_tro": [
+        "duy trì độ ẩm hằng ngày"
+      ],
+      "thanh_phan_chinh": [
+        "Ceramide",
+        "Squalane",
+        "Glycerin"
+      ],
+      "ket_cau": "gel-cream, thấm nhanh",
+      "cach_dung": "Thoa lớp mỏng bước cuối buổi sáng, trước kem chống nắng.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12356/22/CBMP-HN",
+      "hsd_thang": 30
+    },
+    {
+      "ma": "AS-MT02",
+      "ten": "Kem dưỡng đêm Aurora Night Repair Cream",
+      "loai": "Dưỡng ẩm",
+      "gia": 590000,
+      "dung_tich": "50ml",
+      "ton_kho": 38,
+      "da_phu_hop": [
+        "da khô",
+        "da thường",
+        "da lão hoá"
+      ],
+      "van_de_ho_tro": [
+        "da khô ban đêm",
+        "da thiếu đàn hồi"
+      ],
+      "thanh_phan_chinh": [
+        "Peptide",
+        "Ceramide NP",
+        "Bơ hạt mỡ"
+      ],
+      "ket_cau": "cream đặc",
+      "cach_dung": "Thoa bước cuối buổi tối.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "so_cong_bo": "12357/22/CBMP-HN",
+      "hsd_thang": 30
+    },
+    {
+      "ma": "AS-MT03",
+      "ten": "Gel dưỡng ẩm Aurora Oil-Free Gel",
+      "loai": "Dưỡng ẩm",
+      "gia": 340000,
+      "dung_tich": "50ml",
+      "ton_kho": 95,
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp thiên dầu",
+        "da dễ nổi mụn"
+      ],
+      "van_de_ho_tro": [
+        "da dầu nhưng vẫn khô bên trong"
+      ],
+      "thanh_phan_chinh": [
+        "Hyaluronic Acid",
+        "Niacinamide 2%",
+        "Allantoin"
+      ],
+      "ket_cau": "gel nhẹ, không nhờn",
+      "khong_chua": [
+        "dầu khoáng",
+        "cồn khô"
+      ],
+      "cach_dung": "Thoa lớp mỏng sáng và tối.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12358/22/CBMP-HN",
+      "hsd_thang": 30,
+      "ban_chay": true
+    },
+    {
+      "ma": "AS-MT04",
+      "ten": "Kem dưỡng mắt Aurora Eye Cream",
+      "loai": "Dưỡng ẩm",
+      "gia": 450000,
+      "dung_tich": "15ml",
+      "ton_kho": 41,
+      "da_phu_hop": [
+        "mọi loại da"
+      ],
+      "van_de_ho_tro": [
+        "vùng mắt khô",
+        "nếp nhăn nhỏ vùng mắt"
+      ],
+      "thanh_phan_chinh": [
+        "Peptide",
+        "Caffeine",
+        "Vitamin E"
+      ],
+      "cach_dung": "Chấm nhẹ 4 điểm quanh mắt, vỗ đều bằng ngón áp út.",
+      "thoi_diem": [
+        "sáng",
+        "tối"
+      ],
+      "so_cong_bo": "12359/22/CBMP-HN",
+      "hsd_thang": 24
+    },
+    {
+      "ma": "AS-SP01",
+      "ten": "Kem chống nắng Aurora Daily Sun SPF50+ PA++++",
+      "loai": "Chống nắng",
+      "gia": 420000,
+      "dung_tich": "50ml",
+      "ton_kho": 110,
+      "da_phu_hop": [
+        "mọi loại da"
+      ],
+      "van_de_ho_tro": [
+        "bảo vệ da khỏi tia UV hằng ngày"
+      ],
+      "thanh_phan_chinh": [
+        "Filter hoá học thế hệ mới",
+        "Vitamin E",
+        "Panthenol"
+      ],
+      "ket_cau": "sữa lỏng, không vệt trắng",
+      "cach_dung": "Thoa lượng bằng 2 đốt ngón tay, 15 phút trước khi ra ngoài. Dặm lại mỗi 2-3 giờ.",
+      "thoi_diem": [
+        "sáng"
+      ],
+      "so_cong_bo": "12360/22/CBMP-HN",
+      "hsd_thang": 30,
+      "ban_chay": true
+    },
+    {
+      "ma": "AS-SP02",
+      "ten": "Kem chống nắng vật lý Aurora Mineral Sun SPF50",
+      "loai": "Chống nắng",
+      "gia": 465000,
+      "dung_tich": "50ml",
+      "ton_kho": 33,
+      "da_phu_hop": [
+        "da nhạy cảm",
+        "da sau điều trị",
+        "trẻ em trên 6 tháng"
+      ],
+      "van_de_ho_tro": [
+        "da dễ kích ứng với filter hoá học"
+      ],
+      "thanh_phan_chinh": [
+        "Zinc Oxide",
+        "Titanium Dioxide"
+      ],
+      "ket_cau": "kem, có thể hơi nâng tông nhẹ",
+      "cach_dung": "Thoa đều 15 phút trước khi ra ngoài.",
+      "thoi_diem": [
+        "sáng"
+      ],
+      "so_cong_bo": "12361/22/CBMP-HN",
+      "hsd_thang": 30
+    },
+    {
+      "ma": "AS-SP03",
+      "ten": "Xịt chống nắng Aurora Sun Mist SPF50",
+      "loai": "Chống nắng",
+      "gia": 350000,
+      "dung_tich": "150ml",
+      "ton_kho": 58,
+      "da_phu_hop": [
+        "mọi loại da"
+      ],
+      "van_de_ho_tro": [
+        "dặm lại chống nắng khi đã trang điểm"
+      ],
+      "thanh_phan_chinh": [
+        "Filter hoá học",
+        "Chiết xuất lô hội"
+      ],
+      "cach_dung": "Lắc đều, xịt cách mặt 15-20cm. Dùng để DẶM LẠI, không thay thế lớp chống nắng đầu tiên.",
+      "thoi_diem": [
+        "sáng"
+      ],
+      "so_cong_bo": "12362/22/CBMP-HN",
+      "hsd_thang": 24
+    },
+    {
+      "ma": "AS-MK01",
+      "ten": "Mặt nạ đất sét Aurora Clay Mask",
+      "loai": "Mặt nạ",
+      "gia": 310000,
+      "dung_tich": "100ml",
+      "ton_kho": 47,
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp"
+      ],
+      "van_de_ho_tro": [
+        "da nhiều dầu vùng chữ T",
+        "lỗ chân lông có bụi bẩn"
+      ],
+      "thanh_phan_chinh": [
+        "Kaolin",
+        "Than hoạt tính",
+        "Chiết xuất trà xanh"
+      ],
+      "cach_dung": "Đắp lớp mỏng 10 phút, 1-2 lần/tuần, rửa sạch bằng nước ấm.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "so_cong_bo": "12363/22/CBMP-HN",
+      "hsd_thang": 24
+    },
+    {
+      "ma": "AS-MK02",
+      "ten": "Mặt nạ ngủ cấp ẩm Aurora Sleeping Mask",
+      "loai": "Mặt nạ",
+      "gia": 395000,
+      "dung_tich": "80ml",
+      "ton_kho": 52,
+      "da_phu_hop": [
+        "da khô",
+        "da thường",
+        "da mất nước"
+      ],
+      "van_de_ho_tro": [
+        "da khô sau một ngày dài",
+        "da cần cấp ẩm sâu"
+      ],
+      "thanh_phan_chinh": [
+        "Hyaluronic Acid",
+        "Ceramide",
+        "Chiết xuất lô hội"
+      ],
+      "cach_dung": "Đắp lớp vừa phải bước cuối buổi tối, 2-3 lần/tuần, ngủ qua đêm.",
+      "thoi_diem": [
+        "tối"
+      ],
+      "so_cong_bo": "12364/22/CBMP-HN",
+      "hsd_thang": 24
+    },
+    {
+      "ma": "AS-CB01",
+      "ten": "Combo cơ bản cho da dầu mụn Aurora Starter Oily",
+      "loai": "Combo",
+      "gia": 1150000,
+      "gia_goc": 1345000,
+      "ton_kho": 25,
+      "gom": [
+        "AS-CL02",
+        "AS-SR03",
+        "AS-MT03",
+        "AS-SP01"
+      ],
+      "da_phu_hop": [
+        "da dầu",
+        "da hỗn hợp thiên dầu",
+        "da dễ nổi mụn"
+      ],
+      "van_de_ho_tro": [
+        "mới bắt đầu chăm sóc da dầu"
+      ],
+      "so_cong_bo": "theo từng sản phẩm thành phần",
+      "ghi_chu": "Tiết kiệm 195.000đ so với mua lẻ."
+    },
+    {
+      "ma": "AS-CB02",
+      "ten": "Combo phục hồi da yếu Aurora Recovery Set",
+      "loai": "Combo",
+      "gia": 1290000,
+      "gia_goc": 1495000,
+      "ton_kho": 18,
+      "gom": [
+        "AS-CL01",
+        "AS-TN01",
+        "AS-SR01",
+        "AS-SP02"
+      ],
+      "da_phu_hop": [
+        "da nhạy cảm",
+        "da sau kích ứng",
+        "da khô"
+      ],
+      "van_de_ho_tro": [
+        "da yếu cần phục hồi hàng rào bảo vệ"
+      ],
+      "so_cong_bo": "theo từng sản phẩm thành phần",
+      "ghi_chu": "Tiết kiệm 205.000đ so với mua lẻ."
+    }
+  ],
+  "don_hang": [
+    {
+      "ma": "AS20260818",
+      "trang_thai": "Đang giao",
+      "du_kien": "2026-08-21",
+      "san_pham": "Serum phục hồi Aurora Revitalizing Serum",
+      "don_vi_van_chuyen": "GHTK"
+    },
+    {
+      "ma": "AS20260815",
+      "trang_thai": "Đã giao",
+      "du_kien": "2026-08-17",
+      "san_pham": "Combo cơ bản cho da dầu mụn",
+      "don_vi_van_chuyen": "GHN"
+    },
+    {
+      "ma": "AS20260819",
+      "trang_thai": "Đang đóng gói",
+      "du_kien": "2026-08-22",
+      "san_pham": "Kem chống nắng Aurora Daily Sun SPF50+",
+      "don_vi_van_chuyen": "GHTK"
+    }
+  ]
+}

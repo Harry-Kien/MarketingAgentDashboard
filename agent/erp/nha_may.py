@@ -49,6 +49,7 @@ def cong() -> Cong:
             ttl_ton=settings.erp_ttl_ton,
             ngat_mach_so_lan=settings.erp_ngat_mach_so_lan,
             ngat_mach_giay=settings.erp_ngat_mach_giay,
+            cache_toi_da=settings.erp_cache_toi_da,
             han_cho_giay=settings.erp_han_cho_giay,
             so_lan_thu=settings.erp_so_lan_thu,
         )

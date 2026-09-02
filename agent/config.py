@@ -330,6 +330,12 @@ class Settings(BaseSettings):
     #
     # 2 = một lần thử lại. Đặt 1 là tắt hẳn.
     erp_so_lan_thu: int = 2
+    # TRẦN SỐ Ô CACHE mỗi loại (giá, tồn) — cache LRU, đầy thì bỏ ô cũ nhất.
+    #
+    # Bản trước dùng `dict` thuần, lớn mãi không giới hạn. Với 22 mã thì
+    # không sao; với danh mục vài chục nghìn mã thì đó là rò bộ nhớ chạy
+    # suốt đời tiến trình — và nó không nổ, chỉ phình.
+    erp_cache_toi_da: int = 5_000
     # Bắt buộc khi erp_loai != "tep". `Bin` của ERPNext và `stock.quant` của
     # Odoo đều theo TỪNG KHO, nên "còn bao nhiêu" là câu hỏi không có đáp án
     # nếu không nói kho nào — adapter NÉM ngay lúc dựng nếu thiếu, chứ không

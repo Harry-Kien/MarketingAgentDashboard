@@ -70,6 +70,18 @@ class Cong:
         self._duong_dan_tu_van = duong_dan_tu_van
         self._anh_xa = anh_xa if anh_xa is not None else doc_anh_xa()
 
+    @property
+    def nguon(self) -> NguonERP:
+        """
+        Nguồn ERP cổng này đang bọc.
+
+        Mở ra để `agent/erp/kiem_ket_noi.py` soi ĐÚNG đối tượng agent đang
+        dùng, thay vì tự dựng một nguồn mới từ cấu hình. Dựng mới thì phép
+        kiểm sức khoẻ nói về một hệ thống khác với hệ thống đang chạy — và
+        nó nói bằng màu xanh.
+        """
+        return self._nguon
+
     async def gia(self, ma: str, bo_qua_cache: bool = False) -> Gia | None:
         return await self._lay(
             self._cache_gia, self._ttl_gia, ma, bo_qua_cache, self._nguon.gia

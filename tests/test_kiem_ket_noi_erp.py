@@ -92,7 +92,15 @@ def _muc(bc: dict, ten: str) -> dict | None:
 
 # --- Nhánh chưa nối ERP ----------------------------------------------
 
-def test_dang_dung_tep_thi_CHAN_va_noi_ro():
+def test_dang_dung_tep_thi_CHAN_va_noi_ro(monkeypatch):
+    # ĐẶT `tep` TƯỜNG MINH, KHÔNG ĐỌC `.env` CỦA MÁY.
+    #
+    # Bản trước dựa vào giá trị mặc định trong cấu hình, nên ca này ĐỎ ngay
+    # khi lập trình viên nối ERPNext thật — một việc hoàn toàn hợp lệ. Đỏ
+    # giả kiểu đó dạy người ta bỏ qua màu đỏ, và lần đỏ thật tiếp theo cũng
+    # bị bỏ qua y như vậy.
+    monkeypatch.setattr(settings, "erp_loai", "tep")
+
     bc = chay(kiem_ket_noi.kiem_tat_ca())
     assert bc["trang_thai"] == kiem_ket_noi.CHAN
     assert bc["san_sang"] is False
@@ -209,3 +217,35 @@ def test_script_thu_erp_dung_chung_bo_kiem_nay():
         "scripts/thu_erp.py phải gọi agent.erp.kiem_ket_noi, không tự dựng "
         "lại bộ phép kiểm riêng"
     )
+
+
+def test_soi_dung_cong_agent_dang_dung_khong_dung_nguon_moi(monkeypatch):
+    """
+    `kiem_ket_noi` phải soi ĐÚNG đối tượng agent đang dùng.
+
+    Bản trước gọi `nha_may.tao_nguon()`, tức dựng một nguồn KHÁC từ cấu
+    hình. Ca `test_kiem_ket_noi_khong_bao_gio_500` tiêm một nguồn HỎNG mà
+    báo cáo vẫn trả về ERPNext thật — nó xanh suốt chỉ vì `ERP_LOAI=tep`
+    thoát sớm, tức chưa từng kiểm thứ nó nói đang kiểm.
+
+    Nặng hơn ở chạy thật: `Cong` có ngắt mạch. Mạch mở thì agent nhận
+    "không biết", nhưng nguồn dựng mới gọi thẳng và báo XANH — xanh giả
+    ngay tại màn hình người vận hành mở ra để biết hệ thống có ổn không.
+
+    ĐỌC BẰNG AST: bản đầu của chính ca này so chuỗi và đỏ vì bắt nhầm dòng
+    chú thích đang GIẢI THÍCH vì sao không dùng `tao_nguon`. Một phép kiểm
+    bắt nhầm lời giải thích về chính nó là phép kiểm sẽ bị gỡ.
+    """
+    import ast
+    import inspect
+
+    from agent.erp import kiem_ket_noi as kkn
+
+    cay = ast.parse(inspect.getsource(kkn.kiem_tat_ca).lstrip())
+    goi = {
+        ast.unparse(n.func)
+        for n in ast.walk(cay)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+    }
+    assert "nha_may.cong" in goi, goi
+    assert "nha_may.tao_nguon" not in goi, goi

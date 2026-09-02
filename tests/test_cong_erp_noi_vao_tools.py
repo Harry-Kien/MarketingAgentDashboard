@@ -22,7 +22,15 @@ def _sach():
     nha_may.dat_lai()
 
 
-def test_mac_dinh_la_nguon_tep():
+def test_mac_dinh_la_nguon_tep(monkeypatch):
+    # ĐẶT `tep` TƯỜNG MINH, KHÔNG ĐỌC `.env` CỦA MÁY.
+    #
+    # Bản trước dựa vào giá trị mặc định trong cấu hình, nên ca này ĐỎ ngay
+    # khi lập trình viên nối ERPNext thật — một việc hoàn toàn hợp lệ. Đỏ
+    # giả kiểu đó dạy người ta bỏ qua màu đỏ, và lần đỏ thật tiếp theo cũng
+    # bị bỏ qua y như vậy.
+    monkeypatch.setattr(settings, "erp_loai", "tep")
+
     # Máy vừa clone về, không .env, không ERP: vẫn phải chạy được.
     assert settings.erp_loai == "tep"
     assert isinstance(nha_may.tao_nguon(), NguonTep)

@@ -70,7 +70,24 @@ async def kiem_tat_ca() -> dict:
     from agent.erp import nha_may
 
     try:
-        nguon = nha_may.tao_nguon()
+        # LẤY NGUỒN TỪ CHÍNH CỔNG AGENT ĐANG DÙNG, không dựng nguồn mới.
+        #
+        # Bản trước gọi `nha_may.tao_nguon()`, tức dựng một đối tượng KHÁC
+        # từ cấu hình. Hai hệ quả, cái sau nặng hơn nhiều:
+        #
+        # 1. Test tiêm cổng giả vào `nha_may._cong` không có tác dụng — ca
+        #    `test_kiem_ket_noi_khong_bao_gio_500` tiêm một nguồn HỎNG mà
+        #    báo cáo vẫn trả về ERPNext thật, 22 sản phẩm, 295ms. Nó xanh
+        #    suốt chỉ vì `ERP_LOAI=tep` thoát sớm ở trên; ngày ai đó nối ERP
+        #    thật thì mới lộ ra là nó chưa từng kiểm thứ nó nói đang kiểm.
+        #
+        # 2. Ở chạy thật, phép kiểm soi một đối tượng KHÁC với đối tượng
+        #    phục vụ khách. `Cong` có ngắt mạch: khi ERP hỏng liên tiếp, nó
+        #    mở mạch và trả "không biết" cho agent. Nhưng `tao_nguon()` gọi
+        #    thẳng, không qua mạch — nên phép kiểm báo XANH trong khi agent
+        #    đang không đọc được gì. Đúng nghĩa xanh giả, ngay tại màn hình
+        #    người vận hành mở ra để biết hệ thống có ổn không.
+        nguon = nha_may.cong().nguon
     except ValueError as exc:
         # Adapter tự kiểm cấu hình lúc dựng, và thông báo của nó đã nói rõ
         # thiếu biến nào cùng lý do biến đó quan trọng.

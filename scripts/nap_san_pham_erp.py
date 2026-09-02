@@ -140,12 +140,80 @@ async def _day_mot(
         return "hong", f"{type(exc).__name__}: {exc}"
 
 
+async def _nhap_ton_ban_dau(
+    client: httpx.AsyncClient, goc: str, san_pham: list[dict], hong: list[str]
+) -> None:
+    """
+    Nhập tồn kho ban đầu vào ERP bằng một phiếu Material Receipt.
+
+    VÌ SAO BƯỚC NÀY BẮT BUỘC, KHÔNG PHẢI TÙY CHỌN
+    ---------------------------------------------
+    `agent/erp/cong.py` BỎ QUA mọi mã không biết tồn — chú thích ở đó nói
+    rõ: "không có giá hoặc không biết tồn thì đừng đưa ra, đưa ra là mời
+    khách hỏi rồi trả lời bằng số bịa".
+
+    ERPNext trả `None` (không phải 0) cho mã chưa từng nhập kho nào, vì
+    không có bản ghi `Bin`. Hệ quả: tạo Item xong mà chưa nhập kho thì agent
+    thấy DANH MỤC RỖNG — không phải "hết hàng", mà là không có sản phẩm nào
+    tồn tại. Đo được ngay lần chạy đầu: `tra_cuu_san_pham` trả `tim_thay:
+    False` cho cả 22 mã vừa tạo.
+
+    Đây là loại hỏng khó đoán nhất: mọi bước trước đều báo thành công.
+
+    MỘT PHIẾU CHO TẤT CẢ, KHÔNG PHẢI MỖI MÃ MỘT PHIẾU
+    -------------------------------------------------
+    Sổ kho của doanh nghiệp nên đọc được. Hai mươi hai phiếu cùng một giây
+    là hai mươi hai dòng nhiễu cho người kế toán, và không nói được gì hơn
+    một phiếu.
+    """
+    from agent.config import settings
+
+    kho = settings.erp_ma_kho
+    dong = [
+        {
+            "item_code": sp.get("ma"),
+            "qty": int(sp.get("ton_kho") or 0),
+            "t_warehouse": kho,
+            "basic_rate": sp.get("gia") or 0,
+        }
+        for sp in san_pham
+        if int(sp.get("ton_kho") or 0) > 0
+    ]
+    if not dong:
+        print("[nhập tồn] Không mã nào có tồn > 0 trong catalog — bỏ qua.")
+        return
+
+    try:
+        r = await client.post(
+            f"{goc}/api/resource/Stock Entry",
+            json={
+                "stock_entry_type": "Material Receipt",
+                "to_warehouse": kho,
+                "items": dong,
+                "docstatus": 1,      # gửi luôn, phiếu nháp không tạo tồn
+            },
+        )
+    except httpx.HTTPError as exc:
+        hong.append(f"nhập tồn: {type(exc).__name__}: {exc}")
+        print(f"[nhập tồn] LỖI: {exc}")
+        return
+
+    if r.status_code in (200, 201):
+        ten = r.json().get("data", {}).get("name", "")
+        print(f"[nhập tồn] {len(dong)} mã vào kho {kho!r} — phiếu {ten}")
+    else:
+        hong.append(f"nhập tồn: {r.status_code} {r.text[:200]}")
+        print(f"[nhập tồn] LỖI {r.status_code}: {r.text[:200]}")
+
+
 async def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Nạp danh mục lên ERPNext")
     p.add_argument("--thu", action="store_true",
                    help="chỉ in ra sẽ làm gì, KHÔNG ghi lên ERP")
     p.add_argument("--du-lieu-mau", action="store_true", dest="du_lieu_mau",
                    help="cho phép đẩy cả danh mục còn cờ dữ liệu mẫu")
+    p.add_argument("--nhap-ton", action="store_true", dest="nhap_ton",
+                   help="nhập tồn kho ban đầu vào ERP theo số trong catalog")
     a = p.parse_args(argv)
 
     duong_dan = GOC / "data" / "catalog.json"
@@ -229,6 +297,10 @@ async def main(argv: list[str] | None = None) -> int:
                   + (f"  ← {ghi_chu}" if ghi_chu else ""))
             if ket_qua == "hong":
                 hong.append(f"{ma}: {ghi_chu}")
+
+        if a.nhap_ton:
+            print()
+            await _nhap_ton_ban_dau(client, goc, san_pham, hong)
 
     print(f"\nTạo mới {dem['tao']} · cập nhật {dem['cap_nhat']} · "
           f"hỏng {dem['hong']} / tổng {len(san_pham)}")

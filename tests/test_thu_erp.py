@@ -72,7 +72,15 @@ def _noi_erp_gia(monkeypatch, **kw):
 
 # --- 1. Mã thoát khớp kết luận ---------------------------------------
 
-def test_chua_noi_erp_thi_thoat_KHAC_0():
+def test_chua_noi_erp_thi_thoat_KHAC_0(monkeypatch):
+    # ĐẶT `tep` TƯỜNG MINH, KHÔNG ĐỌC `.env` CỦA MÁY.
+    #
+    # Bản trước dựa vào giá trị mặc định trong cấu hình, nên ca này ĐỎ ngay
+    # khi lập trình viên nối ERPNext thật — một việc hoàn toàn hợp lệ. Đỏ
+    # giả kiểu đó dạy người ta bỏ qua màu đỏ, và lần đỏ thật tiếp theo cũng
+    # bị bỏ qua y như vậy.
+    monkeypatch.setattr(settings, "erp_loai", "tep")
+
     nha_may.dat_lai()
     ma, ra = _chay()
     assert ma == 1

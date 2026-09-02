@@ -61,10 +61,25 @@ def _ghi_env(cap: dict[str, str]) -> None:
     ENV.write_text(noi_dung, encoding="utf-8")
 
 
-def _chon(ten_muc: str, ds: list[str]) -> str | None:
-    """Có đúng một thì lấy luôn; nhiều thì bắt người chọn, không tự đoán."""
+def _chon(ten_muc: str, ds: list[str], chi_dinh: str = "", co: str = "") -> str | None:
+    """
+    Có đúng một thì lấy luôn; nhiều thì bắt người chọn, KHÔNG tự đoán.
+
+    `chi_dinh` là lựa chọn người dùng gõ ra — vẫn phải có thật bên ERPNext.
+    Nhận bừa một cái tên gõ nhầm rồi ghi vào `.env` là dựng lại đúng cái bẫy
+    script này sinh ra để tránh: cấu hình trông đúng, hệ thống chạy, và tồn
+    kho sai mãi về sau.
+    """
     if not ds:
         print(f"  [LỖI] ERPNext chưa có {ten_muc} nào. Tạo trong giao diện rồi chạy lại.")
+        return None
+    if chi_dinh:
+        if chi_dinh in ds:
+            print(f"  {ten_muc}: {chi_dinh}  (bạn chỉ định)")
+            return chi_dinh
+        print(f"  [LỖI] ERPNext không có {ten_muc} tên {chi_dinh!r}. Hiện có:")
+        for t in ds:
+            print(f"           {t}")
         return None
     if len(ds) == 1:
         print(f"  {ten_muc}: {ds[0]}")
@@ -72,7 +87,7 @@ def _chon(ten_muc: str, ds: list[str]) -> str | None:
     print(f"  [CHỌN] Có {len(ds)} {ten_muc}, không tự đoán được:")
     for t in ds:
         print(f"           {t}")
-    print("         Điền tay vào .env rồi chạy lại `python -m scripts.thu_erp`.")
+    print(f"         Chạy lại kèm {co} \"<tên>\" để chọn.")
     return None
 
 
@@ -83,6 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mat-khau", default="admin", dest="mat_khau")
     p.add_argument("--xem", action="store_true",
                    help="chỉ xem, KHÔNG sinh khoá và KHÔNG ghi .env")
+    # Chọn TƯỜNG MINH khi có nhiều lựa chọn.
+    #
+    # Khác hẳn với để script tự đoán: ở đây người dùng gõ ra tên kho, tức
+    # đã đọc danh sách và quyết. Script vẫn kiểm tên đó có thật bên ERPNext
+    # — gõ nhầm mà vẫn ghi vào .env là dựng lại đúng cái bẫy "sai im lặng".
+    p.add_argument("--kho", default="", help="tên kho, khi ERPNext có nhiều kho")
+    p.add_argument("--bang-gia", default="", dest="bang_gia",
+                   help="tên bảng giá, khi ERPNext có nhiều bảng giá")
     a = p.parse_args(argv)
 
     if not ENV.exists():
@@ -114,8 +137,10 @@ def main(argv: list[str] | None = None) -> int:
                 return []
             return [x["name"] for x in r.json().get("data", [])]
 
-        kho = _chon("kho", ds("Warehouse", filters='[["is_group","=",0]]'))
-        bang_gia = _chon("bảng giá", ds("Price List", filters='[["selling","=",1]]'))
+        kho = _chon("kho", ds("Warehouse", filters='[["is_group","=",0]]'),
+                    a.kho, "--kho")
+        bang_gia = _chon("bảng giá", ds("Price List", filters='[["selling","=",1]]'),
+                         a.bang_gia, "--bang-gia")
 
         if a.xem:
             print("\nChế độ xem — chưa sinh khoá, chưa ghi .env.")

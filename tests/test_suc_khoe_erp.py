@@ -73,9 +73,17 @@ def test_mach_mo_thi_it_nhat_la_canh_bao(monkeypatch):
     assert "mạch" in m["ghi_chu"].lower()
 
 
-def test_dang_doc_tep_thi_noi_thang_ra_la_chua_noi_erp():
+def test_dang_doc_tep_thi_noi_thang_ra_la_chua_noi_erp(monkeypatch):
     # Chạy bằng `tep` là hợp lệ, nhưng KHÔNG được hiện ra như "Tốt" trống
     # trơn: người vận hành sẽ tưởng đã nối ERP.
+    # ĐẶT `tep` TƯỜNG MINH, KHÔNG ĐỌC `.env` CỦA MÁY.
+    #
+    # Bản trước dựa vào giá trị mặc định trong cấu hình, nên ca này ĐỎ ngay
+    # khi lập trình viên nối ERPNext thật — một việc hoàn toàn hợp lệ. Đỏ
+    # giả kiểu đó dạy người ta bỏ qua màu đỏ, và lần đỏ thật tiếp theo cũng
+    # bị bỏ qua y như vậy.
+    monkeypatch.setattr(settings, "erp_loai", "tep")
+
     nha_may.dat_lai()
     m = chay(suc_khoe._kiem_erp())
     assert m["trang_thai"] == suc_khoe.CANH_BAO

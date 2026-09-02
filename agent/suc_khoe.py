@@ -98,21 +98,61 @@ async def _kiem_giong_doc() -> dict:
 
 
 async def _kiem_kenh() -> dict:
-    """Kênh nhận tin. Chưa cấu hình thì là lựa chọn, không phải hỏng."""
+    """
+    Kênh nhận tin. Chưa cấu hình thì là lựa chọn, không phải hỏng.
+
+    ĐẾM CẢ TÀI KHOẢN NATIVE, KHÔNG CHỈ HAI KÊNH DI SẢN
+    --------------------------------------------------
+    Bản trước chỉ nhìn `ZALOCRM_API_KEY` và `CHATWOOT_BASE_URL` — hai đường
+    nạp tin CŨ. Từ khi có connector native, khách vào qua `channel_accounts`
+    (Zalo cá nhân, Zalo OA, Facebook, Instagram, WhatsApp, web chat), và
+    phép kiểm này mù hoàn toàn với chúng.
+
+    Hậu quả đo được: hệ thống có 3 tài khoản `active` và đã nhận 100 tin
+    nhắn thật, mà màn hình sức khoẻ vẫn báo "chưa nối kênh nào — hệ thống
+    chạy nhưng không có khách vào".
+
+    Báo sai kiểu này không làm ai mất dữ liệu, nhưng nó dạy người vận hành
+    bỏ qua đúng cái ô mà họ mở ra để tin. Và nếu một ngày kênh native chết
+    thật, ô này vẫn nói y hệt — nó chưa từng nhìn vào đó.
+    """
     from agent.channels import registry as channels
+
+    native = ""
+    try:
+        r = await db.fetch(
+            "SELECT channel, status, count(*) n FROM channel_accounts "
+            "GROUP BY 1, 2"
+        )
+        song = {x["channel"] for x in r if x["status"] == "active"}
+        hong = sum(x["n"] for x in r
+                   if x["status"] in ("degraded", "reauth_required"))
+        if song:
+            native = f"{len(song)} kênh native: {', '.join(sorted(song))}"
+            if hong:
+                native += f" · {hong} tài khoản cần xử lý"
+    except Exception:  # noqa: BLE001 — CSDL hỏng đã có mục riêng báo
+        native = ""
 
     bat = []
     if settings.zalocrm_api_key:
         bat.append("zalocrm")
     if settings.chatwoot_base_url and settings.chatwoot_api_token:
         bat.append("chatwoot")
+
     if not bat:
+        if native:
+            # Có kênh native là ĐỦ. Hai kênh di sản tắt là chuyện bình
+            # thường, không phải thiếu sót.
+            return _muc("Kênh nhận tin", TOT, native)
         return _muc("Kênh nhận tin", CANH_BAO,
                     "chưa nối kênh nào — hệ thống chạy nhưng không có khách vào")
 
+    them = f" · {native}" if native else ""
     try:
         tin = await asyncio.wait_for(channels.keo_tin_moi(), timeout=20)
-        return _muc("Kênh nhận tin", TOT, f"{', '.join(bat)} · {len(tin)} tin chờ")
+        return _muc("Kênh nhận tin", TOT,
+                    f"{', '.join(bat)} · {len(tin)} tin chờ{them}")
     except Exception as exc:  # noqa: BLE001
         return _muc("Kênh nhận tin", HONG,
                     f"{', '.join(bat)}: {type(exc).__name__}: {exc}"[:140])

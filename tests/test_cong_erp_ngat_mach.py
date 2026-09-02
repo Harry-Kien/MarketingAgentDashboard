@@ -19,10 +19,21 @@ class DongHo:
 
 
 def _bo(dh):
-    """Nguồn luôn hỏng, TTL = 0 nên lần nào cũng phải gọi ERP thật."""
+    """
+    Nguồn luôn hỏng, TTL = 0 nên lần nào cũng phải gọi ERP thật.
+
+    `so_lan_thu=1` — TẮT THỬ LẠI trong nhóm ca này.
+
+    Không phải vì thử lại sai, mà vì các ca ở đây đếm SỐ LỜI GỌI để suy ra
+    hành vi ngắt mạch. Bật thử lại thì mỗi lần hỏng thành hai lời gọi, và
+    phép đếm nói về hai thứ trộn lẫn — hỏng một cái là phải đọc cả hai mới
+    biết cái nào.
+    Thử lại có nhóm ca riêng: `tests/test_cong_thu_lai.py`.
+    """
     n = NguonGia(ton={"A": TonKho(ban_duoc=5)}, hong=True)
     return n, Cong(
-        n, ttl_ton=0.0, ngat_mach_so_lan=3, ngat_mach_giay=30.0, dong_ho=dh
+        n, ttl_ton=0.0, ngat_mach_so_lan=3, ngat_mach_giay=30.0,
+        so_lan_thu=1, dong_ho=dh,
     )
 
 

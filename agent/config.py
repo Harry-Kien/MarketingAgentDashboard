@@ -313,6 +313,23 @@ class Settings(BaseSettings):
     erp_ttl_ton: float = 60.0
     erp_ngat_mach_so_lan: int = 5
     erp_ngat_mach_giay: float = 30.0
+    # HẠN THỜI GIAN CHO ĐƯỜNG TRẢ LỜI KHÁCH, không phải cho tác vụ nền.
+    #
+    # Adapter để 15 giây là hạn của thư viện HTTP — hợp lý cho một script
+    # chạy nền, quá dài cho một người đang ngồi nhìn khung chat. ERP treo là
+    # khách chờ trọn 15 giây rồi mới nhận "em chưa tra được".
+    #
+    # 4 giây × 2 lần thử ≈ 8 giây xấu nhất, vẫn ngắn hơn một lần 15 giây, và
+    # đổi lại bắt được cú chớp mạng.
+    erp_han_cho_giay: float = 4.0
+    # THỬ LẠI CHỈ ÁP CHO THAO TÁC ĐỌC.
+    #
+    # `Cong` chỉ bọc `gia`, `ton_kho`, `danh_muc`, `suc_khoe` — đều đọc, nên
+    # gọi lại vô hại. Đường GHI đơn đi qua `agent/erp/day_don.py`, không qua
+    # đây, và ở đó thử lại mù là nguy cơ tạo đơn trùng.
+    #
+    # 2 = một lần thử lại. Đặt 1 là tắt hẳn.
+    erp_so_lan_thu: int = 2
     # Bắt buộc khi erp_loai != "tep". `Bin` của ERPNext và `stock.quant` của
     # Odoo đều theo TỪNG KHO, nên "còn bao nhiêu" là câu hỏi không có đáp án
     # nếu không nói kho nào — adapter NÉM ngay lúc dựng nếu thiếu, chứ không

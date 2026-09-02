@@ -98,7 +98,16 @@ class NguonErpNext:
         ma_kho: str | None = None,
         pricelist: str | None = None,
         client: httpx.AsyncClient | None = None,
-        han_cho: float = 15.0,
+        # Hạn NGOÀI CÙNG của thư viện HTTP, không phải hạn của đường chat.
+        #
+        # `Cong` cắt sớm hơn bằng `asyncio.wait_for` theo `ERP_HAN_CHO_GIAY`
+        # (mặc định 4s) cho mỗi lần thử. Con số ở đây chỉ để một kết nối
+        # treo không nằm lại mãi sau khi cổng đã bỏ cuộc — nên nó phải LỚN
+        # HƠN hạn của cổng, không nhỏ hơn.
+        #
+        # Bản trước để 15s và KHÔNG có hạn nào ở cổng, nên nó thành hạn thật
+        # mà khách phải chờ. Nay 10s là trần dọn dẹp, không phải trần chờ.
+        han_cho: float = 10.0,
     ):
         self._goc = (goc if goc is not None else settings.erpnext_url).rstrip("/")
         khoa = api_key if api_key is not None else settings.erpnext_api_key

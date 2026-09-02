@@ -21,6 +21,7 @@ VÌ SAO ĐỒNG HỒ TIÊM VÀO
 from __future__ import annotations
 
 import pathlib
+import random
 import asyncio
 import time
 from collections.abc import Callable
@@ -53,6 +54,8 @@ class Cong:
         ttl_ton: float = 60.0,
         ngat_mach_so_lan: int = 5,
         ngat_mach_giay: float = 30.0,
+        han_cho_giay: float = 4.0,
+        so_lan_thu: int = 2,
         dong_ho: Callable[[], float] = time.monotonic,
         duong_dan_tu_van: pathlib.Path | None = None,
         anh_xa: AnhXa | None = None,
@@ -62,6 +65,8 @@ class Cong:
         self._ttl_ton = ttl_ton
         self._ngat_mach_so_lan = ngat_mach_so_lan
         self._ngat_mach_giay = ngat_mach_giay
+        self._han_cho_giay = han_cho_giay
+        self._so_lan_thu = max(1, int(so_lan_thu))
         self._dong_ho = dong_ho
         self._cache_gia: dict[str, _O] = {}
         self._cache_ton: dict[str, _O] = {}
@@ -105,8 +110,13 @@ class Cong:
             return None
 
         try:
-            gia_tri = await ham(ma)
+            gia_tri = await self._goi_co_thu_lai(ham, ma)
         except Exception:  # noqa: BLE001
+            # MỘT chuỗi thử hỏng = MỘT lần hỏng, không phải N.
+            #
+            # Đếm từng lần thử thì ngắt mạch mở nhanh gấp `so_lan_thu` lần
+            # so với con số người vận hành đặt trong `.env`. Họ viết 5 và
+            # nghĩ là 5 sự cố, chứ không phải 2 hay 3.
             self._hong_lien_tiep += 1
             if self._hong_lien_tiep >= self._ngat_mach_so_lan:
                 self._mo_mach_den = bay_gio + self._ngat_mach_giay
@@ -118,6 +128,47 @@ class Cong:
         self._mo_mach_den = 0.0
         cache[ma] = _O(gia_tri, bay_gio)
         return gia_tri
+
+    async def _goi_co_thu_lai(self, ham, ma: str):
+        """
+        Gọi ERP với hạn giờ mỗi lần, thử lại khi hỏng. Hỏng hết thì NÉM.
+
+        VÌ SAO THỬ LẠI — VÀ VÌ SAO CHỈ Ở ĐÂY
+        ------------------------------------
+        Trước đây một cú chớp mạng là một câu trả lời hỏng: khách hỏi giá
+        đúng lúc ERP nấc một nhịp thì agent nói "em chưa tra được" rồi
+        chuyển người. Mất một khách vì một sự cố kéo dài 200ms.
+
+        Cổng này chỉ bọc `gia`, `ton_kho`, `danh_muc`, `suc_khoe` — toàn
+        thao tác ĐỌC, gọi lại vô hại. Đường GHI đơn đi qua
+        `agent/erp/day_don.py` và KHÔNG qua đây; thử lại mù ở đó là nguy cơ
+        tạo đơn trùng, một lỗi tốn tiền thật.
+
+        VÌ SAO CÓ HẠN GIỜ RIÊNG
+        -----------------------
+        Adapter đặt timeout 15 giây — hạn của thư viện HTTP, hợp lý cho tác
+        vụ nền. Nhưng đây là đường trả lời khách: ERP treo là người ta ngồi
+        nhìn khung chat 15 giây rồi mới nhận lời từ chối.
+
+        VÌ SAO CÓ JITTER
+        ----------------
+        Nhiều khách cùng gặp sự cố sẽ cùng thử lại đúng một nhịp, dồn thành
+        một đợt sóng đập vào ERP vừa mới hồi. Lệch ngẫu nhiên thì tản ra.
+        """
+        cuoi: Exception | None = None
+        for lan in range(self._so_lan_thu):
+            try:
+                return await asyncio.wait_for(ham(ma), timeout=self._han_cho_giay)
+            except asyncio.CancelledError:
+                # Người gọi huỷ (khách đóng chat, tiến trình tắt) — KHÔNG
+                # phải ERP hỏng. Nuốt nó thành lỗi ERP là vừa thử lại vô ích
+                # vừa đẩy ngắt mạch mở oan.
+                raise
+            except Exception as exc:  # noqa: BLE001
+                cuoi = exc
+                if lan + 1 < self._so_lan_thu:
+                    await asyncio.sleep(0.1 + random.random() * 0.2)
+        raise cuoi if cuoi is not None else LoiERP("gọi ERP thất bại")
 
     async def _bao_ngat_mach(self) -> None:
         """Ngắt mạch phải để lại dấu vết.

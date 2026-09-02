@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # Cùng model, cùng giá. Đổi giá trị này là đổi đường đi, không đụng mã.
     llm_provider: str = "gemini"
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
 
     # --- Vertex AI ---
     gcp_project_id: str = ""
@@ -249,8 +251,8 @@ class Settings(BaseSettings):
     # model sinh ra: lúc chuyển người là lúc agent đã tự nhận không đủ thẩm
     # quyền, nên đó chính là lúc KHÔNG nên để nó tự chọn chữ.
     tin_chuyen_nguoi: str = (
-        "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc "
-        "ạ. Bạn ấy sẽ nhắn lại cho mình sớm nhé."
+        "Dạ em đã ghi nhận yêu cầu của mình và gửi lên hệ thống cho bộ phận xử lý rồi ạ. "
+        "Shop sẽ kiểm tra và hỗ trợ mình sớm nhé!"
     )
     # Ngoài giờ trực, câu trên là một lời nói dối: không ai đang ngồi đó, và
     # "sớm" nghĩa là sáu tiếng nữa. Cả hệ thống được xây quanh nguyên tắc

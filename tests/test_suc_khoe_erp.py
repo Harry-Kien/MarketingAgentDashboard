@@ -73,9 +73,10 @@ def test_mach_mo_thi_it_nhat_la_canh_bao(monkeypatch):
     assert "mạch" in m["ghi_chu"].lower()
 
 
-def test_dang_doc_tep_thi_noi_thang_ra_la_chua_noi_erp():
+def test_dang_doc_tep_thi_noi_thang_ra_la_chua_noi_erp(monkeypatch):
     # Chạy bằng `tep` là hợp lệ, nhưng KHÔNG được hiện ra như "Tốt" trống
     # trơn: người vận hành sẽ tưởng đã nối ERP.
+    monkeypatch.setattr(settings, "erp_loai", "tep")
     nha_may.dat_lai()
     m = chay(suc_khoe._kiem_erp())
     assert m["trang_thai"] == suc_khoe.CANH_BAO
@@ -92,9 +93,9 @@ def test_muc_erp_nam_trong_tong_kiem():
     assert "_kiem_don_ket_erp()" in ma
 
 
-def test_ghi_don_tat_thi_khong_canh_bao_don_ket():
+def test_ghi_don_tat_thi_khong_canh_bao_don_ket(monkeypatch):
     # Tính năng tắt thì không có đơn nào chờ đồng bộ. Cảnh báo lúc đó là
     # báo động giả, và báo động giả nhiều thì người ta tắt báo động.
+    monkeypatch.setattr(settings, "erp_ghi_don", False)
     m = chay(suc_khoe._kiem_don_ket_erp())
-    assert settings.erp_ghi_don is False
     assert m["trang_thai"] == suc_khoe.TOT

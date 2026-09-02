@@ -244,7 +244,7 @@ class NextERPClient(BaseERPClient):
 
     async def cancel_sales_order(self, sales_order_id: str, reason: str = "") -> bool:
         url = f"{self._base_url}/api/resource/Sales Order/{sales_order_id}"
-        payload = {"status": "Cancelled", "cancel_reason": reason}
+        payload = {"docstatus": 2, "cancel_reason": reason}
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.put(url, headers=self._headers(), json=payload)
             return resp.status_code in (200, 201)

@@ -22,9 +22,11 @@ def _sach():
     nha_may.dat_lai()
 
 
-def test_mac_dinh_la_nguon_tep():
+def test_mac_dinh_la_nguon_tep(monkeypatch):
     # Máy vừa clone về, không .env, không ERP: vẫn phải chạy được.
-    assert settings.erp_loai == "tep"
+    from agent.config import Settings
+    assert Settings(_env_file=None).erp_loai == "tep"
+    monkeypatch.setattr(settings, "erp_loai", "tep")
     assert isinstance(nha_may.tao_nguon(), NguonTep)
 
 

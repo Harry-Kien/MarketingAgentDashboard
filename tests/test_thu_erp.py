@@ -72,7 +72,8 @@ def _noi_erp_gia(monkeypatch, **kw):
 
 # --- 1. Mã thoát khớp kết luận ---------------------------------------
 
-def test_chua_noi_erp_thi_thoat_KHAC_0():
+def test_chua_noi_erp_thi_thoat_KHAC_0(monkeypatch):
+    monkeypatch.setattr(settings, "erp_loai", "tep")
     nha_may.dat_lai()
     ma, ra = _chay()
     assert ma == 1

@@ -75,7 +75,8 @@ def _day(monkeypatch, nguon, bat: bool = True, **kw):
 def test_mac_dinh_TAT():
     # Bật lên là hành động có hậu quả không rút lại được — phải là quyết
     # định rõ ràng của người vận hành, không phải hệ quả của cập nhật mã.
-    assert settings.erp_ghi_don is False
+    from agent.config import Settings
+    assert Settings(_env_file=None).erp_ghi_don is False
 
 
 def test_tat_thi_khong_cham_vao_erp(monkeypatch):

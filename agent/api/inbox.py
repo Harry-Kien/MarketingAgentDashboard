@@ -139,9 +139,10 @@ class PostgresInboxQueryRepository:
             ORDER BY conversation.updated_at DESC, conversation.id DESC
             LIMIT {limit_param}
         """
+        from agent.runtime import is_busy
         async with self._pool_provider().acquire() as connection:
             rows = await connection.fetch(sql, *args)
-        return [dict(row) for row in rows]
+        return [{**dict(row), "typing": is_busy(row["id"])} for row in rows]
 
     async def get_conversation(
         self,
@@ -150,6 +151,7 @@ class PostgresInboxQueryRepository:
         user_id: UUID,
         is_admin: bool,
     ) -> dict[str, Any] | None:
+        from agent.runtime import is_busy
         sql = """
             SELECT conversation.*, account.display_name AS account_name,
                    account.channel AS account_channel
@@ -191,6 +193,7 @@ class PostgresInboxQueryRepository:
                 conversation_id,
             )
         result = dict(conversation)
+        result["typing"] = is_busy(conversation_id)
         result["messages"] = [dict(message) for message in messages]
         return result
 

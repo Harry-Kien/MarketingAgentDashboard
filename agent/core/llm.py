@@ -572,7 +572,7 @@ def _to_openai_messages(system: dict, messages: list[dict]) -> list[dict]:
                 out.append({
                     "role": "tool",
                     "tool_call_id": r["id"],
-                    "content": json.dumps(r["output"], ensure_ascii=False) if isinstance(r["output"], (dict, list)) else str(r["output"]),
+                    "content": json.dumps(r["output"], ensure_ascii=False, default=str) if isinstance(r["output"], (dict, list)) else str(r["output"]),
                 })
     return out
 

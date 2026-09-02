@@ -92,7 +92,8 @@ def _muc(bc: dict, ten: str) -> dict | None:
 
 # --- Nhánh chưa nối ERP ----------------------------------------------
 
-def test_dang_dung_tep_thi_CHAN_va_noi_ro():
+def test_dang_dung_tep_thi_CHAN_va_noi_ro(monkeypatch):
+    monkeypatch.setattr(settings, "erp_loai", "tep")
     bc = chay(kiem_ket_noi.kiem_tat_ca())
     assert bc["trang_thai"] == kiem_ket_noi.CHAN
     assert bc["san_sang"] is False

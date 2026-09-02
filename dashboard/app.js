@@ -457,7 +457,7 @@ async function loadThread(id) {
       <span>Version <b>${c.version || 1}</b></span>
     </div>
     <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
-      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
+      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i> <span style="font-size:12px;opacity:0.85;margin-left:4px;">AI đang suy nghĩ…</span></div></div>' : ""}
     </div>
     <form class="convo__bar" id="replyform">
       <textarea name="text" placeholder="Nhắn trực tiếp cho khách…" required></textarea>
@@ -1896,22 +1896,41 @@ async function kiemPhien() {
   }
 }
 
-$("#loginform").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = Object.fromEntries(new FormData(e.target));
-  const btn = e.target.querySelector('button[type="submit"]');
-  btn.disabled = true;
-  $("#loginerr").textContent = "";
-  try {
-    await api("/dang-nhap", { method: "POST", body: JSON.stringify(f) });
-    location.reload();
-  } catch (err) {
-    // Thông báo giữ nguyên như máy chủ trả về — không tách "sai tên" khỏi
-    // "sai mật khẩu", vì tách ra là chỉ cho người dò biết tên nào có thật.
-    $("#loginerr").textContent = err.message || "Đăng nhập không thành công";
-    btn.disabled = false;
+async function doLogin(e) {
+  if (e) e.preventDefault();
+  const uInput = $("#loginform input[name='ten_dang_nhap']");
+  const pInput = $("#loginform input[name='mat_khau']");
+  const btn = $("#loginform button[type='submit']");
+  const errEl = $("#loginerr");
+
+  const ten_dang_nhap = uInput ? uInput.value.trim() : "";
+  const mat_khau = pInput ? pInput.value : "";
+
+  if (!ten_dang_nhap || !mat_khau) {
+    if (errEl) errEl.textContent = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu";
+    return;
   }
-});
+
+  if (btn) btn.disabled = true;
+  if (errEl) errEl.textContent = "";
+
+  try {
+    await api("/dang-nhap", {
+      method: "POST",
+      body: JSON.stringify({ ten_dang_nhap, mat_khau })
+    });
+    $("#cong")?.classList.add("is-off");
+    window.location.href = "/";
+  } catch (err) {
+    if (errEl) errEl.textContent = err.message || "Đăng nhập không thành công";
+    if (btn) btn.disabled = false;
+  }
+}
+
+const loginFormEl = $("#loginform");
+if (loginFormEl) {
+  loginFormEl.addEventListener("submit", doLogin);
+}
 
 /* ---------------- vòng làm mới ---------------- */
 

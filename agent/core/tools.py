@@ -137,15 +137,15 @@ TOOLS: list[dict] = [
     {
         "name": "tra_cuu_don_hang",
         "description": (
-            "Tra tình trạng đơn hàng theo mã đơn. Gọi khi khách hỏi đơn của họ "
+            "Tra tình trạng đơn hàng theo mã đơn hoặc hội thoại hiện tại. Gọi khi khách hỏi đơn của họ "
             "tới đâu rồi, bao giờ nhận được."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "ma_don": {"type": "string", "description": "Mã đơn hàng"}
+                "ma_don": {"type": "string", "description": "Mã đơn hàng (nếu khách không nói mã, để trống để tự tra đơn gần nhất)"}
             },
-            "required": ["ma_don"],
+            "required": [],
         },
     },
     {
@@ -153,12 +153,7 @@ TOOLS: list[dict] = [
         "description": (
             "Tra tình trạng GIAO HÀNG của một đơn: đã bàn giao vận chuyển "
             "chưa, mã vận đơn là gì, hãng nào. Dùng khi khách hỏi 'đơn tới "
-            "đâu rồi', 'bao giờ nhận được', 'sao lâu thế'.\n\n"
-            "GIỚI HẠN PHẢI NHỚ: công cụ này đọc SỔ CỦA CỬA HÀNG, KHÔNG đọc "
-            "vị trí kiện hàng theo thời gian thực từ hãng vận chuyển. Tuyệt "
-            "đối KHÔNG đoán ngày giao, KHÔNG hứa 'mai hàng tới'. Có mã vận "
-            "đơn thì đưa mã cho khách tự tra trên ứng dụng của hãng — đó là "
-            "thông tin chính xác hơn bất cứ điều gì suy ra từ đây."
+            "đâu rồi', 'bao giờ nhận được', 'sao lâu thế'."
         ),
         "input_schema": {
             "type": "object",
@@ -168,7 +163,7 @@ TOOLS: list[dict] = [
                     "description": "Mã đơn hàng khách cung cấp",
                 }
             },
-            "required": ["ma_don"],
+            "required": [],
         },
     },
     {
@@ -987,7 +982,9 @@ async def _doc_don_trong_csdl(ma_don: str, conversation_id) -> dict | None:
     """
     row = await db.fetchrow(
         """
-        SELECT ma_don, trang_thai, items, tong_tien, ghi_chu, created_at,
+        SELECT ma_don, trang_thai, items, tong_tien, ghi_chu,
+               to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+               to_char(yeu_cau_huy_luc, 'YYYY-MM-DD HH24:MI:SS') AS yeu_cau_huy_luc,
                (conversation_id = $2) AS cua_hoi_thoai_nay
         FROM orders WHERE ma_don = $1
         """,
@@ -996,39 +993,54 @@ async def _doc_don_trong_csdl(ma_don: str, conversation_id) -> dict | None:
     return dict(row) if row else None
 
 
+def _mo_ta_tien_do(trang_thai: str, yeu_cau_huy_luc: str | None = None) -> str:
+    if yeu_cau_huy_luc and trang_thai != "da_huy":
+        return f"Khách đã gửi yêu cầu hủy đơn lúc {yeu_cau_huy_luc}. Hiện shop đang trong quá trình kiểm tra khâu đóng gói để duyệt hủy đơn theo yêu cầu của bạn."
+    if trang_thai == "da_chot":
+        return "Đơn vừa được chốt thành công, shop đang chuẩn bị đóng gói hàng tại kho để bàn giao cho đơn vị vận chuyển."
+    if trang_thai == "dang_giao":
+        return "Đơn đã bàn giao cho shipper và đang trên đường giao đến địa chỉ của khách."
+    if trang_thai == "da_giao":
+        return "Đơn hàng đã giao thành công."
+    if trang_thai == "da_huy":
+        return "Đơn hàng đã được hủy thành công."
+    return "Đơn đang được xử lý trong hệ thống."
+
+
 async def _tra_cuu_don_hang(args: dict, conversation_id) -> dict:
     """
     Tra đơn cho khách đang nhắn — và CHỈ đơn của khách đó.
-
-    VÌ SAO ĐỌC BẢNG `orders` CHỨ KHÔNG ĐỌC `catalog.json`
-    -----------------------------------------------------
-    `tao_don_hang` ghi vào bảng `orders`. Bản trước của hàm này lại tìm
-    trong mảng `don_hang` của `catalog.json` — ba đơn mẫu bịa. Hai đường
-    không gặp nhau, nên agent tạo đơn xong, khách hỏi lại năm phút sau thì
-    chính agent trả lời "không có mã đơn này trong hệ thống".
-
-    Không có lỗi nào bị ném và không có dòng nhật ký nào.
-
-    VÌ SAO CHẶN THEO HỘI THOẠI
-    --------------------------
-    Mã đơn ngắn và đoán được. Không chặn thì bất kỳ ai nhắn vào Trang cũng
-    đọc được tên, số điện thoại, địa chỉ của khách khác bằng cách đọc mã
-    lên. Rò rỉ dữ liệu cá nhân, không phải bất tiện.
-
-    Và khi mã thuộc về người khác thì cũng KHÔNG nói "không tìm thấy": câu
-    đó phân biệt mã có thật với mã bịa, tức vẫn là một kênh rò rỉ.
     """
     ma = str(args.get("ma_don", "") or "").strip()
     if not ma:
-        return {"tim_thay": False, "ghi_chu": "Khách chưa cho mã đơn."}
+        if conversation_id is not None:
+            row = await db.fetchrow(
+                """
+                SELECT ma_don, trang_thai, items, tong_tien, ghi_chu,
+                       to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+                       to_char(yeu_cau_huy_luc, 'YYYY-MM-DD HH24:MI:SS') AS yeu_cau_huy_luc
+                FROM orders WHERE conversation_id = $1
+                ORDER BY orders.created_at DESC LIMIT 1
+                """,
+                conversation_id,
+            )
+            if row:
+                d = dict(row)
+                d["tien_do_giao_hang"] = _mo_ta_tien_do(
+                    d.get("trang_thai", ""), d.get("yeu_cau_huy_luc")
+                )
+                return {"tim_thay": True, **d}
+        return {"tim_thay": False, "ghi_chu": "Khách chưa cho mã đơn và chưa có đơn nào trong hội thoại này."}
 
     if conversation_id is not None:
         don = await _doc_don_trong_csdl(ma, conversation_id)
         if don is not None:
             if don.get("cua_hoi_thoai_nay"):
-                return {"tim_thay": True, **{
-                    k: v for k, v in don.items() if k != "cua_hoi_thoai_nay"
-                }}
+                d = {k: v for k, v in don.items() if k != "cua_hoi_thoai_nay"}
+                d["tien_do_giao_hang"] = _mo_ta_tien_do(
+                    d.get("trang_thai", ""), d.get("yeu_cau_huy_luc")
+                )
+                return {"tim_thay": True, **d}
             return {
                 "tim_thay": False,
                 "can_xac_minh": True,
@@ -1106,6 +1118,18 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
     ma = str(args.get("ma_don", "") or "").strip()
     ly_do = str(args.get("ly_do", "") or "").strip()
 
+    if not ma and conversation_id is not None:
+        row = await db.fetchrow(
+            """
+            SELECT ma_don FROM orders
+            WHERE conversation_id = $1 AND trang_thai <> 'da_huy'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            conversation_id,
+        )
+        if row:
+            ma = str(row["ma_don"])
+
     da_ghi = False
     if ma and conversation_id is not None:
         da_ghi = await _danh_dau_xin_huy(ma, conversation_id, ly_do)
@@ -1131,6 +1155,7 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
 
     return {
         "da_ghi_nhan": da_ghi,
+        "ma_don": ma,
         "da_huy": False,
         "can_chuyen_nhan_vien": True,
         "ghi_chu": ghi_chu,

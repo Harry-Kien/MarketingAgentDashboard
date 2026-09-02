@@ -880,6 +880,8 @@ async def list_orders(status: str | None = None, limit: int = 60) -> list[dict]:
             "erp_order_id": r.get("erp_order_id"),
             "erp_provider": r.get("erp_provider"),
             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
+            "yeu_cau_huy_luc": r["yeu_cau_huy_luc"].isoformat() if r.get("yeu_cau_huy_luc") else None,
+            "yeu_cau_huy_ly_do": r.get("yeu_cau_huy_ly_do"),
             "created_at": r["created_at"].isoformat(),
         }
         for r in rows
@@ -899,25 +901,45 @@ async def approve_order(order_id: str) -> dict:
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str) -> dict:
     """
-    Huỷ đơn, TRẢ HÀNG VỀ KHO và hủy trên NextERP.
+    Huỷ đơn, TRẢ HÀNG VỀ KHO, hủy trên NextERP và tự động báo khách qua Zalo.
     """
     oid = uuid.UUID(order_id)
     don = await db.fetchrow(
         "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
-        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don, erp_order_id", oid,
+        "WHERE id=$1 AND trang_thai <> 'da_huy' "
+        "RETURNING ma_don, erp_order_id, erp_ma_don, conversation_id, khach_ten", oid,
     )
     if don is None:
         return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
 
     so_dong = await kho.tra_hang(don["ma_don"])
 
-    if don.get("erp_order_id"):
+    erp_ma = don.get("erp_order_id") or don.get("erp_ma_don")
+    if erp_ma:
         from agent.erp import get_erp_client
         try:
             client = get_erp_client()
-            await client.cancel_sales_order(don["erp_order_id"], reason="Nhân viên huỷ trên Dashboard")
+            await client.cancel_sales_order(erp_ma, reason="Nhân viên huỷ trên Dashboard")
         except Exception:
             pass
+
+    # Tự động gửi tin nhắn báo huỷ đơn thành công cho khách qua Zalo/kênh chat
+    if don.get("conversation_id"):
+        try:
+            from agent.channels.zalocrm import ZaloCRMAdapter
+            conv = await db.fetchrow(
+                "SELECT external_id, channel FROM conversations WHERE id = $1",
+                don["conversation_id"],
+            )
+            if conv and conv.get("external_id"):
+                adapter = ZaloCRMAdapter()
+                await adapter.send_text(
+                    conv["external_id"],
+                    f"Dạ shop đã xác nhận và huỷ đơn hàng {don['ma_don']} theo yêu cầu của mình rồi ạ. "
+                    "Hẹn gặp lại anh/chị trong những lần mua sắm tới nhé!",
+                )
+        except Exception as exc:
+            await db.log_event("order.cancel_notify_error", error=str(exc))
 
     await db.log_event("order.cancel", actor="staff", ref_id=oid,
                        ma_don=don["ma_don"], erp_order_id=don.get("erp_order_id"),

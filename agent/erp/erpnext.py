@@ -294,16 +294,25 @@ class NguonErpNext:
     ) -> KetQuaDon:
         if not dong:
             raise ValueError("Đơn không có dòng hàng nào")
+        from datetime import datetime, timedelta
+        ngay_giao = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
         try:
             kq = await self._tao("Sales Order", {
                 "customer": khach_id,
+                "docstatus": 1,
+                "delivery_date": ngay_giao,
                 # `po_no` mang khoá idempotency. Nó cũng là thứ `tim_don`
                 # tra, nên hai bên phải dùng ĐÚNG một trường.
                 "po_no": khoa,
                 "set_warehouse": self._ma_kho,
                 "selling_price_list": self._pricelist,
                 "items": [
-                    {"item_code": d.ma, "qty": d.so_luong, "rate": d.don_gia}
+                    {
+                        "item_code": d.ma,
+                        "qty": d.so_luong,
+                        "rate": d.don_gia,
+                        "delivery_date": ngay_giao,
+                    }
                     for d in dong
                 ],
                 "remarks": ghi_chu,

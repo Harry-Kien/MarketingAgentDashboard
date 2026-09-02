@@ -19,6 +19,7 @@ from agent.api.routes import bat_buoc_dang_nhap
 from agent.erp import nha_may
 from agent.erp.cong import Cong
 from agent.erp.hop_dong import Gia, SanPhamERP, TonKho
+from agent.config import settings
 from tests.erp_gia import NguonGia
 
 
@@ -169,9 +170,11 @@ def test_kiem_ket_noi_tra_bao_cao(tmp_path):
     nha_may.dat_lai()
 
 
-def test_kiem_ket_noi_khong_bao_gio_500(tmp_path):
+def test_kiem_ket_noi_khong_bao_gio_500(tmp_path, monkeypatch):
     # Người vận hành phải nhận BÁO CÁO nói mình thiếu gì, không phải một
     # trang lỗi 500 không nói gì cả.
+    monkeypatch.setattr(settings, "erp_loai", "odoo")
+    monkeypatch.setattr(settings, "odoo_url", "http://127.0.0.1:99999")
     r = _client(_nguon(hong=True), tmp_path).post("/api/erp/kiem-ket-noi")
     assert r.status_code == 200
     assert r.json()["san_sang"] is False

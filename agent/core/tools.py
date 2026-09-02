@@ -408,14 +408,80 @@ async def _catalog_song() -> dict:
 ANH_DIR = ROOT / "data" / "products"
 
 
+def _nguon_anh(ma: str) -> str:
+    """
+    Nguồn gốc ảnh theo `manifest.json`: `chup`, `sinh`, hay khác.
+
+    Thiếu manifest hoặc manifest hỏng thì trả `""` — coi như KHÔNG BIẾT, và
+    không biết thì không gửi. Đường lui im lặng ở đây là đường lui gửi cho
+    khách một tấm ảnh không ai biết nó là gì.
+    """
+    p = ANH_DIR / ma / "manifest.json"
+    if not p.is_file():
+        return ""
+    try:
+        return str(json.loads(p.read_text(encoding="utf-8")).get("nguon") or "")
+    except (ValueError, OSError):
+        return ""
+
+
+def _duoc_gui_anh(nguon: str, du_lieu_mau: bool) -> tuple[bool, str]:
+    """
+    Ảnh nguồn này có được gửi cho khách không.
+
+    VÌ SAO CẦN CHỐT NÀY
+    -------------------
+    Trong `data/products/` từng có một thư mục chứa không phải ảnh sản
+    phẩm mà là BANNER QUẢNG CÁO: huy hiệu GMP / FDA / ISO, dòng "đạt chuẩn
+    xuất khẩu Hoa Kỳ" và "đảm bảo thành phần tuyệt đối an toàn".
+
+    `gui_anh_san_pham` gửi thẳng tệp trong thư mục cho khách, nên gửi tấm
+    đó đi là phát ngôn quảng cáo có huy hiệu chứng nhận — thứ NĐ 181/2013
+    và TT 06/2011 siết.
+
+    Sáu lớp lưới trong `agent/core/agent.py` KHÔNG bắt được: cả sáu đều soi
+    CHỮ agent viết ra. Đây là tuyên bố nằm trong ẢNH. Nên chốt phải đặt ở
+    đúng chỗ ảnh đi ra.
+
+    VÌ SAO ẢNH `sinh` PHỤ THUỘC `du_lieu_mau`, KHÔNG CẤM THẲNG
+    ----------------------------------------------------------
+    `agent/video/catalog_images.py` nói rõ: ảnh model sinh dùng cho bản
+    nháp thì được, nhưng "khi bán hàng thật, ảnh chụp sản phẩm thật vẫn
+    phải thay vào — khách nhận hàng khác với hình đã xem là chuyện không
+    sửa được bằng lời xin lỗi".
+
+    Dùng lại chính cờ `du_lieu_mau` mà `scripts/san_sang.py` dùng thay vì
+    thêm một biến cấu hình mới: khi danh mục còn là dữ liệu mẫu thì đây là
+    bản demo, ảnh sinh gửi được; ngày cửa hàng thay bằng hàng thật, ảnh
+    sinh TỰ ĐỘNG ngừng đi ra. Không ai phải nhớ bật chốt.
+    """
+    if nguon == "chup":
+        return True, ""
+    if nguon == "sinh":
+        if du_lieu_mau:
+            return True, ""
+        return False, (
+            "Ảnh này do model sinh, không phải ảnh chụp sản phẩm thật, mà "
+            "danh mục đã là hàng thật. Khách nhận hàng khác hình đã xem là "
+            "chuyện không sửa được. Mô tả bằng lời thay vì gửi ảnh."
+        )
+    if not nguon:
+        return False, (
+            "Không biết ảnh này từ đâu ra (thiếu manifest hoặc manifest "
+            "hỏng). Không gửi thứ mình không biết là gì. Mô tả bằng lời."
+        )
+    return False, (
+        f"Ảnh này được đánh dấu nguồn {nguon!r}, không phải ảnh chụp sản "
+        "phẩm. Có thể là ảnh quảng cáo hoặc chưa có ảnh. Mô tả bằng lời."
+    )
+
+
 def _anh_san_pham(ma: str) -> pathlib.Path | None:
     """
     Ảnh đầu tiên của một mã sản phẩm, hoặc None.
 
-    Ảnh nằm ở `data/products/<mã>/img_00.jpg`, kèm `manifest.json` ghi rõ
-    ảnh do model sinh hay chụp thật. Ở đây chỉ cần đường dẫn — phần cảnh
-    báo "ảnh sinh, chưa phải ảnh chụp thật" là việc của người vận hành
-    trước khi bán hàng, không phải việc agent nhắc khách mỗi lần gửi.
+    Chỉ trả ĐƯỜNG DẪN. Việc ảnh có được phép gửi hay không do
+    `_duoc_gui_anh` quyết, để chỗ này không phải biết về danh mục.
     """
     thu_muc = ANH_DIR / ma
     if not thu_muc.is_dir():
@@ -652,6 +718,16 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
         if not anh:
             return {"gui_duoc": False,
                     "ly_do": f"Chưa có ảnh cho {sp['ten']}. Mô tả bằng lời thay vì hứa gửi ảnh."}
+
+        # CHỐT NGUỒN ẢNH — đặt ở đây vì đây là chỗ ảnh đi ra tay khách.
+        # Xem `_duoc_gui_anh` cho lý do đầy đủ: sáu lớp lưới đều soi CHỮ,
+        # nên một tuyên bố quảng cáo nằm trong ẢNH đi qua được tất cả.
+        duoc, vi_sao = _duoc_gui_anh(
+            _nguon_anh(sp["ma"]), bool(catalog.get("du_lieu_mau")),
+        )
+        if not duoc:
+            return {"gui_duoc": False, "ly_do": vi_sao}
+
         # Tool KHÔNG tự gửi. Nó báo "gửi được" kèm đường dẫn; việc gửi do
         # lớp kênh làm trong main.py — cùng cách `tao_video` báo `da_nhan`.
         # Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không

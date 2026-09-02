@@ -67,6 +67,31 @@ _BUOC_CHUYEN = (
     "dị ứng", "kích ứng nặng",
     # da đang phản ứng
     "đỏ rát", "ngứa rát", "nổi sẩn", "sưng đỏ", "bong tróc", "phồng rộp",
+
+    # TRẺ EM — bổ sung sau khi bộ 56 câu vàng bắt được ca trượt.
+    #
+    # `data/knowledge/an-toan-va-chong-chi-dinh.md` ghi rõ: "với trẻ nhỏ,
+    # luôn chuyển cho nhân viên thay vì tự tư vấn". Nhưng không từ khoá nào
+    # canh, nên câu "Con em 8 tuổi dùng kem chống nắng này được không?" đi
+    # thẳng vào agent, và nó hỏi lại tên sản phẩm thay vì chuyển người.
+    #
+    # Dùng cụm HAI TỪ chứ không dùng "con" hay "bé" trần: hai chữ đó quá
+    # phổ biến trong tiếng Việt và sẽ chuyển người cho hàng loạt câu vô hại.
+    "con em", "con tôi", "con mình", "con gái", "con trai", "cho bé",
+    "bé nhà", "em bé", "trẻ em", "trẻ nhỏ", "cháu nhà", "cho con",
+
+    # ĐÒI CAM KẾT KHỎI BỆNH — cũng do bộ vàng bắt được.
+    #
+    # `an-toan-va-chong-chi-dinh.md` xếp "hết mụn sau N ngày" và "cam kết
+    # khỏi" vào nhóm TUYỆT ĐỐI không được nói (Thông tư 06/2011/TT-BYT).
+    # Khách hỏi thẳng "bao lâu thì hết mụn hẳn, shop cam kết đi" là đòi đúng
+    # thứ đó — và agent trả lời vòng vo thay vì chuyển người.
+    #
+    # KHÔNG bắt "cam kết" trần: shop CÓ mục "bảo hành và cam kết chất
+    # lượng", và chặn từ đó là agent chuyển người khi khách hỏi bảo hành.
+    "cam kết hết", "cam kết khỏi", "cam kết trị", "đảm bảo hết",
+    "đảm bảo khỏi", "bao lâu thì hết", "bao lâu hết", "hết mụn hẳn",
+    "hết hẳn", "khỏi hẳn", "hết nám hẳn",
 )
 
 
@@ -75,6 +100,74 @@ def _bat_buoc_chuyen(question: str) -> str | None:
     for key in _BUOC_CHUYEN:
         if key in low:
             return f"Câu hỏi chạm vào tình huống bắt buộc chuyển người: '{key}'"
+    return None
+
+
+# LƯỚI THỨ SÁU — sinh ra CÙNG LÚC với khả năng nhìn ảnh.
+#
+# VÌ SAO PHẢI CÓ TRƯỚC KHI BẬT THỊ GIÁC
+# --------------------------------------
+# `_bat_buoc_chuyen` chỉ đọc CHỮ. Khách gửi ảnh vùng da viêm mà không kèm
+# chữ nào — hoặc chỉ viết "da em bị thế này" — thì không từ khoá nào nổ.
+#
+# Trước đây điều đó vô hại: agent không nhìn được ảnh nên không có gì để mà
+# chẩn đoán. Bật thị giác lên là mở đúng cánh cửa đó: model NHÌN THẤY vùng
+# da đỏ và câu trả lời tự nhiên nhất của nó là gọi tên bệnh.
+#
+# Gọi tên bệnh cho khách là hành nghề y không phép. Với một cửa hàng mỹ phẩm
+# thì đó là ranh giới không được chạm, bất kể model tự tin đến đâu.
+#
+# Bắt theo CẤU TRÚC KHẲNG ĐỊNH, không bắt theo tên bệnh đơn lẻ: tài liệu
+# chính sách của shop có quyền nhắc tới "nám" hay "dị ứng", và cấm cả từ đó
+# là agent chuyển người mỗi lần đọc chính sách của mình.
+# KHÔNG có "em" trong danh sách chủ ngữ.
+#
+# Trong lời ăn tiếng nói chăm sóc khách hàng của người Việt, "em" là CHÍNH
+# NHÂN VIÊN, không phải khách: "bên em có chính sách...", "em gửi chị ảnh".
+# Đưa "em" vào thì câu chính sách "bên em đổi trả nếu khách bị dị ứng" bị
+# bắt nhầm — đo được ngay lần chạy thử đầu tiên.
+_CHAN_DOAN_RE = re.compile(
+    r"("
+    r"(bạn|chị|anh|mình|da|vùng da|tình trạng|ảnh|hình)"
+    r"[^.!?]{0,45}?(bị|đang bị|mắc|là|cho thấy|trông giống)"
+    r"|(đây|cái này|kia) (là|có vẻ là|chính là)"
+    r")"
+    r"[^.!?]{0,25}?"
+    r"(viêm da|viêm nang lông|mụn viêm|mụn bọc|mụn mủ|mụn nội tiết"
+    r"|nám|tàn nhang|chàm|eczema|vẩy nến|vảy nến|rosacea|trứng cá đỏ"
+    r"|nấm da|zona|herpes|thuỷ đậu|thủy đậu|u hắc tố|ung thư da"
+    r"|dị ứng|viêm nhiễm|nhiễm trùng)",
+    re.IGNORECASE,
+)
+
+
+# Câu ĐIỀU KIỆN không phải chẩn đoán.
+#
+# "Bên em đổi trả nếu khách bị dị ứng trong 7 ngày" là nói CHÍNH SÁCH cho
+# một tình huống giả định. "Da chị bị dị ứng rồi ạ" mới là gọi tên bệnh cho
+# một người cụ thể đang ngồi trước mặt.
+#
+# Chặn nhầm loại thứ nhất thì agent chuyển người mỗi lần đọc chính sách của
+# chính shop — và người trực sẽ tắt lưới đi sau vài ngày.
+_DIEU_KIEN = ("nếu", "neu ", "trường hợp", "truong hop", "khi nào", "giả sử",
+              "trong trường hợp", "phòng khi")
+
+
+def _chan_doan_y_te(text: str) -> str | None:
+    """
+    Agent có đang gọi tên bệnh cho MỘT KHÁCH CỤ THỂ không.
+
+    Trả lý do để ghi vào nhật ký, hoặc None nếu câu trả lời sạch.
+    """
+    for m in _CHAN_DOAN_RE.finditer(text or ""):
+        # Chỉ xét trong CÙNG MỘT CÂU: dấu chấm ở câu trước không liên quan.
+        dau_cau = max(
+            (text.rfind(d, 0, m.start()) for d in ".!?\n"), default=-1,
+        )
+        truoc = text[dau_cau + 1:m.start()].lower()
+        if any(dk in truoc for dk in _DIEU_KIEN):
+            continue
+        return f"Agent chẩn đoán y tế cho khách: '{m.group(0)[:70].strip()}'"
     return None
 
 
@@ -187,6 +280,7 @@ async def _ghi_ho_so(viec, conversation_id: uuid.UUID, buoc: str) -> None:
 async def respond(
     *, conversation_id: uuid.UUID, history: list[dict], question: str,
     customer_ref: str = "", channel: str = "",
+    anh: list[dict] | None = None,
 ) -> Reply:
     """
     Sinh câu trả lời cho một lượt. `history` là các lượt trước đã chuẩn hoá.
@@ -242,7 +336,18 @@ async def respond(
 
     # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
     # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.
-    messages = [*history, {"role": "user", "content": phong_thu.boc(question)}]
+    # Ảnh khách gửi đi CÙNG lượt hỏi, không thành một lượt riêng.
+    #
+    # Tách ra thì mô hình mất mối liên hệ giữa ảnh và câu hỏi: khách gửi ảnh
+    # kèm "cái này còn hàng không ạ" mà hai thứ nằm ở hai lượt thì nó hỏi lại
+    # "mình muốn hỏi sản phẩm nào ạ?" — đúng lỗi bản trước đã gặp.
+    #
+    # `phong_thu.boc` vẫn bọc phần CHỮ như cũ: ảnh không đi qua bộ quét tấn
+    # công vì bộ quét đọc chữ, còn chữ chèn trong ảnh thì nó không thấy. Đó
+    # là lý do lưới thứ sáu soi ĐẦU RA.
+    chu_boc = phong_thu.boc(question)
+    noi_dung = ([*anh, {"text": chu_boc}] if anh else chu_boc)
+    messages = [*history, {"role": "user", "content": noi_dung}]
     total_cost = 0.0
     tok_in = tok_out = cache_read = latency = 0
     used_tool = False      # đã gọi tool nào chưa — dùng cho lưới "hứa mà không làm"
@@ -328,6 +433,23 @@ async def respond(
                 escalate = True
                 escalate_reason = call["input"].get("ly_do", "")
 
+            # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
+            # nhớ gọi thêm `chuyen_nhan_vien`.
+            #
+            # `xin_huy_don` và `xin_doi_tra` đều trả `can_chuyen_nhan_vien:
+            # True` rồi dặn model trong `ghi_chu`. Nhưng dặn là dặn, và model
+            # thì trượt — đó chính là lý do lưới thứ năm tồn tại.
+            #
+            # Ở đây tệ hơn một lời hứa suông: khách vừa xin huỷ hoặc xin đổi
+            # trả, cờ ĐÃ được ghi lên đơn, mà hội thoại không tới tay ai. Đơn
+            # nằm im mang một yêu cầu chưa ai nhận, và chính sách đổi trả thì
+            # có hạn số ngày.
+            elif out.get("can_chuyen_nhan_vien"):
+                escalate = True
+                escalate_reason = escalate_reason or (
+                    f"Công cụ {call['name']} yêu cầu người xử lý"
+                )
+
             if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
                 anh_can_gui.append(
                     {"duong_dan": out["duong_dan"], "ten": out["ten"]}
@@ -373,6 +495,17 @@ async def respond(
     if not escalate and _promises_handoff(final_text):
         escalate = True
         escalate_reason = "Agent nói sẽ chuyển người nhưng không gọi công cụ"
+
+    # LƯỚI THỨ SÁU: chặn chẩn đoán y tế trong CHÍNH câu trả lời.
+    #
+    # Đặt sau cùng và soi ĐẦU RA, vì đây là chỗ duy nhất bắt được ca nguy
+    # hiểm nhất: khách gửi ảnh da không kèm chữ, mọi lưới đọc-chữ đều im, và
+    # model nhìn thấy vùng đỏ rồi tự gọi tên bệnh.
+    if not escalate:
+        chan_doan = _chan_doan_y_te(final_text)
+        if chan_doan:
+            escalate = True
+            escalate_reason = chan_doan
 
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",

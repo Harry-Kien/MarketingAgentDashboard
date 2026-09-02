@@ -4,8 +4,12 @@ Tài liệu tham khảo: https://api.ghn.vn/home/docs/detail
 """
 from __future__ import annotations
 
+<<<<<<< HEAD
 import hashlib
 import hmac
+=======
+import re
+>>>>>>> origin/main
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
@@ -27,9 +31,32 @@ _DISTRICTS_CACHE: list[dict[str, Any]] | None = None
 _WARDS_CACHE: dict[int, list[dict[str, Any]]] = {}
 
 
+<<<<<<< HEAD
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFD", str(s or "")).encode("ascii", "ignore").decode("utf-8")
     return s.lower().replace("quan", "").replace("phuong", "").replace("quan ", "").replace("huyen", "").replace("tp", "").replace("thanh pho", "").replace(".", "").strip()
+=======
+# Tiền tố hành chính cần bỏ khi so khớp. Phải khớp NGUYÊN TỪ.
+#
+# Bản trước dùng `.replace("quan", "")` — cắt mọi chỗ có ba chữ đó, kể cả khi
+# nằm giữa một từ khác. Đo được:
+#     "TP Ha Long, Quang Ninh"  ->  "ha long, g ninh"
+#     "TP Tam Ky, Quang Nam"    ->  "tam ky, g nam"
+# Năm tỉnh Quảng — Ninh, Nam, Bình, Trị, Ngãi — bị băm nát, nên không bao giờ
+# khớp được quận, rồi rơi vào mặc định "Quận 1 TP.HCM" ở dưới. Hàng đi sai
+# tỉnh mà không ai biết.
+_TIEN_TO = ("thanh pho", "tinh", "quan", "huyen", "phuong", "xa", "thi tran",
+            "thi xa", "tp", "q", "p", "h", "tt")
+
+_TACH_TU = re.compile(r"[^a-z0-9]+")
+
+
+def _norm(s: str) -> str:
+    """Bỏ dấu, bỏ tiền tố hành chính — nhưng chỉ khi nó là MỘT TỪ RIÊNG."""
+    s = unicodedata.normalize("NFD", str(s or "")).encode("ascii", "ignore").decode("utf-8")
+    tu = [t for t in _TACH_TU.split(s.lower()) if t]
+    return " ".join(t for t in tu if t not in _TIEN_TO)
+>>>>>>> origin/main
 
 
 class GHNShippingProvider(BaseShippingProvider):
@@ -51,6 +78,7 @@ class GHNShippingProvider(BaseShippingProvider):
     def name(self) -> str:
         return "Giao Hàng Nhanh (GHN)"
 
+<<<<<<< HEAD
     def map_status(self, carrier_status: str) -> InternalShippingStatus:
         s = str(carrier_status).strip().lower()
         if s in ("delivered", "finish"):
@@ -69,6 +97,22 @@ class GHNShippingProvider(BaseShippingProvider):
         if self._shop_id:
             headers["ShopId"] = str(self._shop_id)
         return headers
+=======
+    def _headers(self) -> dict[str, str]:
+        """
+        Header cho lời gọi thuộc về một cửa hàng cụ thể.
+
+        `ShopId` KHÔNG còn tuỳ chọn: nó cho GHN biết lấy hàng ở kho nào, và
+        thiếu nó thì mọi lời gọi tạo vận đơn đều bị từ chối. Bỏ header đi khi
+        trống chỉ đẩy lỗi sang phía GHN, nơi thông báo nói bằng từ vựng của
+        họ chứ không nói "bạn quên điền GHN_SHOP_ID".
+        """
+        return {
+            "Content-Type": "application/json",
+            "Token": self._token,
+            "ShopId": str(self._shop_id),
+        }
+>>>>>>> origin/main
 
     async def _resolve_address(self, dia_chi: str) -> tuple[int | None, str | None]:
         """Tự động phân tích địa chỉ để lấy to_district_id và to_ward_code từ GHN."""
@@ -107,9 +151,23 @@ class GHNShippingProvider(BaseShippingProvider):
                         if matched_dist_id:
                             break
 
+<<<<<<< HEAD
                 # Mặc định về Quận 1 TP.HCM nếu không bắt được quận cụ thể
                 if not matched_dist_id:
                     matched_dist_id = 1442  # Quận 1 HCM
+=======
+                # KHÔNG đoán. Không khớp được quận thì DỪNG.
+                #
+                # Bản trước mặc định về 1442 (Quận 1 TP.HCM). GHN định tuyến
+                # theo `to_district_id`, KHÔNG theo chữ trong `to_address` —
+                # nên vận đơn ghi địa chỉ Hạ Long mà kiện hàng đi Sài Gòn.
+                # Shop trả phí giao lẫn phí hoàn, khách không nhận được hàng,
+                # và không ai biết cho tới khi khách kêu.
+                #
+                # Hỏi lại khách một câu rẻ hơn nhiều so với gửi sai một tỉnh.
+                if not matched_dist_id:
+                    return None, None
+>>>>>>> origin/main
 
                 # 2. Tìm Ward
                 matched_ward_code = None
@@ -138,6 +196,7 @@ class GHNShippingProvider(BaseShippingProvider):
                     if matched_ward_code:
                         break
 
+<<<<<<< HEAD
                 if not matched_ward_code and wards:
                     matched_ward_code = str(wards[0].get("WardCode", "20102"))
 
@@ -150,6 +209,33 @@ class GHNShippingProvider(BaseShippingProvider):
             return CreateWaybillResult(
                 ok=False,
                 loi="Chưa cấu hình GHN_TOKEN trong .env. Vui lòng cung cấp token GHN.",
+=======
+                # Lấy bừa phường đầu tiên trong quận cũng là đoán — chỉ
+                # sai nhỏ hơn. Vẫn dừng.
+                if not matched_ward_code:
+                    return None, None
+
+                return matched_dist_id, matched_ward_code
+        except Exception:
+            # Mạng hỏng KHÔNG được biến thành "gửi về Quận 1". Trả None để
+            # lớp trên báo lỗi và chuyển người.
+            return None, None
+
+    async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
+        thieu = [ten for ten, gia_tri in (
+            ("GHN_TOKEN", self._token), ("GHN_SHOP_ID", self._shop_id),
+        ) if not str(gia_tri or "").strip()]
+        if thieu:
+            return CreateWaybillResult(
+                ok=False,
+                can_nguoi_xac_nhan=True,
+                loi=(
+                    "Chưa cấu hình " + " và ".join(thieu) + " trong .env. "
+                    "Lấy ở GHN → Quản lý cửa hàng: Token nằm ở mục API, "
+                    "ShopId là mã cửa hàng. Không có ShopId thì GHN không "
+                    "biết lấy hàng ở kho nào."
+                ),
+>>>>>>> origin/main
             )
 
         url = f"{self._api_url}/shipping-order/create"
@@ -166,6 +252,21 @@ class GHNShippingProvider(BaseShippingProvider):
         ]
 
         dist_id, ward_code = await self._resolve_address(req.khach_dia_chi)
+<<<<<<< HEAD
+=======
+        if not dist_id or not ward_code:
+            return CreateWaybillResult(
+                ok=False,
+                can_nguoi_xac_nhan=True,
+                loi=(
+                    "Không xác định được quận/huyện và phường/xã từ địa chỉ: "
+                    f"'{req.khach_dia_chi}'. KHÔNG tạo vận đơn để tránh gửi "
+                    "sai nơi. Hỏi lại khách địa chỉ đầy đủ gồm số nhà, đường, "
+                    "phường/xã, quận/huyện, tỉnh/thành — hoặc để nhân viên "
+                    "tạo vận đơn tay trên trang GHN."
+                ),
+            )
+>>>>>>> origin/main
 
         payload: dict[str, Any] = {
             "payment_type_id": 2,
@@ -175,8 +276,13 @@ class GHNShippingProvider(BaseShippingProvider):
             "to_name": req.khach_ten,
             "to_phone": req.khach_sdt,
             "to_address": req.khach_dia_chi,
+<<<<<<< HEAD
             "to_district_id": dist_id or 1442,
             "to_ward_code": ward_code or "20102",
+=======
+            "to_district_id": dist_id,
+            "to_ward_code": ward_code,
+>>>>>>> origin/main
             "weight": req.tong_khoi_luong_gram,
             "cod_amount": req.thu_ho_cod,
             "service_type_id": 2,
@@ -297,6 +403,7 @@ class GHNShippingProvider(BaseShippingProvider):
     def parse_webhook(
         self, body: dict[str, Any], headers: dict[str, Any]
     ) -> WebhookEventResult:
+<<<<<<< HEAD
         secret = settings.shipping_webhook_secret
         if secret:
             sig = headers.get("x-ghn-signature") or headers.get("signature")
@@ -308,6 +415,19 @@ class GHNShippingProvider(BaseShippingProvider):
                 ).hexdigest()
                 if not hmac.compare_digest(sig, expected):
                     return WebhookEventResult(hop_le=False, loi="Chữ ký webhook GHN không hợp lệ")
+=======
+        # KHÔNG xác thực ở đây — xem `service.kiem_bi_mat_webhook`.
+        #
+        # Bản trước tự kiểm chữ ký tại chỗ và có hai lỗ hổng chồng nhau:
+        #   `if secret:` -> chưa cấu hình thì bỏ qua toàn bộ
+        #   `if sig:`    -> kẻ gọi chỉ cần KHÔNG gửi header là đi thẳng qua
+        # Và nó ký trên `str(body)` — chuỗi repr của dict Python, không phải
+        # body thô — nên kể cả khi có chữ ký thật cũng không bao giờ khớp.
+        #
+        # Ngoài ra GHN KHÔNG ký webhook: tài liệu của họ chỉ có "điền URL
+        # callback". Bảo vệ đúng cách là bí mật nằm trong chính URL, kiểm ở
+        # lớp HTTP cho mọi hãng — một chỗ, không phải mỗi hãng một kiểu.
+>>>>>>> origin/main
 
         order_code = str(body.get("OrderCode") or body.get("order_code") or "")
         client_code = str(body.get("ClientOrderCode") or body.get("client_order_code") or "")

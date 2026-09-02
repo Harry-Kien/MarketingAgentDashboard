@@ -22,6 +22,7 @@ import hmac
 import json
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -36,6 +37,29 @@ from agent.config import settings  # noqa: E402
 
 def _ad() -> ms.MessengerAdapter:
     return ms.MessengerAdapter()
+
+
+def test_verify_page_connection_tra_identity_ma_khong_gui_tin():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.headers["authorization"] == "Bearer page-token"
+        return httpx.Response(200, json={"id": "page-77", "name": "CSKH"})
+
+    client = httpx.AsyncClient(
+        base_url="https://graph.example/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    adapter = ms.MessengerAdapter(
+        account_id=uuid4(),
+        credentials={"access_token": "page-token", "app_secret": "secret", "external_account_id": "pending:x"},
+        client=client,
+    )
+
+    check = asyncio.run(adapter.verify_connection())
+
+    assert check.ok is True
+    assert check.external_account_id == "page-77"
+    asyncio.run(adapter.aclose())
 
 
 def _su_kien(text="giá bao nhiêu ạ", mid="m1", echo=False, dinh_kem=None, sender="u1"):
@@ -314,7 +338,9 @@ def test_graph_bao_loi_trong_than_la_that_bai():
 
 
 def test_khong_co_error_la_thanh_cong():
-    assert ms._doc_ket_qua(_rep(200, {"message_id": "m1"})).ok is True
+    delivery = ms._doc_ket_qua(_rep(200, {"message_id": "m1"}))
+    assert delivery.ok is True
+    assert delivery.provider_message_id == "m1"
 
 
 def test_http_loi_van_la_that_bai():

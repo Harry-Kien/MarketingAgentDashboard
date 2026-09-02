@@ -3,88 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Aurora Skin — trang demo khung chat</title>
+  <title>Kien Omnichannel — demo web chat</title>
   <style>
-    /* Trang này CỐ Ý đơn giản. Nó không phải sản phẩm, nó là chỗ để nhìn
-       thấy khung chat Chatwoot chạy thật — khách nhắn ở đây, agent trả lời,
-       và nếu cần thì bàn giao cho nhân viên. */
-    :root { --nen:#faf8f6; --chu:#1c1917; --mo:#78716c; --vien:#e7e5e4; --nhan:#0068FF; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--nen); color: var(--chu);
-      font: 15px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
-    }
-    .khung { max-width: 720px; margin: 0 auto; padding: 56px 24px 120px; }
-    h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
-    .phu { color: var(--mo); margin: 0 0 40px; }
-    .the {
-      border: 1px solid var(--vien); border-radius: 12px;
-      background: #fff; padding: 20px 22px; margin-bottom: 14px;
-    }
-    .the h2 { font-size: 15px; margin: 0 0 8px; }
-    .the p { margin: 0; color: var(--mo); font-size: 14px; }
-    ol { padding-left: 20px; color: var(--mo); font-size: 14px; }
-    li { margin-bottom: 6px; }
-    code {
-      background: #f5f5f4; padding: 1px 5px; border-radius: 4px;
-      font-size: 13px; font-family: ui-monospace, "Cascadia Code", monospace;
-    }
-    .luu_y {
-      border-left: 3px solid var(--nhan); background: #0068ff0a;
-      padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 14px;
-      color: var(--mo); margin-top: 28px;
-    }
+    :root { color-scheme:light; font:15px/1.65 "Segoe UI",system-ui,sans-serif; color:#142044; background:#f6f8fc; }
+    * { box-sizing:border-box; } body { margin:0; }
+    main { max-width:760px; margin:auto; padding:64px 24px 120px; }
+    h1 { margin:0 0 8px; font-size:32px; letter-spacing:-.03em; }
+    p { color:#5c6882; }.card { margin-top:30px; padding:22px; border:1px solid #dce3f0; border-radius:16px; background:#fff; }
+    code { padding:2px 5px; border-radius:5px; background:#eef2f8; }
   </style>
 </head>
 <body>
-  <div class="khung">
-    <h1>Aurora Skin</h1>
-    <p class="phu">Trang demo — khung chat ở góc dưới bên phải là kênh thật.</p>
-
-    <div class="the">
-      <h2>Serum phục hồi Aurora Revitalizing Serum</h2>
-      <p>Ceramide NP, Panthenol 5%, Madecassoside · 30ml</p>
-    </div>
-    <div class="the">
-      <h2>Gel rửa mặt kiềm dầu Aurora Clear Foam</h2>
-      <p>BHA 0.5%, Tea Tree, Zinc PCA · 150ml</p>
-    </div>
-    <div class="the">
-      <h2>Kem chống nắng Aurora Daily Sun SPF50+ PA+++</h2>
-      <p>Dùng hằng ngày, thoa lại sau 2–3 tiếng nếu ở ngoài trời · 50ml</p>
-    </div>
-
-    <ol>
-      <li>Bấm khung chat, hỏi thử: <em>"Da em dầu nên dùng sữa rửa mặt nào?"</em></li>
-      <li>Agent trả lời — cùng bộ tri thức và cùng chốt tuân thủ như trên Zalo.</li>
-      <li>Hỏi <em>"Em đang mang thai dùng retinol được không?"</em> để xem
-          agent chuyển người: khách nhận câu báo, còn trong Chatwoot hiện
-          ghi chú nội bộ kèm lý do và nhãn <code>can-nguoi-ho-tro</code>.</li>
-    </ol>
-
-    <div class="luu_y">
-      Khung chat này KHÔNG cần Meta hay TikTok duyệt gì — dán một đoạn
-      script là chạy. Đó là lý do nó đáng làm trước Facebook và Instagram,
-      hai kênh còn đang chờ App Review.
-    </div>
-  </div>
-
-  <!-- Khung chat Chatwoot. `websiteToken` gắn với hộp thư "Aurora Skin -
-       Website"; đổi token là đổi hộp thư nhận tin. -->
-  <script>
-    (function (d, t) {
-      var BASE = "http://localhost:3200";
-      var g = d.createElement(t), s = d.getElementsByTagName(t)[0];
-      g.src = BASE + "/packs/js/sdk.js";
-      g.defer = true; g.async = true;
-      s.parentNode.insertBefore(g, s);
-      g.onload = function () {
-        window.chatwootSDK.run({
-          websiteToken: "qo5KLWuCXjhtxkDx1hWLs1X9",
-          baseUrl: BASE
-        });
-      };
-    })(document, "script");
-  </script>
+  <main>
+    <h1>Demo web chat first-party</h1>
+    <p>Trang này dùng widget native của Kien Omnichannel. Tin nhắn đi thẳng vào
+      inbox hợp nhất và giữ đúng account website.</p>
+    <section class="card">
+      <h2>Trước khi thử</h2>
+      <p>Tạo account Web chat trong màn <b>Kết nối</b>, sau đó thay
+        <code>YOUR_WEBCHAT_ACCOUNT_UUID</code> ở cuối file bằng UUID account đó.</p>
+    </section>
+  </main>
+  <script src="/widget.js" data-account-id="YOUR_WEBCHAT_ACCOUNT_UUID"></script>
 </body>
 </html>

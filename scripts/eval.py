@@ -146,6 +146,89 @@ async def run_case(case: dict, conv_id) -> dict:
     }
 
 
+async def hoi_thoai_eval(
+    *,
+    external_id: str = "eval-run",
+    ten: str = "Bo cau hoi vang",
+    customer_ref: str = "eval",
+):
+    """
+    Dựng một hội thoại để chạy bộ đo, hợp lệ với lược đồ HIỆN TẠI.
+
+    VÌ SAO PHẢI VIẾT LẠI PHẦN NÀY
+    -----------------------------
+    Bản trước chèn thẳng `conversations` với `ON CONFLICT (channel,
+    external_id)`. Ràng buộc đó không còn: các migration account-aware đã đổi
+    nó thành `(account_id, external_id)`, và thêm `account_id`, `contact_id`,
+    `contact_point_id` vào nhóm NOT NULL.
+
+    Nên `python -m scripts.eval` chết ngay ở dòng đầu với
+    `InvalidColumnReferenceError` — bộ đo chất lượng KHÔNG chạy được lần nào
+    kể từ khi lược đồ đổi, và không có gì báo: `CLAUDE.md` vẫn ghi lệnh đó
+    như thể nó chạy được.
+
+    Dùng lại tài khoản `webchat` sẵn có thay vì tạo kênh giả: eval đo AGENT,
+    không đo lớp kênh, và thêm một kênh ma vào bảng chỉ làm bẩn dữ liệu thật.
+
+    VÌ SAO CÓ THAM SỐ, VÀ VÌ SAO KHÔNG CHÉP SANG `eval_nhieu_luot`
+    -------------------------------------------------------------
+    Bộ nhiều lượt cần đúng phép dựng này nhưng với `external_id` riêng. Bản
+    trước nó tự chép lấy một câu INSERT — và bản chép đó KHÔNG được sửa khi
+    lược đồ đổi, nên `python -m scripts.eval_nhieu_luot` chết ở dòng đầu kể
+    từ đó, kể cả ở chế độ `--kho` không tốn tiền.
+
+    Không ai biết, vì `docs/thuc-nghiem.md` chỉ ghi "(chưa chạy)" — đọc như
+    một lựa chọn, không phải một lỗi. Đúng khuôn "hai bản sao của cùng một
+    việc: bản ít người đọc hơn sẽ mục". Nên cách sửa là bỏ bản chép đi, chứ
+    không phải vá nó.
+    """
+    tk = await db.fetchrow(
+        "SELECT id FROM channel_accounts WHERE channel = 'webchat' "
+        "ORDER BY created_at LIMIT 1"
+    )
+    if tk is None:
+        raise SystemExit(
+            "Chưa có tài khoản kênh webchat để chạy bộ đo. "
+            "Tạo một tài khoản Website chat trong mục Kết nối rồi chạy lại."
+        )
+    account_id = tk["id"]
+
+    lien_he = await db.fetchrow(
+        "SELECT c.id FROM contacts c JOIN contact_points p ON p.contact_id = c.id "
+        "WHERE p.external_user_id = $2 AND p.channel_account_id = $1 LIMIT 1",
+        account_id, customer_ref,
+    )
+    if lien_he is None:
+        lien_he = await db.fetchrow(
+            "INSERT INTO contacts (display_name) VALUES ($1) RETURNING id", ten
+        )
+    contact_id = lien_he["id"]
+
+    diem = await db.fetchrow(
+        """
+        INSERT INTO contact_points (contact_id, channel_account_id, external_user_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (channel_account_id, external_user_id)
+        DO UPDATE SET last_seen = now()
+        RETURNING id
+        """,
+        contact_id, account_id, customer_ref,
+    )
+
+    conv = await db.fetchrow(
+        """
+        INSERT INTO conversations (account_id, contact_id, contact_point_id,
+                                   channel, external_id, customer_name, customer_ref)
+        VALUES ($1, $2, $3, 'webchat', $4, $5, $6)
+        ON CONFLICT (account_id, external_id)
+        DO UPDATE SET updated_at = now()
+        RETURNING id
+        """,
+        account_id, contact_id, diem["id"], external_id, ten, customer_ref,
+    )
+    return conv["id"]
+
+
 async def main(loc: str | None = None) -> int:
     cases = [
         json.loads(line)
@@ -159,12 +242,7 @@ async def main(loc: str | None = None) -> int:
         return 1
 
     await db.init_db()
-    conv = await db.fetchrow(
-        "INSERT INTO conversations (channel, external_id, customer_name, customer_ref) "
-        "VALUES ('eval','eval-run','Bo cau hoi vang','eval') "
-        "ON CONFLICT (channel, external_id) DO UPDATE SET updated_at = now() RETURNING id"
-    )
-    cid = conv["id"]
+    cid = await hoi_thoai_eval()
 
     print(f"Chạy {len(cases)} ca...\n")
     results = []
@@ -188,7 +266,8 @@ async def main(loc: str | None = None) -> int:
             if res.get("dung_tu_cam"):
                 print(f"           DUNG TU CAM: {res['dung_tu_cam']}")
 
-    await db.execute("DELETE FROM conversations WHERE external_id = 'eval-run'")
+    await db.execute(
+        "DELETE FROM conversations WHERE external_id = 'eval-run' AND customer_ref = 'eval'")
 
     # ---------------- tổng kết ----------------
     n = len(results)

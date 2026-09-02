@@ -75,13 +75,20 @@ def _bao(muc_do: str, chi_tiet: str) -> None:
     print(f"[{muc_do}] {chi_tiet}")
     if not settings.canh_gac_webhook:
         return
-    goi = json.dumps({
-        "muc_do": muc_do,
-        "tieu_de": ("Agent KHÔNG PHẢN HỒI" if muc_do == "hong"
-                    else "Agent đã sống lại"),
-        "chi_tiet": chi_tiet,
-        "nguon": "canh_gac_ngoai",
-    }).encode()
+    # Dùng CHUNG bộ dựng gói tin với canh_gac trong app: một mẫu cấu hình
+    # cho cả hai đường báo động, không phải khai hai lần rồi lệch nhau.
+    from agent.canh_gac import dung_goi_bao_dong
+
+    goi = json.dumps(dung_goi_bao_dong(
+        {
+            "muc_do": muc_do,
+            "tieu_de": ("Agent KHÔNG PHẢN HỒI" if muc_do == "hong"
+                        else "Agent đã sống lại"),
+            "chi_tiet": chi_tiet,
+            "nguon": "canh_gac_ngoai",
+        },
+        mau=settings.canh_gac_goi_tin,
+    ), ensure_ascii=False).encode()
     yeu_cau = urllib.request.Request(
         settings.canh_gac_webhook, data=goi,
         headers={"Content-Type": "application/json"},

@@ -214,5 +214,9 @@ def test_agent_duoc_bao_la_co_anh():
 def test_anh_duoc_luu_vao_csdl():
     """Không lưu thì dashboard không hiện được, và người trực vào sau
     không biết khách từng gửi gì."""
-    src = inspect.getsource(app_main.handle_inbound)
-    assert "attachments" in src.split("INSERT INTO messages")[1][:200]
+    from agent.omnichannel.inbox_service import PostgresInboxTransaction
+
+    ingest = inspect.getsource(app_main._ingest_inbound)
+    normalized = inspect.getsource(PostgresInboxTransaction.insert_attachment)
+    assert "InboxService" in ingest
+    assert "INSERT INTO attachments" in normalized

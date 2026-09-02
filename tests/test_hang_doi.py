@@ -4,7 +4,7 @@ Kiểm thử hàng đợi trực. Không gọi API, không cần CSDL.
 VÌ SAO CÓ FILE NÀY
 ------------------
 Cả hệ thống được xây quanh một ý: agent biết dừng đúng lúc và giao lại cho
-người. Năm lớp lưới trong `agent/core/agent.py` tồn tại chỉ để đảm bảo việc
+người. Sáu lớp lưới trong `agent/core/agent.py` tồn tại chỉ để đảm bảo việc
 đó xảy ra.
 
 Nhưng cả năm lớp đó đổ về ĐÚNG MỘT khung màn hình. Khung đó xếp sai thứ tự

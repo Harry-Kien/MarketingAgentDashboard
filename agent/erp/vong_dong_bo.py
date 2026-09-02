@@ -1,0 +1,391 @@
+"""
+Vòng nền: thử lại đơn kẹt `cho_dong_bo`, và đối soát tồn kho.
+
+VÌ SAO PHẢI CÓ
+--------------
+`cho_dong_bo` nghĩa là "đã ghi nhận, chưa vào được ERP". Không có ai thử lại
+thì nó là NGÕ CỤT: đơn nằm đó mãi, khách chờ, và biểu hiện duy nhất ra ngoài
+là một dòng trạng thái không ai xem.
+
+Và không có bộ đối soát thì tồn kho lệch chỉ lộ ra khi khách phàn nàn.
+
+BACKOFF, KHÔNG PHẢI THỬ LIÊN TỤC
+--------------------------------
+ERP đang bảo trì mà quét mỗi 30 giây là đập vào một hệ thống đang ốm. Giãn
+theo số lần đã thử, tối đa `TRE_TOI_DA_GIAY`.
+
+BỎ CUỘC CÓ TIẾNG, KHÔNG BỎ CUỘC IM LẶNG
+---------------------------------------
+Quá `SO_LAN_TOI_DA` thì dừng thử và KÊU. Thử mãi mãi là giấu một đơn hỏng
+sau một vòng lặp bận rộn — nhìn từ ngoài không phân biệt được với đang chạy
+bình thường.
+"""
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
+
+MOI_GIAY = 60.0
+
+# Quá số lần này thì dừng thử và kêu. Người phải vào xem.
+SO_LAN_TOI_DA = 8
+
+# Giãn dần: 2^n phút, chặn ở 30 phút.
+TRE_TOI_DA_GIAY = 1800
+
+# Đối soát tồn kho mỗi bao nhiêu lượt quét. Nó đọc cả danh mục, và tồn kho
+# lệch là chuyện của giờ chứ không phải của phút — quét nó mỗi phút là đốt
+# hạn mức gọi ERP cho một câu hỏi đổi rất chậm.
+DOI_SOAT_MOI_LAN = 15
+
+
+def tre_lan_sau(so_lan_da_thu: int) -> float:
+    """Giây phải chờ trước lần thử kế tiếp."""
+    return float(min(2 ** max(0, so_lan_da_thu) * 60, TRE_TOI_DA_GIAY))
+
+
+class KhoDon(Protocol):
+    """Những gì vòng nền cần từ CSDL. Tách ra để test không cần Postgres."""
+
+    async def don_cho_dong_bo(self, gioi_han: int = 20) -> list[dict]: ...
+
+    async def danh_dau_da_day(self, id_don: Any, erp_ma_don: str) -> None: ...
+
+    async def danh_dau_that_bai(self, id_don: Any, ly_do: str) -> None: ...
+
+    async def danh_dau_bo_cuoc(self, id_don: Any, ly_do: str) -> None: ...
+
+
+async def quet_mot_luot(
+    kho_don: KhoDon,
+    day: Callable[[dict], Awaitable[Any]],
+    ghi_nhat_ky: Callable[..., Awaitable[None]] | None = None,
+) -> dict:
+    """Thử lại mọi đơn đang kẹt. Trả về thống kê một lượt quét.
+
+    KHÔNG bao giờ ném: một đơn hỏng không được làm dừng cả vòng nền, nếu
+    không thì đơn thứ hai trở đi không bao giờ được thử.
+    """
+    thong_ke = {"da_xet": 0, "xong": 0, "bo_cuoc": 0, "con_cho": 0, "hoan": 0}
+
+    for don in await kho_don.don_cho_dong_bo():
+        thong_ke["da_xet"] += 1
+        so_lan = int(don.get("erp_so_lan_thu") or 0)
+
+        if so_lan >= SO_LAN_TOI_DA:
+            await kho_don.danh_dau_bo_cuoc(
+                don["id"], f"Đã thử {so_lan} lần, dừng lại. Cần người xem."
+            )
+            await _kêu(ghi_nhat_ky, "erp.don_bo_cuoc",
+                       ma_don=don.get("ma_don"), so_lan=so_lan)
+            thong_ke["bo_cuoc"] += 1
+            continue
+
+        # Chưa tới lượt. Không phải lỗi — chỉ là backoff.
+        if float(don.get("_giay_tu_lan_thu_cuoi") or 1e9) < tre_lan_sau(so_lan):
+            thong_ke["hoan"] += 1
+            continue
+
+        try:
+            kq = await day(don)
+        except Exception as exc:  # noqa: BLE001
+            # Vòng nền không được chết. Ghi lại rồi đi tiếp sang đơn sau.
+            await kho_don.danh_dau_that_bai(
+                don["id"], f"{type(exc).__name__}: {exc}"[:200]
+            )
+            thong_ke["con_cho"] += 1
+            continue
+
+        if kq.ket_cuc == "xong":
+            await kho_don.danh_dau_da_day(don["id"], kq.erp_ma_don)
+            await _kêu(ghi_nhat_ky, "erp.don_dong_bo_muon",
+                       ma_don=don.get("ma_don"), erp_ma_don=kq.erp_ma_don,
+                       so_lan=so_lan + 1)
+            thong_ke["xong"] += 1
+        elif kq.ket_cuc == "tu_choi":
+            # Từ chối là CÂU TRẢ LỜI. Thử lại vô nghĩa.
+            await kho_don.danh_dau_bo_cuoc(don["id"], kq.ly_do)
+            await _kêu(ghi_nhat_ky, "erp.don_bi_tu_choi_khi_thu_lai",
+                       ma_don=don.get("ma_don"), ly_do=kq.ly_do)
+            thong_ke["bo_cuoc"] += 1
+        else:
+            await kho_don.danh_dau_that_bai(don["id"], kq.ly_do)
+            thong_ke["con_cho"] += 1
+
+    return thong_ke
+
+
+async def _kêu(ghi_nhat_ky, loai: str, **chi_tiet) -> None:
+    if ghi_nhat_ky is None:
+        return
+    try:
+        await ghi_nhat_ky(loai, **chi_tiet)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+class PostgresKhoDon:
+    """Hiện thực `KhoDon` trên bảng `orders`.
+
+    Bảng `orders` CHÍNH LÀ hàng đợi — xem migration 0008. Không dựng bảng
+    job riêng, vì thế là một đơn tồn tại ở hai nơi.
+    """
+
+    async def don_cho_dong_bo(self, gioi_han: int = 20) -> list[dict]:
+        from agent import db
+
+        rows = await db.fetch(
+            """
+            SELECT id, ma_don, khach_ten, khach_sdt, khach_dia_chi, items,
+                   ghi_chu, erp_so_lan_thu,
+                   EXTRACT(EPOCH FROM (now() - updated_at)) AS _giay_tu_lan_thu_cuoi
+            FROM orders
+            WHERE trang_thai = 'cho_dong_bo'
+            ORDER BY created_at
+            LIMIT $1
+            """,
+            gioi_han,
+        )
+        return [dict(r) for r in rows]
+
+    async def danh_dau_da_day(self, id_don, erp_ma_don: str) -> None:
+        from agent import db
+
+        await db.execute(
+            "UPDATE orders SET trang_thai='da_chot', erp_ma_don=$2, "
+            "erp_dong_bo_luc=now(), erp_loi=NULL, updated_at=now() "
+            "WHERE id=$1",
+            id_don, erp_ma_don,
+        )
+
+    async def danh_dau_that_bai(self, id_don, ly_do: str) -> None:
+        from agent import db
+
+        await db.execute(
+            "UPDATE orders SET erp_so_lan_thu = erp_so_lan_thu + 1, "
+            "erp_loi=$2, updated_at=now() WHERE id=$1",
+            id_don, ly_do[:500],
+        )
+
+    async def danh_dau_bo_cuoc(self, id_don, ly_do: str) -> None:
+        from agent import db
+
+        # `cho_duyet` chứ không phải `da_huy`: máy bỏ cuộc, NGƯỜI quyết định
+        # số phận đơn. Tự huỷ đơn của khách vì ERP không nhận là vượt thẩm
+        # quyền — có thể chỉ là cấu hình sai, sửa xong là đẩy được.
+        await db.execute(
+            "UPDATE orders SET trang_thai='cho_duyet', erp_loi=$2, "
+            "updated_at=now() WHERE id=$1",
+            id_don, ly_do[:500],
+        )
+
+
+    async def don_da_day(self, gioi_han: int = 50) -> list[dict]:
+        """Đơn đã vào ERP nhưng chưa tới trạng thái cuối.
+
+        Cột là `trang_thai_giao_hang`, KHÔNG phải `trang_thai_giao`. Cột
+        sau đã bị migration 0007 xoá và thay bằng cột trước, kèm đổi luôn từ
+        vựng tiếng Việt sang giá trị `InternalShippingStatus`. Bản đầu của
+        hàm này đọc tên cột cũ — câu SQL sẽ nổ lúc chạy thật, trong một vòng
+        nền không ai nhìn.
+
+        Bỏ qua `delivered` và `returned`: chúng là trạng thái CUỐI, hỏi lại
+        ERP về chúng mỗi phút là đốt hạn mức cho một câu trả lời không bao
+        giờ đổi nữa.
+        """
+        from agent import db
+
+        rows = await db.fetch(
+            """
+            SELECT id, ma_don, erp_ma_don,
+                   trang_thai_giao_hang AS trang_thai_giao
+            FROM orders
+            WHERE erp_ma_don IS NOT NULL
+              AND (trang_thai_giao_hang IS NULL
+                   OR trang_thai_giao_hang NOT IN ('delivered', 'returned'))
+              AND trang_thai <> 'da_huy'
+            ORDER BY updated_at
+            LIMIT $1
+            """,
+            gioi_han,
+        )
+        return [dict(r) for r in rows]
+
+    async def ghi_trang_thai_giao(self, id_don, trang_thai: str) -> None:
+        from agent import db
+
+        await db.execute(
+            "UPDATE orders SET trang_thai_giao_hang=$2, "
+            "cap_nhat_van_chuyen_luc=now(), updated_at=now() WHERE id=$1",
+            id_don, trang_thai,
+        )
+
+
+async def doi_soat_ton_kho(
+    ton_noi_bo: dict[str, int],
+    hoi_erp,
+    ghi_nhat_ky: Callable[..., Awaitable[None]] | None = None,
+    nguong_lech: int = 0,
+) -> dict:
+    """So tồn kho nội bộ với ERP. Lệch thì KÊU.
+
+    VÌ SAO CẦN
+    ----------
+    Bảng `ton_kho` nội bộ giờ chỉ là chỗ giữ tạm; ERP là sổ cái. Nhưng "chỉ
+    là chỗ giữ tạm" là một ý định, không phải một sự thật được kiểm. Giữ chỗ
+    không tan, đơn huỷ ngoài hệ thống, nhập kho tay bên ERP — mỗi thứ đều
+    làm hai bên lệch, và không thứ nào tự báo.
+
+    KHÔNG TỰ SỬA
+    ------------
+    Chỉ báo, không ghi đè. Máy tự "chữa" một con số nó không hiểu vì sao
+    lệch là xoá mất bằng chứng của lỗi thật, và lần sau lệch lại.
+
+    `hoi_erp(ma)` trả `TonKho | None`. `None` nghĩa là chưa tra được — bỏ
+    qua mã đó, KHÔNG tính là lệch. Coi "không biết" thành "lệch 0" là báo
+    động giả hàng loạt mỗi khi ERP chậm.
+    """
+    lech: list[dict] = []
+    khong_tra_duoc = 0
+
+    for ma, so_noi_bo in ton_noi_bo.items():
+        try:
+            t = await hoi_erp(ma)
+        except Exception:  # noqa: BLE001
+            khong_tra_duoc += 1
+            continue
+        if t is None:
+            khong_tra_duoc += 1
+            continue
+        if abs(int(t.ban_duoc) - int(so_noi_bo)) > nguong_lech:
+            lech.append({"ma": ma, "noi_bo": int(so_noi_bo),
+                         "erp": int(t.ban_duoc)})
+
+    if lech:
+        await _kêu(ghi_nhat_ky, "erp.lech_ton_kho",
+                   so_ma=len(lech), chi_tiet=lech[:20])
+
+    return {
+        "da_soat": len(ton_noi_bo),
+        "lech": lech,
+        "khong_tra_duoc": khong_tra_duoc,
+    }
+
+
+async def keo_trang_thai_giao(
+    don_da_day: list[dict],
+    hoi_erp,
+    ghi,
+    ghi_nhat_ky: Callable[..., Awaitable[None]] | None = None,
+) -> dict:
+    """Kéo trạng thái giao hàng từ ERP về cho các đơn đã đẩy.
+
+    VÌ SAO CẦN
+    ----------
+    Đơn đẩy sang ERP xong là hết đường một chiều. Kho xuất hàng, ERP ghi
+    phiếu giao — còn bên này vẫn thấy `da_chot` mãi mãi. Khách hỏi "đơn tới
+    đâu rồi", agent tra sổ nội bộ và trả lời bằng thứ nó không biết.
+
+    KHÔNG GHI ĐÈ BẰNG `None`
+    ------------------------
+    `None` nghĩa là CHƯA BIẾT — chưa có phiếu giao, hoặc ERP trả trạng thái
+    lạ. Ghi đè trạng thái đang có bằng "chưa biết" là xoá mất thông tin
+    đúng, và lần sau lại phải hỏi lại từ đầu.
+
+    Không bao giờ ném: một đơn hỏng không được làm dừng cả lượt.
+    """
+    tk = {"da_xet": 0, "cap_nhat": 0, "chua_biet": 0, "hong": 0}
+
+    for don in don_da_day:
+        tk["da_xet"] += 1
+        try:
+            tt = await hoi_erp(don["erp_ma_don"])
+        except Exception:  # noqa: BLE001
+            tk["hong"] += 1
+            continue
+
+        if tt is None:
+            tk["chua_biet"] += 1
+            continue
+        if tt == don.get("trang_thai_giao"):
+            continue
+
+        await ghi(don["id"], tt)
+        await _kêu(ghi_nhat_ky, "erp.trang_thai_giao_moi",
+                   ma_don=don.get("ma_don"), erp_ma_don=don["erp_ma_don"],
+                   tu=don.get("trang_thai_giao"), sang=tt)
+        tk["cap_nhat"] += 1
+
+    return tk
+
+
+async def vong_dong_bo_loop() -> None:
+    """Chạy mãi. Chỉ làm gì khi `ERP_GHI_DON` bật."""
+    from agent import db
+    from agent.config import settings
+    from agent.erp import day_don as _day_don
+
+    kho_don = PostgresKhoDon()
+
+    async def _day(don: dict):
+        return await _day_don.day_don(
+            ma_don=don["ma_don"],
+            khach_ten=don["khach_ten"],
+            khach_sdt=don["khach_sdt"],
+            khach_dia_chi=don["khach_dia_chi"],
+            items=don["items"] or [],
+            ghi_chu=str(don.get("ghi_chu") or ""),
+        )
+
+    lan = 0
+    while True:
+        lan += 1
+        if settings.erp_ghi_don:
+            try:
+                await quet_mot_luot(kho_don, _day, db.log_event)
+            except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+                await db.log_event(
+                    "erp.vong_dong_bo_loi",
+                    error=f"{type(exc).__name__}: {exc}"[:200],
+                )
+
+            # Kéo trạng thái giao hàng NGƯỢC từ ERP về. Không có bước này
+            # thì đơn đẩy sang ERP xong là hết đường một chiều: kho xuất
+            # hàng mà bên này vẫn thấy `da_chot` mãi mãi.
+            try:
+                from agent.erp import nha_may as _nm
+
+                nguon = _nm.tao_nguon()
+                if hasattr(nguon, "trang_thai_giao"):
+                    await keo_trang_thai_giao(
+                        await kho_don.don_da_day(),
+                        nguon.trang_thai_giao,
+                        kho_don.ghi_trang_thai_giao,
+                        db.log_event,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                await db.log_event(
+                    "erp.keo_trang_thai_loi",
+                    error=f"{type(exc).__name__}: {exc}"[:200],
+                )
+
+        # Đối soát thưa hơn nhiều lần đẩy đơn: nó quét cả danh mục, và tồn
+        # kho lệch là chuyện của giờ chứ không phải của phút.
+        if settings.erp_loai != "tep" and lan % DOI_SOAT_MOI_LAN == 1:
+            try:
+                from agent.core import kho as _kho
+                from agent.erp import nha_may
+
+                await doi_soat_ton_kho(
+                    await _kho.lay_tat_ca(),
+                    lambda ma: nha_may.cong().ton_kho(ma, bo_qua_cache=True),
+                    db.log_event,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await db.log_event(
+                    "erp.doi_soat_loi",
+                    error=f"{type(exc).__name__}: {exc}"[:200],
+                )
+
+        await asyncio.sleep(MOI_GIAY)

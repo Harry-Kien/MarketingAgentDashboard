@@ -6,7 +6,7 @@ Tài liệu này hướng dẫn chi tiết từng bước cho các lập trình 
 
 ## 🏗️ 1. Tổng quan Kiến trúc
 
-Phân hệ ERP được đóng gói hoàn chỉnh trong Docker Compose ([`docker-compose.erpnext.yml`](file:///Users/huynhlehoaibao/Documents/AIAgent_mar/docker-compose.erpnext.yml)):
+Phân hệ ERP được đóng gói hoàn chỉnh trong Docker Compose ([`docker-compose.erpnext.yml`](../docker-compose.erpnext.yml)):
 
 * 🌐 **Cổng Web App & REST API:** `http://localhost:8080` (hoặc qua Nginx proxy).
 * 🗄️ **Cơ sở dữ liệu:** MariaDB 10.6 (`erpnext-db`).
@@ -76,16 +76,26 @@ docker compose -f docker-compose.erpnext.yml ps
 
 ### Bước 4: Cấu hình biến môi trường `.env`
 
-Mở file [`.env`](file:///Users/huynhlehoaibao/Documents/AIAgent_mar/.env) ở thư mục gốc dự án và điền thông tin vừa tạo:
+Mở file [`.env`](../.env) ở thư mục gốc dự án và điền thông tin vừa tạo:
 
 ```env
 # ==========================================
 # CẤU HÌNH NEXTERP / ERPNEXT
 # ==========================================
-ERP_PROVIDER=nexterp
-NEXTERP_BASE_URL=http://localhost:8080
-NEXTERP_API_KEY=dán_api_key_vào_đây
-NEXTERP_API_SECRET=dán_api_secret_vào_đây
+ERP_LOAI=erpnext
+ERPNEXT_URL=http://localhost:8080
+ERPNEXT_API_KEY=dán_api_key_vào_đây
+ERPNEXT_API_SECRET=dán_api_secret_vào_đây
+
+# HAI TRƯỜNG DƯỚI ĐÂY LÀ BẮT BUỘC — adapter NỔ ngay lúc khởi động nếu thiếu.
+#
+# Thiếu mã kho thì lời gọi `Bin` trả về tồn của MỌI kho cộng lại: một con số
+# trông hoàn toàn hợp lý và sai, không ai phát hiện cho tới lúc giao hàng từ
+# kho không có hàng. Thiếu bảng giá thì mỗi sản phẩm có thể trả nhiều mức giá.
+#
+# Tên phải khớp CHÍNH XÁC với tên trong ERPNext (mục Kho và Bảng giá).
+ERP_MA_KHO=Kho Chính - AS
+ERP_PRICELIST=Bảng giá bán lẻ
 ```
 
 ---
@@ -105,13 +115,53 @@ Người quản lý hoặc Dev có thể quản lý sản phẩm hoàn toàn tr�
 
 ---
 
+## ⚠️ Điều phải biết trước khi nối: ERP chỉ cấp **nửa** dữ liệu
+
+ERPNext cho mã, tên, nhóm hàng, dung tích, **giá** và **tồn kho**. Nó
+**không** cấp — và sẽ không bao giờ cấp — chín trường làm nên chất tư vấn:
+loại da phù hợp, vấn đề hỗ trợ, thành phần chính, cách dùng, pH, số công bố…
+
+Chín trường ấy ở lại `data/catalog.json`. Đây là thiết kế có chủ ý, ghi rõ
+trong `agent/erp/ho_so.py`: ERP kế toán không phải chỗ chứa văn bản tư vấn,
+và để chúng ở ngoài thì **đổi ERP không mất gì**.
+
+Hệ quả cụ thể khi bạn nối ERPNext:
+
+| Tình huống | Agent làm gì |
+|---|---|
+| SKU **có** hồ sơ tư vấn trong `catalog.json` | Tư vấn bình thường |
+| SKU **chưa có** hồ sơ tư vấn | **Bị loại khỏi `goi_y_san_pham`**, và cổng ghi `erp.thieu_ho_so` vào nhật ký |
+| Khách hỏi đích danh SKU chưa có hồ sơ | Vẫn trả giá và tồn (số thật), kèm cảnh báo cấm agent suy đoán công dụng |
+
+Nghĩa là nối ERPNext với 200 SKU mà chưa viết hồ sơ tư vấn nào thì agent sẽ
+**không gợi ý được gì cả**. Nó không hỏng — nó đang từ chối khuyên khi không
+có căn cứ, đúng nguyên tắc của hệ thống.
+
+---
+
 ## 🧪 4. Kiểm tra Kết nối & Kiểm thử Tự động
 
-### 1. Chạy bài test tích hợp ERP:
+### 1. Kiểm kết nối ERP:
 ```bash
-PYTHONPATH=. pytest tests/test_erp_integration.py -v
+python -m scripts.thu_erp
 ```
-Toàn bộ **3 test cases** (kết nối API, lấy tồn kho, tạo Sales Order, đính kèm mã vận đơn GHN) sẽ chạy và báo **PASSED**.
+
+Lệnh này đọc `ERP_LOAI` rồi thử đúng đường mà agent sẽ đi: xác thực, lấy
+danh mục, hỏi giá và tồn của một mã. Còn chữ `CHẶN` nào thì agent chưa dùng
+được ERP.
+
+### 2. Nạp danh mục lên ERPNext:
+```bash
+python -m scripts.nap_san_pham_erp --thu    # xem trước, KHÔNG ghi gì
+python -m scripts.nap_san_pham_erp          # ghi thật
+```
+
+Chế độ `--thu` chạy được cả khi chưa cấu hình gì — nó không kết nối đi đâu,
+chỉ in ra sẽ đẩy những gì.
+
+Script **từ chối chạy** khi `data/catalog.json` còn cờ `du_lieu_mau: true`.
+Đẩy danh mục mẫu lên ERP thật là đưa hàng không có thật vào hệ thống bán
+hàng, rồi có người lên đơn từ đó.
 
 ### 2. Kiểm tra trên Giao diện Web:
 * Truy cập: **[http://localhost:8080/app/item](http://localhost:8080/app/item)** để xem 13 sản phẩm Blanica đã có mặt trên hệ thống.
@@ -134,12 +184,12 @@ Toàn bộ **3 test cases** (kết nối API, lấy tồn kho, tạo Sales Order
 ## ❓ 6. Xử lý sự cố thường gặp (Troubleshooting)
 
 ### 1. Bị trùng cổng `8080`:
-Nếu máy bạn đã có ứng dụng khác chạy cổng `8080`, hãy mở file [`docker-compose.erpnext.yml`](file:///Users/huynhlehoaibao/Documents/AIAgent_mar/docker-compose.erpnext.yml) sửa:
+Nếu máy bạn đã có ứng dụng khác chạy cổng `8080`, hãy mở file [`docker-compose.erpnext.yml`](../docker-compose.erpnext.yml) sửa:
 ```yaml
 ports:
   - "8085:80"  # Đổi thành 8085
 ```
-Sau đó cập nhật trong `.env`: `NEXTERP_BASE_URL=http://localhost:8085`.
+Sau đó cập nhật trong `.env`: `ERPNEXT_URL=http://localhost:8085`.
 
 ### 2. Quên mật khẩu `Administrator` trong Docker:
 Bạn có thể đặt lại mật khẩu Admin trực tiếp qua lệnh:
@@ -156,4 +206,4 @@ Sau đó F5 lại trang trình duyệt là giao diện sẽ đẹp mắt trở l
 
 ---
 
-🎉 **Chúc bạn thiết lập thành công! Mọi thắc mắc vui lòng kiểm tra thêm tài liệu kiến trúc tại [`docs/kien-truc.md`](file:///Users/huynhlehoaibao/Documents/AIAgent_mar/docs/kien-truc.md).**
+🎉 **Chúc bạn thiết lập thành công! Mọi thắc mắc vui lòng kiểm tra thêm tài liệu kiến trúc tại [`docs/kien-truc.md`](kien-truc.md).**

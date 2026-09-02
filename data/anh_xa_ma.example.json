@@ -1,0 +1,8 @@
+{
+  "_ghi_chu": "MẪU. Ánh xạ mã sản phẩm nội bộ -> mã bên ERP. Chép thành data/anh_xa_ma.json rồi sửa. KHÔNG cần file này nếu mã hai bên trùng nhau — không có file thì cổng coi là đồng nhất. Chạy `python -m scripts.thu_erp` để biết có cần hay không: nó in tỷ lệ mã khớp, và kêu khi dưới 90%.",
+  "_khoa": "mã trong data/catalog.json",
+  "_gia_tri": "item_code (ERPNext) hoặc default_code (Odoo)",
+
+  "AS-CL01": "ITEM-0001",
+  "AS-SR03": "ITEM-0002"
+}

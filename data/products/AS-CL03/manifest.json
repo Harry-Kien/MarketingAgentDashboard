@@ -5,11 +5,13 @@
   "model": "gemini-2.5-flash-image",
   "ghi_chu": "Ảnh do model sinh, KHÔNG phải ảnh chụp sản phẩm thật. Thay bằng ảnh chụp thật trước khi bán hàng.",
   "loi_nhac": [
-    "Ảnh sản phẩm thương mại của một làm sạch chăm sóc da. Bao bì tối giản, tông trắng ngà và xanh rêu nhạt. chụp chính diện trên nền trắng phẳng, ánh sáng studio dịu, toàn bộ sản phẩm nằm trọn trong khung, có khoảng trống phía trên. Trên bao bì in ĐÚNG ba dòng này, không thêm chữ nào khác: \"AURORA\" / \"Aurora Cleansing Oil\" / \"200ml\". Chữ in thẳng hàng, phông sans-serif mảnh, chính tả chính xác. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG có người, KHÔNG khung viền, KHÔNG chữ ký, KHÔNG mã vạch.",
-    "Ảnh sản phẩm thương mại của một làm sạch chăm sóc da. Bao bì tối giản, tông trắng ngà và xanh rêu nhạt. cận cảnh chếch 45 độ, nền xám nhạt chuyển sắc, ánh sáng bên làm nổi chất liệu bề mặt, có khoảng trống phía dưới. Trên bao bì in ĐÚNG ba dòng này, không thêm chữ nào khác: \"AURORA\" / \"Aurora Cleansing Oil\" / \"200ml\". Chữ in thẳng hàng, phông sans-serif mảnh, chính tả chính xác. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG có người, KHÔNG khung viền, KHÔNG chữ ký, KHÔNG mã vạch."
+    "Ảnh sản phẩm thương mại của một làm sạch chăm sóc da. Bao bì tối giản, tông trắng ngà và xanh rêu nhạt. chụp chính diện trên nền trắng phẳng, ánh sáng studio dịu, toàn bộ sản phẩm nằm trọn trong khung, có khoảng trống phía trên. Trên bao bì in ĐÚNG ba dòng này, không thêm chữ nào khác: \"AURORA\" / \"Cleansing Oil\" / \"200ml\". Chữ in thẳng hàng, phông sans-serif mảnh, chính tả chính xác. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG có người, KHÔNG khung viền, KHÔNG chữ ký, KHÔNG mã vạch.",
+    "Ảnh sản phẩm thương mại của một làm sạch chăm sóc da. Bao bì tối giản, tông trắng ngà và xanh rêu nhạt. cận cảnh chếch 45 độ, nền xám nhạt chuyển sắc, ánh sáng bên làm nổi chất liệu bề mặt, có khoảng trống phía dưới. Trên bao bì in ĐÚNG ba dòng này, không thêm chữ nào khác: \"AURORA\" / \"Cleansing Oil\" / \"200ml\". Chữ in thẳng hàng, phông sans-serif mảnh, chính tả chính xác. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG có người, KHÔNG khung viền, KHÔNG chữ ký, KHÔNG mã vạch.",
+    "Ảnh sản phẩm thương mại của một làm sạch chăm sóc da. Bao bì tối giản, tông trắng ngà và xanh rêu nhạt. đặt trên mặt đá sáng màu cạnh khăn bông và nhánh lá xanh, ánh sáng ban ngày tự nhiên, có khoảng trống bên phải. Trên bao bì in ĐÚNG ba dòng này, không thêm chữ nào khác: \"AURORA\" / \"Cleansing Oil\" / \"200ml\". Chữ in thẳng hàng, phông sans-serif mảnh, chính tả chính xác. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG có người, KHÔNG khung viền, KHÔNG chữ ký, KHÔNG mã vạch."
   ],
   "anh": [
     "img_00.jpg",
-    "img_01.jpg"
+    "img_01.jpg",
+    "img_02.jpg"
   ]
 }

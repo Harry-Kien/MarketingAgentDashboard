@@ -8,6 +8,7 @@ from typing import Any
 import asyncpg
 
 from agent.config import settings
+from agent.migrations.runner import apply_all
 
 _pool: asyncpg.Pool | None = None
 
@@ -38,6 +39,7 @@ async def init_db() -> asyncpg.Pool:
     schema = (Path(__file__).parent / "schema.sql").read_text(encoding="utf-8")
     async with _pool.acquire() as conn:
         await conn.execute(schema)
+        await apply_all(conn)
     return _pool
 
 

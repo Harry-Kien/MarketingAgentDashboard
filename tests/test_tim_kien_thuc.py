@@ -167,7 +167,20 @@ def test_moi_tool_khac_deu_la_tool_du_lieu():
     du_lieu = ten - ag._TOOL_TRA_TAI_LIEU
     assert du_lieu == {
         "tra_cuu_san_pham", "goi_y_san_pham", "gui_anh_san_pham",
-        "tra_cuu_don_hang", "tao_van_don", "tao_video", "tao_don_hang", "chuyen_nhan_vien",
+        "tra_cuu_don_hang", "tra_cuu_van_chuyen", "tao_video", "tao_don_hang",
+        "chuyen_nhan_vien",
+        # xin_huy_don: `da_ghi_nhan` phản ánh một dòng CSDL THẬT bị sửa —
+        # False nghĩa là không có đơn nào khớp, chứ không phải "chưa thử".
+        # Nên nó là tool dữ liệu, đúng như phân loại mặc định ở đây.
+        "xin_huy_don",
+        # xin_doi_tra: cùng lý do với xin_huy_don — `da_ghi_nhan` là kết
+        # quả của một câu UPDATE có thật, không phải một lời hứa.
+        #
+        # Việc nó được cộng thưởng độ tin cậy KHÔNG làm hỏng chốt chuyển
+        # người ở đây: tool này luôn trả `can_chuyen_nhan_vien: True`, và
+        # `agent.respond` bật cờ escalate ngay khi thấy khoá đó — không đi
+        # qua đường độ tin cậy.
+        "xin_doi_tra",
     }, "danh sách tool đổi — hãy xác nhận tool mới có trả về DỮ LIỆU THẬT không"
 
 

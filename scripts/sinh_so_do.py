@@ -1,5 +1,5 @@
 """
-Sinh sơ đồ cơ sở dữ liệu TỪ `agent/schema.sql`, không vẽ tay.
+Sinh sơ đồ cơ sở dữ liệu TỪ baseline và migrations, không vẽ tay.
 
     python -m scripts.sinh_so_do            in ra màn hình
     python -m scripts.sinh_so_do --ghi      ghi vào docs/kien-truc.md
@@ -14,8 +14,8 @@ Repo này đã dính đúng chuyện đó hai lần trong một ngày: README li
 thiếu sót đã làm xong từ lâu, và `he_thong.py` viết rằng proxy "không làm
 được" trong khi lớp proxy đang chạy. Cả hai đều là tài liệu nói ngược mã.
 
-Sinh từ `schema.sql` thì sơ đồ không thể sai: nguồn duy nhất là chính file
-mà Postgres đọc lúc khởi động.
+Sinh từ toàn bộ SQL mà Postgres đọc lúc khởi động thì sơ đồ không thể âm
+thầm bỏ sót bảng mới trong migration.
 
 GIỚI HẠN — NÓI RÕ ĐỂ KHÔNG AI TIN NHẦM
 --------------------------------------
@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 SCHEMA = ROOT / "agent" / "schema.sql"
+MIGRATIONS = ROOT / "agent" / "migrations" / "versions"
 RA = ROOT / "docs" / "kien-truc.md"
 
 # Nhóm bảng theo phần nghiệp vụ. Một ERD 16 bảng phẳng thì không ai đọc
@@ -52,6 +53,28 @@ NHOM = {
     "Tri thức (RAG)": ["documents", "chunks"],
     "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],
     "Vận hành": ["nguoi_dung", "phien", "events", "zalo_oa_token"],
+    "Tài khoản kênh": [
+        "channel_accounts",
+        "credential_secrets",
+        "account_memberships",
+        "account_health_events",
+    ],
+    "Inbox native": [
+        "webhook_deliveries",
+        "attachments",
+        "outbox_jobs",
+        "inbox_events",
+        "conversation_reads",
+        "worker_heartbeats",
+    ],
+    "Customer 360": [
+        "contacts", "contact_points", "contact_tags", "contact_notes",
+        "contact_consents", "contact_merges", "data_retention_jobs",
+    ],
+    "Routing và SLA": [
+        "teams", "team_members", "routing_rules", "routing_cursors",
+        "conversation_assignments", "sla_policies", "sla_events",
+    ],
 }
 
 # Cột nào đáng hiện trên sơ đồ. Vẽ đủ 20 cột mỗi bảng thì sơ đồ thành bảng
@@ -62,9 +85,15 @@ BO_QUA_COT = {
 }
 
 
+def doc_sql() -> str:
+    """SQL thực tế theo đúng thứ tự app áp: baseline rồi migrations."""
+    sources = [SCHEMA, *sorted(MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))]
+    return "\n\n".join(path.read_text(encoding="utf-8") for path in sources)
+
+
 def doc_schema() -> tuple[dict[str, list[tuple[str, str]]], list[tuple[str, str]]]:
     """Trả về ({bảng: [(cột, kiểu)]}, [(bảng con, bảng cha)])."""
-    sql = SCHEMA.read_text(encoding="utf-8")
+    sql = doc_sql()
     bang: dict[str, list[tuple[str, str]]] = {}
     khoa_ngoai: list[tuple[str, str]] = []
 
@@ -81,11 +110,33 @@ def doc_schema() -> tuple[dict[str, list[tuple[str, str]]], list[tuple[str, str]
             if not m:
                 continue
             ten_cot, kieu = m.group(1), m.group(2)
-            if (ref := re.search(r"REFERENCES (\w+)", d)):
-                khoa_ngoai.append((ten, ref.group(1)))
             if ten_cot not in BO_QUA_COT:
                 cot.append((ten_cot, kieu.split("(")[0]))
+        for ref in re.findall(r"REFERENCES\s+(\w+)", than):
+            khoa_ngoai.append((ten, ref))
         bang[ten] = cot
+
+    # Baseline cũ thêm một số cột bằng ALTER; migration account-aware cũng
+    # thêm `conversations.account_id`. Bỏ qua ALTER là ERD đúng bảng nhưng
+    # sai chính khóa định tuyến quan trọng nhất.
+    for match in re.finditer(
+        r"ALTER TABLE\s+(\w+)\s+ADD COLUMN IF NOT EXISTS\s+"
+        r"(\w+)\s+([A-Z][A-Z0-9_]*(?:\(\d+(?:,\s*\d+)?\))?)",
+        sql,
+        re.S,
+    ):
+        table, column, kind = match.groups()
+        if table in bang and column not in BO_QUA_COT:
+            item = (column, kind.split("(")[0])
+            if item not in bang[table]:
+                bang[table].append(item)
+
+    for match in re.finditer(
+        r"ALTER TABLE\s+(\w+)\s+(?:(?!;).)*?REFERENCES\s+(\w+)",
+        sql,
+        re.S,
+    ):
+        khoa_ngoai.append((match.group(1), match.group(2)))
     return bang, khoa_ngoai
 
 
@@ -109,9 +160,9 @@ def kien_truc() -> str:
     """Sơ đồ khối. Phần này VIẾT TAY, vì nó là quyết định chứ không phải dữ liệu."""
     return """```mermaid
 flowchart TB
-    subgraph kenh["Kênh — ChannelAdapter là ranh giới"]
-        zalo["Zalo<br/>(ZaloCRM, kéo)"]
-        cw["Facebook · Instagram · WhatsApp<br/>web · email (Chatwoot, đẩy)"]
+    subgraph kenh["Kênh native — ChannelAdapter là ranh giới"]
+        zalo["Zalo cá nhân · Zalo OA"]
+        cw["Facebook · Instagram · WhatsApp<br/>website chat"]
     end
 
     subgraph loi["Lõi agent"]
@@ -219,7 +270,8 @@ def dung_tai_lieu() -> str:
     return f"""# Kiến trúc hệ thống
 
 > **Sơ đồ cơ sở dữ liệu trong tài liệu này được SINH RA từ
-> `agent/schema.sql`** bằng `python -m scripts.sinh_so_do --ghi`.
+> `agent/schema.sql` và `agent/migrations/versions/*.sql`** bằng
+> `python -m scripts.sinh_so_do --ghi`.
 > Đừng sửa tay phần đó — sửa schema rồi sinh lại.
 >
 > Lý do: sơ đồ vẽ tay đúng đúng một ngày, ngày người ta vẽ nó. Repo này đã
@@ -256,11 +308,18 @@ chữ** tách riêng có chủ đích: nhìn ảnh da rồi khuyên dùng gì ch
 
 ## 4. Cơ sở dữ liệu
 
-{len(bang)} bảng, chia theo phần nghiệp vụ:
+{len(bang)} bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
 {chr(10).join(nhom_md)}
+
+Invariant định tuyến quan trọng nhất là `(account_id, external_id)`, không
+phải `(channel, external_id)`. Hai Page có thể cùng nhìn thấy một external
+ID; thiếu account scope sẽ nhập nhầm hội thoại và gửi reply ra sai Page.
+Adapter gắn `account_id` từ lúc parse inbound; outbound lấy account từ bản
+ghi conversation và fail closed khi account sai hoặc đã bị khóa.
 
 {erd(bang, kn)}
 
@@ -269,7 +328,7 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 
 ---
 
-## 5. Bốn nguyên tắc
+## 5. Bảy nguyên tắc
 
 | Nguyên tắc | Nằm ở đâu |
 |---|---|
@@ -277,6 +336,9 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 | Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
 | Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
 | Biết dừng đúng lúc — năm lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
+| Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/routes.py` |
+| Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |
+| Migration tiến về phía trước có version, checksum và transaction lock | `agent/migrations/runner.py` |
 """
 
 

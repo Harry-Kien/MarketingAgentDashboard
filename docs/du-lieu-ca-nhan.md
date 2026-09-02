@@ -36,10 +36,34 @@ luật khác.
    đơn hàng              ──>  ẨN DANH
                               giữ mã đơn, sản phẩm, số tiền, ngày cho sổ sách
                               thay tên / sđt / địa chỉ bằng dấu ẩn danh
+
+   khách bên KHO/ERP     ──>  ẨN DANH
+                              Customer (ERPNext) / res.partner (Odoo)
+                              cùng lý do: ERP chặn xoá bản ghi đã có chứng từ
 ```
 
 Cách này thoả cả hai luật cùng lúc, và là cách các hệ thống quốc tế xử lý
 xung đột giữa "quyền được xoá" và "nghĩa vụ lưu chứng từ".
+
+### Nơi lưu THỨ BA: kho/ERP
+
+Từ khi bật `ERP_GHI_DON=true`, tên — số điện thoại — địa chỉ khách được tạo
+thành `Customer` (ERPNext) hoặc `res.partner` (Odoo) và nằm đó **vĩnh viễn**.
+
+Đó là nơi lưu thứ ba, ngoài Postgres và hồ sơ ghi nhớ. `du_lieu_ca_nhan.xoa()`
+gọi `an_danh_ben_erp()` để với tới nó.
+
+**ERP không với tới được thì `da_xoa` trả `False`.** Đây là chỗ dễ làm sai
+nhất và hậu quả nặng nhất: báo "đã xoá" trong khi ERP còn nguyên dữ liệu là
+ghi một bản nhật ký `pdpd.xoa_du_lieu` **sai sự thật** — một bằng chứng tuân
+thủ cho việc chưa làm. Nhật ký ghi cả `erp_da_lam` và `erp_ly_do` để phần
+còn thiếu không biến mất.
+
+Khi đó người vận hành phải vào ERP ẩn danh tay, vì **thời hạn đáp ứng yêu
+cầu xoá là do luật đặt, không phải do hệ thống đặt**.
+
+`ERP_GHI_DON` đang tắt thì mục này không áp dụng — ERP chưa từng nhận dữ
+liệu khách nào.
 
 ---
 

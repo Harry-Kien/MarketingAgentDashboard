@@ -53,6 +53,16 @@ CHO_PHEP = {
     # nó là người lạ nối được webhook của họ vào endpoint của ta.
     "MESSENGER_VERIFY_TOKEN": "chuỗi bắt tay webhook Facebook Messenger",
     "CHATWOOT_WEBHOOK_SECRET": "bí mật ký HMAC cho webhook Chatwoot",
+    # Ký HMAC hai chiều giữa control plane và sidecar Zalo cá nhân. Cùng một
+    # chuỗi phải nằm ở HAI nơi: biến môi trường của tiến trình sidecar, và
+    # credential `sidecar_secret` của tài khoản trong vault. Lệch nhau thì
+    # mọi lời gọi bị từ chối 401 mà không nói vì sao.
+    "ZALO_SIDECAR_SECRET": "bí mật ký HMAC giữa app và sidecar Zalo cá nhân",
+    # Nằm trong URL webhook ta khai với hãng vận chuyển. GHN không ký
+    # webhook, nên đây là thứ duy nhất phân biệt hãng gọi với người lạ gọi.
+    # Đoán được nó là đánh dấu được đơn "hoàn về" — và hoàn về thì hệ thống
+    # tự cộng hàng lại vào kho.
+    "SHIPPING_WEBHOOK_SECRET": "bí mật trong URL webhook hãng vận chuyển",
 }
 
 

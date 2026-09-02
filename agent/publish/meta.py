@@ -24,7 +24,8 @@ import httpx
 from ..config import settings
 from .base import PublishAdapter, PublishResult, PublishTarget
 
-GRAPH = "https://graph.facebook.com/v21.0"
+# Phiên bản Graph lấy từ cấu hình chung — xem `settings.graph_version`.
+GRAPH = settings.graph_base
 
 
 class MetaPublisher(PublishAdapter):

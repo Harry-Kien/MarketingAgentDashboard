@@ -3,7 +3,8 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", khoFilter: "all", openConv: null, nickDefault: "", timer: null };
+const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
+let inboxRefreshTimer = null;
 
 /* ---------------- tiện ích ---------------- */
 
@@ -12,6 +13,26 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
+
+  /* 401 KHÁC mọi lỗi khác, và phải xử lý riêng.
+   *
+   * Ở contact center người trực mở tab suốt ca, nên phiên hết hạn là chuyện
+   * CHẮC CHẮN xảy ra — hết hạn thật, hoặc máy chủ khởi động lại.
+   *
+   * Trước đây không có nhánh này. Hệ quả: mọi panel hiện chữ "Unauthorized"
+   * (tiếng Anh, giữa giao diện tiếng Việt), vòng làm mới 6 giây vẫn chạy nên
+   * toast lỗi bắn lại mỗi 6 giây mãi mãi, và không chỗ nào bảo người dùng
+   * đăng nhập lại — màn đăng nhập vẫn ẩn. Họ nhìn một dashboard chết trong
+   * khi khách vẫn đang nhắn tới.
+   */
+  if (res.status === 401) {
+    $("#cong")?.classList.remove("is-off");
+    // Dừng vòng làm mới: không dừng thì cứ 6 giây một toast lỗi, và mỗi
+    // lần là một request vô ích tới máy chủ.
+    if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    throw new Error("Phiên đăng nhập đã hết hạn — đăng nhập lại để tiếp tục");
+  }
+
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch { /* giữ nguyên */ }
@@ -47,7 +68,7 @@ const hhmm = (iso) =>
 // Thoát cả `'` dù mọi thuộc tính trong file này đều dùng nháy kép. Lý do là
 // người sửa sau: đổi một chỗ sang nháy đơn là chuyện vô hại ở mọi dự án
 // khác, và ở đây nó lặng lẽ mở đường cho XSS. Tên khách và nội dung tin đến
-// thẳng từ Zalo/Chatwoot — người lạ gõ gì vào cũng được.
+// thẳng từ nhà cung cấp — người lạ gõ gì vào cũng được.
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -61,13 +82,17 @@ const SIGNAL_LABEL = {
 
 /* ---------------- điều hướng ---------------- */
 
+/* MỘT chỗ đổi màn. Trước đây logic này bị chép lại ở `moManKetNoi`, và mỗi
+   bản chép là một chỗ có thể quên cập nhật khi thanh điều hướng đổi. */
+function doiMan(ten) {
+  state.view = ten;
+  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === ten));
+  refresh();
+}
+
 $$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    state.view = btn.dataset.view;
-    $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b === btn));
-    $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === state.view));
-    refresh();
-  })
+  btn.addEventListener("click", () => doiMan(btn.dataset.view))
 );
 
 /* ---------------- sáng / tối ---------------- */
@@ -160,6 +185,7 @@ function cell(label, value, unit, ratio, tone) {
 async function loadOverview() {
   const o = await api("/overview");
   applyRuntime(o.runtime);
+  if (o.public_base_url) PUBLIC_BASE = o.public_base_url;
   drawTape(o.tape);
 
   // Huy hiệu "Ca trực" đếm MỌI hội thoại cần người, không riêng cái chờ
@@ -218,15 +244,15 @@ async function loadOverview() {
 /* ---------------- hội thoại ---------------- */
 
 const CHANNEL_LABEL = {
-  zalocrm: "Zalo", zalo_oa: "Zalo OA", chatwoot: "Chatwoot",
-  facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok",
-  whatsapp: "WhatsApp", web: "Web", test: "Thử",
+  zalo_personal: "Zalo cá nhân", zalo_oa: "Zalo OA",
+  facebook: "Facebook", instagram: "Instagram",
+  whatsapp: "WhatsApp", webchat: "Web chat", web: "Web chat",
 };
 
-/* Chatwoot là HỘP THƯ GỘP: Facebook Messenger, Instagram DM, WhatsApp,
+/* Một connector tương thích có thể là HỘP THƯ GỘP: Facebook Messenger, Instagram DM, WhatsApp,
    chat website, email, Telegram đều đổ về cùng một kênh. Hiện huy hiệu
-   "Chatwoot" là mất đúng thông tin người trực cần — khách này đến từ đâu.
-   Tên lớp Chatwoot đặt có dạng "Channel::FacebookPage"; bộ đọc đã cắt phần
+   tên connector là mất đúng thông tin người trực cần — khách này đến từ đâu.
+   Tên lớp connector có dạng "Channel::FacebookPage"; bộ đọc đã cắt phần
    "Channel::" nên ở đây chỉ còn phần đuôi. */
 const NEN_TANG_LABEL = {
   facebookpage: "Facebook", facebook: "Facebook",
@@ -235,8 +261,7 @@ const NEN_TANG_LABEL = {
   twiliosms: "SMS", line: "LINE", api: "API",
 };
 
-/* Nền tảng nào chưa có màu riêng thì mượn màu của Chatwoot — vẫn đúng, vì
-   nó đến qua Chatwoot thật. */
+/* Nền tảng nào chưa có màu riêng thì dùng màu connector tương thích. */
 const NEN_TANG_MAU = {
   facebook: "facebook", instagram: "instagram", whatsapp: "whatsapp",
   "web chat": "web", email: "chatwoot", telegram: "chatwoot",
@@ -274,14 +299,18 @@ function convRow(c, hangDoi) {
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
     : `<span class="row__sub">${esc(c.last_message || "—")}</span>`;
+  const customer = c.customer_name || c.customer || "Khách";
+  const unread = Number(c.unread_count || 0);
+  const due = c.first_response_due_at || c.resolution_due_at;
   return `<button type="button" class="row ${state.openConv === c.id ? "is-on" : ""}" data-conv="${c.id}">
     <span class="row__flag row__flag--${sig}"></span>
     <span class="row__body">
-      <span class="row__title">${esc(c.customer || "Khách")} ${srcBadge(c.channel, c.nen_tang)}</span>
+      <span class="row__title">${esc(customer)} ${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
+      <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
       ${sub}
     </span>
     <span class="row__side">
-      ${hangDoi ? choBadge(c.cho_bao_lau_phut) : `<span class="row__num">${usd(c.cost)}</span>`}
+      ${hangDoi ? choBadge(c.cho_bao_lau_phut) : unread ? `<span class="unread">${unread}</span>` : ""}
       <span class="row__time">${clock(c.updated_at)}</span>
     </span>
   </button>`;
@@ -308,7 +337,9 @@ $$("#convfilter .chip").forEach((chip) =>
 );
 
 async function loadConversations() {
-  const list = await api("/conversations?status=" + state.convFilter);
+  const query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
+  const result = await api("/inbox/conversations?limit=100" + query);
+  const list = result.items || [];
   $("#convlist").innerHTML = list.length
     ? list.map(convRow).join("")
     : '<p class="empty">Chưa có hội thoại nào.</p>';
@@ -318,38 +349,62 @@ async function loadConversations() {
 
 async function loadThread(id) {
   let c;
-  try { c = await api("/conversations/" + id); }
+  try { c = await api("/inbox/conversations/" + id); }
   catch { $("#convdetail").innerHTML = '<p class="empty">Không tìm thấy hội thoại.</p>'; return; }
 
   const msgs = c.messages.map((m) => {
-    const draft = m.role === "agent" && !m.delivered;
-    const who = { customer: "Khách", agent: "Agent", staff: "Nhân viên" }[m.role] || m.role;
+    const draft = m.role === "agent" && m.delivery_status === "draft";
+    const who = { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
     const meta = [
-      hhmm(m.at), who,
+      hhmm(m.created_at), who, m.delivery_status || "",
       m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
       m.grounded === false ? "KHÔNG có căn cứ" : "",
       m.cost ? usd(m.cost) : "",
       m.latency_ms ? m.latency_ms + "ms" : "",
-      (m.sources || []).length ? "nguồn: " + m.sources.join(", ") : "",
+      (m.sources || []).length ? "có nguồn tham chiếu" : "",
     ].filter(Boolean).join(" · ");
 
     /* Ảnh khách gửi. Đường dẫn đã trỏ qua proxy từ lúc đọc webhook, nên
        hiện được bằng chính phiên dashboard — người trực không phải đăng
-       nhập Chatwoot lần nữa chỉ để xem một tấm ảnh.
+       nhập hệ thống trung gian lần nữa chỉ để xem một tấm ảnh.
 
        Ảnh nằm TRÊN bong bóng chữ: khách gửi ảnh trước rồi mới gõ chú
        thích, và đảo thứ tự làm người đọc hiểu ngược ý họ. */
+    /* Nguồn ảnh: URL của nhà cung cấp nếu có, còn không thì đường phục vụ
+     * tệp của chính hệ thống.
+     *
+     * Tin NHÂN VIÊN gửi không có `url` — `queue_file` chỉ lưu `storage_key`,
+     * tức đường dẫn trên máy chủ. Vẽ thẳng `url` cho ra ảnh vỡ: người trực
+     * gửi ảnh cho khách xong, nhìn lại khung chat thì thấy biểu tượng hỏng.
+     */
+    const nguonAnh = (a) => a.url || (a.id ? `/api/attachments/${a.id}/file` : "");
+
     const anh = (m.attachments || []).length
-      ? `<div class="msg__anh">${m.attachments.map((a) =>
-          a.loai === "image"
-            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="ảnh khách gửi" loading="lazy"></a>`
-            : `<a class="msg__file" href="${esc(a.url)}" target="_blank" rel="noopener">📎 ${esc(a.loai)}</a>`
-        ).join("")}</div>`
+      ? `<div class="msg__anh">${m.attachments.map((a) => {
+          const src = nguonAnh(a);
+          const ten = (a.metadata && a.metadata.caption) || "";
+          if (!src) return "";
+          return (a.kind || a.loai) === "image"
+            ? `<a href="${esc(src)}" target="_blank" rel="noopener" title="${esc(ten)}">
+                 <img src="${esc(src)}" alt="${esc(ten || "ảnh")}" loading="lazy"></a>`
+            : `<a class="msg__file" href="${esc(src)}" target="_blank" rel="noopener">
+                 📎 ${esc(ten || a.kind || "tệp đính kèm")}</a>`;
+        }).join("")}</div>`
       : "";
+
+    /* Không lặp lại tên tệp dưới ảnh.
+     *
+     * `queue_file` đặt nội dung tin BẰNG chú thích, và chú thích mặc định là
+     * tên tệp. Vẽ cả hai thì khung chat hiện ảnh rồi ngay dưới là một bong
+     * bóng xanh ghi "WIN_20241105_22_45_28_Pro.jpg" — Messenger và Zalo đều
+     * không làm vậy: ảnh tự nói lên nó là gì. */
+    const tenTep = (m.attachments || [])
+      .map((a) => (a.metadata && a.metadata.caption) || "").filter(Boolean);
+    const chuTrung = m.content && tenTep.includes(m.content.trim());
 
     return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""}">
       ${anh}
-      ${m.content ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
+      ${m.content && !chuTrung ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
         ${draft ? `<button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
@@ -357,31 +412,104 @@ async function loadThread(id) {
     </div>`;
   }).join("");
 
-  const taken = c.status === "escalated";
+  const taken = c.mode === "human" || c.status === "escalated";
+
+  /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
+   *
+   * Panel này dựng lại bằng `innerHTML` mỗi lần refresh — SSE báo tin mới,
+   * hoặc nhịp 6 giây. Thẻ <textarea> cũ bị vứt cùng cả khối, nên chữ đang
+   * gõ dở biến mất. Nghịch lý: KHÁCH CÀNG NHẮN NHIỀU thì nhân viên càng
+   * hay mất chữ — đúng lúc hội thoại đang nóng.
+   *
+   * Ba thứ phải giữ, mỗi thứ chặn một kiểu khó chịu khác nhau:
+   *   bản nháp   -> không mất chữ
+   *   con trỏ    -> không nhảy về đầu dòng, đang gõ giữa câu vẫn gõ tiếp được
+   *   vị trí cuộn-> đang đọc lại đoạn cũ thì không bị giật xuống đáy
+   */
+  const o_cu = $("#replyform") ? $('#replyform [name="text"]') : null;
+  const dang_focus = o_cu && document.activeElement === o_cu;
+  const con_tro = o_cu ? o_cu.selectionStart : null;
+  const thread_cu = $("#thread");
+  // Cách đáy dưới 40px thì coi như đang theo dõi tin mới -> cuộn tiếp.
+  // Ở xa hơn nghĩa là đang đọc đoạn cũ -> giữ nguyên chỗ họ đang đọc.
+  const dang_o_day = !thread_cu
+    || thread_cu.scrollHeight - thread_cu.scrollTop - thread_cu.clientHeight < 40;
+  const cuon_cu = thread_cu ? thread_cu.scrollTop : 0;
+
   $("#convdetail").innerHTML = `
     <div class="convo__title">
-      <span class="convo__name">${esc(c.customer || "Khách")}</span>
+      <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
       <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
       <span class="convo__spacer"></span>
-      ${srcBadge(c.channel, c.nen_tang)}<span class="msg__meta">${usd(c.cost)}</span>
-      ${NICKS.length > 1 ? `<select class="nickpin" id="nickpin" title="Nick Zalo trả lời riêng cho hội thoại này">
-        <option value="">nick mặc định${nickTen(state.nickDefault) ? " (" + esc(nickTen(state.nickDefault)) + ")" : ""}</option>
-        ${NICKS.map((n) => `<option value="${esc(n.id)}"${n.id === c.zalo_account_id ? " selected" : ""}${n.san_sang ? "" : " disabled"}>${esc(n.ten)}</option>`).join("")}
-      </select>` : ""}
+      ${srcBadge(c.account_channel, c.nen_tang)}<span class="msg__meta">${esc(c.account_name || "")}</span>
+      ${c.contact_id ? `<button type="button" class="btn btn--sm" id="open-contact" data-contact="${c.contact_id}">Customer 360</button>` : ""}
+      ${!taken ? `<button type="button" class="btn btn--sm ${c.mode === "auto" ? "" : "btn--go"}" id="btn-chedo"
+        data-chedo="${c.mode === "auto" ? "assist" : "auto"}">
+        ${c.mode === "auto" ? "Duyệt trước khi gửi" : "Để agent tự trả lời"}
+      </button>` : ""}
       <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
-        ${taken ? "Trả lại cho agent" : "Tôi tiếp quản"}
+        ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
       </button>
+    </div>
+    <div class="opsbar">
+      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
+      <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
+      <span>Version <b>${c.version || 1}</b></span>
     </div>
     <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
       ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
     </div>
     <form class="convo__bar" id="replyform">
       <textarea name="text" placeholder="Nhắn trực tiếp cho khách…" required></textarea>
+      <span class="convo__dinhkem">
+        <button type="button" class="btn btn--sm" data-dinhkem title="Gửi ảnh hoặc tài liệu">📎</button>
+        <input type="file" id="tep-dinhkem" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>
+      </span>
       <button type="submit" class="btn btn--primary">Gửi</button>
     </form>`;
 
   const thread = $("#thread");
-  if (thread) thread.scrollTop = thread.scrollHeight;
+  if (thread) thread.scrollTop = dang_o_day ? thread.scrollHeight : cuon_cu;
+
+  /* Trả lại bản nháp.
+   *
+   * Gắn theo TỪNG hội thoại: giữ chung một biến là dán chữ soạn cho khách A
+   * sang khung của khách B — tệ hơn mất chữ nhiều, vì nó gửi nhầm nội dung
+   * cho nhầm người.
+   */
+  const o_moi = $('#replyform [name="text"]');
+  const nhap = state.nhapTheoHoiThoai && state.nhapTheoHoiThoai[id];
+  if (o_moi && nhap) {
+    o_moi.value = nhap;
+    if (dang_focus) {
+      o_moi.focus();
+      const vt = con_tro == null ? nhap.length : Math.min(con_tro, nhap.length);
+      o_moi.setSelectionRange(vt, vt);
+    }
+  }
+  if (o_moi) {
+    o_moi.addEventListener("input", () => {
+      state.nhapTheoHoiThoai = state.nhapTheoHoiThoai || {};
+      state.nhapTheoHoiThoai[id] = o_moi.value;
+    });
+
+    /* Enter gửi, Shift+Enter xuống dòng.
+     *
+     * Mặc định của trình duyệt với <textarea> là Enter xuống dòng và không
+     * submit. Không phải lỗi trình duyệt — nhưng người trực gõ theo phản xạ
+     * từ Zalo và Messenger, nơi Enter luôn gửi. Giữ mặc định ở đây là bắt
+     * họ với chuột sang nút Gửi sau mỗi câu.
+     *
+     * `isComposing` là bắt buộc với tiếng Việt: bộ gõ dấu dùng Enter để
+     * chốt từ đang gõ. Không kiểm cờ này thì gõ "phường" bị gửi mất nửa
+     * chừng thành "phươn".
+     */
+    o_moi.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
+      ev.preventDefault();
+      $("#replyform").requestSubmit();
+    });
+  }
 
   $$("[data-approve]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -393,22 +521,106 @@ async function loadThread(id) {
     })
   );
 
-  const pin = $("#nickpin");
-  if (pin) pin.addEventListener("change", async () => {
+  const openContact = $("#open-contact");
+  if (openContact) openContact.addEventListener("click", () => openCustomer(openContact.dataset.contact));
+
+  /* Trả hội thoại VỀ cho agent, hoặc bắt duyệt trước khi gửi.
+   *
+   * Trước khi có nút này, hội thoại rơi xuống "Chờ duyệt" hay "Đã chuyển
+   * người" là KẸT ở đó vĩnh viễn: chỉ có nút đi xuống, không có nút đi lên.
+   * Ô xanh "Agent xử lý" trên chú giải là một lời hứa hệ thống không giữ
+   * được, và mọi hội thoại cũ dồn dần vào hàng chờ duyệt.
+   *
+   * Không hiện khi đang có người tiếp quản: phải "Kết thúc tiếp quản" trước.
+   * Bật auto sau lưng người đang giữ là để AI nhắn chen vào giữa cuộc họ
+   * đang xử lý. */
+  const nutCheDo = $("#btn-chedo");
+  if (nutCheDo) nutCheDo.addEventListener("click", async () => {
+    const sang = nutCheDo.dataset.chedo;
+    const ly_do = sang === "auto"
+      ? "Người trực trả hội thoại về cho agent"
+      : "Người trực bật duyệt trước khi gửi";
+    nutCheDo.disabled = true;
     try {
-      await api("/conversations/" + id + "/account", { method: "POST",
-        body: JSON.stringify({ zalo_account_id: pin.value }) });
-      toast(pin.value ? "Đã ghim nick cho hội thoại này." : "Đã bỏ ghim, dùng nick mặc định.");
-    } catch (e) { toast(e.message, true); }
+      await api(`/inbox/conversations/${id}/che-do`, {
+        method: "POST",
+        body: JSON.stringify({
+          che_do: sang, expected_version: c.version || 1, reason: ly_do,
+        }),
+      });
+      toast(sang === "auto"
+        ? "Agent sẽ tự trả lời hội thoại này."
+        : "Từ giờ AI soạn xong sẽ chờ bạn duyệt.");
+      refresh();
+    } catch (e) {
+      toast(e.message, true);
+      nutCheDo.disabled = false;
+    }
   });
 
   $("#btn-take").addEventListener("click", async () => {
     try {
-      await api(`/conversations/${id}/${taken ? "release" : "takeover"}`, { method: "POST" });
-      toast(taken ? "Đã trả hội thoại về cho agent." : "Bạn đang giữ hội thoại này.");
+      await api(`/inbox/conversations/${id}/${taken ? "release" : "takeover"}`, {
+        method: "POST",
+        body: JSON.stringify({ expected_version: c.version || 1, reason: taken ? "Nhân viên kết thúc tiếp quản" : "Nhân viên nhận xử lý" }),
+      });
+      toast(taken ? "Đã chuyển về chế độ gợi ý." : "Bạn đang giữ hội thoại này. AI đã dừng gửi.");
       refresh();
     } catch (e) { toast(e.message, true); }
   });
+
+  /* Đính kèm ảnh hoặc tài liệu — như mọi công cụ chat thật.
+   *
+   * Trước đây agent gửi được ảnh sản phẩm còn NGƯỜI TRỰC thì không. Khách
+   * hỏi "cho xem ảnh thật cái đã mở nắp" thì họ phải mở Zalo riêng ra gửi,
+   * và tin đó nằm ngoài hội thoại — không ai truy được về sau.
+   *
+   * Gửi ngay khi chọn tệp, không đợi bấm Gửi: người dùng quen với Messenger
+   * và Zalo, cả hai đều gửi ngay. Bắt bấm thêm một nút là bước thừa mà
+   * không ai nhớ.
+   */
+  const nutKem = $("[data-dinhkem]");
+  const oTep = $("#tep-dinhkem");
+  if (nutKem && oTep) {
+    nutKem.addEventListener("click", () => oTep.click());
+    oTep.addEventListener("change", async () => {
+      const f = oTep.files && oTep.files[0];
+      if (!f) return;
+      nutKem.disabled = true;
+      const chu = nutKem.textContent;
+      nutKem.textContent = "⏳";
+      try {
+        const fd = new FormData();
+        fd.append("tep", f);
+        // Chú thích lấy từ ô soạn tin nếu người trực đã gõ sẵn — họ thường
+        // viết "ảnh thật bên em nè" rồi mới chọn ảnh.
+        const oChu = $('#replyform [name="text"]');
+        if (oChu && oChu.value.trim()) fd.append("chu_thich", oChu.value.trim());
+
+        // KHÔNG đặt Content-Type: trình duyệt phải tự sinh boundary cho
+        // multipart. Đặt tay là máy chủ không tách được phần tệp.
+        const r = await fetch(`/api/conversations/${id}/send-file`, {
+          method: "POST", body: fd, credentials: "same-origin",
+        });
+        if (!r.ok) {
+          const loi = await r.json().catch(() => ({}));
+          throw new Error(loi.detail || `Không gửi được (HTTP ${r.status})`);
+        }
+        toast("Đã gửi tệp cho khách.");
+        if (oChu) {
+          oChu.value = "";
+          if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[id];
+        }
+        refresh();
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        oTep.value = "";
+        nutKem.disabled = false;
+        nutKem.textContent = chu;
+      }
+    });
+  }
 
   $("#replyform").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -420,16 +632,147 @@ async function loadThread(id) {
       });
       toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
       ev.target.reset();
+      // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
+      // trở vào khung và người trực tưởng tin chưa gửi đi.
+      if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[id];
       refresh();
     } catch (e) { toast(e.message, true); }
   });
 }
 
+/* ---------------- Customer 360 ---------------- */
+
+function openCustomer(id) {
+  state.openContact = id;
+  state.view = "khachhang";
+  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "khachhang"));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "khachhang"));
+  loadContacts();
+}
+
+$("#contactsearch")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  state.contactQuery = String(new FormData(ev.target).get("q") || "").trim();
+  loadContacts();
+});
+
+async function loadContacts() {
+  const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}`);
+  $("#c-khachhang").textContent = contacts.length || "";
+  $("#contactlist").innerHTML = contacts.length ? contacts.map((contact) => `
+    <button type="button" class="row row--avatar ${state.openContact === contact.id ? "is-on" : ""}" data-contact="${contact.id}">
+      <span class="avatar">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
+      <span class="row__body"><span class="row__title">${esc(contact.display_name || "Khách")}</span>
+        <span class="row__sub">${esc(contact.phone || contact.email || "Chưa có PII xác minh")} · ${contact.contact_point_count || 0} danh tính</span></span>
+      <span class="row__side"><span class="row__time">${clock(contact.last_seen)}</span></span>
+    </button>`).join("") : '<p class="empty">Không tìm thấy khách hàng trong phạm vi tài khoản của bạn.</p>';
+  $$("#contactlist [data-contact]").forEach((row) => row.addEventListener("click", () => {
+    state.openContact = row.dataset.contact;
+    loadContacts();
+  }));
+  if (state.openContact) await loadContactDetail(state.openContact);
+}
+
+async function loadContactDetail(id) {
+  let contact;
+  try { contact = await api(`/contacts/${id}`); }
+  catch (e) { $("#contactdetail").innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+  const points = (contact.contact_points || []).map((point) => `
+    <div class="identity-card">${srcBadge(point.channel)}<div><b>${esc(point.account_name)}</b>
+      <small>${esc(point.handle || point.external_user_id)}</small></div>
+      <span>${clock(point.last_seen)}</span></div>`).join("");
+  const consents = (contact.consents || []).map((consent) => `
+    <span class="consent consent--${esc(consent.status)}">${esc(consent.purpose)} · ${esc(consent.status)}</span>`).join("");
+  const tags = (contact.tags || []).map((tag) => `<span class="profile-tag">${esc(tag.tag)}</span>`).join("");
+  const notes = (contact.notes || []).map((note) => `
+    <article class="contact-note"><p>${esc(note.body)}</p><small>${esc(note.visibility)} · ${clock(note.created_at)}</small></article>`).join("");
+  const conversations = (contact.conversations || []).map((conv) => `
+    <button class="timeline-item" type="button" data-open-conv="${conv.id}">
+      ${srcBadge(conv.channel)}<span>${esc(conv.account_name)} · ${esc(conv.status)}</span><time>${clock(conv.updated_at)}</time>
+    </button>`).join("");
+  $("#contactdetail").innerHTML = `
+    <div class="profile-head"><span class="avatar avatar--lg">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
+      <div><p class="eyebrow">CUSTOMER 360</p><h2>${esc(contact.display_name || "Khách")}</h2>
+        <p>${esc(contact.phone || "Chưa có số điện thoại")} · ${esc(contact.email || "Chưa có email")}</p></div>
+      <span class="privacy-pill">${contact.pii_masked ? "PII đã ẩn theo quyền" : "PII được phép xem"}</span></div>
+    <div class="profile-grid"><div><span>Trạng thái</span><b>${esc(contact.status)}</b></div><div><span>Phiên bản</span><b>${contact.version}</b></div>
+      <div><span>Lần đầu</span><b>${clock(contact.first_seen)}</b></div><div><span>Gần nhất</span><b>${clock(contact.last_seen)}</b></div></div>
+    <h3 class="subhead">Nhãn chăm sóc</h3>
+    <div class="profile-actions"><div class="profile-tags">${tags || '<span class="empty">Chưa có nhãn.</span>'}</div>
+      <form id="contact-tag-form" class="inline-action"><input name="tag" maxlength="80" required placeholder="VIP, cần gọi lại…"><button class="btn btn--sm" type="submit">Thêm nhãn</button></form></div>
+    <h3 class="subhead">Danh tính theo kênh</h3><div class="identity-grid">${points || '<p class="empty">Chưa có danh tính.</p>'}</div>
+    <h3 class="subhead">Consent</h3><div class="consent-row">${consents || '<span class="empty">Chưa ghi nhận consent.</span>'}</div>
+    <form id="contact-consent-form" class="consent-form">
+      <input name="purpose" maxlength="80" required placeholder="Mục đích, ví dụ marketing">
+      <select name="status"><option value="granted">Đồng ý</option><option value="denied">Từ chối</option><option value="withdrawn">Rút lại</option></select>
+      <input name="source" maxlength="300" required placeholder="Nguồn bằng chứng">
+      <button class="btn btn--sm" type="submit">Ghi consent</button>
+    </form>
+    <h3 class="subhead">Ghi chú nội bộ</h3><div class="contact-notes">${notes || '<span class="empty">Chưa có ghi chú.</span>'}</div>
+    <form id="contact-note-form" class="note-form"><textarea name="body" maxlength="5000" required placeholder="Thông tin cần bàn giao cho đội chăm sóc…"></textarea>
+      <select name="visibility"><option value="team">Cả đội</option><option value="manager">Quản lý</option></select><button class="btn btn--sm" type="submit">Lưu ghi chú</button></form>
+    <h3 class="subhead">Hội thoại</h3><div class="timeline">${conversations || '<p class="empty">Chưa có hội thoại.</p>'}</div>`;
+
+  $("#contact-tag-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const tag = String(new FormData(form).get("tag") || "").trim();
+    if (!tag) return;
+    try {
+      await api(`/contacts/${id}/tags`, { method: "POST", body: JSON.stringify({ tag }) });
+      toast("Đã thêm nhãn khách hàng.");
+      await loadContactDetail(id);
+    } catch (error) { toast(error.message, true); }
+  });
+  $("#contact-note-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    values.body = String(values.body || "").trim();
+    if (!values.body) return;
+    try {
+      await api(`/contacts/${id}/notes`, { method: "POST", body: JSON.stringify(values) });
+      toast("Đã lưu ghi chú nội bộ.");
+      await loadContactDetail(id);
+    } catch (error) { toast(error.message, true); }
+  });
+  $("#contact-consent-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const purpose = String(values.purpose || "").trim();
+    if (!purpose) return;
+    try {
+      await api(`/contacts/${id}/consents/${encodeURIComponent(purpose)}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: values.status, source: String(values.source || "").trim(), evidence: { captured_via: "dashboard" } }),
+      });
+      toast("Đã cập nhật consent và nhật ký kiểm toán.");
+      await loadContactDetail(id);
+    } catch (error) { toast(error.message, true); }
+  });
+  $$('[data-open-conv]').forEach((button) => button.addEventListener("click", () => {
+    state.openConv = button.dataset.openConv; state.view = "hoithoai";
+    $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "hoithoai"));
+    $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "hoithoai"));
+    loadConversations();
+  }));
+}
+
 
 /* ---------------- đơn hàng ---------------- */
 
-const ORDER_LABEL = { cho_duyet: "Chờ duyệt", da_chot: "Đã chốt", da_huy: "Đã huỷ" };
-const ORDER_TONE  = { cho_duyet: "duyet", da_chot: "chot", da_huy: "huy" };
+/* Khớp `agent/core/tools.py::TRANG_THAI_DON`. Có test canh hai bên không
+   trôi xa nhau — thiếu một nhãn ở đây thì dòng đơn hiện ra chữ kỹ thuật
+   trần, thẻ xám, và người trực không hiểu đang nhìn cái gì. */
+const ORDER_LABEL = {
+  cho_duyet: "Chờ duyệt", da_chot: "Đã chốt", da_huy: "Đã huỷ",
+  cho_dong_bo: "Chờ đồng bộ kho", da_giao: "Đã giao",
+};
+const ORDER_TONE  = {
+  cho_duyet: "duyet", da_chot: "chot", da_huy: "huy",
+  cho_dong_bo: "duyet", da_giao: "chot",
+};
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 $$("#orderfilter .chip").forEach((chip) =>
@@ -450,12 +793,44 @@ async function loadOrders() {
       .map((i) => `<span class="order__line">${esc(i.ten)} &times;${i.so_luong} — ${vnd(i.thanh_tien)}</span>`)
       .join("");
     const cho_duyet = o.trang_thai === "cho_duyet";
-    return `<div class="row">
-      <span class="row__flag row__flag--${cho_duyet ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
+    /*
+     * Đơn `cho_dong_bo`: đã ghi nhận nhưng CHƯA vào được kho/ERP.
+     *
+     * Khách đã được agent hứa "sẽ có người gọi xác nhận". Máy đang tự thử
+     * lại, nhưng nếu nó bỏ cuộc thì lời hứa đó rơi vào khoảng không. Nên
+     * dòng này phải NHÌN THẤY ĐƯỢC, không được lẫn vào đám đơn đã xong.
+     */
+    const cho_dong_bo = o.trang_thai === "cho_dong_bo";
+
+    /*
+     * Khách xin huỷ: phải NHÌN THẤY NGAY trên dòng đơn.
+     *
+     * Agent ghi nhận yêu cầu rồi chuyển hội thoại cho người. Nhưng người
+     * đóng gói làm việc ở MÀN HÌNH NÀY, không đọc từng đoạn chat. Không
+     * hiện ở đây thì hàng vẫn gói và gửi đi, khách từ chối nhận, shop chịu
+     * phí hoàn COD — mà không có lỗi nào bị ném ở đâu cả.
+     *
+     * Đơn đã huỷ rồi thì thôi, cờ hết nghĩa.
+     */
+    const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy";
+    const bang_xin_huy = xin_huy
+      ? `<span class="order__xinhuy"><b>Khách xin huỷ</b> — ${clock(o.yeu_cau_huy_luc)}${
+          o.yeu_cau_huy_ly_do ? " · " + esc(o.yeu_cau_huy_ly_do) : ""
+        }<br>Dừng đóng gói và gọi lại cho khách trước khi quyết định.</span>`
+      : "";
+
+    return `<div class="row${xin_huy ? " row--xinhuy" : ""}">
+      <span class="row__flag row__flag--${xin_huy ? "halt" : (cho_duyet || cho_dong_bo) ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
           <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
+          ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
           ${srcBadge(o.channel, o.nen_tang)}</span>
+        ${bang_xin_huy}
+        ${cho_dong_bo ? `<span class="order__xinhuy"><b>Chưa vào được kho/ERP</b>${
+            o.erp_loi ? " — " + esc(o.erp_loi) : ""
+          }${o.erp_so_lan_thu ? " · đã thử " + o.erp_so_lan_thu + " lần" : ""
+          }<br>Khách đã được hứa sẽ có người gọi xác nhận. Máy đang tự thử lại.</span>` : ""}
         <span class="order__items">${items}</span>
         <span class="order__ship">${esc(o.khach_sdt)} · ${esc(o.khach_dia_chi)}</span>
       </span>
@@ -465,6 +840,8 @@ async function loadOrders() {
         ${cho_duyet ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--go" data-oapprove="${o.id}">Duyệt</button>
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
+          </span>` : xin_huy ? `<span style="display:flex;gap:6px;margin-top:4px">
+            <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ đơn</button>
           </span>` : ""}
       </span>
     </div>`;
@@ -496,7 +873,79 @@ $$("#khofilter .chip").forEach((chip) =>
   })
 );
 
+/* ---------------- kết nối kho / ERP ---------------- */
+
+/* Mức của bộ kiểm khác mức của bộ sức khoẻ: ở đây "chan" nghĩa là CHƯA DÙNG
+   ĐƯỢC, không phải "đang hỏng". Dùng chung bảng màu nhưng đổi tên cho khớp. */
+const ERP_TONE  = { tot: "auto", canh_bao: "assist", chan: "halt" };
+const ERP_LABEL = { tot: "Đủ", canh_bao: "Cảnh báo", chan: "CHẶN" };
+
+/* Dòng cấu hình ERP gần như không đổi, nhưng đọc nó thì CHẠM VÀO ERP THẬT.
+   `loadKho()` nằm trong vòng làm mới 6 giây, nên không có phanh thì mở tab
+   Kho rồi đi ăn trưa là 600 lượt gọi ERP mỗi giờ.
+
+   `ep = true` cho lúc người vừa bấm Thử kết nối — họ cần thấy ngay. */
+const ERP_CAUHINH_MOI_MS = 60000;
+let erpCauHinhLuc = 0;
+
+async function loadErpCauHinh(ep = false) {
+  const box = $("#erpcauhinh");
+  if (!box) return;
+  if (!ep && box.innerHTML.trim()
+      && Date.now() - erpCauHinhLuc < ERP_CAUHINH_MOI_MS) return;
+  erpCauHinhLuc = Date.now();
+  try {
+    const d = await api("/erp/suc-khoe");
+    const chuaNoi = d.nguon === "tep";
+    box.innerHTML = `<div class="row">
+      <span class="row__flag row__flag--${chuaNoi ? "assist" : d.mach_mo ? "halt" : "auto"}"></span>
+      <div class="row__main">
+        <b>Nguồn: ${esc(d.nguon)}</b>
+        <span class="row__sub">${chuaNoi
+          ? "Đang đọc tệp data/catalog.json trên đĩa — CHƯA nối ERP thật. Đặt ERP_LOAI=erpnext hoặc odoo trong .env rồi khởi động lại."
+          : (d.mach_mo
+              ? "NGẮT MẠCH đang mở — giá và tồn kho đang trả “không biết”"
+              : "đang trả lời bình thường")}</span>
+      </div>
+      <span class="tag tag--${chuaNoi ? "assist" : d.song ? "auto" : "halt"}">${
+        chuaNoi ? "chưa nối" : d.song ? "sống" : "không gọi được"}</span>
+    </div>`;
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không đọc được cấu hình: ${esc(e.message)}</p>`;
+  }
+}
+
+$("#erpthu")?.addEventListener("click", async () => {
+  const box = $("#erpketqua");
+  const btn = $("#erpthu");
+  btn.disabled = true;
+  /* Nói rõ nó GỌI THẬT. Người bấm cần biết mình đang tiêu hạn mức API của
+     cửa hàng, không phải đọc một con số đã lưu sẵn. */
+  box.innerHTML = '<p class="empty">Đang gọi thật vào ERP…</p>';
+  try {
+    const d = await api("/erp/kiem-ket-noi", { method: "POST" });
+    const dau = `<div class="row"><span class="row__flag row__flag--${ERP_TONE[d.trang_thai]}"></span>
+      <div class="row__main"><b>${d.san_sang ? "SẴN SÀNG đọc" : "CHƯA DÙNG ĐƯỢC"}</b>
+      <span class="row__sub">ERP_LOAI=${esc(d.erp_loai)} · đẩy đơn ${
+        d.ghi_don ? "BẬT" : "tắt"}${d.ma_kho ? " · kho " + esc(d.ma_kho) : ""}</span></div></div>`;
+    box.innerHTML = dau + d.muc.map((m) => `<div class="row">
+        <span class="row__flag row__flag--${ERP_TONE[m.trang_thai] || "plain"}"></span>
+        <div class="row__main"><b>${esc(m.ten)}</b>
+          <span class="row__sub">${esc(m.ghi_chu)}</span>
+          ${m.goi_y ? `<span class="row__sub">└─ ${esc(m.goi_y)}</span>` : ""}</div>
+        <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
+          ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
+      </div>`).join("");
+    loadErpCauHinh(true);
+  } catch (e) {
+    box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function loadKho() {
+  loadErpCauHinh();
   const k = await api("/kho");
   $("#c-kho").textContent = (k.het_hang + k.sap_het) || "";
 
@@ -515,13 +964,28 @@ async function loadKho() {
 
   $("#khoRows").innerHTML = ds.length ? ds.map((x) => {
     const tone = x.so_luong === 0 ? "halt" : x.sap_het ? "assist" : "auto";
-    return `<div class="row">
+    /* Ảnh sản phẩm ngay trên dòng kho.
+     *
+     * Người trực cần đối chiếu khi khách mô tả bằng lời — "cái chai xanh
+     * xanh ấy" — thay vì mở thư mục ảnh ra tìm. Và cùng tấm ảnh đó là thứ
+     * agent gửi cho khách, nên nhìn thấy nó ở đây là biết khách sẽ thấy gì.
+     *
+     * `loading="lazy"`: màn hình có thể hàng trăm mã, tải hết cùng lúc là
+     * mở hàng trăm kết nối cho một lần cuộn. */
+    const anh = x.co_anh
+      ? `<img class="kho__anh" src="/api/san-pham/${encodeURIComponent(x.ma)}/anh"
+             alt="" loading="lazy" data-xemanh="${esc(x.ma)}">`
+      : '<span class="kho__anh kho__anh--trong">—</span>';
+    const them = [x.dung_tich, ...(x.da_phu_hop || []).slice(0, 2)]
+      .filter(Boolean).join(" · ");
+    return `<div class="row row--kho">
       <span class="row__flag row__flag--${tone}"></span>
+      ${anh}
       <span class="row__body">
         <span class="row__title">${esc(x.ma)} · ${esc(x.ten)}
           ${x.so_luong === 0 ? '<span class="tag tag--huy">Hết hàng</span>'
             : x.sap_het ? '<span class="tag tag--duyet">Sắp hết</span>' : ""}</span>
-        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}</span>
+        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}${them ? " · " + esc(them) : ""}</span>
       </span>
       <span class="row__side">
         <span class="row__num">${num(x.so_luong)}</span>
@@ -714,7 +1178,7 @@ $("#videoform").addEventListener("submit", async (ev) => {
    gọi người liên tục. Kênh có tỷ lệ chuyển người cao không phải kênh tệ —
    thường là kênh có loại câu hỏi khác hẳn, và đó là chỗ cần bổ sung tài liệu. */
 const KENH_TEN = {
-  zalocrm: "Zalo", chatwoot: "Chatwoot", facebook: "Facebook",
+  zalocrm: "Zalo cá nhân", chatwoot: "Kênh tương thích", facebook: "Facebook",
   instagram: "Instagram", whatsapp: "WhatsApp", web: "Website", email: "Email",
 };
 
@@ -754,18 +1218,27 @@ async function loadAnalyticsKhach() {
 
 /* ---------------- các hệ thống đang chạy ---------------- */
 
-/* Một CỔNG VÀO để nhớ, không phải một tiến trình để chạy. ZaloCRM và
-   Chatwoot dùng đường dẫn tuyệt đối nên không proxy dưới tiền tố được mà
-   không viết lại HTML/CSS/JS đang bay qua — xem agent/he_thong.py. */
-async function loadHeThong() {
+/* Màn vận hành chỉ hiển thị các dịch vụ thuộc sản phẩm hiện tại. Connector
+   tương thích cũ vẫn có thể chạy ở backend trong giai đoạn chuyển đổi nhưng
+   không được biến thành một ứng dụng con hay thương hiệu trên dashboard. */
+/* `dangCho` = NGƯỜI vừa bấm nút, đang đợi và cần phản hồi ngay.
+   Vòng làm mới 6 giây gọi hàm này KHÔNG kèm cờ, và phải vẽ đè im lặng.
+
+   Bản đầu gán ô chờ vô điều kiện: cứ 6 giây panel trắng xoá rồi hiện lại
+   sau khi dò xong 5 dịch vụ. Đó là cái nhấp nháy người dùng nhìn thấy. */
+async function loadHeThong(dangCho = false) {
   const box = $("#hethong");
   const btn = $("#hethongrun");
   if (btn) btn.disabled = true;
-  box.innerHTML = '<p class="empty">Đang hỏi từng dịch vụ…</p>';
+  if (dangCho || !box.innerHTML.trim()) {
+    box.innerHTML = '<p class="empty">Đang hỏi từng dịch vụ…</p>';
+  }
   try {
     const d = await api("/he-thong");
-    $("#c-hethong").textContent = `${d.dang_chay}/${d.tong}`;
-    box.innerHTML = d.dich_vu.map((x) => `<div class="row">
+    const visible = d.dich_vu.filter((x) => !["zalocrm", "chatwoot"].includes(x.ma));
+    const running = visible.filter((x) => x.song).length;
+    $("#c-hethong").textContent = `${running}/${visible.length}`;
+    box.innerHTML = visible.map((x) => `<div class="row">
         <span class="row__flag row__flag--${x.song ? "auto" : "halt"}"></span>
         <div class="row__main">
           <b>${esc(x.ten)}${x.chinh ? " · trang bạn đang xem" : ""}</b>
@@ -773,7 +1246,13 @@ async function loadHeThong() {
             ${x.nhung_duoc ? "· mở ngay trong đây"
               : x.can_dang_nhap ? "· cần đăng nhập riêng" : ""}</span>
         </div>
-        ${!x.song
+        ${x.di_toi_man
+          /* Chưa nối được thì KHÔNG có gì để "Mở". Đưa người dùng tới màn
+             làm được việc, và nói đúng việc nút làm. Bản đầu render <a href>
+             trỏ về chính dashboard: bấm vào trang quay về trang chính, nhìn
+             như nút hỏng. */
+          ? `<button type="button" class="btn btn--sm" data-di-toi="${esc(x.di_toi_man)}">Cấu hình</button>`
+          : !x.song
           ? `<span class="tag tag--halt">không chạy</span>`
           : x.nhung_duoc
             /* Nhúng được thì mở NGAY TRONG dashboard. Nút mở tab mới vẫn
@@ -784,7 +1263,7 @@ async function loadHeThong() {
                <a class="btn btn--sm btn--ghost" href="${esc(x.url)}" target="_blank" rel="noopener" title="Mở tab mới">↗</a>`
             : `<a class="btn btn--sm" href="${esc(x.url)}" target="_blank" rel="noopener">Mở</a>`}
       </div>`).join("");
-    $("#hethongvisao").textContent = d.vi_sao_tach;
+    $("#hethongvisao").textContent = "Các thành phần vận hành dùng chung một dashboard, cùng xác thực và nhật ký kiểm toán.";
   } catch (e) {
     box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
   } finally {
@@ -792,12 +1271,24 @@ async function loadHeThong() {
   }
 }
 
-$("#hethongrun")?.addEventListener("click", loadHeThong);
+/* Bọc trong arrow function, KHÔNG gán thẳng `loadHeThong`: gán thẳng thì
+   tham số đầu là đối tượng Event — truthy, nên nó vô tình chạy đúng. Dựa
+   vào tình cờ là thứ hỏng ở lần refactor sau. */
+$("#hethongrun")?.addEventListener("click", () => loadHeThong(true));
 
 /* Bấm "Mở" ở màn Hệ thống -> nhảy sang màn Kết nối và mở đúng app đó.
    Gắn trên vùng chứa chứ không trên từng nút: danh sách dựng lại sau mỗi
    lần Kiểm tra, và listener gắn trên nút cũ thì chết theo nút cũ. */
+/* Nút "Cấu hình" của mục chưa nối: chuyển sang màn tương ứng trong chính
+   dashboard, không mở tab mới. Gắn trên vùng chứa vì danh sách được dựng
+   lại sau mỗi lần làm mới. */
 $("#hethong")?.addEventListener("click", (e) => {
+  const diToi = e.target.closest("[data-di-toi]");
+  if (diToi) {
+    e.preventDefault();
+    doiMan(diToi.dataset.diToi);
+    return;
+  }
   const nut = e.target.closest("[data-mo-trong]");
   if (!nut) return;
   moManKetNoi(nut.dataset.moTrong);
@@ -916,49 +1407,6 @@ async function loadEvents() {
   }).join("") : '<p class="empty">Chưa có sự kiện nào.</p>';
 }
 
-
-/* ---------------- nick Zalo ---------------- */
-
-// Doanh nghiệp chạy nhiều nick. Nick mặc định áp cho hội thoại chưa ghim
-// riêng; ghim riêng thắng, vì khách phải nhận trả lời từ đúng nick họ nhắn vào.
-let NICKS = [];
-
-function nickTen(id) {
-  const n = NICKS.find((x) => x.id === id);
-  return n ? n.ten : "";
-}
-
-async function loadChannelStrip() {
-  const { channels } = await api("/channels");
-  // Nói rõ kênh nào đẩy, kênh nào kéo. Hai cơ chế ngược nhau chạy song song
-  // là điểm dễ gây hiểu nhầm nhất khi vận hành.
-  $("#chanstrip").innerHTML = channels.map((c) =>
-    `<span class="src src--${esc(c.ten)}" style="${c.dang_bat ? "" : "opacity:.45"}"
-       title="${esc(c.co_che === "polling" ? "kéo tin mỗi vài giây" : "nhận webhook tức thì")}${c.dang_bat ? "" : " — chưa cấu hình"}">${esc(CHANNEL_LABEL[c.ten] || c.ten)} · ${esc(c.co_che)}</span>`
-  ).join("");
-}
-
-async function loadNicks() {
-  const r = await api("/zalo/accounts");
-  NICKS = r.accounts;
-  state.nickDefault = r.dang_chon;
-  const opts = NICKS.map((n) =>
-    `<option value="${esc(n.id)}"${n.id === r.dang_chon ? " selected" : ""}${n.san_sang ? "" : " disabled"}>`
-    + `${esc(n.ten)}${n.sdt ? " · " + esc(n.sdt) : ""}${n.san_sang ? "" : " (mất kết nối)"}</option>`
-  ).join("");
-  $("#nickdefault").innerHTML = NICKS.length
-    ? opts : '<option value="">— chưa có nick nào —</option>';
-  $("#nickhint").textContent = r.ghi_chu
-    || (NICKS.length > 1 ? "Ghim nick riêng cho từng hội thoại ở khung bên phải." : "");
-}
-
-$("#nickdefault").addEventListener("change", async (e) => {
-  try {
-    await api("/zalo/account", { method: "POST",
-      body: JSON.stringify({ zalo_account_id: e.target.value }) });
-    toast("Đã đổi nick trả lời mặc định.");
-  } catch (err) { toast(err.message, true); loadNicks(); }
-});
 
 /* ---------------- đăng bài ---------------- */
 
@@ -1470,13 +1918,14 @@ $("#loginform").addEventListener("submit", async (e) => {
 async function refresh() {
   try {
     await loadOverview();
-    if (state.view === "hoithoai") { await loadChannelStrip(); await loadNicks(); await loadConversations(); }
+    if (state.view === "hoithoai") await loadConversations();
+    if (state.view === "khachhang") await loadContacts();
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") loadKetNoi();
+    if (state.view === "ketnoi") await loadKetNoi();
     if (state.view === "sohieu") {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
@@ -1487,85 +1936,667 @@ async function refresh() {
   }
 }
 
+function startInboxStream() {
+  if (!("EventSource" in window)) return;
+  const stream = new EventSource("/api/inbox/events");
+  const schedule = () => {
+    clearTimeout(inboxRefreshTimer);
+    inboxRefreshTimer = setTimeout(async () => {
+      try {
+        await loadOverview();
+        if (state.view === "hoithoai") await loadConversations();
+        if (state.view === "khachhang") await loadContacts();
+      } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
+    }, 120);
+  };
+  ["message.created", "message.sent", "conversation.updated", "conversation.takeover", "conversation.released"]
+    .forEach((topic) => stream.addEventListener(topic, schedule));
+  window.addEventListener("beforeunload", () => stream.close(), { once: true });
+}
+
 // Chỉ bắt đầu vòng làm mới SAU KHI xác nhận có phiên. Gọi refresh() ngay
 // khi chưa đăng nhập thì mọi request trả 401 và người dùng thấy một loạt
 // thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
 kiemPhien().then((co) => {
   if (!co) return;
   refresh();
+  startInboxStream();
   state.timer = setInterval(refresh, 6000);
 });
 
-/* ---------------- Kết nối: ZaloCRM + Chatwoot nhúng thẳng ----------------
-
-   Hai app đi qua lớp proxy ở `agent/api/tich_hop.py`, KHÔNG trỏ thẳng vào
-   :3080 và :3200. Trỏ thẳng thì trình duyệt từ chối hiển thị: cả hai đặt
-   X-Frame-Options (DENY và SAMEORIGIN) để cấm bị nhúng.
-
-   Đổi tab KHÔNG tải lại iframe đang mở sẵn. Mỗi lần đặt lại `src` là một
-   lần đăng nhập lại và mất chỗ đang làm dở — người trực đang gõ nửa câu
-   trả lời cho khách thì mất câu đó. Nên giữ hai iframe riêng, ẩn/hiện. */
-
-const KN_APP = {
-  zalocrm: { nhan: "Quét QR trong đây để thêm nick Zalo. Nick mới hiện ngay ở mục Hệ thống." },
-  chatwoot: { nhan: "Hộp thư gộp Facebook · Instagram · WhatsApp · chat web." },
-  n8n: { nhan: "Định tuyến báo động và đăng bài. Dán webhook vào CANH_GAC_WEBHOOK." },
-  minio: { nhan: "Kho file đính kèm của ZaloCRM." },
-};
-let knHienTai = null;
-const knFrames = {};
-
-function knMo(app) {
-  if (!KN_APP[app]) return;
-  knHienTai = app;
-  const wrap = $(".frame__wrap");
-
-  /* Iframe dựng một lần rồi giữ lại. Iframe gốc trong index.html dùng cho
-     app đầu tiên; các app sau tạo thêm. */
-  if (!knFrames[app]) {
-    const f = Object.keys(knFrames).length === 0
-      ? $("#knframe")
-      : Object.assign(document.createElement("iframe"), {
-          className: "frame",
-          title: app,
-        });
-    if (!f.parentNode) {
-      f.setAttribute("allow", "camera; microphone; clipboard-write");
-      wrap.appendChild(f);
-    }
-    f.src = `/tich-hop/${app}/`;
-    knFrames[app] = f;
-  }
-  Object.entries(knFrames).forEach(([ten, f]) => {
-    f.style.display = ten === app ? "block" : "none";
-  });
-
-  $$("#kntabs .tab").forEach((b) => b.classList.toggle("is-on", b.dataset.app === app));
-  $("#knhint").textContent = KN_APP[app].nhan;
-  $("#knmoi").href = `/tich-hop/${app}/`;
+/* Trung tâm kết nối native. Secret chỉ đi từ form tới vault; response không
+   chứa credential nên DOM cũng không có gì để vô tình làm lộ. */
+function moManKetNoi() {
+  doiMan("ketnoi");
 }
 
-$$("#kntabs .tab").forEach((b) =>
-  b.addEventListener("click", () => knMo(b.dataset.app)));
-
-$("#knreload").addEventListener("click", () => {
-  const f = knFrames[knHienTai];
-  if (f) f.src = f.src;   /* nạp lại đúng app đang xem, không đụng app kia */
+$("#connection-add-toggle")?.addEventListener("click", () => {
+  $("#connection-create").classList.toggle("is-hidden");
 });
 
-/* Từ màn Hệ thống nhảy sang đây và mở đúng app. Đổi cả `state.view` lẫn
-   lớp is-active của thanh bên — chỉ đổi một trong hai thì thanh bên sáng
-   một mục còn màn hình hiện mục khác. */
-function moManKetNoi(app) {
-  state.view = "ketnoi";
-  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "ketnoi"));
-  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "ketnoi"));
-  knMo(app);
+/*
+ * Địa chỉ CÔNG KHAI của hệ thống, do máy chủ báo qua overview.
+ *
+ * Trình duyệt chỉ biết `location.origin` — tức `http://127.0.0.1:8000` khi
+ * người vận hành mở dashboard tại chỗ. Meta và Zalo KHÔNG BAO GIỜ gọi vào
+ * được địa chỉ đó, nhưng copy nó dán vào Meta thì lỗi báo về chỉ nói "không
+ * xác minh được URL" — không nói vì sao.
+ *
+ * Chưa dựng tunnel thì máy chủ vẫn trả localhost, và lúc đó hiện
+ * `location.origin` cũng đúng — nên đường lui giữ nguyên hành vi cũ.
+ */
+let PUBLIC_BASE = "";
+
+function goc_cong_khai() {
+  return (PUBLIC_BASE || location.origin).replace(/\/+$/, "");
 }
 
-function loadKetNoi() {
-  /* Chỉ nạp khi người dùng thật sự mở màn hình này. Nạp sẵn lúc khởi động
-     là kéo hai ứng dụng Rails nặng về cho một người có thể không bao giờ
-     bấm vào đây. */
-  if (!knHienTai) knMo("zalocrm");
+/* Số tài khoản hiện sẵn trước khi thu gọn.
+ *
+ * Một tài khoản Facebook có thể quản lý hàng chục Trang. Đổ hết ra màn hình
+ * thì mọi kênh khác — Zalo, Webchat — bị đẩy xuống dưới tầm nhìn, và người
+ * trực phải cuộn rất lâu mới thấy thứ mình cần.
+ *
+ * Năm là đủ để thấy kênh có gì mà không nuốt mất cả trang. */
+const SO_HIEN_SAN = 5;
+
+const KENH_META = ["facebook", "instagram", "whatsapp"];
+
+/*
+ * URL callback theo KÊNH, không theo từng tài khoản.
+ *
+ * Meta chỉ cho khai MỘT callback URL cho mỗi app, và hệ thống đã có đường
+ * dùng chung `/webhook/native/meta` tự phân phát tin về đúng Trang. Hiện một
+ * URL riêng cho mỗi Trang là dựng ra 26 địa chỉ mà không ai cần tới — tệ hơn
+ * là rối: người dùng tưởng phải khai 26 lần bên Meta rồi bỏ dở.
+ */
+function callbackTheoKenh(channel) {
+  if (KENH_META.includes(channel)) return `${goc_cong_khai()}/webhook/native/meta`;
+  if (channel === "zalo_personal") return `${goc_cong_khai()}/webhook/native/zalo-personal`;
+  return "";
 }
+
+function connectionCallback(account) {
+  // Kênh Meta dùng đường chung -> không hiện gì ở dòng tài khoản.
+  if (KENH_META.includes(account.channel)) return "";
+  return callbackTheoKenh(account.channel);
+}
+
+/* Thứ tự hiện tài khoản trong một kênh. Số nhỏ lên trên.
+ *
+ * Người trực mở màn hình này để hỏi "kênh của mình có sống không" — câu trả
+ * lời phải nằm ở dòng đầu, không phải dòng thứ mười chín.
+ *
+ * `degraded` và `reauth_required` xếp ngay sau `active` chứ KHÔNG xuống dưới
+ * `pending`: chúng là Trang đã từng chạy rồi hỏng, tức đang mất tin của
+ * khách NGAY LÚC NÀY. Chôn chúng dưới hai mươi Trang chưa dùng bao giờ là
+ * giấu đúng thứ cần xử lý gấp nhất.
+ *
+ * `pending` chưa bao giờ nhận tin nên chưa mất gì. `disabled` là người ta chủ
+ * động tắt — không cần chiếm chỗ trên cùng.
+ */
+const UU_TIEN_TRANG_THAI = {
+  active: 0, degraded: 1, reauth_required: 2, pending: 3, disabled: 4,
+};
+
+const ACCOUNT_STATUS_LABEL = {
+  pending: "Chờ xác minh", active: "Sẵn sàng", degraded: "Gián đoạn",
+  reauth_required: "Cần đăng nhập lại", disabled: "Đã tạm ngắt",
+};
+
+async function loadKetNoi() {
+  const accounts = await api("/channel-accounts");
+  const grouped = Object.fromEntries(Object.keys(CHANNEL_LABEL).map((key) => [key, []]));
+  accounts.forEach((account) => (grouped[account.channel] ||= []).push(account));
+
+  /* Sắp xếp mỗi kênh: đang chạy lên đầu, hỏng ngay sau, chưa nối xuống dưới.
+   *
+   * Tiêu chí phụ là TÊN, và nó bắt buộc: không có nó thì hai Trang cùng
+   * trạng thái đổi chỗ nhau mỗi lần làm mới (6 giây một lần), và mắt người
+   * trực phải tìm lại từ đầu mỗi lượt. */
+  Object.values(grouped).forEach((ds) => ds.sort((a, b) => {
+    const ua = UU_TIEN_TRANG_THAI[a.status] ?? 9;
+    const ub = UU_TIEN_TRANG_THAI[b.status] ?? 9;
+    if (ua !== ub) return ua - ub;
+    return String(a.display_name || "").localeCompare(String(b.display_name || ""), "vi");
+  }));
+  $("#connectiongrid").innerHTML = Object.entries(grouped)
+    .filter(([channel]) => ["zalo_personal", "zalo_oa", "facebook", "instagram", "whatsapp", "webchat"].includes(channel))
+    .map(([channel, items]) => {
+      /* Việc CHUNG của cả kênh gom lên đây, không nhân lên theo số tài khoản:
+       * một URL callback, một verify token, một nút đăng ký webhook hàng loạt.
+       * Chỉ "Xác minh provider" là thật sự riêng theo từng Trang. */
+      const url_chung = callbackTheoKenh(channel);
+      const cho_xac_minh = items.filter((a) => a.status === "pending").length;
+      const thanh_chung = url_chung ? `<div class="channel-card__chung">
+        <code class="callback" title="Khai đúng MỘT lần bên nhà cung cấp">${esc(url_chung)}</code>
+        ${KENH_META.includes(channel) && items.length ? `
+          <span class="channel-card__actions">
+            <button type="button" class="btn btn--sm" data-verifytoken-kenh="${items[0].id}">Xem verify token</button>
+            ${cho_xac_minh ? `<button type="button" class="btn btn--sm btn--go" data-subwebhook-all="${channel}">Nhận tin cho tất cả (${cho_xac_minh})</button>` : ""}
+          </span>
+          <div class="token-slot" data-tokenslot="${items[0].id}"></div>` : ""}
+      </div>` : "";
+
+      return `<section class="channel-card">
+      <div class="channel-card__head">${srcBadge(channel)}<div><h3>${esc(CHANNEL_LABEL[channel])}</h3><p>${items.length} tài khoản</p></div>
+        <span class="channel-card__count">${items.length}</span></div>
+      ${thanh_chung}
+      <div class="channel-card__body${items.length > SO_HIEN_SAN ? " is-thu-gon" : ""}"
+           data-body="${channel}">${items.length ? items.map((account) => {
+        const callback = connectionCallback(account);
+        return `<article class="account-line">
+          <span class="health-dot health-dot--${esc(account.status)}"></span>
+          <div><b>${esc(account.display_name)}</b><small>${esc(account.external_account_id || "Chưa có provider ID")}</small>
+            ${callback ? `<code class="callback" title="Callback URL">${esc(callback)}</code>` : ""}</div>
+          <span class="status-pill status-pill--${esc(account.status)}">${esc(ACCOUNT_STATUS_LABEL[account.status] || account.status)}</span>
+          <div class="token-slot" data-tokenslot="${account.id}"></div>
+          <div class="account-actions">
+            ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
+            ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
+            ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
+          </div>
+        </article>`;
+      }).join("") : '<p class="empty">Chưa kết nối tài khoản nào.</p>'}</div>
+      ${items.length > SO_HIEN_SAN ? `<button type="button" class="channel-card__them" data-mo="${channel}"
+        data-them="Xem thêm ${items.length - SO_HIEN_SAN} tài khoản" data-bot="Thu gọn">
+        Xem thêm ${items.length - SO_HIEN_SAN} tài khoản</button>` : ""}
+    </section>`;
+    }).join("");
+
+  $$('[data-verify]').forEach((button) => button.addEventListener("click", async () => {
+    try {
+      const result = await api(`/channel-accounts/${button.dataset.verify}/verify`, { method: "POST" });
+      toast(result.ok ? "Provider đã xác minh; tài khoản sẵn sàng." : `Chưa xác minh được: ${result.code}`, !result.ok);
+      loadKetNoi();
+    } catch (e) { toast(e.message, true); }
+  }));
+  $$('[data-disable]').forEach((button) => button.addEventListener("click", async () => {
+    try { await api(`/channel-accounts/${button.dataset.disable}/disable`, { method: "POST" }); toast("Đã tạm ngắt tài khoản."); loadKetNoi(); }
+    catch (e) { toast(e.message, true); }
+  }));
+  /* Mở rộng và THU GỌN LẠI — cùng một nút.
+   *
+   * Bản trước nút tự xoá sau khi mở, nên muốn thu lại phải tải cả trang. Mở
+   * ra mà không đóng lại được thì lần sau người ta ngại bấm.
+   *
+   * Bật/tắt class thay vì đặt chiều cao: để CSS quyết định cách hiện, JS chỉ
+   * nói trạng thái. */
+  $$("[data-mo]").forEach((button) => button.addEventListener("click", () => {
+    const than = document.querySelector(`[data-body="${button.dataset.mo}"]`);
+    if (!than) return;
+    const dang_thu_gon = than.classList.toggle("is-thu-gon");
+    button.textContent = dang_thu_gon ? button.dataset.them : button.dataset.bot;
+    // Thu lại thì kéo mắt về đầu kênh, nếu không người dùng đang đứng giữa
+    // danh sách sẽ thấy màn hình nhảy mà không hiểu vì sao.
+    if (dang_thu_gon) than.scrollIntoView({ block: "nearest" });
+  }));
+
+  $$('[data-qr]').forEach((button) => button.addEventListener("click", () => quetQR(button.dataset.qr)));
+
+  /*
+   * Đăng ký Trang vào webhook — bước quyết định có NHẬN được tin hay không.
+   *
+   * Có token là gửi tin đi được ngay, nên Trang trông như đã xong. Nhận tin
+   * thì cần đăng ký riêng. Trang nối trước khi hệ thống biết làm bước này
+   * vẫn đang treo, và không có gì trên màn hình nói ra điều đó — nút này là
+   * đường chữa mà không phải gỡ ra nối lại (gỡ là mất lịch sử hội thoại).
+   */
+  /*
+   * Đăng ký webhook cho TẤT CẢ Trang còn chờ, một lần bấm.
+   *
+   * 26 Trang bấm tay từng cái là việc không ai làm hết được — và bỏ dở giữa
+   * chừng thì những Trang chưa bấm im lặng không nhận tin nào.
+   *
+   * Chạy TUẦN TỰ chứ không bắn song song: Graph giới hạn tần suất, và 26 lời
+   * gọi cùng lúc là cách chắc chắn nhất để bị chặn rồi phải làm lại từ đầu.
+   */
+  $$("[data-subwebhook-all]").forEach((button) => button.addEventListener("click", async () => {
+    const kenh = button.dataset.subwebhookAll;
+    const cho = (await api("/channel-accounts"))
+      .filter((a) => a.channel === kenh && a.status === "pending");
+    if (!cho.length) { toast("Không còn Trang nào chờ."); return; }
+
+    button.disabled = true;
+    const chu_cu = button.textContent;
+    const hong = [];
+    let xong = 0;
+
+    for (const [i, tk] of cho.entries()) {
+      button.textContent = `Đang đăng ký ${i + 1}/${cho.length}...`;
+      try {
+        await api(`/channel-accounts/${tk.id}/dang-ky-webhook`, { method: "POST" });
+        xong += 1;
+      } catch (e) {
+        hong.push(`${tk.display_name}: ${e.message}`);
+      }
+    }
+
+    button.disabled = false;
+    button.textContent = chu_cu;
+
+    /* NÓI RA phần hỏng, không gộp vào một chữ "xong".
+     *
+     * Báo "đã đăng ký 26 Trang" trong khi 4 Trang lỗi là xanh giả: người
+     * dùng đóng màn hình, yên tâm, rồi vài ngày sau mới biết bốn Trang đó
+     * chưa từng nhận tin nào. */
+    if (hong.length) {
+      toast(`${xong} Trang đã đăng ký. ${hong.length} Trang HỎNG — xem mục Nhật ký.`, true);
+      // Danh sách đầy đủ ra console: toast không đủ chỗ cho 4 dòng lý do,
+      // mà lý do mới là thứ nói được vì sao Trang đó hỏng.
+      console.warn("Trang đăng ký webhook thất bại:", hong);
+    } else {
+      toast(`${xong} Trang đã đăng ký webhook — tin khách sẽ về từ giờ.`);
+    }
+    loadKetNoi();
+  }));
+
+  $$("[data-subwebhook]").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    const chu = button.textContent;
+    button.textContent = "Đang đăng ký...";
+    try {
+      const r = await api(`/channel-accounts/${button.dataset.subwebhook}/dang-ky-webhook`,
+                          { method: "POST" });
+      toast(`${r.trang} đã đăng ký webhook — tin khách sẽ về từ giờ.`);
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = chu;
+    }
+  }));
+
+  /*
+   * Xem verify token để dán sang Meta.
+   *
+   * KHÔNG hiện sẵn trên thẻ: màn hình Kết nối là chỗ người ta hay chụp lại
+   * để hỏi nhau, và một chuỗi bí mật nằm sẵn ở đó sẽ đi theo mọi ảnh chụp.
+   * Bấm mới hiện, và hiện ngay tại chỗ chứ không mở cửa sổ mới.
+   *
+   * Chỉ verify token được ra khỏi vault — access token và app secret thì
+   * không, vì hai cái đó lộ là mất Trang. Xem agent/api/channel_accounts.py.
+   */
+  $$("[data-verifytoken], [data-verifytoken-kenh]").forEach((button) => button.addEventListener("click", async () => {
+    // Verify token dùng CHUNG cho mọi Trang của cùng một app — nên nút ở mức
+    // kênh chỉ cần hỏi một tài khoản bất kỳ trong kênh đó.
+    const id = button.dataset.verifytoken || button.dataset.verifytokenKenh;
+    const cho = document.querySelector(`[data-tokenslot="${id}"]`);
+    button.disabled = true;
+    try {
+      const r = await api(`/channel-accounts/${id}/verify-token`);
+      if (cho) {
+        cho.innerHTML = `<code class="token-hien">${esc(r.verify_token)}</code>`
+          + '<button type="button" class="btn btn--sm" data-copytoken>Chép</button>';
+        cho.querySelector("[data-copytoken]").addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(r.verify_token);
+            toast("Đã chép. Dán vào ô \"Xác minh mã\" bên Meta.");
+          } catch {
+            // Trình duyệt chặn clipboard khi trang không chạy HTTPS —
+            // chuỗi vẫn hiện trên màn hình nên người dùng bôi đen chép tay.
+            toast("Không chép tự động được. Bôi đen chuỗi rồi chép tay.", true);
+          }
+        });
+      }
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }));
+}
+
+/*
+ * Quét QR Zalo cá nhân.
+ *
+ * VÌ SAO PHẢI HỎI LẠI, KHÔNG DÙNG NGAY PHẢN HỒI CỦA /qr
+ * ------------------------------------------------------
+ * Sidecar trả lời `login-qr` NGAY khi nhận việc, còn ảnh QR thì tới sau —
+ * nó đến qua callback của thư viện Zalo vài trăm mili giây sau đó. Nên lúc
+ * `/qr` trả về, `qr_image` luôn null.
+ *
+ * Bản trước đọc đúng phản hồi ấy rồi hiện toast "chờ sidecar cập nhật trạng
+ * thái" và dừng lại. Người dùng nhìn một dòng chữ, không có gì để quét, và
+ * không có gì gợi ý bước tiếp theo — nút bấm xong coi như hỏng.
+ *
+ * Ảnh nằm ở `/status`. Hỏi lại theo nhịp cho tới khi có ảnh, rồi tiếp tục
+ * hỏi cho tới khi phiên `connected` để đóng khung lại đúng lúc.
+ */
+const QR_NHIP_MS = 2000;
+const QR_TOI_DA_LUOT = 60;          // ~2 phút, dài hơn hạn sống của một mã QR
+
+async function quetQR(accountId) {
+  const khung = $("#qrbox");
+  if (khung) khung.remove();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="qrbox" id="qrbox">
+      <div class="qrbox__panel">
+        <h3>Quét bằng ứng dụng Zalo</h3>
+        <div id="qrslot"><p class="empty">Đang xin mã từ sidecar…</p></div>
+        <p class="qrbox__hint">Mở Zalo trên điện thoại → Thêm → Quét mã QR</p>
+        <button type="button" class="btn" id="qrclose">Đóng</button>
+      </div>
+    </div>`);
+  const dong = () => { const b = $("#qrbox"); if (b) b.remove(); loadKetNoi(); };
+  $("#qrclose").addEventListener("click", dong);
+
+  const slot = () => $("#qrslot");
+  try {
+    await api(`/channel-accounts/${accountId}/zalo-personal/qr`, { method: "POST" });
+  } catch (e) {
+    if (slot()) slot().innerHTML = `<p class="empty">Không xin được mã: ${esc(e.message)}</p>`;
+    return;
+  }
+
+  let daHienAnh = false;
+  for (let luot = 0; luot < QR_TOI_DA_LUOT; luot += 1) {
+    if (!$("#qrbox")) return;                 // người dùng đã đóng khung
+    await new Promise((r) => setTimeout(r, QR_NHIP_MS));
+    let st;
+    try { st = await api(`/channel-accounts/${accountId}/zalo-personal/status`); }
+    catch (e) { continue; }                   // sidecar bận, thử lại nhịp sau
+
+    if (st.qr_image && !daHienAnh) {
+      daHienAnh = true;
+      // Sidecar trả ảnh dạng base64 thuần hoặc đã có tiền tố data:.
+      const src = String(st.qr_image).startsWith("data:")
+        ? st.qr_image : `data:image/png;base64,${st.qr_image}`;
+      if (slot()) slot().innerHTML = `<img alt="Mã QR đăng nhập Zalo" src="${esc(src)}">`;
+    }
+    if (st.status === "qr_scanned" && slot()) {
+      slot().innerHTML = '<p class="empty">Đã quét. Đang xác nhận trên điện thoại…</p>';
+    }
+    if (st.status === "connected") {
+      toast("Đã kết nối Zalo cá nhân. Phiên được lưu mã hoá trong vault.");
+      dong();
+      return;
+    }
+    if (st.status === "qr_expired") {
+      if (slot()) slot().innerHTML = '<p class="empty">Mã QR hết hạn. Đóng rồi bấm Quét QR lại.</p>';
+      return;
+    }
+  }
+  if (slot()) slot().innerHTML = '<p class="empty">Hết thời gian chờ. Đóng rồi thử lại.</p>';
+}
+
+/*
+ * Kết nối tài khoản kênh — mỗi kênh một bộ trường riêng.
+ *
+ * VÌ SAO KHÔNG DÙNG CHUNG MỘT FORM CHO SÁU KÊNH
+ * ----------------------------------------------
+ * Bản đầu hiện đủ sáu ô cho mọi kênh, với nhãn gộp kiểu "Refresh token /
+ * sidecar secret / widget secret". Người vận hành phải tự đoán ô nào dành
+ * cho kênh mình, và bốn ô để trống mà không có gì nói ra điều đó.
+ *
+ * Nối tài khoản là việc làm MỘT LẦN cho mỗi kênh, với những chuỗi dài
+ * giống hệt nhau. Sai ở đây không nổ: credential vẫn được mã hoá, tài
+ * khoản vẫn hiện trên dashboard, chỉ có tin khách là không bao giờ tới —
+ * và có thể nhiều ngày sau mới ai đó nhận ra.
+ *
+ * Ba lớp chặn ba kiểu sai khác nhau:
+ *   1. chỉ hiện ô kênh đó cần   -> không dán nhầm ô
+ *   2. nhãn + chỉ dẫn lấy ở đâu -> không dán nhầm giá trị
+ *   3. cắt khoảng trắng thừa    -> không hỏng vì một dấu cách vô hình
+ *
+ * Lớp 3 nghe vặt nhưng là lỗi kinh điển: copy từ trang web thường dính
+ * khoảng trắng cuối, sai một byte là HMAC hỏng, và thông báo lỗi của
+ * provider không bao giờ nói "bạn thừa một dấu cách".
+ */
+const KENH_TRUONG = {
+  zalo_personal: {
+    // KHÔNG hỏi gì cả — chỉ cần đặt tên rồi quét QR.
+    //
+    // Trước đây ô này bắt người dùng "mở file .env copy dòng
+    // ZALO_SIDECAR_SECRET". Nhưng đó là bí mật của MÁY CHỦ: mọi tài khoản
+    // Zalo dùng chung một giá trị, và người dùng không có `.env` để mở.
+    // Máy chủ tự điền — xem agent/omnichannel/bi_mat_may_chu.py
+    truong: [],
+    ke_tiep: 'Lưu xong, bấm "Quét QR" trên thẻ tài khoản rồi quét bằng app Zalo.',
+  },
+  zalo_oa: {
+    truong: [
+      { o: "external_account_id", nhan: "OA ID", bat_buoc: true,
+        goi_y: "Zalo OA Console → Thông tin OA → OA ID" },
+      { o: "app_id", nhan: "App ID", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng của bạn → App ID" },
+      { o: "app_secret", nhan: "Secret key", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng → Secret Key" },
+      { o: "secondary_secret", nhan: "Refresh token", bat_buoc: true,
+        goi_y: "Zalo OA Console → sau khi cấp quyền cho ứng dụng, lấy Refresh Token" },
+    ],
+    ke_tiep: "Cần URL HTTPS công khai để Zalo gọi webhook vào.",
+  },
+  facebook: {
+    dang_nhap: true,
+    truong: [
+      { o: "external_account_id", nhan: "Page ID", bat_buoc: true,
+        goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang" },
+      { o: "access_token", nhan: "Page access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Messenger → Settings → Generate Token cho đúng Trang" },
+      { o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
+      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT. Phải dán đúng chuỗi này vào Meta khi đăng ký webhook" },
+    ],
+    ke_tiep: "Cần URL HTTPS công khai, rồi đăng ký webhook trong Meta App Dashboard.",
+  },
+  instagram: {
+    dang_nhap: true,
+    truong: [
+      { o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID" },
+      { o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Cùng token với Trang Facebook đã liên kết Instagram" },
+      { o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
+      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+    ],
+    ke_tiep: "Instagram phải là tài khoản Business và đã liên kết một Trang Facebook.",
+  },
+  whatsapp: {
+    truong: [
+      { o: "external_account_id", nhan: "Phone number ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Phone number ID (KHÔNG phải số điện thoại)" },
+      { o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Temporary/Permanent token" },
+      { o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
+      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+    ],
+    ke_tiep: "Cần URL HTTPS công khai để Meta gọi webhook vào.",
+  },
+  webchat: {
+    truong: [
+      { o: "external_account_id", nhan: "Khoá website", bat_buoc: true,
+        goi_y: "Tên ngắn không dấu để phân biệt từng website, ví dụ: web-chinh" },
+      { o: "secondary_secret", nhan: "Widget secret", bat_buoc: true,
+        goi_y: "Bạn tự đặt — chuỗi ngẫu nhiên từ 32 ký tự. Dùng để ký phiên của widget" },
+    ],
+    ke_tiep: "Chạy được ngay, không cần HTTPS công khai khi thử tại chỗ.",
+  },
+};
+
+const O_CREDENTIAL = [
+  "external_account_id", "app_id", "access_token",
+  "app_secret", "verify_token", "secondary_secret",
+];
+
+function veFormKenh(kenh) {
+  const cau_hinh = KENH_TRUONG[kenh];
+  if (!cau_hinh) return;
+  const theo_o = new Map(cau_hinh.truong.map((t) => [t.o, t]));
+
+  for (const ten of O_CREDENTIAL) {
+    const input = document.querySelector(`#connectionform [name="${ten}"]`);
+    if (!input) continue;
+    const khung = input.closest(".field");
+    const dung = theo_o.get(ten);
+
+    khung.classList.toggle("is-hidden", !dung);
+    input.required = Boolean(dung && dung.bat_buoc);
+    if (!dung) { input.value = ""; continue; }
+
+    khung.querySelector("span").textContent =
+      dung.nhan + (dung.bat_buoc ? "" : " (không bắt buộc)");
+
+    // Chỉ dẫn lấy giá trị ở đâu. Không có nó thì người vận hành rời
+    // dashboard đi tìm, quay lại dán nhầm ô — hoặc bỏ dở giữa chừng.
+    let goi_y = khung.querySelector(".field__goiy");
+    if (!goi_y) {
+      goi_y = document.createElement("small");
+      goi_y.className = "field__goiy";
+      khung.appendChild(goi_y);
+    }
+    goi_y.textContent = dung.goi_y;
+  }
+
+  /* Kênh nối được bằng đăng nhập thì ĐỪNG đòi dán token.
+   *
+   * Màn hình cũ có nút "Kết nối bằng đăng nhập" ở trên và ngay dưới là bốn ô
+   * token bắt buộc cho đúng kênh đó — hai thứ nói ngược nhau, và người dùng
+   * làm theo cái dễ đọc hơn là form trước mắt.
+   *
+   * Đi đường dán tay không chỉ mất thời gian: token dán tay KHÔNG tự gia
+   * hạn, nên vài tuần sau kênh chết câm mà không ai biết cho tới khi khách
+   * kêu. Và `app_secret` phải đi qua trình duyệt, trong khi đường đăng nhập
+   * giữ nó ở máy chủ suốt.
+   *
+   * Không xoá hẳn ô nhập tay: vẫn có ca cần khi app Meta chưa được duyệt,
+   * hoặc khi gỡ lỗi. Nó thành đường phụ, đóng sẵn.
+   */
+  const khoi_tay = $("#nhap-tay");
+  const nhac = $("#khuyen-dang-nhap");
+  if (khoi_tay && nhac) {
+    if (cau_hinh.dang_nhap) {
+      khoi_tay.open = false;
+      khoi_tay.querySelector("summary").textContent =
+        "Nhập thủ công (nâng cao — chỉ khi không dùng được đăng nhập)";
+      nhac.textContent = "Kênh này nối bằng nút \"Kết nối Facebook / Instagram "
+        + "bằng đăng nhập\" ở trên: chọn Trang, hệ thống tự nhận token và tự "
+        + "gia hạn. Chỉ mở phần nhập thủ công khi bạn có lý do riêng.";
+      nhac.classList.remove("is-hidden");
+    } else {
+      khoi_tay.open = true;
+      khoi_tay.querySelector("summary").textContent = "Thông tin kết nối";
+      nhac.classList.add("is-hidden");
+    }
+  }
+
+  /* Ô `required` nằm trong `<details>` đang ĐÓNG thì trình duyệt chặn gửi
+   * form mà không hiện được lỗi ở đâu — người dùng bấm Lưu và không có gì
+   * xảy ra. Kênh có đường đăng nhập thì bỏ `required` hết; phần kiểm thiếu
+   * trường vẫn chạy ở `luuKetNoi`, nơi báo được bằng toast. */
+  if (cau_hinh.dang_nhap) {
+    for (const ten of O_CREDENTIAL) {
+      const input = document.querySelector(`#connectionform [name="${ten}"]`);
+      if (input) input.required = false;
+    }
+  }
+
+  const chan = $("#connection-ketiep");
+  if (chan) chan.textContent = cau_hinh.ke_tiep || "";
+}
+
+$('#connectionform [name="channel"]')?.addEventListener("change", (ev) =>
+  veFormKenh(ev.target.value)
+);
+if ($("#connectionform")) veFormKenh($('#connectionform [name="channel"]').value);
+
+$("#connectionform")?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const tho = Object.fromEntries(new FormData(ev.target));
+  // Cắt khoảng trắng cho MỌI giá trị, không riêng token: tên hiển thị dính
+  // dấu cách đầu dòng cũng làm danh sách tài khoản trông lệch.
+  const form = {};
+  for (const [k, v] of Object.entries(tho)) form[k] = String(v ?? "").trim();
+
+  const cau_hinh = KENH_TRUONG[form.channel];
+  const thieu = (cau_hinh?.truong || [])
+    .filter((t) => t.bat_buoc && !form[t.o])
+    .map((t) => t.nhan);
+  if (thieu.length) {
+    /* Kênh có đường đăng nhập mà người dùng bấm Lưu với ô trống thì gần như
+     * chắc chắn họ đang ở nhầm chỗ. Liệt kê bốn token còn thiếu là đẩy họ đi
+     * tìm những chuỗi mà hệ thống tự lấy được. */
+    toast(cau_hinh?.dang_nhap
+      ? 'Kênh này nối bằng nút "Kết nối Facebook / Instagram bằng đăng nhập" ở trên.'
+      : "Còn thiếu: " + thieu.join(", "), true);
+    return;
+  }
+
+  const credentials = {};
+  for (const key of ["app_id", "access_token", "verify_token"]) {
+    if (form[key]) credentials[key] = form[key];
+  }
+  if (form.app_secret) {
+    if (form.channel === "zalo_oa") credentials.secret_key = form.app_secret;
+    else credentials.app_secret = form.app_secret;
+  }
+  if (form.secondary_secret) {
+    if (form.channel === "zalo_oa") credentials.refresh_token = form.secondary_secret;
+    else if (form.channel === "webchat") credentials.widget_secret = form.secondary_secret;
+  }
+
+  let account;
+  try {
+    account = await api("/channel-accounts", { method: "POST", body: JSON.stringify({
+      channel: form.channel, display_name: form.display_name,
+      external_account_id: form.external_account_id || null,
+      capabilities: { send_text: true, receive_message: true }, metadata: {}, credentials,
+    }) });
+  } catch (e) { toast(e.message, true); return; }
+
+  ev.target.reset();
+  veFormKenh($('#connectionform [name="channel"]').value);
+  $("#connection-create").classList.add("is-hidden");
+
+  // XÁC MINH NGAY, không đợi người bấm nút riêng.
+  //
+  // Lưu xong mà không kiểm thì người dùng tưởng đã xong. Credential sai chỉ
+  // lộ ra khi khách nhắn mà không ai nhận — có thể nhiều ngày sau, và lúc
+  // đó không ai còn nhớ mình đã dán gì vào đâu.
+  //
+  // Zalo cá nhân là ngoại lệ: nó chưa có gì để xác minh cho tới khi quét QR.
+  if (form.channel === "zalo_personal") {
+    toast('Đã lưu. Bấm "Quét QR" trên thẻ tài khoản để đăng nhập Zalo.');
+    loadKetNoi();
+    return;
+  }
+  try {
+    await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
+    toast("Đã lưu và xác minh xong với provider.");
+  } catch (e) {
+    toast("Đã lưu, nhưng provider từ chối: " + e.message + " — kiểm lại credential.", true);
+  }
+  loadKetNoi();
+});
+
+
+/*
+ * Kết nối Facebook/Instagram bằng ĐĂNG NHẬP.
+ *
+ * Mở cửa sổ mới thay vì chuyển hướng cả trang: người dùng đang ở giữa việc
+ * cấu hình, và kéo họ ra khỏi dashboard rồi thả về là mất ngữ cảnh. Cửa sổ
+ * con tự đóng và tự làm mới trang cha khi xong.
+ */
+$("#btn-oauth-meta")?.addEventListener("click", async () => {
+  const nut = $("#btn-oauth-meta");
+  nut.disabled = true;
+  try {
+    const r = await api("/connect/meta/start");
+    if (!r.url) throw new Error("Máy chủ không trả về địa chỉ đăng nhập");
+    // Mở TRƯỚC khi await gì thêm: trình duyệt chỉ cho mở cửa sổ mới trong
+    // nhịp xử lý cú bấm, chờ lâu là bị chặn pop-up.
+    const cua_so = window.open(r.url, "ketnoi_meta", "width=620,height=740");
+    if (!cua_so) {
+      toast("Trình duyệt đã chặn cửa sổ. Cho phép pop-up rồi thử lại.", true);
+    }
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    nut.disabled = false;
+  }
+});

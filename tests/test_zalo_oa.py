@@ -168,12 +168,41 @@ def test_error_khac_khong_la_THAT_BAI_du_http_200():
 
 
 def test_error_bang_khong_la_thanh_cong():
-    assert _doc_ket_qua(_rep(200, {"error": 0, "message": "Success"})).ok is True
+    delivery = _doc_ket_qua(
+        _rep(200, {"error": 0, "message": "Success", "data": {"message_id": "z1"}})
+    )
+    assert delivery.ok is True
+    assert delivery.provider_message_id == "z1"
 
 
 def test_khong_co_truong_error_van_coi_la_thanh_cong():
     """Một số endpoint trả 200 rỗng. Coi đó là hỏng thì ghi nhật ký giả."""
     assert _doc_ket_qua(_rep(200, {})).ok is True
+
+
+def test_verify_oa_lay_token_va_doc_oa_id():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"access_token": "oa-token", "refresh_token": "new-refresh", "expires_in": 3600})
+        assert request.url.path.endswith("/getoa")
+        assert request.headers["access_token"] == "oa-token"
+        return httpx.Response(200, json={"error": 0, "data": {"oa_id": "oa-42", "name": "OA CSKH"}})
+
+    client = httpx.AsyncClient(
+        base_url="https://openapi.example/v3/oa",
+        transport=httpx.MockTransport(handler),
+    )
+    adapter = ZaloOAAdapter(
+        account_id=__import__("uuid").uuid4(),
+        credentials={"app_id": "app", "secret_key": "secret", "refresh_token": "refresh"},
+        client=client,
+    )
+
+    check = asyncio.run(adapter.verify_connection())
+
+    assert check.ok is True
+    assert check.external_account_id == "oa-42"
+    asyncio.run(adapter.aclose())
 
 
 def test_http_loi_van_la_that_bai():

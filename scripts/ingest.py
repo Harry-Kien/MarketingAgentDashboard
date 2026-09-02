@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent import db          # noqa: E402
 from agent.core import rag    # noqa: E402
+from agent.tri_thuc import loc_tep_nap_duoc  # noqa: E402
 
 GIAN_CACH_GIAY = 3.0
 SUFFIXES = {".md", ".txt"}
@@ -42,6 +43,32 @@ async def main(folder: str) -> None:
                 print(f"Không có tài liệu thật trong {root} — dùng bản mẫu {mau.name}")
     if not files:
         print(f"Không có file .md hoặc .txt trong {root}")
+        return
+
+    # CHỐT: khung chưa có người điền thì KHÔNG vào kho.
+    #
+    # Tệp khung do `scripts.sinh_kho_tri_thuc` sinh ra trông y như tài liệu
+    # thật — có tiêu đề, có mục, có cấu trúc. Nạp nó vào pgvector thì
+    # `tim_kien_thuc` sẽ trả về những dòng "[CẦN NGƯỜI ĐIỀN: đổi trả bao
+    # nhiêu ngày?]" với điểm khớp CAO, vì câu hỏi của khách và câu hỏi
+    # trong khung dùng chung từ vựng.
+    #
+    # Agent đọc đoạn đó như căn cứ. Nó không nói sai con số, nhưng nó cũng
+    # không nói "chưa biết" — và độ tin cậy được nâng lên bởi chính đoạn
+    # rỗng ấy, nên chốt chuyển người vì độ tin cậy thấp không nổ nữa.
+    # Kho rỗng làm agent trông TỰ TIN HƠN agent không có gì.
+    files, bi_chan = loc_tep_nap_duoc(files)
+    if bi_chan:
+        print(f"\nTỪ CHỐI {len(bi_chan)} tệp còn khung chưa điền:\n")
+        for path, thieu in bi_chan.items():
+            print(f"  {path.name} — còn {len(thieu)} câu chưa trả lời")
+            for ch in thieu[:3]:
+                print(f"      · {ch}")
+            if len(thieu) > 3:
+                print(f"      · … và {len(thieu) - 3} câu nữa")
+        print("\nĐiền xong rồi chạy lại. Xem agent/tri_thuc/chot.py.\n")
+    if not files:
+        print("Không còn tệp nào nạp được.")
         return
 
     await db.init_db()

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Marketing Agent — Trạm điều độ</title>
+<title>Kien Omnichannel — Trung tâm chăm sóc khách hàng</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Lora:wght@500;600&display=swap" rel="stylesheet">
@@ -22,8 +22,8 @@
 <header class="masthead">
   <div class="masthead__id">
     <span class="masthead__mark" aria-hidden="true"></span>
-    <span class="masthead__title">Marketing Agent</span>
-    <span class="masthead__sub">Trạm điều độ</span>
+    <span class="masthead__title">Kien Omnichannel</span>
+    <span class="masthead__sub">Customer Care OS</span>
   </div>
 
   <div class="masthead__controls">
@@ -64,6 +64,10 @@
     <button type="button" class="rail__item" data-view="hoithoai">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
       <span>Hội thoại</span><b id="c-hoithoai" class="rail__count"></b>
+    </button>
+    <button type="button" class="rail__item" data-view="khachhang">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 11a4 4 0 0 1 6 3.5V21"/></svg>
+      <span>Khách hàng</span><b id="c-khachhang" class="rail__count"></b>
     </button>
     <button type="button" class="rail__item" data-view="donhang">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
@@ -115,8 +119,8 @@
        chưa. Mặc định HIỆN, JS ẩn đi khi xác nhận có phiên. -->
   <div class="cong" id="cong">
     <form class="cong__form" id="loginform">
-      <h1 class="cong__ten">Marketing Agent</h1>
-      <p class="cong__phu">Trạm điều độ — Aurora Skin</p>
+      <h1 class="cong__ten">Kien Omnichannel</h1>
+      <p class="cong__phu">Một nơi vận hành mọi kênh chăm sóc khách hàng</p>
       <label class="field">
         <span>Tên đăng nhập</span>
         <input name="ten_dang_nhap" autocomplete="username" required autofocus>
@@ -152,9 +156,8 @@
     <!-- ============ HỘI THOẠI ============ -->
     <section class="view" data-view="hoithoai">
       <div class="nickbar" id="nickbar">
-        <span class="nickbar__label">Nick Zalo trả lời</span>
-        <select id="nickdefault" class="nickbar__select"></select>
-        <span class="nickbar__hint" id="nickhint"></span>
+        <span class="nickbar__label">Tài khoản trả lời</span>
+        <span class="nickbar__hint">Tự động dùng đúng tài khoản đã nhận hội thoại</span>
         <span class="nickbar__spacer"></span>
         <span class="chanstrip" id="chanstrip"></span>
       </div>
@@ -182,6 +185,8 @@
           <button type="button" class="chip is-on" data-ostatus="all">Tất cả</button>
           <button type="button" class="chip" data-ostatus="cho_duyet">Chờ duyệt</button>
           <button type="button" class="chip" data-ostatus="da_chot">Đã chốt</button>
+          <button type="button" class="chip" data-ostatus="cho_dong_bo">Chờ đồng bộ kho</button>
+          <button type="button" class="chip" data-ostatus="da_giao">Đã giao</button>
           <button type="button" class="chip" data-ostatus="da_huy">Đã huỷ</button>
         </div>
         <div id="orders" class="rows"></div>
@@ -191,6 +196,15 @@
     <!-- ============ KHO ============ -->
     <section class="view" data-view="kho">
       <div class="readout" id="khoCards"></div>
+
+      <section class="panel">
+        <h2 class="panel__head">Kết nối kho / ERP
+          <span class="panel__note">nguồn của giá và tồn kho agent nói với khách</span>
+          <button type="button" id="erpthu" class="btn btn--sm">Thử kết nối</button></h2>
+        <div id="erpcauhinh" class="rows"></div>
+        <div id="erpketqua" class="rows"></div>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Tồn kho
           <span class="panel__note">số sống — trừ khi chốt đơn, trả khi huỷ</span></h2>
@@ -215,7 +229,7 @@
         <form id="videoform" class="form">
           <label class="field">
             <span>Tiêu đề</span>
-            <input name="title" required maxlength="200" placeholder="Giới thiệu serum Aurora C15">
+            <input name="title" required maxlength="200" placeholder="Giới thiệu sản phẩm mới">
           </label>
           <label class="field">
             <span>Loại video</span>
@@ -411,7 +425,7 @@
           <form id="probeform" class="form">
             <label class="field field--wide">
               <span>Câu hỏi của khách</span>
-              <input name="question" required placeholder="Serum Aurora dùng được cho da nhạy cảm không?">
+              <input name="question" required placeholder="Sản phẩm này dùng được cho da nhạy cảm không?">
             </label>
             <button type="submit" class="btn">Tìm</button>
           </form>
@@ -424,29 +438,63 @@
       </section>
     </section>
 
-    <!-- ============ HỆ THỐNG ============ -->
-    <!-- Kết nối: ZaloCRM và Chatwoot chạy THẲNG trong đây, không phải link
-         mở tab mới. Cả hai tự cấm bị nhúng bằng X-Frame-Options, nên chúng
-         đi qua lớp proxy `agent/api/tich_hop.py` — đọc phần đầu file đó
-         trước khi sửa gì ở đây, nhất là đoạn nói về cái giá của việc xoá
-         header chống nhúng. -->
+    <!-- ============ CUSTOMER 360 ============ -->
+    <section class="view" data-view="khachhang">
+      <div class="customer360">
+        <aside class="panel customer360__list">
+          <h2 class="panel__head">Customer 360 <span class="panel__note">hợp nhất có kiểm soát</span></h2>
+          <form id="contactsearch" class="searchline">
+            <input name="q" maxlength="120" placeholder="Tìm theo tên…" aria-label="Tìm khách hàng">
+            <button class="btn btn--sm" type="submit">Tìm</button>
+          </form>
+          <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
+        </aside>
+        <section class="panel customer360__detail" id="contactdetail">
+          <p class="empty">Chọn một khách hàng để xem danh tính đa kênh, hội thoại và consent.</p>
+        </section>
+      </div>
+    </section>
+
+    <!-- ============ KẾT NỐI NATIVE ============ -->
     <section class="view" data-view="ketnoi">
-      <section class="panel panel--full">
-        <h2 class="panel__head">
-          <span class="tabs" id="kntabs">
-            <button type="button" class="tab is-on" data-app="zalocrm">ZaloCRM</button>
-            <button type="button" class="tab" data-app="chatwoot">Chatwoot</button>
-            <button type="button" class="tab" data-app="n8n">n8n</button>
-            <button type="button" class="tab" data-app="minio">MinIO</button>
-          </span>
-          <span class="panel__note" id="knhint">đăng nhập ngay tại đây</span>
-          <button type="button" id="knreload" class="btn btn--sm">Tải lại</button>
-          <a id="knmoi" class="btn btn--sm" target="_blank" rel="noopener">Mở tab mới</a>
-        </h2>
-        <div class="frame__wrap">
-          <iframe id="knframe" class="frame" title="Hệ thống kết nối"
-                  allow="camera; microphone; clipboard-write"></iframe>
+      <div class="connections-head">
+        <div><p class="eyebrow">MULTI-ACCOUNT CONNECTIONS</p><h2>Tất cả tài khoản kênh</h2>
+          <p>Mỗi tài khoản có credential, sức khỏe và luồng gửi riêng. Secret chỉ được nhập, không hiển thị lại.</p></div>
+        <button type="button" class="btn btn--primary" id="connection-add-toggle">Thêm tài khoản</button>
+      </div>
+      <section class="panel connection-create is-hidden" id="connection-create">
+        <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
+        <div class="oauth-row">
+          <button type="button" class="btn btn--primary" id="btn-oauth-meta">Kết nối Facebook / Instagram bằng đăng nhập</button>
+          <span class="oauth-row__note">Chọn Trang trên Meta, hệ thống tự nhận token. Không phải dán tay.</span>
         </div>
+        <form id="connectionform" class="form connection-form">
+          <label class="field"><span>Kênh</span><select name="channel" required>
+            <option value="zalo_personal">Zalo cá nhân</option><option value="zalo_oa">Zalo Official Account</option>
+            <option value="facebook">Facebook Page</option><option value="instagram">Instagram</option>
+            <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
+          </select></label>
+          <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
+          <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
+          <details class="nhap-tay" id="nhap-tay">
+            <summary>Nhập thủ công</summary>
+            <div class="nhap-tay__o">
+          <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
+          <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
+          <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
+          <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
+          <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
+          <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
+            </div>
+          </details>
+          <p class="form__ketiep" id="connection-ketiep"></p>
+          <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
+        </form>
+      </section>
+      <div id="connectiongrid" class="connection-grid"><p class="empty">Đang tải tài khoản kênh…</p></div>
+      <section class="panel connection-guide">
+        <h2 class="panel__head">Checklist kích hoạt</h2>
+        <div class="guide-steps"><span><b>1</b> Tạo tài khoản</span><span><b>2</b> Đăng nhập/cấp quyền</span><span><b>3</b> Gắn webhook</span><span><b>4</b> Test inbound + outbound + media</span></div>
       </section>
     </section>
 

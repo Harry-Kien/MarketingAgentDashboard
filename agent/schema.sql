@@ -94,8 +94,24 @@ CREATE INDEX IF NOT EXISTS idx_chunk_doc ON chunks (document_id);
 -- unaccent không đụng tới.
 CREATE EXTENSION IF NOT EXISTS unaccent;
 
+-- GHI ĐỦ SCHEMA CHO MỌI HÀM TRONG THÂN — không phải chuyện phong cách.
+--
+-- `pg_dump` khi phục hồi đặt `search_path` về RỖNG cho an toàn. Tên hàm
+-- không kèm schema lúc đó không phân giải được, `bo_dau` hỏng, kéo theo cột
+-- sinh `chunks.tim_kiem` hỏng, kéo theo cả bảng `chunks` không dựng lại
+-- được — tức mất TOÀN BỘ kho tri thức RAG.
+--
+-- Hội thoại, đơn hàng và contact vẫn phục hồi bình thường, nên mất mát
+-- không lộ ra ngay. Lần thử phục hồi đầu tiên trong dự án này cho 41/42
+-- bảng, và chỉ đếm bảng mới thấy.
+--
+-- Canh bằng tests/test_phuc_hoi_duoc.py — nó ép search_path rỗng đúng như
+-- lúc phục hồi.
 CREATE OR REPLACE FUNCTION bo_dau(text) RETURNS text AS
-$$ SELECT translate(unaccent('unaccent', $1), 'đĐ', 'dD') $$
+$$ SELECT pg_catalog.translate(
+       public.unaccent('public.unaccent'::pg_catalog.regdictionary, $1),
+       'đĐ', 'dD'
+   ) $$
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE;
 
 ALTER TABLE chunks
@@ -197,6 +213,28 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Khách xin huỷ: GHI NHẬN lên chính đơn, người mới là bên quyết định huỷ.
+--
+-- Vì sao không để yêu cầu nằm trong đoạn chat: người đóng gói sáng hôm sau
+-- nhìn màn hình Đơn hàng, không thấy gì bất thường, và gói hàng gửi đi. Đơn
+-- khách đã xin huỷ vẫn lên đường — shop chịu phí hoàn COD và mất khách, mà
+-- không có lỗi nào bị ném ở đâu cả. Hai người nhìn hai màn hình khác nhau.
+--
+-- Vì sao là CỜ chứ không phải một giá trị `trang_thai` mới: đơn đang ở
+-- `cho_duyet` hay `da_chot` đều xin huỷ được, và trạng thái là vòng đời của
+-- đơn — nhét yêu cầu của khách vào đó là trộn hai thứ khác nhau.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS yeu_cau_huy_luc   TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS yeu_cau_huy_ly_do TEXT;
+
+-- Chỉ đánh chỉ mục phần đang chờ xử lý: đây là hàng đợi việc của người,
+-- luôn ngắn, và là truy vấn màn hình Đơn hàng chạy mỗi lần mở.
+CREATE INDEX IF NOT EXISTS idx_order_xin_huy ON orders (yeu_cau_huy_luc DESC)
+    WHERE yeu_cau_huy_luc IS NOT NULL AND trang_thai <> 'da_huy';
+
+-- Cột vận chuyển nằm ở agent/migrations/versions/0007_van_chuyen_ghn.sql.
+-- File này là BASELINE; thay đổi về sau đi bằng migration, để máy đã chạy
+-- và máy vừa clone luôn kết thúc ở cùng một trạng thái.
+
 CREATE INDEX IF NOT EXISTS idx_order_created ON orders (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_status  ON orders (trang_thai);
 

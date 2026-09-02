@@ -31,32 +31,31 @@ một chỗ là hỏng cả hai: một CI đỏ ngẫu nhiên thì người ta n
 theo ba tiêu chí đồng thời: có chuyển người đúng lúc không, có đủ từ khoá
 bắt buộc không, có dùng từ cấm quảng cáo không.
 
-Phân bố: 11 ca tuân thủ · 5 thẩm quyền · 4 ngoài danh mục · 14 RAG chính
-sách · 9 tư vấn da và thành phần · 11 giá/tồn kho/đơn hàng · 2 không dấu.
+Phân bố: 23 ca tuân thủ · 14 ca tri thức chính sách · 10 ca cần số liệu thật · 9 ca bán hàng.
 
-**20/56 ca — hơn một phần ba — thuộc loại "đừng nói bậy"**, không phải
-"tư vấn hay". Bộ này chứng minh agent không gây tai nạn; nó không chứng
-minh agent tư vấn giỏi.
+**23/56 ca thuộc loại "đừng nói bậy"**, không phải "tư vấn
+hay". Bộ này chứng minh agent không gây tai nạn; nó không chứng minh agent
+tư vấn giỏi.
 
 ### 2.2. Kết quả
 
-| Chỉ số | Kết quả qua 13 lần chạy |
+| Chỉ số | Kết quả qua 4 lần chạy |
 |---|---|
-| Ca đạt / 56 | 50 – 56 · trung vị **54** |
-| **Bỏ sót chuyển người** | 0 – 1 · trung vị **0** |
-| Chuyển người thừa | 0 – 2 · trung vị **1** |
+| Ca đạt / 56 | 49 – 56 · trung vị **53.5** |
+| **Bỏ sót chuyển người** | 0 – 2 · trung vị **0** |
+| Chuyển người thừa | 0 – 3 · trung vị **0.5** |
 | **Dùng từ cấm quảng cáo** | **0** (mọi lần chạy) |
-| Câu sạch dấu hiệu bot (sau tách tin) | 51 – 56 · trung vị **54.5** *(trên 4/13 lần)* / 56 |
-| Chi phí mỗi lần chạy | 0.0612 – 0.0883 USD |
+| Câu sạch dấu hiệu bot (sau tách tin) | 54 – 56 · trung vị **56** / 56 |
+| Chi phí mỗi lần chạy | 0.0892 – 0.1103 USD |
 
-Dải điểm 50–56 phản ánh đúng bản chất không tất định của model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
+Dải điểm 49–56 phản ánh đúng bản chất không tất định của model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
 
 ### 2.3. Hai lần bỏ sót chuyển người — và điều rút ra từ chúng
 
-Đây là phần đáng giá nhất của 13 lần chạy, và nó chỉ lộ ra khi đọc cả lịch sử thay vì lần chạy tốt nhất.
+Đây là phần đáng giá nhất của 4 lần chạy, và nó chỉ lộ ra khi đọc cả lịch sử thay vì lần chạy tốt nhất.
 
 `dùng từ cấm quảng cáo` bằng 0 ở **mọi** lần chạy. Nhưng `bỏ sót chuyển
-người` **không** phải luôn bằng 0 — có 2 lần trượt, và hai
+người` **không** phải luôn bằng 0 — có 1 lần trượt, và hai
 lần ấy trượt theo hai kiểu hoàn toàn khác nhau:
 
 | Ca | Tình huống | Agent làm gì | Vì sao nguy hiểm |
@@ -94,20 +93,7 @@ hỏi dồn · bỏ rơi khách).
 
 ### 3.2. Kết quả
 
-| Chỉ số | Kết quả |
-|---|---|
-| Kịch bản đạt | **11/12** |
-| Tổng lượt hội thoại | 43 |
-| **Sai chuyển người** | **0** |
-| **Dùng từ cấm** | **0** |
-| Bỏ rơi khách ở cuối | 0 |
-| Câu mở đường rỗng | 1 |
-| Hỏi lại điều đã biết | 0 |
-| Chi phí cả bộ | 0.0697 USD |
-
-**11/12 kịch bản đạt.** Kịch bản trượt: `kb-07`. Còn 1 câu mở đường RỖNG kiểu *"cần hỗ trợ gì thêm không ạ"* — câu mà prompt đã cấm vì nó không mở ra gì. 
-
-Ca `kb-03` là ca then chốt: khách tư vấn serum bình thường ba lượt, tới **lượt thứ tư** mới nói *"à mà em đang bầu 5 tháng"*. Bộ một lượt mù hoàn toàn với tình huống này.
+*(chưa chạy — `python -m scripts.eval_nhieu_luot`)*
 
 ### 3.3. Lần chạy đầu: bộ đo sai ba ca
 

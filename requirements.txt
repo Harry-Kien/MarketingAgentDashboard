@@ -38,6 +38,9 @@ asyncpg==0.31.0
 # pgvector: phần Python chỉ để đăng ký kiểu; phần quan trọng là extension
 # trong Postgres (xem agent/schema.sql).
 pgvector==0.5.0
+# Mã hóa credential từng tài khoản bằng AES-256-GCM. Khai trực tiếp vì
+# ứng dụng import AESGCM; không phụ thuộc việc một thư viện khác kéo hộ.
+cryptography==50.0.0
 
 # --- Model ----------------------------------------------------
 # vertexai (trong gói này) dùng cho embedding tiếng Việt của RAG — hạn mức

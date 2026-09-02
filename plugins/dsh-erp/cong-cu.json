@@ -1,0 +1,26 @@
+{
+  "_ghi_chu": "Danh sách công cụ MCP dành cho client ngoài (dsh, Claude Desktop…). tests/test_plugin_dsh_erp.py đối chiếu nó với agent/mcp_server.py — đổi tên công cụ bên Python mà quên sửa đây thì đỏ, thay vì hỏng lặng lẽ ở máy người dùng.",
+  "ten": "dsh-erp",
+  "mo_ta": "Hỏi kho/ERP của hệ thống Marketing Agent từ trong DeepSeek Harness. CHỈ ĐỌC.",
+  "mcp": {
+    "duong_dan": "/mcp/",
+    "cong_mac_dinh": 8000,
+    "xac_thuc": "Bearer <MCP_TOKEN>",
+    "_ghi_chu_xac_thuc": "Sinh token bằng `python -m scripts.sinh_token MCP_TOKEN`. Lệnh đó KHÔNG in token ra màn hình."
+  },
+  "cong_cu": [
+    "tra_cuu_san_pham",
+    "goi_y_san_pham",
+    "ton_kho_realtime",
+    "suc_khoe_erp",
+    "tra_cuu_don_hang",
+    "tim_trong_kho_tri_thuc"
+  ],
+  "da_kiem_chung": true,
+  "can_xac_minh": [],
+  "_da_xac_minh": [
+    "dsh có thật trên npm: @deepseek-ai/dsh 0.1.1-rc.2 (release candidate).",
+    "@deepseek-ai/dsh-mcp-client 0.0.1-rc.1 là plugin MCP client CHÍNH THỨC — 'connects to MCP servers and registers their tools on ctx.tools'. Nên KHÔNG cần plugin tự viết.",
+    "Plugin Cordis của dsh định nghĩa lúc CHẠY qua cordis_define/cordis_run, không phải file tĩnh xuất apply(ctx) — mô hình mà bản đầu của thư mục này đoán sai."
+  ]
+}

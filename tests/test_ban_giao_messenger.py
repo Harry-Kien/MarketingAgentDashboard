@@ -98,7 +98,7 @@ def test_luong_xu_ly_LUU_tin_standby_roi_moi_dung():
     """
     from agent import main as app_main
     src = inspect.getsource(app_main.handle_inbound)
-    vi_tri_luu = src.index("INSERT INTO messages")
+    vi_tri_luu = src.index("_ingest_inbound(msg)")
     vi_tri_chan = src.index('.get("standby")')
     assert vi_tri_luu < vi_tri_chan, "chặn standby trước khi lưu -> mất tin khách"
 

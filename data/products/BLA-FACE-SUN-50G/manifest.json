@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "ma": "AS-SR01",
   "ten": "Serum phục hồi Aurora Revitalizing Serum",
   "nguon": "sinh",
@@ -13,3 +14,21 @@
     "img_01.jpg"
   ]
 }
+=======
+  "ma": "BLA-FACE-SUN-50G",
+  "ten_nhan": "Ultra Protect UV Suncream SPF50+ PA++++",
+  "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán, nếu khác tên trên nhãn]",
+  "dung_tich": "50 g",
+  "thanh_phan_tren_nhan": [
+    "Centella Asiatica Extract",
+    "Zinc Oxide",
+    "Titanium Dioxide",
+    "Ethylhexyl Methoxycinnamate"
+  ],
+  "nguon": "chup",
+  "ghi_chu": "Ảnh chụp thật sản phẩm BLANICA, đọc được nhãn. Tên và thành phần dưới đây lấy từ chính nhãn trên ảnh.",
+  "anh": [
+    "img_00.jpg"
+  ]
+}
+>>>>>>> origin/main

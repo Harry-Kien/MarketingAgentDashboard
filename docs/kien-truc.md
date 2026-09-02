@@ -1,7 +1,8 @@
 # Kiến trúc hệ thống
 
 > **Sơ đồ cơ sở dữ liệu trong tài liệu này được SINH RA từ
-> `agent/schema.sql`** bằng `python -m scripts.sinh_so_do --ghi`.
+> `agent/schema.sql` và `agent/migrations/versions/*.sql`** bằng
+> `python -m scripts.sinh_so_do --ghi`.
 > Đừng sửa tay phần đó — sửa schema rồi sinh lại.
 >
 > Lý do: sơ đồ vẽ tay đúng đúng một ngày, ngày người ta vẽ nó. Repo này đã
@@ -18,9 +19,9 @@ thêm một lớp con — không đụng agent, RAG, video hay dashboard.
 
 ```mermaid
 flowchart TB
-    subgraph kenh["Kênh — ChannelAdapter là ranh giới"]
-        zalo["Zalo<br/>(ZaloCRM, kéo)"]
-        cw["Facebook · Instagram · WhatsApp<br/>web · email (Chatwoot, đẩy)"]
+    subgraph kenh["Kênh native — ChannelAdapter là ranh giới"]
+        zalo["Zalo cá nhân · Zalo OA"]
+        cw["Facebook · Instagram · WhatsApp<br/>website chat"]
     end
 
     subgraph loi["Lõi agent"]
@@ -125,7 +126,8 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-17 bảng, chia theo phần nghiệp vụ:
+41 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
@@ -134,6 +136,16 @@ flowchart LR
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` |
+| **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
+| **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
+| **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
+| **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
+
+Invariant định tuyến quan trọng nhất là `(account_id, external_id)`, không
+phải `(channel, external_id)`. Hai Page có thể cùng nhìn thấy một external
+ID; thiếu account scope sẽ nhập nhầm hội thoại và gửi reply ra sai Page.
+Adapter gắn `account_id` từ lúc parse inbound; outbound lấy account từ bản
+ghi conversation và fail closed khi account sai hoặc đã bị khóa.
 
 ```mermaid
 erDiagram
@@ -146,7 +158,7 @@ erDiagram
         TEXT customer_ref
         TEXT status
         TEXT outcome
-        _ con_2_cot_nua
+        _ con_17_cot_nua
     }
     messages {
         UUID id
@@ -155,6 +167,9 @@ erDiagram
         TEXT content
         BOOLEAN delivered
         NUMERIC cost_usd
+        JSONB attachments
+        TEXT direction
+        _ con_3_cot_nua
     }
     documents {
         UUID id
@@ -208,7 +223,7 @@ erDiagram
         TEXT khach_sdt
         TEXT khach_dia_chi
         JSONB items
-        _ con_13_cot_nua
+        _ con_24_cot_nua
     }
     posts {
         UUID id
@@ -276,14 +291,264 @@ erDiagram
         TEXT app_id
         TEXT refresh_token
     }
+    channel_accounts {
+        UUID id
+        TEXT channel
+        TEXT display_name
+        TEXT external_account_id
+        TEXT status
+        JSONB capabilities
+        JSONB metadata
+        BOOLEAN is_legacy
+        _ con_1_cot_nua
+    }
+    credential_secrets {
+        UUID account_id
+        INT key_version
+        BYTEA nonce
+        BYTEA ciphertext
+    }
+    account_memberships {
+        UUID account_id
+        UUID user_id
+        TEXT role
+        KEY PRIMARY
+    }
+    account_health_events {
+        BIGSERIAL id
+        UUID account_id
+        TEXT status
+        TEXT code
+        JSONB detail
+        TIMESTAMPTZ observed_at
+    }
+    webhook_deliveries {
+        UUID id
+        UUID account_id
+        TEXT dedupe_key
+        TEXT raw_sha256
+        BOOLEAN signature_valid
+        TEXT status
+        INT attempts
+        JSONB metadata
+        _ con_3_cot_nua
+    }
+    attachments {
+        UUID id
+        UUID message_id
+        INT ordinal
+        TEXT kind
+        TEXT url
+        TEXT original_url
+        TEXT storage_key
+        TEXT mime_type
+        _ con_2_cot_nua
+    }
+    outbox_jobs {
+        UUID id
+        UUID account_id
+        UUID conversation_id
+        UUID message_id
+        TEXT kind
+        JSONB payload
+        TEXT idempotency_key
+        TEXT status
+        _ con_7_cot_nua
+    }
+    inbox_events {
+        BIGSERIAL sequence_id
+        UUID account_id
+        TEXT topic
+        UUID ref_id
+        JSONB payload
+    }
+    conversation_reads {
+        UUID conversation_id
+        UUID user_id
+        TIMESTAMPTZ last_read_at
+        KEY PRIMARY
+    }
+    worker_heartbeats {
+        TEXT worker_name
+        TEXT worker_id
+        TIMESTAMPTZ last_seen_at
+        JSONB detail
+    }
+    contacts {
+        UUID id
+        TEXT display_name
+        TEXT phone
+        TEXT email
+        JSONB profile
+        TEXT status
+        UUID merged_into
+        INT version
+        _ con_2_cot_nua
+    }
+    contact_points {
+        UUID id
+        UUID contact_id
+        UUID channel_account_id
+        TEXT external_user_id
+        TEXT handle
+        JSONB verified_fields
+        JSONB metadata
+        TIMESTAMPTZ first_seen
+        _ con_1_cot_nua
+    }
+    contact_tags {
+        UUID contact_id
+        TEXT tag
+        UUID created_by
+        KEY PRIMARY
+    }
+    contact_notes {
+        UUID id
+        UUID contact_id
+        TEXT body
+        TEXT visibility
+        UUID created_by
+    }
+    contact_consents {
+        UUID id
+        UUID contact_id
+        UUID account_id
+        TEXT purpose
+        TEXT status
+        TEXT source
+        JSONB evidence
+        UUID captured_by
+        _ con_2_cot_nua
+    }
+    contact_merges {
+        UUID id
+        UUID source_contact_id
+        UUID target_contact_id
+        UUID actor_id
+        TEXT reason
+        INT expected_source_version
+        INT expected_target_version
+        JSONB snapshot
+        _ con_4_cot_nua
+    }
+    data_retention_jobs {
+        UUID id
+        UUID contact_id
+        TEXT kind
+        TEXT status
+        UUID requested_by
+        UUID approved_by
+        TEXT reason
+        BOOLEAN dry_run
+        _ con_4_cot_nua
+    }
+    teams {
+        UUID id
+        TEXT name
+        TEXT description
+        TEXT status
+    }
+    team_members {
+        UUID team_id
+        UUID user_id
+        TEXT role
+        JSONB skills
+        INT max_active
+        BOOLEAN is_available
+        TIMESTAMPTZ joined_at
+        KEY PRIMARY
+    }
+    sla_policies {
+        UUID id
+        UUID account_id
+        TEXT priority
+        INT first_response_minutes
+        INT resolution_minutes
+        JSONB business_hours
+        BOOLEAN active
+        NULLS UNIQUE
+    }
+    routing_rules {
+        UUID id
+        UUID account_id
+        UUID team_id
+        TEXT priority
+        JSONB required_skills
+        INT weight
+        BOOLEAN active
+    }
+    conversation_assignments {
+        UUID id
+        UUID conversation_id
+        UUID assigned_user_id
+        UUID assigned_team_id
+        UUID actor_id
+        TEXT source
+        TEXT reason
+        TIMESTAMPTZ started_at
+        _ con_1_cot_nua
+    }
+    sla_events {
+        BIGSERIAL id
+        UUID conversation_id
+        TEXT kind
+        TIMESTAMPTZ due_at
+        JSONB detail
+    }
+    routing_cursors {
+        UUID rule_id
+        UUID last_user_id
+    }
+    channel_accounts ||--o{ account_health_events : ""
+    channel_accounts ||--o{ account_memberships : ""
+    nguoi_dung ||--o{ account_memberships : ""
+    messages ||--o{ attachments : ""
     documents ||--o{ chunks : ""
+    channel_accounts ||--o{ contact_consents : ""
+    contacts ||--o{ contact_consents : ""
+    nguoi_dung ||--o{ contact_consents : ""
+    contacts ||--o{ contact_merges : ""
+    nguoi_dung ||--o{ contact_merges : ""
+    contacts ||--o{ contact_notes : ""
+    nguoi_dung ||--o{ contact_notes : ""
+    channel_accounts ||--o{ contact_points : ""
+    contacts ||--o{ contact_points : ""
+    contacts ||--o{ contact_tags : ""
+    nguoi_dung ||--o{ contact_tags : ""
+    contacts ||--o{ contacts : ""
+    conversations ||--o{ conversation_assignments : ""
+    nguoi_dung ||--o{ conversation_assignments : ""
+    teams ||--o{ conversation_assignments : ""
+    conversations ||--o{ conversation_reads : ""
+    nguoi_dung ||--o{ conversation_reads : ""
+    channel_accounts ||--o{ conversations : ""
+    contact_points ||--o{ conversations : ""
+    contacts ||--o{ conversations : ""
+    nguoi_dung ||--o{ conversations : ""
+    teams ||--o{ conversations : ""
+    channel_accounts ||--o{ credential_secrets : ""
+    contacts ||--o{ data_retention_jobs : ""
+    nguoi_dung ||--o{ data_retention_jobs : ""
+    channel_accounts ||--o{ inbox_events : ""
     conversations ||--o{ messages : ""
     conversations ||--o{ orders : ""
+    channel_accounts ||--o{ outbox_jobs : ""
+    conversations ||--o{ outbox_jobs : ""
+    messages ||--o{ outbox_jobs : ""
     nguoi_dung ||--o{ phien : ""
     posts ||--o{ post_metrics : ""
     videos ||--o{ posts : ""
+    nguoi_dung ||--o{ routing_cursors : ""
+    routing_rules ||--o{ routing_cursors : ""
+    channel_accounts ||--o{ routing_rules : ""
+    teams ||--o{ routing_rules : ""
+    conversations ||--o{ sla_events : ""
+    channel_accounts ||--o{ sla_policies : ""
+    nguoi_dung ||--o{ team_members : ""
+    teams ||--o{ team_members : ""
     videos ||--o{ video_assets : ""
     conversations ||--o{ videos : ""
+    channel_accounts ||--o{ webhook_deliveries : ""
 ```
 
 Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `created_at`…)
@@ -291,7 +556,7 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 
 ---
 
-## 5. Bốn nguyên tắc
+## 5. Bảy nguyên tắc
 
 | Nguyên tắc | Nằm ở đâu |
 |---|---|
@@ -299,3 +564,6 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 | Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
 | Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
 | Biết dừng đúng lúc — năm lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
+| Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/routes.py` |
+| Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |
+| Migration tiến về phía trước có version, checksum và transaction lock | `agent/migrations/runner.py` |

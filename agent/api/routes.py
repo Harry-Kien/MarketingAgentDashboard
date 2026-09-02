@@ -15,6 +15,19 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.omnichannel.outbound_service import (
+    ConversationNotFound,
+    OutboundMessageNotFound,
+    OutboundService,
+    PostgresOutboundRepository,
+)
+from agent.omnichannel.routing import (
+    AssignmentDenied,
+    ConversationConflict,
+    ConversationNotFound as RoutingConversationNotFound,
+    ConversationRoutingService,
+    PostgresRoutingRepository,
+)
 from agent.publish import analytics, chien_dich, copywriter, registry
 from agent.publish import service as post_service
 from agent.video import pipeline
@@ -189,6 +202,12 @@ async def overview() -> dict:
             "seconds": round(_num(vid.get("seconds")), 1),
         },
         "runtime": dict(runtime.STATE),
+        # Địa chỉ CÔNG KHAI để dashboard dựng URL callback cho Meta.
+        # Trình duyệt chỉ biết `location.origin` — tức 127.0.0.1 khi
+        # người vận hành mở dashboard tại chỗ. Copy địa chỉ đó dán vào
+        # Meta là Meta không bao giờ gọi vào được, mà không có gì nói
+        # ra nguyên nhân. Chỉ máy chủ biết địa chỉ thật.
+        "public_base_url": settings.public_base_url.rstrip("/"),
         "tape": [
             {
                 "id": str(t["id"]),
@@ -320,72 +339,117 @@ async def conversation_detail(conv_id: str) -> dict:
 
 class SendBody(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
+    key = body.idempotency_key or f"staff:{uuid.uuid4()}"
+    return await OutboundService(PostgresOutboundRepository()).queue_text(
+        conversation_id=cid,
+        role="staff",
+        text=body.text,
+        idempotency_key=key,
+    )
 
 
 @router.post("/conversations/{conv_id}/send")
 async def staff_send(conv_id: str, body: SendBody) -> dict:
-    """Nhân viên gửi tin trực tiếp (hoặc gửi bản đã sửa của agent)."""
+    """Ghi tin nhân viên vào outbox; worker mới là nơi gọi provider."""
     cid = uuid.UUID(conv_id)
-    conv = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", cid)
-    if not conv:
-        raise HTTPException(404, "Không thấy hội thoại")
+    try:
+        queued = await _queue_staff_reply(cid, body)
+    except ConversationNotFound as exc:
+        raise HTTPException(404, "Không thấy hội thoại") from exc
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }
 
-    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], body.text)
-    await db.execute(
-        "INSERT INTO messages (conversation_id, role, content, delivered) "
-        "VALUES ($1,'staff',$2,$3)",
-        cid,
-        body.text,
-        delivery.ok,
+
+async def _queue_approved_draft(mid: uuid.UUID):
+    message = await db.fetchrow(
+        """
+        SELECT id, conversation_id, content, delivered, delivery_status
+        FROM messages WHERE id = $1
+        """,
+        mid,
     )
-    await db.execute(
-        "UPDATE conversations SET msg_count = msg_count + 1, updated_at = now() "
-        "WHERE id = $1",
-        cid,
+    if message is None:
+        raise OutboundMessageNotFound("không tìm thấy bản nháp")
+    if message["delivered"] or message.get("delivery_status") in {
+        "sent",
+        "delivered",
+        "read",
+    }:
+        return None
+    return await OutboundService(PostgresOutboundRepository()).queue_existing_text(
+        conversation_id=message["conversation_id"],
+        message_id=message["id"],
+        text=message["content"],
+        idempotency_key=f"approve:{message['id']}",
     )
-    await db.log_event("staff.send", actor="staff", ref_id=cid, ok=delivery.ok)
-    return {"ok": delivery.ok, "detail": delivery.detail}
 
 
 @router.post("/messages/{message_id}/approve")
 async def approve_draft(message_id: str) -> dict:
-    """Chế độ assist: người duyệt bản nháp của agent rồi mới gửi đi."""
+    """Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API."""
     mid = uuid.UUID(message_id)
-    msg = await db.fetchrow("SELECT * FROM messages WHERE id = $1", mid)
-    if not msg:
-        raise HTTPException(404, "Không thấy tin nhắn")
-    if msg["delivered"]:
+    try:
+        queued = await _queue_approved_draft(mid)
+    except OutboundMessageNotFound as exc:
+        raise HTTPException(404, "Không thấy tin nhắn") from exc
+    if queued is None:
         return {"ok": True, "detail": "đã gửi trước đó"}
-
-    conv = await db.fetchrow(
-        "SELECT * FROM conversations WHERE id = $1", msg["conversation_id"]
-    )
-    delivery = await channels.get(conv["channel"]).send_text(conv["external_id"], msg["content"])
-    if delivery.ok:
-        await db.execute("UPDATE messages SET delivered = TRUE WHERE id = $1", mid)
-        await db.execute(
-            "UPDATE conversations SET status = 'auto', updated_at = now() WHERE id = $1",
-            conv["id"],
-        )
-    await db.log_event("draft.approve", actor="staff", ref_id=mid, ok=delivery.ok)
-    return {"ok": delivery.ok, "detail": delivery.detail}
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }
 
 
 @router.post("/conversations/{conv_id}/takeover")
-async def takeover(conv_id: str) -> dict:
+async def takeover(
+    conv_id: str,
+    nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
     """Người giành lại quyền. Agent ngừng trả lời hội thoại này."""
     cid = uuid.UUID(conv_id)
-    await db.execute(
-        "UPDATE conversations SET status = 'escalated', outcome = 'escalated', "
-        "updated_at = now() WHERE id = $1",
-        cid,
+    current = await db.fetchrow(
+        "SELECT version FROM conversations WHERE id = $1", cid
     )
-    await db.log_event("conversation.takeover", actor="staff", ref_id=cid)
-    return {"ok": True}
+    if current is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    actor_id = uuid.UUID(str(nguoi["id"]))
+    try:
+        state = await ConversationRoutingService(
+            PostgresRoutingRepository()
+        ).takeover(
+            conversation_id=cid,
+            actor_id=actor_id,
+            assignee_id=actor_id,
+            expected_version=int(current["version"]),
+            reason="Nhân viên nhận từ dashboard legacy",
+            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+        )
+    except RoutingConversationNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ConversationConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AssignmentDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return {"ok": True, "mode": state.mode, "version": state.version}
 
 
 @router.post("/conversations/{conv_id}/release")
-async def release(conv_id: str) -> dict:
+async def release(
+    conv_id: str,
+    nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
     """
     Trả hội thoại lại cho agent.
 
@@ -399,25 +463,42 @@ async def release(conv_id: str) -> dict:
     """
     cid = uuid.UUID(conv_id)
     conv = await db.fetchrow(
-        "SELECT channel, external_id FROM conversations WHERE id = $1", cid
+        "SELECT account_id, channel, external_id, version "
+        "FROM conversations WHERE id = $1", cid
     )
-    await db.execute(
-        "UPDATE conversations SET status = 'auto', outcome = NULL, "
-        "updated_at = now() WHERE id = $1",
-        cid,
-    )
-    await db.log_event("conversation.release", actor="staff", ref_id=cid)
+    if conv is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    actor_id = uuid.UUID(str(nguoi["id"]))
+    try:
+        state = await ConversationRoutingService(
+            PostgresRoutingRepository()
+        ).release(
+            conversation_id=cid,
+            actor_id=actor_id,
+            expected_version=int(conv["version"]),
+            reason="Nhân viên release từ dashboard legacy",
+            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+        )
+    except RoutingConversationNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ConversationConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AssignmentDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
 
     ghi_chu = ""
     if conv and conv["channel"] == "messenger":
-        ad = channels.get("messenger")
+        ad = await channels.get_for_account(conv["account_id"])
         if (lay := getattr(ad, "nhan_lai_quyen", None)) is not None:
             kq = await lay(conv["external_id"])
             if not getattr(kq, "ok", True):
                 ghi_chu = f"đã bật agent, nhưng chưa giành lại được quyền từ Meta: {kq.detail}"
                 await db.log_event("banGiao.nhan_lai_that_bai", ref_id=cid,
                                    ly_do=str(kq.detail)[:200])
-    return {"ok": True, "ghi_chu": ghi_chu} if ghi_chu else {"ok": True}
+    result = {"ok": True, "mode": state.mode, "version": state.version}
+    if ghi_chu:
+        result["ghi_chu"] = ghi_chu
+    return result
 
 
 # ---------------------------------------------------------------
@@ -522,6 +603,84 @@ async def list_video_assets(video_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# Kiểu tệp suy từ đuôi. Danh sách CHO PHÉP — thứ lạ trả về
+# `application/octet-stream`, tức trình duyệt tải xuống thay vì mở, và không
+# có gì chạy được trong tab của người xem.
+_MIME_THEO_DUOI = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
+}
+
+
+@router.get("/attachments/{attachment_id}/file")
+async def attachment_file(
+    attachment_id: str, _nguoi: dict = Depends(bat_buoc_dang_nhap),
+):
+    """
+    Phục vụ tệp đính kèm cho khung chat.
+
+    VÌ SAO CẦN ĐƯỜNG NÀY
+    --------------------
+    `queue_file` lưu `storage_key` — đường dẫn TRÊN MÁY CHỦ — và để `url`
+    rỗng. Dashboard vẽ `url` nên ra ảnh vỡ: người trực gửi ảnh cho khách
+    xong, nhìn lại khung chat thì thấy một biểu tượng hỏng.
+
+    KHÔNG NHẬN ĐƯỜNG DẪN TỪ CLIENT
+    ------------------------------
+    Client gửi ID của bản ghi; đường dẫn lấy từ CSDL. Nếu nhận đường dẫn thì
+    `?path=../../.env` đọc được mọi tệp trên máy chủ.
+
+    Và vẫn kiểm lần nữa rằng tệp nằm TRONG `data/`: một bản ghi hỏng hoặc bị
+    sửa tay không được biến thành đường đọc toàn ổ đĩa.
+    """
+    try:
+        aid = uuid.UUID(attachment_id)
+    except ValueError as exc:
+        raise HTTPException(404, "Không có tệp") from exc
+
+    row = await db.fetchrow(
+        "SELECT storage_key, mime_type, metadata FROM attachments WHERE id = $1",
+        aid,
+    )
+    if row is None or not row["storage_key"]:
+        raise HTTPException(404, "Không có tệp")
+
+    duong = Path(str(row["storage_key"])).resolve()
+    goc_du_lieu = (Path(__file__).resolve().parents[2] / "data").resolve()
+    if goc_du_lieu not in duong.parents:
+        await db.log_event("attachment.ngoai_thu_muc_du_lieu",
+                           attachment_id=str(aid))
+        raise HTTPException(404, "Không có tệp")
+    if not duong.is_file():
+        raise HTTPException(404, "Tệp không còn trên máy chủ")
+
+    mime = str(row["mime_type"] or "") or _MIME_THEO_DUOI.get(
+        duong.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(duong), media_type=mime)
+
+
+@router.get("/san-pham/{ma}/anh")
+async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)):
+    """
+    Ảnh sản phẩm cho màn hình Kho và cho ô chọn khi nhân viên gửi ảnh.
+
+    ĐƯỜNG DẪN DO MÁY CHỦ DỰNG, KHÔNG DO CLIENT
+    ------------------------------------------
+    `_anh_san_pham` tra mã trong danh mục rồi trả đường dẫn tương ứng. Client
+    chỉ gửi MÃ, không gửi đường dẫn — nên một mã dạng `../../.env` không đi
+    tới đâu cả: nó đơn giản không có trong danh mục.
+
+    Đòi đăng nhập: ảnh sản phẩm không phải bí mật, nhưng mọi thứ dưới `/api`
+    đều sau cổng đăng nhập, và mở một ngoại lệ là mở một đường để dò.
+    """
+    from agent.core.tools import _anh_san_pham
+
+    duong = _anh_san_pham(ma)
+    if duong is None or not duong.exists():
+        raise HTTPException(404, f"Không có ảnh cho mã {ma}")
+    return FileResponse(str(duong), media_type="image/jpeg")
 
 
 @router.get("/videos/{video_id}/assets/{ord}/file")
@@ -783,7 +942,7 @@ class KiemKeIn(BaseModel):
 @router.get("/kho")
 async def kho_tong_quan() -> dict:
     """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
-    from agent.core.tools import _catalog
+    from agent.core.tools import _anh_san_pham, _catalog
 
     danh_muc = {p["ma"]: p for p in _catalog().get("san_pham", [])}
     ton = await db.fetch("SELECT ma, so_luong, cap_nhat_luc FROM ton_kho ORDER BY ma")
@@ -798,6 +957,12 @@ async def kho_tong_quan() -> dict:
             "so_luong": int(t["so_luong"]),
             "sap_het": int(t["so_luong"]) <= kho.NGUONG_SAP_HET,
             "cap_nhat_luc": t["cap_nhat_luc"].isoformat(),
+            # Người trực cần thấy ẢNH để đối chiếu khi khách mô tả sản phẩm
+            # bằng lời — "cái chai xanh xanh ấy" — thay vì mở thư mục ra tìm.
+            "co_anh": _anh_san_pham(t["ma"]) is not None,
+            "dung_tich": sp.get("dung_tich", ""),
+            "da_phu_hop": sp.get("da_phu_hop", []),
+            "van_de_ho_tro": sp.get("van_de_ho_tro", []),
         })
     het = [x for x in ra if x["so_luong"] == 0]
     sap = [x for x in ra if 0 < x["so_luong"] <= kho.NGUONG_SAP_HET]
@@ -1587,3 +1752,136 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True,
     await db.log_event("auth.khoa_nguoi_dung", actor=nguoi["ten_dang_nhap"],
                        ten=ten, khoa=khoa)
     return {"ok": True, "ten_dang_nhap": ten, "khoa": khoa}
+
+
+# ===============================================================
+#  Nhân viên gửi ảnh và tài liệu — như mọi công cụ chat thật
+# ===============================================================
+#
+# `OutboundService.queue_file` đã có từ trước: agent dùng nó gửi ảnh sản
+# phẩm và đường đó chạy được. Nhưng không có route nào cho NGƯỜI, nên khung
+# soạn tin chỉ có ô chữ.
+#
+# Nghĩa là agent gửi được ảnh còn người trực thì không — khách hỏi "cho xem
+# ảnh thật cái đã mở nắp" thì họ phải mở Zalo riêng ra gửi, và tin đó nằm
+# ngoài hội thoại, không ai truy được về sau.
+
+# Danh sách CHO PHÉP, không phải danh sách cấm.
+#
+# `image/svg+xml` trông như ảnh nhưng SVG CHẠY ĐƯỢC MÃ trong trình duyệt
+# người xem. `text/html` cũng vậy. Danh sách cấm thì luôn thiếu một mục, và
+# mục thiếu đó là mục bị khai thác.
+MIME_GUI_DUOC: dict[str, str] = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "application/pdf": ".pdf",
+}
+
+# Zalo và Meta đều chặn tệp lớn hơn mức này ở phía họ. Chặn sớm để người
+# trực biết ngay, thay vì chờ outbox thử ba lần rồi mới báo hỏng.
+TOI_DA_BYTE_GUI = 10 * 1024 * 1024
+
+THU_MUC_TAI_LEN = Path(__file__).resolve().parents[2] / "data" / "uploads"
+
+
+def _ten_file_an_toan(ten_goc: str, mime: str) -> str:
+    """
+    Sinh tên file MỚI. Không bao giờ dùng tên client gửi lên.
+
+    VÌ SAO KHÔNG LỌC TÊN XẤU MÀ VỨT HẲN
+    -----------------------------------
+    Tên như `../../../.env` nối vào đường dẫn là ghi đè file bí mật của
+    chính hệ thống. Lọc từng mẫu xấu là trò đuổi bắt không bao giờ thắng:
+    `..\`, `....//`, ký tự đã mã hoá URL, ký tự Unicode trông giống dấu gạch.
+
+    Sinh tên mới thì cả lớp lỗ hổng đó biến mất — không còn gì của client
+    trong đường dẫn.
+
+    Đuôi lấy theo MIME chứ không theo tên: `virus.exe` gửi kèm
+    `Content-Type: image/png` thì tin MIME. Kiểu tệp là quyết định của máy
+    chủ, không phải của người gửi.
+    """
+    return f"{uuid.uuid4().hex}{MIME_GUI_DUOC.get(mime, '.bin')}"
+
+
+@router.post("/conversations/{conv_id}/send-file")
+async def staff_send_file(
+    conv_id: str,
+    ma_san_pham: str = Form(""),
+    chu_thich: str = Form(""),
+    tep: UploadFile | None = File(None),
+    _nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
+    """
+    Gửi ảnh sản phẩm theo mã, hoặc tải một tệp lên rồi gửi.
+
+    HAI ĐƯỜNG, VÀ VÌ SAO CẢ HAI
+    ---------------------------
+    Theo MÃ SẢN PHẨM là việc người trực làm nhiều nhất — ảnh đã nằm sẵn
+    trong kho, không tải lên gì cả, không mở thêm bề mặt tấn công nào.
+
+    TẢI TỆP LÊN cần cho ảnh chụp thật, hoá đơn, hướng dẫn dùng. Nhưng mỗi
+    lần nhận tệp từ trình duyệt là một lần phải tự bảo vệ — xem
+    `_ten_file_an_toan` và `MIME_GUI_DUOC`.
+
+    Đi qua outbox như mọi tin khác. Gọi thẳng provider ở đây là mất hết thứ
+    outbox đang giữ: thử lại, chống trùng, dead-letter, và thứ tự tin.
+    """
+    from agent.core.tools import _anh_san_pham
+
+    cid = uuid.UUID(conv_id)
+
+    if ma_san_pham.strip():
+        duong = _anh_san_pham(ma_san_pham.strip())
+        if duong is None:
+            raise HTTPException(404, f"Không có ảnh cho mã {ma_san_pham}")
+        khoa = f"staff-file:{uuid.uuid4()}"
+        ten_hien = chu_thich or ma_san_pham.strip()
+    else:
+        if tep is None:
+            raise HTTPException(422, "Cần chọn mã sản phẩm hoặc một tệp")
+        mime = (tep.content_type or "").split(";")[0].strip().lower()
+        if mime not in MIME_GUI_DUOC:
+            raise HTTPException(
+                415,
+                f"Không gửi được kiểu tệp này ({mime or 'không rõ'}). "
+                "Chỉ nhận ảnh JPG/PNG/WEBP/GIF và PDF.",
+            )
+        noi_dung = await tep.read()
+        if not noi_dung:
+            raise HTTPException(422, "Tệp rỗng")
+        if len(noi_dung) > TOI_DA_BYTE_GUI:
+            raise HTTPException(
+                413,
+                f"Tệp {len(noi_dung) // 1024 // 1024}MB, vượt mức "
+                f"{TOI_DA_BYTE_GUI // 1024 // 1024}MB.",
+            )
+
+        THU_MUC_TAI_LEN.mkdir(parents=True, exist_ok=True)
+        duong = THU_MUC_TAI_LEN / _ten_file_an_toan(tep.filename or "", mime)
+        duong.write_bytes(noi_dung)
+        khoa = f"staff-file:{duong.name}"
+        ten_hien = chu_thich or (tep.filename or "tệp đính kèm")[:80]
+
+    try:
+        queued = await OutboundService(PostgresOutboundRepository()).queue_file(
+            conversation_id=cid,
+            role="staff",
+            path=str(duong),
+            caption=ten_hien,
+            idempotency_key=khoa,
+        )
+    except ConversationNotFound as exc:
+        raise HTTPException(404, "Không thấy hội thoại") from exc
+
+    await db.log_event("staff.gui_file", ref_id=cid,
+                       ten=ten_hien[:80], ma_san_pham=ma_san_pham or None)
+    return {
+        "ok": True,
+        "queued": True,
+        "job_id": str(queued.job_id),
+        "message_id": str(queued.message_id),
+        "duplicate": queued.duplicate,
+    }

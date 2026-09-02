@@ -238,6 +238,84 @@ async def _kiem_khach_cho_lau() -> dict:
     return _muc("Khách chờ người", CANH_BAO, ghi, so_khach=so, lau_nhat_phut=phut)
 
 
+async def _kiem_erp() -> dict:
+    """Cổng kho/ERP: đang nối nguồn nào, còn sống không, mạch có mở không.
+
+    VÌ SAO PHẢI CÓ Ở ĐÂY
+    --------------------
+    Cả cổng ERP ghi `log_event` cho mọi sự cố — ngắt mạch, lệch tồn kho, đơn
+    kẹt. Nhưng không màn hình nào của dashboard đọc bảng `events`. Không có
+    mục này thì toàn bộ hệ thống báo động đó reo trong một căn phòng không
+    ai bước vào.
+    """
+    from agent.erp import nha_may
+
+    if (settings.erp_loai or "tep").strip().lower() == "tep":
+        # Hợp lệ, nhưng KHÔNG được hiện ra như "Tốt" trống trơn: người vận
+        # hành sẽ tưởng đã nối ERP trong khi đang đọc một file trên đĩa.
+        return _muc("Kho / ERP", CANH_BAO,
+                    "Đang đọc tệp catalog.json, CHƯA nối ERP thật. "
+                    "Đặt ERP_LOAI=erpnext hoặc odoo rồi chạy "
+                    "`python -m scripts.thu_erp`.")
+
+    t0 = time.perf_counter()
+    try:
+        cong = nha_may.cong()
+        song = await cong.suc_khoe()
+        tt = cong.trang_thai()
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Kho / ERP", HONG, f"{type(exc).__name__}: {exc}"[:150])
+
+    ms = int((time.perf_counter() - t0) * 1000)
+    nguon = tt.get("nguon", "?")
+    if tt.get("mach_mo"):
+        # Mạch mở nghĩa là MỌI câu hỏi về giá và tồn đang trả "không biết",
+        # và agent đang chuyển người nhiều bất thường.
+        return _muc("Kho / ERP", HONG,
+                    f"nguồn {nguon} · NGẮT MẠCH đang mở sau "
+                    f"{tt.get('hong_lien_tiep')} lần hỏng — giá và tồn kho "
+                    "đang trả 'không biết'", latency_ms=ms)
+    if not song:
+        return _muc("Kho / ERP", HONG,
+                    f"nguồn {nguon} · không gọi được ({ms}ms)", latency_ms=ms)
+    return _muc("Kho / ERP", TOT,
+                f"nguồn {nguon} · phản hồi {ms}ms", latency_ms=ms)
+
+
+async def _kiem_don_ket_erp() -> dict:
+    """Đơn kẹt `cho_dong_bo` quá lâu.
+
+    `cho_dong_bo` nghĩa là khách đã được báo "đã ghi nhận, sẽ có người gọi".
+    Nếu không ai gọi vì đơn kẹt thì đó là một lời hứa bị bỏ.
+    """
+    if not settings.erp_ghi_don:
+        return _muc("Đơn chờ đồng bộ ERP", TOT,
+                    "ERP_GHI_DON đang tắt — đơn không đi sang ERP")
+    try:
+        row = await db.fetchrow(
+            """
+            SELECT count(*) AS n,
+                   coalesce(max(EXTRACT(EPOCH FROM (now() - created_at))), 0)
+                       AS lau_nhat
+            FROM orders WHERE trang_thai = 'cho_dong_bo'
+            """
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Đơn chờ đồng bộ ERP", HONG,
+                    f"{type(exc).__name__}: {exc}"[:150])
+
+    n = int(row["n"] or 0)
+    phut = int(float(row["lau_nhat"] or 0) // 60)
+    if n == 0:
+        return _muc("Đơn chờ đồng bộ ERP", TOT, "không đơn nào đang kẹt")
+    if phut >= 30:
+        return _muc("Đơn chờ đồng bộ ERP", HONG,
+                    f"{n} đơn kẹt, đơn lâu nhất {phut} phút — khách đã được "
+                    "hứa sẽ có người gọi", so_don=n, phut=phut)
+    return _muc("Đơn chờ đồng bộ ERP", CANH_BAO,
+                f"{n} đơn đang chờ, lâu nhất {phut} phút", so_don=n)
+
+
 async def tong_kiem() -> dict:
     """
     Chạy mọi phép kiểm song song. Trả trạng thái tổng + chi tiết từng mục.
@@ -250,6 +328,7 @@ async def tong_kiem() -> dict:
         _kiem_db(), _kiem_model(), _kiem_giong_doc(), _kiem_kenh(),
         _kiem_hang_doi_video(), _kiem_sao_luu(), _kiem_kho_anh(),
         _kiem_khach_gan_nhat(), _kiem_khach_cho_lau(),
+        _kiem_erp(), _kiem_don_ket_erp(),
         return_exceptions=True,
     )
 

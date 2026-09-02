@@ -193,6 +193,57 @@ async def danh_sach_bai_dang(trang_thai: str = "", so_luong: int = 20) -> dict:
     return {"so_bai": len(rows), "bai": rows}
 
 
+@mcp.tool()
+async def ton_kho_realtime(ma_san_pham: str) -> dict:
+    """
+    Số lượng BÁN ĐƯỢC của một mã sản phẩm, hỏi thẳng kho/ERP ngay lúc này.
+
+    Khác `tra_cuu_san_pham`: hàm kia đọc danh mục đã cache, đủ dùng để tư
+    vấn. Hàm này bỏ qua cache, dùng khi sắp quyết định có bán hay không.
+
+    `ban_duoc` là hàng CÒN BÁN ĐƯỢC, đã trừ phần các đơn khác giữ chỗ —
+    không phải tổng tồn trong kho.
+
+    Chưa tra được thì trả `tra_duoc: false` và KHÔNG có `ban_duoc`. Đừng
+    hiểu đó là hết hàng, và đừng nói với ai một con số nào.
+    """
+    from agent.erp import nha_may as _nha_may
+
+    cong = _nha_may.cong()
+    t = await cong.ton_kho(ma_san_pham, bo_qua_cache=True)
+    if t is None:
+        # Trả 0 ở đây nghĩa là HẾT HÀNG — một câu trả lời sai khác hẳn
+        # "chưa tra được", mà client không có cách nào phân biệt.
+        return {
+            "tra_duoc": False,
+            "ma": ma_san_pham,
+            "ghi_chu": (
+                "Chưa tra được tồn kho. KHÔNG được hiểu là hết hàng, và "
+                "không được nói bất kỳ con số nào cho khách."
+            ),
+        }
+    return {
+        "tra_duoc": True,
+        "ma": ma_san_pham,
+        "ban_duoc": t.ban_duoc,
+        "ma_kho": t.ma_kho,
+    }
+
+
+@mcp.tool()
+async def suc_khoe_erp() -> dict:
+    """
+    Kho/ERP đang nối tới là nguồn nào, còn sống không, mạch có đang mở không.
+
+    `mach_mo: true` nghĩa là cổng đã ngắt mạch sau nhiều lần gọi hỏng — mọi
+    câu hỏi về giá và tồn kho sẽ trả "không biết" cho tới khi mạch đóng lại.
+    """
+    from agent.erp import nha_may as _nha_may
+
+    cong = _nha_may.cong()
+    return {**cong.trang_thai(), "song": await cong.suc_khoe()}
+
+
 # =====================================================================
 #  GHI — chỉ tới mức bản nháp chờ duyệt
 # =====================================================================

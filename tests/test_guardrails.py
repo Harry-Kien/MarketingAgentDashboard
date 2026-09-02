@@ -289,7 +289,7 @@ def test_hoi_quy_G38_thuoc_uong_la_cau_hoi_y_te():
 
 def test_hai_lan_truot_dung_hai_co_che_khac_nhau():
     """
-    Không lớp lưới nào bắt được cả hai. Đó là lý do có NĂM lớp chứ không
+    Không lớp lưới nào bắt được cả hai. Đó là lý do có SÁU lớp chứ không
     phải một: mỗi lớp canh một cách trượt khác nhau, và gộp lại thì mới
     kín.
     """

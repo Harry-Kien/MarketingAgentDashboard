@@ -17,6 +17,21 @@ from agent import db
 from agent.config import ROOT, settings
 from agent.core import kho
 
+# Năm trạng thái một đơn có thể mang. MỘT chỗ khai, vì dashboard cũng phải
+# biết chúng để hiện nhãn — và hai danh sách rời nhau thì sớm muộn lệch.
+# `tests/test_nhan_trang_thai_don.py` canh việc đó.
+#
+#   cho_duyet    vượt ngưỡng giá trị, chờ người xác nhận
+#   da_chot      agent tự chốt trong hạn mức
+#   cho_dong_bo  đã ghi nhận, CHƯA vào được kho/ERP — đang thử lại
+#   da_giao      hãng vận chuyển báo đã giao (agent/shipping/service.py)
+#   da_huy       người huỷ, hoặc ERP từ chối
+#
+# `da_giao` được thêm vào đây SAU: nó đã bị ghi vào CSDL từ lâu mà dashboard
+# chưa bao giờ có nhãn cho nó, nên đơn giao xong hiện ra chữ trần "da_giao".
+# Không ai báo, vì `ORDER_LABEL[x] || x` là một đường lui im lặng.
+TRANG_THAI_DON = ("cho_duyet", "da_chot", "cho_dong_bo", "da_giao", "da_huy")
+
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 
 # Số đoạn và độ dài mỗi đoạn khi agent TỰ đi tra. Nhỏ hơn lượt tra sẵn đầu
@@ -122,39 +137,114 @@ TOOLS: list[dict] = [
     {
         "name": "tra_cuu_don_hang",
         "description": (
-            "Tra cứu tình trạng đơn hàng và lộ trình giao hàng thời gian thực từ hãng "
-            "vận chuyển (GHN/GHTK). Nếu khách không nói mã đơn cụ thể mà chỉ hỏi chung chung "
-            "('cập nhật đơn cho tôi', 'đơn anh tới đâu rồi', 'kiểm tra đơn hàng'), "
-            "hãy để trống ma_don (hoặc không truyền), công cụ sẽ TỰ ĐỘNG tra cứu đơn hàng "
-            "gần nhất của khách này trong hệ thống!"
+            "Tra tình trạng đơn hàng theo mã đơn. Gọi khi khách hỏi đơn của họ "
+            "tới đâu rồi, bao giờ nhận được."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "ma_don": {
-                    "type": "string",
-                    "description": "Mã đơn hàng hoặc mã vận đơn (tuỳ chọn, để trống nếu khách hỏi chung)",
-                }
+                "ma_don": {"type": "string", "description": "Mã đơn hàng"}
             },
-            "required": [],
+            "required": ["ma_don"],
         },
     },
     {
-        "name": "tao_van_don",
+        "name": "tra_cuu_van_chuyen",
         "description": (
-            "Tạo vận đơn giao hàng với hãng vận chuyển (GHN) cho một đơn hàng đã chốt. "
-            "Tự động chạy qua 4 chốt kiểm duyệt: đơn hợp lệ, đủ thông tin giao nhận, "
-            "đã trừ tồn kho, và chống tạo trùng."
+            "Tra tình trạng GIAO HÀNG của một đơn: đã bàn giao vận chuyển "
+            "chưa, mã vận đơn là gì, hãng nào. Dùng khi khách hỏi 'đơn tới "
+            "đâu rồi', 'bao giờ nhận được', 'sao lâu thế'.\n\n"
+            "GIỚI HẠN PHẢI NHỚ: công cụ này đọc SỔ CỦA CỬA HÀNG, KHÔNG đọc "
+            "vị trí kiện hàng theo thời gian thực từ hãng vận chuyển. Tuyệt "
+            "đối KHÔNG đoán ngày giao, KHÔNG hứa 'mai hàng tới'. Có mã vận "
+            "đơn thì đưa mã cho khách tự tra trên ứng dụng của hãng — đó là "
+            "thông tin chính xác hơn bất cứ điều gì suy ra từ đây."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "ma_don": {
                     "type": "string",
-                    "description": "Mã đơn hàng nội bộ cần tạo vận đơn",
+                    "description": "Mã đơn hàng khách cung cấp",
                 }
             },
             "required": ["ma_don"],
+        },
+    },
+    {
+        "name": "xin_huy_don",
+        "description": (
+            "Khách muốn HUỶ một đơn đã đặt. Ghi nhận yêu cầu lên đơn rồi "
+            "chuyển cho nhân viên xử lý.\n\n"
+            "CÔNG CỤ NÀY KHÔNG HUỶ ĐƠN. Nó chỉ đánh dấu để người đóng gói "
+            "biết mà dừng tay, và để nhân viên gọi lại cho khách. Người mới "
+            "là bên quyết định huỷ — vì xin huỷ thường là lúc khách đang "
+            "không hài lòng, và đó là lúc còn cứu được đơn.\n\n"
+            "TUYỆT ĐỐI KHÔNG nói với khách là 'đã huỷ' hay 'đơn đã được huỷ'. "
+            "Đơn CHƯA huỷ. Nói đúng sự thật: đã ghi nhận, đã chuyển bộ phận "
+            "xử lý, và nhân viên sẽ liên hệ lại."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ma_don": {
+                    "type": "string",
+                    "description": "Mã đơn khách muốn huỷ",
+                },
+                "ly_do": {
+                    "type": "string",
+                    "description": (
+                        "Lý do khách nêu, ghi nguyên văn ý khách. Nhân viên "
+                        "gọi lại cần biết vì sao mới cứu được đơn."
+                    ),
+                },
+            },
+            "required": ["ma_don"],
+        },
+    },
+    {
+        "name": "xin_doi_tra",
+        "description": (
+            "Khách đã NHẬN hàng và muốn ĐỔI sang mẫu khác hoặc TRẢ lại. Ghi "
+            "nhận yêu cầu lên đơn rồi chuyển nhân viên xử lý.\n\n"
+            "Khác `xin_huy_don`: huỷ là trước khi giao, đổi trả là sau khi "
+            "khách đã cầm hàng trên tay.\n\n"
+            "CÔNG CỤ NÀY KHÔNG DUYỆT ĐỔI TRẢ và không hoàn tiền. Nó chỉ ghi "
+            "nhận để nhân viên gọi lại. Việc đơn có đủ điều kiện đổi trả hay "
+            "không là do người quyết định, dựa trên chính sách và tình trạng "
+            "hàng thực tế.\n\n"
+            "TUYỆT ĐỐI KHÔNG nói với khách là 'đã được đổi', 'đã hoàn tiền' "
+            "hay 'đơn đủ điều kiện'. Nói đúng sự thật: đã ghi nhận, đã "
+            "chuyển bộ phận xử lý, nhân viên sẽ liên hệ lại.\n\n"
+            "Nếu khách nói hàng gây kích ứng da hay bất kỳ phản ứng cơ thể "
+            "nào thì đó là tình huống y tế — gọi `chuyen_nhan_vien` thay vì "
+            "công cụ này."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ma_don": {
+                    "type": "string",
+                    "description": "Mã đơn khách muốn đổi hoặc trả",
+                },
+                "loai": {
+                    "type": "string",
+                    "enum": ["doi", "tra"],
+                    "description": (
+                        "doi = đổi sang mẫu/size khác; tra = trả lại hàng. "
+                        "Khách chưa nói rõ thì HỎI, không tự chọn — hai việc "
+                        "này người xử lý làm khác nhau."
+                    ),
+                },
+                "ly_do": {
+                    "type": "string",
+                    "description": (
+                        "Lý do khách nêu, ghi nguyên văn ý khách. Nhân viên "
+                        "cần biết để chuẩn bị trước khi gọi lại."
+                    ),
+                },
+            },
+            "required": ["ma_don", "loai"],
         },
     },
     {
@@ -191,9 +281,11 @@ TOOLS: list[dict] = [
     {
         "name": "tao_don_hang",
         "description": (
-            "Lên đơn hàng cho khách. BẮT BUỘC gọi công cụ này khi khách đồng ý chốt mua "
-            "hoặc đã cung cấp thông tin nhận hàng (họ tên, số điện thoại, địa chỉ cụ thể). "
-            "Công cụ sẽ lưu đơn vào CSDL, trừ tồn kho và tự động tạo mã vận đơn để gửi cho khách."
+            "Lên đơn hàng cho khách. CHỈ gọi sau khi đã (1) tóm tắt đầy đủ đơn "
+            "gồm tên sản phẩm, số lượng, tổng tiền, họ tên, số điện thoại, địa "
+            "chỉ và (2) khách đã trả lời xác nhận rõ ràng bằng lời của họ. "
+            "Nếu thiếu bất kỳ thông tin nào thì HỎI TIẾP, tuyệt đối không tự "
+            "điền và không đoán. Nếu khách chưa xác nhận thì chưa được gọi."
         ),
         "input_schema": {
             "type": "object",
@@ -279,7 +371,28 @@ async def _catalog_song() -> dict:
     Hỏng đường CSDL thì rơi về số trong file — thà cũ còn hơn không có gì,
     và chốt tồn kho lúc chốt đơn vẫn chặn được bán quá.
     """
-    data = _catalog()
+    from agent.erp import nha_may
+    from agent.erp.hop_dong import LoiERP
+
+    try:
+        data = await nha_may.cong().danh_muc()
+    except LoiERP:
+        # Cổng hỏng hoàn toàn thì rơi về file. Ở ĐÂY thì được, vì đây là nửa
+        # tham chiếu (tên, thành phần) — giá và tồn đã bị cổng chặn ở tầng
+        # dưới nếu quá hạn mà gọi không được, nên không có số cũ nào lọt lên.
+        data = _catalog()
+    # CHỈ chồng tồn kho nội bộ khi nguồn là TỆP.
+    #
+    # Với nguồn `tep`, bảng `ton_kho` chính là số sống — file JSON chỉ giữ
+    # con số của ngày ai đó sửa nó.
+    #
+    # Với ERP thật thì ngược hẳn: ERP là SỔ CÁI, và bảng nội bộ chỉ còn vai
+    # giữ chỗ tạm (thiết kế mục 7.2). Chồng nó lên là xoá mất số vừa lấy về
+    # từ ERP — và lỗi đó không nổ, nó LỆCH: agent tư vấn bằng số nội bộ rồi
+    # chốt đơn bằng số ERP, nên khách xác nhận xong mới bị báo hết hàng.
+    if (settings.erp_loai or "tep").strip().lower() != "tep":
+        return data
+
     try:
         from agent.core import kho
         song = await kho.lay_tat_ca()
@@ -424,6 +537,16 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
                 }
             out = {"tim_thay": True, **best}
             out["con_hang"] = (best.get("ton_kho") or 0) > 0
+            # Khách hỏi ĐÍCH DANH thì vẫn trả giá và tồn — hai số ấy có
+            # thật, đến từ ERP. Nhưng phải nói rõ là KHÔNG có nửa tư vấn,
+            # nếu không model sẽ lấp chỗ trống bằng suy đoán từ tên hàng.
+            if not best.get("duoc_gioi_thieu", True):
+                out["ghi_chu"] = (
+                    "Mặt hàng này CHƯA có hồ sơ tư vấn: giá và tồn kho là "
+                    "thật, nhưng không có căn cứ nào về loại da phù hợp, "
+                    "thành phần hay cách dùng. Chỉ được nói giá và còn hàng "
+                    "hay không. Khách hỏi thêm thì gọi chuyen_nhan_vien."
+                )
             return out
         return {
             "tim_thay": False,
@@ -469,12 +592,51 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
                 "ghi_chu": "Không có sản phẩm nào khớp tiêu chí. Hỏi thêm khách "
                            "để thu hẹp, không được bịa sản phẩm.",
             }
-        con_hang = [h for h in hits if (h.get("ton_kho") or 0) > 0]
-        return {
-            "so_luong": len(hits),
-            "san_pham": [_tom_tat(h) for h in (con_hang or hits)[:6]],
-            "het_hang": [h.get("ten") for h in hits if (h.get("ton_kho") or 0) == 0],
+        # SKU CHƯA CÓ HỒ SƠ TƯ VẤN THÌ KHÔNG ĐƯỢC GỢI Ý
+        #
+        # `agent/erp/cong.py:193` gắn cờ `duoc_gioi_thieu=False` cho mặt hàng
+        # có bên ERP mà chưa ai viết nửa tư vấn, và ghi `erp.thieu_ho_so`.
+        # Nhưng KHÔNG mã nào đọc cờ đó — đã tìm khắp repo: chỉ có nơi đặt,
+        # tài liệu, và test. Cảnh báo có, chặn thì không.
+        #
+        # Hậu quả đúng như `docs/van-hanh.md` mô tả: "agent giới thiệu một
+        # sản phẩm nghe rất chung chung". Nó biết tên và giá, không biết hợp
+        # loại da nào — và vẫn đem ra khuyên. Đó là phát ngôn không có căn cứ,
+        # đúng thứ cả hệ thống dựng lên để ngăn.
+        #
+        # Cờ VẮNG MẶT thì coi như được giới thiệu: nguồn `tep` không gắn cờ
+        # này, và mặc định chặn sẽ làm câm toàn bộ gợi ý trên bản chạy file.
+        du_can_cu = [h for h in hits if h.get("duoc_gioi_thieu", True)]
+        thieu_ho_so = [h.get("ten") for h in hits if not h.get("duoc_gioi_thieu", True)]
+
+        if not du_can_cu:
+            return {
+                "so_luong": 0,
+                "thieu_ho_so_tu_van": thieu_ho_so,
+                "ghi_chu": (
+                    "Có mặt hàng khớp tiêu chí nhưng CHƯA có hồ sơ tư vấn, nên "
+                    "không đủ căn cứ để khuyên. Nói thẳng với khách là cần nhân "
+                    "viên tư vấn kỹ hơn rồi gọi chuyen_nhan_vien. Tuyệt đối "
+                    "không suy đoán công dụng từ tên sản phẩm."
+                ),
+            }
+
+        con_hang = [h for h in du_can_cu if (h.get("ton_kho") or 0) > 0]
+        ket_qua = {
+            "so_luong": len(du_can_cu),
+            "san_pham": [_tom_tat(h) for h in (con_hang or du_can_cu)[:6]],
+            "het_hang": [
+                h.get("ten") for h in du_can_cu if (h.get("ton_kho") or 0) == 0
+            ],
         }
+        if thieu_ho_so:
+            ket_qua["thieu_ho_so_tu_van"] = thieu_ho_so
+            ket_qua["ghi_chu"] = (
+                "Vài mặt hàng khác cũng khớp tiêu chí nhưng chưa có hồ sơ tư "
+                "vấn nên đã bị loại khỏi danh sách gợi ý. KHÔNG nhắc tên chúng "
+                "với khách."
+            )
+        return ket_qua
 
     # ---------- gửi ảnh sản phẩm ----------
     if name == "gui_anh_san_pham":
@@ -505,85 +667,18 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             ),
         }
 
-    # ---------- đơn hàng & vận chuyển ----------
+    # ---------- đơn hàng ----------
     if name == "tra_cuu_don_hang":
-        from agent.shipping import tra_cuu_van_don
-        ma = str(args.get("ma_tra_cuu") or args.get("ma_don") or args.get("ma_van_don") or "").strip()
-        db_order = None
-        if ma:
-            db_order = await db.fetchrow(
-                "SELECT * FROM orders WHERE ma_don = $1 OR ma_van_don = $1", ma
-            )
-        else:
-            # Tự động tìm đơn hàng gần nhất của khách trong cuộc trò chuyện này
-            if conversation_id:
-                conv = await db.fetchrow("SELECT customer_ref FROM conversations WHERE id = $1", conversation_id)
-                db_order = await db.fetchrow(
-                    "SELECT * FROM orders WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1",
-                    conversation_id
-                )
-                if not db_order and conv and conv.get("customer_ref"):
-                    db_order = await db.fetchrow(
-                        "SELECT * FROM orders WHERE customer_ref = $1 ORDER BY created_at DESC LIMIT 1",
-                        conv["customer_ref"]
-                    )
-            if not db_order:
-                # Tìm đơn gần nhất trong toàn bộ hệ thống
-                db_order = await db.fetchrow("SELECT * FROM orders ORDER BY created_at DESC LIMIT 1")
+        return await _tra_cuu_don_hang(args, conversation_id)
 
-        if db_order:
-            ma_tim = db_order.get("ma_van_don") or db_order["ma_don"]
-            track = await tra_cuu_van_don(ma_tim)
-            st_giao = track.trang_thai_noi_bo.value if track else "delivering"
-            st_don = db_order.get("trang_thai")
-            if st_giao == "returned":
-                st_don = "da_huy"
-                mo_ta_trang_thai = "Đơn hàng đã bị huỷ / hoàn trả trên hệ thống vận chuyển."
-            elif st_giao == "delivered":
-                st_don = "da_giao"
-                mo_ta_trang_thai = "Đơn hàng đã giao thành công đến người nhận."
-            elif st_giao == "delivery_failed":
-                mo_ta_trang_thai = "Giao hàng không thành công (shipper đang hẹn lại khách)."
-            else:
-                mo_ta_trang_thai = "Đơn hàng đang trong quá trình vận chuyển."
+    if name == "tra_cuu_van_chuyen":
+        return await _tra_cuu_van_chuyen(args)
 
-            return {
-                "tim_thay": True,
-                "ma_don": db_order["ma_don"],
-                "ma_van_don": db_order.get("ma_van_don") or "",
-                "khach_ten": db_order.get("khach_ten"),
-                "tong_tien": int(db_order.get("tong_tien") or 0),
-                "trang_thai_don": st_don,
-                "trang_thai_giao_hang": st_giao,
-                "mo_ta_trang_thai": mo_ta_trang_thai,
-                "vi_tri_hien_tai": track.vi_tri_hien_tai if track else "Kho hàng",
-                "ngay_du_kien_giao": track.ngay_du_kien_giao.strftime("%d/%m/%Y") if track and track.ngay_du_kien_giao else None,
-                "lich_su": [
-                    {"thoi_gian": str(it.thoi_gian), "mo_ta": it.mo_ta, "dia_diem": it.dia_diem}
-                    for it in (track.lich_su if track else [])
-                ],
-            }
+    if name == "xin_huy_don":
+        return await _xin_huy_don(args, conversation_id)
 
-        for dh in catalog.get("don_hang", []):
-            if _norm(dh.get("ma", "")) == _norm(ma):
-                return {"tim_thay": True, **dh}
-        return {"tim_thay": False, "ghi_chu": f"Không có mã đơn '{ma}' trong hệ thống."}
-
-    if name == "tao_van_don":
-        from agent.shipping import tao_van_don_cho_don
-        ma_don = str(args.get("ma_don", "")).strip()
-        res = await tao_van_don_cho_don(ma_don)
-        if res.ok:
-            return {
-                "tao_duoc": True,
-                "ma_don": ma_don,
-                "ma_van_don": res.ma_van_don,
-                "don_vi": res.don_vi,
-                "phi_van_chuyen": res.phi_van_chuyen,
-                "trang_thai": res.trang_thai_noi_bo.value,
-                "ngay_du_kien_giao": res.ngay_du_kien_giao.strftime("%d/%m/%Y") if res.ngay_du_kien_giao else None,
-            }
-        return {"tao_duoc": False, "ly_do": res.loi}
+    if name == "xin_doi_tra":
+        return await _xin_doi_tra(args, conversation_id)
 
     # ---------- lên đơn: tool DUY NHẤT có hậu quả không đảo ngược ----------
     if name == "tao_don_hang":
@@ -712,8 +807,22 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         sp = ranked[0][1]
         sl = max(1, int(it.get("so_luong") or 1))
 
-        # --- Chốt 4: kiểm tồn kho ngay trước khi chốt ---
-        ton = int(sp.get("ton_kho") or 0)
+        # --- Chốt 4: tồn kho đọc SỐNG, bỏ qua cache ---
+        # Con số trong `products` đến từ danh mục đã cache tối đa ERP_TTL_TON
+        # giây. Ở mọi chỗ khác thì đủ tốt; ở đúng khoảnh khắc chốt thì không,
+        # vì giữa lúc tư vấn và lúc khách gật, món cuối có thể đã bán mất.
+        from agent.erp import nha_may
+
+        ton_song = await nha_may.cong().ton_kho(sp["ma"], bo_qua_cache=True)
+        if ton_song is None:
+            # Không biết còn bao nhiêu thì KHÔNG chốt. Chốt liều là bán món
+            # có thể đã hết, và khách chỉ biết khi không nhận được hàng.
+            return {
+                "tao_duoc": False,
+                "ly_do": f"Chưa tra được tồn kho của {sp['ten']}. "
+                         "Hãy báo khách chờ một chút và chuyển cho nhân viên.",
+            }
+        ton = ton_song.ban_duoc
         if ton <= 0:
             return {
                 "tao_duoc": False,
@@ -732,48 +841,24 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             "don_gia": int(sp["gia"]), "so_luong": sl, "thanh_tien": thanh_tien,
         })
 
-    # --- Tính phí vận chuyển theo chính sách (Freeship từ 500k) ---
-    phi_ship = 30000 if tong < 500000 else 0
-    tong_thanh_toan = tong + phi_ship
-
     # --- Chốt 5: vượt ngưỡng thì KHÔNG tự chốt, đưa vào hàng chờ duyệt ---
     tu_chot = tong < settings.nguong_tu_chot_vnd
     trang_thai = "da_chot" if tu_chot else "cho_duyet"
 
     ma_don = "AS" + __import__("time").strftime("%y%m%d%H%M%S")
 
-    # --- Khởi tạo Sales Order trên ERP (NextERP / MockERP) ---
-    from agent.erp import cap_nhat_ma_van_don_erp, tao_sales_order_erp
-    so_erp = None
-    try:
-        so_erp = await tao_sales_order_erp(
-            khach_ten=str(args["khach_ten"]).strip(),
-            khach_sdt=sdt,
-            khach_dia_chi=str(args["khach_dia_chi"]).strip(),
-            items=[{"item_code": l["ma"], "qty": l["so_luong"], "rate": l["don_gia"]} for l in lines],
-            shipping_fee=phi_ship,
-            notes=f"Đơn hàng tự động qua AI Agent #{ma_don}",
-        )
-    except Exception:
-        pass
-
-    erp_id = so_erp.name if so_erp else None
-    erp_prov = settings.erp_provider
-
     # --- Chốt 6: chống tạo trùng (unique index trên conversation + items) ---
     try:
         row = await db.fetchrow(
             """
             INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt,
-                                khach_dia_chi, items, tong_tien, phi_van_chuyen,
-                                erp_order_id, erp_provider, trang_thai, ghi_chu)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, ma_don
+                                khach_dia_chi, items, tong_tien, trang_thai, ghi_chu)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ma_don
             """,
             ma_don, conversation_id,
             str(args["khach_ten"]).strip(), sdt,
             str(args["khach_dia_chi"]).strip(),
-            lines, tong_thanh_toan, phi_ship,
-            erp_id, erp_prov, trang_thai, args.get("ghi_chu"),
+            lines, tong, trang_thai, args.get("ghi_chu"),
         )
     except Exception as exc:  # noqa: BLE001
         if "idx_order_dedupe" in str(exc) or "duplicate" in str(exc).lower():
@@ -786,6 +871,10 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
 
     # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
+    # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
+    # khách khác có thể đã lấy mất món cuối. Chỉ khoá hàng lúc trừ mới
+    # chặn được, và nếu không đủ thì phải huỷ luôn đơn vừa tạo — thà không
+    # có đơn còn hơn có đơn cho hàng không tồn tại.
     du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
     if not du_hang:
         await db.execute("DELETE FROM orders WHERE id = $1", row["id"])
@@ -793,40 +882,76 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
 
     await db.log_event(
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
-        tong_tien=tong_thanh_toan, phi_ship=phi_ship,
-        erp_order_id=erp_id, trang_thai=trang_thai,
+        tong_tien=tong, trang_thai=trang_thai,
     )
 
-    # --- Chốt 8: Tự động đẩy sang Hãng Vận Chuyển khi đơn đã chốt ---
-    ma_van_don = None
-    if tu_chot:
-        from agent.shipping import tao_van_don_cho_don
-        wb_res = await tao_van_don_cho_don(row["ma_don"])
-        if wb_res.ok and wb_res.ma_van_don:
-            ma_van_don = wb_res.ma_van_don
-            if so_erp:
-                try:
-                    await cap_nhat_ma_van_don_erp(so_erp.name, ma_van_don, settings.shipping_provider)
-                except Exception:
-                    pass
+    # --- Chốt 8: đẩy sang ERP (chỉ khi ERP_GHI_DON bật) ---
+    # Đặt SAU chốt 7 có chủ ý: hàng phải được giữ trước đã. Đẩy sang ERP
+    # rồi mới phát hiện không đủ hàng là tạo một đơn bên ERP phải đi huỷ tay.
+    #
+    # Chỉ chạy cho đơn đã chốt. Đơn `cho_duyet` chưa phải là đơn — người còn
+    # chưa duyệt, đẩy sang ERP là ghi nhận một thứ có thể bị bỏ.
+    if trang_thai == "da_chot":
+        from agent.erp import day_don as _day_don
+
+        kq_erp = await _day_don.day_don(
+            ma_don=row["ma_don"],
+            khach_ten=str(args["khach_ten"]).strip(),
+            khach_sdt=sdt,
+            khach_dia_chi=str(args["khach_dia_chi"]).strip(),
+            items=lines,
+            ghi_chu=str(args.get("ghi_chu") or ""),
+        )
+        if kq_erp.ket_cuc == "tu_choi":
+            # ERP hiểu và không đồng ý. Trả hàng, huỷ đơn — thà không có đơn
+            # còn hơn có đơn mà kho không bao giờ xuất.
+            await kho.tra_hang(row["ma_don"], ly_do="erp_tu_choi")
+            await db.execute(
+                "UPDATE orders SET trang_thai='da_huy', erp_loi=$2 "
+                "WHERE id = $1", row["id"], kq_erp.ly_do,
+            )
+            return {
+                "tao_duoc": False,
+                "ly_do": f"Kho từ chối đơn: {kq_erp.ly_do}. Báo khách là chưa "
+                         "lên đơn được và chuyển cho nhân viên.",
+            }
+        if kq_erp.ket_cuc == "cho_lai":
+            # KHÔNG BIẾT ERP đã ghi hay chưa. Giữ hàng, giữ đơn, đổi trạng
+            # thái để vòng nền thử lại — và KHÔNG nói với khách là đã chốt.
+            trang_thai = "cho_dong_bo"
+            await db.execute(
+                "UPDATE orders SET trang_thai='cho_dong_bo', erp_loi=$2, "
+                "erp_so_lan_thu = erp_so_lan_thu + 1 WHERE id = $1",
+                row["id"], kq_erp.ly_do,
+            )
+        elif kq_erp.erp_ma_don:
+            await db.execute(
+                "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now() "
+                "WHERE id = $1", row["id"], kq_erp.erp_ma_don,
+            )
+
+    if trang_thai == "cho_dong_bo":
+        return {
+            "tao_duoc": True,
+            "ma_don": row["ma_don"],
+            "items": lines,
+            "tong_tien": tong,
+            "trang_thai": trang_thai,
+            "ghi_chu_cho_agent": (
+                "Đơn ĐÃ GHI NHẬN nhưng chưa đồng bộ được sang kho. Báo khách "
+                "là đã nhận thông tin và sẽ có người gọi xác nhận. TUYỆT ĐỐI "
+                "KHÔNG nói là đã chốt xong."
+            ),
+        }
 
     return {
         "tao_duoc": True,
         "ma_don": row["ma_don"],
-        "erp_order_id": erp_id,
-        "ma_van_don": ma_van_don,
         "items": lines,
-        "tien_hang": tong,
-        "phi_ship": phi_ship,
-        "tong_tien": tong_thanh_toan,
+        "tong_tien": tong,
         "trang_thai": trang_thai,
         "ghi_chu_cho_agent": (
-            (
-                f"Đơn đã chốt. Báo mã đơn #{row['ma_don']}"
-                + (f" và mã vận đơn {ma_van_don}" if ma_van_don else "")
-                + (f", tiền hàng {tong:,}đ + phí ship {phi_ship:,}đ" if phi_ship > 0 else f", tiền hàng {tong:,}đ (Freeship)")
-                + f" = Tổng thanh toán COD: {tong_thanh_toan:,}đ cho khách."
-            )
+            "Đơn đã chốt. Báo mã đơn và tổng tiền cho khách."
             if tu_chot else
             "Đơn giá trị lớn nên đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "
             "nhận và sẽ có người gọi xác nhận, KHÔNG nói là đã chốt xong."
@@ -834,6 +959,353 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
     }
 
 
-# Bí danh tương thích
-execute = run_tool
+# Lời lẽ cho từng trạng thái giao hàng. Đặt ở đây, MỘT chỗ, để agent không
+# tự nghĩ ra cách diễn đạt khác nhau mỗi lượt — và để người vận hành sửa
+# được câu chữ mà không phải đụng vào prompt.
+# Khoá khớp `models.InternalShippingStatus` — đó là bộ trạng thái nội bộ duy
+# nhất. Hai bộ tên cho cùng một thứ là hai nguồn sự thật, và sớm muộn chúng
+# lệch nhau.
+_LOI_TRANG_THAI_GIAO = {
+    "delivering": "Đơn đã bàn giao đơn vị vận chuyển và đang trên đường.",
+    "delivered": "Đơn đã giao thành công.",
+    "delivery_failed": "Đơn giao không thành công — cần người kiểm tra lại.",
+    "returned": "Đơn đang được hoàn về kho.",
+    "khong_ro": (
+        "Hãng vận chuyển trả về một trạng thái hệ thống chưa nhận ra. "
+        "Cần chuyển người kiểm tra, đừng đoán."
+    ),
+}
 
+
+async def _doc_don_trong_csdl(ma_don: str, conversation_id) -> dict | None:
+    """
+    Đọc đơn THẬT từ bảng `orders`, kèm cờ đơn có thuộc hội thoại này không.
+
+    Trả về cả đơn của người khác (không kèm chi tiết cá nhân ở chỗ gọi) là
+    CỐ Ý: chỗ gọi cần phân biệt "mã không tồn tại" với "mã của người khác"
+    để chọn câu trả lời, nhưng KHÔNG được nói ra sự khác biệt đó với khách.
+    """
+    row = await db.fetchrow(
+        """
+        SELECT ma_don, trang_thai, items, tong_tien, ghi_chu, created_at,
+               (conversation_id = $2) AS cua_hoi_thoai_nay
+        FROM orders WHERE ma_don = $1
+        """,
+        ma_don, conversation_id,
+    )
+    return dict(row) if row else None
+
+
+async def _tra_cuu_don_hang(args: dict, conversation_id) -> dict:
+    """
+    Tra đơn cho khách đang nhắn — và CHỈ đơn của khách đó.
+
+    VÌ SAO ĐỌC BẢNG `orders` CHỨ KHÔNG ĐỌC `catalog.json`
+    -----------------------------------------------------
+    `tao_don_hang` ghi vào bảng `orders`. Bản trước của hàm này lại tìm
+    trong mảng `don_hang` của `catalog.json` — ba đơn mẫu bịa. Hai đường
+    không gặp nhau, nên agent tạo đơn xong, khách hỏi lại năm phút sau thì
+    chính agent trả lời "không có mã đơn này trong hệ thống".
+
+    Không có lỗi nào bị ném và không có dòng nhật ký nào.
+
+    VÌ SAO CHẶN THEO HỘI THOẠI
+    --------------------------
+    Mã đơn ngắn và đoán được. Không chặn thì bất kỳ ai nhắn vào Trang cũng
+    đọc được tên, số điện thoại, địa chỉ của khách khác bằng cách đọc mã
+    lên. Rò rỉ dữ liệu cá nhân, không phải bất tiện.
+
+    Và khi mã thuộc về người khác thì cũng KHÔNG nói "không tìm thấy": câu
+    đó phân biệt mã có thật với mã bịa, tức vẫn là một kênh rò rỉ.
+    """
+    ma = str(args.get("ma_don", "") or "").strip()
+    if not ma:
+        return {"tim_thay": False, "ghi_chu": "Khách chưa cho mã đơn."}
+
+    if conversation_id is not None:
+        don = await _doc_don_trong_csdl(ma, conversation_id)
+        if don is not None:
+            if don.get("cua_hoi_thoai_nay"):
+                return {"tim_thay": True, **{
+                    k: v for k, v in don.items() if k != "cua_hoi_thoai_nay"
+                }}
+            return {
+                "tim_thay": False,
+                "can_xac_minh": True,
+                "ghi_chu": (
+                    "Mã đơn này không thuộc hội thoại đang nói chuyện. TUYỆT "
+                    "ĐỐI không đọc thông tin đơn ra. Xin lỗi khách, nói cần "
+                    "xác minh và hỏi số điện thoại đã đặt đơn, rồi gọi "
+                    "chuyen_nhan_vien để người thật kiểm tra."
+                ),
+            }
+
+    # Đường lui cho bản demo, TỰ TẮT khi shop thay bằng dữ liệu thật.
+    #
+    # Để đơn mẫu sống sót sang dữ liệu thật là agent trả lời khách bằng đơn
+    # bịa — tệ hơn hẳn việc nói không tìm thấy.
+    catalog = _catalog()
+    if catalog.get("du_lieu_mau"):
+        for dh in catalog.get("don_hang", []):
+            if _norm(dh.get("ma", "")) == _norm(ma):
+                return {"tim_thay": True, "du_lieu_mau": True, **dh}
+
+    return {
+        "tim_thay": False,
+        "ghi_chu": (
+            "Không tìm thấy đơn trong hội thoại này. Hỏi khách xem có đặt "
+            "bằng số điện thoại hoặc kênh khác không, rồi chuyển nhân viên."
+        ),
+    }
+
+
+async def _danh_dau_xin_huy(ma_don: str, conversation_id, ly_do: str) -> bool:
+    """
+    Gắn cờ xin huỷ lên đơn. Trả True nếu có đúng một dòng được sửa.
+
+    KHÔNG đụng tới `trang_thai`: huỷ là việc của người, và trộn hai thứ vào
+    một câu SQL là sớm muộn có người sửa nhầm thành huỷ thật.
+
+    Chặn theo `conversation_id` vì mã đơn đoán được — không chặn thì bất kỳ
+    ai cũng gắn cờ lên đơn của người lạ, tức phá hoại được từ xa.
+
+    Loại đơn `da_huy` để không dựng lại cờ trên đơn đã đóng.
+    """
+    row = await db.fetchrow(
+        """
+        UPDATE orders
+           SET yeu_cau_huy_luc   = COALESCE(yeu_cau_huy_luc, now()),
+               yeu_cau_huy_ly_do = $3,
+               updated_at        = now()
+         WHERE ma_don = $1
+           AND conversation_id = $2
+           AND trang_thai <> 'da_huy'
+        RETURNING ma_don
+        """,
+        ma_don, conversation_id, (ly_do or "")[:500],
+    )
+    return row is not None
+
+
+async def _xin_huy_don(args: dict, conversation_id) -> dict:
+    """
+    Ghi nhận yêu cầu huỷ rồi chuyển người — không bao giờ tự huỷ.
+
+    VÌ SAO GHI LÊN CHÍNH ĐƠN
+    ------------------------
+    Chuyển hội thoại cho người là chưa đủ. Yêu cầu khi đó chỉ nằm trong đoạn
+    chat, còn người đóng gói sáng hôm sau nhìn màn hình Đơn hàng và không
+    thấy gì bất thường. Hàng vẫn lên đường, khách từ chối nhận, shop chịu
+    phí hoàn COD — và không có lỗi nào bị ném ở đâu cả.
+
+    VẪN CHUYỂN NGƯỜI KỂ CẢ KHI KHÔNG GẮN ĐƯỢC CỜ
+    ---------------------------------------------
+    Không tìm thấy đơn trong hội thoại này thì khách vẫn đang muốn huỷ một
+    cái gì đó. Im lặng bỏ qua là bỏ rơi khách ở đúng lúc họ bực nhất.
+    """
+    ma = str(args.get("ma_don", "") or "").strip()
+    ly_do = str(args.get("ly_do", "") or "").strip()
+
+    da_ghi = False
+    if ma and conversation_id is not None:
+        da_ghi = await _danh_dau_xin_huy(ma, conversation_id, ly_do)
+        if da_ghi:
+            await db.log_event(
+                "order.xin_huy", actor="agent", ma_don=ma, ly_do=ly_do[:200],
+            )
+
+    if da_ghi:
+        ghi_chu = (
+            "Đã ghi nhận yêu cầu huỷ lên đơn và chuyển nhân viên. "
+            "TUYỆT ĐỐI KHÔNG nói với khách là đơn 'đã huỷ' — đơn CHƯA huỷ, "
+            "người mới là bên quyết định. Nói đúng: đã ghi nhận, đã chuyển "
+            "bộ phận xử lý, nhân viên sẽ liên hệ lại sớm."
+        )
+    else:
+        ghi_chu = (
+            "KHÔNG tìm thấy đơn này trong hội thoại. Không nói đơn 'đã huỷ' "
+            "và không đọc thông tin đơn nào ra. Xin lỗi khách, hỏi lại mã "
+            "đơn hoặc số điện thoại đã đặt, và cho biết nhân viên sẽ kiểm "
+            "tra giúp."
+        )
+
+    return {
+        "da_ghi_nhan": da_ghi,
+        "da_huy": False,
+        "can_chuyen_nhan_vien": True,
+        "ghi_chu": ghi_chu,
+    }
+
+
+async def _danh_dau_xin_doi_tra(
+    ma_don: str, conversation_id, loai: str, ly_do: str
+) -> bool:
+    """
+    Gắn cờ xin đổi/trả lên đơn. Trả True nếu có đúng một dòng được sửa.
+
+    Cùng khuôn `_danh_dau_xin_huy`, và cùng lý do cho từng ràng buộc:
+
+    - KHÔNG đụng `trang_thai`: duyệt đổi trả là việc của người.
+    - Chặn theo `conversation_id`: mã đơn đoán được, không chặn thì ai cũng
+      gắn cờ lên đơn của người lạ — phá hoại được từ xa.
+    - Loại đơn `da_huy`: đơn đã đóng thì không dựng cờ mới lên.
+
+    KHÔNG dùng `COALESCE` để giữ mốc thời gian đầu tiên như bên xin huỷ.
+    Khách đổi ý từ "đổi" sang "trả" là chuyện thường, và người xử lý cần
+    thấy yêu cầu MỚI NHẤT, không phải yêu cầu đầu tiên.
+    """
+    row = await db.fetchrow(
+        """
+        UPDATE orders
+           SET yeu_cau_doi_tra_luc   = now(),
+               yeu_cau_doi_tra_loai  = $3,
+               yeu_cau_doi_tra_ly_do = $4,
+               updated_at            = now()
+         WHERE ma_don = $1
+           AND conversation_id = $2
+           AND trang_thai <> 'da_huy'
+        RETURNING ma_don
+        """,
+        ma_don, conversation_id, loai, (ly_do or "")[:500],
+    )
+    return row is not None
+
+
+async def _xin_doi_tra(args: dict, conversation_id) -> dict:
+    """
+    Ghi nhận yêu cầu đổi/trả rồi chuyển người — không bao giờ tự duyệt.
+
+    VÌ SAO CẦN, KHI ĐÃ CÓ `chuyen_nhan_vien`
+    ----------------------------------------
+    Chuyển hội thoại là chưa đủ, đúng như với xin huỷ. Yêu cầu khi đó chỉ
+    nằm trong đoạn chat và trong một dòng lý do văn xuôi — không đếm được,
+    không truy được, không hiện lên màn hình Đơn hàng.
+
+    Với đổi trả thì hậu quả còn cụ thể hơn: chính sách có hạn số ngày. Yêu
+    cầu nằm im ba hôm trong hộp thư rồi mới có người đọc là khách hết hạn
+    đổi trả vì lý do không phải của họ.
+
+    VẪN CHUYỂN NGƯỜI KỂ CẢ KHI KHÔNG GẮN ĐƯỢC CỜ
+    ---------------------------------------------
+    Không tra được đơn thì khách vẫn đang muốn đổi trả một cái gì đó. Im
+    lặng bỏ qua là bỏ rơi khách ở đúng lúc họ đã không hài lòng sẵn.
+    """
+    ma = str(args.get("ma_don", "") or "").strip()
+    loai = str(args.get("loai", "") or "").strip().lower()
+    ly_do = str(args.get("ly_do", "") or "").strip()
+
+    # Giá trị lạ thì HỎI LẠI, không tự đoán. Đoán sai giữa đổi và trả là
+    # gửi người xử lý đi làm nhầm việc — bên cần kiểm tồn kho, bên cần
+    # duyệt hoàn tiền.
+    if loai not in ("doi", "tra"):
+        return {
+            "da_ghi_nhan": False,
+            "can_chuyen_nhan_vien": False,
+            "ghi_chu": (
+                "Chưa rõ khách muốn ĐỔI sang mẫu khác hay TRẢ lại lấy tiền. "
+                "Hỏi khách cho rõ rồi gọi lại công cụ này, đừng tự chọn."
+            ),
+        }
+
+    da_ghi = False
+    if ma and conversation_id is not None:
+        da_ghi = await _danh_dau_xin_doi_tra(ma, conversation_id, loai, ly_do)
+        if da_ghi:
+            await db.log_event(
+                "order.xin_doi_tra", actor="agent", ma_don=ma,
+                loai=loai, ly_do=ly_do[:200],
+            )
+
+    if da_ghi:
+        viec = "đổi sang mẫu khác" if loai == "doi" else "trả lại hàng"
+        ghi_chu = (
+            f"Đã ghi nhận yêu cầu {viec} lên đơn và chuyển nhân viên. "
+            "TUYỆT ĐỐI KHÔNG nói với khách là 'đã được đổi', 'đã hoàn tiền' "
+            "hay 'đơn đủ điều kiện' — chưa ai duyệt cả. Nói đúng: đã ghi "
+            "nhận, đã chuyển bộ phận xử lý, nhân viên sẽ liên hệ lại sớm. "
+            "Được phép nói lại CHÍNH SÁCH đổi trả nếu khách hỏi, nhưng "
+            "không được kết luận đơn này có thuộc diện đó hay không."
+        )
+    else:
+        ghi_chu = (
+            "KHÔNG tìm thấy đơn này trong hội thoại. Không đọc thông tin đơn "
+            "nào ra và không hứa gì về đổi trả. Xin lỗi khách, hỏi lại mã "
+            "đơn hoặc số điện thoại đã đặt, và cho biết nhân viên sẽ kiểm "
+            "tra giúp."
+        )
+
+    return {
+        "da_ghi_nhan": da_ghi,
+        "da_duyet": False,
+        "loai": loai,
+        "can_chuyen_nhan_vien": True,
+        "ghi_chu": ghi_chu,
+    }
+
+
+async def _tra_cuu_van_chuyen(args: dict) -> dict:
+    """
+    Tình trạng giao hàng của một đơn, đọc từ SỔ CỦA CỬA HÀNG.
+
+    VÌ SAO KHÔNG GỌI THẲNG API HÃNG Ở ĐÂY
+    -------------------------------------
+    Lời gọi mạng nằm trong đường trả lời khách là thêm một chỗ để treo: hãng
+    chậm 20 giây thì khách chờ 20 giây, và nếu hãng chết thì agent im luôn.
+    Webhook của hãng cập nhật `orders.trang_thai_giao_hang`; tool này chỉ đọc.
+
+    Đổi lại, số liệu có thể trễ vài phút — và đó là đánh đổi đúng: trả lời
+    chậm vài phút tốt hơn không trả lời.
+    """
+    ma = str(args.get("ma_don", "")).strip()
+    if not ma:
+        return {"tim_thay": False, "ghi_chu": "Chưa có mã đơn để tra."}
+    try:
+        row = await db.fetchrow(
+            "SELECT ma_don, trang_thai, trang_thai_giao_hang, ma_van_don, "
+            "       don_vi_van_chuyen, ngay_du_kien_giao, "
+            "       cap_nhat_van_chuyen_luc "
+            "FROM orders WHERE upper(ma_don) = upper($1)",
+            ma,
+        )
+    except Exception:  # noqa: BLE001 — CSDL chết thì agent vẫn phải nói được gì đó
+        return {
+            "tim_thay": False,
+            "ghi_chu": "Chưa tra được lúc này. Cần chuyển người hỗ trợ.",
+        }
+    if row is None:
+        return {
+            "tim_thay": False,
+            "ghi_chu": f"Không thấy đơn {ma} trong hệ thống.",
+        }
+
+    trang_thai_giao = row.get("trang_thai_giao_hang")
+    if not trang_thai_giao:
+        # Chưa bàn giao vận chuyển. NÓI THẬT điều đó, đừng suy ra ngày giao.
+        return {
+            "tim_thay": True,
+            "ma_don": row["ma_don"],
+            "trang_thai_don": row["trang_thai"],
+            "da_ban_giao_van_chuyen": False,
+            "ghi_chu": (
+                "Đơn chưa bàn giao đơn vị vận chuyển. Không được đoán ngày "
+                "giao; nếu khách sốt ruột thì chuyển người."
+            ),
+        }
+    return {
+        "tim_thay": True,
+        "ma_don": row["ma_don"],
+        "trang_thai_don": row["trang_thai"],
+        "da_ban_giao_van_chuyen": True,
+        "trang_thai_giao": trang_thai_giao,
+        "ma_van_don": row.get("ma_van_don") or "",
+        "hang_van_chuyen": row.get("don_vi_van_chuyen") or "",
+        "cap_nhat_luc": (
+            row["cap_nhat_van_chuyen_luc"].isoformat()
+            if row.get("cap_nhat_van_chuyen_luc") else ""
+        ),
+        "loi_goi_y": _LOI_TRANG_THAI_GIAO.get(trang_thai_giao, ""),
+        "ghi_chu": (
+            "Có mã vận đơn thì đưa cho khách tự tra trên ứng dụng của hãng. "
+            "KHÔNG đoán ngày giao."
+        ),
+    }

@@ -51,6 +51,12 @@ jobs:
               "agent.channels.base", "agent.channels.registry",
               "agent.channels.zalocrm", "agent.channels.chatwoot",
               "agent.channels.zalocrm_accounts",
+              # zalo_personal vắng mặt ở đây suốt một thời gian dài dù nó là
+              # adapter của kênh ĐANG CHẠY THẬT — đúng loại lỗ mà bước này
+              # sinh ra để bịt.
+              "agent.channels.zalo_personal",
+              "agent.tri_thuc", "agent.tri_thuc.nganh",
+              "agent.migrations.runner",
               "agent.publish.base", "agent.publish.registry",
               "agent.publish.service", "agent.publish.analytics",
               "agent.publish.copywriter", "agent.publish.chien_dich",

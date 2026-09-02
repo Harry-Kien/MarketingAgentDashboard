@@ -40,6 +40,8 @@ import asyncio
 
 import httpx
 
+from agent.config import settings
+
 
 # `can_dang_nhap`: mở ra là gặp màn hình đăng nhập của chính nó, không phải
 # lỗi. Ghi rõ để người vận hành không tưởng là hỏng.
@@ -92,6 +94,57 @@ DICH_VU = [
 ]
 
 
+def muc_erp() -> dict:
+    """Mục Kho/ERP, dựng theo cấu hình thay vì gõ cứng.
+
+    VÌ SAO KHÔNG NẰM THẲNG TRONG `DICH_VU`
+    --------------------------------------
+    Bốn dịch vụ kia chạy trên localhost với cổng cố định. ERP thì ở MÁY
+    KHÁC, địa chỉ khác nhau ở từng cửa hàng — gõ cứng một URL là bảo đảm nó
+    sai với mọi người trừ người viết ra nó.
+
+    VÌ SAO KHÔNG `nhung_duoc`
+    -------------------------
+    Odoo và ERPNext đều gửi `X-Frame-Options`. Bật nhúng thì người dùng bấm
+    "Mở" và nhận một khung trắng — hỏng câm, không lỗi nào được ném.
+    """
+    loai = (settings.erp_loai or "tep").strip().lower()
+    goc = {
+        "erpnext": settings.erpnext_url,
+        "odoo": settings.odoo_url,
+    }.get(loai, "")
+
+    if loai == "tep" or not goc:
+        return {
+            "ma": "erp",
+            "ten": "Kho / ERP",
+            "mo_ta": ("CHƯA nối ERP — agent đang đọc giá và tồn kho từ tệp "
+                      "data/catalog.json trên đĩa"),
+            # Chưa có ERP để mở. Bản đầu trỏ `url` về chính dashboard với lý
+            # do "liên kết gãy còn tệ hơn không có liên kết" — nhưng bấm vào
+            # thì trang quay về trang chính, không lời giải thích, nhìn như
+            # nút hỏng. Đó là lựa chọn TỆ NHẤT trong ba.
+            #
+            # Lựa chọn đúng: đưa người dùng sang màn Kho, nơi có panel Kết
+            # nối kho/ERP và nút Thử kết nối. Nút chỉ có nghĩa khi bấm xong
+            # người dùng ở GẦN VIỆC hơn trước.
+            "di_toi_man": "kho",
+            "url": "",
+            "kiem": "http://127.0.0.1:8000/healthz",
+            "can_dang_nhap": False,
+        }
+
+    goc = goc.rstrip("/")
+    return {
+        "ma": "erp",
+        "ten": "Kho / ERP",
+        "mo_ta": f"Giá và tồn kho thật — nguồn {loai}",
+        "url": goc,
+        "kiem": goc,
+        "can_dang_nhap": True,
+    }
+
+
 async def _song(url: str) -> tuple[bool, str]:
     """
     Dịch vụ có trả lời không.
@@ -109,10 +162,13 @@ async def _song(url: str) -> tuple[bool, str]:
 
 async def kiem_tat_ca() -> dict:
     """Trạng thái mọi hệ thống con, hỏi song song."""
-    ket = await asyncio.gather(*(_song(d["kiem"]) for d in DICH_VU))
+    # `muc_erp()` dựng theo cấu hình nên phải gọi mỗi lần, không cache vào
+    # DICH_VU — đổi ERP_LOAI mà bảng vẫn hiện cái cũ là nói dối người xem.
+    dich_vu = [*DICH_VU, muc_erp()]
+    ket = await asyncio.gather(*(_song(d["kiem"]) for d in dich_vu))
 
     ra = []
-    for d, (song, ghi_chu) in zip(DICH_VU, ket, strict=True):
+    for d, (song, ghi_chu) in zip(dich_vu, ket, strict=True):
         ra.append({**{k: v for k, v in d.items() if k != "kiem"},
                    "song": song, "ghi_chu": ghi_chu})
 

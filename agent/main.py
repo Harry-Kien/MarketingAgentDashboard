@@ -21,6 +21,17 @@ from fastapi.staticfiles import StaticFiles
 from agent import db, runtime
 from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
+from agent.api.channel_accounts import router as channel_accounts_router
+from agent.api.contacts import router as contacts_router
+from agent.api.erp import router as erp_router
+from agent.api.routing_admin import router as routing_admin_router
+from agent.api.retention import router as retention_router
+from agent.api.inbox import router as inbox_router
+from agent.api.outbox import router as outbox_router
+from agent.api.native_webhooks import router as native_webhooks_router
+from agent.api.zalo_personal_webhook import router as zalo_personal_webhook_router
+from agent.api.webchat import router as webchat_router
+from agent.api.oauth_meta import router as oauth_meta_router
 from agent.api import tich_hop
 from agent.channels.base import InboundMessage
 from agent.channels import chatwoot, messenger
@@ -28,12 +39,29 @@ from agent.channels import registry as channels
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
+from agent.core import anh_khach
 from agent import canh_gac
 from agent.core import du_lieu_ca_nhan, gio_lam_viec, xac_thuc
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
+from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
+from agent.omnichannel.outbox import PostgresOutboxRepository
+from agent.omnichannel.outbound_service import (
+    OutboundService,
+    PostgresOutboundRepository,
+    QueuedOutbound,
+    handover_idempotency_key,
+)
+from agent.omnichannel.sla import PostgresSlaRepository, SlaMonitor, sla_loop
+from agent.omnichannel.auto_routing import (
+    AutoRoutingService,
+    AutoRoutingWorker,
+    PostgresAutoRoutingRepository,
+    auto_routing_loop,
+)
 from agent.video import worker as video_worker
+from agent.workers.outbox_worker import OutboxProcessor, outbox_loop
 
 DASHBOARD_DIR = ROOT / "dashboard"
 
@@ -73,6 +101,56 @@ def _chatwoot_signature_hop_le(
     return secrets.compare_digest(supplied, expected)
 
 
+# Vai của tiến trình này. `tat_ca` là mặc định để một máy một tiến trình —
+# cách chạy phổ biến nhất — không phải cấu hình thêm gì.
+VAI_CO_VONG_NEN = frozenset({"tat_ca", "worker"})
+
+
+def nen_chay_vong_nen(cau_hinh=settings) -> bool:
+    """
+    Tiến trình này có được chạy các vòng lặp nền không.
+
+    VÌ SAO CẦN CHIA VAI
+    -------------------
+    `lifespan` dựng outbox worker, SLA monitor, auto-routing, scheduler,
+    dọn dữ liệu, canh gác và backup. Chạy `uvicorn --workers 4` là có bốn
+    bộ đầy đủ chạy song song.
+
+    Outbox worker chịu được vì nó claim bằng `FOR UPDATE SKIP LOCKED`.
+    Backup loop thì không: nhiều `pg_dump` cùng lúc vừa tốn I/O vừa có thể
+    sinh bản sao lưu cắt dở — và bản sao lưu hỏng chỉ lộ ra đúng lúc cần
+    phục hồi, tức lúc không sửa được nữa.
+
+    Vai lạ thì trả False: thà một tiến trình không chạy vòng nền (dễ nhận
+    ra vì hàng đợi ứ) còn hơn bốn tiến trình cùng chạy (không ai nhận ra).
+    """
+    return str(getattr(cau_hinh, "vai_tro_tien_trinh", "tat_ca")) in VAI_CO_VONG_NEN
+
+
+def nen_chay_poller_legacy(cau_hinh=settings) -> bool:
+    """
+    Có được bật đường nạp tin CŨ không — đòi hỏi ý định tường minh.
+
+    VÌ SAO KHÔNG DÙNG `if settings.zalocrm_api_key` NHƯ TRƯỚC
+    ---------------------------------------------------------
+    `.env` không đi theo repo, nên không ai dọn nó khi kiến trúc đổi. Một
+    khoá cũ còn sót lại là chuyện bình thường; nó KHÔNG có nghĩa người vận
+    hành muốn chạy đường cũ.
+
+    Suy ra ý định từ sự tồn tại của cấu hình là cách hệ thống tự bật một
+    tính năng mà không ai yêu cầu — ở đây là chạy song song hai đường nạp
+    tin, sinh hội thoại trùng, và không có gì báo.
+
+    Tách thành hàm riêng thay vì viết thẳng trong `lifespan` để test được:
+    lifespan cần cả vòng đời app mới chạy, nên điều kiện nằm trong đó là
+    điều kiện không ai canh.
+    """
+    return bool(
+        getattr(cau_hinh, "legacy_polling_bat", False)
+        and cau_hinh.zalocrm_api_key
+    )
+
+
 async def poll_loop() -> None:
     """
     Hỏi ZaloCRM có tin mới không, mỗi vài giây.
@@ -84,7 +162,7 @@ async def poll_loop() -> None:
     """
     while True:
         try:
-            if settings.zalocrm_api_key and runtime.enabled():
+            if nen_chay_poller_legacy() and runtime.enabled():
                 for msg in await channels.keo_tin_moi():
                     await handle_inbound(msg)
         except asyncio.CancelledError:
@@ -92,6 +170,182 @@ async def poll_loop() -> None:
         except Exception as exc:  # noqa: BLE001 — vòng lặp nền không được chết
             await db.log_event("poll.error", error=f"{type(exc).__name__}: {exc}"[:200])
         await asyncio.sleep(settings.zalocrm_poll_seconds)
+
+
+# Chu kỳ kiểm phiên Zalo cá nhân. Đủ thưa để không quấy sidecar, đủ dày để
+# một lần restart không làm kênh chết quá lâu.
+# Hỏi Meta về hạn token mỗi ngày một lần.
+#
+# Dày hơn là phí: hạn token đo bằng tuần, không đo bằng phút. Thưa hơn là có
+# ngày mất cả một cửa sổ cảnh báo.
+KIEM_TOKEN_META_MOI_GIAY = 24 * 3600
+
+
+async def canh_han_token_meta_loop() -> None:
+    """
+    Báo TRƯỚC khi Page token hết hạn, thay vì phát hiện sau khi tin ngừng về.
+
+    VÌ SAO KHÔNG THỂ BIẾT NẾU KHÔNG HỎI
+    -----------------------------------
+    Đo trên tài khoản thật: token dài hạn nên `expires_at = 0` — vĩnh viễn.
+    Nhưng `data_access_expires_at` thì CÓ hạn, và sau mốc đó app mất quyền
+    đọc dữ liệu trừ khi chủ Trang cấp quyền lại.
+
+    Khi tới hạn, Trang vẫn hiện xanh trên dashboard, webhook vẫn đăng ký —
+    chỉ có Graph bắt đầu trả `OAuthException`, tin khách không về nữa, và tin
+    gửi đi thì hỏng. Tất cả cùng lúc, không báo trước.
+
+    VÌ SAO CHẠY NGAY LẦN ĐẦU RỒI MỚI NGỦ
+    -------------------------------------
+    Khởi động lại app là lúc người vận hành đang nhìn màn hình. Ngủ 24 giờ
+    trước lần kiểm đầu tiên nghĩa là một token sắp chết vẫn im lặng suốt một
+    ngày nữa.
+    """
+    from agent.channels.suc_khoe_token_meta import NGAY_BAO_TRUOC, hoi_meta
+    from agent.omnichannel.account_repository import PostgresAccountRepository
+    from agent.omnichannel.accounts import Channel
+    from agent.omnichannel.credential_loader import VaultCredentialLoader
+    from agent.security.credential_vault import CredentialVault, parse_master_keys
+
+    while True:
+        try:
+            repo = PostgresAccountRepository()
+            vault = CredentialVault(
+                parse_master_keys(settings.credential_master_keys),
+                active_version=settings.credential_active_key_version,
+            )
+            loader = VaultCredentialLoader(repo, vault)
+            app_id = settings.meta_app_id or settings.messenger_app_id
+
+            for kenh in (Channel.FACEBOOK, Channel.INSTAGRAM):
+                for acc in await repo.list_active_by_channel(kenh):
+                    creds = await loader.load(acc.id) or {}
+                    kq = await hoi_meta(
+                        token=str(creds.get("access_token") or ""),
+                        app_id=app_id,
+                        app_secret=str(creds.get("app_secret") or ""),
+                    )
+                    # None = không hỏi được. Im lặng có chủ ý: mạng hỏng biến
+                    # thành báo động giả thì lần sau người ta bỏ qua cảnh báo
+                    # thật.
+                    if kq is None or kq["muc"] == "on":
+                        continue
+
+                    con = kq.get("ngay_con_lai")
+                    await db.log_event(
+                        "meta.token_sap_het" if kq["muc"] == "sap_het"
+                        else "meta.token_chet",
+                        actor="system",
+                        tai_khoan=acc.display_name[:80],
+                        kenh=kenh.value,
+                        ngay_con_lai=round(con, 1) if con is not None else None,
+                    )
+                    await canh_gac.bao_dong(
+                        tieu_de="Token Meta sắp hết hạn",
+                        muc_do="chan" if kq["muc"] != "sap_het" else "canh_bao",
+                        chi_tiet=f"Token Meta của '{acc.display_name[:60]}' "
+                        + (f"còn {con:.0f} ngày — chủ Trang cần cấp quyền lại "
+                           f"(báo trước {NGAY_BAO_TRUOC} ngày)"
+                           if kq["muc"] == "sap_het"
+                           else "ĐÃ HẾT HẠN — Trang này không nhận/gửi tin được nữa"),
+                    )
+        except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+            await db.log_event("meta.canh_han_token_loi", actor="system",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(KIEM_TOKEN_META_MOI_GIAY)
+
+
+# Dọn phiên đăng nhập hết hạn mỗi sáu giờ.
+#
+# `xac_thuc.don_phien_het_han` đã có từ trước và KHÔNG AI GỌI. Phiên hết hạn
+# vẫn bị chặn ở SQL (`WHERE het_han > now()`) nên đó không phải lỗ hổng —
+# nhưng bảng `phien` phình mãi, và những dòng ấy là chứng chỉ cũ nằm lại
+# trong CSDL mà không còn lý do gì để tồn tại.
+DON_PHIEN_MOI_GIAY = 6 * 3600
+
+
+async def don_phien_loop() -> None:
+    """Xoá phiên đã hết hạn. Chạy ngay lần đầu rồi mới ngủ."""
+    from agent.core import xac_thuc
+
+    while True:
+        try:
+            n = await xac_thuc.don_phien_het_han()
+            if n:
+                await db.log_event("phien.don_het_han", actor="system", so_dong=n)
+        except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+            await db.log_event("phien.don_loi", actor="system",
+                               error=f"{type(exc).__name__}: {exc}"[:200])
+        await asyncio.sleep(DON_PHIEN_MOI_GIAY)
+
+
+GIU_PHIEN_ZALO_MOI_GIAY = 60
+
+
+async def giu_phien_zalo_loop() -> None:
+    """
+    Khôi phục phiên Zalo cá nhân bị đứt, mãi mãi.
+
+    VÌ SAO PHẢI LÀ VÒNG LẶP, KHÔNG CHỈ CHẠY MỘT LẦN LÚC KHỞI ĐỘNG
+    -------------------------------------------------------------
+    Phiên đứt vì nhiều lý do ngoài tầm app: sidecar restart riêng, mạng rớt,
+    Zalo tự ngắt thiết bị. Chạy một lần lúc khởi động chỉ vá được một trong
+    số đó.
+
+    Không có vòng này thì kênh Zalo chết câm mà mọi đèn vẫn xanh — sidecar
+    healthz OK, app OK, thẻ tài khoản vẫn "Sẵn sàng", chỉ tin khách là không
+    tới nữa.
+    """
+    from agent.omnichannel.account_repository import PostgresAccountRepository
+    from agent.omnichannel.accounts import Channel
+    from agent.omnichannel.zalo_session_keeper import khoi_phuc_phien_dut
+
+    async def _bao(account_id, ly_do) -> None:
+        # Cần NGƯỜI quét QR lại — máy không tự làm được, nên phải đi ra
+        # ngoài chứ không chỉ nằm im trong nhật ký.
+        await db.log_event(
+            "zalo_personal.can_quet_lai",
+            actor="system",
+            ref_id=account_id,
+            ly_do=str(ly_do)[:200],
+        )
+
+    # Dựng MỘT lần ngoài vòng lặp: repository không giữ trạng thái, nó chỉ
+    # bọc pool dùng chung. Dựng lại mỗi nhịp còn khiến closure `_mo` bắt biến
+    # của vòng lặp — thứ ruff bắt đúng (B023) và là mầm lỗi khi mã đổi sau này.
+    repository = PostgresAccountRepository()
+
+    async def _mo(account_id):
+        from agent.api.channel_accounts import _zalo_personal_adapter
+        return await _zalo_personal_adapter(account_id, repository)
+
+    while True:
+        try:
+            rows = await db.fetch(
+                "SELECT id FROM channel_accounts "
+                "WHERE channel = $1 AND status <> 'disabled'",
+                Channel.ZALO_PERSONAL.value,
+            )
+            if rows:
+                ket_qua = await khoi_phuc_phien_dut(
+                    [r["id"] for r in rows],
+                    _mo,
+                    canh_bao=lambda acc, ly_do: asyncio.create_task(_bao(acc, ly_do)),
+                )
+                if ket_qua["da_khoi_phuc"]:
+                    await db.log_event(
+                        "zalo_personal.da_khoi_phuc",
+                        actor="system",
+                        so_tai_khoan=len(ket_qua["da_khoi_phuc"]),
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
+            await db.log_event(
+                "zalo_personal.giu_phien.error",
+                error=f"{type(exc).__name__}: {exc}"[:200],
+            )
+        await asyncio.sleep(GIU_PHIEN_ZALO_MOI_GIAY)
 
 
 async def schedule_loop() -> None:
@@ -186,18 +440,125 @@ async def lifespan(app: FastAPI):
     await db.init_db()
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
-    poller = asyncio.create_task(poll_loop()) if settings.zalocrm_api_key else None
-    scheduler = asyncio.create_task(schedule_loop())
-    don_du_lieu = asyncio.create_task(don_du_lieu_loop())
+    # Nạp tồn kho từ danh mục cho những mã CHƯA có dòng nào.
+    #
+    # Hàm này đã tồn tại từ lâu với chú thích "chạy một lần khi khởi động",
+    # và KHÔNG CÓ GÌ GỌI NÓ. Bảng `ton_kho` trống trong khi danh mục có 22
+    # sản phẩm, nên `giu_hang` trả "Mã X không có trong kho" và MỌI đơn agent
+    # lên đều hỏng — chức năng chính của hệ thống, hỏng 100%, không một dòng
+    # lỗi nào ở đâu.
+    #
+    # Không ghi đè số đang có (ON CONFLICT DO NOTHING): danh mục là ảnh chụp
+    # lúc viết ra, bảng này là số sống. Nhờ vậy chạy mỗi lần khởi động là an
+    # toàn, và sản phẩm thêm vào danh mục sau cũng được nạp ở lần khởi động
+    # kế tiếp.
+    try:
+        from agent.core import kho as _kho
+        from agent.core import tools as _tools
+
+        _them = await _kho.dong_bo_tu_danh_muc(_tools._catalog().get("san_pham", []))
+        if _them:
+            await db.log_event("kho.nap_tu_danh_muc", so_ma_moi=_them)
+    except Exception as _exc:  # noqa: BLE001 — danh mục hỏng không được chết app
+        # Nhưng KHÔNG nuốt im: không có dòng này thì ta quay lại đúng lỗi
+        # vừa sửa, chỉ khác nguyên nhân.
+        await db.log_event(
+            "kho.nap_tu_danh_muc_loi",
+            error=f"{type(_exc).__name__}: {_exc}"[:200],
+        )
+
+    # Tiến trình chỉ giữ vai "api" thì KHÔNG dựng vòng nền nào — xem
+    # `nen_chay_vong_nen`. Gom mọi task nền vào một danh sách để lúc tắt
+    # không phải nhớ huỷ từng cái: quên một cái là một vòng lặp sống sót
+    # qua shutdown, và không có gì báo.
+    tasks_nen: list[asyncio.Task] = []
+    chay_nen = nen_chay_vong_nen()
+
+    def _nen(coro):
+        """Dựng task nếu tiến trình này giữ vai chạy vòng nền."""
+        if not chay_nen:
+            # Đóng coroutine chưa chạy, nếu không Python cảnh báo
+            # "coroutine was never awaited" ở mọi tiến trình api.
+            coro.close()
+            return None
+        task = asyncio.create_task(coro)
+        tasks_nen.append(task)
+        return task
+
+    async def log_outbox_error(error: str) -> None:
+        await db.log_event("outbox.error", error=error)
+
+    outbox_processor = OutboxProcessor(
+        PostgresOutboxRepository(), channels.get_for_account
+    )
+    _nen(
+        outbox_loop(
+            outbox_processor,
+            worker_id=f"app-{uuid.uuid4()}",
+            log_error=log_outbox_error,
+        )
+    )
+
+    async def log_sla_error(error: str) -> None:
+        await db.log_event("sla.error", error=error)
+
+    _nen(
+        sla_loop(
+            SlaMonitor(PostgresSlaRepository()),
+            worker_id=f"sla-{uuid.uuid4()}",
+            log_error=log_sla_error,
+        )
+    )
+
+    async def log_routing_error(error: str) -> None:
+        await db.log_event("auto_routing.error", error=error)
+
+    routing_repository = PostgresAutoRoutingRepository()
+    _nen(
+        auto_routing_loop(
+            AutoRoutingWorker(
+                routing_repository,
+                AutoRoutingService(routing_repository),
+            ),
+            worker_id=f"routing-{uuid.uuid4()}",
+            log_error=log_routing_error,
+        )
+    )
+
+    poller = None
+    if nen_chay_poller_legacy():
+        # Nói TO khi chạy đường cũ. Một tính năng di sản chạy im lặng là
+        # tính năng không ai nhớ là đang bật, cho tới lúc nó sinh hội thoại
+        # trùng và không ai hiểu vì sao.
+        await db.log_event(
+            "legacy.polling.bat",
+            actor="system",
+            canh_bao="Đường nạp tin ZaloCRM cũ ĐANG CHẠY song song với "
+                     "connector native — chỉ nên bật khi đang migration",
+        )
+        poller = _nen(poll_loop())
+    _nen(schedule_loop())
+    _nen(don_du_lieu_loop())
     # Canh gác: phát hiện SUY GIẢM (model chết, kênh mất kết nối, sao
     # lưu cũ). KHÔNG phát hiện được chính tiến trình này chết — lúc đó
     # nó chết theo. Xem scripts/canh_gac_ngoai.py cho trường hợp ấy.
-    canh = asyncio.create_task(canh_gac.vong_canh_gac())
+    _nen(canh_gac.vong_canh_gac())
+    _nen(canh_han_token_meta_loop())
+    _nen(don_phien_loop())
+    # Giữ kênh Zalo sống qua mọi lần restart — xem giu_phien_zalo_loop.
+    _nen(giu_phien_zalo_loop())
+    # Thử lại đơn kẹt `cho_dong_bo`. Vòng này tự bỏ qua khi ERP_GHI_DON tắt,
+    # nên dựng nó vô điều kiện là an toàn — và có nó ngay từ đầu nghĩa là
+    # ngày bật ghi đơn không phải nhớ bật thêm thứ gì.
+    from agent.erp.vong_dong_bo import vong_dong_bo_loop
+
+    _nen(vong_dong_bo_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
     # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
     # thái dở, không ai nhặt lại và không dòng lỗi nào.
-    video_workers = await video_worker.start()
-    backuper = asyncio.create_task(backup_loop())
+    video_workers = await video_worker.start() if chay_nen else []
+    tasks_nen.extend(video_workers)
+    _nen(backup_loop())
 
     # Vòng đời của MCP phải chạy TRONG vòng đời app, không tự chạy được.
     # Bỏ bước này thì mount xong vẫn ném "Task group is not initialized" ở
@@ -216,22 +577,12 @@ async def lifespan(app: FastAPI):
         with suppress(Exception):
             await mcp_ctx.__aexit__(None, None, None)
 
-    backuper.cancel()
-    with suppress(asyncio.CancelledError):
-        await backuper
-    for w in video_workers:
-        w.cancel()
-    for w in video_workers:
+    for task in tasks_nen:
+        task.cancel()
+    for task in tasks_nen:
         with suppress(asyncio.CancelledError):
-            await w
-    for t in (scheduler, don_du_lieu, canh):
-        t.cancel()
-        with suppress(asyncio.CancelledError):
-            await t
-    if poller:
-        poller.cancel()
-        with suppress(asyncio.CancelledError):
-            await poller
+            await task
+
     await pub_registry.dong_tat_ca()
     await zalo_acc.aclose()
     await channels.dong_tat_ca()
@@ -246,7 +597,50 @@ app = FastAPI(title="Marketing Agent", version="0.1.0", lifespan=lifespan)
 _MO = (
     "/api/dang-nhap",     # phải vào được mới đăng nhập được
     "/api/dang-xuat",     # đăng xuất luôn phải chạy, kể cả phiên đã hỏng
+    # Meta gọi vào đây sau khi người dùng cấp quyền, và Meta KHÔNG mang
+    # cookie phiên của ta. Đòi đăng nhập ở đây là luồng OAuth không bao giờ
+    # chạy được — nó trả 401 cho chính Meta.
+    #
+    # Chốt thay thế: `state` dùng một lần, sinh ra ở `/start` (nơi VẪN đòi
+    # quyền quản trị). Không có state hợp lệ thì callback từ chối, nên mở
+    # đường này không mở thêm quyền gì.
+    #
+    # Chỉ mở ĐÚNG callback — `/start` không nằm trong danh sách này.
+    "/api/connect/meta/callback",
 )
+
+
+@app.post("/webhook/shipping/{hang}")
+async def webhook_shipping(
+    request: Request, hang: str = "ghn", token: str = "",
+) -> JSONResponse:
+    """
+    Hãng vận chuyển báo trạng thái vận đơn về đây.
+
+    KHÔNG nằm dưới `/api/` nên không bị middleware đăng nhập chặn — đúng
+    thiết kế: hãng vận chuyển không có phiên đăng nhập của ta. Chốt thay
+    thế là bí mật trong URL, kiểm ở `shipping.kiem_bi_mat_webhook`, và chưa
+    cấu hình thì TỪ CHỐI chứ không cho qua.
+
+    URL khai với hãng có dạng:
+        https://<tên miền>/webhook/shipping/ghn?token=<SHIPPING_WEBHOOK_SECRET>
+    """
+    from agent.shipping import xu_ly_webhook_van_chuyen
+
+    raw = await request.body()
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return JSONResponse({"ok": False, "error": "payload không phải JSON"},
+                            status_code=400)
+
+    ket_qua = await xu_ly_webhook_van_chuyen(
+        hang, payload, dict(request.headers), query_token=token,
+    )
+    # Bí mật sai phải trả 401 THẬT, không phải 200 kèm cờ false: hãng vận
+    # chuyển và người vận hành đều đọc mã HTTP, và 200 nghĩa là "đã nhận".
+    ma_http = int(ket_qua.pop("http_status", 200))
+    return JSONResponse(ket_qua, status_code=ma_http)
 
 
 @app.middleware("http")
@@ -348,6 +742,17 @@ async def ws_cable(ws: WebSocket):
 
 
 app.include_router(api_router)
+app.include_router(channel_accounts_router)
+app.include_router(contacts_router)
+app.include_router(erp_router)
+app.include_router(routing_admin_router)
+app.include_router(retention_router)
+app.include_router(inbox_router)
+app.include_router(outbox_router)
+app.include_router(native_webhooks_router)
+app.include_router(zalo_personal_webhook_router)
+app.include_router(webchat_router)
+app.include_router(oauth_meta_router)
 app.include_router(tich_hop.router)
 
 
@@ -403,7 +808,7 @@ async def webhook_messenger(request: Request, tasks: BackgroundTasks) -> JSONRes
     # "quyền về tay ta" vừa mang tin mới, thì tin ấy phải được agent trả lời
     # chứ không rơi vào nhánh `escalated` của trạng thái cũ.
     for bg in ad.doc_ban_giao(payload):
-        tasks.add_task(_ban_giao_messenger, bg)
+        tasks.add_task(_ban_giao_messenger, bg, ad.account_id)
 
     inbound = ad.parse_nhieu(payload)
     for m in inbound:
@@ -413,7 +818,7 @@ async def webhook_messenger(request: Request, tasks: BackgroundTasks) -> JSONRes
     return JSONResponse({"ok": True, "queued": len(inbound)})
 
 
-async def _ban_giao_messenger(bg: dict) -> None:
+async def _ban_giao_messenger(bg: dict, account_id=None) -> None:
     """
     Quyền hội thoại vừa đổi chủ phía Meta — đồng bộ lại trạng thái bên mình.
 
@@ -424,8 +829,10 @@ async def _ban_giao_messenger(bg: dict) -> None:
     tin là bên kia đang lo, và đó là cách khách bị bỏ rơi mà không ai sai.
     """
     conv = await db.fetchrow(
-        "SELECT id, status FROM conversations WHERE channel = 'messenger' "
-        "AND external_id = $1", bg["khach"],
+        "SELECT id, status FROM conversations WHERE account_id = $1 "
+        "AND external_id = $2",
+        account_id or channels.get("messenger").account_id,
+        bg["khach"],
     )
     if conv is None:
         return
@@ -437,7 +844,8 @@ async def _ban_giao_messenger(bg: dict) -> None:
         await db.log_event("banGiao.nhan_lai", ref_id=conv["id"], boi="messenger")
     else:
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, updated_at = now() "
             "WHERE id = $1", conv["id"],
         )
         await db.log_event("banGiao.trao_di", ref_id=conv["id"],
@@ -529,7 +937,23 @@ async def webhook(
                 {"ok": False, "error": "chữ ký Chatwoot không hợp lệ"},
                 status_code=401,
             )
-    elif settings.webhook_secret:
+    else:
+        # CHƯA CẤU HÌNH THÌ TỪ CHỐI, KHÔNG PHẢI CHO QUA.
+        #
+        # Bản trước viết `elif settings.webhook_secret:` — bí mật trống thì
+        # bỏ qua kiểm tra hoàn toàn, và cửa này mở toang cho mọi người trên
+        # Internet đẩy tin giả vào hộp thư.
+        #
+        # Đây là lần thứ BA cùng một khuôn trong repo này: `doc_thach_thuc`
+        # của webhook Meta và `kiem_bi_mat_webhook` của vận chuyển đều từng
+        # như vậy. Cả ba giờ cùng một luật: danh sách rỗng nghĩa là TỪ CHỐI.
+        if not settings.webhook_secret:
+            return JSONResponse(
+                {"ok": False,
+                 "error": "WEBHOOK_SECRET chưa cấu hình — từ chối mọi webhook. "
+                          "Sinh bằng: python -m scripts.sinh_token WEBHOOK_SECRET"},
+                status_code=503,
+            )
         supplied = (
             request.headers.get("x-webhook-secret")
             or request.query_params.get("token", "")
@@ -547,7 +971,11 @@ async def webhook(
     if kenh == "chatwoot":
         event = payload.get("event")
         if chatwoot.la_tin_nhan_vien(payload) or event == "conversation_status_changed":
-            tasks.add_task(_xu_ly_su_kien_chatwoot, payload)
+            tasks.add_task(
+                _xu_ly_su_kien_chatwoot,
+                payload,
+                channels.get("chatwoot").account_id,
+            )
             return JSONResponse({"ok": True, "queued": event})
 
     # `parse_nhieu` chứ không `parse`: MỘT payload có thể mang NHIỀU tin.
@@ -564,7 +992,7 @@ async def webhook(
     return JSONResponse({"ok": True, "queued": len(inbound)})
 
 
-async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
+async def _xu_ly_su_kien_chatwoot(payload: dict, account_id=None) -> None:
     """
     Đồng bộ nửa còn lại của bàn giao người–Agent.
 
@@ -583,8 +1011,9 @@ async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
         if await db.seen_webhook(f"chatwoot:staff:{message_id}"):
             return
         conv = await db.fetchrow(
-            "SELECT id FROM conversations WHERE channel = 'chatwoot' "
-            "AND external_id = $1",
+            "SELECT id FROM conversations WHERE account_id = $1 "
+            "AND external_id = $2",
+            account_id or channels.get("chatwoot").account_id,
             conversation_ref,
         )
         if conv is None:
@@ -606,7 +1035,8 @@ async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
                 content,
             )
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, "
             "outcome = 'escalated', msg_count = msg_count + $2, "
             "updated_at = now() WHERE id = $1",
             conv["id"],
@@ -633,8 +1063,9 @@ async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
     if status == "resolved":
         conv = await db.fetchrow(
             "UPDATE conversations SET status = 'closed', outcome = 'resolved', "
-            "updated_at = now() WHERE channel = 'chatwoot' AND external_id = $1 "
+            "updated_at = now() WHERE account_id = $1 AND external_id = $2 "
             "RETURNING id",
+            account_id or channels.get("chatwoot").account_id,
             conversation_ref,
         )
         if conv:
@@ -647,8 +1078,9 @@ async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
         # nằm trong tay người; mở khoá ở đó sẽ tạo hai giọng nói cùng lúc.
         conv = await db.fetchrow(
             "UPDATE conversations SET status = 'auto', outcome = NULL, "
-            "updated_at = now() WHERE channel = 'chatwoot' AND external_id = $1 "
+            "updated_at = now() WHERE account_id = $1 AND external_id = $2 "
             "AND status = 'closed' RETURNING id",
+            account_id or channels.get("chatwoot").account_id,
             conversation_ref,
         )
         if conv:
@@ -657,7 +1089,43 @@ async def _xu_ly_su_kien_chatwoot(payload: dict) -> None:
             )
 
 
-async def _gui_nhu_nguoi(adapter, msg, cid, text: str) -> bool:
+async def _queue_ai_text(
+    cid: uuid.UUID,
+    text: str,
+    idempotency_key: str,
+    metadata: dict | None = None,
+) -> QueuedOutbound:
+    return await OutboundService(PostgresOutboundRepository()).queue_text(
+        conversation_id=cid,
+        role="agent",
+        text=text,
+        idempotency_key=idempotency_key,
+        metadata=metadata,
+    )
+
+
+async def _queue_ai_file(
+    cid: uuid.UUID,
+    path: str,
+    caption: str,
+    idempotency_key: str,
+) -> QueuedOutbound:
+    return await OutboundService(PostgresOutboundRepository()).queue_file(
+        conversation_id=cid,
+        role="agent",
+        path=path,
+        caption=caption,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def _gui_nhu_nguoi(
+    _adapter,
+    msg,
+    cid,
+    text: str,
+    metadata: dict | None = None,
+) -> list[QueuedOutbound]:
     """
     Gửi câu trả lời theo nhịp của một người thật đang nhắn tin.
 
@@ -669,27 +1137,35 @@ async def _gui_nhu_nguoi(adapter, msg, cid, text: str) -> bool:
          vẫn biết ngay là máy.
       3. Giữ cờ "đang soạn tin" suốt quá trình để dashboard hiển thị đúng.
 
-    Trả True nếu tin ĐẦU TIÊN đi được. Tin đầu là tin quyết định khách có
-    nhận được câu trả lời hay không; các tin sau chỉ bổ sung, hỏng một tin
-    sau không có nghĩa là cả câu trả lời thất bại.
+    Mỗi phần được ghi message + outbox trong cùng transaction. Provider chỉ
+    được gọi bởi worker sau commit; vì thế kết quả ở đây là ``queued``, chưa
+    phải ``delivered``.
     """
     lan_dau = await _la_tin_dau(cid)
-    tins = tu_nhien.lam_tu_nhien(text, lan_dau=lan_dau)
+    # Công tắc `NHIP_NGUOI_THAT` phải THẬT SỰ tắt được.
+    #
+    # Trước đây nó được khai trong `config.py` kèm chú thích "tắt đi thì gửi
+    # một cục" — nhưng không ai đọc, nên tắt cũng không có tác dụng gì. Một
+    # công tắc nói dối tệ hơn không có công tắc: người vận hành tưởng đã tắt
+    # rồi đi tìm nguyên nhân ở chỗ khác.
+    tins = (tu_nhien.lam_tu_nhien(text, lan_dau=lan_dau)
+            if settings.nhip_nguoi_that else [text.strip()])
+    tins = [t for t in tins if t]
     if not tins:
-        return False
+        return []
 
-    ok_dau = False
+    queued: list[QueuedOutbound] = []
     for i, phan in enumerate(tins):
-        if i and settings.nhip_nguoi_that:
-            runtime.mark_busy(cid)
-            await asyncio.sleep(tu_nhien.nhip_go(phan))
-        kq = await adapter.send_text(msg.conversation_ref, phan)
-        if i == 0:
-            ok_dau = kq.ok
-            if not kq.ok:
-                break        # tin đầu hỏng thì gửi tiếp cũng vô nghĩa
+        queued.append(
+            await _queue_ai_text(
+                cid,
+                phan,
+                f"ai:{msg.dedupe_key}:part:{i}",
+                metadata if i == 0 else None,
+            )
+        )
     runtime.clear_busy(cid)
-    return ok_dau
+    return queued
 
 
 async def _la_tin_dau(cid) -> bool:
@@ -701,56 +1177,24 @@ async def _la_tin_dau(cid) -> bool:
     return (r["n"] if r else 0) == 0
 
 
+async def _ingest_inbound(msg: InboundMessage):
+    """Commit inbox trước khi AI hoặc provider bên ngoài được gọi."""
+    return await InboxService(PostgresInboxRepository()).ingest(msg)
+
+
 async def handle_inbound(msg: InboundMessage) -> None:
     """Toàn bộ luồng xử lý một tin nhắn đến."""
-    if await db.seen_webhook(msg.dedupe_key):
-        return  # đã xử lý — chống gửi trùng
-
-    conv = await db.fetchrow(
-        """
-        INSERT INTO conversations
-            (channel, external_id, customer_name, customer_ref, nen_tang)
-        VALUES ($1,$2,$3,$4,$5)
-        ON CONFLICT (channel, external_id) DO UPDATE
-            SET customer_name = CASE
-                    WHEN EXCLUDED.customer_name <> 'Khách' AND EXCLUDED.customer_name <> ''
-                    THEN EXCLUDED.customer_name
-                    ELSE conversations.customer_name
-                END,
-                -- Chỉ ghi đè khi tin mới CÓ nền tảng. Kênh nào không biết
-                -- nền tảng gốc thì để nguyên giá trị cũ, không xoá mất.
-                nen_tang = coalesce(EXCLUDED.nen_tang, conversations.nen_tang),
-                updated_at = now()
-        RETURNING *
-        """,
-        msg.channel,
-        msg.conversation_ref,
-        msg.customer_name,
-        msg.customer_ref,
-        (msg.meta or {}).get("nen_tang_goc"),
-    )
-    cid: uuid.UUID = conv["id"]
-
-    # Chống vòng lặp dội tin (Echo Loop): không bao giờ xử lý tin nhắn trùng với lời Agent vừa gửi
-    last_agent_msg = await db.fetchrow(
-        "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'agent' ORDER BY created_at DESC LIMIT 1",
-        cid,
-    )
-    if last_agent_msg and last_agent_msg["content"].strip() == msg.text.strip():
+    ingested = await _ingest_inbound(msg)
+    if ingested.duplicate:
         return
-
-    await db.execute(
-        "INSERT INTO messages (conversation_id, role, content, attachments) "
-        "VALUES ($1,'customer',$2,$3)",
-        cid,
-        msg.text,
-        msg.attachments,   # codec JSONB tự mã hoá
-    )
-    await db.execute(
-        "UPDATE conversations SET msg_count = msg_count + 1, updated_at = now() "
-        "WHERE id = $1",
-        cid,
-    )
+    if ingested.conversation_id is None:
+        raise RuntimeError("inbox ingest không trả conversation_id")
+    cid: uuid.UUID = ingested.conversation_id
+    conv = {
+        "id": cid,
+        "status": ingested.conversation_status or "auto",
+        "mode": ingested.conversation_mode or "auto",
+    }
 
     # TIN VỀ QUA `standby` — người thật đang phụ trách hội thoại này.
     #
@@ -763,15 +1207,21 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # lần duy nhất hệ thống biết được điều đó.
     if (msg.meta or {}).get("standby"):
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, updated_at = now() "
             "WHERE id = $1", cid,
         )
         return
 
     # Công tắc ngắt, hoặc hội thoại đã do người tiếp quản -> agent đứng ngoài.
-    if not runtime.enabled() or conv["status"] == "escalated":
+    if (
+        not runtime.enabled()
+        or conv["status"] == "escalated"
+        or conv["mode"] == "human"
+    ):
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, updated_at = now() "
             "WHERE id = $1",
             cid,
         )
@@ -790,7 +1240,8 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # biết mình có đủ thẩm quyền hay không, và các lớp lưới cũ vẫn chạy.
     if msg.attachments and not msg.text.strip():
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, "
             "outcome = 'escalated', updated_at = now() WHERE id = $1", cid,
         )
         await db.log_event("conversation.escalated", ref_id=cid,
@@ -805,24 +1256,44 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Và báo luôn cho kênh, để KHÁCH cũng thấy — không chỉ người vận hành.
     # Màn hình im lặng rồi bỗng hiện ra một đoạn dài là dấu hiệu máy trả
     # lời; thấy "đang soạn tin" thì cảm giác hoàn toàn khác.
-    adapter = channels.get(msg.channel)
+    adapter = await channels.get_for_account(msg.account_id)
     with suppress(Exception):
         await adapter.bao_dang_go(msg.conversation_ref, True)
     try:
         # Agent phải BIẾT là có ảnh. Không nói thì nó trả lời câu chữ như
         # thể ảnh không tồn tại — khách gửi ảnh kèm "cái này còn hàng
         # không ạ?" mà nhận về câu hỏi lại "mình muốn hỏi sản phẩm nào ạ?".
+        # Agent NHÌN ĐƯỢC ảnh khách gửi.
+        #
+        # Bản trước nói thẳng với model "[bạn KHÔNG xem được nội dung ảnh]" —
+        # trung thực và đúng lúc đó, nhưng nghĩa là mọi ca khách gửi ảnh đều
+        # phải chuyển người: ảnh sản phẩm muốn mua, ảnh hàng nhận được bị vỡ,
+        # ảnh màn hình chuyển khoản.
+        #
+        # Tải ảnh hỏng thì rơi về đúng hành vi cũ, không làm đứt lượt trả
+        # lời: tin nhắn của khách mới là việc chính.
         cau_hoi = msg.text
+        khoi_anh: list[dict] = []
         if msg.attachments:
-            cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} ảnh — bạn KHÔNG "
-                       f"xem được nội dung ảnh] {msg.text}")
+            async def _ghi_loi_anh(ly_do: str) -> None:
+                await db.log_event("anh_khach.tai_that_bai", ref_id=cid,
+                                   ly_do=ly_do)
+
+            khoi_anh = await anh_khach.lay_khoi_anh(
+                msg.attachments, ghi_loi=_ghi_loi_anh)
+            if not khoi_anh:
+                cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} tệp nhưng "
+                           f"hệ thống KHÔNG tải về xem được] {msg.text}")
+
         reply = await brain.respond(
             conversation_id=cid, history=history, question=cau_hoi,
             customer_ref=msg.customer_ref, channel=msg.channel,
+            anh=khoi_anh or None,
         )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
         await db.execute(
-            "UPDATE conversations SET status = 'escalated', updated_at = now() "
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, updated_at = now() "
             "WHERE id = $1",
             cid,
         )
@@ -835,32 +1306,45 @@ async def handle_inbound(msg: InboundMessage) -> None:
 
     # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt.
     auto_send = runtime.mode() == "auto" and not reply.escalate
-    delivered = False
+    queued_parts: list[QueuedOutbound] = []
     if auto_send and await adapter.can_send_now(msg.conversation_ref):
-        delivered = await _gui_nhu_nguoi(adapter, msg, cid, reply.text)
+        metadata = {
+            "grounded": reply.grounded,
+            "confidence": reply.confidence,
+            "sources": reply.sources,
+            "model": reply.model,
+            "tokens_in": reply.tokens_in,
+            "tokens_out": reply.tokens_out,
+            "cache_read": reply.cache_read,
+            "cost_usd": reply.cost_usd,
+            "latency_ms": reply.latency_ms,
+        }
+        try:
+            queued_parts = await _gui_nhu_nguoi(
+                adapter, msg, cid, reply.text, metadata
+            )
+        except Exception as exc:  # noqa: BLE001 — giữ draft để người gửi tay
+            await db.log_event(
+                "outbox.enqueue_error",
+                ref_id=cid,
+                error=f"{type(exc).__name__}: {exc}"[:500],
+            )
+            queued_parts = []
 
         # Ảnh đi SAU lời, không đi trước. Nhận ảnh trước khi biết đó là gì
         # thì khách phải tự đoán; nhận lời trước rồi thấy ảnh là đúng thứ
         # tự nhiên của một người bán hàng.
-        for anh in reply.anh_can_gui:
-            # Thất bại của kênh về bằng GIÁ TRỊ chứ không bằng ngoại lệ:
-            # `send_file` bắt `httpx.HTTPError` rồi trả `Delivery(False)`,
-            # và HTTP 500 cũng thành `Delivery(False)`. Nên chỉ bọc
-            # `suppress` là hụt đúng con đường hay hỏng nhất — phải kiểm
-            # `.ok` nữa. Không kiểm thì agent vừa nói "em gửi ảnh nhé",
-            # ảnh không tới, mà dashboard vẫn xanh.
+        for i, anh in enumerate(reply.anh_can_gui):
             try:
-                kq = await adapter.send_file(
-                    msg.conversation_ref, anh["duong_dan"], caption=anh["ten"]
+                await _queue_ai_file(
+                    cid,
+                    anh["duong_dan"],
+                    anh["ten"],
+                    f"ai:{msg.dedupe_key}:file:{i}",
                 )
-                if not getattr(kq, "ok", True):
-                    await db.log_event(
-                        "anh.gui_that_bai", ref_id=cid, ten=anh.get("ten", ""),
-                        ly_do=str(getattr(kq, "detail", ""))[:200],
-                    )
-            except Exception as exc:  # noqa: BLE001 — một ảnh hỏng không được chặn ảnh sau
+            except Exception as exc:  # noqa: BLE001 — một ảnh hỏng không chặn ảnh sau
                 await db.log_event(
-                    "anh.gui_that_bai", ref_id=cid, ten=anh.get("ten", ""),
+                    "anh.queue_that_bai", ref_id=cid, ten=anh.get("ten", ""),
                     ly_do=f"{type(exc).__name__}: {exc}"[:200],
                 )
 
@@ -878,34 +1362,48 @@ async def handle_inbound(msg: InboundMessage) -> None:
     elif reply.escalate and runtime.mode() == "auto":
         await bao_khach_dang_chuyen_nguoi(adapter, msg.conversation_ref, cid)
 
-    await db.execute(
-        """
-        INSERT INTO messages
-            (conversation_id, role, content, delivered, grounded, confidence,
-             sources, model, tokens_in, tokens_out, cache_read, cost_usd, latency_ms)
-        VALUES ($1,'agent',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-        """,
-        cid,
-        reply.text,
-        delivered,
-        reply.grounded,
-        reply.confidence,
-        reply.sources,   # codec JSONB tu ma hoa
-        reply.model,
-        reply.tokens_in,
-        reply.tokens_out,
-        reply.cache_read,
-        reply.cost_usd,
-        reply.latency_ms,
-    )
+    # Khi đã enqueue, OutboundService đã tạo message cùng transaction với job.
+    # Chỉ lưu bản nháp ở đây cho assist/escalate hoặc khi enqueue hỏng.
+    stored_draft = not queued_parts
+    if stored_draft:
+        await db.execute(
+            """
+            INSERT INTO messages
+                (conversation_id, role, content, delivered, direction,
+                 delivery_status, grounded, confidence, sources, model,
+                 tokens_in, tokens_out, cache_read, cost_usd, latency_ms)
+            VALUES (
+                $1,'agent',$2,false,'outbound','draft',$3,$4,$5,$6,$7,$8,$9,$10,$11
+            )
+            """,
+            cid,
+            reply.text,
+            reply.grounded,
+            reply.confidence,
+            reply.sources,
+            reply.model,
+            reply.tokens_in,
+            reply.tokens_out,
+            reply.cache_read,
+            reply.cost_usd,
+            reply.latency_ms,
+        )
 
-    status = "escalated" if reply.escalate else ("auto" if delivered else "assist")
+    status = (
+        "escalated" if reply.escalate else ("auto" if queued_parts else "assist")
+    )
     await db.execute(
         """
         UPDATE conversations
         SET cost_usd = cost_usd + $2,
-            msg_count = msg_count + 1,
+            msg_count = msg_count + $4,
             status = $3,
+            mode = CASE
+                WHEN $3 = 'escalated' THEN 'human'
+                WHEN $3 = 'assist' THEN 'assist'
+                ELSE mode
+            END,
+            version = version + 1,
             outcome = CASE WHEN $3 = 'escalated' THEN 'escalated' ELSE outcome END,
             updated_at = now()
         WHERE id = $1
@@ -913,6 +1411,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
         cid,
         reply.cost_usd,
         status,
+        1 if stored_draft else 0,
     )
 
     if reply.escalate:
@@ -936,7 +1435,7 @@ async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
     gửi ảnh xong nhận lại đúng sự im lặng — tức là vẫn bị bỏ rơi, chỉ khác
     là nay có bản ghi trong CSDL để sau này truy ra.
     """
-    adapter = channels.get(msg.channel)
+    adapter = await channels.get_for_account(msg.account_id)
     await bao_nhan_vien_tiep_quan(
         adapter, msg.conversation_ref, cid, "khách gửi ảnh, cần người xem"
     )
@@ -979,20 +1478,26 @@ async def bao_khach_dang_chuyen_nguoi(adapter, conversation_ref: str, cid) -> No
         # Câu đổi theo giờ: trong giờ thì "sẽ nhắn lại sớm" là thật; ngoài
         # giờ phải nói rõ mấy giờ có người, vì lúc 2 giờ sáng chữ "sớm" là
         # một lời hứa không ai giữ được.
-        kq = await adapter.send_text(conversation_ref, gio_lam_viec.tin_chuyen_nguoi())
-        # `.detail` chứ không phải `.error` — `Delivery` chỉ có hai trường
-        # `ok` và `detail`. Đọc nhầm tên thì nhật ký vẫn ghi, nhưng ghi một
-        # lý do RỖNG: có dấu vết mà không có manh mối.
-        if not getattr(kq, "ok", True):
-            await db.log_event(
-                "escalate.bao_that_bai", ref_id=cid,
-                ly_do=str(getattr(kq, "detail", ""))[:200],
-            )
+        await _queue_handover_notice(cid, gio_lam_viec.tin_chuyen_nguoi())
     except Exception as exc:  # noqa: BLE001 — không được làm sập luồng
         await db.log_event(
             "escalate.bao_that_bai", ref_id=cid,
             ly_do=f"{type(exc).__name__}: {exc}"[:200],
         )
+
+
+async def _queue_handover_notice(cid: uuid.UUID, text: str) -> QueuedOutbound:
+    conversation = await db.fetchrow(
+        "SELECT version FROM conversations WHERE id = $1",
+        cid,
+    )
+    version = int(conversation["version"]) if conversation else 1
+    return await OutboundService(PostgresOutboundRepository()).queue_text(
+        conversation_id=cid,
+        role="system",
+        text=text,
+        idempotency_key=handover_idempotency_key(cid, version),
+    )
 
 
 async def bao_nhan_vien_tiep_quan(
@@ -1086,5 +1591,36 @@ if settings.mcp_token:
     # của app con — đây là chỗ mọi lần mount ASGI lồng nhau bị vấp.
     app.state.mcp_app = _mcp_app
 
+class _GiaoDienLuonHoiLai(StaticFiles):
+    """`StaticFiles` nhưng bắt trình duyệt hỏi lại trước khi dùng bản đệm.
+
+    VÌ SAO CẦN
+    ----------
+    `StaticFiles` gửi `ETag` và `Last-Modified` nhưng KHÔNG gửi
+    `Cache-Control`. Thiếu header đó, trình duyệt tự suy diễn thời gian sống
+    (thường là 10% khoảng cách từ `Last-Modified`) và phục vụ `app.js` từ bộ
+    đệm mà không hỏi lại máy chủ.
+
+    Đã gặp thật: máy chủ phục vụ bản mới, đĩa có bản mới, mà trình duyệt vẫn
+    chạy bản cũ kể cả sau `location.reload()`. Nghĩa là mọi bản vá đều không
+    tới tay người trực cho tới khi họ tình cờ Ctrl+F5 — sửa xong một lỗi rồi
+    tưởng đã xong, trong khi người dùng vẫn đang gặp đúng lỗi đó.
+
+    `no-cache` KHÔNG phải "đừng lưu đệm". Nó là "lưu được, nhưng phải hỏi lại
+    trước khi dùng". ETag vẫn còn nên lần hỏi lại trả 304 rỗng — gần như
+    miễn phí, và luôn đúng bản.
+
+    Video KHÔNG đi qua lớp này: chúng bất biến sau khi dựng và nặng hàng
+    megabyte, bắt hỏi lại mỗi lần là đốt băng thông cho một câu trả lời luôn
+    giống nhau.
+    """
+
+    def file_response(self, *args, **kwargs):  # noqa: D102
+        res = super().file_response(*args, **kwargs)
+        res.headers["Cache-Control"] = "no-cache"
+        return res
+
+
 if DASHBOARD_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")
+    app.mount("/", _GiaoDienLuonHoiLai(directory=str(DASHBOARD_DIR), html=True),
+              name="dashboard")

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from uuid import UUID
 
 import httpx
 
@@ -46,7 +47,8 @@ INBOUND_SENDER = "contact"
 class ZaloCRMAdapter(ChannelAdapter):
     name = "zalocrm"
 
-    def __init__(self) -> None:
+    def __init__(self, *, account_id: UUID | None = None) -> None:
+        super().__init__(account_id=account_id)
         self._client = httpx.AsyncClient(
             base_url=settings.zalocrm_base_url.rstrip("/"),
             headers={"X-API-Key": settings.zalocrm_api_key},
@@ -117,6 +119,7 @@ class ZaloCRMAdapter(ChannelAdapter):
 
                 out.append(
                     InboundMessage(
+                        account_id=self.account_id,
                         channel=self.name,
                         conversation_ref=conv_id,
                         customer_ref=customer_ref,
@@ -165,6 +168,7 @@ class ZaloCRMAdapter(ChannelAdapter):
             msg_id = __import__("hashlib").md5(f"{conv_id}:{t_clean}:{body.get('sentAt')}".encode()).hexdigest()
 
         return InboundMessage(
+            account_id=self.account_id,
             channel=self.name,
             conversation_ref=conv_id,
             customer_ref=str(body.get("contactId") or conv_id),

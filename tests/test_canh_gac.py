@@ -157,7 +157,11 @@ def test_vong_canh_gac_duoc_bat_khi_khoi_dong():
 
 def test_vong_canh_gac_duoc_tat_khi_dung_app():
     src = inspect.getsource(app_main)
-    assert "(scheduler, don_du_lieu, canh)" in src, "task canh gác không được huỷ khi tắt"
+    # Canh gác được dựng qua `_nen()` nên nó nằm trong `tasks_nen`, và cả
+    # danh sách bị huỷ đồng loạt lúc tắt. Kiểm cả hai nửa: dựng đúng đường,
+    # và đường ấy có được dọn.
+    assert "_nen(canh_gac.vong_canh_gac())" in src, "canh gac phai di qua _nen()"
+    assert "for task in tasks_nen:" in src, "task canh gác không được huỷ khi tắt"
 
 
 def test_bao_dong_di_qua_webhook_khong_gan_cung_zalo():

@@ -1,0 +1,39 @@
+# Lớp vá của profile `web` — áp sau mọi lớp bundle.
+#
+# NỐI dsh VÀO HỆ THỐNG MARKETING AGENT
+# ------------------------------------
+# `@deepseek-ai/dsh-mcp-client` không khai `dsh.bundle`, nên `dsh plugin add`
+# chỉ cài nó như một phụ thuộc thường, KHÔNG tự kích hoạt. Chèn tay ở đây là
+# cách bật nó (dsh sẽ tự kích hoạt khi gói có bundle ở bản sau).
+#
+# CÚ PHÁP: `insert:` KHÔNG kèm `id` ở cấp ngoài.
+# Một entry vá có `id` là để SỬA entry đã tồn tại. Dùng nó để thêm mới thì
+# dsh báo `patch: entry "..." not found` rồi bỏ qua — hỏng im lặng.
+#
+# Công cụ sẽ hiện ra trong dsh dưới tên `mcp__marketing__<tên gốc>`.
+#
+# TOKEN KHÔNG NẰM TRONG FILE NÀY
+# ------------------------------
+# Đọc từ biến môi trường lúc chạy. Nhúng thẳng là để một bí mật nằm trong
+# một file cấu hình dễ bị chép, dễ bị chụp màn hình, và không xoay vòng được.
+#
+#   Windows :  $env:MCP_TOKEN = "<token>"
+#   bash    :  export MCP_TOKEN="<token>"
+#
+# Lấy token: mở `.env` của dự án, dòng MCP_TOKEN. Sinh mới bằng
+# `python -m scripts.sinh_token MCP_TOKEN` (lệnh đó KHÔNG in ra màn hình).
+
+- insert:
+    - id: mcp-marketing-agent
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: marketing
+        url: http://127.0.0.1:8000/mcp/
+        headers:
+          Authorization: !!js 'process.env.MCP_TOKEN ? "Bearer " + process.env.MCP_TOKEN : ""'
+        toolCallTimeoutMs: 30000
+        # `false` có chủ ý: máy chủ Marketing Agent chưa chạy thì dsh vẫn
+        # boot được, chỉ thiếu nhóm công cụ này. `true` là mỗi lần quên bật
+        # uvicorn thì dsh không mở lên nổi.
+        failOnStartupError: false

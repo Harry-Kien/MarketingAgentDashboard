@@ -69,7 +69,12 @@ def test_so_test_khai_trong_tai_lieu_khop_thuc_te():
     that = len(list((ROOT / "tests").glob("test_*.py")))
     assert that > 0
     # Không so tuyệt đối — chỉ chặn lệch quá xa để còn thấy được.
-    assert 300 <= int(m.group(1)) <= 900, m.group(1)
+    #
+    # Khoảng cũ là 300–900, dựng khi bộ test còn ~440 ca. Bộ đã lớn gấp ba
+    # rưỡi, nên chính CÂU CHẶN NÀY thành thứ nói sai: nó đỏ khi tài liệu
+    # được cập nhật cho ĐÚNG. Nới khoảng ra, và ghi lại lý do để lần sau
+    # người đọc biết đây là mốc cần xem lại chứ không phải hằng số thiêng.
+    assert 1_000 <= int(m.group(1)) <= 3_000, m.group(1)
 
 
 def test_co_canh_bao_ve_lenh_ton_tien():

@@ -32,6 +32,7 @@ class MockShippingProvider(BaseShippingProvider):
     def name(self) -> str:
         return self._name
 
+<<<<<<< HEAD
     def map_status(self, carrier_status: str) -> InternalShippingStatus:
         s = str(carrier_status).strip().lower()
         if s in ("delivered", "da_giao", "finish", "thanh_cong"):
@@ -42,6 +43,8 @@ class MockShippingProvider(BaseShippingProvider):
             return InternalShippingStatus.RETURNED
         return InternalShippingStatus.DELIVERING
 
+=======
+>>>>>>> origin/main
     async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
         tracking_code = f"MOCK-{self._code.upper()}-{int(time.time())}-{req.ma_don}"
         now = datetime.now(timezone.utc)

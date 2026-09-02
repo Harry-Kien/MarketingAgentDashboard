@@ -55,6 +55,7 @@ sys.path.insert(0, str(ROOT))
 from agent import db  # noqa: E402
 from agent.core import agent as brain  # noqa: E402
 from agent.core import cham_nhieu_luot  # noqa: E402
+from scripts.eval import hoi_thoai_eval  # noqa: E402
 
 
 def _kich_ban() -> Path:
@@ -206,12 +207,17 @@ async def main(loc: str | None = None, kho: bool = False) -> int:
         return 1
 
     await db.init_db()
-    conv = await db.fetchrow(
-        "INSERT INTO conversations (channel, external_id, customer_name, customer_ref) "
-        "VALUES ('eval','eval-nhieu-luot','Bo kich ban nhieu luot','eval-nl') "
-        "ON CONFLICT (channel, external_id) DO UPDATE SET updated_at = now() RETURNING id"
+    # Dùng CHUNG phép dựng hội thoại với bộ 56 câu vàng.
+    #
+    # Bản trước tự chép một câu INSERT với `ON CONFLICT (channel,
+    # external_id)`. Migration 0001 đã BỎ ràng buộc đó và đặt `account_id`
+    # vào nhóm NOT NULL, nên câu chép ấy chết ngay dòng đầu — kể cả `--kho`,
+    # chế độ đáng lẽ chạy được mà không tốn đồng nào.
+    cid = await hoi_thoai_eval(
+        external_id="eval-nhieu-luot",
+        ten="Bo kich ban nhieu luot",
+        customer_ref="eval-nl",
     )
-    cid = conv["id"]
 
     tong_luot = sum(len(k["luot"]) for k in kbs)
     print(f"Chạy {len(kbs)} kịch bản · {tong_luot} lượt"

@@ -255,12 +255,40 @@ Bạn có thể đặt lại mật khẩu Admin trực tiếp qua lệnh:
 docker exec -it erpnext-web bench --site localhost set-admin-password mat_khau_moi_123
 ```
 
-### 3. Trang NextERP bị mất CSS (Vỡ giao diện HTML thô):
-Nếu bạn vừa tạo mới lại volume Docker từ đầu và thấy trang bị mất định dạng CSS, chỉ cần chạy đúng 1 lệnh để đồng bộ lại file tĩnh:
-```bash
-docker exec erpnext-web cp -rL /home/frappe/frappe-bench/assets /home/frappe/frappe-bench/sites/assets
+### 3. Trang NextERP bị mất CSS (Vỡ giao diện HTML thô)
+
+**Đã sửa trong `docker-compose.erpnext.yml` — mục này giữ lại để giải thích
+nguyên nhân, phòng khi ai đó sửa file compose và làm hỏng lại.**
+
+Nguyên nhân là **hai tầng symlink** mà nginx không đi theo được:
+
 ```
-Sau đó F5 lại trang trình duyệt là giao diện sẽ đẹp mắt trở lại ngay lập tức.
+sites/assets   → /home/frappe/frappe-bench/assets           (tầng 1)
+assets/frappe  → .../apps/frappe/frappe/public              (tầng 2)
+assets/erpnext → .../apps/erpnext/erpnext/public            (tầng 2)
+```
+
+Cả ba là **đường dẫn tuyệt đối** chỉ tồn tại trong container `erpnext-web`.
+Nginx mount `sites` rồi đi theo symlink vào hư không → mọi tệp tĩnh **404**
+→ trang hiện ra dạng HTML thô, không CSS, ảnh vỡ.
+
+Backend cũng **không** phục vụ được assets ở chế độ production (đã đo: 404),
+nên proxy `/assets/` sang `erpnext-web` cũng không cứu được.
+
+Cách sửa: cho `assets` và `apps` mỗi thứ một volume riêng, mount vào nginx
+**ở đúng đường dẫn tuyệt đối** mà symlink trỏ tới. Docker tự chép nội dung
+từ ảnh vào volume rỗng ở lần mount đầu, nên không cần lệnh thủ công nào.
+
+> **Vì sao không dùng cách chép tay** `cp -rL ... sites/assets`: entrypoint
+> của ảnh tạo LẠI symlink mỗi lần khởi động — dòng "Linking fresh assets to
+> volume" trong log `erpnext-web`. Bản vá ấy mất sau mỗi
+> `docker compose restart`, và không có gì nhắc người ta chạy lại.
+
+Kiểm nhanh — phải ra `200`:
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" http://localhost:8080/assets/js/frappe-web.bundle.js
+```
 
 ---
 

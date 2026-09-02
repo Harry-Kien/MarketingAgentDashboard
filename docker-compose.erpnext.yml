@@ -44,6 +44,32 @@ services:
       MYSQL_ROOT_PASSWORD: erpnext_root_password
     volumes:
       - erpnext_sites_data:/home/frappe/frappe-bench/sites
+      # ASSETS RA MỘT VOLUME RIÊNG — đây là chỗ sửa lỗi vỡ giao diện.
+      #
+      # Trong ảnh frappe, `sites/assets` là SYMLINK trỏ tới
+      # `/home/frappe/frappe-bench/assets`. Nginx mount `sites` rồi đi theo
+      # symlink đó vào một đường dẫn KHÔNG tồn tại trong container nginx,
+      # nên mọi tệp tĩnh trả 404 và trang hiện ra dạng HTML thô.
+      #
+      # Docker tự chép nội dung thư mục trong ảnh vào volume rỗng ở lần
+      # mount đầu, nên nginx mount cùng volume này là thấy TỆP THẬT, không
+      # còn phụ thuộc symlink.
+      #
+      # Vì sao không dùng cách chép tay `cp -rL` như tài liệu cũ: entrypoint
+      # của ảnh tạo LẠI symlink mỗi lần khởi động ("Linking fresh assets to
+      # volume" trong log), nên bản vá ấy mất sau mỗi `docker compose
+      # restart` — và người ta phải nhớ chạy lại một lệnh mà không có gì
+      # nhắc.
+      - erpnext_assets_data:/home/frappe/frappe-bench/assets
+      # Và `apps` nữa — symlink còn một tầng sâu hơn.
+      #
+      # `assets/frappe` KHÔNG phải thư mục mà là symlink tới
+      # `/home/frappe/frappe-bench/apps/frappe/frappe/public`; `assets/erpnext`
+      # tương tự. Mount mỗi `assets` là nginx thấy hai symlink gãy tiếp.
+      #
+      # Mount `apps` ở ĐÚNG đường dẫn tuyệt đối đó trong cả hai container thì
+      # symlink phân giải được, không cần sửa gì trong ảnh.
+      - erpnext_apps_data:/home/frappe/frappe-bench/apps
     depends_on:
       - erpnext-db
       - erpnext-redis-cache
@@ -68,6 +94,12 @@ services:
       - "127.0.0.1:8080:80"
     volumes:
       - erpnext_sites_data:/var/www/html/sites:ro
+      # Cùng volume assets với erpnext-web, chỉ đọc. Nginx phục vụ tệp
+      # thật ở đây thay vì đi theo symlink gãy trong `sites/`.
+      - erpnext_assets_data:/var/www/html/assets:ro
+      # Mount ở ĐÚNG đường dẫn mà symlink trong assets trỏ tới. Đặt chỗ khác
+      # là symlink vẫn gãy — chúng là đường dẫn TUYỆT ĐỐI.
+      - erpnext_apps_data:/home/frappe/frappe-bench/apps:ro
       - ./nginx.erpnext.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - erpnext-web
@@ -81,3 +113,5 @@ networks:
 volumes:
   erpnext_db_data:
   erpnext_sites_data:
+  erpnext_assets_data:
+  erpnext_apps_data:

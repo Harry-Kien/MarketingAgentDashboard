@@ -199,3 +199,67 @@ def test_che_do_thu_chay_duoc_khi_chua_cau_hinh_gi():
     assert kq.returncode == 0, kq.stdout + kq.stderr
     assert "CHẾ ĐỘ THỬ" in kq.stdout
     assert "chưa ghi gì lên ERP" in kq.stdout
+
+
+# =====================================================================
+#  Vỡ giao diện: hai tầng symlink nginx không đi theo được
+# =====================================================================
+#
+# `sites/assets` → `/home/frappe/frappe-bench/assets`, rồi `assets/frappe` →
+# `.../apps/frappe/frappe/public`. Cả hai là đường dẫn TUYỆT ĐỐI chỉ có
+# trong container `erpnext-web`. Nginx đi theo vào hư không → mọi tệp tĩnh
+# 404 → trang hiện ra dạng HTML thô.
+#
+# Cách vá cũ (`cp -rL` vào sites/assets) mất sau mỗi restart, vì entrypoint
+# tạo lại symlink. Cách hiện tại: volume riêng cho `assets` và `apps`, mount
+# vào nginx ở đúng đường dẫn tuyệt đối.
+
+
+def _mounts(dv: dict) -> list[str]:
+    return [str(v) for v in (dv.get("volumes") or [])]
+
+
+def test_assets_va_apps_deu_co_volume_rieng():
+    d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    khai = set(d.get("volumes") or {})
+    assert "erpnext_assets_data" in khai
+    assert "erpnext_apps_data" in khai
+
+
+def test_nginx_mount_apps_dung_duong_dan_tuyet_doi():
+    """
+    Symlink trong `assets` là đường dẫn TUYỆT ĐỐI. Mount `apps` ở chỗ khác
+    thì symlink vẫn gãy, và triệu chứng y hệt như chưa sửa gì.
+    """
+    d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    proxy = _mounts(d["services"]["erpnext-proxy"])
+    assert any(
+        m.startswith("erpnext_apps_data:/home/frappe/frappe-bench/apps")
+        for m in proxy
+    ), proxy
+
+
+def test_web_va_proxy_dung_CHUNG_volume_assets():
+    d = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    web = _mounts(d["services"]["erpnext-web"])
+    proxy = _mounts(d["services"]["erpnext-proxy"])
+    for ten in ("erpnext_assets_data", "erpnext_apps_data"):
+        assert any(m.startswith(ten + ":") for m in web), (ten, web)
+        assert any(m.startswith(ten + ":") for m in proxy), (ten, proxy)
+
+
+def test_nginx_khong_con_phuc_vu_assets_qua_thu_muc_sites():
+    """Đi qua `sites/assets` là đi vào symlink gãy — đúng lỗi đã sửa."""
+    conf = NGINX.read_text(encoding="utf-8")
+    assert "alias /var/www/html/sites/assets" not in conf
+    assert "alias /var/www/html/assets/" in conf
+
+
+def test_tai_lieu_giai_thich_nguyen_nhan_chu_khong_chi_dua_lenh_va():
+    """
+    Cách vá cũ mất sau mỗi restart. Để nguyên trong tài liệu mà không nói
+    rõ là mời người sau dùng lại nó rồi tưởng đã xong.
+    """
+    text = TAI_LIEU.read_text(encoding="utf-8")
+    assert "symlink" in text.lower()
+    assert "cp -rL" not in text.split("Vì sao không dùng cách chép tay")[0]

@@ -254,3 +254,84 @@ def test_outbox_worker_song_va_queue_khong_tac_thi_du(monkeypatch):
     monkeypatch.setattr(db, "fetchrow", fetchrow)
 
     assert asyncio.run(ss.kiem_outbox())["muc"] == ss.DU
+
+
+# =====================================================================
+#  Kho tri thức: đếm tệp là chưa đủ, phải xem nó nói về thương hiệu nào
+# =====================================================================
+#
+# Bản trước chỉ kiểm `data/knowledge/` có tệp `.md` hay không, nên nó báo
+# XANH cho một kho toàn tài liệu của thương hiệu MẪU.
+#
+# Đo được thật: sau khi nạp danh mục BLANICA, 12/19 tài liệu vẫn nói về
+# Aurora — kèm con số cụ thể như "miễn phí vận chuyển từ 500.000đ". Agent
+# trích dẫn nguyên văn, KÈM TÊN TÀI LIỆU, và nói đó là chính sách của cửa
+# hàng. Không gì nổ: tài liệu có thật, trích dẫn đúng, chỉ là của một cửa
+# hàng không tồn tại.
+#
+# Xanh giả ngay trong phép kiểm gác cửa đi vào chạy thật.
+
+
+def _dung_du_lieu(tmp_path, monkeypatch, thuong_hieu: str, tai_lieu: dict):
+    import json as _json
+
+    monkeypatch.setattr(ss, "ROOT", tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "catalog.json").write_text(
+        _json.dumps({"thuong_hieu": thuong_hieu, "san_pham": []}),
+        encoding="utf-8",
+    )
+    kho = tmp_path / "data" / "knowledge"
+    kho.mkdir()
+    for ten, noi_dung in tai_lieu.items():
+        (kho / ten).write_text(noi_dung, encoding="utf-8")
+
+
+def test_tai_lieu_con_ten_thuong_hieu_mau_thi_CHAN(tmp_path, monkeypatch):
+    _dung_du_lieu(tmp_path, monkeypatch, "BLANICA", {
+        "chinh-sach.md": "Miễn phí vận chuyển đơn từ 500.000đ — Aurora Skin.",
+        "that.md": "Tài liệu thật của BLANICA.",
+    })
+
+    m = ss.kiem_du_lieu_that()
+
+    assert m["muc"] == ss.CHAN
+    assert "1/2" in m["ghi"]
+    assert "chinh-sach.md" in m["ghi"]
+
+
+def test_goi_y_sua_phai_noi_ve_TRI_THUC_khong_phai_anh(tmp_path, monkeypatch):
+    """
+    Bản trước luôn in câu về ẢNH, kể cả khi thứ thiếu là tài liệu. Người
+    đọc đi sửa ảnh trong khi lỗi nằm ở chỗ khác — một lời khuyên sai chỗ
+    tệ hơn không có lời khuyên nào.
+    """
+    _dung_du_lieu(tmp_path, monkeypatch, "BLANICA",
+                  {"x.md": "Aurora Skin xin chào."})
+
+    m = ss.kiem_du_lieu_that()
+
+    assert "sinh_kho_tri_thuc" in m["sua"]
+    assert "quảng cáo sai sự thật" not in m["sua"]
+
+
+def test_tai_lieu_da_doi_het_thi_QUA(tmp_path, monkeypatch):
+    _dung_du_lieu(tmp_path, monkeypatch, "BLANICA", {
+        "a.md": "Chính sách đổi trả của BLANICA.",
+        "b.md": "Hướng dẫn dùng sản phẩm BLANICA.",
+    })
+
+    assert ss.kiem_du_lieu_that()["muc"] == ss.DU
+
+
+def test_khong_bat_khi_chinh_thuong_hieu_la_aurora(tmp_path, monkeypatch):
+    """
+    Cửa hàng tên thật là Aurora thì tài liệu nhắc Aurora là ĐÚNG. Bắt ở đây
+    là đỏ giả vĩnh viễn không sửa được — và người ta sẽ gỡ phép kiểm.
+    """
+    _dung_du_lieu(tmp_path, monkeypatch, "Aurora Skin",
+                  {"a.md": "Chính sách của Aurora Skin."})
+
+    m = ss.kiem_du_lieu_that()
+
+    assert "tri thức" not in m["ghi"]

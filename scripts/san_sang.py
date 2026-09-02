@@ -224,6 +224,43 @@ def kiem_du_lieu_that() -> dict:
     tri_thuc = ROOT / "data" / "knowledge"
     if not tri_thuc.exists() or not any(tri_thuc.glob("*.md")):
         thieu.append("chưa có tài liệu thật trong data/knowledge/")
+    else:
+        # ĐẾM TỆP LÀ CHƯA ĐỦ — PHẢI XEM NÓ NÓI VỀ THƯƠNG HIỆU NÀO.
+        #
+        # Bản trước chỉ kiểm thư mục có tệp `.md` hay không, nên nó báo
+        # XANH cho một kho tri thức toàn tài liệu của thương hiệu MẪU. Đo
+        # được thật: sau khi nạp danh mục BLANICA, 12/19 tài liệu vẫn nói
+        # về Aurora — và chúng chứa con số cụ thể như "miễn phí vận chuyển
+        # từ 500.000đ".
+        #
+        # Agent trích dẫn nguyên văn những con số đó, KÈM TÊN TÀI LIỆU, và
+        # nói với khách rằng đó là chính sách của cửa hàng. Không có gì nổ:
+        # tài liệu có thật, trích dẫn đúng, chỉ là của một cửa hàng không
+        # tồn tại.
+        #
+        # Xanh giả ngay trong phép kiểm gác cửa đi vào chạy thật.
+        thuong_hieu_that = ""
+        if cat.exists():
+            try:
+                thuong_hieu_that = str(
+                    json.loads(cat.read_text(encoding="utf-8"))
+                    .get("thuong_hieu", "")
+                ).strip()
+            except ValueError:
+                pass
+        if thuong_hieu_that and "aurora" not in thuong_hieu_that.lower():
+            con_mau = [
+                p.name for p in sorted(tri_thuc.glob("*.md"))
+                if "aurora" in p.read_text(
+                    encoding="utf-8", errors="replace").lower()
+            ]
+            if con_mau:
+                thieu.append(
+                    f"{len(con_mau)}/{len(list(tri_thuc.glob('*.md')))} tài "
+                    f"liệu tri thức vẫn nói về thương hiệu MẪU (Aurora) "
+                    f"trong khi danh mục là {thuong_hieu_that} — "
+                    f"ví dụ: {', '.join(con_mau[:3])}"
+                )
 
     manifest = ROOT / "data" / "products" / "manifest.json"
     if manifest.exists() and "KHÔNG phải ảnh chụp" in manifest.read_text(
@@ -231,9 +268,23 @@ def kiem_du_lieu_that() -> dict:
         thieu.append("ảnh sản phẩm vẫn là ảnh model sinh, không phải hàng thật")
 
     if thieu:
-        return _muc("Dữ liệu doanh nghiệp", CHAN, " · ".join(thieu),
-                    "Bán hàng bằng ảnh không phải sản phẩm mình bán là quảng "
-                    "cáo sai sự thật. Sửa xong chạy: python -m scripts.ingest")
+        # Gợi ý phải khớp thứ đang thiếu.
+        #
+        # Bản trước luôn in câu về ẢNH, kể cả khi thứ thiếu là tài liệu tri
+        # thức. Người đọc đi sửa ảnh trong khi lỗi nằm ở chỗ khác — một lời
+        # khuyên sai chỗ tệ hơn không có lời khuyên nào.
+        if any("tri thức" in t for t in thieu):
+            sua = (
+                "Agent TRÍCH DẪN NGUYÊN VĂN các tài liệu này kèm tên nguồn, "
+                "nên chính sách của thương hiệu mẫu sẽ được nói với khách "
+                "như chính sách của bạn. Dựng khung: python -m "
+                "scripts.sinh_kho_tri_thuc --nganh my_pham · "
+                "điền xong: python -m scripts.ingest data/knowledge"
+            )
+        else:
+            sua = ("Bán hàng bằng ảnh không phải sản phẩm mình bán là quảng "
+                   "cáo sai sự thật. Sửa xong chạy: python -m scripts.ingest")
+        return _muc("Dữ liệu doanh nghiệp", CHAN, " · ".join(thieu), sua)
     return _muc("Dữ liệu doanh nghiệp", DU, "danh mục, tài liệu và ảnh đều là thật")
 
 

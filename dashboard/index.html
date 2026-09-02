@@ -566,6 +566,43 @@
         <h2 class="panel__head">Checklist kích hoạt</h2>
         <div class="guide-steps"><span><b>1</b> Tạo tài khoản</span><span><b>2</b> Đăng nhập/cấp quyền</span><span><b>3</b> Gắn webhook</span><span><b>4</b> Test inbound + outbound + media</span></div>
       </section>
+
+      <!-- Ứng dụng nhúng: nối công cụ nội bộ vào thẳng dashboard -->
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Ứng dụng nhúng
+            <span class="panel__note">mở ngay trong dashboard</span></h2>
+          <p class="panel__note">
+            Công cụ nội bộ nào có giao diện web đều nhúng được: Grafana,
+            Metabase, Uptime Kuma… Chỉ nhận địa chỉ trong mạng nội bộ.
+          </p>
+          <div id="tichhop-ds" class="rows"><p class="empty">Đang tải…</p></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel__head">Thêm ứng dụng</h2>
+          <form id="tichhopform" class="form">
+            <label class="field">
+              <span>Tên (đi vào đường dẫn)</span>
+              <input name="ten" required maxlength="31" placeholder="grafana">
+            </label>
+            <label class="field">
+              <span>Nhãn hiển thị</span>
+              <input name="nhan" maxlength="60" placeholder="Grafana">
+            </label>
+            <label class="field field--wide">
+              <span>Địa chỉ gốc</span>
+              <input name="dia_chi" required maxlength="200"
+                placeholder="http://127.0.0.1:3000">
+            </label>
+            <div class="rowbtns">
+              <button type="button" class="btn" id="tichhop-thu">Thử kết nối</button>
+              <button type="submit" class="btn btn--primary">Lưu và nhúng</button>
+            </div>
+          </form>
+          <div id="tichhop-ketqua" class="rows"></div>
+        </section>
+      </div>
     </section>
 
     <section class="view" data-view="hethong">

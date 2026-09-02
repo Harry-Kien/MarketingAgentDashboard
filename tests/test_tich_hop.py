@@ -68,14 +68,13 @@ def test_proxy_khong_nam_trong_danh_sach_mo():
 # =====================================================================
 
 def test_referer_tro_vao_proxy_thi_nhan_dung_app():
-    assert tich_hop.ung_dung_tu_referer(
-        "http://localhost:8000/tich-hop/chatwoot/app/accounts/1") == "chatwoot"
-    assert tich_hop.ung_dung_tu_referer(
-        "http://localhost:8000/tich-hop/zalocrm/") == "zalocrm"
-    assert tich_hop.ung_dung_tu_referer(
-        "http://localhost:8000/tich-hop/n8n/workflow/1") == "n8n"
-    assert tich_hop.ung_dung_tu_referer(
-        "http://localhost:8000/tich-hop/minio/browser") == "minio"
+    def hoi(ref):
+        return asyncio.run(tich_hop.ung_dung_tu_referer(ref))
+
+    assert hoi("http://localhost:8000/tich-hop/chatwoot/app/accounts/1") == "chatwoot"
+    assert hoi("http://localhost:8000/tich-hop/zalocrm/") == "zalocrm"
+    assert hoi("http://localhost:8000/tich-hop/n8n/workflow/1") == "n8n"
+    assert hoi("http://localhost:8000/tich-hop/minio/browser") == "minio"
 
 
 def test_referer_khong_phai_proxy_thi_khong_chuyen_di_dau():
@@ -85,7 +84,7 @@ def test_referer_khong_phai_proxy_thi_khong_chuyen_di_dau():
     """
     for r in ("", "http://localhost:8000/", "http://localhost:8000/api/overview",
               "https://ke-xau.example/trang-gia"):
-        assert tich_hop.ung_dung_tu_referer(r) is None, r
+        assert asyncio.run(tich_hop.ung_dung_tu_referer(r)) is None, r
 
 
 def test_ten_app_la_tren_danh_sach_trang_khong_phai_doan():
@@ -97,17 +96,17 @@ def test_ten_app_la_tren_danh_sach_trang_khong_phai_doan():
     for r in ("http://localhost:8000/tich-hop/evil.com/",
               "http://localhost:8000/tich-hop/../etc/",
               "http://localhost:8000/tich-hop/google/"):
-        assert tich_hop.ung_dung_tu_referer(r) is None, r
+        assert asyncio.run(tich_hop.ung_dung_tu_referer(r)) is None, r
 
 
 def test_dich_chi_biet_hai_ten():
     import pytest
     from fastapi import HTTPException
 
-    assert tich_hop._dich("zalocrm").startswith("http")
-    assert tich_hop._dich("chatwoot").startswith("http")
+    assert asyncio.run(tich_hop._dich("zalocrm")).startswith("http")
+    assert asyncio.run(tich_hop._dich("chatwoot")).startswith("http")
     with pytest.raises(HTTPException):
-        tich_hop._dich("evil.com")
+        asyncio.run(tich_hop._dich("evil.com"))
 
 
 def test_duong_cua_he_thong_luon_duoc_uu_tien():
@@ -301,7 +300,7 @@ def test_dung_bon_ung_dung():
 
 def test_moi_ung_dung_deu_co_dia_chi():
     for ten in tich_hop.UNG_DUNG:
-        assert tich_hop._dich(ten).startswith("http"), ten
+        assert asyncio.run(tich_hop._dich(ten)).startswith("http"), ten
 
 
 def test_danh_sach_trang_va_referer_dung_chung_mot_nguon():
@@ -310,8 +309,11 @@ def test_danh_sach_trang_va_referer_dung_chung_mot_nguon():
     qua được cửa này mà chặn ở cửa kia — và cái lệch đó chính là loại lỗ
     hổng người ta chỉ phát hiện sau khi bị lợi dụng.
     """
-    src = inspect.getsource(tich_hop.ung_dung_tu_referer)
-    assert "UNG_DUNG" in src
+    # Danh sách trắng nay GHI ĐƯỢC (bảng `tich_hop_ung_dung`), nên cả hai
+    # cửa phải hỏi CÙNG một hàm `tich_hop_kho.ten_hop_le()` thay vì cùng
+    # một hằng số. Lệch nhau thì một tên qua được cửa này mà chặn ở cửa kia.
+    assert "ten_hop_le" in inspect.getsource(tich_hop.ung_dung_tu_referer)
+    assert "dia_chi_cua" in inspect.getsource(tich_hop._dich)
 
 
 def test_dich_vu_khai_nhung_duoc():

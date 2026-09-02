@@ -28,7 +28,24 @@ def test_javascript_goi_api_native_thay_vi_iframe_he_thong_tham_khao():
         "/verify",
     ):
         assert endpoint in js
-    assert "/tich-hop/" not in js
+    # Cấm NHÚNG, không cấm nhắc tới đường dẫn.
+    #
+    # Bản trước cấm mọi chuỗi "/tich-hop/". Ý định thì đúng — luồng chăm
+    # sóc khách hàng phải là màn native, không phải một iframe ZaloCRM —
+    # nhưng cách viết bắt luôn cả màn QUẢN TRỊ danh sách ứng dụng nhúng,
+    # vốn chỉ gọi `/api/tich-hop/ung-dung` và mở link ra tab mới.
+    #
+    # Ràng buộc thật là: không được dựng iframe trỏ vào proxy. Kiểm đúng
+    # điều đó thì chốt vừa còn tác dụng vừa không chặn nhầm.
+    import re
+
+    assert not re.search(r"iframe[^\n]{0,200}/tich-hop/", js), (
+        "app.js dựng iframe trỏ vào /tich-hop/ — luồng CSKH phải là màn "
+        "native, không phải hệ thống tham khảo nhúng vào"
+    )
+    assert not re.search(r"/tich-hop/[^\n]{0,120}iframe", js), (
+        "app.js dựng iframe trỏ vào /tich-hop/"
+    )
     assert "knFrames" not in js
     for foreign_brand in ("ZaloCRM", "Chatwoot", "Aurora Skin"):
         assert foreign_brand not in js

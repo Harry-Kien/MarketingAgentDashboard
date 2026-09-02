@@ -1925,7 +1925,7 @@ async function refresh() {
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") await loadKetNoi();
+    if (state.view === "ketnoi") { await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
@@ -2756,4 +2756,81 @@ document.addEventListener("click", async (e) => {
       await loadKyNang();
     } catch (err) { toast(err.message, true); }
   }
+});
+
+/* ---------------- ứng dụng nhúng (tích hợp) ---------------- */
+
+async function loadTichHop() {
+  const d = await api("/tich-hop/ung-dung");
+  const ve = (a) => `<div class="row">
+      <span class="row__flag ${a.xoa_duoc ? "row__flag--auto" : ""}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(a.nhan)}
+          ${a.xoa_duoc ? "" : '<b class="pill">viết sẵn</b>'}</span>
+        <span class="row__sub">${esc(a.dia_chi)}</span>
+      </span>
+      <span class="row__side">
+        <a class="btn btn--sm" href="/tich-hop/${encodeURIComponent(a.ten)}/"
+           target="_blank" rel="noopener">Mở</a>
+        ${a.xoa_duoc
+          ? `<button type="button" class="btn btn--sm btn--halt"
+               data-tichhop-xoa="${esc(a.ten)}">Xoá</button>`
+          : ""}
+      </span>
+    </div>`;
+  $("#tichhop-ds").innerHTML =
+    d.mac_dinh.map(ve).join("") + d.tu_them.map(ve).join("");
+}
+
+/* Đọc form một chỗ duy nhất, dùng chung cho "Thử" và "Lưu".
+ * Hai đường đọc form theo hai cách là thử một thứ rồi lưu một thứ khác, và
+ * người vận hành không có cách nào biết. */
+function docFormTichHop() {
+  const f = $("#tichhopform");
+  const g = (n) => (f.elements[n]?.value || "").trim();
+  return { ten: g("ten"), nhan: g("nhan") || g("ten"), dia_chi: g("dia_chi") };
+}
+
+$("#tichhop-thu")?.addEventListener("click", async () => {
+  const hop = $("#tichhop-ketqua");
+  try {
+    const r = await api("/tich-hop/ung-dung/thu", {
+      method: "POST",
+      body: JSON.stringify(docFormTichHop()),
+    });
+    hop.innerHTML = r.noi_duoc
+      ? `<p class="empty">Nối được ${esc(r.dia_chi)} — HTTP ${r.ma}.</p>`
+      : `<p class="empty">Không nối được ${esc(r.dia_chi)}: ${esc(r.ly_do)}</p>`;
+  } catch (e) {
+    hop.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
+    toast(e.message, true);
+  }
+});
+
+$("#tichhopform")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/tich-hop/ung-dung", {
+      method: "POST",
+      body: JSON.stringify(docFormTichHop()),
+    });
+    e.target.reset();
+    $("#tichhop-ketqua").innerHTML = "";
+    toast("Đã thêm ứng dụng nhúng");
+    await loadTichHop();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-tichhop-xoa]");
+  if (!b) return;
+  if (!confirm(`Gỡ ứng dụng "${b.dataset.tichhopXoa}" khỏi dashboard?`)) return;
+  try {
+    await api("/tich-hop/ung-dung/" + encodeURIComponent(b.dataset.tichhopXoa),
+              { method: "DELETE" });
+    toast("Đã gỡ");
+    await loadTichHop();
+  } catch (err) { toast(err.message, true); }
 });

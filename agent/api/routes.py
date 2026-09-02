@@ -15,6 +15,8 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.api import tich_hop_kho
+from agent.api.tich_hop_kho import LoiUngDung
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang.ban_mo_ta import LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.chay import chay_plugin
@@ -939,6 +941,80 @@ async def thu_ky_nang_plugin(
     except LoiBanMoTa as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"ket_qua": await chay_plugin(bm, body.args)}
+
+
+# ---------------------------------------------------------------
+#  Ứng dụng nhúng (tích hợp)
+# ---------------------------------------------------------------
+#
+# Chỉ quản trị viên, kể cả đường ĐỌC: danh sách này nói chính xác những
+# dịch vụ nội bộ nào đang chạy và ở cổng nào. Với người muốn dò mạng trong,
+# đó là bản đồ.
+
+@router.get("/tich-hop/ung-dung")
+async def liet_ke_ung_dung(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    return await tich_hop_kho.liet_ke()
+
+
+class UngDungBody(BaseModel):
+    ten: str = Field(min_length=2, max_length=31)
+    nhan: str = Field("", max_length=60)
+    dia_chi: str = Field(min_length=8, max_length=200)
+
+
+@router.post("/tich-hop/ung-dung")
+async def luu_ung_dung(
+    body: UngDungBody, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    try:
+        return await tich_hop_kho.luu(
+            body.ten, body.nhan, body.dia_chi, boi=nguoi["ten_dang_nhap"]
+        )
+    except LoiUngDung as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/tich-hop/ung-dung/{ten}")
+async def xoa_ung_dung(
+    ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    try:
+        da_xoa = await tich_hop_kho.xoa(ten, boi=nguoi["ten_dang_nhap"])
+    except LoiUngDung as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not da_xoa:
+        raise HTTPException(404, f"Không có ứng dụng tên {ten!r}.")
+    return {"da_xoa": ten}
+
+
+@router.post("/tich-hop/ung-dung/thu")
+async def thu_ung_dung(
+    body: UngDungBody, _: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    """
+    Thử một địa chỉ TRƯỚC khi lưu.
+
+    Cùng lý do với `POST /api/knowledge/probe` và nút chạy thử của plugin:
+    người vận hành phải thấy nó nối được hay không ngay tại form, chứ không
+    phải lưu xong, mở tab, rồi nhìn một trang trắng và không biết vì sao.
+    """
+    try:
+        dia_chi = tich_hop_kho.kiem_dia_chi(body.dia_chi)
+    except LoiUngDung as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as c:
+            r = await c.get(dia_chi + "/")
+        return {"noi_duoc": True, "ma": r.status_code, "dia_chi": dia_chi}
+    except httpx.HTTPError as exc:
+        return {
+            "noi_duoc": False,
+            "dia_chi": dia_chi,
+            "ly_do": f"{type(exc).__name__}: {exc}"[:200],
+        }
 
 
 @router.get("/events")

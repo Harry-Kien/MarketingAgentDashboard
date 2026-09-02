@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-42 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+43 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -135,7 +135,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `tich_hop_ung_dung` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
@@ -503,6 +503,15 @@ erDiagram
         TEXT ten
         BOOLEAN bat
         JSONB ban_mo_ta
+        TEXT tao_boi
+        TIMESTAMPTZ tao_luc
+        TIMESTAMPTZ sua_luc
+    }
+    tich_hop_ung_dung {
+        TEXT ten
+        TEXT nhan
+        TEXT dia_chi
+        BOOLEAN bat
         TEXT tao_boi
         TIMESTAMPTZ tao_luc
         TIMESTAMPTZ sua_luc

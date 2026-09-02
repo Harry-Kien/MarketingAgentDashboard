@@ -18,7 +18,7 @@ from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from agent import db, runtime
+from agent import db, nhat_ky, runtime
 from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.api.channel_accounts import router as channel_accounts_router
@@ -437,6 +437,14 @@ async def don_du_lieu_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # DÒNG ĐẦU TIÊN, trước cả khi nối cơ sở dữ liệu.
+    #
+    # `httpx` ghi URL đầy đủ kèm query string ở mức INFO, và bộ kiểm sức
+    # khoẻ token Meta gọi `debug_token?input_token=…&access_token=…` — hai
+    # bí mật vào log mỗi lần canh gác chạy. Cài bộ lọc sau khi có lời gọi
+    # đầu tiên là đã muộn.
+    nhat_ky.dung_nhat_ky()
+
     await db.init_db()
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
@@ -716,7 +724,7 @@ async def bat_duong_tuyet_doi(request: Request, call_next):
                                   "/tich-hop"))
                 or duong == "/" or duong.startswith("/app."))
     if not cua_minh:
-        ten = tich_hop.ung_dung_tu_referer(request.headers.get("referer", ""))
+        ten = await tich_hop.ung_dung_tu_referer(request.headers.get("referer", ""))
         if ten:
             nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
             if nguoi is None:

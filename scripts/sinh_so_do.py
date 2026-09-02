@@ -54,6 +54,7 @@ NHOM = {
     "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],
     "Vận hành": [
         "nguoi_dung", "phien", "events", "zalo_oa_token", "ky_nang_cai_dat",
+        "tich_hop_ung_dung",
     ],
     "Tài khoản kênh": [
         "channel_accounts",

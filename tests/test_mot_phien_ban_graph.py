@@ -20,23 +20,76 @@ sửa một dòng, không phải đi tìm bốn chỗ rồi bỏ sót một.
 """
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_khong_con_phien_ban_gan_cung_trong_ma():
-    """Canh cả cây `agent/`: chỗ mới thêm cũng phải đi qua cấu hình."""
-    import re
+def _id_docstring(cay: ast.Module) -> set[int]:
+    """
+    id() của mọi node docstring — module, lớp, hàm.
 
+    Bản trước quét theo DÒNG và chỉ bỏ qua dòng bắt đầu bằng `#`. Docstring
+    thì không bắt đầu bằng `#`, nên một tệp GIẢI THÍCH lỗi này bằng cách
+    trích URL ví dụ lại bị chính ca kiểm ấy bắt — test đỏ trong khi mã hoàn
+    toàn đúng.
+    """
+    ra: set[int] = set()
+    for node in ast.walk(cay):
+        if not isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        than = getattr(node, "body", None)
+        if (than and isinstance(than[0], ast.Expr)
+                and isinstance(than[0].value, ast.Constant)
+                and isinstance(than[0].value.value, str)):
+            ra.add(id(than[0].value))
+    return ra
+
+
+def test_khong_con_phien_ban_gan_cung_trong_ma():
+    """
+    Canh cả cây `agent/`: chỗ mới thêm cũng phải đi qua cấu hình.
+
+    Đọc AST chứ không quét dòng. Chú thích và docstring được phép nhắc tới
+    `graph.facebook.com/v23.0` để giải thích — thứ bị cấm là một CHUỖI THẬT
+    trong mã dựng URL từ phiên bản gán cứng.
+    """
     xau = []
     for f in (ROOT / "agent").rglob("*.py"):
-        for i, dong in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            if dong.strip().startswith("#"):
-                continue
-            if re.search(r"graph\.facebook\.com/v\d", dong):
-                xau.append(f"{f.relative_to(ROOT)}:{i}")
+        cay = ast.parse(f.read_text(encoding="utf-8"))
+        bo_qua = _id_docstring(cay)
+        for node in ast.walk(cay):
+            if (isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and id(node) not in bo_qua
+                    and re.search(r"graph\.facebook\.com/v\d", node.value)):
+                xau.append(f"{f.relative_to(ROOT)}:{node.lineno}")
     assert not xau, "còn gán cứng phiên bản Graph tại: " + ", ".join(xau)
+
+
+def test_ca_kiem_tren_that_su_bat_duoc_gan_cung(tmp_path):
+    """
+    Canh chính bộ canh. Nới AST tới mức không còn bắt được gì thì ca trên
+    xanh vĩnh viễn và ràng buộc biến mất — xanh giả, đúng thứ tệ nhất.
+    """
+    tep = tmp_path / "xau.py"
+    tep.write_text(
+        '"""Docstring nhắc https://graph.facebook.com/v23.0 thì KHÔNG sao."""\n'
+        'URL = "https://graph.facebook.com/v21.0/me"\n',
+        encoding="utf-8",
+    )
+    cay = ast.parse(tep.read_text(encoding="utf-8"))
+    bo_qua = _id_docstring(cay)
+    dinh = [
+        n.lineno for n in ast.walk(cay)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and id(n) not in bo_qua
+        and re.search(r"graph\.facebook\.com/v\d", n.value)
+    ]
+    assert dinh == [2], "phải bắt dòng 2 (mã thật) và bỏ qua dòng 1 (docstring)"
 
 
 def test_moi_noi_deu_lay_cung_mot_gia_tri():

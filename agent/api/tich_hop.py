@@ -55,6 +55,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from ..config import settings
 
+from agent.api import tich_hop_kho
+
 router = APIRouter(prefix="/tich-hop", tags=["tich-hop"])
 
 TIEN_TO = "/tich-hop"
@@ -71,30 +73,33 @@ _BO_QUA = {"content-encoding", "content-length", "transfer-encoding",
            "connection", "keep-alive", "upgrade"}
 
 
-# Danh sách TRẮNG. Không phải để cho gọn — nếu tên app lấy thẳng từ URL rồi
+# DANH SÁCH TRẮNG. Không phải để cho gọn — nếu tên app lấy thẳng từ URL rồi
 # ghép vào địa chỉ đích, thì `/tich-hop/evil.com/` biến dashboard thành máy
-# chuyển tiếp mù, đúng định nghĩa SSRF. Bốn tên này, không hơn.
-_MAC_DINH = {
-    "zalocrm": "http://127.0.0.1:3080",
-    "chatwoot": "http://127.0.0.1:3200",
-    "n8n": "http://127.0.0.1:5678",
-    "minio": "http://127.0.0.1:9001",
-}
-UNG_DUNG = tuple(_MAC_DINH)
+# chuyển tiếp mù, đúng định nghĩa SSRF.
+#
+# Danh sách nay GHI ĐƯỢC (bảng `tich_hop_ung_dung`), nhưng tính chất chống
+# SSRF không mất: tên lấy từ URL vẫn phải TRA trong danh sách, không bao giờ
+# được ghép thẳng vào địa chỉ. Bù lại có thêm rào ở tầng ghi — địa chỉ đích
+# bắt buộc trỏ vào loopback hoặc dải mạng riêng, xem `tich_hop_kho`.
+MAC_DINH = tich_hop_kho.MAC_DINH
+UNG_DUNG = tuple(MAC_DINH)
 
 
-def _dich(ten: str) -> str:
+async def _dich(ten: str) -> str:
     """Địa chỉ gốc của một app. Tên lạ thì 404, không đoán."""
     if ten == "zalocrm" and settings.zalocrm_base_url:
         return settings.zalocrm_base_url.rstrip("/")
     if ten == "chatwoot" and settings.chatwoot_base_url:
         return settings.chatwoot_base_url.rstrip("/")
-    if ten in _MAC_DINH:
-        return _MAC_DINH[ten]
+    if ten in MAC_DINH:
+        return MAC_DINH[ten]
+    tu_them = await tich_hop_kho.dia_chi_cua(ten)
+    if tu_them:
+        return tu_them
     raise HTTPException(404, f"Không biết ứng dụng {ten!r}")
 
 
-def ung_dung_tu_referer(referer: str) -> str | None:
+async def ung_dung_tu_referer(referer: str) -> str | None:
     """
     Request vào đường tuyệt đối thuộc về app nào, đoán từ Referer.
 
@@ -105,7 +110,7 @@ def ung_dung_tu_referer(referer: str) -> str | None:
         return None
     sau = referer.split(TIEN_TO + "/", 1)[-1]
     ten = sau.split("/", 1)[0].split("?", 1)[0]
-    return ten if ten in UNG_DUNG else None
+    return ten if ten in await tich_hop_kho.ten_hop_le() else None
 
 
 def _sua_location(gia_tri: str, ten: str, goc: str) -> str:
@@ -124,7 +129,7 @@ def _sua_location(gia_tri: str, ten: str, goc: str) -> str:
 
 async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
     """Chuyển một request HTTP sang app đích và mang câu trả lời về."""
-    goc = _dich(ten)
+    goc = await _dich(ten)
     url = f"{goc}/{duong.lstrip('/')}"
     if request.url.query:
         url += "?" + request.url.query
@@ -235,7 +240,7 @@ async def cau_websocket(ws: WebSocket, ten: str, duong: str) -> None:
         return
 
     try:
-        goc = _dich(ten).replace("http://", "ws://").replace("https://", "wss://")
+        goc = (await _dich(ten)).replace("http://", "ws://").replace("https://", "wss://")
     except HTTPException:
         # `_dich` ném HTTPException — đúng cho route HTTP, vô nghĩa ở đây:
         # không có chỗ nào biến nó thành 404 cho một WebSocket, nên nó sẽ

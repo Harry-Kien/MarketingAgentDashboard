@@ -49,6 +49,8 @@ không ai biết**:
 | `_tu_khoa_loai_da()` đọc file không đi theo repo | trí nhớ loại da **chết câm** trên mọi máy mới |
 | `zip()` cắt ngầm về danh sách ngắn hơn | đoạn tri thức lặng lẽ không vào kho |
 | Bộ đo chỉ tìm dấu hỏi | **xanh giả** — thưởng cho cả câu prompt đã cấm |
+| `httpx` ghi URL đầy đủ ở mức INFO | **token Meta vào log** mỗi lần canh gác chạy |
+| Git đổi LF→CRLF khi checkout | checksum migration lệch, **ứng dụng không khởi động được** |
 
 Khi sửa hay thêm gì, luôn hỏi: **hỏng thì có ai biết không?** Nếu không —
 thêm phép kiểm, thêm nhật ký, hoặc để nó nổ to.

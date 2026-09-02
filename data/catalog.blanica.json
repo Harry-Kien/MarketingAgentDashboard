@@ -1,0 +1,349 @@
+{
+  "_ghi_chu": "KHUNG do hệ thống dựng. Phần đọc được từ nhãn sản phẩm đã điền sẵn; phần chỉ cửa hàng biết để dấu [CẦN NGƯỜI ĐIỀN]. Điền xong thì đổi tên tệp thành catalog.json, XOÁ dòng du_lieu_mau, rồi chạy: python -m scripts.san_sang",
+  "du_lieu_mau": true,
+  "thuong_hieu": "BLANICA",
+  "san_pham": [
+    {
+      "ma": "BLA-BODY-ARMPIT-10ML",
+      "ten_nhan": "Perfect Underarm Serum",
+      "dung_tich": "10 ml",
+      "thanh_phan_chinh": [
+        "Betel Leaf Extract",
+        "Peppermint Essential Oil"
+      ],
+      "loai": "Chăm sóc cơ thể",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-BODY-POSTWAX-15ML",
+      "ten_nhan": "Post Hair Removal Serum",
+      "dung_tich": "15 ml",
+      "thanh_phan_chinh": [
+        "Allantoin",
+        "Pro-Vitamin B5",
+        "Dihydromyricetin"
+      ],
+      "loai": "Chăm sóc cơ thể",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-BODY-WAX-120G",
+      "ten_nhan": "Hair Removal Cream",
+      "dung_tich": "120 ml",
+      "thanh_phan_chinh": [
+        "Allantoin",
+        "Pro-Vitamin B5",
+        "Jojoba"
+      ],
+      "loai": "Chăm sóc cơ thể",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]",
+      "_canh_bao": "Mã sản phẩm ghi 120G nhưng nhãn in 120 ml. Xác nhận lại đơn vị trước khi bán — sai đơn vị là sai thông tin hàng hoá."
+    },
+    {
+      "ma": "BLA-CARE-FOAMMEN-100ML",
+      "ten_nhan": "Gentle Intimate Cleansing Foam for Men",
+      "dung_tich": "100 ml",
+      "thanh_phan_chinh": [
+        "Turmeric Root Extract",
+        "Lactobacillus Fermented",
+        "Tea Tree"
+      ],
+      "loai": "Chăm sóc vùng kín",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-CARE-FOAMWOMEN-100ML",
+      "ten_nhan": "Gentle Intimate Cleansing Foam for Women",
+      "dung_tich": "100 ml",
+      "thanh_phan_chinh": [
+        "Niacinamide",
+        "Chamomilla Flower Extract",
+        "Turmeric Root Extract",
+        "Lactobacillus Fermented"
+      ],
+      "loai": "Chăm sóc vùng kín",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-CLEAN-120G",
+      "ten_nhan": "Jeju Seawater Facial Cleanser",
+      "dung_tich": "120 g",
+      "thanh_phan_chinh": [
+        "Jeju Lava Seawater",
+        "Seaweed",
+        "Honey",
+        "Witch Hazel Extract"
+      ],
+      "loai": "Làm sạch",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-CREAM-30G",
+      "ten_nhan": "Moisturizing & Whitening Cream",
+      "dung_tich": "30 g",
+      "thanh_phan_chinh": [
+        "[CẦN NGƯỜI ĐIỀN: thành phần chính]"
+      ],
+      "loai": "Dưỡng ẩm",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-REMOV-480ML",
+      "ten_nhan": "Jeju Seawater Balancing Cleansing",
+      "dung_tich": "480 ml",
+      "thanh_phan_chinh": [
+        "Jeju Lava Seawater",
+        "Seaweed",
+        "Rice Extract",
+        "4 Herbal Extracts"
+      ],
+      "loai": "Làm sạch",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-SCRUB-120G",
+      "ten_nhan": "",
+      "dung_tich": "[CẦN NGƯỜI ĐIỀN: dung tích]",
+      "thanh_phan_chinh": [
+        "[CẦN NGƯỜI ĐIỀN: thành phần chính]"
+      ],
+      "loai": "Làm sạch",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]",
+      "_canh_bao_anh": "Chưa có ảnh dùng được — xem manifest trong data/products/BLA-FACE-SCRUB-120G/"
+    },
+    {
+      "ma": "BLA-FACE-SERUM-30ML",
+      "ten_nhan": "Whitening & Soothing Serum",
+      "dung_tich": "30 ml",
+      "thanh_phan_chinh": [
+        "Centella Asiatica Extract",
+        "5% Niacinamide",
+        "Pro-Vitamin B5",
+        "Sodium Hyaluronate"
+      ],
+      "loai": "Tinh chất chuyên sâu",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-SUN-50G",
+      "ten_nhan": "Ultra Protect UV Suncream SPF50+ PA++++",
+      "dung_tich": "50 g",
+      "thanh_phan_chinh": [
+        "Centella Asiatica Extract",
+        "Zinc Oxide",
+        "Titanium Dioxide",
+        "Ethylhexyl Methoxycinnamate"
+      ],
+      "loai": "Chống nắng",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-FACE-TONER-150ML",
+      "ten_nhan": "Jeju Seawater Balancing Toner",
+      "dung_tich": "150 ml",
+      "thanh_phan_chinh": [
+        "Jeju Lava Seawater",
+        "Seaweed",
+        "Saffron Extract",
+        "Ceramide",
+        "Witch Hazel Extract"
+      ],
+      "loai": "Cân bằng",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    },
+    {
+      "ma": "BLA-HAIR-SERUM-30ML",
+      "ten_nhan": "Hair Nourishing Serum",
+      "dung_tich": "30 ml",
+      "thanh_phan_chinh": [
+        "Sodium Hyaluronate",
+        "11 Herbal Extracts"
+      ],
+      "loai": "Chăm sóc tóc",
+      "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán]",
+      "gia": "[CẦN NGƯỜI ĐIỀN: giá bán, đơn vị VND, chỉ ghi số]",
+      "ton_kho": "[CẦN NGƯỜI ĐIỀN: tồn kho hiện tại]",
+      "da_phu_hop": [
+        "[CẦN NGƯỜI ĐIỀN: da dầu / khô / hỗn hợp / nhạy cảm / thường]"
+      ],
+      "van_de_ho_tro": [
+        "[CẦN NGƯỜI ĐIỀN: vấn đề sản phẩm này giải quyết]"
+      ],
+      "cach_dung": "[CẦN NGƯỜI ĐIỀN: hướng dẫn dùng]",
+      "thoi_diem": [
+        "[CẦN NGƯỜI ĐIỀN: sáng / tối]"
+      ],
+      "so_cong_bo": "[CẦN NGƯỜI ĐIỀN: số tiếp nhận phiếu công bố mỹ phẩm]",
+      "hsd_thang": "[CẦN NGƯỜI ĐIỀN: hạn dùng tính bằng tháng]"
+    }
+  ],
+  "don_hang": []
+}

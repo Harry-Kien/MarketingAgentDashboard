@@ -30,6 +30,14 @@ video-studio/
 # Tài liệu công ty, bảng giá, tồn kho, bộ eval và kết quả chạy đều là dữ
 # liệu vận hành, không phải mã nguồn. Repo này công khai.
 data/knowledge/
+# Và mọi thư mục lưu trữ tài liệu cũ. Chúng là bản sao của kho tri thức —
+# cùng nội dung, cùng lý do không lên repo. Chặn kho gốc mà để lọt bản lưu
+# trữ của nó là chặn một nửa, y như chuyện đã xảy ra với catalog.json.bak.
+data/knowledge.*/
+# NGOẠI TRỪ bản mẫu: CI có job chạy trên bản clone sạch, và job đó cần
+# `knowledge.example` để agent có tài liệu mà trả lời. Chặn nhầm nó là CI
+# đỏ trên mọi máy vừa clone, với lý do rất khó đoán.
+!data/knowledge.example/
 data/eval/*
 # Ngoại lệ: bộ kịch bản MẪU là hiện vật kiểm thử, không phải dữ liệu doanh
 # nghiệp — hội thoại hư cấu, thương hiệu hư cấu, không có số liệu thật nào.

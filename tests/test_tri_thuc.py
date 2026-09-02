@@ -261,3 +261,58 @@ def test_khong_tai_lieu_that_nao_bi_chan_oan():
             continue
         _, bi_chan = loc_tep_nap_duoc(tep)
         assert bi_chan == {}, [p.name for p in bi_chan]
+
+
+# =====================================================================
+#  Nạp tri thức: gỡ tài liệu không còn tệp
+# =====================================================================
+#
+# `rag.ingest` thay bản cũ theo `source` nhưng KHÔNG BAO GIỜ xoá tài liệu mà
+# tệp đã biến mất. Gỡ một tệp khỏi thư mục thì nội dung nó vẫn sống trong
+# pgvector, và agent vẫn trích dẫn — kèm tên tài liệu, từ một tệp không còn
+# tồn tại.
+#
+# Đo được thật: chuyển 12 tài liệu Aurora ra thư mục lưu trữ, chạy lại
+# `scripts.ingest`, pgvector vẫn giữ đủ 19 tài liệu / 92 đoạn.
+
+
+def test_ingest_co_go_tai_lieu_mo_coi():
+    src = (ROOT / "scripts" / "ingest.py").read_text(encoding="utf-8")
+    assert "mo_coi" in src
+    assert "DELETE FROM documents WHERE source = ANY" in src
+
+
+def test_ingest_KHONG_dung_LIKE_tren_duong_dan():
+    r"""
+    PostgreSQL coi `\` là ký tự THOÁT trong LIKE. Trên Windows `source` là
+    `data\knowledge\x.md`, nên mẫu `data\knowledge%` bị đọc thành
+    `dataknowledge%` và khớp KHÔNG GÌ CẢ.
+
+    Bản đầu của chính bản vá này dính đúng lỗi đó: lệnh chạy, in "Xong",
+    không gỡ tài liệu nào — và không có gì báo là nó vừa không làm việc
+    mình nói.
+
+    ĐỌC BẰNG AST: chú thích trong `ingest.py` có nhắc `source LIKE` để giải
+    thích lỗi cũ. So chuỗi thì bắt nhầm chính lời giải thích — lần thứ ba
+    dính bẫy này trong cùng một dự án.
+    """
+    import ast
+
+    cay = ast.parse((ROOT / "scripts" / "ingest.py").read_text(encoding="utf-8"))
+    chuoi = [
+        n.value for n in ast.walk(cay)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    ]
+    pham = [s for s in chuoi if "source LIKE" in s]
+    assert not pham, f"còn dùng LIKE trên đường dẫn: {pham}"
+
+
+def test_gitignore_chan_thu_muc_luu_tru_nhung_giu_ban_example():
+    """
+    Thư mục lưu trữ là bản sao của kho tri thức — cùng nội dung, cùng lý do
+    không lên repo. Nhưng `knowledge.example` thì PHẢI lên: CI có job chạy
+    trên bản clone sạch và cần nó để agent có tài liệu mà trả lời.
+    """
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "data/knowledge.*/" in ignore
+    assert "!data/knowledge.example/" in ignore

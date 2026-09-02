@@ -72,6 +72,44 @@ async def main(folder: str) -> None:
         return
 
     await db.init_db()
+
+    # GỠ TÀI LIỆU KHÔNG CÒN TỆP TRÊN ĐĨA.
+    #
+    # `rag.ingest` thay bản cũ theo `source`, nhưng KHÔNG BAO GIỜ xoá tài
+    # liệu mà tệp đã biến mất. Nghĩa là gỡ một tệp tri thức khỏi thư mục
+    # thì nội dung nó vẫn sống trong pgvector, và agent vẫn trích dẫn —
+    # kèm tên tài liệu, đầy tự tin, từ một tệp không còn tồn tại.
+    #
+    # Đúng họ với dòng tồn kho mồ côi: đồng bộ chỉ-thêm luôn để lại rác, và
+    # rác ở kho tri thức thì được đọc như CĂN CỨ.
+    #
+    # Chỉ gỡ tài liệu có `source` nằm TRONG thư mục đang nạp. Xoá theo kiểu
+    # "không có trong danh sách lần này" là nạp một thư mục con sẽ quét
+    # sạch mọi thứ ngoài nó.
+    #
+    # LỌC TRONG PYTHON, KHÔNG DÙNG `LIKE` TRÊN ĐƯỜNG DẪN.
+    #
+    # Bản đầu dùng `WHERE source LIKE 'data\knowledge%'`. PostgreSQL coi `\`
+    # là ký tự THOÁT trong LIKE, nên mẫu đó bị đọc thành `dataknowledge%` và
+    # khớp KHÔNG GÌ CẢ. Kết quả: lệnh chạy, in "Xong", không gỡ tài liệu
+    # nào — và không có gì báo là nó vừa không làm việc mình nói.
+    #
+    # Bảng này vài chục dòng, lọc trong Python vừa đúng vừa hết chuyện.
+    con_tren_dia = {str(p) for p in files}
+    thu_muc = str(files[0].parent)
+    cu = await db.fetch("SELECT title, source FROM documents")
+    can_go = [
+        r for r in cu
+        if str(r["source"]).startswith(thu_muc)
+        and r["source"] not in con_tren_dia
+    ]
+    mo_coi = {r["title"] for r in can_go}
+    if can_go:
+        await db.execute(
+            "DELETE FROM documents WHERE source = ANY($1)",
+            [r["source"] for r in can_go],
+        )
+
     total = 0
     try:
         for path in files:
@@ -90,6 +128,10 @@ async def main(folder: str) -> None:
         await db.close_db()
 
     print(f"\nXong. {len(files)} tài liệu, {total} đoạn.")
+    if mo_coi:
+        print(f"Đã gỡ {len(mo_coi)} tài liệu không còn tệp: "
+              + ", ".join(sorted(mo_coi)[:5])
+              + (" …" if len(mo_coi) > 5 else ""))
     print("Gợi ý: khi corpus đủ lớn, tạo index cho nhanh:")
     print("  CREATE INDEX ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists=100);")
 

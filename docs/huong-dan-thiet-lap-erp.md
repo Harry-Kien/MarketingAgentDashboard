@@ -46,7 +46,43 @@ Kiểm tra trạng thái các container:
 ```bash
 docker compose -f docker-compose.erpnext.yml ps
 ```
-> Khi thấy cả 4 service (`erpnext-proxy`, `erpnext-web`, `erpnext-db`, `erpnext-redis-cache`) ở trạng thái **`Up`**, NextERP đã sẵn sàng.
+> Cả 5 service (`erpnext-proxy`, `erpnext-web`, `erpnext-db`,
+> `erpnext-redis-cache`, `erpnext-redis-queue`) phải ở trạng thái **`Up`**.
+
+**Nhưng `Up` CHƯA phải sẵn sàng.** Mở `http://localhost:8080` lúc này sẽ ra
+**404** — container chạy nhưng chưa có *site* nào bên trong. Đó là bước 1b.
+
+---
+
+### Bước 1b: Tạo site (chỉ làm MỘT LẦN, trên máy mới)
+
+Compose chỉ dựng tiến trình; nó không tạo cơ sở dữ liệu của ERPNext. Thiếu
+bước này thì mọi bước sau đều thất bại với 404, và log của `erpnext-web`
+trông hoàn toàn bình thường — gunicorn vẫn báo "Listening at 0.0.0.0:8000".
+Đó là lý do bước này dễ bị bỏ qua nhất.
+
+Trỏ ERPNext tới CSDL và Redis trong cùng mạng docker:
+
+```bash
+docker exec erpnext-web bench set-config -g db_host erpnext-db
+docker exec erpnext-web bench set-config -g redis_cache "redis://erpnext-redis-cache:6379"
+docker exec erpnext-web bench set-config -g redis_queue "redis://erpnext-redis-queue:6379"
+docker exec erpnext-web bench set-config -g redis_socketio "redis://erpnext-redis-queue:6379"
+```
+
+Rồi tạo site. Mất vài phút:
+
+```bash
+docker exec erpnext-web bench new-site localhost --mariadb-root-password erpnext_root_password --admin-password admin --install-app erpnext --no-mariadb-socket
+```
+
+> **Tên site phải là `localhost`.** `nginx.erpnext.conf` gửi header
+> `X-Frappe-Site-Name localhost`; đặt tên khác thì nginx tìm không ra site
+> và vẫn trả 404.
+
+Trên Windows dùng Git Bash, thêm `MSYS_NO_PATHCONV=1` vào đầu mỗi lệnh
+`docker exec` — nếu không, Git Bash bẻ `/home/frappe/...` thành đường dẫn
+Windows và lệnh báo "No such file or directory" một cách khó hiểu.
 
 ---
 
@@ -57,6 +93,28 @@ docker compose -f docker-compose.erpnext.yml ps
    * **Username:** `Administrator`
    * **Password:** `admin` (hoặc mật khẩu bạn đã cấu hình lúc setup site).
    *(Nếu hệ thống yêu cầu đổi mật khẩu lần đầu, hãy nhập mật khẩu mới và ghi nhớ lại).*
+
+---
+
+### Bước 3–4 làm tự động (khuyên dùng)
+
+Hai bước dưới đây có thể chạy bằng một lệnh. Nó đăng nhập, sinh khoá API,
+hỏi ERPNext xem có những kho và bảng giá nào, rồi ghi thẳng vào `.env`:
+
+```bash
+python -m scripts.noi_erpnext --xem     # chỉ xem, không sinh khoá
+python -m scripts.noi_erpnext           # làm thật
+```
+
+**Khoá không bao giờ được in ra màn hình** — in ra là để lại bí mật trong
+lịch sử terminal và trong ảnh chụp màn hình. Cùng quy ước với
+`scripts/sinh_token.py`.
+
+Nếu ERPNext có **nhiều hơn một** kho hoặc bảng giá, script liệt kê ra rồi
+**dừng** thay vì tự chọn. Đoán bừa một kho không gây lỗi — nó sai **im
+lặng**, và triệu chứng duy nhất là tồn kho lệch mãi về sau.
+
+Muốn làm tay thì đọc tiếp hai bước dưới.
 
 ---
 

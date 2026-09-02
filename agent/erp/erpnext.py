@@ -33,8 +33,8 @@ import json
 import httpx
 
 from agent.config import settings
-from agent.erp.hop_dong import (DongDon, Gia, KetQuaDon, LoiERP, SanPhamERP,
-                                TonKho, TuChoiERP)
+from agent.erp.hop_dong import (DongDon, Gia, KetQuaDon, Lo, LoiERP,
+                                SanPhamERP, TonKho, TuChoiERP)
 
 # Frappe mặc định phân trang 20. Xem bẫy số 1 ở đầu file.
 KHONG_PHAN_TRANG = "0"
@@ -43,6 +43,18 @@ _TRUONG_ITEM = ["item_code", "item_name", "item_group", "stock_uom",
                 "is_sales_item"]
 _TRUONG_GIA = ["price_list_rate", "currency", "price_list", "valid_upto"]
 _TRUONG_BIN = ["actual_qty", "reserved_qty", "warehouse"]
+
+# Hai bộ trường cho `Batch`, thử theo thứ tự.
+#
+# ERPNext v14 có `batch_qty` là trường thật. v15 chuyển số lượng lô sang
+# `Serial and Batch Bundle`, và tuỳ bản mà `batch_qty` còn hay mất. Hỏi một
+# trường không tồn tại thì Frappe trả 417, nên phải thử rồi lùi.
+#
+# Lùi về bộ KHÔNG có số lượng chứ không bỏ luôn tính năng: biết hạn của lô
+# mà không biết còn bao nhiêu vẫn hơn không biết gì — miễn là `so_luong`
+# mang None để tầng trên không tưởng nhầm là đã bán hết.
+_TRUONG_LO = ["name", "expiry_date", "batch_qty"]
+_TRUONG_LO_KHONG_SO = ["name", "expiry_date"]
 
 # Nhãn thay cho thông tin nhận dạng sau khi khách yêu cầu xoá. Khớp
 # `agent/core/du_lieu_ca_nhan.AN_DANH` để hai bên đọc ra cùng một thứ.
@@ -239,6 +251,44 @@ class NguonErpNext:
             ban_duoc=max(0, int(co - giu)),
             ma_kho=str(r.get("warehouse") or self._ma_kho),
         )
+
+    async def lo_hang(self, ma: str) -> list[Lo]:
+        """
+        Các lô CÒN HIỆU LỰC của một mã, kèm hạn dùng.
+
+        Năng lực tuỳ chọn — xem ghi chú ở `NguonERP` trong hop_dong.py.
+
+        Lọc `disabled = 0`: lô đã vô hiệu hoá vẫn nằm trong bảng, và lấy cả
+        chúng là báo cho khách hạn của một lô cửa hàng đã ngừng bán.
+        """
+        loc = [["item", "=", ma], ["disabled", "=", 0]]
+        try:
+            rows = await self._lay("Batch", loc, _TRUONG_LO)
+            co_so_luong = True
+        except LoiERP:
+            # Bản ERPNext này không có `batch_qty`. Lùi về bộ không số
+            # lượng — và ĐÁNH DẤU, để `so_luong` mang None chứ không phải 0.
+            rows = await self._lay("Batch", loc, _TRUONG_LO_KHONG_SO)
+            co_so_luong = False
+
+        ra: list[Lo] = []
+        for r in rows:
+            if not r.get("name"):
+                continue
+            sl: int | None = None
+            if co_so_luong:
+                tho = r.get("batch_qty")
+                # `batch_qty` vắng mặt trong CHÍNH bản ghi này (Frappe trả
+                # null cho trường ảo chưa tính) khác với "bản này không có
+                # trường đó". Cả hai đều thành None, và đó là đúng.
+                if tho is not None:
+                    sl = max(0, int(float(tho)))
+            ra.append(Lo(
+                ma_lo=str(r["name"]),
+                het_han=str(r["expiry_date"]) if r.get("expiry_date") else None,
+                so_luong=sl,
+            ))
+        return ra
 
     async def suc_khoe(self) -> bool:
         try:

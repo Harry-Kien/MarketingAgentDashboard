@@ -30,6 +30,33 @@ class Migration:
     checksum: str
 
 
+def _chuan_hoa(noi_dung: bytes) -> bytes:
+    """
+    Bỏ CR trước khi băm: checksum phải nói về NỘI DUNG SQL, không về cách
+    xuống dòng.
+
+    LỖI THẬT ĐÃ GẶP. Git trên Windows mặc định `core.autocrlf=true`, và
+    repo này không có `.gitattributes`. Một lệnh `git checkout` bình thường
+    viết lại mọi tệp .sql từ LF sang CRLF — nội dung SQL không đổi một ký
+    tự nào, nhưng sha256 đổi hoàn toàn.
+
+    Hệ quả: `apply_migrations` ném MigrationError và ứng dụng KHÔNG KHỞI
+    ĐỘNG ĐƯỢC. Thông báo lỗi lại nói "checksum migration đã áp dụng không
+    khớp" — nghe như có người sửa một migration đã chạy, tức là chỉ đúng
+    hướng điều tra sai. Người mới clone repo trên Windows gặp đúng bức
+    tường này ngay lần chạy đầu tiên.
+
+    Chuẩn hoá TƯƠNG THÍCH NGƯỢC: tệp gốc vốn dùng LF, nên bỏ CR cho ra
+    đúng chuỗi byte đã băm lần đầu — mọi CSDL đang chạy giữ nguyên giá trị
+    trong `schema_migrations`, không cần vá tay dòng nào.
+
+    Chốt vẫn còn nguyên tác dụng: sửa MỘT KÝ TỰ SQL trong migration đã áp
+    dụng thì checksum vẫn lệch và vẫn bị chặn. Chỉ riêng cách xuống dòng là
+    thôi được tính.
+    """
+    return noi_dung.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def discover_migrations(directory: Path = VERSIONS_DIR) -> list[Migration]:
     """Đọc các file migration hợp lệ và trả theo thứ tự phiên bản."""
     found: list[Migration] = []
@@ -44,7 +71,7 @@ def discover_migrations(directory: Path = VERSIONS_DIR) -> list[Migration]:
                 version=version,
                 name=name,
                 path=path,
-                checksum=hashlib.sha256(path.read_bytes()).hexdigest(),
+                checksum=hashlib.sha256(_chuan_hoa(path.read_bytes())).hexdigest(),
             )
         )
     return found

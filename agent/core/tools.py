@@ -359,6 +359,25 @@ def _catalog() -> dict:
     return json.loads(duong_dan.read_text(encoding="utf-8"))
 
 
+async def _han_dung(ma: str):
+    """
+    Lô hết hạn sớm nhất còn hàng của một mã, hoặc None.
+
+    Nuốt mọi lỗi và trả None: hạn dùng là thông tin THÊM: ERP quản lô hỏng
+    không được làm hỏng cả lượt tra giá, vốn là việc chính của công cụ này.
+    Ngắt mạch trong `Cong` đã ghi nhận sự cố rồi, nên nuốt ở đây không làm
+    mất dấu vết.
+    """
+    if not ma:
+        return None
+    try:
+        from agent.erp import nha_may
+
+        return await nha_may.cong().han_dung(ma)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def _catalog_song() -> dict:
     """
     Danh mục kèm TỒN KHO SỐNG từ bảng `ton_kho`.
@@ -637,6 +656,22 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
                 }
             out = {"tim_thay": True, **best}
             out["con_hang"] = (best.get("ton_kho") or 0) > 0
+
+            # HẠN DÙNG — chỉ thêm khi BIẾT CHẮC.
+            #
+            # `Cong.han_dung()` trả về lô hết hạn sớm nhất trong số các lô
+            # ta biết chắc CÒN HÀNG, và trả None nếu không chắc. Không có
+            # nhánh nào ở đây đoán thay: thiếu khoá `han_su_dung` thì model
+            # không có gì để nói, đúng như ý muốn.
+            #
+            # Tuyệt đối không đặt một giá trị mặc định kiểu "không rõ" —
+            # chuỗi đó nằm trong ngữ cảnh là model sẽ nhắc lại nó với khách,
+            # và "hạn dùng: không rõ" nghe như một sự thật về sản phẩm chứ
+            # không phải một khoảng trống trong dữ liệu.
+            lo = await _han_dung(best.get("ma", ""))
+            if lo is not None:
+                out["han_su_dung"] = lo.het_han
+                out["ma_lo"] = lo.ma_lo
             # Khách hỏi ĐÍCH DANH thì vẫn trả giá và tồn — hai số ấy có
             # thật, đến từ ERP. Nhưng phải nói rõ là KHÔNG có nửa tư vấn,
             # nếu không model sẽ lấp chỗ trống bằng suy đoán từ tên hàng.

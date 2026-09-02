@@ -31,7 +31,7 @@ from typing import Any
 
 from agent.erp import ho_so as ho_so_tu_van
 from agent.erp.anh_xa import AnhXa, doc_anh_xa
-from agent.erp.hop_dong import Gia, LoiERP, NguonERP, TonKho
+from agent.erp.hop_dong import Gia, Lo, LoiERP, NguonERP, TonKho
 
 
 # Trần số lời gọi ERP chạy cùng lúc khi nạp danh mục. Bắn 100 lời gọi một
@@ -79,6 +79,7 @@ class Cong:
         # phình, nên không ai phát hiện cho tới lúc máy hết RAM.
         self._cache: dict[str, OrderedDict[str, _O]] = {
             "gia": OrderedDict(), "ton_kho": OrderedDict(),
+            "lo_hang": OrderedDict(),
         }
 
         # NGẮT MẠCH THEO TỪNG THAO TÁC, không dùng chung một bộ đếm.
@@ -120,6 +121,46 @@ class Cong:
         return await self._lay(
             "ton_kho", self._ttl_ton, ma, bo_qua_cache, self._nguon.ton_kho
         )
+
+    async def lo_hang(self, ma: str, bo_qua_cache: bool = False) -> list[Lo] | None:
+        """
+        Các lô còn hiệu lực của một mã. `None` = không biết.
+
+        Adapter nào không quản lô thì trả về `None` NGAY, không gọi ERP và
+        không tính vào ngắt mạch. Phân biệt "ngành này không có hạn dùng"
+        với "hỏi mà không được" là bắt buộc: gộp lại thì cửa hàng đồ thể
+        thao trông như đang có sự cố ERP suốt ngày.
+        """
+        ham = getattr(self._nguon, "lo_hang", None)
+        if ham is None:
+            return None
+        # TTL dùng chung với tồn kho: lô hàng đổi theo cùng nhịp nhập/xuất,
+        # và để nó dài hơn thì có lúc tồn nói "còn 5" mà lô nói "hết sạch".
+        return await self._lay("lo_hang", self._ttl_ton, ma, bo_qua_cache, ham)
+
+    async def han_dung(self, ma: str) -> Lo | None:
+        """
+        Lô SẼ HẾT HẠN SỚM NHẤT trong số các lô CÒN HÀNG.
+
+        Đây là con số duy nhất được phép nói với khách, và nó có một quy
+        tắc gắt: chỉ tính những lô mà ta BIẾT CHẮC còn hàng.
+
+        Vì sao gắt tới vậy. Lô `so_luong = None` nghĩa là ERPNext không trả
+        về số lượng (v15 chuyển sang `Serial and Batch Bundle`). Nếu tính
+        cả lô ấy vào, ta có thể chọn phải một lô đã bán sạch từ lâu và báo
+        cho khách hạn của nó — khách nghe "hạn tới 2027", nhận lọ hết hạn
+        tháng sau. Bỏ qua thì tệ nhất là agent nói "em chưa tra được hạn",
+        và người trực tra hộ.
+
+        Giữa "sai một cách tự tin" và "im lặng đúng lúc", chọn cái thứ hai.
+        """
+        ds = await self.lo_hang(ma)
+        if not ds:
+            return None
+        con_hang = [lo for lo in ds if lo.het_han and (lo.so_luong or 0) > 0]
+        if not con_hang:
+            return None
+        return min(con_hang, key=lambda lo: lo.het_han)
 
     def _ghi_cache(self, ten: str, ma: str, gia_tri, luc: float) -> None:
         """Ghi vào cache LRU, bỏ ô cũ nhất khi vượt trần."""

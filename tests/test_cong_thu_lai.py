@@ -216,4 +216,12 @@ def test_cong_khong_boc_thao_tac_ghi_nao():
         t for t in dir(Cong)
         if not t.startswith("_") and callable(getattr(Cong, t, None))
     }
-    assert cong_khai == {"gia", "ton_kho", "suc_khoe", "danh_muc", "trang_thai"}
+    # Danh sách này KHÔNG được nới ra cho một thao tác ghi. Thêm tên vào đây
+    # là một quyết định có ý thức, và lý do phải viết ra ngay tại chỗ:
+    #
+    #   lo_hang    đọc DocType `Batch` — lấy hạn dùng
+    #   han_dung   thuần tính toán trên kết quả `lo_hang`, không gọi ERP
+    assert cong_khai == {
+        "gia", "ton_kho", "suc_khoe", "danh_muc", "trang_thai",
+        "lo_hang", "han_dung",
+    }

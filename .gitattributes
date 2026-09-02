@@ -1,0 +1,27 @@
+# Chặn Git đổi cách xuống dòng — checksum migration phụ thuộc vào nó.
+#
+# `core.autocrlf=true` là mặc định của Git trên Windows. Không có tệp này
+# thì một lệnh `git checkout` bình thường viết lại mọi .sql từ LF sang
+# CRLF, và chốt checksum trong agent/migrations/runner.py chặn khởi động
+# — với thông báo lỗi trỏ sai hướng hoàn toàn.
+#
+# `runner.py` cũng chuẩn hoá trước khi băm. Hai lớp, vì một lớp sẽ hỏng:
+# tệp này chỉ bảo vệ người clone SAU khi nó có mặt.
+* text=auto
+
+*.sql   text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.mp4   binary
+*.ico   binary

@@ -63,6 +63,29 @@ class TonKho:
 
 
 @dataclass(frozen=True)
+class Lo:
+    """
+    Một lô hàng, kèm hạn dùng. Chỉ dùng cho ngành có hạn: mỹ phẩm, thực
+    phẩm, dược.
+
+    `so_luong = None` nghĩa là ERPNext KHÔNG trả về số lượng của lô này —
+    không phải lô rỗng. Phân biệt hai thứ đó là bắt buộc: bản ERPNext v15
+    chuyển số lượng lô sang `Serial and Batch Bundle`, nên trường
+    `batch_qty` có bản có, bản không.
+
+    Coi `None` là 0 thì mọi lô đều trông như đã bán hết và agent im lặng về
+    hạn dùng. Coi `None` là "còn hàng" thì agent báo hạn của một lô đã hết
+    sạch — khách nghe "hạn tới 2027" rồi nhận lọ hết hạn tháng sau. Cái
+    thứ hai là thứ phải tránh, nên `None` được xử lý TƯỜNG MINH ở
+    `Cong.han_dung()` chứ không rơi vào nhánh mặc định nào.
+    """
+
+    ma_lo: str
+    het_han: str | None = None      # ISO yyyy-mm-dd; None = lô không quản hạn
+    so_luong: int | None = None     # None = KHÔNG BIẾT, khác 0
+
+
+@dataclass(frozen=True)
 class SanPhamERP:
     """Nửa thương mại của một sản phẩm. Nửa tư vấn nằm ở kho nội bộ."""
 
@@ -101,6 +124,14 @@ class NguonERP(Protocol):
     async def ton_kho(self, ma: str) -> TonKho | None: ...
 
     async def suc_khoe(self) -> bool: ...
+
+    # `lo_hang(ma) -> list[Lo]` là NĂNG LỰC TUỲ CHỌN, cố ý không nằm trong
+    # Protocol này.
+    #
+    # Không phải ngành nào cũng quản lô: cửa hàng đồ thể thao không có hạn
+    # dùng, và bắt adapter của họ hiện thực một phương thức luôn trả rỗng
+    # là thêm mã chết ở bốn nơi. `Cong` dò bằng `getattr` và bỏ qua nếu
+    # adapter không có — xem `Cong.lo_hang()`.
 
 
 @dataclass(frozen=True)

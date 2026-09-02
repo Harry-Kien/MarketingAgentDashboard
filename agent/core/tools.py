@@ -547,6 +547,40 @@ def _tom_tat(sp: dict) -> dict:
 
 
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
+    # ---------- CHỐT THỨ HAI: kỹ năng đang tắt ----------
+    #
+    # Lọc lược đồ trước khi gửi model là chốt thứ nhất, và nó KHÔNG đủ. Lịch
+    # sử hội thoại còn giữ nguyên lược đồ của những lượt trước, nên một công
+    # cụ vừa bị tắt vẫn nằm trong ngữ cảnh model đang đọc — nó gọi tiếp là
+    # chuyện bình thường, không phải model hỏng.
+    #
+    # Trả về "chuyển người" chứ không phải một câu lỗi: người vận hành tắt
+    # `tao_don_hang` là đang nói "việc này người làm", nên đúng việc cần làm
+    # là đưa hội thoại cho người, không phải để agent tự xoay.
+    from agent.ky_nang import kho_ky_nang
+
+    if await kho_ky_nang.dang_tat(name):
+        return {
+            "loi": f"Kỹ năng {name!r} đang tắt.",
+            "can_chuyen_nhan_vien": True,
+            "ghi_chu": (
+                "Công cụ này đã bị tắt trong cấu hình. KHÔNG tự trả lời thay "
+                "nó — đã chuyển hội thoại cho người."
+            ),
+        }
+
+    # ---------- plugin do người vận hành cấu hình ----------
+    #
+    # Đặt TRƯỚC mọi nhánh có sẵn: `doc_ban_mo_ta` đã chặn plugin trùng tên
+    # công cụ viết sẵn, nên tới đây không có tên nào thuộc cả hai phía. Đặt
+    # sau thì thứ tự nhánh trở thành thứ ưu tiên ngầm — và ngầm là chỗ lỗi
+    # trốn.
+    bm = await kho_ky_nang.tim_plugin(name)
+    if bm is not None:
+        from agent.ky_nang.chay import chay_plugin
+
+        return await chay_plugin(bm, args)
+
     # ---------- tra kho tri thức ----------
     # Đặt TRƯỚC lời gọi danh mục: câu hỏi chính sách không cần đọc catalog,
     # và nạp catalog cho một câu hỏi về đổi trả là công vô ích mỗi lượt.

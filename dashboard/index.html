@@ -93,6 +93,10 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
       <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="kynang">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6M15 3v6"/><rect x="6" y="9" width="12" height="7" rx="2"/><path d="M12 16v5"/></svg>
+      <span>Kỹ năng</span><b id="c-kynang" class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="hethong">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
       <span>Hệ thống</span><b id="c-hethong" class="rail__count"></b>
@@ -436,6 +440,72 @@
         <h2 class="panel__head">Tài liệu đã nạp</h2>
         <div id="docs" class="rows"></div>
       </section>
+    </section>
+
+    <!-- ============ KỸ NĂNG (SKILL) VÀ PLUGIN ============ -->
+    <section class="view" data-view="kynang">
+      <section class="panel">
+        <h2 class="panel__head">Kỹ năng viết sẵn
+          <span class="panel__note">bật/tắt có hiệu lực từ tin nhắn kế tiếp</span></h2>
+        <p class="panel__note">
+          Tắt một kỹ năng KHÔNG làm agent im lặng về việc đó — nó chuyển hội
+          thoại cho người. Đọc cột “tắt thì mất gì” trước khi bấm.
+        </p>
+        <div id="kynang-cosan" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
+
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Kỹ năng cắm thêm</h2>
+          <p class="panel__note">
+            Thêm công cụ cho agent mà không sửa mã. Bản mô tả là dữ liệu, không
+            phải mã — bốn loại đều chỉ đọc.
+          </p>
+          <div id="kynang-plugin" class="rows"><p class="empty">Chưa có plugin nào.</p></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel__head">Tạo hoặc sửa plugin</h2>
+          <form id="pluginform" class="form">
+            <label class="field">
+              <span>Tên công cụ</span>
+              <input name="ten" required maxlength="40" placeholder="tra_bao_hanh">
+            </label>
+            <label class="field">
+              <span>Loại</span>
+              <select name="loai" id="plugin-loai">
+                <option value="tra_bang">Tra bảng khoá → giá trị</option>
+                <option value="tra_tai_lieu">Hỏi kho tri thức (giới hạn nhóm)</option>
+                <option value="chuyen_chuyen_biet">Chuyển người kèm lý do riêng</option>
+                <option value="goi_api_doc">Gọi API chỉ đọc (cần danh sách cho phép)</option>
+              </select>
+            </label>
+            <label class="field field--wide">
+              <span>Mô tả — model chọn công cụ DỰA TRÊN ô này</span>
+              <textarea name="mo_ta" required rows="3" minlength="20" maxlength="600"
+                placeholder="Tra thời hạn bảo hành của một dòng sản phẩm theo tên dòng. Không dùng cho câu hỏi về đổi trả."></textarea>
+            </label>
+            <label class="field">
+              <span>Tên tham số</span>
+              <input name="tham_so_ten" maxlength="30" placeholder="dong_san_pham">
+            </label>
+            <label class="field">
+              <span>Mô tả tham số</span>
+              <input name="tham_so_mo_ta" maxlength="200" placeholder="Tên dòng sản phẩm khách hỏi">
+            </label>
+            <label class="field field--wide">
+              <span id="plugin-cauhinh-nhan">Cấu hình (JSON)</span>
+              <textarea name="cau_hinh" rows="5" id="plugin-cauhinh"
+                placeholder='{"bang": {"serum": "12 tháng"}}'></textarea>
+            </label>
+            <div class="rowbtns">
+              <button type="button" class="btn" id="plugin-thu">Chạy thử</button>
+              <button type="submit" class="btn btn--primary">Lưu và bật</button>
+            </div>
+          </form>
+          <div id="plugin-ketqua" class="rows"></div>
+        </section>
+      </div>
     </section>
 
     <!-- ============ CUSTOMER 360 ============ -->

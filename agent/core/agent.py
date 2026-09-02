@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from agent import db
 from agent.config import ROOT, settings
 from agent.core import llm, rag, tools
+from agent.ky_nang import kho_ky_nang
 from agent.core import ho_so_khach, phong_thu
 
 SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
@@ -359,13 +360,22 @@ async def respond(
     anh_can_gui: list[dict] = []
     final_text = ""
 
+    # Danh sách công cụ đọc MỘT LẦN mỗi lượt, không đọc lại mỗi vòng lặp.
+    #
+    # Đọc lại mỗi vòng thì người vận hành tắt một kỹ năng đúng lúc agent
+    # đang ở vòng 2 sẽ làm lược đồ đổi giữa chừng — model nhìn thấy một công
+    # cụ ở vòng trước rồi mất nó ở vòng sau, ngay trong cùng một hội thoại.
+    # Đọc một lần thì cả lượt dùng chung một bộ công cụ, và thay đổi có hiệu
+    # lực từ tin nhắn kế tiếp.
+    cong_cu = await kho_ky_nang.cong_cu_dang_bat(tools.TOOLS)
+
     for _ in range(MAX_TOOL_ROUNDS):
         result = await llm.complete(
             # Phần ổn định mang cache_control; ngữ cảnh RAG biến động nằm SAU.
             system=llm.cached_system(SYSTEM, context),
             messages=messages,
             model=settings.model_chat,
-            tools=tools.TOOLS,
+            tools=cong_cu,
             max_tokens=1500,
             effort="medium",
         )

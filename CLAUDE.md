@@ -31,6 +31,11 @@ trong prompt, một lần trong mã để chặn khi mô hình trượt.
 nhau. Đừng gỡ lớp nào mà không đọc `docs/co-so-ly-thuyet.md` mục 6 — có
 bằng chứng thực nghiệm giải thích vì sao cần cả sáu.
 
+Cùng lý do đó, **kỹ năng cắm thêm (plugin) là DỮ LIỆU, không phải mã**. Mã
+tuỳ ý chạy trong tiến trình agent thì nằm *cùng phía* với sáu lớp lưới —
+đọc được biến môi trường, gọi được CSDL, sửa được chính hàm canh nó. Bốn
+loại plugin đều chỉ đọc; xem `docs/ky-nang.md` và `agent/ky_nang/`.
+
 ---
 
 ## Lỗi hay gặp nhất trong repo này: hỏng IM LẶNG
@@ -66,12 +71,13 @@ docker compose up -d              # Postgres+pgvector (5433) + n8n (5678)
 python -m uvicorn agent.main:app --reload --port 8000
 ```
 
-Sinh lại tài liệu **sau khi đổi schema hoặc chạy eval** (có test canh việc
-này):
+Sinh lại tài liệu **sau khi đổi schema, thêm kỹ năng, hoặc chạy eval** (có
+test canh việc này):
 
 ```bash
 python -m scripts.sinh_so_do --ghi
 python -m scripts.sinh_thuc_nghiem --ghi
+python -m scripts.sinh_ky_nang --ghi
 ```
 
 Đo chất lượng — **gọi API thật, tốn tiền**, hỏi chủ dự án trước khi chạy:

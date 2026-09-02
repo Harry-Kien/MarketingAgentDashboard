@@ -1510,3 +1510,51 @@ svg { flex: none; }
 .btn--ghost { background: transparent; border-color: transparent;
               color: hsl(var(--muted-foreground)); }
 .btn--ghost:hover { background: hsl(var(--muted)); color: inherit; }
+
+/* ---------------- kỹ năng (skill) và plugin ---------------- */
+
+/* Nhãn nhỏ cạnh tên kỹ năng. Mức `hanh_dong` được tô đỏ vì nó là công cụ
+   DUY NHẤT có hậu quả không đảo ngược — có test canh việc chỉ đúng một kỹ
+   năng mang mức ấy, để màu đỏ không bị lạm phát mà mất nghĩa. */
+.pill {
+  display: inline-block;
+  margin-left: .45rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.pill--halt {
+  border-color: hsl(var(--destructive) / .35);
+  background: hsl(var(--destructive) / .1);
+  color: hsl(var(--destructive));
+}
+
+/* Kết quả chạy thử plugin: JSON thô, nên phải giữ nguyên xuống dòng và
+   cuộn NGANG trong khung của chính nó — không để nó đẩy cả trang trượt. */
+.pre {
+  margin: 0;
+  padding: .7rem .8rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .72rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.rowbtns {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}

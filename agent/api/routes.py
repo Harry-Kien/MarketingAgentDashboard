@@ -15,6 +15,9 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.ky_nang import kho_ky_nang
+from agent.ky_nang.ban_mo_ta import LoiBanMoTa, doc_ban_mo_ta
+from agent.ky_nang.chay import chay_plugin
 from agent.omnichannel.outbound_service import (
     ConversationNotFound,
     OutboundMessageNotFound,
@@ -848,6 +851,94 @@ async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(bat_buoc_quan_tri
     state = runtime.update(**body.model_dump(exclude_none=True))
     await db.log_event("runtime.update", actor="staff", **{k: str(v) for k, v in state.items()})
     return state
+
+
+# ---------------------------------------------------------------
+#  Kỹ năng (skill) và kỹ năng cắm thêm (plugin)
+# ---------------------------------------------------------------
+#
+# TOÀN BỘ nhóm này chỉ quản trị viên gọi được, kể cả đường ĐỌC.
+#
+# Đường đọc thường để công khai trong dashboard, nhưng ở đây nó trả về danh
+# sách chính xác những gì agent làm được và làm không được. Với người muốn
+# lách agent, đó là bản đồ — biết `tao_don_hang` đang tắt là biết không cần
+# thử con đường ấy nữa. Không có lý do gì để người trực ca cần bản đồ đó.
+
+@router.get("/ky-nang")
+async def liet_ke_ky_nang(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    return await kho_ky_nang.liet_ke()
+
+
+class BatTatBody(BaseModel):
+    ten: str = Field(min_length=3, max_length=40)
+    bat: bool
+
+
+@router.post("/ky-nang/bat-tat")
+async def bat_tat_ky_nang(
+    body: BatTatBody, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    try:
+        await kho_ky_nang.dat_bat_tat(body.ten, body.bat, boi=nguoi["ten_dang_nhap"])
+    except LoiBanMoTa as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await kho_ky_nang.liet_ke()
+
+
+@router.post("/ky-nang/plugin")
+async def luu_ky_nang_plugin(
+    body: dict, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    """
+    Tạo hoặc sửa một plugin.
+
+    Nhận `dict` thô thay vì một model Pydantic: bộ kiểm thật nằm trong
+    `doc_ban_mo_ta`, và nó ném ra câu nói rõ phải sửa gì. Dựng thêm một model
+    Pydantic ở đây là có HAI bộ kiểm cho cùng một thứ, và cái nào lỏng hơn
+    sẽ là cái quyết định.
+    """
+    try:
+        bm = await kho_ky_nang.luu_plugin(body, boi=nguoi["ten_dang_nhap"])
+    except LoiBanMoTa as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ten": bm.ten, "loai": bm.loai}
+
+
+@router.delete("/ky-nang/plugin/{ten}")
+async def xoa_ky_nang_plugin(
+    ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    try:
+        da_xoa = await kho_ky_nang.xoa_plugin(ten, boi=nguoi["ten_dang_nhap"])
+    except LoiBanMoTa as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not da_xoa:
+        raise HTTPException(404, f"Không có plugin tên {ten!r}.")
+    return {"da_xoa": ten}
+
+
+class ThuPluginBody(BaseModel):
+    ban_mo_ta: dict
+    args: dict = Field(default_factory=dict)
+
+
+@router.post("/ky-nang/plugin/thu")
+async def thu_ky_nang_plugin(
+    body: ThuPluginBody, _: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    """
+    Chạy thử một plugin CHƯA lưu, và không tốn một lượt gọi model nào.
+
+    Cùng lý do với `POST /api/knowledge/probe`: người vận hành phải nhìn
+    thấy plugin trả về cái gì TRƯỚC khi nó đi vào hội thoại thật. Không có
+    nút này thì cách duy nhất để thử là bật lên rồi nhắn cho chính mình —
+    và lúc đó nó đã sống trong mọi hội thoại đang mở.
+    """
+    try:
+        bm = doc_ban_mo_ta(body.ban_mo_ta)
+    except LoiBanMoTa as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ket_qua": await chay_plugin(bm, body.args)}
 
 
 @router.get("/events")

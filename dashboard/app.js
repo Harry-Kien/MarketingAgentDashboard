@@ -1930,6 +1930,7 @@ async function refresh() {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
+    if (state.view === "kynang") await loadKyNang();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
@@ -2598,5 +2599,161 @@ $("#btn-oauth-meta")?.addEventListener("click", async () => {
     toast(e.message, true);
   } finally {
     nut.disabled = false;
+  }
+});
+
+/* ---------------- kỹ năng (skill) và plugin ---------------- */
+
+const RUI_RO_NHAN = { doc: "đọc", ghi_nhan: "ghi nhận", hanh_dong: "HÀNH ĐỘNG" };
+const NHOM_NHAN = {
+  tu_van: "Tư vấn", don_hang: "Đơn hàng", sau_ban: "Sau bán",
+  marketing: "Marketing", con_nguoi: "Con người",
+};
+
+/* Mẫu cấu hình cho từng loại. Ô cấu hình là JSON, và JSON gõ tay từ đầu thì
+ * ai cũng gõ sai lần đầu — điền sẵn mẫu đúng thì người vận hành SỬA chứ
+ * không VIẾT, và đó là khác biệt giữa dùng được và bỏ đó. */
+const PLUGIN_MAU = {
+  tra_bang: '{\n  "bang": {\n    "serum": "12 tháng",\n    "kem chống nắng": "6 tháng"\n  }\n}',
+  tra_tai_lieu: '{\n  "nhom_tai_lieu": "bao-hanh",\n  "k": 4\n}',
+  chuyen_chuyen_biet: '{\n  "ly_do": "Khách hỏi hợp tác bán buôn"\n}',
+  goi_api_doc: '{\n  "url": "https://noi-bo.example.com/tra/{ma}",\n  "han_giay": 5\n}',
+};
+
+async function loadKyNang() {
+  const d = await api("/ky-nang");
+  const tat = d.co_san.filter((k) => !k.bat).length;
+  $("#c-kynang").textContent = tat ? `${tat} tắt` : "";
+
+  $("#kynang-cosan").innerHTML = d.co_san.map((k) => `<div class="row">
+      <span class="row__flag ${k.bat ? "row__flag--auto" : "row__flag--halt"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(k.ten)}
+          ${k.muc_rui_ro === "hanh_dong" ? '<b class="pill pill--halt">HÀNH ĐỘNG</b>' : ""}
+          ${k.tat_duoc ? "" : '<b class="pill">không tắt được</b>'}</span>
+        <span class="row__sub">${esc(NHOM_NHAN[k.nhom] || k.nhom)} ·
+          ${esc(RUI_RO_NHAN[k.muc_rui_ro] || k.muc_rui_ro)}${
+            k.can_erp ? " · cần ERP" : ""}${
+            k.can_kho_tri_thuc ? " · cần kho tri thức" : ""}</span>
+        <span class="row__sub">${esc(k.tom_tat)}</span>
+        <span class="row__sub"><em>Tắt thì:</em> ${esc(k.tat_thi_mat_gi)}</span>
+      </span>
+      <span class="row__side">
+        ${k.tat_duoc
+          ? `<button type="button" class="btn btn--sm ${k.bat ? "btn--halt" : ""}"
+               data-kynang="${esc(k.ten)}" data-bat="${k.bat ? "0" : "1"}">${
+               k.bat ? "Tắt" : "Bật"}</button>`
+          : ""}
+      </span>
+    </div>`).join("");
+
+  $("#kynang-plugin").innerHTML = d.plugin.length
+    ? d.plugin.map((p) => `<div class="row">
+        <span class="row__flag row__flag--auto"></span>
+        <span class="row__body">
+          <span class="row__title">${esc(p.ten)}</span>
+          <span class="row__sub">${esc(p.loai)}${
+            p.tham_so.length ? " · tham số: " + esc(p.tham_so.join(", ")) : ""}</span>
+          <span class="row__sub">${esc(p.mo_ta)}</span>
+        </span>
+        <span class="row__side">
+          <button type="button" class="btn btn--sm btn--halt"
+            data-plugin-xoa="${esc(p.ten)}">Xoá</button>
+        </span>
+      </div>`).join("")
+    : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
+}
+
+/* Đọc form thành bản mô tả. Dùng chung cho nút "Chạy thử" và nút "Lưu" —
+ * hai đường khác nhau đọc form theo hai cách là chạy thử một thứ rồi lưu
+ * một thứ khác, và người vận hành không có cách nào biết. */
+function docFormPlugin() {
+  const f = $("#pluginform");
+  const g = (n) => (f.elements[n]?.value || "").trim();
+  let cau_hinh = {};
+  const tho = g("cau_hinh");
+  if (tho) {
+    try {
+      cau_hinh = JSON.parse(tho);
+    } catch (e) {
+      throw new Error("Ô cấu hình không phải JSON hợp lệ: " + e.message);
+    }
+  }
+  const tham_so = [];
+  if (g("tham_so_ten")) {
+    tham_so.push({ ten: g("tham_so_ten"), mo_ta: g("tham_so_mo_ta"), bat_buoc: true });
+  }
+  return { ten: g("ten"), loai: g("loai"), mo_ta: g("mo_ta"), tham_so, cau_hinh };
+}
+
+$("#plugin-loai")?.addEventListener("change", (e) => {
+  const o = $("#plugin-cauhinh");
+  if (o && !o.value.trim()) o.value = PLUGIN_MAU[e.target.value] || "";
+});
+
+$("#plugin-thu")?.addEventListener("click", async () => {
+  const hop = $("#plugin-ketqua");
+  try {
+    const bm = docFormPlugin();
+    const args = {};
+    if (bm.tham_so.length) {
+      const v = prompt(`Giá trị thử cho tham số "${bm.tham_so[0].ten}":`, "");
+      if (v === null) return;
+      args[bm.tham_so[0].ten] = v;
+    }
+    const r = await api("/ky-nang/plugin/thu", {
+      method: "POST",
+      body: JSON.stringify({ ban_mo_ta: bm, args }),
+    });
+    hop.innerHTML = `<pre class="pre">${esc(JSON.stringify(r.ket_qua, null, 2))}</pre>`;
+  } catch (e) {
+    hop.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
+    toast(e.message, true);
+  }
+});
+
+$("#pluginform")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/ky-nang/plugin", {
+      method: "POST",
+      body: JSON.stringify(docFormPlugin()),
+    });
+    e.target.reset();
+    $("#plugin-ketqua").innerHTML = "";
+    toast("Đã lưu và bật plugin");
+    await loadKyNang();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+document.addEventListener("click", async (e) => {
+  const bt = e.target.closest("[data-kynang]");
+  if (bt) {
+    const bat = bt.dataset.bat === "1";
+    /* Xác nhận CHỈ khi tắt, không hỏi khi bật. Hỏi cả hai chiều thì hộp
+     * thoại thành thói quen bấm OK, và lúc đó nó không còn chặn gì. */
+    if (!bat && !confirm(
+      `Tắt "${bt.dataset.kynang}"?\n\nAgent sẽ chuyển hội thoại cho người ` +
+      `mỗi khi cần dùng kỹ năng này.`)) return;
+    try {
+      await api("/ky-nang/bat-tat", {
+        method: "POST",
+        body: JSON.stringify({ ten: bt.dataset.kynang, bat }),
+      });
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bx = e.target.closest("[data-plugin-xoa]");
+  if (bx) {
+    if (!confirm(`Xoá hẳn plugin "${bx.dataset.pluginXoa}"?`)) return;
+    try {
+      await api("/ky-nang/plugin/" + encodeURIComponent(bx.dataset.pluginXoa),
+                { method: "DELETE" });
+      toast("Đã xoá");
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
   }
 });

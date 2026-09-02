@@ -303,6 +303,15 @@ class Settings(BaseSettings):
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.
     nguong_tu_chot_vnd: int = 1_000_000
 
+    # --- Kỹ năng cắm thêm (plugin) ---
+    # Host mà plugin `goi_api_doc` được phép gọi tới, cách nhau bằng dấu phẩy.
+    #
+    # MẶC ĐỊNH RỖNG, và đó là chủ ý: agent không được gọi ra ngoài tới bất kỳ
+    # đâu cho tới khi quản trị viên chủ động ghi host vào đây. Ô này cố ý
+    # KHÔNG sửa được từ dashboard — sửa được từ dashboard thì chiếm một tài
+    # khoản quản trị là chiếm luôn đường ra mạng của máy chủ.
+    ky_nang_host_cho_phep: str = ""
+
     # --- Kho / ERP ---
     # tep = đọc data/catalog.json (MẶC ĐỊNH — giữ clone sạch chạy được).
     # Đổi giá trị này là đổi nguồn dữ liệu sản phẩm, không đụng agent.

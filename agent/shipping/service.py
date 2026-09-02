@@ -3,10 +3,7 @@ Bộ điều phối nghiệp vụ vận chuyển: 4 chốt kiểm duyệt, xử 
 """
 from __future__ import annotations
 
-<<<<<<< HEAD
-=======
 import hmac
->>>>>>> origin/main
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -40,8 +37,6 @@ def get_provider(name: str | None = None) -> BaseShippingProvider:
     return _PROVIDERS[key]
 
 
-<<<<<<< HEAD
-=======
 async def _bao_khach(conversation_id, text: str, khoa: str) -> None:
     """
     Gửi tin cho khách QUA OUTBOX. Không bao giờ gọi thẳng adapter.
@@ -90,7 +85,6 @@ async def _bao_khach(conversation_id, text: str, khoa: str) -> None:
         )
 
 
->>>>>>> origin/main
 async def tao_van_don_cho_don(
     ma_don: str, provider_name: str | None = None
 ) -> CreateWaybillResult:
@@ -111,9 +105,6 @@ async def tao_van_don_cho_don(
     trang_thai = str(order.get("trang_thai", ""))
     if trang_thai in ("da_huy", "huy"):
         return CreateWaybillResult(ok=False, loi=f"Đơn hàng '{ma_don}' đã bị huỷ, không thể tạo vận đơn.")
-<<<<<<< HEAD
-    if trang_thai not in ("da_chot", "cho_duyet"):
-=======
     # `cho_duyet` KHÔNG được tạo vận đơn.
     #
     # Bản trước cho phép. Nhưng `cho_duyet` nghĩa là đơn vượt ngưỡng giá trị
@@ -127,7 +118,6 @@ async def tao_van_don_cho_don(
                  "dashboard trước, rồi mới tạo vận đơn."),
         )
     if trang_thai not in ("da_chot",):
->>>>>>> origin/main
         return CreateWaybillResult(
             ok=False, loi=f"Đơn hàng đang ở trạng thái '{trang_thai}', chưa đủ điều kiện xuất kho."
         )
@@ -247,8 +237,6 @@ async def tao_van_don_cho_don(
             phi=result.phi_van_chuyen,
         )
 
-<<<<<<< HEAD
-=======
         # BÁO MÃ CHO KHÁCH.
         #
         # Bản trước lưu mã vào bảng rồi dừng. Khách chỉ nghe tin khi hàng ĐÃ
@@ -268,7 +256,6 @@ async def tao_van_don_cho_don(
             f"vandon-tao:{result.ma_van_don}",
         )
 
->>>>>>> origin/main
     return result
 
 
@@ -303,28 +290,6 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
 
     # Cập nhật lại vị trí / trạng thái vào CSDL nếu có thay đổi
     if result.ok:
-<<<<<<< HEAD
-        st_noi_bo = result.trang_thai_noi_bo
-        new_trang_thai = order.get("trang_thai")
-        if st_noi_bo == InternalShippingStatus.RETURNED and order.get("trang_thai") != "da_huy":
-            new_trang_thai = "da_huy"
-            await kho.tra_hang(order["ma_don"], ly_do="huy_tren_hang")
-        elif st_noi_bo == InternalShippingStatus.DELIVERED and order.get("trang_thai") != "da_giao":
-            new_trang_thai = "da_giao"
-
-        await db.execute(
-            """
-            UPDATE orders
-            SET trang_thai = $1,
-                trang_thai_giao_hang = $2,
-                cap_nhat_van_chuyen_luc = now(),
-                updated_at = now()
-            WHERE id = $3
-            """,
-            new_trang_thai,
-            st_noi_bo.value,
-            order["id"],
-=======
         await db.execute(
             """
             UPDATE orders
@@ -335,16 +300,11 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
             """,
             result.trang_thai_noi_bo.value,
             ma_van_don,
->>>>>>> origin/main
         )
 
     return result
 
 
-<<<<<<< HEAD
-async def xu_ly_webhook_van_chuyen(
-    provider_name: str, payload: dict[str, Any], headers: dict[str, Any]
-=======
 def kiem_bi_mat_webhook(headers: dict[str, Any], query_token: str = "") -> tuple[bool, str]:
     """
     Cổng duy nhất canh webhook vận chuyển. Trả (cho qua, lý do từ chối).
@@ -398,7 +358,6 @@ async def xu_ly_webhook_van_chuyen(
     payload: dict[str, Any],
     headers: dict[str, Any],
     query_token: str = "",
->>>>>>> origin/main
 ) -> dict[str, Any]:
     """
     Xử lý Webhook từ hãng vận chuyển gửi sang:
@@ -407,16 +366,12 @@ async def xu_ly_webhook_van_chuyen(
       3. Cập nhật đơn hàng trong DB.
       4. Kích hoạt thông báo cho khách hoặc hoàn kho nếu đơn bị hoàn về.
     """
-<<<<<<< HEAD
-    from agent.channels import registry as channels
-=======
     cho_qua, ly_do_chan = kiem_bi_mat_webhook(headers, query_token)
     if not cho_qua:
         await db.log_event(
             "shipping.webhook_tu_choi", carrier=provider_name, ly_do=ly_do_chan,
         )
         return {"ok": False, "error": ly_do_chan, "http_status": 401}
->>>>>>> origin/main
 
     provider = get_provider(provider_name)
     event: WebhookEventResult = provider.parse_webhook(payload, headers)
@@ -442,8 +397,6 @@ async def xu_ly_webhook_van_chuyen(
         return {"ok": True, "note": "Không tìm thấy đơn hàng trong hệ thống"}
 
     st_noi_bo = event.trang_thai_noi_bo
-<<<<<<< HEAD
-=======
 
     # Mã hãng không nhận ra: GIỮ NGUYÊN trạng thái cũ, gọi người, và KHÔNG
     # nói gì với khách. Đoán bừa "đang giao" là trả lời sai cho kiện đã mất.
@@ -462,7 +415,6 @@ async def xu_ly_webhook_van_chuyen(
                 f"{provider_name}. Giữ nguyên trạng thái đơn, cần người kiểm."
             ),
         }
->>>>>>> origin/main
     ma_don = order["ma_don"]
     ma_van_don = order["ma_van_don"] or event.ma_van_don
 
@@ -494,23 +446,6 @@ async def xu_ly_webhook_van_chuyen(
             "UPDATE orders SET trang_thai = 'da_giao', updated_at = now() WHERE id = $1",
             order["id"],
         )
-<<<<<<< HEAD
-        # Gửi tin nhắn thông báo cho khách qua Zalo/Chatwoot
-        conv_id = order.get("conversation_id")
-        if conv_id:
-            conv = await db.fetchrow("SELECT channel, external_id FROM conversations WHERE id = $1", conv_id)
-            if conv:
-                adapter = channels.get(conv["channel"])
-                if adapter:
-                    msg_text = (
-                        f"Dạ shop thông báo đơn hàng #{ma_don} (Mã vận đơn: {ma_van_don}) "
-                        f"đã được giao thành công đến bạn ạ! Cảm ơn bạn đã ủng hộ shop nha ❤️"
-                    )
-                    try:
-                        await adapter.send_text(conv["external_id"], msg_text)
-                    except Exception:
-                        pass
-=======
         # Khoá gắn theo MÃ VẬN ĐƠN và trạng thái: GHN phát lại webhook là
         # chuyện thường, và lần phát thứ hai không được sinh tin thứ hai.
         await _bao_khach(
@@ -520,7 +455,6 @@ async def xu_ly_webhook_van_chuyen(
             "mình cứ nhắn em ạ.",
             f"vandon-dagiao:{ma_van_don}",
         )
->>>>>>> origin/main
 
     # 2. HOÀN VỀ (RETURNED): Tự động cộng lại hàng vào kho (Restock) & Ghi nhật ký
     elif st_noi_bo == InternalShippingStatus.RETURNED:

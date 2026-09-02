@@ -1,7 +1,4 @@
 """
-<<<<<<< HEAD
-Giao diện cơ sở cho mọi đơn vị vận chuyển (GHN, GHTK, ViettelPost, Mock).
-=======
 Hợp đồng chung cho mọi đơn vị vận chuyển (GHN, GHTK, Viettel Post, Mock).
 
 Lớp AI và dashboard không cần biết đang nói chuyện với hãng nào.
@@ -14,7 +11,6 @@ agent và người trực học từ vựng của từng hãng.
 
 Bốn trạng thái là đủ để trả lời câu khách hỏi, và không phụ thuộc hãng nào.
 Chúng khai ở `models.InternalShippingStatus`.
->>>>>>> origin/main
 """
 from __future__ import annotations
 
@@ -29,8 +25,6 @@ from .models import (
     WebhookEventResult,
 )
 
-<<<<<<< HEAD
-=======
 # Bảng mã của các hãng -> trạng thái nội bộ. KHỚP CHÍNH XÁC, không khớp
 # chuỗi con.
 #
@@ -103,45 +97,23 @@ def anh_xa_trang_thai(ma_hang: str) -> tuple[InternalShippingStatus | None, str]
     thap = str(ma_hang or "").strip().lower()
     return _BANG_MA.get(thap), str(ma_hang or "")
 
->>>>>>> origin/main
 
 class BaseShippingProvider(ABC):
     """
     Hợp đồng trừu tượng cho đối tác vận chuyển.
-<<<<<<< HEAD
-    Mọi hãng (GHN, GHTK, Viettel Post) đều phải hiện thực đủ 4 phương thức này.
-=======
 
     Mọi hãng đều phải hiện thực đủ các phương thức này.
->>>>>>> origin/main
     """
 
     @property
     @abstractmethod
     def code(self) -> str:
         """Mã định danh của hãng (ví dụ: 'ghn', 'ghtk', 'mock')."""
-<<<<<<< HEAD
-        ...
-=======
->>>>>>> origin/main
 
     @property
     @abstractmethod
     def name(self) -> str:
         """Tên hiển thị (ví dụ: 'Giao Hàng Nhanh')."""
-<<<<<<< HEAD
-        ...
-
-    @abstractmethod
-    async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
-        """Gọi API hãng để tạo vận đơn mới và nhận mã tracking."""
-        ...
-
-    @abstractmethod
-    async def tra_cuu(self, ma_van_don: str) -> TrackingResult:
-        """Tra cứu trạng thái và lộ trình thời gian thực theo mã vận đơn."""
-        ...
-=======
 
     @abstractmethod
     async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
@@ -156,24 +128,12 @@ class BaseShippingProvider(ABC):
     @abstractmethod
     async def tra_cuu(self, ma_van_don: str) -> TrackingResult:
         """Tra trạng thái và lộ trình theo mã vận đơn."""
->>>>>>> origin/main
 
     @abstractmethod
     def parse_webhook(
         self, body: dict[str, Any], headers: dict[str, Any]
     ) -> WebhookEventResult:
         """
-<<<<<<< HEAD
-        Xác thực chữ ký và phân tích payload webhook từ hãng gửi về.
-        Ánh xạ trạng thái riêng của hãng về 4 trạng thái nội bộ.
-        """
-        ...
-
-    @abstractmethod
-    def map_status(self, carrier_status: str) -> InternalShippingStatus:
-        """Ánh xạ trạng thái chi tiết của hãng về 4 trạng thái cốt lõi."""
-        ...
-=======
         Đọc webhook của hãng.
 
         Xác thực KHÔNG làm ở đây: nó là việc của lớp HTTP, và làm ở đây thì
@@ -198,4 +158,3 @@ class BaseShippingProvider(ABC):
     async def san_sang(self) -> tuple[bool, str]:
         """Dùng được chưa? Trả (được/không, lý do) — dashboard hiện lý do."""
         return True, ""
->>>>>>> origin/main

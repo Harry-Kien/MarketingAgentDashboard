@@ -1,20 +1,4 @@
 {
-<<<<<<< HEAD
-  "ma": "AS-SR01",
-  "ten": "Serum phục hồi Aurora Revitalizing Serum",
-  "nguon": "sinh",
-  "model": "gemini-2.5-flash-image",
-  "ghi_chu": "Ảnh do model sinh, KHÔNG phải ảnh chụp sản phẩm thật. Thay bằng ảnh chụp thật trước khi bán hàng.",
-  "loi_nhac": [
-    "Ảnh sản phẩm thương mại của một đặc trị chăm sóc da: Serum phục hồi Aurora Revitalizing Serum. Bao bì tối giản, sạch sẽ, tông trắng ngà và xanh rêu nhạt, dung tích 30ml. chụp chính diện trên nền trắng phẳng, ánh sáng studio dịu, toàn bộ sản phẩm nằm trọn trong khung, có khoảng trống phía trên. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG in chữ, KHÔNG nhãn có chữ, KHÔNG logo, KHÔNG người, KHÔNG khung viền, KHÔNG chữ ký.",
-    "Ảnh sản phẩm thương mại của một đặc trị chăm sóc da: Serum phục hồi Aurora Revitalizing Serum. Bao bì tối giản, sạch sẽ, tông trắng ngà và xanh rêu nhạt, dung tích 30ml. cận cảnh chếch 45 độ, nền xám nhạt chuyển sắc, ánh sáng bên làm nổi chất liệu bề mặt, có khoảng trống phía dưới. Chất lượng ảnh quảng cáo, nét, không hạt. KHÔNG in chữ, KHÔNG nhãn có chữ, KHÔNG logo, KHÔNG người, KHÔNG khung viền, KHÔNG chữ ký."
-  ],
-  "anh": [
-    "img_00.jpg",
-    "img_01.jpg"
-  ]
-}
-=======
   "ma": "BLA-HAIR-SERUM-30ML",
   "ten_nhan": "Hair Nourishing Serum",
   "ten": "[CẦN NGƯỜI ĐIỀN: tên tiếng Việt dùng để bán, nếu khác tên trên nhãn]",
@@ -29,4 +13,3 @@
     "img_00.jpg"
   ]
 }
->>>>>>> origin/main

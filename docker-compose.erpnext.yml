@@ -56,9 +56,6 @@ services:
     container_name: erpnext-proxy
     restart: unless-stopped
     ports:
-<<<<<<< HEAD
-      - "8080:80"
-=======
       # BUỘC VỀ 127.0.0.1, không để "8080:80".
       #
       # Docker bind `0.0.0.0` theo mặc định, nghĩa là mở ra CẢ MẠNG LAN —
@@ -69,7 +66,6 @@ services:
       # Cùng lý do đã ghi cho Postgres, n8n và Langfuse trong
       # `docker-compose.yml`. File này về sau nên giữ đúng quy ước đó.
       - "127.0.0.1:8080:80"
->>>>>>> origin/main
     volumes:
       - erpnext_sites_data:/var/www/html/sites:ro
       - ./nginx.erpnext.conf:/etc/nginx/conf.d/default.conf:ro

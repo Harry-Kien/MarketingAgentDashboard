@@ -56,12 +56,9 @@ class CreateWaybillResult:
     trang_thai_noi_bo: InternalShippingStatus = InternalShippingStatus.DELIVERING
     thong_tin_them: dict[str, Any] = field(default_factory=dict)
     loi: str = ""
-<<<<<<< HEAD
-=======
     # Không phải lỗi hệ thống — là việc cần người quyết. Ví dụ: địa chỉ khách
     # cho không đủ để xác định quận/phường. Agent phải HỎI LẠI, không thử lại.
     can_nguoi_xac_nhan: bool = False
->>>>>>> origin/main
 
 
 @dataclass(slots=True)
@@ -93,16 +90,12 @@ class WebhookEventResult:
     ma_van_don: str = ""
     don_vi: str = ""
     trang_thai_goc: str = ""
-<<<<<<< HEAD
-    trang_thai_noi_bo: InternalShippingStatus = InternalShippingStatus.DELIVERING
-=======
     # None = KHÔNG nhận ra mã của hãng.
     #
     # Mặc định cũ là DELIVERING, nghĩa là một mã lạ — `lost`, hoặc mã GHN vừa
     # thêm — lặng lẽ thành "đang giao". Khách hỏi "đơn tới đâu rồi" thì agent
     # trả lời "đang giao" cho kiện hàng đã mất.
     trang_thai_noi_bo: InternalShippingStatus | None = None
->>>>>>> origin/main
     mo_ta: str = ""
     thoi_gian: datetime | None = None
     du_lieu_goc: dict[str, Any] = field(default_factory=dict)

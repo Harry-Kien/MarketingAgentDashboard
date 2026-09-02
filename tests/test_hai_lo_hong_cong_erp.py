@@ -97,14 +97,17 @@ def test_khi_dung_tep_thi_van_chong_ton_kho_song_len(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "erp_loai", "tep")
     nha_may.dat_lai()
 
+    d_raw = chay(tools._catalog_song())
+    ma_test = d_raw["san_pham"][0]["ma"] if d_raw.get("san_pham") else "AS-CL01"
+
     async def _kho_noi_bo():
-        return {"AS-CL01": 7}
+        return {ma_test: 7}
 
     monkeypatch.setattr("agent.core.kho.lay_tat_ca", _kho_noi_bo)
     d = chay(tools._catalog_song())
     nha_may.dat_lai()
 
-    sp = [x for x in d["san_pham"] if x["ma"] == "AS-CL01"]
+    sp = [x for x in d["san_pham"] if x["ma"] == ma_test]
     assert sp and sp[0]["ton_kho"] == 7
 
 

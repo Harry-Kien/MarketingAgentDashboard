@@ -13,23 +13,19 @@ class Settings(BaseSettings):
     )
 
     # --- Nhà cung cấp model ---
-    # openai    = OpenAI API trực tiếp (gpt-4o-mini, gpt-4o)
     # vertex    = Claude qua Vertex AI (GCP ADC, không cần API key)
     # anthropic = Claude qua API trực tiếp của Anthropic (cần API key)
-    # gemini    = Gemini trên Vertex AI
     # Cùng model, cùng giá. Đổi giá trị này là đổi đường đi, không đụng mã.
-    llm_provider: str = "openai"
-    openai_api_key: str = ""
-    openai_base_url: str = "https://api.openai.com/v1"
+    llm_provider: str = "gemini"
     anthropic_api_key: str = ""
 
     # --- Vertex AI ---
     gcp_project_id: str = ""
     gcp_region: str = "global"          # cho Claude trên Vertex
     gemini_region: str = "us-central1"  # cho Gemini trên Vertex
-    model_chat: str = "gpt-4o-mini"
-    model_hard: str = "gpt-4o"
-    model_cheap: str = "gpt-4o-mini"
+    model_chat: str = "gemini-2.5-flash"
+    model_hard: str = "gemini-2.5-pro"
+    model_cheap: str = "gemini-2.5-flash-lite"
 
     # Vai của tiến trình: "tat_ca" | "api" | "worker".
     # Chạy nhiều bản API phải đặt "api" cho chúng và dựng ĐÚNG MỘT tiến
@@ -114,27 +110,38 @@ class Settings(BaseSettings):
     # Cửa sổ tiêu chuẩn của Meta, tính từ tin CUỐI của khách. Ngoài cửa sổ
     # phải dùng Message Tag hoặc quảng cáo — cơ chế khác, không phải việc
     # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.
+    messenger_cua_so_gio: float = 24.0
+
     # --- Meta OAuth: nối Trang bằng ĐĂNG NHẬP thay vì dán token ---
+    # Đây là thông tin của ỨNG DỤNG Meta, KHÁC token của từng Trang. App
+    # secret chỉ dùng phía máy chủ khi đổi code lấy token; nó không bao giờ
+    # được đưa vào URL trình duyệt. Để trống thì rơi về messenger_app_*.
     meta_app_id: str = ""
     meta_app_secret: str = ""
 
     # --- Zalo cá nhân: bí mật CỦA MÁY CHỦ, không hỏi người dùng ---
+    # Mọi tài khoản Zalo cá nhân dùng chung đúng hai giá trị này. Trước đây
+    # form kết nối bắt người dùng tự mở `.env` chép `ZALO_SIDECAR_SECRET`
+    # sang — bất khả thi khi hệ thống chạy trên tên miền cho nhiều người,
+    # và chép tay chuỗi 32 ký tự thì sai một byte là HMAC hỏng câm.
+    # Xem agent/omnichannel/bi_mat_may_chu.py
     zalo_sidecar_secret: str = ""
     zalo_sidecar_url: str = "http://127.0.0.1:3210"
 
-    # --- Vận chuyển (GHN / GHTK / Mock) ---
+    # --- Vận chuyển ---
+    # `mock` là mặc định CÓ CHỦ Ý: nó không gọi mạng, không tốn phí, không
+    # tạo vận đơn thật. Đổi sang `ghn` là hành động có hậu quả tiền bạc, nên
+    # nó phải là một quyết định rõ ràng của người vận hành.
     shipping_provider: str = "mock"
-    ghn_api_url: str = "https://online-gateway.ghn.vn/shiip/public-api/v2"
+    # Mặc định trỏ SANDBOX của GHN. Lên thật thì đổi sang
+    # https://online-gateway.ghn.vn/shiip/public-api/v2
+    ghn_api_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api/v2"
     ghn_token: str = ""
     ghn_shop_id: str = ""
+    # Bí mật nằm trong URL webhook. TRỐNG = TỪ CHỐI mọi webhook vận chuyển,
+    # không phải chấp nhận tất cả — xem agent/shipping/service.py
     shipping_webhook_secret: str = ""
 
-    # --- Quản trị Doanh nghiệp ERP (nexterp / mock / internal) ---
-    erp_provider: str = "nexterp"
-    nexterp_base_url: str = "http://localhost:8080"
-    nexterp_api_key: str = ""
-    nexterp_api_secret: str = ""
-    erp_cache_ttl_seconds: int = 300
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"
 
@@ -331,6 +338,26 @@ class Settings(BaseSettings):
     odoo_db: str = ""
     odoo_dang_nhap: str = ""
     odoo_api_key: str = ""
+
+    @property
+    def erp_provider(self) -> str:
+        return "nexterp" if self.erp_loai == "erpnext" else self.erp_loai
+
+    @property
+    def nexterp_base_url(self) -> str:
+        return self.erpnext_url or "http://localhost:8080"
+
+    @property
+    def nexterp_api_key(self) -> str:
+        return self.erpnext_api_key
+
+    @property
+    def nexterp_api_secret(self) -> str:
+        return self.erpnext_api_secret
+
+    @property
+    def erp_cache_ttl_seconds(self) -> int:
+        return int(self.erp_ttl_ton)
 
     @property
     def studio_path(self) -> Path:

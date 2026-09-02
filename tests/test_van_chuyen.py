@@ -52,7 +52,7 @@ def test_mac_dinh_he_thong_dung_mock():
     """
     from agent.config import Settings
 
-    assert Settings().shipping_provider == "mock"
+    assert Settings(_env_file=None).shipping_provider == "mock"
 
 
 # ---------------------------------------------------------------

@@ -42,6 +42,10 @@ data/videos/
 # Danh mục THẬT không lên repo. Bản mẫu `catalog.example.json` thì CÓ, để
 # máy vừa clone về chạy được ngay — mã tự dùng bản mẫu khi chưa có bản thật.
 data/catalog.json
+# Và bản sao lưu của nó. `scripts/nap_catalog_tu_excel.py` tạo tệp này mỗi
+# lần ghi đè danh mục — nó chứa ĐÚNG những con số mà dòng trên đang chặn.
+# Chặn danh mục mà để lọt bản sao của chính nó là chặn một nửa.
+data/catalog.json.bak
 # Ánh xạ mã là cấu hình của TỪNG cửa hàng. Bản `.example` đi theo repo để
 # người cài biết định dạng; bản thật thì không, để mã của cửa hàng này không
 # theo clone sang cửa hàng khác.

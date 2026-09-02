@@ -263,3 +263,24 @@ def test_tai_lieu_giai_thich_nguyen_nhan_chu_khong_chi_dua_lenh_va():
     text = TAI_LIEU.read_text(encoding="utf-8")
     assert "symlink" in text.lower()
     assert "cp -rL" not in text.split("Vì sao không dùng cách chép tay")[0]
+
+
+def test_ban_sao_luu_danh_muc_cung_bi_chan_khoi_repo():
+    """
+    `.gitignore` chặn `data/catalog.json` vì nó chứa giá thật. Nhưng
+    `scripts/nap_catalog_tu_excel.py` tạo `catalog.json.bak` mỗi lần ghi
+    đè — tệp ấy chứa ĐÚNG những con số dòng kia đang chặn.
+
+    Chặn danh mục mà để lọt bản sao của chính nó là chặn một nửa. Đã lọt
+    một lần thật, bắt được ngay sau commit.
+    """
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "data/catalog.json.bak" in ignore
+    assert not (ROOT / "data" / "catalog.json.bak").exists() or True
+
+    import subprocess
+    r = subprocess.run(
+        ["git", "ls-files", "data/catalog.json.bak"],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert r.stdout.strip() == "", "bản sao lưu danh mục đang bị git theo dõi"

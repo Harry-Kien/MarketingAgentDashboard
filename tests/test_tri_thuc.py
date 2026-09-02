@@ -316,3 +316,43 @@ def test_gitignore_chan_thu_muc_luu_tru_nhung_giu_ban_example():
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "data/knowledge.*/" in ignore
     assert "!data/knowledge.example/" in ignore
+
+
+# =====================================================================
+#  Nạp tài liệu qua dashboard: mỗi tài liệu một `source` riêng
+# =====================================================================
+
+def test_moi_tai_lieu_dashboard_co_source_rieng():
+    """
+    rag.ingest xoá bản cũ THEO source trước khi ghi — đúng, vì nạp lại
+    cùng một tệp không được tạo bản thứ hai.
+
+    Nhưng bản trước truyền cứng `"dashboard"` cho MỌI tài liệu, nên quy tắc
+    ấy thành: nạp tài liệu thứ hai XOÁ MẤT tài liệu thứ nhất. Nhân viên dán
+    năm chính sách vào ô "Nạp tài liệu", bấm năm lần, kho còn đúng một cái.
+
+    Không lỗi, không nhật ký. Chỉ là agent trả lời "chưa có thông tin" cho
+    bốn chính sách mà người ta tin là đã nạp. Đo được bằng hai lời gọi liên
+    tiếp.
+
+    ĐỌC BẰNG AST: chú thích trong `routes.py` có nhắc chuỗi dashboard để
+    giải thích lỗi cũ.
+    """
+    import ast
+
+    src = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    cay = ast.parse(src)
+    ham = next(
+        n for n in ast.walk(cay)
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "add_document"
+    )
+    goi = [
+        n for n in ast.walk(ham)
+        if isinstance(n, ast.Call) and ast.unparse(n.func) == "rag.ingest"
+    ]
+    assert goi, "add_document không còn gọi rag.ingest"
+    nguon = ast.unparse(goi[0].args[1])
+    assert nguon != '"dashboard"' and nguon != "'dashboard'", (
+        "mọi tài liệu dùng chung một source — tài liệu sau xoá tài liệu trước"
+    )
+    assert "title" in nguon, f"source phải phân biệt theo tiêu đề, đang là {nguon}"

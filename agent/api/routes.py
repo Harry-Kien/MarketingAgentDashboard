@@ -786,7 +786,27 @@ class DocBody(BaseModel):
 
 @router.post("/knowledge")
 async def add_document(body: DocBody) -> dict:
-    n = await rag.ingest(body.title, "dashboard", body.text)
+    """
+    Nạp một tài liệu từ ô "Nạp tài liệu" trên dashboard.
+
+    `source` PHẢI DUY NHẤT THEO TỪNG TÀI LIỆU
+    -----------------------------------------
+    Bản trước truyền cứng `"dashboard"` cho mọi tài liệu. `rag.ingest` xoá
+    bản cũ THEO `source` trước khi ghi — đúng, vì nạp lại cùng một tệp
+    không được tạo bản thứ hai.
+
+    Nhưng khi mọi tài liệu chung một `source`, quy tắc ấy nghĩa là: nạp tài
+    liệu thứ hai XOÁ MẤT tài liệu thứ nhất. Nhân viên dán năm chính sách
+    vào ô này, bấm năm lần, và kho còn đúng một cái — cái cuối.
+
+    Không có lỗi, không dòng nhật ký nào. Chỉ là agent trả lời "chưa có
+    thông tin" cho bốn chính sách mà người ta tin là đã nạp rồi. Đo được
+    bằng hai lời gọi liên tiếp.
+
+    Lấy tiêu đề làm `source` giữ được cả hai tính chất: tài liệu khác tên
+    thì cùng tồn tại, còn nạp lại CÙNG một tên thì vẫn thay bản cũ.
+    """
+    n = await rag.ingest(body.title, f"dashboard:{body.title}", body.text)
     return {"ok": True, "chunks": n}
 
 
@@ -1774,7 +1794,7 @@ THU_MUC_TAI_LEN = Path(__file__).resolve().parents[2] / "data" / "uploads"
 
 
 def _ten_file_an_toan(ten_goc: str, mime: str) -> str:
-    """
+    r"""
     Sinh tên file MỚI. Không bao giờ dùng tên client gửi lên.
 
     VÌ SAO KHÔNG LỌC TÊN XẤU MÀ VỨT HẲN

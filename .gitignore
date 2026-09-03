@@ -105,3 +105,5 @@ data/sidecar.log
 
 # Ảnh và tài liệu nhân viên gửi cho khách — dữ liệu vận hành, không phải mã.
 data/uploads/
+uv_err.log
+uv_out.log

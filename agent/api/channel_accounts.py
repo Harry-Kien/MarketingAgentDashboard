@@ -248,6 +248,103 @@ async def enable_account(
     return account.to_public(has_credentials=True)
 
 
+# Bảng giữ dấu vết của KHÁCH. Xoá tài khoản kênh không được đụng tới chúng,
+# và lược đồ đã canh việc đó bằng `ON DELETE RESTRICT`.
+#
+#   conversations        hội thoại đã diễn ra
+#   contact_points       danh tính khách trên kênh đó
+#   outbox_jobs          tin đang chờ gửi
+#   webhook_deliveries   webhook đã nhận, dùng để chống trùng
+#
+# Ta hỏi TRƯỚC thay vì để Postgres ném lỗi ràng buộc, vì thông điệp của
+# Postgres nói tên constraint chứ không nói "còn 12 hội thoại". Người vận
+# hành cần biết CÁI GÌ đang giữ, để chọn giữa xoá và tạm ngắt.
+_BANG_GIU = (
+    ("conversations", "account_id", "hội thoại"),
+    ("contact_points", "channel_account_id", "danh tính khách"),
+    ("outbox_jobs", "account_id", "tin đang chờ gửi"),
+    ("webhook_deliveries", "account_id", "webhook đã nhận"),
+)
+
+
+async def _dang_giu(account_id: UUID) -> list[str]:
+    """Những gì đang giữ tài khoản này lại, viết bằng tiếng người."""
+    giu: list[str] = []
+    for bang, cot, nhan in _BANG_GIU:
+        r = await db.fetchrow(
+            f"SELECT count(*) AS n FROM {bang} WHERE {cot} = $1", account_id
+        )
+        n = int(r["n"]) if r else 0
+        if n:
+            giu.append(f"{n} {nhan}")
+    return giu
+
+
+@router.get("/{account_id}/co-xoa-duoc")
+async def kiem_xoa_duoc(
+    account_id: UUID,
+    _: dict = Depends(bat_buoc_quan_tri),
+) -> dict[str, Any]:
+    """
+    Xem trước: xoá được hay không, và nếu không thì vì sao.
+
+    Có đường xem trước riêng để dashboard nói thẳng trong hộp thoại xác
+    nhận, thay vì để người dùng bấm Xoá rồi nhận một lỗi.
+    """
+    giu = await _dang_giu(account_id)
+    return {"xoa_duoc": not giu, "dang_giu": giu}
+
+
+@router.delete("/{account_id}")
+async def xoa_tai_khoan(
+    account_id: UUID,
+    user: dict = Depends(bat_buoc_quan_tri),
+    repository: PostgresAccountRepository = Depends(get_account_repository),
+) -> dict[str, Any]:
+    """
+    Xoá hẳn một tài khoản kênh.
+
+    KHÔNG BAO GIỜ XOÁ LỊCH SỬ KHÁCH. Tài khoản đã có hội thoại thì từ chối
+    xoá và bảo người vận hành dùng "Tạm ngắt" — hội thoại cũ là bằng chứng
+    của cửa hàng, và một nút dọn dẹp giao diện không được phép xoá nó.
+
+    Cái ĐƯỢC xoá theo (lược đồ khai `ON DELETE CASCADE`): credential, sự
+    kiện sức khoẻ, phân quyền, luật định tuyến, SLA, inbox_events. Trong đó
+    credential là thứ QUAN TRỌNG phải đi: để lại bí mật của một tài khoản
+    không còn dùng là để lại một chiếc chìa khoá không ai canh.
+    """
+    account = await repository.get(account_id)
+    if account is None:
+        raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+
+    giu = await _dang_giu(account_id)
+    if giu:
+        raise HTTPException(
+            409,
+            f"Không xoá được: còn {', '.join(giu)}. Lịch sử khách không bị "
+            "xoá theo tài khoản. Dùng \"Tạm ngắt\" để ngừng kênh mà vẫn giữ "
+            "dữ liệu.",
+        )
+
+    # Ghi nhật ký TRƯỚC khi xoá. Ghi sau thì lần xoá thành công cuối cùng
+    # có thể không để lại dấu vết nào nếu tiến trình chết giữa chừng — và
+    # đúng lúc ấy là lúc người ta cần biết ai đã xoá cái gì.
+    await db.log_event(
+        "kenh.xoa_tai_khoan",
+        # `_actor()` trả về AccountActor — đúng cho `service.*`, SAI cho
+        # `db.log_event`: cột `events.actor` là TEXT và asyncpg từ chối một
+        # đối tượng. Chép khuôn từ dòng `disable_account` ngay bên trên là
+        # rơi thẳng vào bẫy này.
+        actor=user["ten_dang_nhap"],
+        ref_id=account_id,      # cột uuid — str() cũng bị từ chối
+        channel=str(account.channel.value if hasattr(account.channel, "value")
+                    else account.channel),
+        display_name=account.display_name or "",
+    )
+    await db.execute("DELETE FROM channel_accounts WHERE id = $1", account_id)
+    return {"da_xoa": str(account_id)}
+
+
 @router.get("/{account_id}/health")
 async def account_health(
     account_id: UUID,

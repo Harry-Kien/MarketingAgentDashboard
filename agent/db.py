@@ -83,8 +83,23 @@ async def log_event(kind: str, *, actor: str = "system", ref_id=None, **detail) 
             ref_id,
             detail,   # codec JSONB tu ma hoa — KHONG dumps thu cong
         )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # KHÔNG im lặng. Nhật ký kiểm toán hỏng thì luồng chính vẫn phải
+        # chạy — nhưng nếu hỏng mà không ai biết thì nó hỏng MÃI MÃI.
+        #
+        # Đã xảy ra: một lời gọi truyền `ref_id=str(uuid)` vào cột uuid.
+        # asyncpg từ chối, dòng dưới nuốt, và thao tác XOÁ TÀI KHOẢN KÊNH —
+        # không đảo ngược được — không để lại dấu vết nào. Phát hiện ra chỉ
+        # vì tình cờ đi đếm bảng `events` sau khi thử.
+        #
+        # Ghi qua logging chứ không qua CSDL: chính CSDL vừa là thứ hỏng.
+        # Bộ lọc trong `agent/nhat_ky.py` che bí mật trước khi in.
+        import logging
+
+        logging.getLogger("agent.nhat_ky_kiem_toan").error(
+            "KHÔNG ghi được nhật ký kiểm toán %r: %s: %s",
+            kind, type(exc).__name__, exc,
+        )
 
 
 async def seen_webhook(key: str) -> bool:

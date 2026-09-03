@@ -2107,6 +2107,8 @@ async function loadKetNoi() {
             ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
             ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
             ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
+            <button class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
+              data-ten-tk="${esc(account.display_name)}">Xoá</button>
           </div>
         </article>`;
       }).join("") : '<p class="empty">Chưa kết nối tài khoản nào.</p>'}</div>
@@ -2126,6 +2128,42 @@ async function loadKetNoi() {
   $$('[data-disable]').forEach((button) => button.addEventListener("click", async () => {
     try { await api(`/channel-accounts/${button.dataset.disable}/disable`, { method: "POST" }); toast("Đã tạm ngắt tài khoản."); loadKetNoi(); }
     catch (e) { toast(e.message, true); }
+  }));
+
+  /* XOÁ TÀI KHOẢN KÊNH.
+   *
+   * Hỏi máy chủ TRƯỚC xem có xoá được không, rồi mới hiện hộp thoại. Bấm
+   * Xoá rồi mới nhận lỗi "còn 12 hội thoại" là bắt người dùng thử để biết
+   * — trong khi máy chủ biết câu trả lời từ trước.
+   *
+   * Lịch sử khách KHÔNG bao giờ bị xoá theo: lược đồ khai `ON DELETE
+   * RESTRICT` cho hội thoại, danh tính khách, tin chờ gửi và webhook. */
+  $$("[data-xoa-tk]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.xoaTk;
+    const ten = button.dataset.tenTk || "tài khoản này";
+    let truoc;
+    try {
+      truoc = await api("/channel-accounts/" + id + "/co-xoa-duoc");
+    } catch (e) { toast(e.message, true); return; }
+
+    if (!truoc.xoa_duoc) {
+      alert(
+        `Không xoá được "${ten}".\n\n` +
+        `Còn ${truoc.dang_giu.join(", ")}.\n\n` +
+        "Lịch sử khách không bị xoá theo tài khoản — đó là bằng chứng của " +
+        'cửa hàng. Dùng nút "Tạm ngắt" để ngừng kênh mà vẫn giữ dữ liệu.');
+      return;
+    }
+    if (!confirm(
+        `Xoá hẳn "${ten}" khỏi hệ thống?\n\n` +
+        "Credential đã lưu sẽ bị xoá theo và không khôi phục được.\n" +
+        "Tài khoản này chưa có hội thoại nào nên không mất lịch sử.")) return;
+
+    try {
+      await api("/channel-accounts/" + id, { method: "DELETE" });
+      toast("Đã xoá \"" + ten + "\"");
+      loadKetNoi();
+    } catch (e) { toast(e.message, true); }
   }));
   /* Mở rộng và THU GỌN LẠI — cùng một nút.
    *

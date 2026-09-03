@@ -58,6 +58,15 @@ data/catalog.json.bak
 # người cài biết định dạng; bản thật thì không, để mã của cửa hàng này không
 # theo clone sang cửa hàng khác.
 data/anh_xa_ma.json
+# Tệp bổ sung sáu trường tư vấn. Rỗng thì vô hại, nhưng ĐIỀN XONG thì nó
+# chứa số công bố mỹ phẩm và thành phần thật — đúng loại dữ liệu mà
+# `data/catalog.json` ở trên đang chặn, chỉ khác định dạng.
+#
+# Chặn NGAY khi sinh ra tệp, không đợi tới lúc nó có dữ liệu: repo này đã
+# một lần chặn danh mục mà quên bản sao lưu của chính nó, và bản sao ấy lọt
+# lên GitHub.
+data/bo_sung_tu_van.xlsx
+data/_thu_bo_sung.xlsx
 
 # Ảnh mẫu tổng hợp (do script sinh ra) thì GIỮ LẠI — lệnh test trong README
 # cần chúng, và chúng không chứa thông tin thật nào.

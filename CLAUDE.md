@@ -99,6 +99,21 @@ Nhưng vì thế nó không đi theo repo, và `scripts.eval` chết ngay dòng 
 Sửa xong `_BUOC_CHUYEN` hay prompt thì **chạy lại nhóm tuân thủ** rồi sinh
 lại `docs/thuc-nghiem.md` — có test canh việc tài liệu đã cũ.
 
+Bảng hàng của cửa hàng không có sáu trường tư vấn (`so_cong_bo`,
+`khong_chua`, `hsd_thang`, `cach_dung`, `thoi_diem`, `do_pH`). Thiếu chúng
+agent KHÔNG nói sai — nó chuyển người, ở đúng những câu lẽ ra tự trả lời
+được, mỗi ngày. Hai script này để người điền nốt:
+
+```bash
+python -m scripts.sinh_mau_bo_sung           # sinh Excel để người điền
+python -m scripts.nap_bo_sung_tu_van         # xem trước, KHÔNG ghi
+python -m scripts.nap_bo_sung_tu_van --ghi   # gộp vào catalog.json
+```
+
+Tách khỏi `nap_catalog_tu_excel` có chủ ý: bảng giá được xuất lại mỗi lần
+đổi giá, phần tư vấn thì viết một lần. Chung một tệp là mỗi lần xuất lại
+bảng giá mất sạch phần tư vấn.
+
 ---
 
 ## Quy ước bắt buộc

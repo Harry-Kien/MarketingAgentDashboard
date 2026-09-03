@@ -112,3 +112,4 @@ data/xac_thuc_domain/*
 tunnel.log
 tunnel.out
 sidecar*.log
+app.log

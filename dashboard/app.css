@@ -1628,3 +1628,16 @@ svg { flex: none; }
 }
 #cauhinh-ds .row__body,
 #kynang-cosan .row__body { min-width: 0; }
+
+/* Hai vùng còn lại của màn Cấu hình cũng cần chữ xuống dòng.
+ *
+ * Lượt trước tôi chỉ phủ bốn vùng và BỎ SÓT hai vùng này — lịch sử thay đổi
+ * và bảng "không chỉnh được ở đây". Cả hai đều là chữ giải thích, và cả hai
+ * đều bị `.row__sub { white-space: nowrap }` cắt cụt. */
+#cauhinh-lichsu .row__sub,
+.view[data-view="cauhinh"] .rows .row__sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.5;
+}

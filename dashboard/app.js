@@ -2890,13 +2890,38 @@ async function loadCauHinh() {
   await loadLichSuCauHinh();
 }
 
+/* JSON thô trong nhật ký là thứ LẬP TRÌNH VIÊN đọc được, không phải người
+ * trực ca. `{"mode":"auto","enabled":"True","zalo_account_id":null,...}` dài
+ * 200 ký tự và chôn mất thứ duy nhất đáng nhìn: cái gì vừa đổi.
+ *
+ * Chỉ hiện những khoá NGƯỜI chỉnh được, bỏ phần còn lại. */
+const NHAN_CAU_HINH = {
+  enabled: "Công tắc agent",
+  mode: "Chế độ trả lời",
+  confidence_floor: "Ngưỡng tin cậy",
+  max_cost_per_conversation: "Trần mỗi hội thoại",
+  tran_chi_phi_ngay_usd: "Trần mỗi ngày",
+};
+
+function doiThayCauHinh(ct) {
+  if (!ct || typeof ct !== "object") return "đặt lại về mặc định";
+  const phan = Object.entries(NHAN_CAU_HINH)
+    .filter(([k]) => ct[k] !== undefined && ct[k] !== null)
+    .map(([k, nhan]) => `${nhan} = ${ct[k]}`);
+  return phan.length ? phan.join(" · ") : "đặt lại về mặc định";
+}
+
 async function loadLichSuCauHinh() {
   const ls = await api("/cau-hinh/lich-su?limit=12");
   $("#cauhinh-lichsu").innerHTML = ls.length
+    /* `.row` là lưới `3px minmax(0,1fr) auto`. Cột đầu LÀ dải màu — thiếu
+       `.row__flag` thì `.row__body` rơi vào cột 3px và nội dung biến mất
+       hoàn toàn. Nhìn ra là một danh sách toàn dòng trống. */
     ? ls.map((x) => `<div class="row">
+        <span class="row__flag row__flag--auto"></span>
         <span class="row__body">
           <span class="row__title">${esc(x.boi || "?")}</span>
-          <span class="row__sub">${esc(JSON.stringify(x.chi_tiet)).slice(0, 160)}</span>
+          <span class="row__sub">${esc(doiThayCauHinh(x.chi_tiet))}</span>
         </span>
         <span class="row__side"><span class="row__time">${clock(x.luc)}</span></span>
       </div>`).join("")

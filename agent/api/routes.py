@@ -1124,6 +1124,43 @@ async def dat_lai_cau_hinh(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
     return await runtime.dat_lai_mac_dinh(boi=nguoi["ten_dang_nhap"])
 
 
+# ---------------------------------------------------------------
+#  Xác nhận bảng giá — việc chỉ con người làm được
+# ---------------------------------------------------------------
+
+@router.get("/erp/xac-nhan-bang-gia")
+async def doc_xac_nhan_bang_gia(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    from agent.erp import xac_nhan
+
+    return {"xac_nhan": await xac_nhan.doc(),
+            "dang_dung": settings.erp_pricelist or ""}
+
+
+@router.post("/erp/xac-nhan-bang-gia")
+async def ghi_xac_nhan_bang_gia(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    """
+    Xác nhận bảng giá ĐANG DÙNG là giá bán lẻ.
+
+    Không nhận tên bảng giá từ thân request. Lấy thẳng từ cấu hình đang
+    chạy: cho gửi tên vào là mở đường xác nhận một bảng giá khác với bảng
+    hệ thống thật sự đang dùng — và xác nhận ấy sẽ trông hợp lệ.
+    """
+    from agent.erp import xac_nhan
+
+    try:
+        return await xac_nhan.ghi(settings.erp_pricelist,
+                                  boi=nguoi["ten_dang_nhap"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/erp/xac-nhan-bang-gia")
+async def go_xac_nhan_bang_gia(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    from agent.erp import xac_nhan
+
+    return {"da_go": await xac_nhan.go(boi=nguoi["ten_dang_nhap"])}
+
+
 @router.get("/events")
 async def recent_events(limit: int = 50) -> list[dict]:
     rows = await db.fetch(

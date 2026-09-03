@@ -125,8 +125,21 @@ async def luu(fields: dict, *, boi: str = "staff") -> dict:
 
 
 async def dat_lai_mac_dinh(*, boi: str = "staff") -> dict:
-    """Xoá cấu hình đã lưu và quay về mặc định của `.env`."""
-    await db.execute("DELETE FROM cau_hinh_agent")
+    """
+    Xoá cấu hình đã lưu và quay về mặc định của `.env`.
+
+    XOÁ ĐÚNG NHỮNG KHOÁ CỦA MÌNH, không xoá cả bảng.
+
+    Bản đầu chạy `DELETE FROM cau_hinh_agent` trần. Bảng ấy là kho khoá–giá
+    trị dùng chung, nên mọi thứ lưu thêm vào sau này — ví dụ xác nhận bảng
+    giá — bị quét sạch khi ai đó bấm "Quay về mặc định" cho một việc hoàn
+    toàn khác. Nút ấy hứa đặt lại BỐN thiết lập agent, không hứa xoá thứ
+    người khác vừa xác nhận tuần trước.
+    """
+    await db.execute(
+        "DELETE FROM cau_hinh_agent WHERE khoa = ANY($1)",
+        list(KHOA_BEN_VUNG),
+    )
     for k in KHOA_BEN_VUNG:
         STATE[k] = MAC_DINH[k]
     await db.log_event("runtime.dat_lai_mac_dinh", actor=boi)

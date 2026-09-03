@@ -173,12 +173,30 @@ async def kiem_tat_ca() -> dict:
                     f"{g.gia_ban:,} {g.don_vi} từ '{g.nguon}', {tre_gia:.0f}ms"))
     # Máy KHÔNG tự biết bảng nào là bảng bán lẻ. Nó phải nói ra và bắt người
     # xác nhận, chứ không được im lặng coi như đúng.
-    muc.append(_muc(
-        "Bảng giá", CANH_BAO,
-        f"NGƯỜI phải xác nhận '{g.nguon}' đúng là giá BÁN LẺ",
-        "Sai bảng giá thì agent báo giá sỉ cho khách lẻ, rất tự tin. "
-        "Với Odoo đây là list_price, CHƯA qua pricelist.",
-    ))
+    #
+    # Nhưng cảnh báo không bao giờ tắt được thì tệ hơn không có cảnh báo:
+    # người vận hành biết mục này LÚC NÀO CŨNG vàng, nên lần sau có một mục
+    # vàng THẬT thì mắt họ lướt qua. Xác nhận được thì nó mới còn nghĩa.
+    #
+    # Xác nhận gắn với ĐÚNG TÊN bảng giá. Đổi ERP_PRICELIST sang bảng khác
+    # là cảnh báo quay lại ngay — cái đã xác nhận không còn là cái đang chạy.
+    from agent.erp import xac_nhan as _xn
+
+    da = await _xn.da_xac_nhan(g.nguon)
+    if da:
+        muc.append(_muc(
+            "Bảng giá", TOT,
+            f"'{g.nguon}' — {da.get('boi', '?')} đã xác nhận là giá bán lẻ "
+            f"({str(da.get('luc', ''))[:10]})",
+        ))
+    else:
+        muc.append(_muc(
+            "Bảng giá", CANH_BAO,
+            f"NGƯỜI phải xác nhận '{g.nguon}' đúng là giá BÁN LẺ",
+            "Sai bảng giá thì agent báo giá sỉ cho khách lẻ, rất tự tin. "
+            "Với Odoo đây là list_price, CHƯA qua pricelist. "
+            "Xác nhận ở màn Kho khi đã kiểm.",
+        ))
 
     # --- 4. Tồn kho lấy từ kho nào -----------------------------------
     try:

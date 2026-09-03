@@ -933,8 +933,18 @@ $("#erpthu")?.addEventListener("click", async () => {
         <div class="row__main"><b>${esc(m.ten)}</b>
           <span class="row__sub">${esc(m.ghi_chu)}</span>
           ${m.goi_y ? `<span class="row__sub">└─ ${esc(m.goi_y)}</span>` : ""}</div>
-        <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
-          ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
+        <span class="row__side">
+          ${m.ten === "Bảng giá"
+            /* Mục DUY NHẤT máy không tự quyết được. Nút nằm ngay cạnh nó,
+               không nằm trong một màn cài đặt nào khác: người vừa đọc dòng
+               cảnh báo là người đang có đủ ngữ cảnh để bấm. */
+            ? `<button type="button" class="btn btn--sm" data-bg-xacnhan="${
+                 m.trang_thai === "tot" ? "go" : "ghi"}">${
+                 m.trang_thai === "tot" ? "Gỡ xác nhận" : "Tôi đã kiểm"}</button>`
+            : ""}
+          <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
+            ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
+        </span>
       </div>`).join("");
     loadErpCauHinh(true);
   } catch (e) {
@@ -2924,5 +2934,33 @@ $("#cauhinh-macdinh")?.addEventListener("click", async () => {
     await api("/cau-hinh/mac-dinh", { method: "POST" });
     toast("Đã quay về mặc định");
     await loadCauHinh();
+  } catch (err) { toast(err.message, true); }
+});
+
+
+/* ---------------- xác nhận bảng giá ---------------- */
+
+/* Mục "Bảng giá" là thứ máy KHÔNG tự kiểm được: nó chỉ thấy một cái tên và
+ * một con số, không biết bảng nào là bảng bán lẻ.
+ *
+ * Nhưng một cảnh báo không bao giờ tắt được thì tệ hơn không có cảnh báo —
+ * người vận hành biết mục ấy lúc nào cũng vàng, nên lần sau có mục vàng
+ * THẬT thì mắt họ lướt qua. */
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-bg-xacnhan]");
+  if (!b) return;
+  const ghi = b.dataset.bgXacnhan === "ghi";
+  if (ghi && !confirm(
+      "Xác nhận bảng giá đang dùng ĐÚNG là giá bán lẻ?
+
+" +
+      "Sai thì agent báo giá sỉ cho khách lẻ, rất tự tin.
+" +
+      "Xác nhận này gắn với tên bảng giá hiện tại — đổi sang bảng khác thì " +
+      "cảnh báo quay lại.")) return;
+  try {
+    await api("/erp/xac-nhan-bang-gia", { method: ghi ? "POST" : "DELETE" });
+    toast(ghi ? "Đã ghi nhận xác nhận" : "Đã gỡ — cảnh báo quay lại");
+    $("#erpthu")?.click();
   } catch (err) { toast(err.message, true); }
 });

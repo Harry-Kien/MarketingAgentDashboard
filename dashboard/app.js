@@ -204,6 +204,17 @@ async function loadOverview() {
          o.conversations.containment, "auto"),
     cell("Chờ người", o.conversations.waiting, "cuộc",
          o.conversations.total ? o.conversations.waiting / o.conversations.total : 0, "assist"),
+    /* TIN CHẾT — ô này chỉ hiện khi có tin chết, và khi hiện thì nó đỏ.
+     *
+     * Một ô luôn hiện "0" là một ô người ta thôi nhìn sau tuần đầu. Ô chỉ
+     * xuất hiện khi có chuyện thì sự xuất hiện của nó CHÍNH LÀ tín hiệu.
+     *
+     * Không cắt theo 24 giờ: tin không gửi được tuần trước vẫn là tin
+     * khách không nhận được. Ba tin đã chết rải hơn một tuần mà không ai
+     * biết, đúng vì không có chỗ nào đếm chúng. */
+    (o.tin_chet && o.tin_chet.so
+      ? cell("Tin KHÔNG gửi được", o.tin_chet.so, "khách không nhận được", 1, "halt")
+      : ""),
     cell("Đã chuyển người", o.conversations.escalated, "cuộc",
          o.conversations.total ? o.conversations.escalated / o.conversations.total : 0, "halt"),
     cell("Có căn cứ tài liệu", pct(o.quality.grounding), `${o.quality.replies} lượt trả lời`,

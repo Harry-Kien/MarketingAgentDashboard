@@ -112,6 +112,63 @@ def _job_from_row(row: Mapping[str, Any]) -> OutboxJob:
     )
 
 
+async def _keu_tin_chet(job: OutboxJob, error: str) -> None:
+    """
+    Một tin đã bỏ cuộc hẳn — phải có người biết.
+
+    VÌ SAO CẦN, dù `inbox_events` đã ghi `outbox.dead`
+    ---------------------------------------------------
+    Dòng trong `inbox_events` chỉ có nghĩa khi ai đó đi đọc bảng ấy. Không
+    ai đọc.
+
+    Đo được trên hệ thống thật (03.09.2026): BA tin của nhân viên chết rải
+    suốt hơn một tuần — "oke", "xin chào", "Dạ mình cần Linh hỗ trợ gì ạ?".
+    Người trực gõ, thấy tin hiện lên khung chat, tưởng đã gửi. Khách không
+    nhận được gì. Không thông báo, không dấu hiệu nào trên giao diện.
+
+    Outbox thử tám lần rồi bỏ cuộc — đúng thiết kế. Nhưng bỏ cuộc xong thì
+    KHÔNG AI ĐƯỢC BÁO, và đó là chỗ hỏng.
+
+    Đây là kiểu tốn khách thật: hệ thống trông bình thường, chỉ có khách là
+    chờ mãi không thấy trả lời.
+
+    NUỐT MỌI LỖI Ở ĐÂY
+    ------------------
+    Cảnh báo hỏng không được làm hỏng worker outbox. Tin đã chết rồi; làm
+    chết luôn cả hàng đợi là biến một tin mất thành mọi tin mất.
+    """
+    try:
+        from agent import db as _db
+
+        await _db.log_event(
+            "outbox.tin_chet",
+            actor="system",
+            ref_id=job.conversation_id,
+            # KHÔNG đặt tên khoá là `kind`: `log_event(kind, **detail)`
+            # nhận `kind` làm tham số VỊ TRÍ, nên truyền thêm một kwarg
+            # cùng tên là TypeError — và `log_event` nuốt nó, nên sự kiện
+            # lặng lẽ không được ghi. Test bắt được đúng chuyện này.
+            loai_tin=job.kind,
+            attempts=str(job.attempts),
+            error=error[:200],
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from agent import canh_gac
+
+        await canh_gac._bao(
+            "nghiem_trong",
+            "Tin nhắn KHÔNG gửi được cho khách",
+            f"Đã thử {job.attempts} lần rồi bỏ cuộc. Khách không nhận được "
+            f"tin này và sẽ ngồi chờ. Lý do: {error[:160]}",
+            {},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class PostgresOutboxRepository:
     def __init__(self, pool_provider: Callable[[], Any] = db.pool):
         self._pool_provider = pool_provider
@@ -364,12 +421,20 @@ class PostgresOutboxRepository:
             await self._mark_failed_on_connection(
                 guarded, job, error, decision
             )
-            return
-        async with self._pool_provider().acquire() as connection:
-            async with connection.transaction():
-                await self._mark_failed_on_connection(
-                    connection, job, error, decision
-                )
+        else:
+            async with self._pool_provider().acquire() as connection:
+                async with connection.transaction():
+                    await self._mark_failed_on_connection(
+                        connection, job, error, decision
+                    )
+
+        # KÊU SAU KHI GIAO DỊCH ĐÃ XONG, không kêu bên trong.
+        #
+        # Cảnh báo là một lời gọi HTTP ra ngoài. Gọi nó khi đang giữ giao
+        # dịch là giữ khoá hàng trên `outbox_jobs` suốt thời gian webhook
+        # cảnh báo phản hồi — và nếu webhook treo, cả worker treo theo.
+        if decision.status is OutboxStatus.DEAD:
+            await _keu_tin_chet(job, error)
 
     @staticmethod
     async def _mark_failed_on_connection(

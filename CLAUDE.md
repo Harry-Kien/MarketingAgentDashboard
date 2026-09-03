@@ -51,6 +51,7 @@ không ai biết**:
 | Bộ đo chỉ tìm dấu hỏi | **xanh giả** — thưởng cho cả câu prompt đã cấm |
 | `httpx` ghi URL đầy đủ ở mức INFO | **token Meta vào log** mỗi lần canh gác chạy |
 | Git đổi LF→CRLF khi checkout | checksum migration lệch, **ứng dụng không khởi động được** |
+| Outbox bỏ cuộc sau 8 lần thử mà không báo ai | **tin nhân viên chết**, khách chờ mãi không có trả lời |
 
 Khi sửa hay thêm gì, luôn hỏi: **hỏng thì có ai biết không?** Nếu không —
 thêm phép kiểm, thêm nhật ký, hoặc để nó nổ to.

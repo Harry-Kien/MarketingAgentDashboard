@@ -173,6 +173,19 @@ async def overview() -> dict:
         """
     )
 
+    # TIN CHẾT — không giới hạn 24 giờ, có chủ ý.
+    #
+    # Một tin không gửi được cho khách vẫn là một tin không gửi được, dù nó
+    # chết từ tuần trước. Đo được trên hệ thống thật: ba tin của nhân viên
+    # chết rải hơn một tuần mà không ai biết, vì không có chỗ nào đếm chúng.
+    #
+    # Cắt theo 24 giờ là để chúng tự biến mất khỏi màn hình sau một đêm —
+    # đúng cái đã xảy ra.
+    chet = await db.fetchrow(
+        "SELECT count(*) AS n, max(updated_at) AS gan_nhat "
+        "FROM outbox_jobs WHERE status = 'dead'"
+    ) or {}
+
     total = int(conv.get("total") or 0)
     handled = int(conv.get("handled") or 0)
     replies = int(msg.get("replies") or 0)
@@ -205,6 +218,12 @@ async def overview() -> dict:
             "review": int(vid.get("review") or 0),
             "failed": int(vid.get("failed") or 0),
             "seconds": round(_num(vid.get("seconds")), 1),
+        },
+        "tin_chet": {
+            "so": int(chet.get("n") or 0),
+            "gan_nhat": (
+                chet["gan_nhat"].isoformat() if chet.get("gan_nhat") else None
+            ),
         },
         "runtime": dict(runtime.STATE),
         # Địa chỉ CÔNG KHAI để dashboard dựng URL callback cho Meta.

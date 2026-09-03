@@ -107,3 +107,5 @@ data/sidecar.log
 data/uploads/
 uv_err.log
 uv_out.log
+data/xac_thuc_domain/*
+!data/xac_thuc_domain/.gitkeep

@@ -31,6 +31,7 @@ from agent.api.outbox import router as outbox_router
 from agent.api.native_webhooks import router as native_webhooks_router
 from agent.api.zalo_personal_webhook import router as zalo_personal_webhook_router
 from agent.api.zalo_oa_webhook import router as zalo_oa_webhook_router
+from agent.api.xac_thuc_domain import router as xac_thuc_domain_router
 from agent.api.webchat import router as webchat_router
 from agent.api.oauth_meta import router as oauth_meta_router
 from agent.api import tich_hop
@@ -772,6 +773,10 @@ app.include_router(zalo_oa_webhook_router)
 app.include_router(webchat_router)
 app.include_router(oauth_meta_router)
 app.include_router(tich_hop.router)
+
+# ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một
+# đoạn. Đặt sớm hơn là nó nuốt cả /healthz, /mcp và trang dashboard.
+app.include_router(xac_thuc_domain_router)
 
 
 @app.get("/healthz")

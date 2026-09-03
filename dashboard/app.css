@@ -1641,3 +1641,19 @@ svg { flex: none; }
   text-overflow: clip;
   line-height: 1.5;
 }
+
+/* Lý do kênh hỏng, hiện ngay dưới tên tài khoản.
+ *
+ * Tô màu cảnh báo và cho XUỐNG DÒNG: đây là câu người vận hành đọc để biết
+ * phải làm gì, cắt cụt nó là bỏ đi lý do dòng này tồn tại. */
+.row__sub--loi,
+.account-line .row__sub--loi {
+  display: block;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  color: hsl(var(--destructive));
+  font-size: .72rem;
+  line-height: 1.45;
+  margin-top: .15rem;
+}

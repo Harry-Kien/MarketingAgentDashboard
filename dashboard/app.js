@@ -2106,6 +2106,12 @@ async function loadKetNoi() {
         return `<article class="account-line">
           <span class="health-dot health-dot--${esc(account.status)}"></span>
           <div><b>${esc(account.display_name)}</b><small>${esc(account.external_account_id || "Chưa có provider ID")}</small>
+            ${account.ly_do_hong
+              /* Lý do NẰM LẠI trên thẻ. Toast báo xong là biến mất, nên
+                 người mở dashboard sáng hôm sau chỉ thấy một chữ vàng
+                 trống rỗng và không biết phải làm gì. */
+              ? `<span class="row__sub row__sub--loi">${esc(account.ly_do_hong)}</span>`
+              : ""}
             ${callback ? `<code class="callback" title="Callback URL">${esc(callback)}</code>` : ""}</div>
           <span class="status-pill status-pill--${esc(account.status)}">${esc(ACCOUNT_STATUS_LABEL[account.status] || account.status)}</span>
           <div class="token-slot" data-tokenslot="${account.id}"></div>
@@ -2124,10 +2130,36 @@ async function loadKetNoi() {
     </section>`;
     }).join("");
 
+/* Mã lỗi một mình KHÔNG hành động được.
+ *
+ * `provider.unreachable` đúng cho cả "sidecar chưa bật" lẫn "mạng chết"
+ * lẫn "token hết hạn" — ba việc phải làm hoàn toàn khác nhau. Máy chủ đã
+ * trả kèm `detail.ly_do` từ bản vá trước; giao diện thì vứt đi và chỉ hiện
+ * cái mã.
+ *
+ * Hậu quả đo được: người dùng thấy "provider.unreachable", không biết làm
+ * gì, phải hỏi — trong khi câu trả lời "sidecar không phản hồi" đã nằm sẵn
+ * trong chính phản hồi ấy. */
+const GOI_Y_LOI = {
+  "provider.unreachable": "Kiểm tra dịch vụ đó đã chạy chưa.",
+  "provider.unauthorized": "Credential sai hoặc đã hết hạn — nhập lại.",
+  "provider.rejected": "Provider từ chối. Xem lý do bên dưới.",
+  "provider.invalid_response": "Provider trả về dữ liệu lạ.",
+};
+
+function lyDoKetNoi(kq) {
+  const ly_do = kq && kq.detail && kq.detail.ly_do;
+  const goi_y = GOI_Y_LOI[kq && kq.code] || "";
+  /* Giữ CẢ mã: người vận hành đọc lý do, còn mã là thứ tra được trong tài
+     liệu và nhắn cho người khác. Bỏ mã đi là mất đường tra cứu. */
+  return [kq && kq.code, ly_do, goi_y].filter(Boolean).join(" — ");
+}
+
   $$('[data-verify]').forEach((button) => button.addEventListener("click", async () => {
     try {
       const result = await api(`/channel-accounts/${button.dataset.verify}/verify`, { method: "POST" });
-      toast(result.ok ? "Provider đã xác minh; tài khoản sẵn sàng." : `Chưa xác minh được: ${result.code}`, !result.ok);
+      toast(result.ok ? "Provider đã xác minh; tài khoản sẵn sàng."
+                      : `Chưa xác minh được: ${lyDoKetNoi(result)}`, !result.ok);
       loadKetNoi();
     } catch (e) { toast(e.message, true); }
   }));

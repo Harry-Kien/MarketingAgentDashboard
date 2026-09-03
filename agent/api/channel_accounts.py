@@ -129,12 +129,54 @@ async def list_accounts(
         UUID(str(user["id"])),
         is_admin=user["vai_tro"] == "quan_tri",
     )
-    return [
-        account.to_public(
+
+    # LÝ DO HỎNG PHẢI NẰM LẠI TRÊN THẺ, KHÔNG CHỈ CHỚP QUA TOAST.
+    #
+    # Trước đây API chỉ trả `status`, nên thẻ hiện "Gián đoạn" trống rỗng.
+    # Người vận hành mở dashboard sáng hôm sau thấy một chữ vàng và không có
+    # cách nào biết vì sao — toast báo lý do đã biến mất từ tối qua.
+    #
+    # MỘT truy vấn cho TẤT CẢ tài khoản, không phải một truy vấn mỗi thẻ:
+    # 29 tài khoản là 29 lượt hỏi CSDL mỗi lần mở màn Kết nối.
+    ly_do: dict[str, str] = {}
+    ids = [a.id for a in accounts if str(a.status) != "active"]
+    if ids:
+        try:
+            rows = await db.fetch(
+                """
+                SELECT DISTINCT ON (account_id) account_id, code, detail
+                FROM account_health_events
+                WHERE account_id = ANY($1) AND status <> 'active'
+                ORDER BY account_id, observed_at DESC
+                """,
+                ids,
+            )
+            for r in rows:
+                ct = r["detail"] or {}
+                if isinstance(ct, str):
+                    import json as _json
+
+                    try:
+                        ct = _json.loads(ct)
+                    except ValueError:
+                        ct = {}
+                ly_do[str(r["account_id"])] = str(
+                    (ct or {}).get("ly_do") or r["code"] or ""
+                )[:200]
+        except Exception:  # noqa: BLE001
+            # Bảng chưa migrate hoặc CSDL nấc: thẻ mất phần lý do, nhưng màn
+            # Kết nối vẫn hiện được. Mất một dòng phụ tốt hơn mất cả màn.
+            ly_do = {}
+
+    ra = []
+    for account in accounts:
+        cong_khai = account.to_public(
             has_credentials=await repository.has_credentials(account.id)
         )
-        for account in accounts
-    ]
+        if ly_do.get(str(account.id)):
+            cong_khai["ly_do_hong"] = ly_do[str(account.id)]
+        ra.append(cong_khai)
+    return ra
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

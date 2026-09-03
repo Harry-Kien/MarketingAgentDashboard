@@ -143,3 +143,9 @@ class MockShippingProvider(BaseShippingProvider):
             thoi_gian=datetime.now(timezone.utc),
             du_lieu_goc=body,
         )
+
+    async def huy_van_don(self, ma_van_don: str, ly_do: str = "") -> tuple[bool, str]:
+        if ma_van_don in self._storage:
+            self._storage[ma_van_don]["trang_thai_noi_bo"] = InternalShippingStatus.RETURNED
+            self._storage[ma_van_don]["trang_thai_goc"] = "cancel"
+        return True, "Đã huỷ vận đơn mock thành công"

@@ -151,7 +151,7 @@ class BaseShippingProvider(ABC):
         trang_thai, _goc = anh_xa_trang_thai(carrier_status)
         return trang_thai
 
-    async def huy_van_don(self, ma_van_don: str) -> tuple[bool, str]:
+    async def huy_van_don(self, ma_van_don: str, ly_do: str = "") -> tuple[bool, str]:
         """Mặc định: hãng không cho huỷ qua API. Ghi đè nếu hãng hỗ trợ."""
         return False, "Hãng này không cho huỷ vận đơn qua API"
 

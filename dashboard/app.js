@@ -824,6 +824,7 @@ async function loadOrders() {
       <span class="row__body">
         <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
           <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
+          ${o.ma_van_don ? `<span class="tag tag--auto" title="${esc(o.don_vi_van_chuyen || "ghn")}">${esc((o.don_vi_van_chuyen || "ghn").toUpperCase())}: ${esc(o.ma_van_don)}</span>` : ""}
           ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
           ${srcBadge(o.channel, o.nen_tang)}</span>
         ${bang_xin_huy}
@@ -840,6 +841,9 @@ async function loadOrders() {
         ${cho_duyet ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--go" data-oapprove="${o.id}">Duyệt</button>
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
+          </span>` : o.trang_thai === "da_chot" ? `<span style="display:flex;gap:6px;margin-top:4px">
+            ${!o.ma_van_don ? `<button type="button" class="btn btn--sm btn--go" data-owaybill="${o.id}">Tạo vận đơn</button>` : ""}
+            <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
           </span>` : xin_huy ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ đơn</button>
           </span>` : ""}
@@ -848,12 +852,41 @@ async function loadOrders() {
   }).join("") : '<p class="empty">Chưa có đơn hàng nào.</p>';
 
   $$("[data-oapprove]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/orders/" + b.dataset.oapprove + "/approve", { method: "POST" });
-    toast("Đã duyệt đơn."); loadOrders();
+    try {
+      const r = await api("/orders/" + b.dataset.oapprove + "/approve", { method: "POST" });
+      if (r.ok) {
+        toast("Đã duyệt đơn" + (r.ma_van_don ? ` · VĐ: ${r.ma_van_don}` : ""));
+      } else {
+        toast(r.error || "Không thể duyệt đơn", true);
+      }
+    } catch (e) {
+      toast(e.message, true);
+    }
+    loadOrders();
+  }));
+  $$("[data-owaybill]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = "Đang tạo...";
+    try {
+      const r = await api("/orders/" + b.dataset.owaybill + "/create-waybill", { method: "POST" });
+      if (r.ok) {
+        toast("Đã tạo vận đơn: " + (r.ma_van_don || ""));
+      } else {
+        toast(r.error || "Không thể tạo vận đơn", true);
+      }
+    } catch (e) {
+      toast(e.message, true);
+    }
+    loadOrders();
   }));
   $$("[data-ocancel]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
-    toast("Đã huỷ đơn."); loadOrders();
+    try {
+      await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
+      toast("Đã huỷ đơn.");
+    } catch (e) {
+      toast(e.message, true);
+    }
+    loadOrders();
   }));
 }
 

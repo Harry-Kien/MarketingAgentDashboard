@@ -143,6 +143,8 @@ class Settings(BaseSettings):
     # Bí mật nằm trong URL webhook. TRỐNG = TỪ CHỐI mọi webhook vận chuyển,
     # không phải chấp nhận tất cả — xem agent/shipping/service.py
     shipping_webhook_secret: str = ""
+    # Tự động tạo vận đơn khi đơn chốt. MẶC ĐỊNH TẮT để người vận hành chủ động.
+    shipping_tu_dong_tao: bool = False
 
     # --- Dữ liệu ---
     database_url: str = "postgresql://agent:agent@localhost:5433/marketing_agent"

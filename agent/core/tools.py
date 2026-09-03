@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 import unicodedata
 
 from agent import db
@@ -153,7 +154,8 @@ TOOLS: list[dict] = [
         "description": (
             "Tra tình trạng GIAO HÀNG của một đơn: đã bàn giao vận chuyển "
             "chưa, mã vận đơn là gì, hãng nào. Dùng khi khách hỏi 'đơn tới "
-            "đâu rồi', 'bao giờ nhận được', 'sao lâu thế'."
+            "đâu rồi', 'bao giờ nhận được', 'sao lâu thế'. "
+            "KHÔNG tự đoán hay hứa ngày giao hàng cho khách."
         ),
         "input_schema": {
             "type": "object",
@@ -429,7 +431,7 @@ def _norm(s: str) -> str:
     có phân biệt dấu thì agent sẽ báo "không tìm thấy" cho sản phẩm có thật
     — mất đơn vì lý do hoàn toàn kỹ thuật.
     """
-    text = unicodedata.normalize("NFD", str(s).lower())
+    text = unicodedata.normalize("NFD", s.lower())
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
     return " ".join(text.replace("đ", "d").split())
 
@@ -617,7 +619,7 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             }
 
         con_hang = [h for h in du_can_cu if (h.get("ton_kho") or 0) > 0]
-        ket_qua = {
+        ket_qua: dict[str, Any] = {
             "so_luong": len(du_can_cu),
             "san_pham": [_tom_tat(h) for h in (con_hang or du_can_cu)[:6]],
             "het_hang": [
@@ -865,6 +867,9 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             }
         return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
 
+    if not row:
+        return {"tao_duoc": False, "ly_do": "Lỗi hệ thống: không tạo được bản ghi đơn hàng."}
+
     # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
     # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
     # khách khác có thể đã lấy mất món cuối. Chỉ khoá hàng lúc trừ mới
@@ -939,7 +944,22 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             ),
         }
 
-    return {
+    ma_van_don = None
+    if trang_thai == "da_chot" and settings.shipping_tu_dong_tao:
+        from agent.shipping import tao_van_don_cho_don
+
+        try:
+            kq_ship = await tao_van_don_cho_don(row["ma_don"])
+            if kq_ship.ok and kq_ship.ma_van_don:
+                ma_van_don = kq_ship.ma_van_don
+        except Exception as exc:  # noqa: BLE001
+            await db.log_event(
+                "shipping.tu_dong_tao_that_bai",
+                ma_don=row["ma_don"],
+                loi=f"{type(exc).__name__}: {exc}"[:200],
+            )
+
+    ket_qua_don: dict[str, Any] = {
         "tao_duoc": True,
         "ma_don": row["ma_don"],
         "items": lines,
@@ -952,6 +972,9 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             "nhận và sẽ có người gọi xác nhận, KHÔNG nói là đã chốt xong."
         ),
     }
+    if ma_van_don:
+        ket_qua_don["ma_van_don"] = ma_van_don
+    return ket_qua_don
 
 
 # Lời lẽ cho từng trạng thái giao hàng. Đặt ở đây, MỘT chỗ, để agent không

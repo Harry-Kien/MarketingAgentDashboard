@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Darwin",
+  "typeCheckingMode": "basic",
+  "include": ["agent", "dashboard", "tests"],
+  "exclude": ["**/__pyrefly_virtual__", "**/__pycache__", ".venv"]
+}

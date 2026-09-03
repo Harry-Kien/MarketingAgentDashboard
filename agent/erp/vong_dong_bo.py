@@ -102,6 +102,13 @@ async def quet_mot_luot(
             await _kêu(ghi_nhat_ky, "erp.don_dong_bo_muon",
                        ma_don=don.get("ma_don"), erp_ma_don=kq.erp_ma_don,
                        so_lan=so_lan + 1)
+            from agent.config import settings
+            if settings.shipping_tu_dong_tao and don.get("ma_don"):
+                try:
+                    from agent.shipping import tao_van_don_cho_don
+                    await tao_van_don_cho_don(don["ma_don"])
+                except Exception:  # noqa: BLE001
+                    pass
             thong_ke["xong"] += 1
         elif kq.ket_cuc == "tu_choi":
             # Từ chối là CÂU TRẢ LỜI. Thử lại vô nghĩa.

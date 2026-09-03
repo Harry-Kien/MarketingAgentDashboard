@@ -84,3 +84,7 @@ data/sidecar.log
 
 # Ảnh và tài liệu nhân viên gửi cho khách — dữ liệu vận hành, không phải mã.
 data/uploads/
+
+# Cache dữ liệu tạm (GHN địa giới, ...) — dữ liệu chạy
+data/cache/
+

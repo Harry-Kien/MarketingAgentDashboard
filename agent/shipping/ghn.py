@@ -4,14 +4,17 @@ Tài liệu tham khảo: https://api.ghn.vn/home/docs/detail
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import re
+import time
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
-from agent.config import settings
+from agent.config import ROOT, settings
 from .base import BaseShippingProvider
 from .models import (
     CreateWaybillRequest,
@@ -25,26 +28,44 @@ from .models import (
 _DISTRICTS_CACHE: list[dict[str, Any]] | None = None
 _WARDS_CACHE: dict[int, list[dict[str, Any]]] = {}
 
+CACHE_DIR = ROOT / "data" / "cache"
+GHN_CACHE_TTL_SECONDS = 7 * 86400  # 7 ngày
+
+
+def _read_disk_cache(path: Path) -> Any | None:
+    try:
+        if path.exists():
+            stat = path.stat()
+            if (time.time() - stat.st_mtime) < GHN_CACHE_TTL_SECONDS:
+                return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _write_disk_cache(path: Path, data: Any) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
 
 # Tiền tố hành chính cần bỏ khi so khớp. Phải khớp NGUYÊN TỪ.
-#
-# Bản trước dùng `.replace("quan", "")` — cắt mọi chỗ có ba chữ đó, kể cả khi
-# nằm giữa một từ khác. Đo được:
-#     "TP Ha Long, Quang Ninh"  ->  "ha long, g ninh"
-#     "TP Tam Ky, Quang Nam"    ->  "tam ky, g nam"
-# Năm tỉnh Quảng — Ninh, Nam, Bình, Trị, Ngãi — bị băm nát, nên không bao giờ
-# khớp được quận, rồi rơi vào mặc định "Quận 1 TP.HCM" ở dưới. Hàng đi sai
-# tỉnh mà không ai biết.
-_TIEN_TO = ("thanh pho", "tinh", "quan", "huyen", "phuong", "xa", "thi tran",
-            "thi xa", "tp", "q", "p", "h", "tt")
+_TIEN_TO = (
+    "thanh pho", "tinh", "quan", "huyen", "phuong", "xa", "thi tran",
+    "thi xa", "tp", "q", "p", "h", "tt",
+)
 
 _TACH_TU = re.compile(r"[^a-z0-9]+")
 
 
 def _norm(s: str) -> str:
-    """Bỏ dấu, bỏ tiền tố hành chính — nhưng chỉ khi nó là MỘT TỪ RIÊNG."""
-    s = unicodedata.normalize("NFD", str(s or "")).encode("ascii", "ignore").decode("utf-8")
-    tu = [t for t in _TACH_TU.split(s.lower()) if t]
+    """Bỏ dấu (giữ đ thành d), bỏ tiền tố hành chính khi đứng riêng lẻ."""
+    text = unicodedata.normalize("NFD", str(s or "").lower())
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.replace("đ", "d")
+    tu = [t for t in _TACH_TU.split(text) if t]
     return " ".join(t for t in tu if t not in _TIEN_TO)
 
 
@@ -88,85 +109,124 @@ class GHNShippingProvider(BaseShippingProvider):
         if not self._token:
             return None, None
 
+        raw_addr = unicodedata.normalize("NFD", str(dia_chi or "").lower())
+        raw_addr = "".join(ch for ch in raw_addr if unicodedata.category(ch) != "Mn").replace("đ", "d")
         addr_clean = _norm(dia_chi)
+        if not addr_clean:
+            return None, None
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 if _DISTRICTS_CACHE is None:
-                    res = await client.get(
-                        f"{self._api_url.replace('/v2', '')}/master-data/district",
-                        headers={"Token": self._token},
-                    )
-                    if res.status_code == 200:
-                        _DISTRICTS_CACHE = res.json().get("data", [])
+                    disk_districts = _read_disk_cache(CACHE_DIR / "ghn_districts.json")
+                    if disk_districts:
+                        _DISTRICTS_CACHE = disk_districts
                     else:
-                        _DISTRICTS_CACHE = []
+                        res = await client.get(
+                            f"{self._api_url.replace('/v2', '')}/master-data/district",
+                            headers={"Token": self._token},
+                        )
+                        if res.status_code == 200:
+                            _DISTRICTS_CACHE = res.json().get("data", [])
+                            _write_disk_cache(CACHE_DIR / "ghn_districts.json", _DISTRICTS_CACHE)
+                        else:
+                            _DISTRICTS_CACHE = []
 
-                # 1. Tìm District
-                matched_dist_id = None
+                # 1. Tìm các ứng viên Quận/Huyện phù hợp
+                candidates: list[tuple[int, dict[str, Any]]] = []
                 if _DISTRICTS_CACHE:
                     for d in _DISTRICTS_CACHE:
                         d_name = _norm(d.get("DistrictName", ""))
-                        if d_name and (f" {d_name} " in f" {addr_clean} " or addr_clean.endswith(f" {d_name}")):
-                            matched_dist_id = d.get("DistrictID")
-                            break
-                        # Kiểm tra name extension (ví dụ: Q1, Q.1)
-                        for ext in d.get("NameExtension", []) or []:
-                            ext_clean = _norm(ext)
-                            if ext_clean and f" {ext_clean} " in f" {addr_clean} ":
-                                matched_dist_id = d.get("DistrictID")
-                                break
-                        if matched_dist_id:
-                            break
+                        matched_phrase = ""
+                        if d_name:
+                            if d_name.isdigit():
+                                m = re.search(rf"\b(q|quan|district)\s*\.?\s*{d_name}\b", raw_addr)
+                                if m:
+                                    matched_phrase = m.group(0)
+                            else:
+                                if f" {d_name} " in f" {addr_clean} " or addr_clean.endswith(f" {d_name}"):
+                                    matched_phrase = d_name
 
-                # KHÔNG đoán. Không khớp được quận thì DỪNG.
-                #
-                # Bản trước mặc định về 1442 (Quận 1 TP.HCM). GHN định tuyến
-                # theo `to_district_id`, KHÔNG theo chữ trong `to_address` —
-                # nên vận đơn ghi địa chỉ Hạ Long mà kiện hàng đi Sài Gòn.
-                # Shop trả phí giao lẫn phí hoàn, khách không nhận được hàng,
-                # và không ai biết cho tới khi khách kêu.
-                #
-                # Hỏi lại khách một câu rẻ hơn nhiều so với gửi sai một tỉnh.
-                if not matched_dist_id:
+                        if not matched_phrase:
+                            for ext in d.get("NameExtension", []) or []:
+                                ext_clean = _norm(ext)
+                                if ext_clean.isdigit():
+                                    m = re.search(rf"\b(q|quan|district)\s*\.?\s*{ext_clean}\b", raw_addr)
+                                    if m:
+                                        matched_phrase = m.group(0)
+                                        break
+                                else:
+                                    if ext_clean and (f" {ext_clean} " in f" {addr_clean} " or addr_clean.endswith(f" {ext_clean}")):
+                                        matched_phrase = ext_clean
+                                        break
+
+                        if matched_phrase:
+                            candidates.append((len(matched_phrase), d))
+
+                if not candidates:
                     return None, None
 
-                # 2. Tìm Ward
-                matched_ward_code = None
-                if matched_dist_id not in _WARDS_CACHE:
-                    res_w = await client.post(
-                        f"{self._api_url.replace('/v2', '')}/master-data/ward",
-                        headers={"Token": self._token},
-                        json={"district_id": matched_dist_id},
-                    )
-                    if res_w.status_code == 200:
-                        _WARDS_CACHE[matched_dist_id] = res_w.json().get("data", [])
-                    else:
-                        _WARDS_CACHE[matched_dist_id] = []
+                # Ưu tiên quận có cụm từ khớp dài nhất (tránh nhầm số nhà với tên quận)
+                candidates.sort(key=lambda x: x[0], reverse=True)
 
-                wards = _WARDS_CACHE.get(matched_dist_id, [])
-                for w in wards:
-                    w_name = _norm(w.get("WardName", ""))
-                    if w_name and (f" {w_name} " in f" {addr_clean} " or addr_clean.endswith(f" {w_name}")):
-                        matched_ward_code = str(w.get("WardCode", ""))
-                        break
-                    for ext in w.get("NameExtension", []) or []:
-                        ext_clean = _norm(ext)
-                        if ext_clean and f" {ext_clean} " in f" {addr_clean} ":
-                            matched_ward_code = str(w.get("WardCode", ""))
-                            break
-                    if matched_ward_code:
-                        break
+                # 2. Tìm Phường/Xã cho ứng viên quận và xác nhận sự tồn tại của Phường trong Quận đó
+                for _, c in candidates:
+                    dist_id = c.get("DistrictID")
+                    if not dist_id:
+                        continue
+                    if dist_id not in _WARDS_CACHE:
+                        disk_wards = _read_disk_cache(CACHE_DIR / f"ghn_wards_{dist_id}.json")
+                        if disk_wards:
+                            _WARDS_CACHE[dist_id] = disk_wards
+                        else:
+                            res_w = await client.post(
+                                f"{self._api_url.replace('/v2', '')}/master-data/ward",
+                                headers={"Token": self._token},
+                                json={"district_id": dist_id},
+                            )
+                            if res_w.status_code == 200:
+                                _WARDS_CACHE[dist_id] = res_w.json().get("data", [])
+                                _write_disk_cache(CACHE_DIR / f"ghn_wards_{dist_id}.json", _WARDS_CACHE[dist_id])
+                            else:
+                                _WARDS_CACHE[dist_id] = []
 
-                # Lấy bừa phường đầu tiên trong quận cũng là đoán — chỉ
-                # sai nhỏ hơn. Vẫn dừng.
-                if not matched_ward_code:
-                    return None, None
+                    wards = _WARDS_CACHE.get(dist_id, [])
+                    ward_candidates: list[tuple[int, dict[str, Any]]] = []
+                    for w in wards:
+                        w_name = _norm(w.get("WardName", ""))
+                        w_matched_phrase = ""
+                        if w_name:
+                            if w_name.isdigit():
+                                m = re.search(rf"\b(p|phuong|xa|ward)\s*\.?\s*{w_name}\b", raw_addr)
+                                if m:
+                                    w_matched_phrase = m.group(0)
+                            else:
+                                if f" {w_name} " in f" {addr_clean} " or addr_clean.endswith(f" {w_name}"):
+                                    w_matched_phrase = w_name
 
-                return matched_dist_id, matched_ward_code
+                        if not w_matched_phrase:
+                            for ext in w.get("NameExtension", []) or []:
+                                ext_clean = _norm(ext)
+                                if ext_clean.isdigit():
+                                    m = re.search(rf"\b(p|phuong|xa|ward)\s*\.?\s*{ext_clean}\b", raw_addr)
+                                    if m:
+                                        w_matched_phrase = m.group(0)
+                                        break
+                                else:
+                                    if ext_clean and (f" {ext_clean} " in f" {addr_clean} " or addr_clean.endswith(f" {ext_clean}")):
+                                        w_matched_phrase = ext_clean
+                                        break
+
+                        if w_matched_phrase:
+                            ward_candidates.append((len(w_matched_phrase), w))
+
+                    if ward_candidates:
+                        ward_candidates.sort(key=lambda x: x[0], reverse=True)
+                        best_w = ward_candidates[0][1]
+                        return dist_id, str(best_w.get("WardCode", ""))
+
+                return None, None
         except Exception:
-            # Mạng hỏng KHÔNG được biến thành "gửi về Quận 1". Trả None để
-            # lớp trên báo lỗi và chuyển người.
             return None, None
 
     async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
@@ -314,7 +374,7 @@ class GHNShippingProvider(BaseShippingProvider):
                     TrackingTimelineItem(
                         thoi_gian=t_dt,
                         trang_thai_hang=st,
-                        trang_thai_noi_bo=self.map_status(st),
+                        trang_thai_noi_bo=self.map_status(st) or InternalShippingStatus.DELIVERING,
                         dia_diem=str(log.get("station", "")),
                         mo_ta=str(log.get("status_name", "")),
                     )
@@ -324,7 +384,7 @@ class GHNShippingProvider(BaseShippingProvider):
                 ok=True,
                 ma_van_don=ma_van_don,
                 don_vi="ghn",
-                trang_thai_noi_bo=internal_status,
+                trang_thai_noi_bo=internal_status or InternalShippingStatus.DELIVERING,
                 trang_thai_goc=carrier_status,
                 vi_tri_hien_tai=station,
                 lich_su=timeline,
@@ -370,3 +430,33 @@ class GHNShippingProvider(BaseShippingProvider):
             thoi_gian=datetime.now(timezone.utc),
             du_lieu_goc=body,
         )
+
+    async def huy_van_don(self, ma_van_don: str, ly_do: str = "") -> tuple[bool, str]:
+        thieu = [ten for ten, gia_tri in (
+            ("GHN_TOKEN", self._token), ("GHN_SHOP_ID", self._shop_id),
+        ) if not str(gia_tri or "").strip()]
+        if thieu:
+            return False, f"Thiếu cấu hình {', '.join(thieu)}"
+
+        url = f"{self._api_url}/switch-status/cancel"
+        payload = {
+            "order_codes": [ma_van_don],
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=self._headers(), json=payload)
+                data = res.json()
+
+            if res.status_code != 200 or data.get("code") != 200:
+                msg = data.get("message") or data.get("code_message_value") or res.text
+                return False, f"GHN từ chối huỷ đơn: {msg}"
+
+            res_data = data.get("data") or []
+            if res_data and isinstance(res_data, list):
+                item = res_data[0]
+                if item.get("result") is False:
+                    return False, str(item.get("message") or "Hãng không thể huỷ đơn này")
+
+            return True, "Huỷ vận đơn GHN thành công"
+        except Exception as exc:  # noqa: BLE001
+            return False, f"Lỗi kết nối GHN khi huỷ vận đơn: {exc}"

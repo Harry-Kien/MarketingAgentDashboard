@@ -120,8 +120,16 @@ async def day_don(
                 ly_do="ERP không trả về mã khách hàng",
             )
 
-        kq = await nguon.tao_don(ma_don, khach_id, _dong_tu_items(items),
-                                 ghi_chu)
+        import inspect
+        sig = inspect.signature(nguon.tao_don)
+        if "dia_chi" in sig.parameters:
+            kq = await nguon.tao_don(
+                ma_don, khach_id, _dong_tu_items(items), ghi_chu, dia_chi=khach_dia_chi
+            )
+        else:
+            kq = await nguon.tao_don(
+                ma_don, khach_id, _dong_tu_items(items), ghi_chu
+            )
     except TuChoiERP as exc:
         await _ghi_nhat_ky("erp.don_bi_tu_choi", ma_don=ma_don, ly_do=str(exc))
         return KetQuaDay(ket_cuc="tu_choi", ly_do=str(exc))

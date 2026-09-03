@@ -259,6 +259,55 @@ async def tao_van_don_cho_don(
     return result
 
 
+async def huy_van_don_cho_don(ma_don: str, ly_do: str = "") -> tuple[bool, str]:
+    """
+    Huỷ vận đơn của đơn hàng trên hãng vận chuyển.
+    Được gọi khi đơn hàng bị huỷ bởi khách hoặc nhân viên.
+    """
+    order = await db.fetchrow(
+        "SELECT ma_van_don, don_vi_van_chuyen, conversation_id FROM orders WHERE ma_don = $1",
+        ma_don,
+    )
+    if not order:
+        return False, f"Không tìm thấy đơn hàng mã '{ma_don}' trong CSDL."
+
+    ma_van_don = str(order.get("ma_van_don") or "").strip()
+    if not ma_van_don:
+        return True, "Đơn hàng chưa có mã vận đơn, không cần huỷ hãng."
+
+    provider = get_provider(order.get("don_vi_van_chuyen"))
+    ok, msg = await provider.huy_van_don(ma_van_don, ly_do=ly_do)
+
+    if ok:
+        await db.execute(
+            """
+            UPDATE orders
+            SET trang_thai_giao_hang = 'returned',
+                cap_nhat_van_chuyen_luc = now(),
+                updated_at = now()
+            WHERE ma_don = $1
+            """,
+            ma_don,
+        )
+        await db.log_event(
+            "shipping.cancelled",
+            ma_don=ma_don,
+            ma_van_don=ma_van_don,
+            carrier=provider.code,
+            ly_do=ly_do,
+        )
+    else:
+        await db.log_event(
+            "shipping.cancel_failed",
+            ma_don=ma_don,
+            ma_van_don=ma_van_don,
+            carrier=provider.code,
+            loi=msg,
+        )
+
+    return ok, msg
+
+
 async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
     """
     Tra cứu thời gian thực theo mã đơn hoặc mã vận đơn.

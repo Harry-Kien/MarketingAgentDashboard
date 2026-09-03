@@ -271,10 +271,27 @@ class NguonErpNext:
         # Tra theo số điện thoại TRƯỚC. Tạo mới mỗi đơn thì một người thành
         # mười bản ghi, và báo cáo bán hàng bên ERP thành vô nghĩa.
         co = await self._lay(
-            "Customer", [["mobile_no", "=", sdt]], ["name"]
+            "Customer", [["mobile_no", "=", sdt]], ["name", "customer_name"]
         )
         if co:
-            return str(co[0]["name"])
+            cust_id = str(co[0]["name"])
+            # Cập nhật lại tên và địa chỉ mới nhất cho khách nếu có thay đổi
+            updates: dict[str, Any] = {}
+            if ten and ten != co[0].get("customer_name"):
+                updates["customer_name"] = ten
+            if dia_chi:
+                updates["primary_address"] = dia_chi
+            if updates:
+                try:
+                    await self._client.put(
+                        f"/api/resource/Customer/{cust_id}",
+                        json=updates,
+                        headers={**self._headers, "content-type": "application/json"},
+                    )
+                except Exception:
+                    pass
+            return cust_id
+
         moi = await self._tao("Customer", {
             "customer_name": ten,
             "mobile_no": sdt,
@@ -290,33 +307,42 @@ class NguonErpNext:
         return str(co[0]["name"]) if co else None
 
     async def tao_don(
-        self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
+        self,
+        khoa: str,
+        khach_id: str,
+        dong: list[DongDon],
+        ghi_chu: str = "",
+        dia_chi: str = "",
     ) -> KetQuaDon:
         if not dong:
             raise ValueError("Đơn không có dòng hàng nào")
         from datetime import datetime, timedelta
         ngay_giao = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        payload: dict[str, Any] = {
+            "customer": khach_id,
+            "docstatus": 1,
+            "delivery_date": ngay_giao,
+            # `po_no` mang khoá idempotency. Nó cũng là thứ `tim_don`
+            # tra, nên hai bên phải dùng ĐÚNG một trường.
+            "po_no": khoa,
+            "set_warehouse": self._ma_kho,
+            "selling_price_list": self._pricelist,
+            "items": [
+                {
+                    "item_code": d.ma,
+                    "qty": d.so_luong,
+                    "rate": d.don_gia,
+                    "delivery_date": ngay_giao,
+                }
+                for d in dong
+            ],
+            "remarks": ghi_chu,
+        }
+        if dia_chi:
+            payload["shipping_address"] = dia_chi
+            payload["address_display"] = dia_chi
         try:
-            kq = await self._tao("Sales Order", {
-                "customer": khach_id,
-                "docstatus": 1,
-                "delivery_date": ngay_giao,
-                # `po_no` mang khoá idempotency. Nó cũng là thứ `tim_don`
-                # tra, nên hai bên phải dùng ĐÚNG một trường.
-                "po_no": khoa,
-                "set_warehouse": self._ma_kho,
-                "selling_price_list": self._pricelist,
-                "items": [
-                    {
-                        "item_code": d.ma,
-                        "qty": d.so_luong,
-                        "rate": d.don_gia,
-                        "delivery_date": ngay_giao,
-                    }
-                    for d in dong
-                ],
-                "remarks": ghi_chu,
-            })
+            kq = await self._tao("Sales Order", payload)
         except TuChoiERP as exc:
             return KetQuaDon(thanh_cong=False, ly_do=str(exc))
         return KetQuaDon(thanh_cong=True, erp_ma_don=str(kq.get("name") or ""))

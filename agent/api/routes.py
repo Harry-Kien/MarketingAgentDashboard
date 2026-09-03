@@ -1,6 +1,7 @@
 """API cho dashboard. Chỉ đọc/ghi Postgres và gọi adapter kênh."""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -891,28 +892,127 @@ async def list_orders(status: str | None = None, limit: int = 60) -> list[dict]:
 @router.post("/orders/{order_id}/approve")
 async def approve_order(order_id: str) -> dict:
     oid = uuid.UUID(order_id)
+    order = await db.fetchrow("SELECT * FROM orders WHERE id = $1", oid)
+    if not order:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+    trang_thai = "da_chot"
+    erp_ma_don = order.get("erp_ma_don")
+    erp_loi = None
+
+    # Nếu ERP_GHI_DON bật và đơn chưa có erp_ma_don: đẩy sang ERP
+    if settings.erp_ghi_don and not erp_ma_don:
+        from agent.erp import day_don as _day_don
+
+        raw_items = order.get("items") or []
+        if isinstance(raw_items, str):
+            try:
+                raw_items = json.loads(raw_items)
+            except Exception:
+                raw_items = []
+
+        kq_erp = await _day_don.day_don(
+            ma_don=order["ma_don"],
+            khach_ten=str(order.get("khach_ten") or "").strip(),
+            khach_sdt=str(order.get("khach_sdt") or "").strip(),
+            khach_dia_chi=str(order.get("khach_dia_chi") or "").strip(),
+            items=raw_items,
+            ghi_chu=str(order.get("ghi_chu") or ""),
+        )
+        if kq_erp.ket_cuc == "xong":
+            erp_ma_don = kq_erp.erp_ma_don
+        elif kq_erp.ket_cuc == "cho_lai":
+            trang_thai = "cho_dong_bo"
+            erp_loi = kq_erp.ly_do
+        elif kq_erp.ket_cuc == "tu_choi":
+            return {
+                "ok": False,
+                "error": f"ERP từ chối đơn: {kq_erp.ly_do}",
+                "ket_cuc": "tu_choi",
+            }
+
     await db.execute(
-        "UPDATE orders SET trang_thai='da_chot', updated_at=now() WHERE id=$1", oid
+        """
+        UPDATE orders
+        SET trang_thai = $1,
+            erp_ma_don = coalesce($2, erp_ma_don),
+            erp_loi = $3,
+            erp_dong_bo_luc = CASE WHEN $2 IS NOT NULL THEN now() ELSE erp_dong_bo_luc END,
+            updated_at = now()
+        WHERE id = $4
+        """,
+        trang_thai, erp_ma_don, erp_loi, oid,
     )
-    await db.log_event("order.approve", actor="staff", ref_id=oid)
-    return {"ok": True}
+    await db.log_event("order.approve", actor="staff", ref_id=oid, trang_thai=trang_thai, erp_ma_don=erp_ma_don)
+
+    # Nếu đơn đã chốt và bật tự động tạo vận đơn
+    ma_van_don = order.get("ma_van_don")
+    if trang_thai == "da_chot" and settings.shipping_tu_dong_tao and not ma_van_don:
+        from agent.shipping import tao_van_don_cho_don
+
+        try:
+            kq_ship = await tao_van_don_cho_don(order["ma_don"])
+            if kq_ship.ok:
+                ma_van_don = kq_ship.ma_van_don
+        except Exception as exc:  # noqa: BLE001
+            await db.log_event("shipping.tu_dong_tao_that_bai", ma_don=order["ma_don"], loi=str(exc))
+
+    return {
+        "ok": True,
+        "ma_don": order["ma_don"],
+        "trang_thai": trang_thai,
+        "erp_ma_don": erp_ma_don,
+        "ma_van_don": ma_van_don,
+    }
+
+
+@router.post("/orders/{order_id}/create-waybill")
+async def create_waybill_for_order(order_id: str) -> dict:
+    """Tạo vận đơn thủ công từ Dashboard cho đơn hàng."""
+    oid = uuid.UUID(order_id)
+    order = await db.fetchrow("SELECT ma_don, trang_thai, ma_van_don FROM orders WHERE id = $1", oid)
+    if not order:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+    from agent.shipping import tao_van_don_cho_don
+
+    result = await tao_van_don_cho_don(order["ma_don"])
+    if not result.ok:
+        return {
+            "ok": False,
+            "error": result.loi or "Không thể tạo vận đơn",
+            "can_nguoi_xac_nhan": result.can_nguoi_xac_nhan,
+        }
+
+    return {
+        "ok": True,
+        "ma_don": order["ma_don"],
+        "ma_van_don": result.ma_van_don,
+        "don_vi": result.don_vi,
+        "phi_van_chuyen": result.phi_van_chuyen,
+    }
 
 
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str) -> dict:
     """
-    Huỷ đơn, TRẢ HÀNG VỀ KHO, hủy trên NextERP và tự động báo khách qua Zalo.
+    Huỷ đơn, TRẢ HÀNG VỀ KHO, huỷ vận đơn GHN, huỷ trên NextERP và tự động báo khách qua Zalo.
     """
     oid = uuid.UUID(order_id)
     don = await db.fetchrow(
         "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
         "WHERE id=$1 AND trang_thai <> 'da_huy' "
-        "RETURNING ma_don, erp_order_id, erp_ma_don, conversation_id, khach_ten", oid,
+        "RETURNING ma_don, erp_order_id, erp_ma_don, conversation_id, khach_ten, ma_van_don", oid,
     )
     if don is None:
         return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
 
     so_dong = await kho.tra_hang(don["ma_don"])
+
+    # Huỷ vận đơn trên hãng vận chuyển (nếu có)
+    from agent.shipping import huy_van_don_cho_don
+
+    await huy_van_don_cho_don(don["ma_don"], ly_do="Nhân viên huỷ trên Dashboard")
 
     erp_ma = don.get("erp_order_id") or don.get("erp_ma_don")
     if erp_ma:

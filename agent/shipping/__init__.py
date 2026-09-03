@@ -12,7 +12,13 @@ from .models import (
     TrackingResult,
     WebhookEventResult,
 )
-from .service import get_provider, tao_van_don_cho_don, tra_cuu_van_don, xu_ly_webhook_van_chuyen
+from .service import (
+    get_provider,
+    huy_van_don_cho_don,
+    tao_van_don_cho_don,
+    tra_cuu_van_don,
+    xu_ly_webhook_van_chuyen,
+)
 
 __all__ = [
     "BaseShippingProvider",
@@ -25,6 +31,7 @@ __all__ = [
     "TrackingResult",
     "WebhookEventResult",
     "get_provider",
+    "huy_van_don_cho_don",
     "tao_van_don_cho_don",
     "tra_cuu_van_don",
     "xu_ly_webhook_van_chuyen",

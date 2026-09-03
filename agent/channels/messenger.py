@@ -58,6 +58,7 @@ import hmac
 import os
 from datetime import datetime, timezone
 from collections.abc import Mapping
+from .ly_do_loi import chi_tiet_loi
 from typing import Any
 from uuid import UUID
 
@@ -522,7 +523,7 @@ class MessengerAdapter(ChannelAdapter):
                 headers={"Authorization": f"Bearer {self._page_token}"},
             )
         except httpx.HTTPError as exc:
-            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+            return ConnectionCheck(False, "provider.unreachable", detail=chi_tiet_loi(exc))
         if response.status_code in {401, 403}:
             return ConnectionCheck(False, "provider.unauthorized")
         if response.is_error:

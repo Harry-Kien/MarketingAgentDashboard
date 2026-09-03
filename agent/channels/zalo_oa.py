@@ -54,6 +54,7 @@ from agent import db
 from agent.channels.base import (ChannelAdapter, ConnectionCheck, Delivery,
                                  InboundMessage, con_trong_cua_so)
 from agent.config import settings
+from .ly_do_loi import chi_tiet_loi
 
 # Sự kiện webhook mang tin của KHÁCH. Zalo còn đẩy nhiều loại khác (khách
 # theo dõi OA, bỏ theo dõi, đã xem tin...) — không phải tin nhắn, bỏ qua.
@@ -380,7 +381,7 @@ class ZaloOAAdapter(ChannelAdapter):
                 headers={"access_token": token},
             )
         except (httpx.HTTPError, RuntimeError) as exc:
-            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+            return ConnectionCheck(False, "provider.unreachable", detail=chi_tiet_loi(exc))
         if response.status_code in {401, 403}:
             return ConnectionCheck(False, "provider.unauthorized")
         try:

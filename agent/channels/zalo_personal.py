@@ -14,6 +14,7 @@ from uuid import UUID
 import httpx
 
 from agent.channels.base import ChannelAdapter, ConnectionCheck, Delivery, InboundMessage
+from .ly_do_loi import chi_tiet_loi
 
 
 def _received_at(value: Any) -> datetime:
@@ -228,7 +229,7 @@ class ZaloPersonalAdapter(ChannelAdapter):
         try:
             data = await self.status()
         except RuntimeError as exc:
-            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+            return ConnectionCheck(False, "provider.unreachable", detail=chi_tiet_loi(exc))
         if data.get("status") != "connected":
             return ConnectionCheck(False, "provider.not_connected", detail={"status": str(data.get("status") or "unknown")})
         own_id = str(data.get("own_id") or "").strip()

@@ -20,6 +20,7 @@ from agent.channels.base import (
     InboundMessage,
     con_trong_cua_so,
 )
+from .ly_do_loi import chi_tiet_loi
 
 
 def _timestamp_ms(value: Any) -> datetime:
@@ -113,7 +114,7 @@ class _MetaAdapter(ChannelAdapter):
                 headers={"Authorization": f"Bearer {self._access_token}"},
             )
         except httpx.HTTPError as exc:
-            return ConnectionCheck(False, "provider.unreachable", detail={"error_type": type(exc).__name__})
+            return ConnectionCheck(False, "provider.unreachable", detail=chi_tiet_loi(exc))
         if response.status_code in {401, 403}:
             return ConnectionCheck(False, "provider.unauthorized")
         if response.is_error:

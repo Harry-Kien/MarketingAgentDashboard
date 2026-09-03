@@ -17,7 +17,7 @@ from contextlib import suppress
 import uuid
 from dataclasses import dataclass, field
 
-from agent import db
+from agent import db, ngan_sach
 from agent.config import ROOT, settings
 from agent.core import llm, rag, tools
 from agent.ky_nang import kho_ky_nang
@@ -302,6 +302,28 @@ async def respond(
             escalate_reason=f"Vượt trần chi phí hội thoại ({spent:.4f} USD)",
         )
 
+    # CÙNG LỚP LƯỚI ẤY, PHẠM VI TOÀN CỤC.
+    #
+    # Trần trên chặn được MỘT hội thoại chạy loạn. Nó không chặn được nhiều
+    # hội thoại cùng chạy đúng luật: 0,25 USD × 10.000 hội thoại = 2.500
+    # USD, và không có gì nói "khoan đã". Một bài viral, một vòng lặp trong
+    # adapter kênh, hay một người gửi tin từ nhiều tài khoản đều tới đó
+    # được — không đường nào cần kẻ xấu.
+    #
+    # Chạm trần thì chuyển người VÀ kêu to. Im lặng ngừng trả lời là kiểu
+    # hỏng tệ nhất: khách vẫn nhắn, tin vẫn vào CSDL, không ai trả lời, và
+    # không có gì báo.
+    con, da_tieu, tran_ngay = await ngan_sach.con_ngan_sach()
+    if not con:
+        await ngan_sach.keu_neu_cham_tran(da_tieu, tran_ngay)
+        return Reply(
+            text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
+            escalate=True,
+            escalate_reason=(
+                f"Chạm trần chi phí ngày ({da_tieu:.2f}/{tran_ngay:.2f} USD)"
+            ),
+        )
+
     # Quét prompt injection TRƯỚC khi tốn một lời gọi model nào. Thấy dấu
     # hiệu thì chuyển người ngay — không chặn khách, vì người thật cũng có
     # thể gõ câu lạ, nhưng cũng không để model tự xoay xở với nó.
@@ -516,6 +538,11 @@ async def respond(
         if chan_doan:
             escalate = True
             escalate_reason = chan_doan
+
+    # Cộng vào bộ đếm ngân sách ngày NGAY, không đợi lần làm mới đệm kế
+    # tiếp. Đệm sống 30 giây, và ở đúng lúc đang chạm trần thì 30 giây tiêu
+    # mù là quãng nguy hiểm nhất.
+    ngan_sach.ghi_nhan(total_cost)
 
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",

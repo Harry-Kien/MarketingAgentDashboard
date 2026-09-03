@@ -846,6 +846,7 @@ class RuntimeBody(BaseModel):
     mode: str | None = None
     confidence_floor: float | None = None
     max_cost_per_conversation: float | None = None
+    tran_chi_phi_ngay_usd: float | None = None
 
 
 @router.post("/runtime")
@@ -1050,6 +1051,19 @@ _MO_TA_CAU_HINH = {
         "tat_thi": "Nâng lên: an toàn hơn, nhưng chuyển người nhiều hơn nên "
                    "ca trực nặng hơn. Hạ xuống: agent tự tin hơn, và sai "
                    "nhiều hơn ở đúng những câu nó vốn không chắc.",
+    },
+    "tran_chi_phi_ngay_usd": {
+        "nhan": "Trần chi phí mỗi NGÀY",
+        "kieu": "so",
+        "min": 0.0, "max": 500.0, "buoc": 1.0,
+        "don_vi": "USD · 0 = tắt",
+        "y_nghia": "Chạm trần thì MỌI hội thoại chuyển sang người, và hệ "
+                   "thống bắn cảnh báo. Đây là hàng rào cuối giữa một sự cố "
+                   "kỹ thuật và một hoá đơn thật.",
+        "tat_thi": "Trần mỗi hội thoại chỉ chặn được MỘT hội thoại chạy "
+                   "loạn. 0,25 USD × 10.000 hội thoại vẫn là 2.500 USD, và "
+                   "một bài viral hay một vòng lặp trong adapter kênh đều "
+                   "tới đó được. Đặt 0 là bỏ hàng rào ấy.",
     },
     "max_cost_per_conversation": {
         "nhan": "Trần chi phí mỗi hội thoại",

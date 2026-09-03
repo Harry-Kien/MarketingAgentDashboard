@@ -300,6 +300,18 @@ class Settings(BaseSettings):
     sse_poll_seconds: float = 0.25
     confidence_floor: float = 0.55
     max_cost_per_conversation: float = 0.25
+
+    # TRẦN CHI PHÍ TOÀN CỤC THEO NGÀY, tính bằng USD. `0` = tắt.
+    #
+    # Trần mỗi hội thoại ở trên chặn được MỘT hội thoại chạy loạn. Nó
+    # không chặn được nhiều hội thoại cùng chạy đúng luật: 0,25 × 10.000
+    # = 2.500 USD, và không có gì nói 'khoan đã'. Một bài viral, một vòng
+    # lặp trong adapter kênh, hay một người nhắn từ nhiều tài khoản đều
+    # tới đó được — không đường nào cần kẻ xấu.
+    #
+    # 25 USD/ngày là khoảng 1.000 lượt trả lời — rộng rãi cho một cửa
+    # hàng, và vẫn là một con số hữu hạn khi có sự cố lúc 3 giờ sáng.
+    tran_chi_phi_ngay_usd: float = 25.0
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.
     nguong_tu_chot_vnd: int = 1_000_000
 

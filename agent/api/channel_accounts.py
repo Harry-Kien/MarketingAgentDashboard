@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from agent import db
 from agent.config import settings
 from agent.channels.zalo_personal import ZaloPersonalAdapter
+from agent.channels.kiem_hinh_dang import HinhDangSai
+from agent.channels.kiem_hinh_dang import kiem as kiem_hinh_dang
 from agent.omnichannel.credential_loader import VaultCredentialLoader
 from agent.omnichannel.account_verification import (
     NativeConnectionVerifier,
@@ -149,6 +151,14 @@ async def create_account(
         raise HTTPException(422, "Không thể tạo mới kết nối legacy")
     # Phần credential thuộc về MÁY CHỦ do máy chủ điền, người dùng không
     # phải đi chép từ `.env`. Xem agent/omnichannel/bi_mat_may_chu.py
+    # Bắt lỗi DÁN NHẦM Ô ngay tại đây, khi người dùng còn đang nhìn form.
+    # Để tới lúc gọi provider thì thông điệp là 'Invalid secret key' —
+    # đúng, nhưng không nói được rằng họ dán nhầm ô nào.
+    try:
+        kiem_hinh_dang(body.channel.value, body.credentials)
+    except HinhDangSai as exc:
+        raise HTTPException(422, str(exc)) from exc
+
     try:
         credentials = bo_sung_bi_mat_may_chu(body.channel, body.credentials)
     except ThieuBiMatMayChu as exc:
@@ -203,6 +213,15 @@ async def rotate_credentials(
     account = await repository.get(account_id)
     if account is None:
         raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+
+    # Đường này QUAN TRỌNG HƠN đường tạo mới: nó chính là đường người ta
+    # dùng để SỬA một credential dán nhầm. Không kiểm ở đây thì họ sửa,
+    # dán nhầm y hệt lần nữa, và lại nhận đúng một thông điệp vô nghĩa.
+    try:
+        kiem_hinh_dang(account.channel.value, body.credentials)
+    except HinhDangSai as exc:
+        raise HTTPException(422, str(exc)) from exc
+
     try:
         credentials = bo_sung_bi_mat_may_chu(account.channel, body.credentials)
     except ThieuBiMatMayChu as exc:

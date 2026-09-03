@@ -145,8 +145,9 @@ class ZaloOAAdapter(ChannelAdapter):
         api_base = str(
             self._credentials.get("api_base") or settings.zalo_oa_api_base
         )
+        self._api_base = api_base.rstrip("/")
         self._client = client or httpx.AsyncClient(
-            base_url=api_base.rstrip("/"), timeout=20.0
+            base_url=self._api_base, timeout=20.0
         )
         # Token nằm trong bộ nhớ tiến trình; bản bền nằm trong CSDL. Giữ
         # cả hai vì mỗi lượt gửi mà hỏi CSDL một lần là công vô ích.
@@ -159,6 +160,33 @@ class ZaloOAAdapter(ChannelAdapter):
             and self._secret_key
             and (self._refresh_token or self._token)
         )
+
+    # HAI PHIÊN BẢN API CÙNG TỒN TẠI, VÀ ZALO KHÔNG GỘP CHÚNG.
+    #
+    # Đo được trên OA thật (03.09.2026), cùng một access token:
+    #
+    #     v3.0/oa/message/cs    hoạt động   <- gửi tin
+    #     v3.0/oa/getoa         error 404 "empty or invalid API"
+    #     v2.0/oa/getoa         hoạt động   <- thông tin OA
+    #     v3.0/oa/upload/image  error 404 "empty or invalid API"
+    #     v2.0/oa/upload/image  hoạt động   <- error -201 "File not exist"
+    #                                          nghĩa là ĐƯỜNG CÓ, chỉ thiếu file
+    #
+    # Nên KHÔNG hạ cả `api_base` xuống v2.0: làm vậy là chữa hai đường và
+    # phá đường gửi tin, tức là đổi một lỗi chưa ai gặp lấy một lỗi ai cũng
+    # gặp.
+    #
+    # `error` nằm trong THÂN JSON chứ không nằm ở mã HTTP: cả hai lượt gọi
+    # đều trả HTTP 200. Đó là lý do lỗi này sống được lâu — mọi phép kiểm
+    # nhìn `status_code` đều thấy xanh.
+    def _url_v2(self, duong: str) -> str:
+        """Đường dẫn trên v2.0, dựng từ `api_base` để vẫn ghim được lúc test."""
+        goc = self._api_base
+        if "/v3.0/" in goc:
+            goc = goc.replace("/v3.0/", "/v2.0/")
+        elif goc.endswith("/v3.0"):
+            goc = goc[: -len("/v3.0")] + "/v2.0"
+        return f"{goc}/{duong.lstrip('/')}"
 
     # ---------------- token ----------------
 
@@ -311,7 +339,7 @@ class ZaloOAAdapter(ChannelAdapter):
 
             with open(path, "rb") as fh:
                 up = await self._client.post(
-                    "/upload/image",
+                    self._url_v2("upload/image"),
                     headers={"access_token": token},
                     files={"file": (os.path.basename(path), fh)},
                 )
@@ -377,7 +405,7 @@ class ZaloOAAdapter(ChannelAdapter):
         try:
             token = await self._lay_token()
             response = await self._client.get(
-                "/getoa",
+                self._url_v2("getoa"),
                 headers={"access_token": token},
             )
         except (httpx.HTTPError, RuntimeError) as exc:

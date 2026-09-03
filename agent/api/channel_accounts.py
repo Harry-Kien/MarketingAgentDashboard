@@ -465,6 +465,28 @@ async def _zalo_personal_adapter(
     )
 
 
+# Sidecar Zalo cá nhân là TIẾN TRÌNH RIÊNG, không nằm trong repo và không
+# nằm trong docker-compose. Nó tắt là chuyện thường — máy khởi động lại,
+# người vận hành đóng nhầm cửa sổ.
+#
+# Trước bản này, ba đường dưới để `RuntimeError` lọt thẳng ra ngoài và
+# FastAPI biến nó thành `500 Internal Server Error`. Người dùng bấm "Quét
+# QR" và nhận đúng bốn chữ đó — trong khi ngoại lệ đã nói rõ "sidecar không
+# phản hồi".
+#
+# 503 chứ không phải 500: đây là dịch vụ phụ thuộc chưa sẵn sàng, không
+# phải lỗi lập trình. Mã đúng giúp người đọc log phân biệt hai loại.
+def _loi_sidecar(exc: Exception) -> HTTPException:
+    ly_do = str(exc) or type(exc).__name__
+    if "sidecar" in ly_do.lower() or isinstance(exc, (ConnectionError, OSError)):
+        return HTTPException(
+            503,
+            "Sidecar Zalo cá nhân chưa chạy. Bật nó trên cổng 3210 rồi thử "
+            f"lại. ({ly_do[:120]})",
+        )
+    return HTTPException(502, f"Sidecar báo lỗi: {ly_do[:160]}")
+
+
 @router.post("/{account_id}/zalo-personal/qr", status_code=202)
 async def start_zalo_personal_qr(
     account_id: UUID,
@@ -473,7 +495,12 @@ async def start_zalo_personal_qr(
 ) -> dict[str, Any]:
     adapter, _credentials = await _zalo_personal_adapter(account_id, repository)
     try:
-        return await adapter.start_qr()
+        try:
+            return await adapter.start_qr()
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise _loi_sidecar(exc) from exc
     finally:
         await adapter.aclose()
 
@@ -490,7 +517,12 @@ async def restore_zalo_personal_session(
         await adapter.aclose()
         raise HTTPException(409, "Chưa có session đã mã hóa để khôi phục")
     try:
-        return await adapter.restore_session(session)
+        try:
+            return await adapter.restore_session(session)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise _loi_sidecar(exc) from exc
     finally:
         await adapter.aclose()
 
@@ -503,7 +535,12 @@ async def zalo_personal_status(
 ) -> dict[str, Any]:
     adapter, _credentials = await _zalo_personal_adapter(account_id, repository)
     try:
-        return await adapter.status()
+        try:
+            return await adapter.status()
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise _loi_sidecar(exc) from exc
     finally:
         await adapter.aclose()
 

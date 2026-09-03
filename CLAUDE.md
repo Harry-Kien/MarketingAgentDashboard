@@ -69,9 +69,29 @@ python -m pytest -q               # ~1575 test, khoảng 1 phút, không gọi A
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
 
+Sau khi khởi động máy, dựng cả hệ thống bằng **một lệnh**:
+
+```bash
+python -m scripts.khoi_dong       # Docker → Postgres → app → sidecar → tunnel
+```
+
+Nó in một dòng cho mỗi tầng và **trả mã thoát khác 0 nếu còn tầng nào
+hỏng**. Tên miền tunnel đổi mỗi lần chạy, nên lệnh nhắc dán lại URL webhook
+— bỏ bước đó là kênh chết im lặng.
+
+Vì sao cần: hệ thống là **năm tiến trình rời nhau**. Đo được 03.09.2026 —
+máy tắt lúc 19:52, bật lại lúc 22:41, **không cổng nào trong
+8000/5433/3210/5678 còn nghe**. Ba tiếng đó khách nhắn vào rơi vào hư
+không: không lỗi, không nhật ký, và dashboard cũng không chạy để mà hiện
+đỏ. `restart: unless-stopped` trong `docker-compose.yml` lo nửa Docker; ba
+tiến trình ngoài Docker cần lệnh trên.
+
+Bật riêng từng tầng khi cần gỡ lỗi:
+
 ```bash
 docker compose up -d              # Postgres+pgvector (5433) + n8n (5678)
 python -m uvicorn agent.main:app --reload --port 8000
+python -m scripts.chay_tunnel                # tunnel công khai + ghi .env
 ```
 
 Zalo cá nhân cần **sidecar Node chạy riêng** (`connectors/zalo-personal-

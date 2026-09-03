@@ -27,6 +27,17 @@ name: marketing-agent
 services:
   # --- Postgres + pgvector: RAG, hội thoại, chi phí, video ----
   db:
+    # `unless-stopped`: máy khởi động lại thì container tự lên theo.
+    #
+    # ĐO ĐƯỢC 03.09.2026: máy tắt lúc 19:52, bật lại lúc 22:41. Postgres
+    # và n8n KHÔNG lên lại, còn các container ERPNext (có sẵn chính sách
+    # này) thì lên. Ba tiếng đó khách nhắn vào rơi vào hư không và không
+    # ai được báo — không lỗi, không nhật ký, dashboard cũng không chạy
+    # để mà hiện đỏ.
+    #
+    # KHÔNG dùng `always`: nó bật lại cả container mình vừa cố ý dừng để
+    # gỡ lỗi, và chống lại chính người vận hành.
+    restart: unless-stopped
     image: pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b   # pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: agent
@@ -68,6 +79,7 @@ services:
   # 5678 chết, hướng dẫn đứt ngay bước 1, và màn Sức khoẻ hệ thống hiện một
   # ô đỏ vĩnh viễn. Một bảng giám sát luôn đỏ là bảng người ta ngừng đọc.
   n8n:
+    restart: unless-stopped
     # Digest lấy từ registry Docker Hub, không phải chép tay. Kiểm chứng:
     #   docker image inspect n8nio/n8n:2.36.5 --format '{{index .RepoDigests 0}}'
     #
@@ -121,6 +133,7 @@ services:
   # phí và độ trễ đã có sẵn trong bảng `messages` và hiện ở màn Số hiệu —
   # xem GET /api/cost.
   langfuse_db:
+    restart: unless-stopped
     profiles: ["trace"]
     image: postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685   # postgres:16-alpine
     environment:
@@ -136,6 +149,7 @@ services:
       retries: 20
 
   langfuse:
+    restart: unless-stopped
     profiles: ["trace"]
     image: langfuse/langfuse@sha256:85c278dcab96c15db94191a5c1664f85aba2d7fb6771a00e99681c902c4b7015   # langfuse/langfuse:2
     depends_on:

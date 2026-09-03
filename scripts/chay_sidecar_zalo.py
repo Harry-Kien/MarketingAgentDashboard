@@ -72,17 +72,36 @@ def _cong_tu_url(url: str) -> str:
     return CONG_MAC_DINH
 
 
-def _song(cong: str, giay: float = 12.0) -> bool:
+def _song(cong: str, giay: float = 45.0) -> bool:
+    """
+    Đợi sidecar trả lời `/healthz`, tối đa `giay` giây.
+
+    VÌ SAO 45 CHỨ KHÔNG PHẢI 12
+
+    Đo được (03.09.2026): script in "Sidecar không lên sau 12 giây" trong
+    khi `sidecar.log` đã ghi "listening on http://127.0.0.1:3210" và cổng
+    3210 đang nghe thật. Sidecar in dòng ấy lúc mở cổng, nhưng còn phải
+    khôi phục phiên Zalo xong mới phục vụ được — mất hơn 12 giây.
+
+    Báo hỏng cho một tiến trình đang khoẻ là kiểu sai đắt nhất ở đây: người
+    vận hành đi bật lại một thứ đang chạy, hoặc tệ hơn, tin rằng kênh đã
+    chết và thôi không dùng nữa.
+
+    `time.sleep` phải nằm NGOÀI khối `except`. Để trong đó thì nhánh nối
+    được-nhưng-không-phải-200 quay vòng không nghỉ, đốt CPU suốt thời gian
+    chờ.
+    """
     han = time.time() + giay
     while time.time() < han:
         try:
             with urllib.request.urlopen(
-                f"http://127.0.0.1:{cong}/healthz", timeout=2
+                f"http://127.0.0.1:{cong}/healthz", timeout=3
             ) as r:
                 if r.status == 200:
                     return True
         except (urllib.error.URLError, OSError):
-            time.sleep(0.6)
+            pass
+        time.sleep(0.6)
     return False
 
 
@@ -136,7 +155,7 @@ def main() -> int:
         print(f"Sidecar sống trên http://127.0.0.1:{cong} — nhật ký: {nhat_ky.name}")
         print("Vào dashboard → Kết nối → Xác minh provider.")
         return 0
-    print(f"Sidecar không lên sau 12 giây. Xem {nhat_ky.name}, hoặc chạy lại")
+    print(f"Sidecar không lên sau 45 giây. Xem {nhat_ky.name}, hoặc chạy lại")
     print("với --hien để nhìn log ngay trên terminal.")
     return 1
 

@@ -119,6 +119,37 @@ def _cho_domain(giay: float = 40.0) -> str | None:
     return None
 
 
+def _xoa_dem_dns() -> None:
+    """
+    Xoá bộ nhớ đệm DNS của máy trước mỗi lượt đo.
+
+    ĐÂY LÀ CHỖ KIÊN NHẪN KHÔNG CỨU ĐƯỢC, và bản trước sai vì tưởng nó cứu.
+
+    Tên miền `trycloudflare` vừa được cấp xong nên lượt hỏi DNS đầu tiên
+    thường trả về "không có tên miền này". Windows GHI NHỚ câu trả lời phủ
+    định ấy. Từ đó mọi lượt sau trong cùng tiến trình đều nhận lại câu trả
+    lời đã lưu, không hỏi ra ngoài nữa — nên chờ 60 giây hay 600 giây cũng
+    y hệt nhau.
+
+    Đo được: `curl` trượt ở 0,003 giây với mã 6 ("không phân giải được"),
+    trong khi `nslookup` cùng lúc trả về đủ bốn địa chỉ. Xoá đệm xong thì
+    4/4 lượt đều 200.
+
+    Hỏng thì bỏ qua: không xoá được đệm chỉ làm phép đo kém nhạy, còn làm
+    chết cả script vì một lệnh phụ trợ thì tệ hơn nhiều.
+    """
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["ipconfig", "/flushdns"],
+                           capture_output=True, timeout=10)
+        else:
+            # Không có lệnh chung cho Linux/macOS, và cũng không cần: hai hệ
+            # này không nhớ đệm phủ định ở tầng hệ điều hành như Windows.
+            pass
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _thong(domain: str, han_giay: float = 60.0) -> int:
     """
     Số lượt gọi thành công từ Internet, trong hạn `han_giay`.
@@ -134,10 +165,13 @@ def _thong(domain: str, han_giay: float = 60.0) -> int:
 
     Nên đếm trong một CỬA SỔ THỜI GIAN chứ không đếm theo số lần, và dừng
     sớm ngay khi có hai lượt liền nhau thành công.
+
+    Chờ lâu thôi VẪN CHƯA ĐỦ — xem `_xoa_dem_dns`.
     """
     ok = lien_tiep = 0
     han = time.time() + han_giay
     while time.time() < han:
+        _xoa_dem_dns()
         try:
             with urllib.request.urlopen(f"{domain}/healthz", timeout=15) as r:
                 if r.status == 200:

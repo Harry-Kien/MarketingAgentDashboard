@@ -141,6 +141,35 @@ def test_do_theo_CUA_SO_THOI_GIAN_chu_khong_theo_so_lan():
     )
 
 
+def test_XOA_DEM_DNS_trong_moi_luot_do():
+    """
+    Kiên nhẫn thôi KHÔNG cứu được, và đây là chỗ bản thứ hai vẫn sai.
+
+    Tên miền `trycloudflare` vừa cấp xong nên lượt hỏi DNS đầu trả về
+    "không có tên miền này", và Windows GHI NHỚ câu trả lời phủ định đó.
+    Mọi lượt sau đọc lại bộ nhớ đệm chứ không hỏi ra ngoài nữa — chờ 60
+    giây hay 600 giây đều y hệt.
+
+    Đo được: `curl` trượt ở 0,003 giây với mã 6 ("không phân giải được"),
+    trong khi `nslookup` cùng lúc trả về đủ bốn địa chỉ. Xoá đệm xong thì
+    4/4 lượt đều 200.
+    """
+    than = _than("_thong")
+    assert "_xoa_dem_dns()" in than, (
+        "không xoá đệm DNS — mọi lượt đo sau lượt đầu chỉ đọc lại câu trả "
+        "lời phủ định đã lưu, và kiên nhẫn thành vô nghĩa"
+    )
+
+
+def test_xoa_dem_DNS_hong_thi_KHONG_lam_chet_script():
+    """
+    `ipconfig /flushdns` là lệnh phụ trợ. Để nó ném ra là đánh đổi một phép
+    đo kém nhạy lấy việc hỏng cả bước bật tunnel.
+    """
+    than = _than("_xoa_dem_dns")
+    assert "except" in than, "không bọc lỗi — lệnh phụ trợ hỏng sẽ giết script"
+
+
 def test_bao_hong_thi_KHONG_ghi_env():
     """
     Nếu thật sự không thông, ghi `.env` là ghi một tên miền chết đè lên một

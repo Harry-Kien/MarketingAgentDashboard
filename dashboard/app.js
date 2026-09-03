@@ -2025,12 +2025,18 @@ const KENH_META = ["facebook", "instagram", "whatsapp"];
 function callbackTheoKenh(channel) {
   if (KENH_META.includes(channel)) return `${goc_cong_khai()}/webhook/native/meta`;
   if (channel === "zalo_personal") return `${goc_cong_khai()}/webhook/native/zalo-personal`;
+  /* Zalo OA KHÔNG dùng đường chung: mỗi OA có secret key riêng, nên phải
+     biết OA nào TRƯỚC khi kiểm được chữ ký. URL vì thế mang account_id, và
+     phải dựng ở `connectionCallback` nơi có đối tượng account. */
   return "";
 }
 
 function connectionCallback(account) {
   // Kênh Meta dùng đường chung -> không hiện gì ở dòng tài khoản.
   if (KENH_META.includes(account.channel)) return "";
+  if (account.channel === "zalo_oa") {
+    return `${goc_cong_khai()}/webhook/native/zalo-oa/${account.id}`;
+  }
   return callbackTheoKenh(account.channel);
 }
 

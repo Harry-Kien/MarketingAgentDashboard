@@ -1597,3 +1597,34 @@ svg { flex: none; }
   white-space: nowrap;
 }
 .switch input { width: 2.2rem; height: 1.1rem; cursor: pointer; accent-color: hsl(var(--primary)); }
+
+/* Cho chữ XUỐNG DÒNG ở hai màn nơi nó LÀ nội dung, không phải nhãn phụ.
+ *
+ * `.row__sub` mặc định `nowrap` + `ellipsis` — đúng cho danh sách hội thoại,
+ * nơi mỗi dòng là một bản xem trước và cắt cụt là bình thường.
+ *
+ * Ở màn Cấu hình và Kỹ năng thì ngược hẳn: dòng ấy là câu "tắt cái này thì
+ * mất gì", và cả hai màn được thiết kế quanh việc người vận hành ĐỌC nó
+ * trước khi bấm. Cắt cụt ở giữa câu là bỏ đi lý do tồn tại của màn hình.
+ *
+ * Có test canh: tests/test_dashboard_chu_khong_bi_cat.py
+ */
+#cauhinh-ds .row__sub,
+#kynang-cosan .row__sub,
+#kynang-plugin .row__sub,
+#tichhop-ds .row__sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.5;
+}
+
+/* Xuống dòng rồi thì phần thân cần chỗ thở, và cột phải không được co lại
+   thành một vạch khi câu bên trái dài ra. */
+#cauhinh-ds .row,
+#kynang-cosan .row {
+  align-items: flex-start;
+  gap: .9rem;
+}
+#cauhinh-ds .row__body,
+#kynang-cosan .row__body { min-width: 0; }

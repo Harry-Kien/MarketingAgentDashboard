@@ -2951,11 +2951,8 @@ document.addEventListener("click", async (e) => {
   if (!b) return;
   const ghi = b.dataset.bgXacnhan === "ghi";
   if (ghi && !confirm(
-      "Xác nhận bảng giá đang dùng ĐÚNG là giá bán lẻ?
-
-" +
-      "Sai thì agent báo giá sỉ cho khách lẻ, rất tự tin.
-" +
+      "Xác nhận bảng giá đang dùng ĐÚNG là giá bán lẻ?\n\n" +
+      "Sai thì agent báo giá sỉ cho khách lẻ, rất tự tin.\n" +
       "Xác nhận này gắn với tên bảng giá hiện tại — đổi sang bảng khác thì " +
       "cảnh báo quay lại.")) return;
   try {

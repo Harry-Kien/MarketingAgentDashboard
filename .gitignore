@@ -109,3 +109,5 @@ uv_err.log
 uv_out.log
 data/xac_thuc_domain/*
 !data/xac_thuc_domain/.gitkeep
+tunnel.log
+tunnel.out

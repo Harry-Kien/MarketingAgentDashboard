@@ -111,3 +111,4 @@ data/xac_thuc_domain/*
 !data/xac_thuc_domain/.gitkeep
 tunnel.log
 tunnel.out
+sidecar*.log

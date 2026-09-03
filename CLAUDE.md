@@ -73,6 +73,20 @@ docker compose up -d              # Postgres+pgvector (5433) + n8n (5678)
 python -m uvicorn agent.main:app --reload --port 8000
 ```
 
+Zalo cá nhân cần **sidecar Node chạy riêng** (`connectors/zalo-personal-
+sidecar`). Nó KHÔNG nằm trong `docker-compose`, nên không tự lên sau khi
+khởi động máy — và tắt nó là một kiểu hỏng im lặng: dashboard hiện "Gián
+đoạn", tin nhân viên vào outbox rồi **chết sau tám lần thử**, khách chờ mãi
+không có trả lời.
+
+```bash
+python -m scripts.chay_sidecar_zalo          # chạy nền
+python -m scripts.chay_sidecar_zalo --hien   # xem log ngay trên terminal
+```
+
+Bật xong vào dashboard → **Kết nối** → **Xác minh provider**. Phiên cũ tự
+khôi phục nếu còn hạn; hết hạn mới phải quét QR lại.
+
 Sinh lại tài liệu **sau khi đổi schema, thêm kỹ năng, hoặc chạy eval** (có
 test canh việc này):
 

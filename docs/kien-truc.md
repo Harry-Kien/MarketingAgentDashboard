@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-43 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+44 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -135,7 +135,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `tich_hop_ung_dung` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `tich_hop_ung_dung` · `cau_hinh_agent` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
@@ -514,6 +514,12 @@ erDiagram
         BOOLEAN bat
         TEXT tao_boi
         TIMESTAMPTZ tao_luc
+        TIMESTAMPTZ sua_luc
+    }
+    cau_hinh_agent {
+        TEXT khoa
+        JSONB gia_tri
+        TEXT sua_boi
         TIMESTAMPTZ sua_luc
     }
     channel_accounts ||--o{ account_health_events : ""

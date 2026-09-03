@@ -850,7 +850,7 @@ class RuntimeBody(BaseModel):
 
 @router.post("/runtime")
 async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
-    state = runtime.update(**body.model_dump(exclude_none=True))
+    state = await runtime.luu(body.model_dump(exclude_none=True), boi=nguoi["ten_dang_nhap"])
     await db.log_event("runtime.update", actor="staff", **{k: str(v) for k, v in state.items()})
     return state
 
@@ -1015,6 +1015,99 @@ async def thu_ung_dung(
             "dia_chi": dia_chi,
             "ly_do": f"{type(exc).__name__}: {exc}"[:200],
         }
+
+
+# ---------------------------------------------------------------
+#  Màn Cấu hình Agent
+# ---------------------------------------------------------------
+
+# Mô tả cho NGƯỜI VẬN HÀNH đọc trước khi kéo một thanh trượt.
+#
+# Con số trần trụi không nói được hậu quả: "0.55" không cho biết nâng lên
+# thì gì xảy ra. Mỗi thiết lập vì thế đi kèm câu "cao hơn thì…" và "thấp
+# hơn thì…" — hai hướng, vì cả hai hướng đều có giá.
+_MO_TA_CAU_HINH = {
+    "enabled": {
+        "nhan": "Agent đang chạy",
+        "kieu": "bool",
+        "y_nghia": "Công tắc ngắt. Tắt là agent đứng ngoài mọi hội thoại.",
+        "tat_thi": "Mọi tin nhắn vào thẳng hàng đợi người. Không mất tin nào.",
+    },
+    "mode": {
+        "nhan": "Chế độ trả lời",
+        "kieu": "chon",
+        "chon": ["assist", "auto"],
+        "y_nghia": "assist = agent soạn, người bấm gửi. auto = agent tự gửi.",
+        "tat_thi": "Tuần đầu vận hành thật nên để assist — người đọc được "
+                   "từng câu trước khi nó tới khách.",
+    },
+    "confidence_floor": {
+        "nhan": "Ngưỡng độ tin cậy",
+        "kieu": "so",
+        "min": 0.0, "max": 1.0, "buoc": 0.05,
+        "y_nghia": "Dưới ngưỡng này mà công cụ không trả về dữ liệu thật "
+                   "thì agent không được phát ngôn — chuyển người.",
+        "tat_thi": "Nâng lên: an toàn hơn, nhưng chuyển người nhiều hơn nên "
+                   "ca trực nặng hơn. Hạ xuống: agent tự tin hơn, và sai "
+                   "nhiều hơn ở đúng những câu nó vốn không chắc.",
+    },
+    "max_cost_per_conversation": {
+        "nhan": "Trần chi phí mỗi hội thoại",
+        "kieu": "so",
+        "min": 0.01, "max": 5.0, "buoc": 0.01,
+        "don_vi": "USD",
+        "y_nghia": "Vượt trần thì chuyển người, chưa tốn thêm lời gọi nào.",
+        "tat_thi": "Hạ quá thấp thì hội thoại dài bị cắt giữa chừng và "
+                   "chuyển người dù agent đang trả lời tốt.",
+    },
+}
+
+
+@router.get("/cau-hinh")
+async def doc_cau_hinh(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    """Cấu hình đang chạy, kèm mặc định và mô tả cho người vận hành."""
+    dang_dung = dict(runtime.STATE)
+    return {
+        "muc": [
+            {
+                "khoa": k,
+                "gia_tri": dang_dung.get(k),
+                "mac_dinh": runtime.MAC_DINH.get(k),
+                "lech_mac_dinh": dang_dung.get(k) != runtime.MAC_DINH.get(k),
+                **mo_ta,
+            }
+            for k, mo_ta in _MO_TA_CAU_HINH.items()
+        ],
+        "ben_vung": list(runtime.KHOA_BEN_VUNG),
+    }
+
+
+@router.get("/cau-hinh/lich-su")
+async def lich_su_cau_hinh(
+    limit: int = 20, _: dict = Depends(bat_buoc_quan_tri)
+) -> list[dict]:
+    """
+    Ai đổi gì, lúc nào.
+
+    Cấu hình đổi được mà không truy được ai đổi thì lúc có sự cố không dựng
+    lại được chuyện gì đã xảy ra — và đó đúng là lúc người ta cần biết.
+    """
+    rows = await db.fetch(
+        "SELECT actor, detail, created_at FROM events "
+        "WHERE kind IN ('runtime.update', 'runtime.dat_lai_mac_dinh') "
+        f"ORDER BY created_at DESC LIMIT {max(1, min(int(limit), 100))}"
+    )
+    return [
+        {"boi": r["actor"], "chi_tiet": r["detail"],
+         "luc": r["created_at"].isoformat()}
+        for r in rows
+    ]
+
+
+@router.post("/cau-hinh/mac-dinh")
+async def dat_lai_cau_hinh(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+    """Quay về mặc định trong `.env`. Xoá hẳn phần đã lưu."""
+    return await runtime.dat_lai_mac_dinh(boi=nguoi["ten_dang_nhap"])
 
 
 @router.get("/events")

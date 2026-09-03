@@ -93,6 +93,10 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
       <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="cauhinh">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      <span>Cấu hình</span><b id="c-cauhinh" class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="kynang">
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6M15 3v6"/><rect x="6" y="9" width="12" height="7" rx="2"/><path d="M12 16v5"/></svg>
       <span>Kỹ năng</span><b id="c-kynang" class="rail__count"></b>
@@ -440,6 +444,62 @@
         <h2 class="panel__head">Tài liệu đã nạp</h2>
         <div id="docs" class="rows"></div>
       </section>
+    </section>
+
+    <!-- ============ CẤU HÌNH AGENT ============ -->
+    <section class="view" data-view="cauhinh">
+      <section class="panel">
+        <h2 class="panel__head">Cấu hình agent
+          <span class="panel__note" id="cauhinh-luu">sống qua khởi động lại</span></h2>
+        <p class="panel__note">
+          Đổi ở đây có hiệu lực từ tin nhắn kế tiếp, và được ghi xuống cơ sở
+          dữ liệu — khởi động lại máy chủ không làm mất.
+        </p>
+        <div id="cauhinh-ds" class="rows"><p class="empty">Đang tải…</p></div>
+        <div class="rowbtns" style="margin-top:.9rem">
+          <button type="button" class="btn btn--halt" id="cauhinh-macdinh">
+            Quay về mặc định</button>
+        </div>
+      </section>
+
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Ai đổi gì, lúc nào</h2>
+          <p class="panel__note">
+            Cấu hình đổi được mà không truy được ai đổi thì lúc có sự cố
+            không dựng lại được chuyện gì đã xảy ra.
+          </p>
+          <div id="cauhinh-lichsu" class="rows"></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel__head">Không chỉnh được ở đây</h2>
+          <p class="panel__note">
+            Ba thứ sau cố ý nằm trong mã, không phải trên giao diện — sửa
+            được từ dashboard thì sẽ có ngày ai đó sửa.
+          </p>
+          <div class="rows">
+            <div class="row"><span class="row__body">
+              <span class="row__title">Sáu lớp lưới an toàn</span>
+              <span class="row__sub">Trần chi phí · quét injection · ngưỡng tin cậy ·
+                từ khoá bắt buộc chuyển người · hứa mà không làm · chẩn đoán y tế.
+                <code>agent/core/agent.py</code></span>
+            </span></div>
+            <div class="row"><span class="row__body">
+              <span class="row__title">Prompt hệ thống</span>
+              <span class="row__sub">Ô nhập tự do đi thẳng vào prompt là một
+                đường prompt injection do chính người trong nhà mở.
+                <code>agent/prompts/system.md</code></span>
+            </span></div>
+            <div class="row"><span class="row__body">
+              <span class="row__title">Host cho phép gọi ra ngoài</span>
+              <span class="row__sub">Sửa được từ dashboard thì chiếm một tài
+                khoản quản trị là chiếm luôn đường ra mạng.
+                <code>KY_NANG_HOST_CHO_PHEP</code> trong <code>.env</code></span>
+            </span></div>
+          </div>
+        </section>
+      </div>
     </section>
 
     <!-- ============ KỸ NĂNG (SKILL) VÀ PLUGIN ============ -->

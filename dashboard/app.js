@@ -1931,6 +1931,7 @@ async function refresh() {
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
+    if (state.view === "cauhinh") await loadCauHinh();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
@@ -2832,5 +2833,96 @@ document.addEventListener("click", async (e) => {
               { method: "DELETE" });
     toast("Đã gỡ");
     await loadTichHop();
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ---------------- cấu hình agent ---------------- */
+
+/* Ô nhập dựng theo `kieu` do máy chủ khai, không đoán từ giá trị.
+ * Đoán từ giá trị thì `confidence_floor = 1` (số nguyên) sẽ ra ô checkbox,
+ * và người vận hành mất luôn thanh trượt. */
+function oNhapCauHinh(m) {
+  const id = `ch-${m.khoa}`;
+  if (m.kieu === "bool") {
+    return `<label class="switch"><input type="checkbox" id="${id}"
+      data-ch="${m.khoa}" data-kieu="bool" ${m.gia_tri ? "checked" : ""}>
+      <span>${m.gia_tri ? "đang bật" : "đang tắt"}</span></label>`;
+  }
+  if (m.kieu === "chon") {
+    return `<select id="${id}" data-ch="${m.khoa}" data-kieu="chon">${
+      m.chon.map((c) => `<option value="${esc(c)}"${
+        c === m.gia_tri ? " selected" : ""}>${esc(c)}</option>`).join("")
+    }</select>`;
+  }
+  return `<input type="number" id="${id}" data-ch="${m.khoa}" data-kieu="so"
+    min="${m.min}" max="${m.max}" step="${m.buoc}" value="${m.gia_tri}">
+    ${m.don_vi ? `<span class="row__sub">${esc(m.don_vi)}</span>` : ""}`;
+}
+
+async function loadCauHinh() {
+  const d = await api("/cau-hinh");
+  const lech = d.muc.filter((m) => m.lech_mac_dinh).length;
+  $("#c-cauhinh").textContent = lech ? `${lech} lệch` : "";
+
+  $("#cauhinh-ds").innerHTML = d.muc.map((m) => `<div class="row">
+      <span class="row__flag ${m.lech_mac_dinh ? "row__flag--halt" : "row__flag--auto"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(m.nhan)}
+          ${m.lech_mac_dinh
+            ? `<b class="pill">khác mặc định (${esc(String(m.mac_dinh))})</b>`
+            : ""}</span>
+        <span class="row__sub">${esc(m.y_nghia)}</span>
+        <span class="row__sub"><em>Lưu ý:</em> ${esc(m.tat_thi)}</span>
+      </span>
+      <span class="row__side">${oNhapCauHinh(m)}</span>
+    </div>`).join("");
+
+  await loadLichSuCauHinh();
+}
+
+async function loadLichSuCauHinh() {
+  const ls = await api("/cau-hinh/lich-su?limit=12");
+  $("#cauhinh-lichsu").innerHTML = ls.length
+    ? ls.map((x) => `<div class="row">
+        <span class="row__body">
+          <span class="row__title">${esc(x.boi || "?")}</span>
+          <span class="row__sub">${esc(JSON.stringify(x.chi_tiet)).slice(0, 160)}</span>
+        </span>
+        <span class="row__side"><span class="row__time">${clock(x.luc)}</span></span>
+      </div>`).join("")
+    : '<p class="empty">Chưa có thay đổi nào được ghi.</p>';
+}
+
+/* Gửi ngay khi đổi, không có nút Lưu riêng.
+ * Nút Lưu riêng nghĩa là có một trạng thái "đã sửa nhưng chưa lưu" hiện
+ * trên màn hình — và người vận hành đóng tab ở đúng trạng thái đó sẽ tin
+ * là mình đã đổi. Gửi ngay thì thứ nhìn thấy luôn là thứ đang chạy. */
+document.addEventListener("change", async (e) => {
+  const el = e.target.closest("[data-ch]");
+  if (!el) return;
+  const kieu = el.dataset.kieu;
+  const gt = kieu === "bool" ? el.checked
+           : kieu === "so" ? Number(el.value)
+           : el.value;
+  try {
+    await api("/runtime", {
+      method: "POST",
+      body: JSON.stringify({ [el.dataset.ch]: gt }),
+    });
+    toast("Đã lưu — có hiệu lực từ tin nhắn kế tiếp");
+    await loadCauHinh();
+  } catch (err) {
+    toast(err.message, true);
+    await loadCauHinh();
+  }
+});
+
+$("#cauhinh-macdinh")?.addEventListener("click", async () => {
+  if (!confirm("Quay về mặc định trong .env?\n\nMọi thiết lập đã lưu sẽ bị xoá."))
+    return;
+  try {
+    await api("/cau-hinh/mac-dinh", { method: "POST" });
+    toast("Đã quay về mặc định");
+    await loadCauHinh();
   } catch (err) { toast(err.message, true); }
 });

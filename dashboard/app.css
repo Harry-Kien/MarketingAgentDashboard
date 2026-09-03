@@ -1558,3 +1558,42 @@ svg { flex: none; }
   flex-wrap: wrap;
   grid-column: 1 / -1;
 }
+
+/* ---------------- cấu hình agent ---------------- */
+
+/* Ô nhập nằm ở cột phải của mỗi dòng. Cho chúng một bề rộng tối thiểu để
+   thanh số không co lại thành ba ký tự khi nhãn bên trái dài. */
+#cauhinh-ds .row__side {
+  min-width: 9.5rem;
+  align-items: center;
+  gap: .45rem;
+}
+#cauhinh-ds input[type="number"],
+#cauhinh-ds select {
+  width: 100%;
+  min-width: 6rem;
+  padding: .38rem .55rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+}
+#cauhinh-ds input[type="number"]:focus-visible,
+#cauhinh-ds select:focus-visible {
+  outline: 2px solid hsl(var(--ring, var(--primary)));
+  outline-offset: 1px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  cursor: pointer;
+  font-size: .78rem;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.switch input { width: 2.2rem; height: 1.1rem; cursor: pointer; accent-color: hsl(var(--primary)); }

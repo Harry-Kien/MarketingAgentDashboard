@@ -446,6 +446,14 @@ async def lifespan(app: FastAPI):
     nhat_ky.dung_nhat_ky()
 
     await db.init_db()
+
+    # NẠP CẤU HÌNH ĐÃ LƯU trước khi ghi nhật ký khởi động.
+    #
+    # Ghi trước khi nạp thì dòng `app.start` báo mode/enabled MẶC ĐỊNH
+    # trong khi vài mili giây sau agent chạy bằng cấu hình đã lưu — và
+    # người đọc nhật ký để dựng lại sự cố sẽ tin dòng ấy.
+    await runtime.nap()
+
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
     # Nạp tồn kho từ danh mục cho những mã CHƯA có dòng nào.

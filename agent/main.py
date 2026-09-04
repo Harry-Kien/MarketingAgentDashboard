@@ -30,6 +30,7 @@ from agent.api.inbox import router as inbox_router
 from agent.api.outbox import router as outbox_router
 from agent.api.native_webhooks import router as native_webhooks_router
 from agent.api.zalo_personal_webhook import router as zalo_personal_webhook_router
+
 from agent.api.zalo_oa_webhook import router as zalo_oa_webhook_router
 from agent.api.xac_thuc_domain import router as xac_thuc_domain_router
 from agent.api.webchat import router as webchat_router
@@ -300,17 +301,21 @@ async def giu_phien_zalo_loop() -> None:
     """
     from agent.omnichannel.account_repository import PostgresAccountRepository
     from agent.omnichannel.accounts import Channel
-    from agent.omnichannel.zalo_session_keeper import khoi_phuc_phien_dut
+    from agent.omnichannel.zalo_session_keeper import (DAU_LECH_BI_MAT,
+                                                       khoi_phuc_phien_dut)
 
     async def _bao(account_id, ly_do) -> None:
-        # Cần NGƯỜI quét QR lại — máy không tự làm được, nên phải đi ra
-        # ngoài chứ không chỉ nằm im trong nhật ký.
-        await db.log_event(
-            "zalo_personal.can_quet_lai",
-            actor="system",
-            ref_id=account_id,
-            ly_do=str(ly_do)[:200],
+        # Cần NGƯỜI làm gì đó — máy không tự làm được, nên phải đi ra
+        # ngoài chứ không chỉ nằm im trong nhật ký. Hai bệnh khác nhau
+        # phải mang hai tên: đo được 04.09.2026, 1866 sự kiện
+        # `can_quet_lai` mà bệnh thật là bí mật HMAC trong vault lệch với
+        # `.env` — quét QR bao nhiêu lần cũng không chữa được.
+        kind = (
+            "zalo_personal.lech_bi_mat_sidecar"
+            if str(ly_do).startswith(DAU_LECH_BI_MAT)
+            else "zalo_personal.can_quet_lai"
         )
+        await db.log_event(kind, actor="system", ref_id=account_id, ly_do=str(ly_do)[:200])
 
     # Dựng MỘT lần ngoài vòng lặp: repository không giữ trạng thái, nó chỉ
     # bọc pool dùng chung. Dựng lại mỗi nhịp còn khiến closure `_mo` bắt biến
@@ -942,7 +947,15 @@ async def webhook(
     # Messenger gói `entry[].messaging[]`, khách gõ ba tin liên tiếp thì cả
     # ba về cùng một request. Lấy đúng một tin nghĩa là hai tin sau biến mất
     # trong im lặng. Hai kênh cũ vẫn trả về danh sách một phần tử.
-    inbound = channels.get(kenh).parse_nhieu(payload)
+    try:
+        adapter = channels.get(kenh)
+    except channels.KenhKhongTonTai:
+        # Sau khi đã kiểm secret, nên đây là người có quyền nhưng gõ sai tên
+        # kênh — trả 404 rõ ràng thay vì lặng lẽ parse bằng adapter khác.
+        return JSONResponse(
+            {"ok": False, "error": f"kênh {kenh!r} không tồn tại"}, status_code=404
+        )
+    inbound = adapter.parse_nhieu(payload)
     if not inbound:
         return JSONResponse({"ok": True, "skipped": "không phải tin văn bản đến"})
 

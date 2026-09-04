@@ -30,6 +30,8 @@ class _Adapter:
 
     async def status(self):
         self.da_goi_status += 1
+        if self._trang_thai == "chu_ky_sai":
+            raise RuntimeError("Chữ ký sidecar không hợp lệ")
         return {"status": self._trang_thai}
 
     async def restore_session(self, session):
@@ -100,3 +102,23 @@ def test_mot_account_hong_khong_lam_chet_ca_vong():
 
     assert ket_qua["da_khoi_phuc"] == ["b"]
     assert ket_qua["can_quet_lai"] == ["a"]
+
+
+def test_lech_bi_mat_khong_bi_goi_la_het_phien():
+    """
+    Sidecar từ chối CHỮ KÝ là bệnh khác hẳn hết phiên: quét QR lại không
+    chữa được. Đo 04.09.2026: 1866 sự kiện "cần quét QR" cho đúng bệnh này.
+    """
+    from agent.omnichannel.zalo_session_keeper import DAU_LECH_BI_MAT
+
+    bao = []
+    adapters = {"a": _Adapter("chu_ky_sai")}
+    ket_qua = _chay(["a"], adapters, {"a": {"cookie": {}}},
+                    canh_bao=lambda acc, ly_do: bao.append((acc, ly_do)))
+
+    assert ket_qua["lech_bi_mat"] == ["a"]
+    assert ket_qua["can_quet_lai"] == []
+    assert adapters["a"].da_goi_restore == 0
+    assert bao and bao[0][1].startswith(DAU_LECH_BI_MAT)
+    assert "Lưu lại" in bao[0][1]
+

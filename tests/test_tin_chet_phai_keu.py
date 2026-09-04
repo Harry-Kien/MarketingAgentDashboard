@@ -104,6 +104,26 @@ def test_canh_bao_hong_KHONG_lam_chet_worker(monkeypatch):
 #  Chỉ kêu khi CHẾT HẲN, không kêu mỗi lần thử lại
 # ---------------------------------------------------------------
 
+def test_ca_hai_nhanh_hong_thi_van_con_dau_vet_tren_stderr(monkeypatch, capsys):
+    """
+    CSDL hỏng VÀ báo động hỏng cùng lúc thì bản trước nuốt sạch: tin chết
+    không để lại một dấu vết nào. stderr là thứ cuối cùng còn lại, và người
+    chạy ứng dụng trên terminal nhìn thấy nó.
+    """
+    from agent import canh_gac, db
+
+    async def no(*a, **k):
+        raise RuntimeError("CSDL sập")
+
+    monkeypatch.setattr(db, "log_event", no)
+    monkeypatch.setattr(canh_gac, "_bao", no)
+    chay(_keu_tin_chet(_Job(), "ConnectError: sidecar không phản hồi"))
+
+    err = capsys.readouterr().err
+    assert "TIN CHẾT" in err
+    assert "sidecar không phản hồi" in err
+
+
 def test_con_thu_lai_thi_CHUA_chet():
     d = retry_decision(attempts=3, max_attempts=8,
                        now=datetime.now(timezone.utc))

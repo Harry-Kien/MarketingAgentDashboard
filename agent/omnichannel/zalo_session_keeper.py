@@ -30,6 +30,11 @@ from typing import Any
 # một phiên chết nằm im (mất mọi tin khách cho tới khi ai đó phát hiện).
 CON_SONG = frozenset({"connected"})
 
+# Đầu chuỗi lý do khi sidecar từ chối CHỮ KÝ. Đây không phải "hết phiên":
+# quét QR lại không chữa được, chỉ đồng bộ lại bí mật mới chữa được. Đo
+# được 04.09.2026: 1866 sự kiện "cần quét QR lại" với đúng lý do này.
+DAU_LECH_BI_MAT = "LỆCH BÍ MẬT SIDECAR"
+
 
 async def khoi_phuc_phien_dut(
     account_ids: Sequence[Any] | Iterable[Any],
@@ -49,6 +54,7 @@ async def khoi_phuc_phien_dut(
     """
     da_khoi_phuc: list = []
     can_quet_lai: list = []
+    lech_bi_mat: list = []
 
     for account_id in account_ids:
         adapter = None
@@ -71,8 +77,18 @@ async def khoi_phuc_phien_dut(
         except Exception as exc:  # noqa: BLE001
             # Một tài khoản hỏng KHÔNG được kéo cả cụm: nhiều tài khoản Zalo
             # dùng chung một sidecar, và cụm chết vì một cái là mất tất.
+            ly_do = f"{type(exc).__name__}: {exc}"[:200]
+            if "Chữ ký sidecar" in str(exc):
+                lech_bi_mat.append(account_id)
+                canh_bao(
+                    account_id,
+                    f"{DAU_LECH_BI_MAT}: sidecar_secret trong vault khác "
+                    f"ZALO_SIDECAR_SECRET của sidecar. Kết nối → Lưu lại tài "
+                    f"khoản để đồng bộ. ({ly_do})"[:200],
+                )
+                continue
             can_quet_lai.append(account_id)
-            canh_bao(account_id, f"{type(exc).__name__}: {exc}"[:200])
+            canh_bao(account_id, ly_do)
         finally:
             if adapter is not None:
                 try:
@@ -80,4 +96,8 @@ async def khoi_phuc_phien_dut(
                 except Exception:  # noqa: BLE001 — dọn dẹp không được làm hỏng vòng
                     pass
 
-    return {"da_khoi_phuc": da_khoi_phuc, "can_quet_lai": can_quet_lai}
+    return {
+        "da_khoi_phuc": da_khoi_phuc,
+        "can_quet_lai": can_quet_lai,
+        "lech_bi_mat": lech_bi_mat,
+    }

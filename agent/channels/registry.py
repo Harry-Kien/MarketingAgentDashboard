@@ -46,15 +46,25 @@ def _dung() -> dict[str, ChannelAdapter]:
     return _ADAPTERS
 
 
+class KenhKhongTonTai(KeyError):
+    """Tên kênh không có trong bộ đăng ký."""
+
+
 def get(name: str) -> ChannelAdapter:
     """
-    Adapter cho một kênh. Tên lạ thì trả ZaloCRM.
+    Adapter cho một kênh. Tên lạ thì NÉM, không đoán.
 
-    Trả về mặc định thay vì ném lỗi là cố ý: dữ liệu cũ trong CSDL có thể
-    mang tên kênh không còn tồn tại, và một hội thoại lịch sử không được
-    phép làm sập màn hình.
+    Bản trước trả ZaloCRM cho mọi tên lạ, với lý do "hội thoại lịch sử
+    không được làm sập màn hình". Nhưng hội thoại đi qua `get_for_account`
+    từ lâu rồi; chỗ duy nhất còn đưa tên tuỳ ý vào đây là `/webhook/{kenh}`
+    với `kenh` lấy thẳng từ URL. Đoán bừa ở đó nghĩa là POST tới
+    `/webhook/webchat` được parse bằng adapter ZaloCRM và gán vào tài khoản
+    ZaloCRM: tin sai chỗ hoặc biến mất, không lỗi, không nhật ký.
     """
-    return _dung().get(name, _dung()["zalocrm"])
+    try:
+        return _dung()[name]
+    except KeyError:
+        raise KenhKhongTonTai(name) from None
 
 
 async def get_for_account(account_id) -> ChannelAdapter:

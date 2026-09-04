@@ -360,6 +360,77 @@ async def kiem_kho_bi_mat_tai_khoan() -> dict:
     )
 
 
+def so_bi_mat_sidecar(tai_khoan: list[tuple[str, str]], bi_mat_env: str) -> dict:
+    """
+    Phần thuần: `tai_khoan` là (tên hiển thị, sidecar_secret trong vault).
+
+    Chỉ so BẰNG NHAU, không bao giờ in giá trị: đây là bí mật ký HMAC.
+    """
+    ten = "Bí mật sidecar Zalo"
+    if not tai_khoan:
+        return _muc(ten, DU, "không có tài khoản Zalo cá nhân")
+    lech = [t for t, bm in tai_khoan if bm != bi_mat_env]
+    if lech:
+        return _muc(
+            ten, CHAN,
+            f"{len(lech)}/{len(tai_khoan)} tài khoản có sidecar_secret trong vault "
+            f"KHÁC .env ({', '.join(lech)})",
+            "Mọi lời gọi tới sidecar bị 401 và tin khách rơi im lặng. "
+            "Dashboard → Kết nối → mở tài khoản → Lưu lại để máy chủ đè bí mật "
+            "đúng từ .env, rồi Xác minh provider",
+        )
+    return _muc(ten, DU, f"{len(tai_khoan)} tài khoản khớp .env")
+
+
+async def kiem_bi_mat_sidecar() -> dict:
+    """
+    Vault và `.env` phải cùng một `ZALO_SIDECAR_SECRET`.
+
+    Đo được 04.09.2026: sinh lại bí mật bằng `sinh_token` sau khi tài khoản
+    đã lưu vào vault -> sidecar chạy bí mật mới, app ký bằng bí mật cũ, cả
+    hai chiều 401. Mọi đèn vẫn xanh, kể cả bản readiness này. Tám ngày
+    không có tin khách nào vào.
+    """
+    from agent import db
+    from agent.omnichannel.account_repository import PostgresAccountRepository
+    from agent.omnichannel.credential_loader import VaultCredentialLoader
+    from agent.security.credential_vault import (
+        CredentialVault,
+        InvalidMasterKeyConfiguration,
+        parse_master_keys,
+    )
+
+    ten = "Bí mật sidecar Zalo"
+    try:
+        await db.init_db()
+        rows = await db.fetch(
+            "SELECT id, display_name FROM channel_accounts "
+            "WHERE channel = 'zalo_personal' AND status <> 'disabled'"
+        )
+        if not rows:
+            return so_bi_mat_sidecar([], settings.zalo_sidecar_secret)
+        loader = VaultCredentialLoader(
+            PostgresAccountRepository(),
+            CredentialVault(
+                parse_master_keys(settings.credential_master_keys),
+                active_version=settings.credential_active_key_version,
+            ),
+        )
+        tai_khoan = []
+        for r in rows:
+            cred = await loader.load(r["id"]) or {}
+            tai_khoan.append(
+                (str(r["display_name"]), str(cred.get("sidecar_secret") or ""))
+            )
+    except InvalidMasterKeyConfiguration:
+        return _muc(ten, CANH_BAO, "chưa cấu hình khoá vault nên không so được",
+                    "Xem mục Kho bí mật tài khoản")
+    except Exception as exc:  # noqa: BLE001
+        return _muc(ten, CANH_BAO, f"không hỏi được ({type(exc).__name__})",
+                    "Khởi động PostgreSQL và chạy lại readiness")
+    return so_bi_mat_sidecar(tai_khoan, settings.zalo_sidecar_secret)
+
+
 async def kiem_outbox() -> dict:
     """Outbox có thoát hàng hay đang chất tin mà worker đã chết."""
     from datetime import datetime, timedelta, timezone
@@ -525,6 +596,7 @@ async def chay() -> int:
     muc = [
         kiem_bi_mat(), kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
+        await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),
         kiem_sao_luu(), kiem_bao_dong(),
         kiem_cookie(), kiem_cong(),

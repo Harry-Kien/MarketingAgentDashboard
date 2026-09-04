@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -152,8 +153,12 @@ async def _keu_tin_chet(job: OutboxJob, error: str) -> None:
             attempts=str(job.attempts),
             error=error[:200],
         )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # CSDL hỏng thì nhật ký không ghi được — nhưng stderr thì luôn còn.
+        # Nuốt hẳn ở đây là tin chết KHÔNG để lại dấu vết nào, kể cả trên
+        # terminal của người đang chạy ứng dụng.
+        print(f"[outbox] TIN CHẾT không ghi được nhật ký ({type(exc).__name__}): "
+              f"job={job.id} loai={job.kind} loi={error[:160]}", file=sys.stderr)
 
     try:
         from agent import canh_gac
@@ -165,8 +170,9 @@ async def _keu_tin_chet(job: OutboxJob, error: str) -> None:
             f"tin này và sẽ ngồi chờ. Lý do: {error[:160]}",
             {},
         )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outbox] TIN CHẾT không báo động được ({type(exc).__name__}): "
+              f"job={job.id} loai={job.kind} loi={error[:160]}", file=sys.stderr)
 
 
 class PostgresOutboxRepository:

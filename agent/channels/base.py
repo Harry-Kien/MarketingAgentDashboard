@@ -135,6 +135,17 @@ class ChannelAdapter(ABC):
         """
         return None
 
+    async def aclose(self) -> None:
+        """
+        Đóng tài nguyên (client HTTP) lúc tắt ứng dụng.
+
+        Nằm trong hợp đồng vì `registry.dong_tat_ca()` gọi nó cho MỌI
+        adapter trong cache mà không phòng bị. Bảy adapter hiện có đều tự
+        khai, nên chưa nổ; một adapter mới quên là AttributeError đúng lúc
+        shutdown — và lỗi lúc shutdown là thứ không ai đọc.
+        """
+        return None
+
     async def can_send_now(self, conversation_ref: str) -> bool:
         """
         Kênh có cho phép gửi chủ động lúc này không?

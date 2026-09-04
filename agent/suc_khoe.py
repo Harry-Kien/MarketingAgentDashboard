@@ -208,6 +208,71 @@ async def _kiem_kho_anh() -> dict:
     return _muc("Kho ảnh sản phẩm", TOT, ghi)
 
 
+_NOI_BO = ("localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal", "::1")
+
+
+async def _kiem_cong_cong_khai() -> dict:
+    """
+    Gọi CHÍNH MÌNH từ ngoài Internet, qua đúng URL mà Zalo/Meta sẽ gọi.
+
+    LỖI THẬT, ĐO ĐƯỢC 04.09.2026
+
+    Tunnel `trycloudflare` sống được 1,5 tiếng rồi bị Cloudflare huỷ từ phía
+    họ:
+
+        ERR Register tunnel error from server side
+            error="Unauthorized: Tunnel not found"
+
+    Tiến trình `cloudflared` VẪN CHẠY và vẫn thử lại mãi — nên mọi phép kiểm
+    kiểu "cloudflared còn sống không" đều trả lời có. Suốt bảy tiếng sau đó:
+    URL công khai chết, không webhook nào tới được, mà `/api/suc-khoe` trả
+    "tot" và cả bốn kênh hiện `active` với `ly_do_hong` rỗng.
+
+    Xanh giả, đúng kiểu nguy hiểm nhất: đỏ giả thì người ta đi kiểm, xanh
+    giả thì không ai kiểm.
+
+    VÌ SAO PHẢI ĐỌC CẢ THÂN PHẢN HỒI
+
+    Tunnel chết mà DNS còn phân giải được thì Cloudflare trả về trang lỗi
+    của CHÍNH NÓ. Chỉ xem mã HTTP là có ngày nhận 200 từ một trang báo lỗi.
+    Nên phải thấy đúng `"ok": true` do ứng dụng này sinh ra.
+
+    VÌ SAO CHỈ `canh_bao` KHI CHƯA CẤU HÌNH
+
+    `public_base_url` trỏ vào localhost là trạng thái phát triển bình
+    thường, không phải sự cố. Gắn nhãn "Hệ thống đang hỏng" cho nó là cách
+    nhanh nhất khiến người ta tắt thông báo — và lần sau hỏng thật thì không
+    ai thấy.
+    """
+    import httpx
+
+    goc = (settings.public_base_url or "").strip().rstrip("/")
+    if not goc:
+        return _muc("Cổng công khai", CANH_BAO,
+                    "chưa đặt PUBLIC_BASE_URL — webhook không tới được")
+    if any(x in goc for x in _NOI_BO):
+        return _muc("Cổng công khai", CANH_BAO,
+                    f"{goc} là địa chỉ nội bộ — Zalo/Meta không gọi tới được")
+
+    t0 = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as c:
+            r = await c.get(f"{goc}/healthz")
+    except Exception as exc:  # noqa: BLE001
+        # Giữ tên ngoại lệ, bỏ thông điệp: httpx nhét URL đầy đủ vào đó, và
+        # URL ấy đã từng mang theo token khi có tham số truy vấn.
+        return _muc("Cổng công khai", HONG,
+                    f"{goc} KHÔNG gọi tới được từ Internet "
+                    f"({type(exc).__name__}) — mọi webhook đang rơi vào hư không")
+
+    ms = int((time.perf_counter() - t0) * 1000)
+    if r.status_code != 200 or '"ok":true' not in r.text.replace(" ", ""):
+        return _muc("Cổng công khai", HONG,
+                    f"{goc} trả {r.status_code} chứ không phải ứng dụng này — "
+                    "tunnel chết hoặc đang trỏ sang nơi khác", latency_ms=ms)
+    return _muc("Cổng công khai", TOT, f"{goc} · {ms}ms", latency_ms=ms)
+
+
 async def _kiem_khach_gan_nhat() -> dict:
     """Lâu không có tin khách nào là dấu hiệu kênh đứt, không phải ế hàng."""
     try:
@@ -366,6 +431,7 @@ async def tong_kiem() -> dict:
     t0 = time.perf_counter()
     muc = await asyncio.gather(
         _kiem_db(), _kiem_model(), _kiem_giong_doc(), _kiem_kenh(),
+        _kiem_cong_cong_khai(),
         _kiem_hang_doi_video(), _kiem_sao_luu(), _kiem_kho_anh(),
         _kiem_khach_gan_nhat(), _kiem_khach_cho_lau(),
         _kiem_erp(), _kiem_don_ket_erp(),

@@ -2712,7 +2712,16 @@ const NHOM_NHAN = {
  * ai cũng gõ sai lần đầu — điền sẵn mẫu đúng thì người vận hành SỬA chứ
  * không VIẾT, và đó là khác biệt giữa dùng được và bỏ đó. */
 const PLUGIN_MAU = {
-  tra_bang: '{\n  "bang": {\n    "serum": "12 tháng",\n    "kem chống nắng": "6 tháng"\n  }\n}',
+  /* Khoá mẫu phải ĐỦ RIÊNG, và đây không phải chuyện thẩm mỹ.
+   *
+   * Mẫu cũ dùng khoá "serum". Danh mục cửa hàng này có BỐN sản phẩm chứa
+   * chữ ấy, nên một dòng "serum" trả lời thay cho cả bốn — chắc nịch, không
+   * mơ hồ, nên cũng không có nhánh hỏi lại nào chạy. Người vận hành SỬA mẫu
+   * chứ không VIẾT lại, nên mẫu xấu là cái bẫy được nhân bản.
+   *
+   * `ban_mo_ta.khoa_long_nhau` nay chặn khoá lồng nhau lúc lưu, nhưng mẫu
+   * vẫn nên dạy đúng ngay từ đầu thay vì đợi bị từ chối. */
+  tra_bang: '{\n  "bang": {\n    "Kem Chống Nắng": "12 tháng sau khi mở nắp",\n    "Sữa Rửa Mặt": "12 tháng sau khi mở nắp"\n  }\n}',
   tra_tai_lieu: '{\n  "nhom_tai_lieu": "bao-hanh",\n  "k": 4\n}',
   chuyen_chuyen_biet: '{\n  "ly_do": "Khách hỏi hợp tác bán buôn"\n}',
   goi_api_doc: '{\n  "url": "https://noi-bo.example.com/tra/{ma}",\n  "han_giay": 5\n}',

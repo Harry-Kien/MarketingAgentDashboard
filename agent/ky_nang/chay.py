@@ -11,16 +11,9 @@ bắt mọi lời gọi `db.execute`/`db.fetch`/`llm.` xuất hiện ở đây l
 """
 from __future__ import annotations
 
-import unicodedata
 
-from agent.ky_nang.ban_mo_ta import BanMoTa
+from agent.ky_nang.ban_mo_ta import BanMoTa, bo_dau
 from agent.ky_nang.mang import LoiMang, lay
-
-
-def _bo_dau(s: str) -> str:
-    """Bỏ dấu và hạ chữ thường — để tra bảng không phụ thuộc cách gõ."""
-    s = unicodedata.normalize("NFD", s.lower().strip())
-    return "".join(c for c in s if unicodedata.category(c) != "Mn")
 
 
 async def chay_plugin(bm: BanMoTa, args: dict) -> dict:
@@ -72,7 +65,7 @@ async def _tra_tai_lieu(bm: BanMoTa, args: dict) -> dict:
     if not cau_hoi:
         return {"tim_thay": False, "ghi_chu": "Thiếu nội dung cần tra."}
 
-    nhom = _bo_dau(bm.cau_hinh["nhom_tai_lieu"])
+    nhom = bo_dau(bm.cau_hinh["nhom_tai_lieu"])
     k = int(bm.cau_hinh.get("k", 4))
 
     # Lọc SAU khi truy hồi, không lọc trong SQL.
@@ -82,7 +75,7 @@ async def _tra_tai_lieu(bm: BanMoTa, args: dict) -> dict:
     # — cùng một câu hỏi, hai công cụ, hai thứ tự khác nhau. Lấy dư rồi cắt
     # thì thứ tự giữ nguyên. Đổi lại là tốn hơn một chút, chấp nhận được.
     doan = await rag.retrieve(cau_hoi, k=k * 3)
-    hop = [p for p in doan if nhom in _bo_dau(p.doc_title)][:k]
+    hop = [p for p in doan if nhom in bo_dau(p.doc_title)][:k]
 
     if not hop:
         return {
@@ -110,15 +103,15 @@ def _tra_bang(bm: BanMoTa, args: dict) -> dict:
         return {"tim_thay": False, "ghi_chu": "Thiếu khoá cần tra."}
 
     bang = bm.cau_hinh["bang"]
-    can = _bo_dau(khoa)
+    can = bo_dau(khoa)
 
     # Khớp đúng trước, khớp chứa sau. Khách gõ "hà nội" hay "Hà Nội" hay
     # "cửa hàng hà nội" đều phải ra một dòng.
     for k_, v_ in bang.items():
-        if _bo_dau(k_) == can:
+        if bo_dau(k_) == can:
             return {"tim_thay": True, "khoa": k_, "gia_tri": v_}
 
-    gan = [(k_, v_) for k_, v_ in bang.items() if can in _bo_dau(k_) or _bo_dau(k_) in can]
+    gan = [(k_, v_) for k_, v_ in bang.items() if can in bo_dau(k_) or bo_dau(k_) in can]
     if len(gan) == 1:
         return {"tim_thay": True, "khoa": gan[0][0], "gia_tri": gan[0][1]}
     if len(gan) > 1:

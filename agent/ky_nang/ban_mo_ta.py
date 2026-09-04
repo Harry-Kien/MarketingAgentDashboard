@@ -28,6 +28,7 @@ quản trị viên mới tạo được plugin. Ba chốt, vì một chốt sẽ
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from agent.core import phong_thu
@@ -63,6 +64,53 @@ THAM_SO_TOI_DA = 5
 # model — tốn tiền mỗi lượt, và làm model chọn công cụ kém đi. Chọn 12 vì
 # nó gấp đôi số công cụ một cửa hàng thật cần thêm ngoài 11 cái có sẵn.
 PLUGIN_TOI_DA = 12
+
+
+def bo_dau(s: str) -> str:
+    """
+    Bỏ dấu và hạ chữ thường — để tra bảng không phụ thuộc cách gõ.
+
+    Ở ĐÂY chứ không ở `chay.py`, vì `chay` nhập khẩu từ tệp này chứ không
+    ngược lại. Có hai bản sao thì lúc nào đó chúng lệch nhau, và khi ấy phép
+    kiểm lúc lưu nói một đằng, phép so khớp lúc chạy làm một nẻo — không
+    lỗi, không nhật ký. Test canh việc chỉ có MỘT định nghĩa.
+    """
+    s = unicodedata.normalize("NFD", s.lower().strip())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def khoa_long_nhau(bang: dict[str, str]) -> tuple[str, str] | None:
+    """
+    Cặp khoá mà cái này nằm lọt trong cái kia, hoặc None.
+
+    VÌ SAO PHẢI CHẶN
+
+    `chay._tra_bang` khớp đúng trước, rồi khớp CHỨA hai chiều. Với hai khoá
+    lồng nhau — ví dụ "serum" và "serum dưỡng tóc" — câu hỏi nào rơi vào
+    giữa sẽ nhận câu trả lời của khoá NGẮN, một cách chắc nịch:
+
+        khách hỏi "serum khử mùi dùng được bao lâu"
+        → "serum dưỡng tóc" không nằm trong câu, "serum" thì có
+        → đúng MỘT dòng khớp → trả lời theo dòng "serum"
+
+    Không mơ hồ, nên không có nhánh hỏi lại. Không lỗi, không nhật ký. Khách
+    nhận một con số sai và tin nó.
+
+    Đo được trên danh mục thật của cửa hàng này: ô gợi ý sẵn của giao diện
+    dùng khoá "serum", trong khi danh mục có BỐN sản phẩm chứa chữ ấy —
+    Serum Sau Tẩy Lông, Serum Dưỡng Trắng, Serum Dưỡng Tóc, Serum Khử Mùi.
+    Cấu hình đó lưu được, và trả cùng một đáp án cho cả bốn.
+
+    Khoá KHÔNG lồng nhau thì trường hợp xấu nhất là khớp nhiều dòng, và
+    nhánh ấy đã HỎI LẠI khách. Hỏi lại thì không ai bị trả lời sai.
+    """
+    chuan = [(k, bo_dau(k)) for k in bang]
+    for i, (ka, a) in enumerate(chuan):
+        for kb, b in chuan[i + 1:]:
+            if a and b and (a in b or b in a):
+                # Trả cặp NGẮN trước: đó là khoá sẽ nuốt câu hỏi của khoá kia.
+                return (ka, kb) if len(a) <= len(b) else (kb, ka)
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +271,15 @@ def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
             sach[k_.strip()] = v_.strip()
         if not ten_tham_so:
             raise LoiBanMoTa("tra_bang cần đúng một tham số để nhận khoá cần tra.")
+        if (cap := khoa_long_nhau(sach)) is not None:
+            ngan, dai = cap
+            raise LoiBanMoTa(
+                f"Khoá {ngan!r} nằm lọt trong khoá {dai!r}. Câu hỏi nào chỉ "
+                f"chứa {ngan!r} sẽ nhận câu trả lời của dòng đó một cách chắc "
+                f"nịch, kể cả khi khách đang hỏi về dòng khác — không mơ hồ "
+                f"nên cũng không có ai hỏi lại. Hãy viết khoá đủ riêng, ví dụ "
+                f"{dai!r} và một tên cụ thể khác thay cho {ngan!r}."
+            )
         return {"bang": sach}
 
     if loai == "chuyen_chuyen_biet":

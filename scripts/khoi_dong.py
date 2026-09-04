@@ -1,7 +1,25 @@
 """
 Dựng cả hệ thống bằng MỘT lệnh, và nói thẳng cái nào chưa lên.
 
-    python -m scripts.khoi_dong
+    python -m scripts.khoi_dong                  có cổng công khai
+    python -m scripts.khoi_dong --khong-tunnel   chạy nội bộ, không tunnel
+
+CHẠY KHÔNG TUNNEL CÓ ĐƯỢC KHÔNG — ĐƯỢC
+--------------------------------------
+`PUBLIC_BASE_URL=http://host.docker.internal:8000` là mặc định xuất xưởng
+trong `.env.example`. Không tunnel là một LỰA CHỌN, không phải sự cố.
+
+Cái vẫn chạy đầy đủ:
+
+    Zalo cá nhân   sidecar gọi thẳng 127.0.0.1:8000, không đi qua tunnel.
+                   Đo được: 34/39 tin khách vào bằng đúng đường này.
+    Dashboard, agent tự trả lời, ERP, sao lưu, hàng đợi video
+
+Cái mất — và chỉ mất CHIỀU NHẬN:
+
+    Zalo OA, Facebook   máy chủ của họ gọi vào ta, nên cần địa chỉ công
+                        khai. Chiều GỬI vẫn chạy, vì nó đi ra bằng API.
+    Callback OAuth Meta, link media khi đăng bài
 
 VÌ SAO CẦN LỆNH NÀY
 -------------------
@@ -100,6 +118,35 @@ def _doc_env(khoa: str) -> str:
 # ---------------------------------------------------------------
 #  Từng tầng
 # ---------------------------------------------------------------
+
+NOI_BO = "http://host.docker.internal:8000"
+
+
+def _doi_env_noi_bo() -> None:
+    """Trả `.env` về địa chỉ mặc định xuất xưởng — xem `buoc_bo_tunnel`."""
+    tep = GOC / ".env"
+    if not tep.exists():
+        return
+    s = tep.read_text(encoding="utf-8", errors="replace")
+    s = re.sub(r"(?m)^PUBLIC_BASE_URL=.*$", f"PUBLIC_BASE_URL={NOI_BO}", s)
+    s = re.sub(r"(?m)^WEBHOOK_PUBLIC_URL=.*$",
+               f"WEBHOOK_PUBLIC_URL={NOI_BO}/webhook", s)
+    tep.write_text(s, encoding="utf-8")
+
+
+def _giet_tunnel_cu() -> int:
+    """
+    Tắt mọi cloudflared đang chạy.
+
+    Không tắt thì tiến trình vẫn sống và vẫn thử lại mãi với một tunnel đã
+    bị Cloudflare huỷ — tốn CPU, và làm `tunnel.log` đầy `ERR` khiến lần sau
+    đọc log không phân biệt được lỗi cũ với lỗi mới.
+    """
+    if sys.platform == "win32":
+        r = _chay("taskkill", "/F", "/IM", "cloudflared.exe", giay=30)
+        return 0 if r.returncode else 1
+    return 0 if _chay("pkill", "-f", "cloudflared", giay=30).returncode else 1
+
 
 def _docker_song() -> bool:
     try:
@@ -217,6 +264,40 @@ def buoc_tunnel() -> tuple[bool, str, bool]:
     return True, sau, (sau != truoc)
 
 
+def buoc_bo_tunnel() -> tuple[bool, str, bool]:
+    """
+    Chạy KHÔNG tunnel, và trả `.env` về địa chỉ nội bộ.
+
+    VÌ SAO PHẢI GHI LẠI `.env` CHỨ KHÔNG CHỈ BỎ QUA BƯỚC BẬT
+
+    Bỏ tunnel mà để nguyên tên miền `trycloudflare` đã chết trong `.env` thì
+    mục "Cổng công khai" đỏ VĨNH VIỄN — nó gọi một tên miền không còn tồn
+    tại, và đúng là không gọi được. Đỏ thật về mặt kỹ thuật, nhưng vô nghĩa
+    về mặt vận hành: không ai định cho nó sống cả.
+
+    Một bảng giám sát luôn đỏ là bảng người ta thôi đọc, và lúc đó lần sau
+    hỏng thật cũng không ai thấy. Nên `hong` phải dành cho "định cho nó chạy
+    mà nó không chạy", còn "không định dùng" là `canh_bao` — và phép kiểm
+    phân biệt hai thứ đó BẰNG CHÍNH giá trị trong `.env`.
+
+    KÊNH NÀO CHỊU ẢNH HƯỞNG
+
+    Zalo cá nhân KHÔNG chịu ảnh hưởng: sidecar gọi thẳng
+    `127.0.0.1:8000/webhook/native/zalo-personal`. Đo được trên hệ thống
+    này: 34/39 tin khách vào qua đúng đường ấy.
+
+    Mất là mất chiều NHẬN của Zalo OA và Facebook (Meta gọi từ máy chủ của
+    họ nên bắt buộc cần địa chỉ công khai), cùng callback OAuth Meta và link
+    media khi đăng bài. Chiều GỬI của cả hai vẫn chạy — nó đi ra bằng API,
+    không cần ai gọi vào.
+    """
+    truoc = _doc_env("PUBLIC_BASE_URL")
+    _giet_tunnel_cu()
+    _doi_env_noi_bo()
+    sau = _doc_env("PUBLIC_BASE_URL")
+    return True, f"BỎ QUA — {sau}", (sau != truoc)
+
+
 # ---------------------------------------------------------------
 
 def main() -> int:
@@ -243,7 +324,8 @@ def main() -> int:
     ket.append(("Sidecar Zalo", ok_sc, mo_ta_sc))
     print(f"  {'[đủ]' if ok_sc else '[HỎNG]':<9}{'Sidecar Zalo':<18}{mo_ta_sc}")
 
-    ok_tn, mo_ta_tn, doi = buoc_tunnel()
+    bo_tunnel = "--khong-tunnel" in sys.argv
+    ok_tn, mo_ta_tn, doi = buoc_bo_tunnel() if bo_tunnel else buoc_tunnel()
     ket.append(("Tunnel", ok_tn, mo_ta_tn))
     print(f"  {'[đủ]' if ok_tn else '[HỎNG]':<9}{'Tunnel':<18}{mo_ta_tn}")
 
@@ -259,7 +341,13 @@ def main() -> int:
         return 1
 
     print(f"Xong. Dashboard: http://127.0.0.1:{CONG_APP}")
-    if doi:
+    if bo_tunnel:
+        print("\nCHẠY KHÔNG CỔNG CÔNG KHAI. Vẫn hoạt động đầy đủ:")
+        print("  · Zalo cá nhân — sidecar gọi thẳng 127.0.0.1, không qua tunnel")
+        print("  · Dashboard, agent tự trả lời, ERP, sao lưu")
+        print("Tạm mất CHIỀU NHẬN của Zalo OA và Facebook — máy chủ của họ")
+        print("cần một địa chỉ công khai để gọi vào. Chiều GỬI vẫn chạy.")
+    elif doi:
         print("\nTÊN MIỀN VỪA ĐỔI — phải dán lại URL webhook vào Zalo/Meta")
         print("Console. Không nền tảng nào báo cho bạn biết nó đã ngừng gọi")
         print("được, nên bỏ bước này là kênh chết im lặng.")

@@ -72,8 +72,21 @@ ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 Sau khi khởi động máy, dựng cả hệ thống bằng **một lệnh**:
 
 ```bash
-python -m scripts.khoi_dong       # Docker → Postgres → app → sidecar → tunnel
+python -m scripts.khoi_dong                  # có cổng công khai
+python -m scripts.khoi_dong --khong-tunnel   # chạy nội bộ, không tunnel
 ```
+
+**Không tunnel vẫn chạy được, và đó là mặc định xuất xưởng**
+(`PUBLIC_BASE_URL=http://host.docker.internal:8000` trong `.env.example`).
+Zalo cá nhân KHÔNG đi qua tunnel — sidecar gọi thẳng
+`127.0.0.1:8000/webhook/native/zalo-personal`; đo được 34/39 tin khách vào
+bằng đúng đường ấy. Mất là mất **chiều nhận** của Zalo OA và Facebook, vì
+máy chủ của họ cần một địa chỉ công khai để gọi vào. Chiều **gửi** vẫn chạy.
+
+Cờ `--khong-tunnel` trả `.env` về địa chỉ nội bộ, và đó mới là điểm chính:
+để nguyên tên miền `trycloudflare` đã chết thì mục "Cổng công khai" đỏ vĩnh
+viễn — đỏ thật về kỹ thuật, vô nghĩa về vận hành, và một bảng luôn đỏ là
+bảng người ta thôi đọc.
 
 Nó in một dòng cho mỗi tầng và **trả mã thoát khác 0 nếu còn tầng nào
 hỏng**. Tên miền tunnel đổi mỗi lần chạy, nên lệnh nhắc dán lại URL webhook

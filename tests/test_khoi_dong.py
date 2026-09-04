@@ -170,6 +170,69 @@ def test_biet_ten_mien_co_doi_hay_khong():
 
 
 # ---------------------------------------------------------------
+#  Chạy KHÔNG tunnel — một lựa chọn, không phải sự cố
+# ---------------------------------------------------------------
+
+def test_co_duong_chay_khong_tunnel():
+    """
+    `PUBLIC_BASE_URL=http://host.docker.internal:8000` là mặc định xuất
+    xưởng trong `.env.example`. Bắt buộc phải có tunnel mới chạy được là
+    chống lại chính cấu hình mặc định của repo.
+    """
+    than = _than("main")
+    assert "--khong-tunnel" in than, "không có đường chạy nội bộ"
+    assert "buoc_bo_tunnel" in than, "cờ có mà không dẫn tới nhánh nào"
+
+
+def test_bo_tunnel_thi_TRA_env_ve_noi_bo():
+    """
+    Đây là chỗ dễ sai nhất, và nó tạo ĐỎ GIẢ.
+
+    Chỉ bỏ qua bước bật mà để nguyên tên miền `trycloudflare` đã chết trong
+    `.env` thì mục "Cổng công khai" đỏ vĩnh viễn — nó gọi một tên miền không
+    còn tồn tại, và đúng là không gọi được. Đỏ thật về kỹ thuật, vô nghĩa về
+    vận hành: không ai định cho nó sống cả.
+
+    Một bảng giám sát luôn đỏ là bảng người ta thôi đọc — rồi lần sau hỏng
+    thật cũng không ai thấy.
+    """
+    than = _than("buoc_bo_tunnel")
+    assert "_doi_env_noi_bo()" in than, (
+        "không trả .env về nội bộ — mục Cổng công khai sẽ đỏ vĩnh viễn"
+    )
+
+
+def test_bo_tunnel_thi_TAT_cloudflared_dang_chay():
+    """
+    Không tắt thì tiến trình vẫn sống, vẫn thử lại mãi với một tunnel đã bị
+    huỷ — tốn CPU và làm `tunnel.log` đầy `ERR` cũ, khiến lần sau đọc log
+    không phân biệt được lỗi cũ với lỗi mới.
+    """
+    assert "_giet_tunnel_cu()" in _than("buoc_bo_tunnel")
+
+
+def test_env_noi_bo_doi_CA_HAI_bien():
+    """Sửa một quên một thì nửa URL đúng nửa sai, và cái sai không kêu."""
+    than = _than("_doi_env_noi_bo")
+    for bien in ("PUBLIC_BASE_URL", "WEBHOOK_PUBLIC_URL"):
+        assert bien in than, f"_doi_env_noi_bo không đặt lại {bien}"
+
+
+def test_dia_chi_noi_bo_dung_thu_ma_phep_kiem_COI_LA_noi_bo():
+    """
+    Hai tệp khác nhau phải khớp nhau: `khoi_dong.NOI_BO` ghi vào `.env`, còn
+    `suc_khoe._NOI_BO` quyết định `canh_bao` hay `hong`. Lệch nhau là ghi
+    vào một địa chỉ mà phép kiểm coi là công khai — và đỏ ngay lập tức.
+    """
+    from agent.suc_khoe import _NOI_BO
+    from scripts.khoi_dong import NOI_BO
+
+    assert any(x in NOI_BO for x in _NOI_BO), (
+        f"{NOI_BO} không nằm trong danh sách nội bộ của suc_khoe"
+    )
+
+
+# ---------------------------------------------------------------
 #  Tắt app: đừng tắt nhầm tiến trình khác
 # ---------------------------------------------------------------
 

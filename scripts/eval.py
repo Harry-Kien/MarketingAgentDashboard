@@ -29,7 +29,14 @@ from agent import db  # noqa: E402
 from agent.core import agent as brain  # noqa: E402
 from agent.core import tu_nhien  # noqa: E402
 
-GOLDEN = ROOT / "data" / "eval" / "golden.jsonl"
+# Đường lui sang bộ mẫu, cùng cách `eval_nhieu_luot` lui về
+# `kich_ban.example.jsonl`: bộ thật bị .gitignore chặn vì có thể chứa giá
+# thật, nên máy vừa clone chỉ có bản mẫu — và CLAUDE.md dẫn tới file này.
+_GOLDEN_THAT = ROOT / "data" / "eval" / "golden.jsonl"
+GOLDEN = (
+    _GOLDEN_THAT if _GOLDEN_THAT.exists()
+    else ROOT / "data" / "eval" / "golden.example.jsonl"
+)
 OUT_DIR = ROOT / "data" / "eval"
 
 
@@ -230,6 +237,12 @@ async def hoi_thoai_eval(
 
 
 async def main(loc: str | None = None) -> int:
+    if GOLDEN.name == "golden.example.jsonl":
+        # Nói to, vì đây là điểm dễ hiểu nhầm nhất: số đo ra trông y hệt số
+        # đo thật, chỉ khác là agent đang trả lời về hàng KHÔNG CÓ THẬT.
+        print("[CẢNH BÁO] Không thấy data/eval/golden.jsonl — đang đo trên BỘ MẪU")
+        print("           (hàng mẫu, không phải hàng của shop). Để đo thật:")
+        print("           python -m scripts.sinh_bo_cau_vang")
     cases = [
         json.loads(line)
         for line in GOLDEN.read_text(encoding="utf-8").splitlines()

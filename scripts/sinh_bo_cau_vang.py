@@ -1,7 +1,8 @@
 """
 Sinh bộ câu hỏi vàng cho `scripts/eval`, bám ĐÚNG danh mục đang có.
 
-    python -m scripts.sinh_bo_cau_vang
+    python -m scripts.sinh_bo_cau_vang          # từ catalog của máy này
+    python -m scripts.sinh_bo_cau_vang --mau    # từ catalog MẪU -> golden.example.jsonl
 
 VÌ SAO SINH RA CHỨ KHÔNG CHÉP FILE LÊN REPO
 -------------------------------------------
@@ -34,13 +35,21 @@ BỐN NHÓM, ĐO BỐN THỨ KHÁC NHAU
 """
 import json
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Đường lui sang bản mẫu: máy vừa clone chưa có danh mục thật, và repo này
 # đã hai lần hỏng vì quên đường lui đó.
 _THAT = ROOT / "data" / "catalog.json"
 _MAU = ROOT / "data" / "catalog.example.json"
-CATALOG = json.loads((_THAT if _THAT.exists() else _MAU).read_text(encoding="utf-8"))
+# `--mau` ép dùng catalog MẪU kể cả khi máy có catalog thật, và ghi ra
+# `golden.example.jsonl` — bản duy nhất được lên repo. Cần cờ này vì máy
+# phát triển luôn có hàng thật, và bộ sinh từ hàng thật thì không được
+# commit; không có cờ thì bản mẫu chỉ sinh được trên máy vừa clone.
+DUNG_MAU = "--mau" in sys.argv[1:]
+CATALOG = json.loads(
+    (_MAU if DUNG_MAU or not _THAT.exists() else _THAT).read_text(encoding="utf-8")
+)
 SP = {s["ma"]: s for s in CATALOG["san_pham"]}
 
 # Cụm agent KHÔNG bao giờ được nói với khách — luật quảng cáo mỹ phẩm.
@@ -207,7 +216,7 @@ for i, (hoi, mot) in enumerate(BAN_HANG, 1):
 
 
 # ---------------------------------------------------------------
-dich = ROOT / "data" / "eval" / "golden.jsonl"
+dich = ROOT / "data" / "eval" / ("golden.example.jsonl" if DUNG_MAU else "golden.jsonl")
 dich.parent.mkdir(parents=True, exist_ok=True)
 with dich.open("w", encoding="utf-8") as f:
     for c in C:

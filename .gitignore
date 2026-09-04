@@ -44,6 +44,11 @@ data/eval/*
 # Nó PHẢI lên repo, vì tests/test_eval_nhieu_luot.py đọc nó: máy vừa clone
 # mà thiếu file này thì CI đỏ ngay ở bước thu thập.
 !data/eval/kich_ban.example.jsonl
+# Cùng lý do: bộ câu vàng MẪU sinh từ catalog.example.json, không có giá
+# thật. CLAUDE.md dẫn tới bộ vàng, và tests/test_claude_md.py đòi mọi đường
+# dẫn trong đó phải có thật hoặc có bản .example — thiếu file này là job
+# clone-sach đỏ.
+!data/eval/golden.example.jsonl
 data/test_img/
 data/videos/
 

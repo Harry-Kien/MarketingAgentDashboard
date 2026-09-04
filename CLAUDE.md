@@ -142,7 +142,9 @@ python -m scripts.eval_nhieu_luot --kho  # kiểm bộ khung, KHÔNG tốn tiề
 
 **Chạy `sinh_bo_cau_vang` TRƯỚC.** `data/eval/golden.jsonl` bị `.gitignore`
 chặn — đúng, vì khi thay danh mục mẫu bằng hàng thật thì nó chứa giá thật.
-Nhưng vì thế nó không đi theo repo, và `scripts.eval` chết ngay dòng đầu.
+Thiếu nó, `scripts.eval` lui về `data/eval/golden.example.jsonl` (sinh từ
+catalog mẫu bằng cờ `--mau`) và in cảnh báo: số đo khi ấy là trên hàng
+mẫu, không phải hàng của shop.
 
 Sửa xong `_BUOC_CHUYEN` hay prompt thì **chạy lại nhóm tuân thủ** rồi sinh
 lại `docs/thuc-nghiem.md` — có test canh việc tài liệu đã cũ.

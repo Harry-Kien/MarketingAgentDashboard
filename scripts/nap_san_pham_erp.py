@@ -216,7 +216,14 @@ async def main(argv: list[str] | None = None) -> int:
                    help="nhập tồn kho ban đầu vào ERP theo số trong catalog")
     a = p.parse_args(argv)
 
+    # Đường lui sang bản mẫu. `catalog.json` cố ý không đi theo repo, và
+    # thiếu đường lui thì `--thu` — chế độ sinh ra để chạy TRƯỚC khi có gì —
+    # lại chết trên mọi bản clone sạch. Job `clone-sach` đã đỏ vì đúng dòng
+    # này. Bản mẫu mang cờ `du_lieu_mau: true`, nên nhánh CHẶN bên dưới vẫn
+    # ngăn nó lên ERP thật.
     duong_dan = GOC / "data" / "catalog.json"
+    if not duong_dan.exists():
+        duong_dan = GOC / "data" / "catalog.example.json"
     if not duong_dan.exists():
         print(f"[LỖI] Không thấy {duong_dan}")
         return 1

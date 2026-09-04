@@ -32,6 +32,9 @@ python-dotenv==1.2.1
 # nhật; giao diện vẫn mở nên không ai đoán ra nguyên nhân. Cái gì mình
 # import thì mình khai.
 websockets==16.1.1
+# `agent/api/tich_hop.py` import THẲNG starlette (đi kèm fastapi). Cùng lý
+# do với websockets ở trên: cái gì mình import thì mình khai.
+starlette==1.6.0
 
 # --- Dữ liệu và RAG -------------------------------------------
 asyncpg==0.31.0
@@ -61,8 +64,19 @@ mcp[cli]==2.0.0
 # toàn bộ bố cục chữ — xem agent/video/renderers/layout.py.
 pillow==12.3.0
 
+# --- Dữ liệu doanh nghiệp -------------------------------------
+# Đọc/ghi Excel cho ba script nạp danh mục và bổ sung tư vấn
+# (`nap_catalog_tu_excel`, `sinh_mau_bo_sung`, `nap_bo_sung_tu_van`).
+# THIẾU DÒNG NÀY suốt từ 01/09 đến 04/09: máy phát triển có sẵn nên pytest
+# xanh, còn CI chết ngay ở bước thu thập test — hơn bốn mươi lần chạy đỏ
+# liên tiếp vì một import chưa khai. `tests/test_requirements.py` canh.
+openpyxl==3.1.5
+
 # --- Kiểm thử -------------------------------------------------
 pytest==9.1.1
+# `tests/test_ha_tang_erpnext.py` đọc docker-compose.erpnext.yml bằng yaml.
+# Hiện về máy nhờ gói khác kéo theo; khai thẳng để không phụ thuộc điều đó.
+pyyaml==6.0.3
 
 # --- ĐÃ GỠ ----------------------------------------------------
 # langfuse: từng có trong danh sách nhưng KHÔNG được import ở bất kỳ đâu.

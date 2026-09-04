@@ -97,6 +97,66 @@ async def _kiem_giong_doc() -> dict:
                 "là ước lượng. " + (ch.get("ly_do_google") or ""))
 
 
+async def _tai_khoan_active_thieu_credential() -> list[str]:
+    """
+    Tài khoản mang nhãn `active` mà KHÔNG nạp nổi credential.
+
+    LỖI THẬT, ĐO ĐƯỢC 04.09.2026
+
+    Tài khoản webchat "Web thử nghiệm" hiện `active`, `ly_do_hong` rỗng,
+    `/api/suc-khoe` báo "4 kênh native" — nhưng khách bấm vào widget nhận:
+
+        409 {"detail": "Webchat account thiếu widget secret"}
+
+    Nó được tạo và đánh dấu `active` mà chưa từng cấu hình. Bản ghi có
+    `metadata` rỗng và không một credential nào.
+
+    Chính docstring của `_kiem_kenh` đã tiên đoán chuyện này — "nếu một ngày
+    kênh native chết thật, ô này vẫn nói y hệt — nó chưa từng nhìn vào đó" —
+    rồi vẫn đọc cột `status` thay vì gọi thử.
+
+    VÌ SAO KHÔNG GỌI `verify_connection()`
+
+    Đó mới là phép kiểm đầy đủ, nhưng nó đi ra mạng. `canh_gac` chạy mỗi 60
+    giây, và `verify` của Zalo OA gọi `_lay_token()`; access token có đệm,
+    nhưng đệm nằm trong INSTANCE adapter, nên mỗi lượt kiểm dựng adapter mới
+    là một lượt làm mới. Refresh token của Zalo XOAY VÒNG — dùng một lần rồi
+    chết. Đốt nó mỗi phút là tự tay giết kênh mình đang canh.
+
+    Hỏi "có credential không" thì chỉ là MỘT truy vấn tồn tại — không giải
+    mã, không chạm mạng, không chạm khoá. Nó bắt đúng lớp lỗi "được đánh dấu
+    sống nhưng không phục vụ nổi", cho MỌI kênh, kể cả kênh chưa tồn tại lúc
+    viết dòng này.
+
+    Sống-hay-chết ở đầu kia đã có vòng giữ phiên Zalo và vòng kiểm token
+    Meta lo; chúng ghi kết quả vào `status`, thứ mà `_kiem_kenh` vẫn đọc.
+    """
+    try:
+        r = await db.fetch(
+            """
+            SELECT a.channel, a.display_name
+            FROM channel_accounts a
+            WHERE a.status = 'active'
+              AND NOT EXISTS (SELECT 1 FROM credential_secrets s
+                              WHERE s.account_id = a.id)
+            ORDER BY a.channel, a.display_name
+            """
+        )
+        return [f"{x['channel']} · {x['display_name']}" for x in r]
+    except Exception:  # noqa: BLE001
+        # CSDL sập thì IM LẶNG, và có chủ ý.
+        #
+        # `_kiem_kenh` vốn bọc truy vấn của nó đúng như vậy, vì "Cơ sở dữ
+        # liệu" đã là một mục riêng: hỏng ở đó thì trang sức khoẻ đã đỏ sẵn,
+        # nói thêm lần nữa chỉ là nhiễu.
+        #
+        # Quan trọng hơn: ném ra ở đây là giết cả mục "Kênh nhận tin", tức
+        # đổi MỘT ô đỏ lấy một ô biến mất. Test cũ
+        # `test_csdl_hong_thi_khong_lam_sap_phep_kiem` bắt đúng chỗ này khi
+        # bản đầu của hàm không có khối `try` — nó có từ trước, và nó đúng.
+        return []
+
+
 async def _kiem_kenh() -> dict:
     """
     Kênh nhận tin. Chưa cấu hình thì là lựa chọn, không phải hỏng.
@@ -133,6 +193,16 @@ async def _kiem_kenh() -> dict:
                 native += f" · {hong} tài khoản cần xử lý"
     except Exception:  # noqa: BLE001 — CSDL hỏng đã có mục riêng báo
         native = ""
+
+    thieu = await _tai_khoan_active_thieu_credential()
+    if thieu:
+        # Đặt TRƯỚC mọi nhánh trả `tot` bên dưới. Một tài khoản `active` mà
+        # không phục vụ được là hỏng, dù các tài khoản khác có khoẻ đến đâu.
+        return _muc(
+            "Kênh nhận tin", HONG,
+            f"{len(thieu)} kênh hiện 'active' nhưng CHƯA CÓ CREDENTIAL — "
+            f"khách vào sẽ bị từ chối: {', '.join(thieu)}",
+        )
 
     bat = []
     if settings.zalocrm_api_key:

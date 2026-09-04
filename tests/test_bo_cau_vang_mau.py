@@ -69,6 +69,9 @@ def test_bo_mau_khop_bo_sinh():
     thì trả file về nguyên trạng để test không để lại thay đổi trong cây
     làm việc — lệch thì báo lệnh sinh lại, không tự sửa hộ.
     """
+    # So sau khi chuẩn hoá xuống dòng: `core.autocrlf=true` trên Windows
+    # đưa CRLF vào bản làm việc, bộ sinh ghi LF — khác nhau đó không phải
+    # "bản mẫu đã cũ".
     truoc = MAU.read_bytes()
     try:
         kq = subprocess.run(
@@ -80,7 +83,7 @@ def test_bo_mau_khop_bo_sinh():
         sau = MAU.read_bytes()
     finally:
         MAU.write_bytes(truoc)
-    assert sau == truoc, (
+    assert sau.replace(b"\r\n", b"\n") == truoc.replace(b"\r\n", b"\n"), (
         "golden.example.jsonl đã cũ so với bộ sinh — chạy: "
         "python -m scripts.sinh_bo_cau_vang --mau"
     )

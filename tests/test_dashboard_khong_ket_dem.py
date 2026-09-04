@@ -25,9 +25,17 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(scope="module")
 def client():
+    """
+    KHÔNG dùng `with TestClient(app)`: dạng đó chạy `lifespan`, và lifespan
+    mở Postgres. Trên máy phát triển Postgres luôn có nên test xanh; trên CI
+    không có Postgres, sáu ca này ERROR ở khâu dựng fixture — và cùng với
+    thư viện chưa khai, đó là hai lý do CI đỏ suốt nhiều ngày.
+
+    Thứ test này canh — lớp StaticFiles gắn header — được mount lúc IMPORT,
+    không cần lifespan.
+    """
     from agent.main import app
-    with TestClient(app) as c:
-        yield c
+    return TestClient(app)
 
 
 @pytest.mark.parametrize("duong", ["/app.js", "/app.css", "/index.html"])

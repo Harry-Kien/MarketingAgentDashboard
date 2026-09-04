@@ -218,7 +218,11 @@ for i, (hoi, mot) in enumerate(BAN_HANG, 1):
 # ---------------------------------------------------------------
 dich = ROOT / "data" / "eval" / ("golden.example.jsonl" if DUNG_MAU else "golden.jsonl")
 dich.parent.mkdir(parents=True, exist_ok=True)
-with dich.open("w", encoding="utf-8") as f:
+# `newline="\n"` để file giống nhau trên mọi hệ điều hành: mở text mode
+# thường thì Windows ghi CRLF, Linux ghi LF, và test so bản mẫu với bộ sinh
+# sẽ đỏ trên máy này xanh trên máy kia — vì lý do không liên quan gì tới
+# nội dung.
+with dich.open("w", encoding="utf-8", newline="\n") as f:
     for c in C:
         f.write(json.dumps(c, ensure_ascii=False) + "\n")
 

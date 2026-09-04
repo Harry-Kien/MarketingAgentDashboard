@@ -192,7 +192,12 @@ def test_factory_native_thieu_credential_thi_fail_closed():
         (Channel.WEBCHAT, WebchatAdapter),
     ],
 )
-def test_factory_kich_hoat_du_cac_connector_native(channel, adapter_type):
+def test_factory_kich_hoat_du_cac_connector_native(channel, adapter_type, monkeypatch):
+    # Bí mật sidecar giờ lấy từ .env (máy CI không có .env) — xem
+    # tests/test_bi_mat_sidecar_khong_tin_vault.py cho lý do.
+    from agent.config import settings
+    monkeypatch.setattr(settings, "zalo_sidecar_secret", "s" * 32)
+    monkeypatch.setattr(settings, "zalo_sidecar_url", "http://127.0.0.1:3210")
     account = ChannelAccount(
         id=uuid4(),
         channel=channel,

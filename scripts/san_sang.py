@@ -360,75 +360,77 @@ async def kiem_kho_bi_mat_tai_khoan() -> dict:
     )
 
 
-def so_bi_mat_sidecar(tai_khoan: list[tuple[str, str]], bi_mat_env: str) -> dict:
+def doc_tham_do_sidecar(loi: str | None, co_tai_khoan: bool) -> dict:
     """
-    Phần thuần: `tai_khoan` là (tên hiển thị, sidecar_secret trong vault).
+    Phần thuần: `loi` là chi tiết lỗi khi hỏi `status` sidecar bằng bí mật
+    trong `.env`, None nếu sidecar trả lời được.
 
-    Chỉ so BẰNG NHAU, không bao giờ in giá trị: đây là bí mật ký HMAC.
+    Không bao giờ in bí mật — chỉ in kết luận.
     """
     ten = "Bí mật sidecar Zalo"
-    if not tai_khoan:
-        return _muc(ten, DU, "không có tài khoản Zalo cá nhân")
-    lech = [t for t, bm in tai_khoan if bm != bi_mat_env]
-    if lech:
+    if loi is None:
+        return _muc(ten, DU, "sidecar nhận chữ ký ký bằng .env hiện tại")
+    if "chữ ký" in loi.lower():
         return _muc(
             ten, CHAN,
-            f"{len(lech)}/{len(tai_khoan)} tài khoản có sidecar_secret trong vault "
-            f"KHÁC .env ({', '.join(lech)})",
-            "Mọi lời gọi tới sidecar bị 401 và tin khách rơi im lặng. "
-            "Dashboard → Kết nối → mở tài khoản → Lưu lại để máy chủ đè bí mật "
-            "đúng từ .env, rồi Xác minh provider",
+            "sidecar ĐANG CHẠY nhưng với ZALO_SIDECAR_SECRET khác .env",
+            "Mọi lời gọi hai chiều bị 401, tin khách rơi im lặng và nút Quét QR "
+            "báo sai là 'sidecar chưa chạy'. Khởi động lại sidecar để nó đọc "
+            ".env hiện tại: python -m scripts.chay_sidecar_zalo",
         )
-    return _muc(ten, DU, f"{len(tai_khoan)} tài khoản khớp .env")
+    if not co_tai_khoan:
+        return _muc(ten, DU, "chưa có tài khoản Zalo cá nhân, sidecar không cần chạy")
+    return _muc(
+        ten, CANH_BAO, f"sidecar không trả lời ({loi[:80]})",
+        "python -m scripts.chay_sidecar_zalo — kênh Zalo cá nhân đang đứt",
+    )
 
 
 async def kiem_bi_mat_sidecar() -> dict:
     """
-    Vault và `.env` phải cùng một `ZALO_SIDECAR_SECRET`.
+    Sidecar đang chạy có nhận chữ ký ký bằng `.env` hiện tại không.
 
-    Đo được 04.09.2026: sinh lại bí mật bằng `sinh_token` sau khi tài khoản
-    đã lưu vào vault -> sidecar chạy bí mật mới, app ký bằng bí mật cũ, cả
-    hai chiều 401. Mọi đèn vẫn xanh, kể cả bản readiness này. Tám ngày
-    không có tin khách nào vào.
+    Hỏi THẲNG sidecar chứ không so với vault: từ 04.09.2026 app không còn tin
+    bí mật trong vault nữa (xem bi_mat_may_chu.py), nên lệch chỉ còn một
+    cách xảy ra — sidecar được bật với `.env` cũ. Đo được đúng cảnh đó: tám
+    ngày không tin khách, mọi đèn xanh, nút Quét QR báo "chưa chạy".
     """
-    from agent import db
-    from agent.omnichannel.account_repository import PostgresAccountRepository
-    from agent.omnichannel.credential_loader import VaultCredentialLoader
-    from agent.security.credential_vault import (
-        CredentialVault,
-        InvalidMasterKeyConfiguration,
-        parse_master_keys,
-    )
+    from uuid import uuid4
 
-    ten = "Bí mật sidecar Zalo"
+    from agent.channels.zalo_personal import ZaloPersonalAdapter
+
+    co_tai_khoan = False
     try:
+        from agent import db
         await db.init_db()
-        rows = await db.fetch(
-            "SELECT id, display_name FROM channel_accounts "
-            "WHERE channel = 'zalo_personal' AND status <> 'disabled'"
-        )
-        if not rows:
-            return so_bi_mat_sidecar([], settings.zalo_sidecar_secret)
-        loader = VaultCredentialLoader(
-            PostgresAccountRepository(),
-            CredentialVault(
-                parse_master_keys(settings.credential_master_keys),
-                active_version=settings.credential_active_key_version,
-            ),
-        )
-        tai_khoan = []
-        for r in rows:
-            cred = await loader.load(r["id"]) or {}
-            tai_khoan.append(
-                (str(r["display_name"]), str(cred.get("sidecar_secret") or ""))
-            )
-    except InvalidMasterKeyConfiguration:
-        return _muc(ten, CANH_BAO, "chưa cấu hình khoá vault nên không so được",
-                    "Xem mục Kho bí mật tài khoản")
-    except Exception as exc:  # noqa: BLE001
-        return _muc(ten, CANH_BAO, f"không hỏi được ({type(exc).__name__})",
-                    "Khởi động PostgreSQL và chạy lại readiness")
-    return so_bi_mat_sidecar(tai_khoan, settings.zalo_sidecar_secret)
+        co_tai_khoan = bool(await db.fetch(
+            "SELECT 1 FROM channel_accounts "
+            "WHERE channel = 'zalo_personal' AND status <> 'disabled' LIMIT 1"
+        ))
+    except Exception:  # noqa: BLE001 — không có CSDL vẫn thăm dò được sidecar
+        pass
+
+    if not settings.zalo_sidecar_secret:
+        return _muc("Bí mật sidecar Zalo", CANH_BAO if not co_tai_khoan else CHAN,
+                    "ZALO_SIDECAR_SECRET trống trong .env",
+                    "python -m scripts.sinh_token ZALO_SIDECAR_SECRET rồi bật sidecar")
+    adapter = ZaloPersonalAdapter(
+        account_id=uuid4(),
+        credentials={
+            "sidecar_secret": settings.zalo_sidecar_secret,
+            "sidecar_url": settings.zalo_sidecar_url,
+        },
+    )
+    try:
+        # Chữ ký được kiểm TRƯỚC khi tra tài khoản, nên id ngẫu nhiên vẫn
+        # phân biệt được "sai chữ ký" với "không phản hồi".
+        await adapter.status()
+        loi = None
+    except RuntimeError as exc:
+        loi = str(exc)
+    finally:
+        await adapter.aclose()
+    return doc_tham_do_sidecar(loi, co_tai_khoan)
 
 
 async def kiem_outbox() -> dict:

@@ -120,5 +120,5 @@ def test_lech_bi_mat_khong_bi_goi_la_het_phien():
     assert ket_qua["can_quet_lai"] == []
     assert adapters["a"].da_goi_restore == 0
     assert bao and bao[0][1].startswith(DAU_LECH_BI_MAT)
-    assert "Lưu lại" in bao[0][1]
+    assert "chay_sidecar_zalo" in bao[0][1]
 

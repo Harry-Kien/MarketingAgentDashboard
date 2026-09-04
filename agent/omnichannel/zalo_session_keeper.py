@@ -82,9 +82,10 @@ async def khoi_phuc_phien_dut(
                 lech_bi_mat.append(account_id)
                 canh_bao(
                     account_id,
-                    f"{DAU_LECH_BI_MAT}: sidecar_secret trong vault khác "
-                    f"ZALO_SIDECAR_SECRET của sidecar. Kết nối → Lưu lại tài "
-                    f"khoản để đồng bộ. ({ly_do})"[:200],
+                    f"{DAU_LECH_BI_MAT}: sidecar đang chạy với "
+                    f"ZALO_SIDECAR_SECRET khác .env của ứng dụng. Khởi động "
+                    f"lại sidecar: python -m scripts.chay_sidecar_zalo "
+                    f"({ly_do})"[:200],
                 )
                 continue
             can_quet_lai.append(account_id)

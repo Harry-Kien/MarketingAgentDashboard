@@ -15,6 +15,8 @@ from agent.channels.zalo_personal import ZaloPersonalAdapter
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
 from agent.omnichannel.accounts import AccountStatus, Channel
+from agent.omnichannel.bi_mat_may_chu import (ThieuBiMatMayChu,
+                                              bo_sung_bi_mat_may_chu)
 from agent.omnichannel.credential_loader import SYSTEM_ACTOR_ID, VaultCredentialLoader
 from agent.security.credential_vault import CredentialVault, parse_master_keys
 
@@ -117,6 +119,13 @@ async def zalo_personal_callback(
     credentials = await loader.load(account_id)
     if not credentials:
         raise HTTPException(409, "Tài khoản chưa có credential sidecar")
+    # Chữ ký kiểm bằng bí mật của MÁY CHỦ trong .env, không phải bản vault —
+    # vault lệch từng làm callback bị 401 tám ngày mà sidecar không đọc
+    # phản hồi, nên không ai biết. Xem bi_mat_may_chu.py.
+    try:
+        credentials = bo_sung_bi_mat_may_chu(Channel.ZALO_PERSONAL, credentials)
+    except ThieuBiMatMayChu as exc:
+        raise HTTPException(503, str(exc)) from exc
 
     raw_body = await request.body()
     if not verify_sidecar_callback(

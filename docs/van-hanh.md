@@ -153,6 +153,9 @@ Kiểm theo thứ tự này, dừng ở chỗ đầu tiên sai:
 2. `webhook_deliveries` có tăng không? → không tăng nghĩa là tin chưa tới app
 3. Sidecar báo `disconnected`? → phiên chết, chờ 60 giây tự khôi phục
 4. `ZALO_CONTROL_PLANE_URL` có **đủ đường dẫn** `/webhook/native/zalo-personal` không?
+5. `san_sang` mục *Bí mật sidecar Zalo* đỏ? → sidecar đang chạy với
+   `ZALO_SIDECAR_SECRET` cũ (bật trước khi `.env` đổi). Khởi động lại nó
+   bằng `python -m scripts.chay_sidecar_zalo`; quét QR không chữa được.
 
 Điểm 4 đã xảy ra thật: thiếu đường dẫn thì sidecar POST vào 404, phiên
 không tới nơi, tin biến mất — mà sidecar vẫn `healthz` xanh và app cũng

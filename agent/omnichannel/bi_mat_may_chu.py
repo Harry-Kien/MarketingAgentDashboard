@@ -27,6 +27,20 @@ quét QR — cách chỗ gây lỗi hàng chục thao tác, không còn ai nhớ
 
 Đè lên còn tự chữa những tài khoản cũ đã lỡ lưu sai: chỉ cần bấm lưu lại.
 
+VÌ SAO ĐÈ CẢ LÚC ĐỌC, KHÔNG CHỈ LÚC LƯU
+---------------------------------------
+Bản đầu chỉ đè lúc lưu. Rồi đo được 04.09.2026: `sinh_token
+ZALO_SIDECAR_SECRET` chạy SAU khi tài khoản đã lưu — vault giữ bí mật cũ,
+sidecar chạy bí mật mới, mọi lời gọi hai chiều 401 suốt tám ngày. Nút "Quét
+QR" báo "sidecar chưa chạy" trong khi nó đang chạy, và không có nút nào để
+người dùng tự đồng bộ lại.
+
+Bí mật của máy chủ thì máy chủ luôn cầm bản đúng trong `.env`. Nên MỌI chỗ
+dựng adapter hay kiểm chữ ký callback đều gọi hàm này lên credential vừa
+đọc từ vault: bản trong vault chỉ còn là di tích, không bao giờ được tin.
+Nhờ vậy lệch chỉ còn một cách xảy ra — sidecar được khởi động với `.env`
+cũ — và cách chữa duy nhất là khởi động lại sidecar, không phải bấm gì.
+
 VÌ SAO NÉM KHI MÁY CHỦ CHƯA CẤU HÌNH
 ------------------------------------
 Điền chuỗi rỗng thì tài khoản trông y hệt tài khoản tốt trên dashboard —

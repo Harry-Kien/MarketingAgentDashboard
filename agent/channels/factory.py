@@ -6,6 +6,8 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from agent.omnichannel.accounts import AccountStatus, Channel, ChannelAccount
+from agent.omnichannel.bi_mat_may_chu import (ThieuBiMatMayChu,
+                                              bo_sung_bi_mat_may_chu)
 
 from .base import ChannelAdapter
 from .chatwoot import ChatwootAdapter
@@ -82,6 +84,12 @@ class AccountAdapterFactory:
             raise AccountAdapterNotFound("tài khoản native không có credential")
         credentials = dict(loaded)
         credentials.setdefault("external_account_id", account.external_account_id)
+        # Bí mật của MÁY CHỦ (sidecar) lấy từ .env, đè lên bản trong vault.
+        # Xem agent/omnichannel/bi_mat_may_chu.py, mục "đè cả lúc đọc".
+        try:
+            credentials = bo_sung_bi_mat_may_chu(account.channel, credentials)
+        except ThieuBiMatMayChu as exc:
+            raise AccountAdapterNotFound(str(exc)) from exc
         kwargs: dict[str, Any] = {
             "account_id": account.id,
             "credentials": credentials,

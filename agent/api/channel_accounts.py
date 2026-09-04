@@ -459,6 +459,12 @@ async def _zalo_personal_adapter(
     credentials = await VaultCredentialLoader(repository, vault).load(account_id)
     if not credentials:
         raise HTTPException(409, "Tài khoản chưa có cấu hình sidecar")
+    # Bí mật sidecar lấy từ .env, không tin bản trong vault — xem
+    # agent/omnichannel/bi_mat_may_chu.py, mục "đè cả lúc đọc".
+    try:
+        credentials = bo_sung_bi_mat_may_chu(Channel.ZALO_PERSONAL, credentials)
+    except ThieuBiMatMayChu as exc:
+        raise HTTPException(503, str(exc)) from exc
     return (
         ZaloPersonalAdapter(account_id=account_id, credentials=credentials),
         credentials,
@@ -478,6 +484,16 @@ async def _zalo_personal_adapter(
 # phải lỗi lập trình. Mã đúng giúp người đọc log phân biệt hai loại.
 def _loi_sidecar(exc: Exception) -> HTTPException:
     ly_do = str(exc) or type(exc).__name__
+    if "chữ ký" in ly_do.lower():
+        # Sidecar ĐANG CHẠY nhưng với ZALO_SIDECAR_SECRET khác app — thường
+        # vì nó được bật trước khi `.env` đổi. Bản trước gộp vào "chưa chạy",
+        # và người dùng đi bật một thứ đang chạy. Quét QR không chữa được.
+        return HTTPException(
+            503,
+            "Sidecar Zalo cá nhân đang chạy với ZALO_SIDECAR_SECRET khác ứng "
+            "dụng. Khởi động lại sidecar để nó đọc .env hiện tại: "
+            "python -m scripts.chay_sidecar_zalo",
+        )
     if "sidecar" in ly_do.lower() or isinstance(exc, (ConnectionError, OSError)):
         return HTTPException(
             503,

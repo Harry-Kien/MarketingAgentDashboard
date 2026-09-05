@@ -3095,10 +3095,16 @@ async function loadCaiDatApi() {
       <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
       <span class="row__body">
         <span class="row__title">${esc(ten)}</span>
-        ${(nhom[ma] || []).map((m) => `<div class="rows" style="margin:.35rem 0">
-          <label class="row__sub">${esc(m.nhan)}${m.y_nghia ? ` — ${esc(m.y_nghia)}` : ""}</label>
+        ${(nhom[ma] || []).map((m) => {
+          // Tách riêng biến này: giá trị từ máy chủ chỉ được nhắc tới trong
+          // template SAU khi đã qua esc() — không để điều kiện rẽ nhánh nằm
+          // ngay trong dấu ${...} kèm giá trị thô.
+          const yNghia = m.y_nghia ? ` — ${esc(m.y_nghia)}` : "";
+          return `<div class="rows" style="margin:.35rem 0">
+          <label class="row__sub">${esc(m.nhan)}${yNghia}</label>
           ${oNhapApi(m)} ${trangThaiApi(m)}
-        </div>`).join("")}
+        </div>`;
+        }).join("")}
         <div class="rowbtns">
           <button type="button" class="btn btn--sm" data-api-kiem="${ma}">Kiểm tra</button>
           <button type="button" class="btn btn--sm btn--go" data-api-luu="${ma}">Lưu</button>
@@ -3135,11 +3141,32 @@ document.addEventListener("click", async (e) => {
       return;
     }
     const gia_tri = giaTriApiDangGo(ma);
+    const da_luu = [];
+    const hong = [];
+    // Lưu từng khoá riêng: một khoá hỏng không được che khoá đã lưu, và
+    // người dùng phải biết đúng khoá nào hỏng — gộp chung một try thì khoá
+    // 1 đã ghi vào CSDL nhưng người dùng chỉ thấy "lỗi", tưởng chưa lưu gì.
     for (const [khoa, v] of Object.entries(gia_tri)) {
-      await api(`/cai-dat-api/${khoa}`, { method: "PUT", body: JSON.stringify({ gia_tri: v }) });
+      try {
+        await api(`/cai-dat-api/${khoa}`, { method: "PUT", body: JSON.stringify({ gia_tri: v }) });
+        da_luu.push(khoa);
+      } catch (err) {
+        hong.push({ khoa, loi: err.message });
+      }
     }
-    toast(`Đã lưu ${Object.keys(gia_tri).length} khoá — có hiệu lực ngay`);
+    // Nạp lại LUÔN, kể cả khi có khoá hỏng: khoá đã lưu phải hiện trạng thái
+    // mới (nguồn = csdl, bốn ký tự cuối), không đứng khựng ở dữ liệu cũ.
     await loadCaiDatApi();
+    if (!hong.length) {
+      toast(`Đã lưu ${da_luu.length} khoá — có hiệu lực ngay`);
+    } else {
+      const thongBao = `Lưu được ${da_luu.length}, hỏng ${hong.length}: ` +
+        hong.map((h) => h.khoa + " (" + h.loi + ")").join("; ");
+      toast(thongBao, true);
+      // kq cũ đã bị loadCaiDatApi() dựng lại DOM mới — lấy lại tham chiếu.
+      const kqMoi = $(`[data-api-kq="${ma}"]`);
+      if (kqMoi) kqMoi.textContent = thongBao;
+    }
   } catch (err) {
     kq.textContent = "";
     toast(err.message, true);

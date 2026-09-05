@@ -51,3 +51,15 @@ def test_khong_tu_kiem_khi_mo_trang():
     """Mỗi lần kiểm là một lượt gọi tốn tiền; chỉ chạy khi người bấm."""
     than = _than_ham("loadCaiDatApi")
     assert "kiem-tra" not in than
+
+
+def test_moi_chuoi_tu_may_chu_deu_qua_esc():
+    """kiem_ket_qua là chữ do nhà cung cấp trả về — không esc là XSS từ chính lỗi của họ."""
+    src = _than_ham("oNhapApi") + _than_ham("trangThaiApi") + _than_ham("loadCaiDatApi")
+    for ten in ["m.nhan", "m.y_nghia", "m.hien", "m.kiem_ket_qua"]:
+        # Mọi lần chèn phải đi qua esc(...) — chuỗi "${<tên>" trần (không có
+        # "esc(" đứng trước) nghĩa là có chỗ lọt HTML thô từ máy chủ ra DOM.
+        assert ("${" + ten) not in src, f"{ten} bị chèn thẳng, không qua esc()"
+        assert ("esc(" + ten) in src, f"{ten} chưa từng được esc() ở đâu cả"
+    assert "${esc(c)}" in src
+    assert "${c}" not in src

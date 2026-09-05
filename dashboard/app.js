@@ -3130,7 +3130,17 @@ function hienODungProvider() {
   const can = API_KHOA_THEO_PROVIDER[o.value] || "";
   for (const khoa of Object.values(API_KHOA_THEO_PROVIDER)) {
     const dong = document.querySelector(`[data-api-row="${khoa}"]`);
-    if (dong) dong.hidden = khoa !== can;
+    if (dong) {
+      const dang_an = khoa !== can;
+      dong.hidden = dang_an;
+      /* Khi ẩn dòng, xoá tất cả password đã gõ để khoá cũ không thể quay lại
+       * nếu người dùng đổi provider rồi đổi lại. */
+      if (dang_an) {
+        dong.querySelectorAll('input[type="password"]').forEach((ip) => {
+          ip.value = "";
+        });
+      }
+    }
   }
 }
 
@@ -3144,6 +3154,9 @@ document.addEventListener("change", (e) => {
 function giaTriApiDangGo(ma) {
   const ra = {};
   document.querySelectorAll(`[data-api-nhom="${ma}"] [data-api-khoa]`).forEach((o) => {
+    /* Một ô đã ẩn là một ô người dùng không còn nhìn thấy — gửi giá trị của nó
+     * đi là lưu thầm, có thể là khoá cũ từ trước khi đổi provider. Bỏ qua ô ẩn. */
+    if (o.closest("[data-api-row]")?.hidden) return;
     const v = (o.value || "").trim();
     if (v) ra[o.dataset.apiKhoa] = v;
   });

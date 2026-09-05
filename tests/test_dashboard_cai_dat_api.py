@@ -84,3 +84,13 @@ def test_moi_chuoi_tu_may_chu_deu_qua_esc():
         assert ("esc(" + ten) in src, f"{ten} chưa từng được esc() ở đâu cả"
     assert "${esc(c)}" in src
     assert "${c}" not in src
+
+
+def test_o_da_an_khong_duoc_gui_va_bi_xoa_gia_tri():
+    """Đổi provider sau khi gõ khoá: ô ẩn phải bị bỏ qua lúc gom và xoá giá trị lúc ẩn."""
+    gom = _than_ham("giaTriApiDangGo")
+    assert "data-api-row" in gom and "hidden" in gom, \
+        "giaTriApiDangGo phải kiểm closest('[data-api-row]')?.hidden"
+    an = _than_ham("hienODungProvider")
+    assert 'input[type="password"]' in an and ".value" in an, \
+        "hienODungProvider phải xoá giá trị password khi ẩn dòng"

@@ -258,6 +258,26 @@ ERP_GHI_DON=true
 
 ---
 
+## Nhập khoá API trên dashboard
+
+Cấu hình → **Cài đặt API**. Ba thẻ: Model, ERP, Vận chuyển. Khoá được mã
+hoá trong CSDL bằng vault của tài khoản kênh và có hiệu lực ngay. `.env`
+vẫn là đường lui: chưa đặt ở dashboard thì hệ thống dùng `.env`.
+
+Thứ tự đúng: **Kiểm tra → Lưu**. Kiểm chạy bằng đúng thứ bạn vừa gõ,
+chưa lưu gì; "HẾT HẠN MỨC" nghĩa là khoá đúng nhưng nhà cung cấp từ chối.
+
+**Đổi provider sang `gemini_api`** (chỉ cần API key, không cần gcloud): kho
+tri thức phải **nạp lại** vì model embedding đổi. Màn Sức khoẻ có dòng
+*Embedding kho tri thức* báo đỏ cho tới khi nạp lại — đừng bỏ qua, tìm
+kiếm sẽ sai mà không lỗi.
+
+Khoá chủ vault (`CREDENTIAL_MASTER_KEYS`) đổi thì mọi khoá đã lưu không
+mở được: `san_sang` mục *Khoá API* chặn, nhật ký có
+`cau_hinh_api.giai_ma_hong`. Nhập lại khoá là xong.
+
+---
+
 ## Dấu hiệu cổng ERP đang hỏng
 
 Khác mục trên, đây là các kiểu hỏng **đã lường trước và có lưới chặn**, chưa

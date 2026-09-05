@@ -26,7 +26,32 @@ from agent.core import ho_so_khach, phong_thu
 SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
 MAX_TOOL_ROUNDS = 4
 
+# ĐỌC: BẢN ĐỒ TỆP NÀY — năm chặng của respond(), theo đúng thứ tự mã chạy.
+# ĐỌC:
+# ĐỌC:   dòng  52–249  BẢY HÀM CANH LƯỚI  ← một phần ba tệp, đọc chậm nhất
+# ĐỌC:   dòng 281–341  chặng 1 · ba cửa chặn, CHƯA gọi mô hình
+# ĐỌC:   dòng 343–373  chặng 2 · dựng ngữ cảnh (RAG + hồ sơ + rào lời khách)
+# ĐỌC:   dòng 385–392  chặng 3 · nạp danh sách năng lực
+# ĐỌC:   dòng 394–509  chặng 4 · VÒNG LẶP mô hình ↔ công cụ  ← trái tim agent
+# ĐỌC:   dòng 511–562  chặng 5 · bốn lưới cuối rồi trả Reply
+# ĐỌC:
+# ĐỌC: Hai hằng số trên:
+# ĐỌC:   SYSTEM đọc MỘT LẦN lúc nạp module — phải là cùng một chuỗi ở mọi
+# ĐỌC:   request thì điểm cache mới đọc lại được (xem dòng 397).
+# ĐỌC:   MAX_TOOL_ROUNDS là hằng số trong MÃ chứ không phải cột cấu hình:
+# ĐỌC:   nó chặn vòng lặp vô hạn, và cấu hình sửa được thì sẽ có ngày ai sửa.
 
+
+# ĐỌC: Kiểu dữ liệu DUY NHẤT tệp này trả ra. Mọi đường đi trong respond() —
+# ĐỌC: cả tám cửa thoát sớm lẫn cửa ra bình thường — đều kết thúc bằng một Reply.
+# ĐỌC:
+# ĐỌC: Nó mang theo BẰNG CHỨNG (grounded, confidence, sources) và CHI PHÍ
+# ĐỌC: (cost_usd, tokens, latency), không chỉ câu chữ. Đó là thứ làm câu trả lời
+# ĐỌC: kiểm chứng được về sau — dashboard dựng lại được từng lượt mà không cần
+# ĐỌC: bật lại nhật ký gỡ lỗi.
+# ĐỌC:
+# ĐỌC: slots=True làm hai việc: tiết kiệm bộ nhớ, và CHẶN gán thuộc tính không
+# ĐỌC: khai báo — gõ sai tên trường thành lỗi ngay thay vì âm thầm tạo thuộc tính mới.
 @dataclass(slots=True)
 class Reply:
     text: str
@@ -291,6 +316,14 @@ async def respond(
     lại. Bỏ trống thì agent chạy như cũ, không nhớ gì — dùng cho bộ eval,
     nơi mỗi ca phải độc lập.
     """
+    # ĐỌC: ══ CHẶNG 1 · BA CỬA CHẶN ══════════════════════════════════════
+    # ĐỌC: Cả ba chạy TRƯỚC khi tốn một lời gọi mô hình nào, và mỗi cửa đều
+    # ĐỌC: `return` ngay tại chỗ nếu nổ. Chặn ở đây là chặn MIỄN PHÍ; đặt
+    # ĐỌC: chúng ở cuối luồng thì mỗi lần chặn vẫn mất tiền một lượt gọi.
+    # ĐỌC:
+    # ĐỌC:   cửa 1 (dòng dưới) trần chi phí MỘT hội thoại      — 0,25 USD
+    # ĐỌC:   cửa 2 (dòng ~340) trần ngân sách TOÀN CỤC theo ngày — 25 USD
+    # ĐỌC:   cửa 3 (dòng ~354) quét prompt injection            — 13 mẫu
     conv = await db.fetchrow(
         "SELECT cost_usd FROM conversations WHERE id = $1", conversation_id
     )
@@ -340,6 +373,16 @@ async def respond(
                             + ", ".join(dau_hieu),
         )
 
+    # ĐỌC: ══ CHẶNG 2 · DỰNG NGỮ CẢNH ═══════════════════════════════════
+    # ĐỌC: Ba nguồn ghép lại thành thứ mô hình sẽ đọc:
+    # ĐỌC:   (a) rag.retrieve  — 5 đoạn tài liệu công ty, tìm kiếm LAI
+    # ĐỌC:                       vector + từ khoá, hợp nhất bằng RRF
+    # ĐỌC:   (b) ho_so_khach   — trí nhớ về chính khách này
+    # ĐỌC:   (c) phong_thu.boc — rào lời khách thành DỮ LIỆU, không phải lệnh
+    # ĐỌC:
+    # ĐỌC: `passages` được giữ lại NGOÀI biến `context`, vì hai lý do:
+    # ĐỌC:   dòng ~478 sẽ THÊM vào nó (đoạn agent tự tra được),
+    # ĐỌC:   dòng ~577 sẽ đọc doc_title từ nó để điền Reply.sources.
     passages = await rag.retrieve(question, k=5)
     context = rag.as_context(passages)
 
@@ -391,6 +434,20 @@ async def respond(
     # lực từ tin nhắn kế tiếp.
     cong_cu = await kho_ky_nang.cong_cu_dang_bat(tools.TOOLS)
 
+    # ĐỌC: ══ CHẶNG 4 · VÒNG LẶP MÔ HÌNH ↔ CÔNG CỤ ════════════════════════
+    # ĐỌC: ĐÂY LÀ TRÁI TIM CỦA AGENT. Nếu chỉ đọc một đoạn trong cả dự án,
+    # ĐỌC: đọc đoạn này.
+    # ĐỌC:
+    # ĐỌC: Agent KHÔNG PHẢI là mô hình. Agent là VÒNG LẶP quanh mô hình:
+    # ĐỌC:
+    # ĐỌC:     mã đưa mô hình một danh sách công cụ
+    # ĐỌC:       → mô hình nói "gọi cái này với tham số này"
+    # ĐỌC:         → MÃ thi hành công cụ đó   (dòng ~488)
+    # ĐỌC:           → mã đưa kết quả lại cho mô hình
+    # ĐỌC:             → lặp, tối đa 4 lần
+    # ĐỌC:
+    # ĐỌC: Mô hình không bao giờ tự chạy được gì. Nó chỉ trả về một Ý ĐỊNH,
+    # ĐỌC: và mã quyết định có làm hay không.
     for _ in range(MAX_TOOL_ROUNDS):
         result = await llm.complete(
             # Phần ổn định mang cache_control; ngữ cảnh RAG biến động nằm SAU.
@@ -458,6 +515,14 @@ async def respond(
                         content=d.get("noi_dung", ""),
                         score=float(d.get("diem") or 0.0),
                     ))
+            # ĐỌC: MỘT CHỮ `elif` — và nó là bản vá cho lỗi XANH GIẢ.
+            # ĐỌC: Bản trước cộng thưởng độ tin cậy cho MỌI lời gọi công cụ,
+            # ĐỌC: kể cả lời gọi KHÔNG TÌM THẤY GÌ. Hậu quả: agent tra hụt lại
+            # ĐỌC: trông tự tin hơn agent không thèm tra, và lưới ③ ở chặng 5
+            # ĐỌC: không bao giờ nổ nữa.
+            # ĐỌC: Nay chỉ công cụ trả về DỮ LIỆU HỆ THỐNG (giá, tồn kho, đơn)
+            # ĐỌC: mới bật cờ. Công cụ trả TÀI LIỆU đã tự nâng điểm qua `score`
+            # ĐỌC: của chính nó ở nhánh `if` bên trên.
             elif call["name"] not in _TOOL_TRA_TAI_LIEU:
                 co_du_lieu = True
 
@@ -508,6 +573,20 @@ async def respond(
         escalate = True
         escalate_reason = "Vượt số vòng gọi công cụ cho phép"
 
+    # ĐỌC: ══ CHẶNG 5 · BỐN LƯỚI CUỐI ═════════════════════════════════════
+    # ĐỌC: Đây là hiện thực của nguyên tắc số một của dự án:
+    # ĐỌC:   "Ràng buộc nằm trong MÃ, không nằm trong prompt."
+    # ĐỌC: Prompt là YÊU CẦU; mô hình sinh xác suất nên vẫn trượt. Nên mỗi luật
+    # ĐỌC: pháp lý hiện thực HAI LẦN — một lần trong prompt để mô hình BIẾT,
+    # ĐỌC: một lần ở đây để CHẶN khi mô hình trượt.
+    # ĐỌC:
+    # ĐỌC: Để ý THAM SỐ của từng lưới — đó là chỗ chúng khác nhau:
+    # ĐỌC:   lưới ③ (ngay dưới)  xét confidence   — chất lượng căn cứ
+    # ĐỌC:   lưới ④              soi `question`   — CÂU HỎI của khách
+    # ĐỌC:   lưới ⑤ và ⑥         soi `final_text` — CÂU TRẢ LỜI vừa sinh ra
+    # ĐỌC:
+    # ĐỌC: Ba cách trượt khác nhau, ba lưới khác nhau. Không lớp nào bắt được
+    # ĐỌC: cả ba — đó là lý do phải xếp chồng chứ không gộp làm một.
     confidence = _confidence(passages, co_du_lieu)
     if confidence < settings.confidence_floor and not co_du_lieu:
         escalate = True

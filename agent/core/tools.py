@@ -566,6 +566,19 @@ def _tom_tat(sp: dict) -> dict:
 
 
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
+    # ĐỌC: ══ CÂY QUYẾT ĐỊNH — đọc từ trên xuống, THỨ TỰ CÓ Ý NGHĨA ═══════
+    # ĐỌC:
+    # ĐỌC:   1. chốt 2  · kỹ năng đang tắt?      → trả cờ chuyển người
+    # ĐỌC:   2. plugin  · tên khớp bản mô tả?    → chay_plugin(), CHỈ ĐỌC
+    # ĐỌC:   3. tim_kien_thuc                    → rag.retrieve
+    # ĐỌC:   4. _catalog_song() rồi 10 nhánh còn lại
+    # ĐỌC:
+    # ĐỌC: Hàm này nhận một dict và trả một dict — không có trạng thái nào để
+    # ĐỌC: giữ, nên cả tệp 1456 dòng này KHÔNG có class nào.
+    # ĐỌC:
+    # ĐỌC: MỌI nhánh trả về đều có trường `ghi_chu` nói mô hình phải làm gì
+    # ĐỌC: tiếp — kể cả nhánh hỏng. Trả dict rỗng thì mô hình tự nghĩ ra đường
+    # ĐỌC: đi, và đường nó hay chọn là đoán bừa.
     # ---------- CHỐT THỨ HAI: kỹ năng đang tắt ----------
     #
     # Lọc lược đồ trước khi gửi model là chốt thứ nhất, và nó KHÔNG đủ. Lịch
@@ -578,6 +591,14 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     # là đưa hội thoại cho người, không phải để agent tự xoay.
     from agent.ky_nang import kho_ky_nang
 
+    # ĐỌC: VÌ SAO CẦN CHỐT THỨ HAI khi đã lọc ở agent.py dòng ~440?
+    # ĐỌC: Dòng thời gian thật trong một hội thoại đang mở:
+    # ĐỌC:   10:00  khách hỏi giá → agent gọi công cụ → lược đồ VÀO lịch sử
+    # ĐỌC:   10:01  quản trị TẮT công cụ đó trên dashboard
+    # ĐỌC:   10:02  khách hỏi tiếp → chốt 1 đã bỏ công cụ khỏi lược đồ MỚI,
+    # ĐỌC:          nhưng mô hình vẫn thấy nó trong LỊCH SỬ của lượt 10:00
+    # ĐỌC:          và gọi lại — hợp lý, không phải mô hình hỏng.
+    # ĐỌC: Nên phải kiểm lại LÚC THI HÀNH, không chỉ lúc công bố khả năng.
     if await kho_ky_nang.dang_tat(name):
         return {
             "loi": f"Kỹ năng {name!r} đang tắt.",

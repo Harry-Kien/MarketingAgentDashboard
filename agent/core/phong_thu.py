@@ -74,6 +74,15 @@ def _fold(s: str) -> str:
     return " ".join(text.split())
 
 
+# ĐỌC: ══ PHÒNG THỦ HAI LỚP, HAI CƠ CHẾ KHÁC NHAU ═══════════════════════
+# ĐỌC:
+# ĐỌC:   quet()  — lớp 1, CHẶN. Chạy ở agent.py chặng 1, trước khi gọi mô hình.
+# ĐỌC:             Thấy dấu hiệu → chuyển người ngay, không tốn lời gọi nào.
+# ĐỌC:   boc()   — lớp 2, RÀO.  Chạy ở agent.py chặng 2, sau khi đã quét.
+# ĐỌC:             Phòng khi lớp 1 bỏ sót một cách nói mới.
+# ĐỌC:
+# ĐỌC: Hai lớp vì một lớp sẽ hỏng. Và cả hai đều KHÔNG chặn khách — chúng chỉ
+# ĐỌC: chuyển sang người thật, vì người thật cũng có thể gõ câu lạ.
 def quet(text: str) -> tuple[bool, list[str]]:
     """
     Quét một tin nhắn. Trả (có dấu hiệu tấn công, danh sách tên dấu hiệu).

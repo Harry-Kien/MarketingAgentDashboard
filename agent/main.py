@@ -494,6 +494,17 @@ async def lifespan(app: FastAPI):
     # `nen_chay_vong_nen`. Gom mọi task nền vào một danh sách để lúc tắt
     # không phải nhớ huỷ từng cái: quên một cái là một vòng lặp sống sót
     # qua shutdown, và không có gì báo.
+    # ĐỌC: ══ 12 VÒNG NỀN ĐƯỢC DỰNG Ở ĐÂY ═════════════════════════════════
+    # ĐỌC: Hệ thống có ba NHỊP hoạt động khác nhau, và đây là nơi nhịp thứ hai
+    # ĐỌC: và thứ ba được khởi động:
+    # ĐỌC:
+    # ĐỌC:   nhịp 1 · đồng bộ, trước mặt khách  → handle_inbound (dòng ~1155)
+    # ĐỌC:   nhịp 2 · hàng đợi bền vững         → outbox_loop, video_worker
+    # ĐỌC:   nhịp 3 · định kỳ, quan sát         → canh_gac, backup, don_du_lieu
+    # ĐỌC:
+    # ĐỌC: `chay_nen` là lý do quan trọng: chạy nhiều bản app sau bộ cân bằng
+    # ĐỌC: tải thì CHỈ MỘT bản giữ vai chạy vòng nền. Các bản còn lại chỉ phục
+    # ĐỌC: vụ HTTP — nếu không thì 5 bản app sẽ cùng nhặt một job outbox.
     tasks_nen: list[asyncio.Task] = []
     chay_nen = nen_chay_vong_nen()
 
@@ -1157,6 +1168,20 @@ async def _ingest_inbound(msg: InboundMessage):
 
 async def handle_inbound(msg: InboundMessage) -> None:
     """Toàn bộ luồng xử lý một tin nhắn đến."""
+    # ĐỌC: ══ ĐIỂM VÀO CỦA MỌI TIN NHẮN, MỌI KÊNH ═══════════════════════════
+    # ĐỌC: Đọc hàm này TRƯỚC khi đọc lifespan(). Nó là một đầu của luồng;
+    # ĐỌC: agent/core/agent.py:respond() là phần giữa; outbox worker là đầu kia.
+    # ĐỌC:
+    # ĐỌC: Thứ tự sáu việc, và thứ tự này quan trọng:
+    # ĐỌC:   1. _ingest_inbound  → chống trùng, lưu tin, COMMIT
+    # ĐỌC:   2. kiểm standby / mode=human → người thật đang phụ trách thì đứng ngoài
+    # ĐỌC:   3. ảnh KHÔNG kèm chữ → chuyển người NGAY, mô hình không được nhìn
+    # ĐỌC:   4. _history(cid)    → lấy lượt trước, BỎ tin vừa lưu
+    # ĐỌC:   5. brain.respond()  → cửa vào lõi agent
+    # ĐỌC:   6. _gui_nhu_nguoi   → tách 2–3 tin, ghi message + outbox CÙNG transaction
+    # ĐỌC:
+    # ĐỌC: Nguyên tắc xuyên suốt: COMMIT XONG MỚI GỌI RA NGOÀI. App chết đúng
+    # ĐỌC: giây đó thì tin vẫn còn, và worker sẽ gửi lại sau.
     ingested = await _ingest_inbound(msg)
     if ingested.duplicate:
         return

@@ -51,6 +51,17 @@ NHOM = ("tu_van", "don_hang", "sau_ban", "marketing", "con_nguoi")
 KHONG_TAT_DUOC = frozenset({"chuyen_nhan_vien"})
 
 
+# ĐỌC: ══ 11 NĂNG LỰC CỦA AGENT — đọc bảng này là hiểu ý đồ nghiệp vụ ═════
+# ĐỌC:
+# ĐỌC: Mỗi kỹ năng khai báo HAI CHỖ, và có test bắt hai chỗ phải khớp:
+# ĐỌC:   TOOLS trong core/tools.py  → viết cho MÔ HÌNH đọc (tham số, khi nào dùng)
+# ĐỌC:   SO_DANG_KY ngay dưới       → viết cho NGƯỜI VẬN HÀNH đọc
+# ĐỌC:
+# ĐỌC: Trường đáng đọc nhất là `tat_thi_mat_gi` — nó nói hậu quả bằng tiếng
+# ĐỌC: Việt cho người bấm nút, không phải cho lập trình viên.
+# ĐỌC:
+# ĐỌC: Đếm theo nhóm: 4 tư vấn · 4 sau bán · 1 đơn hàng · 1 marketing · 1 con người
+# ĐỌC: Đếm theo rủi ro: 6 `doc` · 4 `ghi_nhan` · ĐÚNG MỘT `hanh_dong` (tao_don_hang)
 SO_DANG_KY: tuple[KyNang, ...] = (
     KyNang(
         ten="tim_kien_thuc",

@@ -7,6 +7,7 @@ chỉ phụ thuộc vào kiểu trả về `Passage`.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 import asyncio
@@ -79,6 +80,21 @@ async def _ghi_model_dang_dung(model: str) -> None:
     _da_ghi_model = model
 
 
+def _kiem_so_vector(vec: list[list[float]], texts: list[str], model: str) -> None:
+    """
+    Chặn kiểu lỗi im lặng nặng nhất trong repo này: `zip()` cắt ngầm về danh
+    sách ngắn hơn (xem CLAUDE.md — bảng "hỏng im lặng"). Nếu API nhúng trả
+    thiếu vector, `zip(pieces, vectors, strict=True)` ở `ingest()` sẽ NỔ —
+    nhưng đó là chỗ QUÁ TRỄ để chẩn đoán, và hàm `retrieve()` (đường hỏi,
+    không phải nạp) không đi qua `ingest()` nên không có lưới nào khác canh
+    số lượng. Kiểm ngay tại nguồn, cho cả hai nhánh dispatch.
+    """
+    if len(vec) != len(texts):
+        raise RuntimeError(
+            f"embedding {model}: nhận {len(vec)} vector cho {len(texts)} văn bản"
+        )
+
+
 @dataclass(slots=True)
 class Passage:
     doc_title: str
@@ -112,23 +128,44 @@ _CHO_DAU_GIAY = 15.0
 
 async def embed(texts: list[str], *, query: bool = False) -> list[list[float]]:
     task = "RETRIEVAL_QUERY" if query else "RETRIEVAL_DOCUMENT"
+    model = embed_model_hien_hanh()
     cho = _CHO_DAU_GIAY
     for lan in range(_LAN_THU_EMBED):
         try:
-            model = embed_model_hien_hanh()
             if model == EMBED_MODEL_API:
                 vec = await _embed_gemini_api(texts, task)
             else:
                 vec = await asyncio.to_thread(_embed_sync, texts, task)
-            if not query:
-                await _ghi_model_dang_dung(model)
-            return vec
+            _kiem_so_vector(vec, texts, model)
+            break
         except Exception as exc:  # noqa: BLE001
             tam_thoi = "429" in str(exc) or "exhaust" in str(exc).lower()
             if not tam_thoi or lan == _LAN_THU_EMBED - 1:
                 raise
             await asyncio.sleep(cho)
             cho *= 2
+
+    # Ghi nhận "kho nạp bằng model nào" là việc CHẨN ĐOÁN — chỉ `suc_khoe`
+    # đọc lại để đối chiếu, không phải một bước bắt buộc của việc nạp tri
+    # thức. Tách khỏi try/except phía trên: nếu để chung, một lần CSDL sập
+    # đúng lúc ghi bookkeeping sẽ làm MẤT LUÔN vector vừa nhúng thành công
+    # (tốn tiền + thời gian gọi API) và làm sập cả `embed()` — trong khi lẽ
+    # ra vector đó vẫn dùng được. Không re-raise ở đây, nhưng cũng không
+    # được nuốt lặng lẽ: log ERROR là thứ ồn ào nhất mà không phá được luồng
+    # nạp kho tri thức.
+    if not query:
+        try:
+            await _ghi_model_dang_dung(model)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger("agent.rag").error(
+                "embed_model_dang_dung: ghi thất bại (%s), model=%s — "
+                "vector vẫn nạp bình thường nhưng suc_khoe không đối chiếu "
+                "được lần nạp này",
+                type(exc).__name__,
+                model,
+            )
+
+    return vec
 
 
 def _vec(values: list[float]) -> str:

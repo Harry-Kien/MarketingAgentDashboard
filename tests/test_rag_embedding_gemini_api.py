@@ -64,6 +64,48 @@ def test_embed_tai_lieu_ghi_model_dang_dung(monkeypatch):
     assert len(ghi) == 1, "ghi lặp mỗi lô là tốn một lượt CSDL vô ích"
 
 
+def test_ghi_model_hong_khong_lam_mat_vector(monkeypatch, caplog):
+    """CSDL sập lúc ghi bookkeeping không được vứt mất vector vừa nhúng."""
+
+    async def sap(sql, *args):
+        raise RuntimeError("CSDL sập")
+
+    monkeypatch.setattr(
+        rag, "_embed_sync", lambda texts, task: [[0.0] * rag.EMBED_DIM for _ in texts]
+    )
+    monkeypatch.setattr(rag.db, "execute", sap)
+    rag._da_ghi_model = None
+    with caplog.at_level("ERROR", logger="agent.rag"):
+        vec = asyncio.run(rag.embed(["a"]))
+    assert len(vec) == 1 and len(vec[0]) == rag.EMBED_DIM
+    assert any(
+        "embed_model_dang_dung" in r.message or "CSDL sập" in r.message
+        for r in caplog.records
+    )
+
+
+def test_so_vector_lech_so_van_ban_thi_no_to(monkeypatch):
+    cd._gia_tri.clear()
+    cd._gia_tri["GEMINI_API_KEY"] = "AIzaTEST"
+    monkeypatch.setattr(settings, "llm_provider", "gemini_api")
+    cd._gia_tri.pop("LLM_PROVIDER", None)
+    monkeypatch.setattr(rag, "_LAN_THU_EMBED", 1)
+
+    async def post(self, url, headers=None, json=None):
+        return httpx.Response(
+            200,
+            json={"embeddings": [{"values": [0.1] * 768}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    try:
+        asyncio.run(rag.embed(["a", "b"], query=True))
+        raise AssertionError("phải raise RuntimeError vì lệch số vector")
+    except RuntimeError as exc:
+        assert "1" in str(exc) and "2" in str(exc)
+
+
 def test_suc_khoe_bao_do_khi_kho_nap_bang_model_khac(monkeypatch):
     from agent import suc_khoe
 

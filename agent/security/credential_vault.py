@@ -81,42 +81,17 @@ class CredentialVault:
         # AAD, kể cả khi người gọi truyền đúng chuỗi "channel-account:<id>".
         return f"pham-vi:{pham_vi}".encode()
 
-    def encrypt_pham_vi(
-        self, payload: Mapping[str, Any], *, pham_vi: str
+    def _ma_hoa(
+        self, payload: Mapping[str, Any], aad: bytes
     ) -> SealedCredential:
-        """Mã hoá cho một phạm vi chuỗi (khoá hệ thống), không gắn tài khoản."""
-        nonce = os.urandom(12)
-        plaintext = json.dumps(
-            dict(payload), ensure_ascii=False, separators=(",", ":"), sort_keys=True,
-        ).encode("utf-8")
-        ciphertext = AESGCM(self._keys[self._active_version]).encrypt(
-            nonce, plaintext, self._aad_pham_vi(pham_vi),
-        )
-        return SealedCredential(self._active_version, nonce, ciphertext)
+        """Mã hoá dữ liệu bằng AES-256-GCM với AAD tùy chọn.
 
-    def decrypt_pham_vi(
-        self, sealed: SealedCredential, *, pham_vi: str
-    ) -> dict[str, Any]:
-        key = self._keys.get(sealed.key_version)
-        if key is None:
-            raise InvalidCredentialCiphertext("không thể mở giá trị đã mã hóa")
-        try:
-            plaintext = AESGCM(key).decrypt(
-                sealed.nonce, sealed.ciphertext, self._aad_pham_vi(pham_vi),
-            )
-            decoded = json.loads(plaintext)
-        except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise InvalidCredentialCiphertext("không thể mở giá trị đã mã hóa") from exc
-        if not isinstance(decoded, dict):
-            raise InvalidCredentialCiphertext("giá trị đã mã hóa sai cấu trúc")
-        return decoded
+        Envelope này dùng chung cho hai loại phạm vi:
+        - channel-account: cho credential tài khoản kênh
+        - pham-vi: cho cấu hình toàn hệ thống
 
-    def encrypt(
-        self,
-        payload: Mapping[str, Any],
-        *,
-        account_id: UUID,
-    ) -> SealedCredential:
+        Mỗi phạm vi tạo AAD riêng → sửa envelope ở một chỗ duy nhất.
+        """
         nonce = os.urandom(12)
         plaintext = json.dumps(
             dict(payload),
@@ -127,9 +102,57 @@ class CredentialVault:
         ciphertext = AESGCM(self._keys[self._active_version]).encrypt(
             nonce,
             plaintext,
-            self._aad(account_id),
+            aad,
         )
         return SealedCredential(self._active_version, nonce, ciphertext)
+
+    def _giai_ma(
+        self, sealed: SealedCredential, aad: bytes
+    ) -> dict[str, Any]:
+        """Giải mã dữ liệu được bảo vệ bằng AES-256-GCM với AAD tùy chọn.
+
+        Envelope này dùng chung cho hai loại phạm vi:
+        - channel-account: cho credential tài khoản kênh
+        - pham-vi: cho cấu hình toàn hệ thống
+
+        Mỗi phạm vi tạo AAD riêng → sửa envelope ở một chỗ duy nhất.
+        """
+        key = self._keys.get(sealed.key_version)
+        if key is None:
+            raise InvalidCredentialCiphertext("không thể mở giá trị đã mã hóa")
+        try:
+            plaintext = AESGCM(key).decrypt(
+                sealed.nonce,
+                sealed.ciphertext,
+                aad,
+            )
+            decoded = json.loads(plaintext)
+        except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InvalidCredentialCiphertext("không thể mở giá trị đã mã hóa") from exc
+        if not isinstance(decoded, dict):
+            raise InvalidCredentialCiphertext("giá trị đã mã hóa sai cấu trúc")
+        return decoded
+
+    def encrypt_pham_vi(
+        self, payload: Mapping[str, Any], *, pham_vi: str
+    ) -> SealedCredential:
+        """Mã hoá cho một phạm vi chuỗi (khoá hệ thống), không gắn tài khoản."""
+        return self._ma_hoa(payload, self._aad_pham_vi(pham_vi))
+
+    def decrypt_pham_vi(
+        self, sealed: SealedCredential, *, pham_vi: str
+    ) -> dict[str, Any]:
+        """Giải mã cho một phạm vi chuỗi (khoá hệ thống), không gắn tài khoản."""
+        return self._giai_ma(sealed, self._aad_pham_vi(pham_vi))
+
+    def encrypt(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        account_id: UUID,
+    ) -> SealedCredential:
+        """Mã hoá cho một tài khoản kênh cụ thể."""
+        return self._ma_hoa(payload, self._aad(account_id))
 
     def decrypt(
         self,
@@ -137,21 +160,6 @@ class CredentialVault:
         *,
         account_id: UUID,
     ) -> dict[str, Any]:
-        key = self._keys.get(sealed.key_version)
-        if key is None:
-            raise InvalidCredentialCiphertext("không thể mở credential đã mã hóa")
-        try:
-            plaintext = AESGCM(key).decrypt(
-                sealed.nonce,
-                sealed.ciphertext,
-                self._aad(account_id),
-            )
-            decoded = json.loads(plaintext)
-        except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise InvalidCredentialCiphertext(
-                "không thể mở credential đã mã hóa"
-            ) from exc
-        if not isinstance(decoded, dict):
-            raise InvalidCredentialCiphertext("credential đã mã hóa sai cấu trúc")
-        return decoded
+        """Giải mã cho một tài khoản kênh cụ thể."""
+        return self._giai_ma(sealed, self._aad(account_id))
 

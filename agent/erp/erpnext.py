@@ -121,10 +121,14 @@ class NguonErpNext:
         # mà khách phải chờ. Nay 10s là trần dọn dẹp, không phải trần chờ.
         han_cho: float = 10.0,
     ):
-        self._goc = (goc if goc is not None else settings.erpnext_url).rstrip("/")
-        khoa = api_key if api_key is not None else settings.erpnext_api_key
+        from agent import cau_hinh_dong
+
+        # Mặc định đọc qua cấu hình động (dashboard → CSDL → .env). Tham số
+        # tường minh vẫn thắng: `kiem-tra` trên dashboard truyền giá trị chưa lưu.
+        self._goc = (goc if goc is not None else cau_hinh_dong.lay("ERPNEXT_URL")).rstrip("/")
+        khoa = api_key if api_key is not None else cau_hinh_dong.lay("ERPNEXT_API_KEY")
         bi_mat = (
-            api_secret if api_secret is not None else settings.erpnext_api_secret
+            api_secret if api_secret is not None else cau_hinh_dong.lay("ERPNEXT_API_SECRET")
         )
         self._ma_kho = ma_kho if ma_kho is not None else settings.erp_ma_kho
         self._pricelist = (

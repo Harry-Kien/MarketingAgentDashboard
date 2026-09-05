@@ -5,6 +5,7 @@ Tài liệu tham khảo: https://api.ghn.vn/home/docs/detail
 from __future__ import annotations
 
 import re
+import time
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
@@ -55,9 +56,11 @@ class GHNShippingProvider(BaseShippingProvider):
         token: str | None = None,
         shop_id: str | None = None,
     ) -> None:
+        from agent import cau_hinh_dong
+
         self._api_url = (api_url or settings.ghn_api_url).rstrip("/")
-        self._token = token or settings.ghn_token
-        self._shop_id = shop_id or settings.ghn_shop_id
+        self._token = token or cau_hinh_dong.lay("GHN_TOKEN")
+        self._shop_id = shop_id or cau_hinh_dong.lay("GHN_SHOP_ID")
 
     @property
     def code(self) -> str:
@@ -370,3 +373,40 @@ class GHNShippingProvider(BaseShippingProvider):
             thoi_gian=datetime.now(timezone.utc),
             du_lieu_goc=body,
         )
+
+
+async def kiem_ket_noi(
+    *, token: str, shop_id: str, api_url: str | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> tuple[bool, str, int]:
+    """
+    Token có sống và shop id có thuộc tài khoản này không. CHỈ ĐỌC.
+
+    `shop/all` là lời gọi rẻ nhất cần token mà không tạo gì. Tách riêng khỏi
+    `GHNShippingProvider` để dashboard kiểm bằng giá trị CHƯA LƯU.
+    """
+    goc = (api_url or settings.ghn_api_url).rstrip("/")
+    t0 = time.perf_counter()
+    dong = client is None
+    client = client or httpx.AsyncClient(timeout=15.0)
+    try:
+        r = await client.post(
+            f"{goc}/shop/all",
+            headers={"Token": token, "Content-Type": "application/json"},
+            json={"offset": 0, "limit": 50},
+        )
+    except httpx.HTTPError as exc:
+        return False, f"{type(exc).__name__}: không nối được GHN", int((time.perf_counter() - t0) * 1000)
+    finally:
+        if dong:
+            await client.aclose()
+    ms = int((time.perf_counter() - t0) * 1000)
+    if r.status_code in (401, 403):
+        return False, "GHN từ chối token", ms
+    if r.status_code >= 400:
+        return False, f"GHN {r.status_code}: {r.text[:120]}", ms
+    shops = ((r.json().get("data") or {}).get("shops") or [])
+    ids = {str(s.get("_id")) for s in shops}
+    if shop_id and str(shop_id) not in ids:
+        return False, f"token đúng nhưng shop id {shop_id} không thuộc tài khoản này", ms
+    return True, f"{len(shops)} shop · {ms}ms", ms

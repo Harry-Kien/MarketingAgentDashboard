@@ -18,6 +18,66 @@ from agent.config import settings
 EMBED_MODEL = "text-multilingual-embedding-002"   # 768 chiều, tốt cho tiếng Việt
 EMBED_DIM = 768
 
+# Gemini API (Google AI Studio) không có text-multilingual-embedding-002.
+# gemini-embedding-001 mặc định 3072 chiều, nhưng nhận `outputDimensionality`
+# — ép về 768 để khớp cột `vector(768)`. Vector của hai model KHÔNG so được
+# với nhau: đổi provider là phải nạp lại kho, và `suc_khoe` canh việc đó.
+EMBED_MODEL_API = "gemini-embedding-001"
+_da_ghi_model: str | None = None
+
+
+def embed_model_hien_hanh() -> str:
+    from agent.core import llm
+
+    return EMBED_MODEL_API if llm.provider() == "gemini_api" else EMBED_MODEL
+
+
+async def _embed_gemini_api(texts: list[str], task: str) -> list[list[float]]:
+    import httpx
+
+    from agent import cau_hinh_dong
+    from agent.core.llm import GEMINI_API_GOC
+
+    key = cau_hinh_dong.lay("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "Chưa có GEMINI_API_KEY cho embedding. Nhập ở dashboard → Cấu hình → Cài đặt API"
+        )
+    body = {
+        "requests": [
+            {
+                "model": f"models/{EMBED_MODEL_API}",
+                "content": {"parts": [{"text": t}]},
+                "taskType": task,
+                "outputDimensionality": EMBED_DIM,
+            }
+            for t in texts
+        ]
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            f"{GEMINI_API_GOC}/models/{EMBED_MODEL_API}:batchEmbedContents",
+            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+            json=body,
+        )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Gemini embedding {r.status_code}: {r.text[:200]}")
+    return [e["values"] for e in r.json().get("embeddings", [])]
+
+
+async def _ghi_model_dang_dung(model: str) -> None:
+    """Ghi một lần mỗi tiến trình vào cau_hinh_agent để suc_khoe đối chiếu."""
+    global _da_ghi_model
+    if _da_ghi_model == model:
+        return
+    await db.execute(
+        "INSERT INTO cau_hinh_agent (khoa, gia_tri, sua_boi) "
+        "VALUES ('embed_model_dang_dung', $1, 'system') "
+        "ON CONFLICT (khoa) DO UPDATE SET gia_tri = EXCLUDED.gia_tri, sua_luc = now()",
+        model,   # codec JSONB của pool tự mã hoá chuỗi
+    )
+    _da_ghi_model = model
+
 
 @dataclass(slots=True)
 class Passage:
@@ -55,7 +115,14 @@ async def embed(texts: list[str], *, query: bool = False) -> list[list[float]]:
     cho = _CHO_DAU_GIAY
     for lan in range(_LAN_THU_EMBED):
         try:
-            return await asyncio.to_thread(_embed_sync, texts, task)
+            model = embed_model_hien_hanh()
+            if model == EMBED_MODEL_API:
+                vec = await _embed_gemini_api(texts, task)
+            else:
+                vec = await asyncio.to_thread(_embed_sync, texts, task)
+            if not query:
+                await _ghi_model_dang_dung(model)
+            return vec
         except Exception as exc:  # noqa: BLE001
             tam_thoi = "429" in str(exc) or "exhaust" in str(exc).lower()
             if not tam_thoi or lan == _LAN_THU_EMBED - 1:

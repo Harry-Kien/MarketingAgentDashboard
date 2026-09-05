@@ -57,27 +57,45 @@ async def _kiem_model() -> dict:
     kiểm dưới 0,00001 USD — rẻ hơn nhiều so với việc phát hiện hết quota qua
     lời phàn nàn của khách.
     """
+    from agent import cau_hinh_dong
     from agent.core import llm
 
-    try:
-        r = await asyncio.wait_for(
-            llm.complete(
-                system=llm.cached_system("Trả lời đúng một chữ: ok"),
-                messages=[{"role": "user", "content": "ok?"}],
-                model=settings.model_cheap, max_tokens=8, effort="low",
-            ),
-            timeout=45,
+    p = llm.provider()
+    ok, chi_tiet, ms = await llm.kiem_khoa(
+        provider_name=p,
+        model=cau_hinh_dong.lay("MODEL_CHEAP") or settings.model_cheap,
+    )
+    if ok:
+        return _muc("Model ngôn ngữ", TOT, f"{chi_tiet} · {p}", latency_ms=ms)
+    if "HẾT HẠN MỨC" in chi_tiet:
+        return _muc("Model ngôn ngữ", HONG, "HẾT HẠN MỨC — agent không trả lời được khách")
+    return _muc("Model ngôn ngữ", HONG, chi_tiet[:150])
+
+
+async def _kiem_embedding_khop() -> dict:
+    """
+    Kho tri thức có được nạp bằng đúng model embedding đang hỏi không.
+
+    Hai model cho hai không gian vector khác nhau: kho nạp bằng A, hỏi bằng
+    B thì tìm kiếm trả kết quả sai mà không một lỗi nào. Đổi provider trên
+    dashboard là lúc chuyện này xảy ra.
+    """
+    from agent.core import rag
+
+    hien = rag.embed_model_hien_hanh()
+    row = await db.fetchrow(
+        "SELECT gia_tri FROM cau_hinh_agent WHERE khoa = 'embed_model_dang_dung'"
+    )
+    if not row:
+        return _muc("Embedding kho tri thức", TOT, f"{hien} (chưa ghi nhận lần nạp nào)")
+    da = str(row["gia_tri"])
+    if da != hien:
+        return _muc(
+            "Embedding kho tri thức", HONG,
+            f"kho nạp bằng {da}, đang hỏi bằng {hien} — tìm kiếm sai mà không lỗi. "
+            "Nạp lại kho tri thức (Tri thức → Nạp lại)",
         )
-        return _muc("Model ngôn ngữ", TOT,
-                    f"{r.model} · {r.latency_ms}ms", latency_ms=r.latency_ms)
-    except asyncio.TimeoutError:
-        return _muc("Model ngôn ngữ", HONG, "quá 45 giây không trả lời")
-    except Exception as exc:  # noqa: BLE001
-        loi = str(exc)
-        if "429" in loi or "exhaust" in loi.lower():
-            return _muc("Model ngôn ngữ", HONG,
-                        "HẾT HẠN MỨC — agent không trả lời được khách")
-        return _muc("Model ngôn ngữ", HONG, f"{type(exc).__name__}: {loi}"[:150])
+    return _muc("Embedding kho tri thức", TOT, hien)
 
 
 async def _kiem_giong_doc() -> dict:
@@ -500,7 +518,7 @@ async def tong_kiem() -> dict:
     """
     t0 = time.perf_counter()
     muc = await asyncio.gather(
-        _kiem_db(), _kiem_model(), _kiem_giong_doc(), _kiem_kenh(),
+        _kiem_db(), _kiem_model(), _kiem_embedding_khop(), _kiem_giong_doc(), _kiem_kenh(),
         _kiem_cong_cong_khai(),
         _kiem_hang_doi_video(), _kiem_sao_luu(), _kiem_kho_anh(),
         _kiem_khach_gan_nhat(), _kiem_khach_cho_lau(),

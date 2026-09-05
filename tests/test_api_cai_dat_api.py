@@ -113,7 +113,16 @@ def test_kiem_tra_dung_gia_tri_gui_len_va_khong_luu(kho, monkeypatch):
     assert kho.dong == {}, "kiểm tra không được lưu gì"
 
 
-def test_kiem_tra_gia_tri_da_luu_thi_ghi_ket_qua(kho, monkeypatch):
+def test_kiem_tra_tu_dashboard_van_ghi_ket_qua(kho, monkeypatch):
+    """
+    Body ĐÚNG như trình duyệt gửi: `giaTriApiDangGo()` gom mọi ô có giá trị,
+    nên ô chọn provider và các ô không bí mật đã điền sẵn luôn đi kèm — ô bí
+    mật thì trống vì máy chủ không bao giờ gửi giá trị xuống để mà điền.
+
+    Bản trước chỉ ghi khi `gia_tri` RỖNG, tức là không bao giờ ghi khi lời
+    gọi đến từ dashboard: `ghi_ket_qua_kiem` là mã chết và không ai biết, vì
+    test cũ post một payload trình duyệt không dựng được.
+    """
     async def kiem_khoa(**kw):
         return False, "HẾT HẠN MỨC", 5
 
@@ -121,13 +130,37 @@ def test_kiem_tra_gia_tri_da_luu_thi_ghi_ket_qua(kho, monkeypatch):
     c = _app(admin=True)
     c.put("/api/cai-dat-api/LLM_PROVIDER", json={"gia_tri": "gemini_api"})
     c.put("/api/cai-dat-api/GEMINI_API_KEY", json={"gia_tri": "k" * 20})
-    r = c.post("/api/cai-dat-api/kiem-tra", json={"nhom": "model"})
+    r = c.post("/api/cai-dat-api/kiem-tra", json={
+        "nhom": "model",
+        "gia_tri": {"LLM_PROVIDER": "gemini_api", "MODEL_CHEAP": "gemini-2.5-flash-lite"},
+    })
     assert r.json()["ok"] is False
     assert any(k == "GEMINI_API_KEY" and "HẾT HẠN MỨC" in kq for k, kq in kho.kiem)
     # Chỉ khoá THỰC SỰ được probe (Gemini, vì provider = gemini_api) mới được
     # ghi kết quả — ANTHROPIC_API_KEY không hề tham gia lệnh gọi thì không
     # được phép ăn theo, dù cùng nhóm "model" (xem finding Critical round 1).
     assert not any(k == "ANTHROPIC_API_KEY" for k, _ in kho.kiem)
+
+
+def test_kiem_tra_bang_khoa_vua_go_thi_khong_dong_dau_len_khoa_da_luu(kho, monkeypatch):
+    """
+    Người dán một khoá KHÁC vào ô rồi bấm Kiểm tra: kết quả nói về khoá vừa
+    gõ, không nói gì về khoá đang lưu. Đóng dấu "đạt" lên khoá đã lưu lúc
+    này là nói dối trên dashboard.
+    """
+    async def kiem_khoa(**kw):
+        return True, "gemini-2.5-flash-lite · 12ms", 12
+
+    monkeypatch.setattr(cai_dat_api.llm, "kiem_khoa", kiem_khoa)
+    c = _app(admin=True)
+    c.put("/api/cai-dat-api/LLM_PROVIDER", json={"gia_tri": "gemini_api"})
+    c.put("/api/cai-dat-api/GEMINI_API_KEY", json={"gia_tri": "k" * 20})
+    r = c.post("/api/cai-dat-api/kiem-tra", json={
+        "nhom": "model",
+        "gia_tri": {"LLM_PROVIDER": "gemini_api", "GEMINI_API_KEY": "m" * 20},
+    })
+    assert r.json()["ok"] is True
+    assert kho.kiem == [], "khoá vừa gõ khác khoá đang lưu thì không được ghi gì"
 
 
 def test_kiem_tra_che_khoa_neu_provider_echo_lai(kho, monkeypatch):

@@ -145,13 +145,27 @@ async def kiem_tra(body: KiemTraIn, _: dict = Depends(bat_buoc_quan_tri)) -> dic
     if body.nhom not in NHOM_HOP_LE:
         raise HTTPException(422, f"nhóm không hợp lệ: {body.nhom!r}")
     ket = await kiem_nhom(body.nhom, body.gia_tri)
-    # Chỉ ghi kết quả khi kiểm cấu hình ĐÃ LƯU: ghi "đạt" cho một khoá đang
-    # lưu trong khi thứ vừa đạt là khoá chưa lưu là nói dối trên dashboard.
+    # Ghi kết quả TỪNG KHOÁ MỘT, không theo "cả body có rỗng hay không".
+    #
+    # Bản trước đòi `not body.gia_tri` mới ghi. Nhưng dashboard LUÔN gửi ô
+    # chọn provider và các ô không bí mật đã điền sẵn (`giaTriApiDangGo()`
+    # gom mọi ô có giá trị), nên `body.gia_tri` không bao giờ rỗng khi lời
+    # gọi đến từ trình duyệt — điều kiện ấy luôn sai và `ghi_ket_qua_kiem`
+    # là mã chết: bấm Kiểm tra bao nhiêu lần cũng không có dòng "kiểm lúc…"
+    # nào hiện lên. Hỏng im lặng đúng nghĩa: không lỗi, không nhật ký.
+    #
+    # Điều thật sự cần hỏi là: lần probe này chạy bằng giá trị ĐANG LƯU của
+    # khoá `k` hay bằng một giá trị người vừa gõ? Chỉ trường hợp đầu mới
+    # được đóng dấu vào khoá đã lưu — dán một khoá khác vào ô rồi thấy nó
+    # đạt, mà dashboard ghi "đạt" cho khoá đang lưu, là nói dối.
+    #
     # Và chỉ ghi cho `khoa_da_kiem` — khoá THỰC SỰ được đưa vào lệnh gọi —
     # chứ không phải mọi khoá bí mật của nhóm: nhóm "model" có hai khoá
     # (Gemini/Anthropic) nhưng mỗi lần chỉ probe một, khoá còn lại không
     # được phép ăn theo kết quả của khoá kia (xanh giả).
-    if not body.gia_tri:
-        for khoa in ket["khoa_da_kiem"]:
-            await cau_hinh_dong.ghi_ket_qua_kiem(khoa, ket["ok"], ket["chi_tiet"])
+    for khoa in ket["khoa_da_kiem"]:
+        go = body.gia_tri.get(khoa)
+        if go and go != cau_hinh_dong.lay(khoa):
+            continue
+        await cau_hinh_dong.ghi_ket_qua_kiem(khoa, ket["ok"], ket["chi_tiet"])
     return ket

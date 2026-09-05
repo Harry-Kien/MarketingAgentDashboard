@@ -283,12 +283,21 @@ def test_khong_doi_bo_nao_AI_sang_openai():
     Nhánh gốc đổi ngầm `llm_provider` mặc định sang `openai` và model sang
     `gpt-4o-mini`. Bản cài mới nào cũng dính, và `OPENAI_API_KEY` trống thì
     agent chết hẳn. Đó là thay đổi không liên quan gì tới vận chuyển.
-    """
-    from agent.config import Settings
 
-    mac_dinh = Settings()
-    assert mac_dinh.llm_provider == "gemini"
+    Mặc định phải là một nhánh Gemini VÀ phải khớp `.env.example`: lệch nhau
+    thì ai chạy không có `.env` đi một đường, ai chép `.env.example` đi đường
+    khác, và lỗi chỉ hiện ra ở lượt gọi model đầu tiên.
+    """
+    from agent.config import ROOT, Settings
+
+    # `_env_file=None`: hỏi MẶC ĐỊNH TRONG MÃ, không hỏi `.env` của máy đang
+    # chạy test. Bản trước không tắt và xanh chỉ vì `.env` ở máy đó tình cờ
+    # trùng — trên máy khác nó bắt nhầm cấu hình cá nhân.
+    mac_dinh = Settings(_env_file=None)
+    assert mac_dinh.llm_provider == "gemini_api"
     assert mac_dinh.model_chat.startswith("gemini")
+    env_mau = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert f"LLM_PROVIDER={mac_dinh.llm_provider}" in env_mau
 
 
 def test_khong_co_token_ghn_thi_khong_tao_van_don():

@@ -160,7 +160,10 @@ Mỗi dòng: nhãn, ô nhập (`type="password"` cho bí mật, không bao giờ
 .env", "chưa đặt"), kết quả kiểm gần nhất. Mỗi thẻ hai nút: **Kiểm tra**
 (dùng giá trị đang gõ, chưa lưu) và **Lưu**. Provider là ô chọn; chọn
 `gemini_api` thì ô Gemini API key nổi lên, chọn `anthropic` thì ô
-Anthropic. Chỉ quản trị thấy nút Lưu, nhân viên xem được trạng thái.
+Anthropic. Quyền ghi do **máy chủ** chặn (`PUT`/`DELETE`/`kiem-tra` trả 403
+cho nhân viên); nút Lưu vẫn hiện với mọi người vì dashboard chưa có đường
+dẫn vai trò xuống client. Nhân viên bấm thì nhận 403 và xem được trạng
+thái — ràng buộc nằm ở chỗ duy nhất không bỏ qua được.
 
 Không tự kiểm khi mở trang, cùng lý do màn Sức khoẻ không tự chạy: mỗi lần
 kiểm là một lượt gọi tốn tiền.

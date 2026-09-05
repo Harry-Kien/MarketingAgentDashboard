@@ -53,6 +53,27 @@ def test_khong_tu_kiem_khi_mo_trang():
     assert "kiem-tra" not in than
 
 
+def test_chi_hien_o_khoa_cua_provider_dang_chon():
+    """
+    Hiện cả hai ô khoá là mời người ta dán khoá Anthropic trong khi provider
+    là gemini_api: khoá lưu đúng, Kiểm tra báo đúng, agent vẫn câm — không
+    có gì nổ và người dùng không biết nhìn đâu.
+    """
+    than = _than_ham("hienODungProvider")
+    # Ẩn bằng thuộc tính `hidden` trên chính dòng, không xoá khỏi DOM: dựng
+    # lại DOM mỗi lần đổi ô chọn là mất thứ người ta đang gõ dở.
+    assert "data-api-row" in than and ".hidden" in than
+    assert re.search(r"API_KHOA_THEO_PROVIDER\s*=\s*\{[^}]*gemini_api:\s*\"GEMINI_API_KEY\"", JS)
+    assert re.search(r"API_KHOA_THEO_PROVIDER\s*=\s*\{[^}]*anthropic:\s*\"ANTHROPIC_API_KEY\"", JS)
+    # gemini/vertex xác thực qua gcloud: không ô nào được hiện.
+    assert not re.search(r"API_KHOA_THEO_PROVIDER\s*=\s*\{[^}]*\bvertex:", JS)
+    # Áp dụng cả lúc dựng lần đầu, không chỉ khi người đổi ô chọn.
+    assert "hienODungProvider()" in _than_ham("loadCaiDatApi")
+    assert re.search(r'addEventListener\("change"[\s\S]{0,200}hienODungProvider\(\)', JS)
+    # Dòng phải MANG khoá để mà ẩn được.
+    assert 'data-api-row="${esc(m.khoa)}"' in _than_ham("loadCaiDatApi")
+
+
 def test_moi_chuoi_tu_may_chu_deu_qua_esc():
     """kiem_ket_qua là chữ do nhà cung cấp trả về — không esc là XSS từ chính lỗi của họ."""
     src = _than_ham("oNhapApi") + _than_ham("trangThaiApi") + _than_ham("loadCaiDatApi")

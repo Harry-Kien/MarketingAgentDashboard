@@ -3100,7 +3100,7 @@ async function loadCaiDatApi() {
           // template SAU khi đã qua esc() — không để điều kiện rẽ nhánh nằm
           // ngay trong dấu ${...} kèm giá trị thô.
           const yNghia = m.y_nghia ? ` — ${esc(m.y_nghia)}` : "";
-          return `<div class="rows" style="margin:.35rem 0">
+          return `<div class="rows" style="margin:.35rem 0" data-api-row="${esc(m.khoa)}">
           <label class="row__sub">${esc(m.nhan)}${yNghia}</label>
           ${oNhapApi(m)} ${trangThaiApi(m)}
         </div>`;
@@ -3112,7 +3112,32 @@ async function loadCaiDatApi() {
         </div>
       </span>
     </div>`).join("");
+  hienODungProvider();
 }
+
+/* Provider nào cần khoá nào. gemini/vertex xác thực qua gcloud trên máy,
+ * không có khoá nào để nhập — nên không có mục nào trong bảng này. */
+const API_KHOA_THEO_PROVIDER = { gemini_api: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY" };
+
+/* Chỉ hiện ô khoá của provider đang chọn.
+ *
+ * Hiện cả hai ô là mời người ta dán khoá Anthropic trong khi provider là
+ * gemini_api: khoá lưu đúng, nút Kiểm tra báo đúng, và agent vẫn không trả
+ * lời được — không có gì nổ, người dùng không biết nhìn đâu. */
+function hienODungProvider() {
+  const o = document.querySelector('[data-api-nhom="model"] [data-api-khoa="LLM_PROVIDER"]');
+  if (!o) return;
+  const can = API_KHOA_THEO_PROVIDER[o.value] || "";
+  for (const khoa of Object.values(API_KHOA_THEO_PROVIDER)) {
+    const dong = document.querySelector(`[data-api-row="${khoa}"]`);
+    if (dong) dong.hidden = khoa !== can;
+  }
+}
+
+document.addEventListener("change", (e) => {
+  const o = e.target.closest('[data-api-nhom="model"] [data-api-khoa="LLM_PROVIDER"]');
+  if (o) hienODungProvider();
+});
 
 /* Gom giá trị đang gõ trong một nhóm; bỏ ô trống để không ghi đè khoá đã
  * lưu bằng chuỗi rỗng. */

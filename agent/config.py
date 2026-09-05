@@ -13,10 +13,17 @@ class Settings(BaseSettings):
     )
 
     # --- Nhà cung cấp model ---
-    # vertex    = Claude qua Vertex AI (GCP ADC, không cần API key)
-    # anthropic = Claude qua API trực tiếp của Anthropic (cần API key)
+    # gemini_api = Gemini qua Google AI Studio (chỉ cần API key)
+    # gemini     = Gemini qua Vertex AI (cần dự án GCP + gcloud trên máy)
+    # vertex     = Claude qua Vertex AI (GCP ADC, không cần API key)
+    # anthropic  = Claude qua API trực tiếp của Anthropic (cần API key)
     # Cùng model, cùng giá. Đổi giá trị này là đổi đường đi, không đụng mã.
-    llm_provider: str = "gemini"
+    #
+    # Mặc định phải KHỚP `.env.example` (=gemini_api). Lệch nhau thì ai chạy
+    # không có `.env` đi một đường, ai `cp .env.example .env` đi đường khác —
+    # và người thứ nhất nhận lỗi gcloud khó hiểu thay vì câu "thiếu API key"
+    # mà `san_sang` nói rất rõ.
+    llm_provider: str = "gemini_api"
     anthropic_api_key: str = ""
     # Gemini qua Google AI Studio (provider gemini_api). Nhập được trên
     # dashboard; ở đây chỉ là đường lui — xem agent/cau_hinh_dong.py.

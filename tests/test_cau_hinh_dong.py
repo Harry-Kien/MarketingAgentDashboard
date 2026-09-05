@@ -12,6 +12,10 @@ from agent import cau_hinh_dong as cd
 from agent.config import settings
 from agent.security.credential_vault import CredentialVault
 
+# Giữ lại bản THẬT trước khi fixture `kho` thay nó bằng no-op: có test cần
+# chạy đúng hàm này để chứng minh cache client được xoá.
+_SAU_KHI_DOI_THAT = cd._sau_khi_doi
+
 
 class _KhoGia:
     def __init__(self):
@@ -212,6 +216,58 @@ def test_ghi_ket_qua_kiem_cho_khoa_da_luu(kho):
     ds = {m["khoa"]: m for m in cd.liet_ke()}
     assert ds["GEMINI_API_KEY"]["kiem_ket_qua"] == "hỏng: " + "y" * 200
     assert ds["GEMINI_API_KEY"]["kiem_luc"] is not None
+
+
+def test_dat_va_xoa_deu_don_dep_cache_va_danh_sach_che(kho, monkeypatch):
+    """
+    KHÔNG vá `_sau_khi_doi`: đây đúng là thứ cần canh.
+
+    Đổi khoá mà giữ client Anthropic cũ là dashboard báo "đã lưu" trong khi
+    model vẫn gọi bằng khoá cũ. Và không quên danh sách bí mật của nhật ký
+    thì khoá vừa dán không được che dòng log nào cho tới lần khởi động lại.
+    Cả hai đều hỏng im lặng, nên phải có test giữ lời gọi lại.
+    """
+    from agent import nhat_ky
+    from agent.core import llm
+
+    monkeypatch.setattr(cd, "_sau_khi_doi", _SAU_KHI_DOI_THAT)
+    goi: list[str] = []
+    monkeypatch.setattr(llm, "xoa_cache_client", lambda: goi.append("cache"))
+    monkeypatch.setattr(nhat_ky, "quen_bi_mat", lambda: goi.append("che"))
+
+    asyncio.run(cd.dat("GEMINI_API_KEY", "k" * 20, sua_boi="admin"))
+    asyncio.run(cd.xoa("GEMINI_API_KEY", sua_boi="admin"))
+
+    assert goi.count("cache") == 2
+    assert goi.count("che") == 2
+
+
+def test_khoa_luu_qua_dashboard_bi_che_trong_nhat_ky(kho):
+    """
+    Bí mật nhập trên dashboard nằm trong CSDL, KHÔNG có trong `settings` —
+    bộ lọc chỉ duyệt `settings` là đúng những khoá mới nhất không được che
+    dòng log nào. Không lỗi, không cảnh báo: log lộ khoá trong im lặng.
+    """
+    import logging
+
+    from agent import nhat_ky
+
+    khoa_that = "AIzaSyRAT-DAI-VA-BI-MAT-999"
+    asyncio.run(cd.dat("GEMINI_API_KEY", khoa_that, sua_boi="admin"))
+    nhat_ky.quen_bi_mat()   # fixture vá _sau_khi_doi nên phải quên bằng tay
+    try:
+        loc = nhat_ky.LocBiMat()
+        ban_ghi = logging.LogRecord(
+            name="httpx", level=logging.INFO, pathname="x", lineno=1,
+            msg="POST https://generativelanguage.googleapis.com/?k=%s",
+            args=(khoa_that,), exc_info=None,
+        )
+        loc.filter(ban_ghi)
+        assert khoa_that not in ban_ghi.getMessage()
+        assert nhat_ky.CHE in ban_ghi.getMessage()
+    finally:
+        # Danh sách nhớ ở mức LỚP: không quên là test sau thấy bí mật của test này.
+        nhat_ky.quen_bi_mat()
 
 
 def test_ghi_ket_qua_kiem_bo_qua_khoa_chi_co_o_env(kho, monkeypatch):

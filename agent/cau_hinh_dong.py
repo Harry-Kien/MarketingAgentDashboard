@@ -176,7 +176,13 @@ async def nap() -> None:
     try:
         rows = await _kho.doc_tat_ca()
     except Exception as exc:  # noqa: BLE001 — bảng chưa có thì chạy bằng .env
-        _log.warning("cau_hinh_dong: không đọc được bảng (%s), dùng .env", type(exc).__name__)
+        # Kèm cả thông điệp, không chỉ tên lớp: "OSError" một mình không nói
+        # được là Postgres chưa lên hay bảng chưa migrate, và người đọc log
+        # phải đoán. Bí mật không lọt: bộ lọc nhat_ky quét mọi dòng log.
+        _log.warning(
+            "cau_hinh_dong: không đọc được bảng (%s: %s), dùng .env",
+            type(exc).__name__, exc,
+        )
         return
     if not rows:
         return
@@ -249,9 +255,14 @@ def kiem_gia_tri(khoa: str, gia_tri: str) -> str:
 def _sau_khi_doi(khoa: str) -> None:
     # Client Anthropic được cache theo khoá; đổi khoá mà giữ client cũ là
     # dashboard báo "đã lưu" trong khi model vẫn chạy khoá cũ.
+    from agent import nhat_ky
     from agent.core import llm
 
     llm.xoa_cache_client()
+    # Bộ lọc nhật ký nhớ danh sách bí mật một lần rồi dùng mãi. Không quên
+    # ở đây thì khoá vừa dán không được che cho tới lần khởi động lại — và
+    # đó đúng là lúc nó bị gọi nhiều nhất.
+    nhat_ky.quen_bi_mat()
 
 
 async def dat(khoa: str, gia_tri: str, *, sua_boi: str) -> None:

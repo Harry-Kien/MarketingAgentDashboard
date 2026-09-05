@@ -33,6 +33,14 @@ Che theo tên (`access_token=…`) chỉ bắt được bí mật nằm trong qu
 Bí mật còn lọt ra qua thân JSON, qua header in trong traceback, qua một
 `print(cfg)` nào đó. Nên lớp thứ hai quét CHÍNH GIÁ TRỊ bí mật đang cấu
 hình: chuỗi ấy xuất hiện ở đâu trong dòng log cũng bị thay.
+
+HAI NGUỒN BÍ MẬT
+----------------
+Danh sách giá trị cần che lấy từ `settings` (thêm khoá vào settings với tên
+mang "token"/"key"/"secret"… là nó tự vào danh sách) VÀ từ `cau_hinh_dong`
+(khoá người nhập trên dashboard, nằm trong CSDL chứ không có trong
+`settings`). Bỏ nguồn thứ hai là khoá mới dán không được che dòng nào.
+Danh sách được nhớ lại, nên `cau_hinh_dong` gọi `quen_bi_mat()` mỗi lần đổi.
 """
 from __future__ import annotations
 
@@ -92,29 +100,55 @@ def _gia_tri_bi_mat() -> tuple[str, ...]:
     """
     Các giá trị bí mật đang cấu hình, đủ dài để quét an toàn.
 
-    Đọc qua `getattr` chứ không liệt kê cứng: thêm một khoá vào `settings`
-    mà quên thêm vào đây là bí mật đó không được che, và không ai biết.
-    Duyệt theo TÊN TRƯỜNG thì khoá mới tự vào danh sách nếu tên nó mang một
-    trong các từ khoá.
+    HAI NGUỒN, vì bí mật giờ vào hệ thống bằng hai đường.
+
+    1. `settings` — đọc qua `getattr` chứ không liệt kê cứng: thêm một khoá
+       vào `settings` mà quên thêm vào đây là bí mật đó không được che, và
+       không ai biết. Duyệt theo TÊN TRƯỜNG thì khoá mới tự vào danh sách
+       nếu tên nó mang một trong các từ khoá.
+
+    2. `cau_hinh_dong` — khoá người nhập trên dashboard KHÔNG có trong
+       `settings` (nó nằm trong CSDL, `.env` chỉ là đường lui). Bỏ nguồn này
+       là đúng những khoá mới nhất — thứ vừa được dán vào và đang được gọi
+       nhiều nhất — không được che dòng nào. `bi_mat` lấy từ `DANH_MUC` chứ
+       không đoán theo tên: URL ERPNext cũng có chữ "key" trong khoá kề bên,
+       và che nhầm một URL là mất khả năng gỡ lỗi.
+
+    Nhập trễ và nuốt mọi lỗi: hàm này chạy trên đường ghi log, nên nó không
+    bao giờ được phép làm hỏng chính việc ghi log.
     """
+    ra: set[str] = set()
+
     try:
         from agent.config import settings
-    except Exception:  # noqa: BLE001
-        return ()
 
-    ra: set[str] = set()
-    for ten in dir(settings):
-        if ten.startswith("_"):
-            continue
-        if not any(t in ten.lower() for t in
-                   ("secret", "token", "key", "password", "mat_khau")):
-            continue
-        try:
-            gt = getattr(settings, ten)
-        except Exception:  # noqa: BLE001
-            continue
-        if isinstance(gt, str) and len(gt) >= _DAI_TOI_THIEU:
-            ra.add(gt)
+        for ten in dir(settings):
+            if ten.startswith("_"):
+                continue
+            if not any(t in ten.lower() for t in
+                       ("secret", "token", "key", "password", "mat_khau")):
+                continue
+            try:
+                gt = getattr(settings, ten)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(gt, str) and len(gt) >= _DAI_TOI_THIEU:
+                ra.add(gt)
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from agent import cau_hinh_dong
+
+        for khoa, gt in cau_hinh_dong._gia_tri.items():
+            mo_ta = cau_hinh_dong.DANH_MUC.get(khoa)
+            if mo_ta is None or not mo_ta.bi_mat:
+                continue
+            if isinstance(gt, str) and len(gt) >= _DAI_TOI_THIEU:
+                ra.add(gt)
+    except Exception:  # noqa: BLE001
+        pass
+
     return tuple(ra)
 
 
@@ -128,17 +162,19 @@ class LocBiMat(logging.Filter):
     chưa ai nghĩ tới.
     """
 
-    def __init__(self):
-        super().__init__()
-        self._bi_mat: tuple[str, ...] | None = None
+    # Bộ nhớ đệm nằm ở LỚP chứ không ở thể hiện: `dung_nhat_ky()` dựng một
+    # `LocBiMat` mới mỗi lần gọi và gắn nó vào nhiều handler, nên xoá theo
+    # thể hiện thì `quen_bi_mat()` phải đi tìm lại từng bộ lọc đã gắn ở đâu.
+    # Một chỗ để đặt lại là một chỗ không quên được.
+    _bi_mat: tuple[str, ...] | None = None
 
     @property
     def bi_mat(self) -> tuple[str, ...]:
         # Đọc trễ: bộ lọc được dựng lúc khởi động, có thể TRƯỚC khi .env
         # nạp xong. Đọc ngay lúc dựng thì danh sách rỗng vĩnh viễn.
-        if self._bi_mat is None:
-            self._bi_mat = _gia_tri_bi_mat()
-        return self._bi_mat
+        if LocBiMat._bi_mat is None:
+            LocBiMat._bi_mat = _gia_tri_bi_mat()
+        return LocBiMat._bi_mat
 
     def filter(self, record: logging.LogRecord) -> bool:
         bm = self.bi_mat
@@ -157,6 +193,18 @@ class LocBiMat(logging.Filter):
         if record.exc_text:
             record.exc_text = che(record.exc_text, bm)
         return True
+
+
+def quen_bi_mat() -> None:
+    """
+    Quên danh sách bí mật đã ghi nhớ; lần ghi log kế tiếp đọc lại.
+
+    Gọi khi cấu hình động đổi. Danh sách được nhớ một lần rồi dùng mãi (đọc
+    lại mỗi dòng log là quá đắt trên đường nóng), nên khoá vừa dán trên
+    dashboard sẽ KHÔNG được che cho tới lần khởi động lại — đúng lúc nó bị
+    gọi nhiều nhất, và không có gì báo cho ai biết.
+    """
+    LocBiMat._bi_mat = None
 
 
 _DA_CAI = False

@@ -448,6 +448,19 @@
 
     <!-- ============ CẤU HÌNH AGENT ============ -->
     <section class="view" data-view="cauhinh">
+      <section class="panel" id="api-panel">
+        <h2 class="panel__head">Cài đặt API
+          <span class="panel__note" id="api-vault"></span></h2>
+        <p class="panel__note">
+          Khoá dán ở đây được mã hoá trong cơ sở dữ liệu và có hiệu lực ngay,
+          không cần khởi động lại. Khoá không bao giờ hiện lại — chỉ bốn ký tự
+          cuối. Chưa đặt ở đây thì hệ thống dùng <code>.env</code>. Bấm
+          <b>Kiểm tra</b> trước khi <b>Lưu</b>: kiểm chạy bằng đúng thứ bạn
+          vừa gõ.
+        </p>
+        <div id="api-nhom" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Cấu hình agent
           <span class="panel__note" id="cauhinh-luu">sống qua khởi động lại</span></h2>

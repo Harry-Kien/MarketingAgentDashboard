@@ -1952,7 +1952,7 @@ async function refresh() {
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
-    if (state.view === "cauhinh") await loadCauHinh();
+    if (state.view === "cauhinh") { await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
@@ -3056,6 +3056,94 @@ $("#cauhinh-macdinh")?.addEventListener("click", async () => {
     toast("Đã quay về mặc định");
     await loadCauHinh();
   } catch (err) { toast(err.message, true); }
+});
+
+
+/* ---------------- cài đặt API ---------------- */
+
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)" };
+
+/* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
+ * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */
+function oNhapApi(m) {
+  if (m.chon && m.chon.length) {
+    return `<select data-api-khoa="${m.khoa}">${
+      m.chon.map((c) => `<option value="${esc(c)}"${c === m.hien ? " selected" : ""}>${esc(c)}</option>`).join("")
+    }</select>`;
+  }
+  if (m.bi_mat) {
+    return `<input type="password" autocomplete="off" data-api-khoa="${m.khoa}"
+      placeholder="${m.da_dat ? `đã đặt ${esc(m.hien)} — dán khoá mới để thay` : "chưa đặt — dán khoá vào đây"}">`;
+  }
+  return `<input type="text" data-api-khoa="${m.khoa}" value="${esc(m.hien || "")}"
+    placeholder="${esc(m.nhan)}">`;
+}
+
+function trangThaiApi(m) {
+  const nguon = { csdl: "từ dashboard", env: "đang dùng .env", trong: "chưa đặt" }[m.nguon] || "";
+  const kiem = m.kiem_ket_qua ? ` · kiểm ${new Date(m.kiem_luc).toLocaleString("vi-VN")}: ${esc(m.kiem_ket_qua)}` : "";
+  return `<span class="row__sub">${nguon}${kiem}</span>`;
+}
+
+async function loadCaiDatApi() {
+  const d = await api("/cai-dat-api");
+  $("#api-vault").textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
+  const nhom = {};
+  for (const m of d.muc) (nhom[m.nhom] ||= []).push(m);
+  $("#api-nhom").innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
+    <div class="row" data-api-nhom="${ma}">
+      <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(ten)}</span>
+        ${(nhom[ma] || []).map((m) => `<div class="rows" style="margin:.35rem 0">
+          <label class="row__sub">${esc(m.nhan)}${m.y_nghia ? ` — ${esc(m.y_nghia)}` : ""}</label>
+          ${oNhapApi(m)} ${trangThaiApi(m)}
+        </div>`).join("")}
+        <div class="rowbtns">
+          <button type="button" class="btn btn--sm" data-api-kiem="${ma}">Kiểm tra</button>
+          <button type="button" class="btn btn--sm btn--go" data-api-luu="${ma}">Lưu</button>
+          <span class="row__sub" data-api-kq="${ma}"></span>
+        </div>
+      </span>
+    </div>`).join("");
+}
+
+/* Gom giá trị đang gõ trong một nhóm; bỏ ô trống để không ghi đè khoá đã
+ * lưu bằng chuỗi rỗng. */
+function giaTriApiDangGo(ma) {
+  const ra = {};
+  document.querySelectorAll(`[data-api-nhom="${ma}"] [data-api-khoa]`).forEach((o) => {
+    const v = (o.value || "").trim();
+    if (v) ra[o.dataset.apiKhoa] = v;
+  });
+  return ra;
+}
+
+document.addEventListener("click", async (e) => {
+  const kiem = e.target.closest("[data-api-kiem]");
+  const luu = e.target.closest("[data-api-luu]");
+  if (!kiem && !luu) return;
+  const ma = (kiem || luu).dataset.apiKiem || (kiem || luu).dataset.apiLuu;
+  const kq = $(`[data-api-kq="${ma}"]`);
+  try {
+    if (kiem) {
+      kq.textContent = "đang kiểm…";
+      const r = await api("/cai-dat-api/kiem-tra", {
+        method: "POST", body: JSON.stringify({ nhom: ma, gia_tri: giaTriApiDangGo(ma) }),
+      });
+      kq.textContent = (r.ok ? "✓ " : "✗ ") + r.chi_tiet;
+      return;
+    }
+    const gia_tri = giaTriApiDangGo(ma);
+    for (const [khoa, v] of Object.entries(gia_tri)) {
+      await api(`/cai-dat-api/${khoa}`, { method: "PUT", body: JSON.stringify({ gia_tri: v }) });
+    }
+    toast(`Đã lưu ${Object.keys(gia_tri).length} khoá — có hiệu lực ngay`);
+    await loadCaiDatApi();
+  } catch (err) {
+    kq.textContent = "";
+    toast(err.message, true);
+  }
 });
 
 

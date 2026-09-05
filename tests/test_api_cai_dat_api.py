@@ -191,3 +191,22 @@ def test_kiem_nhom_erp_dung_gia_tri_chua_luu(kho, monkeypatch):
     monkeypatch.setattr(cai_dat_api, "NguonErpNext", _Nguon)
     kq = asyncio.run(cai_dat_api.kiem_nhom("erp", {"ERPNEXT_URL": "https://e", "ERPNEXT_API_KEY": "k", "ERPNEXT_API_SECRET": "s"}))
     assert kq["ok"] and dung["goc"] == "https://e" and dung["api_secret"] == "s"
+
+
+def test_router_duoc_gan_vao_app():
+    from fastapi.openapi.utils import get_openapi
+    from agent import main
+
+    spec = get_openapi(title="x", version="1", routes=main.app.routes)
+    assert "/api/cai-dat-api" in spec["paths"]
+    assert "/api/cai-dat-api/kiem-tra" in spec["paths"]
+
+
+def test_lifespan_nap_cau_hinh_dong_sau_runtime():
+    import inspect
+
+    from agent import main
+
+    than = inspect.getsource(main.lifespan)
+    assert "cau_hinh_dong.nap()" in than
+    assert than.index("runtime.nap()") < than.index("cau_hinh_dong.nap()")

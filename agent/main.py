@@ -18,9 +18,10 @@ from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from agent import db, nhat_ky, runtime
+from agent import cau_hinh_dong, db, nhat_ky, runtime
 from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
+from agent.api.cai_dat_api import router as cai_dat_api_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
 from agent.api.erp import router as erp_router
@@ -461,6 +462,10 @@ async def lifespan(app: FastAPI):
     # người đọc nhật ký để dựng lại sự cố sẽ tin dòng ấy.
     await runtime.nap()
 
+    # Khoá API nhập từ dashboard. Nạp SAU runtime và TRƯỚC dòng app.start,
+    # cùng lý do với runtime: nhật ký khởi động phải nói đúng provider đang chạy.
+    await cau_hinh_dong.nap()
+
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
     # Nạp tồn kho từ danh mục cho những mã CHƯA có dòng nào.
@@ -785,6 +790,7 @@ app.include_router(inbox_router)
 app.include_router(outbox_router)
 app.include_router(native_webhooks_router)
 app.include_router(zalo_personal_webhook_router)
+app.include_router(cai_dat_api_router)
 app.include_router(zalo_oa_webhook_router)
 app.include_router(webchat_router)
 app.include_router(oauth_meta_router)

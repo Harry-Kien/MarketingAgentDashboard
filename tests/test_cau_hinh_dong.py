@@ -145,3 +145,84 @@ def test_danh_muc_khong_chua_cong_tac_nguy_hiem():
 def test_moi_khoa_trong_danh_muc_deu_co_duong_lui_env():
     """Thêm khoá vào DANH_MUC mà quên ánh xạ .env thì lay() nổ KeyError lúc chạy thật."""
     assert set(cd._DOC_ENV) == set(cd.DANH_MUC)
+
+
+def test_kho_hong_thi_nap_khong_chan_khoi_dong_va_lui_ve_env(kho, monkeypatch):
+    """
+    Bảng cau_hinh_bi_mat chưa tồn tại hoặc không đọc được: nap() phải trả bình thường
+    (không chặn khởi động) và lay() phải lui về .env.
+    """
+    class KhoBiBao:
+        async def doc_tat_ca(self):
+            raise RuntimeError("relation cau_hinh_bi_mat does not exist")
+
+    monkeypatch.setattr(cd, "_kho", KhoBiBao())
+    monkeypatch.setattr(settings, "anthropic_api_key", "tu-env")
+    # nap() không được nổ lỗi
+    asyncio.run(cd.nap())
+    # lay() phải trả giá trị .env
+    assert cd.lay("ANTHROPIC_API_KEY") == "tu-env"
+    assert cd.nguon("ANTHROPIC_API_KEY") == "env"
+
+
+def test_vault_chua_san_sang_luc_nap_thi_chay_bang_env(kho, monkeypatch):
+    """
+    Có khoá trong CSDL nhưng vault chưa cấu hình lúc nap(): nap() phải trả bình thường
+    (không nổ VaultChuaSanSang) và lay() phải lui về .env.
+    """
+    monkeypatch.setattr(settings, "gemini_api_key", "tu-env")
+    # Lưu một khoá vào CSDL
+    asyncio.run(cd.dat("GEMINI_API_KEY", "x" * 20, sua_boi="admin"))
+    # Giờ vault không sẵn sàng
+    def hong():
+        raise cd.VaultChuaSanSang("chưa cấu hình")
+
+    monkeypatch.setattr(cd, "_vault", hong)
+    # Xoá bộ nhớ tiến trình để buộc nap() đọc lại
+    cd._gia_tri.clear()
+    cd._meta.clear()
+    # nap() không được nổ lỗi
+    asyncio.run(cd.nap())
+    # lay() phải trả giá trị .env vì vault lỗi
+    assert cd.lay("GEMINI_API_KEY") == "tu-env"
+    assert cd.nguon("GEMINI_API_KEY") in ("env", "trong")
+
+
+def test_ghi_ket_qua_kiem_cho_khoa_da_luu(kho):
+    """
+    Khoá được lưu trong CSDL: ghi_ket_qua_kiem() phải gọi kho.ghi_kiem() với
+    "đạt: " hoặc "hỏng: " prefix, và chi_tiet bị cắt tối đa 200 ký tự.
+    liet_ke() phải hiển thị kiem_ket_qua và kiem_luc cho khoá đó.
+    """
+    # Lưu một khoá vào CSDL
+    asyncio.run(cd.dat("GEMINI_API_KEY", "x" * 20, sua_boi="admin"))
+    # Ghi kết quả kiểm (ok)
+    asyncio.run(cd.ghi_ket_qua_kiem("GEMINI_API_KEY", True, "gemini-2.5-flash-lite · 12ms"))
+    # Ghi kết quả kiểm (hỏng) với chi_tiet dài
+    chi_tiet_dai = "y" * 500
+    asyncio.run(cd.ghi_ket_qua_kiem("GEMINI_API_KEY", False, chi_tiet_dai))
+    # Kiểm kho.kiem
+    assert len(kho.kiem) == 2
+    assert kho.kiem[0] == ("GEMINI_API_KEY", "đạt: gemini-2.5-flash-lite · 12ms")
+    assert kho.kiem[1][0] == "GEMINI_API_KEY"
+    assert kho.kiem[1][1].startswith("hỏng: ")
+    # "hỏng: " là 6 ký tự + 200 ký tự chi_tiet tối đa = 206
+    assert len(kho.kiem[1][1]) <= 6 + 200
+    # liet_ke() phải hiển thị kiem_ket_qua và kiem_luc
+    ds = {m["khoa"]: m for m in cd.liet_ke()}
+    assert ds["GEMINI_API_KEY"]["kiem_ket_qua"] == "hỏng: " + "y" * 200
+    assert ds["GEMINI_API_KEY"]["kiem_luc"] is not None
+
+
+def test_ghi_ket_qua_kiem_bo_qua_khoa_chi_co_o_env(kho, monkeypatch):
+    """
+    Khoá chỉ có ở .env (không lưu trong CSDL): ghi_ket_qua_kiem() phải bỏ qua,
+    không gọi kho.ghi_kiem().
+    """
+    monkeypatch.setattr(settings, "anthropic_api_key", "tu-env")
+    # Không lưu vào CSDL, chỉ nạp từ .env
+    asyncio.run(cd.nap())
+    # Ghi kết quả kiểm
+    asyncio.run(cd.ghi_ket_qua_kiem("ANTHROPIC_API_KEY", True, "ok"))
+    # kho.kiem phải trống (không gọi ghi_kiem)
+    assert kho.kiem == []

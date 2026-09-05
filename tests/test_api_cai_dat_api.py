@@ -124,6 +124,47 @@ def test_kiem_tra_gia_tri_da_luu_thi_ghi_ket_qua(kho, monkeypatch):
     r = c.post("/api/cai-dat-api/kiem-tra", json={"nhom": "model"})
     assert r.json()["ok"] is False
     assert any(k == "GEMINI_API_KEY" and "HẾT HẠN MỨC" in kq for k, kq in kho.kiem)
+    # Chỉ khoá THỰC SỰ được probe (Gemini, vì provider = gemini_api) mới được
+    # ghi kết quả — ANTHROPIC_API_KEY không hề tham gia lệnh gọi thì không
+    # được phép ăn theo, dù cùng nhóm "model" (xem finding Critical round 1).
+    assert not any(k == "ANTHROPIC_API_KEY" for k, _ in kho.kiem)
+
+
+def test_kiem_tra_che_khoa_neu_provider_echo_lai(kho, monkeypatch):
+    """Phòng thân: dù provider (hay lỗi thư viện HTTP) lỡ echo khoá vào
+    thông báo lỗi, `chi_tiet` trả về dashboard/log không được chứa nó."""
+    khoa_that = "AIzaSyBIMAT-secret-value-xyz"
+
+    async def kiem_khoa(*, api_key, **kw):
+        return False, f"AuthenticationError: khoá {api_key} bị từ chối", 5
+
+    monkeypatch.setattr(cai_dat_api.llm, "kiem_khoa", kiem_khoa)
+    c = _app(admin=True)
+    r = c.post("/api/cai-dat-api/kiem-tra", json={
+        "nhom": "model",
+        "gia_tri": {"LLM_PROVIDER": "gemini_api", "GEMINI_API_KEY": khoa_that},
+    })
+    chi_tiet = r.json()["chi_tiet"]
+    assert khoa_that not in chi_tiet
+    assert "AuthenticationError" in chi_tiet
+
+
+def test_kiem_tra_provider_vertex_khong_gui_khoa(kho, monkeypatch):
+    """provider gemini/vertex xác thực qua gcloud trên máy, không qua API
+    key — gửi khoá cho llm.kiem_khoa trong trường hợp này là dữ liệu thừa,
+    có thể lẫn khoá của provider khác đang lưu trong cấu hình."""
+    nhan = {}
+
+    async def kiem_khoa(*, provider_name, api_key="", model="", project="", timeout=45.0):
+        nhan.update(provider_name=provider_name, api_key=api_key)
+        return True, "vertex ok", 8
+
+    monkeypatch.setattr(cai_dat_api.llm, "kiem_khoa", kiem_khoa)
+    c = _app(admin=True)
+    r = c.post("/api/cai-dat-api/kiem-tra", json={"nhom": "model", "gia_tri": {"LLM_PROVIDER": "vertex"}})
+    assert r.status_code == 200
+    assert nhan["api_key"] == ""
+    assert r.json()["khoa_da_kiem"] == []
 
 
 def test_vault_chua_san_sang_thi_503_khi_ghi(kho, monkeypatch):

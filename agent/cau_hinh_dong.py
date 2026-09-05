@@ -22,6 +22,7 @@ Giá trị đầy đủ không có đường nào ra khỏi tiến trình.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -120,6 +121,29 @@ _meta: dict[str, dict[str, Any]] = {}
 _log = logging.getLogger("agent.cau_hinh_dong")
 
 
+# Đường lui .env cho từng khoá, viết TƯỜNG MINH thay vì getattr(settings,
+# khoa.lower()): tên trường gõ nhầm thì nổ lúc import chứ không lặng lẽ trả
+# rỗng, và tests/test_ra_soat_ma_chet.py soi được rằng mỗi trường cấu hình
+# có người đọc.
+_DOC_ENV: dict[str, Callable[[], str]] = {
+    "LLM_PROVIDER": lambda: settings.llm_provider,
+    "GEMINI_API_KEY": lambda: settings.gemini_api_key,
+    "ANTHROPIC_API_KEY": lambda: settings.anthropic_api_key,
+    "MODEL_CHAT": lambda: settings.model_chat,
+    "MODEL_HARD": lambda: settings.model_hard,
+    "MODEL_CHEAP": lambda: settings.model_cheap,
+    "ERPNEXT_URL": lambda: settings.erpnext_url,
+    "ERPNEXT_API_KEY": lambda: settings.erpnext_api_key,
+    "ERPNEXT_API_SECRET": lambda: settings.erpnext_api_secret,
+    "GHN_TOKEN": lambda: settings.ghn_token,
+    "GHN_SHOP_ID": lambda: settings.ghn_shop_id,
+}
+
+
+def _tu_env(khoa: str) -> str:
+    return str(_DOC_ENV[khoa]() or "")
+
+
 def _vault() -> CredentialVault:
     try:
         return CredentialVault(
@@ -192,14 +216,14 @@ def lay(khoa: str) -> str:
     v = _gia_tri.get(khoa, "")
     if v:
         return v
-    return str(getattr(settings, khoa.lower(), "") or "")
+    return _tu_env(khoa)
 
 
 def nguon(khoa: str) -> str:
     _mo_ta(khoa)
     if _gia_tri.get(khoa):
         return "csdl"
-    if str(getattr(settings, khoa.lower(), "") or ""):
+    if _tu_env(khoa):
         return "env"
     return "trong"
 

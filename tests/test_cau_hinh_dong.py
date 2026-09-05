@@ -140,3 +140,8 @@ def test_danh_muc_khong_chua_cong_tac_nguy_hiem():
     """ERP_LOAI và SHIPPING_PROVIDER cố ý ở .env: bật sai là dữ liệu không xoá được."""
     assert "ERP_LOAI" not in cd.DANH_MUC
     assert "SHIPPING_PROVIDER" not in cd.DANH_MUC
+
+
+def test_moi_khoa_trong_danh_muc_deu_co_duong_lui_env():
+    """Thêm khoá vào DANH_MUC mà quên ánh xạ .env thì lay() nổ KeyError lúc chạy thật."""
+    assert set(cd._DOC_ENV) == set(cd.DANH_MUC)

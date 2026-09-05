@@ -95,6 +95,31 @@ def test_kiem_khoa_het_han_muc_noi_ro(monkeypatch):
     assert not ok and "HẾT HẠN MỨC" in chi_tiet
 
 
+def test_kiem_khoa_anthropic_khong_de_khoa_chua_luu_lai_trong_cache(monkeypatch):
+    """
+    Thử một khoá rồi KHÔNG bấm Lưu: khoá ấy không được nằm lại trong cache
+    client của tiến trình. `xoa_cache_client()` chỉ chạy khi có người đổi
+    cấu hình, nên "rớt lại" ở đây nghĩa là có thể rớt lại mãi mãi.
+    """
+    class _Anthropic:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+    import anthropic
+    monkeypatch.setattr(anthropic, "Anthropic", _Anthropic)
+
+    async def _complete_claude(**kw):
+        return llm.LLMResult(text="ok", model="claude", latency_ms=1)
+
+    monkeypatch.setattr(llm, "_complete_claude", _complete_claude)
+    khoa_chua_luu = "k-chua-luu" + "x" * 20
+    ok, _, _ = asyncio.run(llm.kiem_khoa(
+        provider_name="anthropic", api_key=khoa_chua_luu, model="claude-sonnet-4-5",
+    ))
+    assert ok
+    assert khoa_chua_luu not in repr(llm._ANTHROPIC_CACHE)
+
+
 def test_xoa_cache_client_lam_dung_lai_client_anthropic(monkeypatch):
     dung = []
 

@@ -612,7 +612,25 @@ async def kiem_khoa(
                 timeout,
             )
         elif p in ("anthropic", "vertex"):
-            client = _anthropic_client(provider_name=p, api_key=api_key)
+            if p == "anthropic":
+                # KHÔNG đi qua `_anthropic_client`: nó nhớ client theo khoá,
+                # nên thử một khoá CHƯA LƯU là để lại client của khoá ấy nằm
+                # trong `_ANTHROPIC_CACHE` của tiến trình. Không ai bấm Lưu
+                # thì cache vẫn giữ nó, và `xoa_cache_client()` chỉ chạy khi
+                # có người đổi cấu hình — nghĩa là có thể không bao giờ.
+                # Dựng thẳng thì client sống đúng bằng lời gọi kiểm này.
+                from anthropic import Anthropic
+
+                key = api_key or cau_hinh_dong.lay("ANTHROPIC_API_KEY")
+                if not key:
+                    raise RuntimeError(
+                        "LLM_PROVIDER=anthropic nhưng thiếu ANTHROPIC_API_KEY. Nhập ở "
+                        "dashboard → Cấu hình → Cài đặt API, hoặc đặt trong .env"
+                    )
+                client = Anthropic(api_key=key)
+            else:
+                # vertex: xác thực qua gcloud, không có bí mật nào để rớt lại.
+                client = _anthropic_client(provider_name="vertex")
             r = await asyncio.wait_for(
                 _complete_claude(system=system, messages=messages, model=model,
                                  max_tokens=8, tools=None, effort="low", client=client),

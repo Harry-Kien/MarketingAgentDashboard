@@ -405,7 +405,16 @@ async def kiem_ket_noi(
         return False, "GHN từ chối token", ms
     if r.status_code >= 400:
         return False, f"GHN {r.status_code}: {r.text[:120]}", ms
-    shops = ((r.json().get("data") or {}).get("shops") or [])
+    try:
+        du_lieu = r.json()
+        shops = ((du_lieu.get("data") or {}).get("shops") or []) if isinstance(du_lieu, dict) else None
+    except ValueError:
+        shops = None
+    if shops is None:
+        # 200 mà thân không phải JSON/đối tượng: GHN đổi hình dạng, hoặc một
+        # proxy chen vào. Hàm này là phép kiểm cho dashboard — phải TRẢ LỜI,
+        # không được ném.
+        return False, "GHN trả về 200 nhưng thân không phải JSON như mong đợi", ms
     ids = {str(s.get("_id")) for s in shops}
     if shop_id and str(shop_id) not in ids:
         return False, f"token đúng nhưng shop id {shop_id} không thuộc tài khoản này", ms

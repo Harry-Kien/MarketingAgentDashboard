@@ -46,6 +46,16 @@ def test_token_sai_thi_khong_ok():
     assert not ok and "token" in chi_tiet.lower()
 
 
+def test_than_200_khong_phai_json_thi_khong_no():
+    def handler(req):
+        return httpx.Response(200, text="<html>ok</html>")
+
+    ok, chi_tiet, _ = asyncio.run(ghn.kiem_ket_noi(
+        token="tok", shop_id="1", api_url="https://ghn.test/v2", client=_client(handler),
+    ))
+    assert not ok and "JSON" in chi_tiet
+
+
 def test_provider_ghn_doc_qua_cau_hinh_dong(monkeypatch):
     cd._gia_tri.clear()
     monkeypatch.setattr(settings, "ghn_token", "tu-env")

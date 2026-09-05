@@ -118,6 +118,39 @@ def test_suc_khoe_bao_do_khi_kho_nap_bang_model_khac(monkeypatch):
     assert "model-cu" in m["ghi_chu"] and "Nạp lại" in m["ghi_chu"]
 
 
+def test_suc_khoe_chua_ghi_nhan_lan_nap_ma_doi_provider_thi_canh_bao(monkeypatch):
+    """
+    Không có dòng `embed_model_dang_dung` KHÔNG có nghĩa là yên tâm: kho nạp
+    trước khi có bookkeeping không để lại dấu vết, và mọi kho như vậy dùng
+    EMBED_MODEL mặc định. Bản trước báo TỐT cho đúng cảnh đổi provider xong
+    chưa nạp lại — xanh giả ngay trong mục canh xanh giả.
+    """
+    from agent import suc_khoe
+    from agent.core import rag
+
+    async def fetchrow(sql, *args):
+        return None
+
+    monkeypatch.setattr(suc_khoe.db, "fetchrow", fetchrow)
+    monkeypatch.setattr(rag, "embed_model_hien_hanh", lambda: rag.EMBED_MODEL_API)
+    m = asyncio.run(suc_khoe._kiem_embedding_khop())
+    assert m["trang_thai"] == suc_khoe.CANH_BAO
+    assert rag.EMBED_MODEL in m["ghi_chu"] and "Nạp lại" in m["ghi_chu"]
+
+
+def test_suc_khoe_chua_ghi_nhan_lan_nap_va_van_model_mac_dinh_thi_tot(monkeypatch):
+    from agent import suc_khoe
+    from agent.core import rag
+
+    async def fetchrow(sql, *args):
+        return None
+
+    monkeypatch.setattr(suc_khoe.db, "fetchrow", fetchrow)
+    monkeypatch.setattr(rag, "embed_model_hien_hanh", lambda: rag.EMBED_MODEL)
+    m = asyncio.run(suc_khoe._kiem_embedding_khop())
+    assert m["trang_thai"] == suc_khoe.TOT
+
+
 def test_suc_khoe_kiem_model_di_qua_kiem_khoa():
     from agent import suc_khoe
 

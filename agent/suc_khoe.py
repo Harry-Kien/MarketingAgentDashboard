@@ -87,6 +87,21 @@ async def _kiem_embedding_khop() -> dict:
         "SELECT gia_tri FROM cau_hinh_agent WHERE khoa = 'embed_model_dang_dung'"
     )
     if not row:
+        # KHÔNG có dòng nào KHÔNG có nghĩa là "kho trống nên yên tâm".
+        #
+        # Bookkeeping `embed_model_dang_dung` chỉ được ghi từ khi có nó; mọi
+        # kho nạp trước đó — và mọi kho nạp lúc provider còn là gemini/vertex
+        # — dùng EMBED_MODEL mặc định mà không để lại dòng nào. Nên "vắng
+        # dòng + đang hỏi bằng model KHÁC mặc định" là đúng cảnh đổi provider
+        # xong chưa nạp lại: tìm kiếm trả kết quả sai mà không một lỗi nào,
+        # và bản trước báo TỐT cho đúng cảnh ấy. Xanh giả.
+        if hien != rag.EMBED_MODEL:
+            return _muc(
+                "Embedding kho tri thức", CANH_BAO,
+                f"chưa ghi nhận lần nạp nào, đang hỏi bằng {hien} — kho có thể "
+                f"được nạp bằng {rag.EMBED_MODEL} trước khi đổi provider. "
+                "Nạp lại kho tri thức (Tri thức → Nạp lại)",
+            )
         return _muc("Embedding kho tri thức", TOT, f"{hien} (chưa ghi nhận lần nạp nào)")
     da = str(row["gia_tri"])
     if da != hien:

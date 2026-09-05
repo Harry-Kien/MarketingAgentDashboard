@@ -464,13 +464,69 @@ async def kiem_khoa_api() -> dict:
             "AND created_at > now() - interval '10 minutes'"
         )
         giai_ma_hong = int(hong["n"]) if hong else 0
-    except Exception:  # noqa: BLE001 — không có CSDL thì vẫn đọc được .env
+    except Exception as exc:  # noqa: BLE001 — không có CSDL thì vẫn đọc được .env
+        # Nói ra là không đếm được, chứ không lặng lẽ coi như bằng 0: nuốt ở
+        # đây nghĩa là khoá chủ vault đổi mà mục này vẫn báo "đủ".
+        print(f"[cảnh báo] không đếm được sự kiện giải mã hỏng ({type(exc).__name__})")
         giai_ma_hong = 0
     provider = (cau_hinh_dong.lay("LLM_PROVIDER") or "gemini").lower()
     khoa = "GEMINI_API_KEY" if provider == "gemini_api" else "ANTHROPIC_API_KEY"
     if provider in ("gemini_api", "anthropic"):
         return doc_khoa_api(provider, cau_hinh_dong.nguon(khoa), bool(cau_hinh_dong.lay(khoa)), giai_ma_hong)
     return doc_khoa_api(provider, "trong", False, giai_ma_hong)
+
+
+def doc_embedding(da_nap: str | None, hien_hanh: str) -> dict:
+    """
+    Phần thuần: `da_nap` là model ghi trong `embed_model_dang_dung` (None khi
+    chưa có dòng nào), `hien_hanh` là model provider hiện hành sẽ dùng.
+
+    Hai model cho hai không gian vector khác nhau. Kho nạp bằng A mà hỏi bằng
+    B thì `<=>` vẫn trả về đủ số kết quả, xếp hạng vẫn có vẻ hợp lý, và
+    không một lỗi nào được ghi — agent chỉ trích dẫn nhầm đoạn tài liệu.
+    Đổi provider trên dashboard là lúc chuyện này xảy ra.
+
+    VẮNG DÒNG KHÔNG PHẢI LÀ AN TOÀN: bookkeeping mới có gần đây, nên kho nạp
+    trước đó không để lại dấu vết nào — và mọi kho như vậy dùng `EMBED_MODEL`
+    mặc định. Coi None là `EMBED_MODEL` thì đúng cảnh "đổi sang gemini_api
+    xong chưa nạp lại" được báo, thay vì xanh giả.
+    """
+    from agent.core import rag
+
+    ten = "Embedding"
+    thuc = da_nap or rag.EMBED_MODEL
+    if thuc == hien_hanh:
+        ghi = hien_hanh + ("" if da_nap else " (chưa ghi nhận lần nạp nào)")
+        return _muc(ten, DU, ghi)
+    if da_nap:
+        ghi = f"kho nạp bằng {da_nap}, đang hỏi bằng {hien_hanh}"
+    else:
+        ghi = (f"chưa ghi nhận lần nạp nào, đang hỏi bằng {hien_hanh} — kho có "
+               f"thể được nạp bằng {rag.EMBED_MODEL} trước khi đổi provider")
+    return _muc(
+        ten, CANH_BAO,
+        ghi + " — tìm kiếm trả kết quả sai mà không một lỗi nào",
+        "Nạp lại kho tri thức (Tri thức → Nạp lại), hoặc: python -m "
+        "scripts.ingest data/knowledge",
+    )
+
+
+async def kiem_embedding() -> dict:
+    """Kho tri thức có được nạp bằng đúng model embedding đang hỏi không."""
+    from agent import db
+    from agent.core import rag
+
+    hien = rag.embed_model_hien_hanh()
+    try:
+        await db.init_db()
+        row = await db.fetchrow(
+            "SELECT gia_tri FROM cau_hinh_agent WHERE khoa = 'embed_model_dang_dung'"
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Embedding", CANH_BAO,
+                    f"không hỏi được CSDL ({type(exc).__name__})",
+                    "Khởi động PostgreSQL rồi chạy lại")
+    return doc_embedding(str(row["gia_tri"]) if row else None, hien)
 
 
 async def kiem_outbox() -> dict:
@@ -636,7 +692,8 @@ async def kiem_ton_kho() -> dict:
 
 async def chay() -> int:
     muc = [
-        kiem_bi_mat(), await kiem_khoa_api(), kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
+        kiem_bi_mat(), await kiem_khoa_api(), await kiem_embedding(),
+        kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),

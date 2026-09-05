@@ -70,6 +70,11 @@ def test_ghi_model_hong_khong_lam_mat_vector(monkeypatch, caplog):
     async def sap(sql, *args):
         raise RuntimeError("CSDL sập")
 
+    # Ghim provider Vertex TƯỜNG MINH: mặc định xuất xưởng nay là gemini_api,
+    # và máy CI không có .env — để mặc định quyết định là test đi nhánh
+    # Gemini API rồi gọi mạng thật. Đã đỏ trên CI đúng vì thế (05.09.2026).
+    cd._gia_tri.clear()
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
     monkeypatch.setattr(
         rag, "_embed_sync", lambda texts, task: [[0.0] * rag.EMBED_DIM for _ in texts]
     )

@@ -433,6 +433,46 @@ async def kiem_bi_mat_sidecar() -> dict:
     return doc_tham_do_sidecar(loi, co_tai_khoan)
 
 
+def doc_khoa_api(provider: str, nguon_khoa: str, co_khoa: bool, giai_ma_hong: int) -> dict:
+    ten = "Khoá API"
+    if giai_ma_hong:
+        return _muc(
+            ten, CHAN, f"{giai_ma_hong} khoá trong CSDL không giải mã được",
+            "khoá chủ vault đã đổi. Nhập lại khoá ở dashboard → Cấu hình → Cài đặt API, "
+            "hoặc khôi phục CREDENTIAL_MASTER_KEYS cũ",
+        )
+    can_khoa = provider in ("gemini_api", "anthropic")
+    if can_khoa and not co_khoa:
+        return _muc(
+            ten, CHAN, f"provider {provider} cần API key mà không có ở đâu cả",
+            "Nhập ở dashboard → Cấu hình → Cài đặt API (hoặc .env). Không có thì agent "
+            "không trả lời được một tin nào",
+        )
+    nguon = {"csdl": "khoá từ dashboard", "env": "khoá từ .env", "trong": "không cần khoá"}[nguon_khoa]
+    return _muc(ten, DU, f"provider {provider} · {nguon}")
+
+
+async def kiem_khoa_api() -> dict:
+    """Provider hiện hành có khoá không, và khoá lấy từ đâu."""
+    from agent import cau_hinh_dong, db
+
+    try:
+        await db.init_db()
+        await cau_hinh_dong.nap()
+        hong = await db.fetchrow(
+            "SELECT count(*) AS n FROM events WHERE kind = 'cau_hinh_api.giai_ma_hong' "
+            "AND created_at > now() - interval '10 minutes'"
+        )
+        giai_ma_hong = int(hong["n"]) if hong else 0
+    except Exception:  # noqa: BLE001 — không có CSDL thì vẫn đọc được .env
+        giai_ma_hong = 0
+    provider = (cau_hinh_dong.lay("LLM_PROVIDER") or "gemini").lower()
+    khoa = "GEMINI_API_KEY" if provider == "gemini_api" else "ANTHROPIC_API_KEY"
+    if provider in ("gemini_api", "anthropic"):
+        return doc_khoa_api(provider, cau_hinh_dong.nguon(khoa), bool(cau_hinh_dong.lay(khoa)), giai_ma_hong)
+    return doc_khoa_api(provider, "trong", False, giai_ma_hong)
+
+
 async def kiem_outbox() -> dict:
     """Outbox có thoát hàng hay đang chất tin mà worker đã chết."""
     from datetime import datetime, timedelta, timezone
@@ -596,7 +636,7 @@ async def kiem_ton_kho() -> dict:
 
 async def chay() -> int:
     muc = [
-        kiem_bi_mat(), kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
+        kiem_bi_mat(), await kiem_khoa_api(), kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),

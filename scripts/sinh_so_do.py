@@ -55,7 +55,7 @@ NHOM = {
     "Vận hành": [
         "nguoi_dung", "phien", "events", "zalo_oa_token", "ky_nang_cai_dat",
         "tich_hop_ung_dung",
-        "cau_hinh_agent",
+        "cau_hinh_agent", "cau_hinh_bi_mat",
     ],
     "Tài khoản kênh": [
         "channel_accounts",

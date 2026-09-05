@@ -1,12 +1,14 @@
 """
 Lớp gọi model — trung lập với nhà cung cấp.
 
-Hỗ trợ 3 đường, đổi bằng LLM_PROVIDER trong .env:
-  gemini    - Gemini trên Vertex AI (MẶC ĐỊNH). Cùng project, cùng ADC với
-              embedding của RAG. Hạn mức Gemini tách biệt với hạn mức Claude.
-  vertex    - Claude trên Vertex AI. Cần project ĐƯỢC CẤP QUOTA Claude;
-              project mới mặc định quota = 0 và mọi lời gọi trả 429.
-  anthropic - Claude qua API trực tiếp, chỉ cần API key.
+Hỗ trợ 4 đường, đổi bằng LLM_PROVIDER (dashboard → Cấu hình → Cài đặt API,
+hoặc .env):
+  gemini_api - Gemini qua Google AI Studio API key. Không cần dự án GCP.
+  gemini     - Gemini trên Vertex AI (MẶC ĐỊNH). Cùng project, cùng ADC với
+               embedding của RAG. Hạn mức Gemini tách biệt với hạn mức Claude.
+  vertex     - Claude trên Vertex AI. Cần project ĐƯỢC CẤP QUOTA Claude;
+               project mới mặc định quota = 0 và mọi lời gọi trả 429.
+  anthropic  - Claude qua API trực tiếp, chỉ cần API key.
 
 ĐỊNH DẠNG TRUNG LẬP
 -------------------
@@ -33,7 +35,6 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -76,7 +77,11 @@ class LLMResult:
 
 
 def provider() -> str:
-    return (settings.llm_provider or "gemini").strip().lower()
+    # Đọc qua cấu hình động để đổi provider trên dashboard có hiệu lực
+    # ngay; `.env` vẫn là đường lui bên trong `lay()`.
+    from agent import cau_hinh_dong
+
+    return (cau_hinh_dong.lay("LLM_PROVIDER") or "gemini").strip().lower()
 
 
 def price(model: str, t_in: int, t_out: int, c_read: int = 0, c_write: int = 0) -> float:
@@ -165,7 +170,7 @@ async def _token() -> str:
         ) from exc
 
 
-def _gemini_url(model: str) -> str:
+def _gemini_url(model: str, *, project: str | None = None) -> str:
     region = settings.gemini_region or "us-central1"
     host = (
         "aiplatform.googleapis.com"
@@ -173,8 +178,45 @@ def _gemini_url(model: str) -> str:
         else f"{region}-aiplatform.googleapis.com"
     )
     return (
-        f"https://{host}/v1/projects/{settings.gcp_project_id}"
+        f"https://{host}/v1/projects/{project or settings.gcp_project_id}"
         f"/locations/{region}/publishers/google/models/{model}:generateContent"
+    )
+
+
+GEMINI_API_GOC = "https://generativelanguage.googleapis.com/v1beta"
+
+
+async def _gemini_dich(
+    model: str, *, provider_name: str | None = None, api_key: str = "",
+    project: str = "",
+) -> tuple[str, dict[str, str]]:
+    """
+    URL và header cho một lượt gọi Gemini, theo provider.
+
+    Hai đường tới cùng một model: Vertex (token ADC, cần dự án GCP) và
+    Gemini API (chỉ cần API key). Body giống hệt nhau, nên chỉ tách phần
+    này ra — và `kiem_khoa` truyền khoá CHƯA LƯU vào đây để thử.
+    """
+    from agent import cau_hinh_dong
+
+    p = (provider_name or provider()).strip().lower()
+    if p == "gemini_api":
+        key = api_key or cau_hinh_dong.lay("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "Chưa có GEMINI_API_KEY. Nhập ở dashboard → Cấu hình → Cài đặt API, "
+                "hoặc đặt trong .env"
+            )
+        return (
+            f"{GEMINI_API_GOC}/models/{model}:generateContent",
+            {"x-goog-api-key": key, "Content-Type": "application/json"},
+        )
+    project = project or settings.gcp_project_id
+    if not project or project.startswith("your-"):
+        raise RuntimeError("Chưa đặt GCP_PROJECT_ID trong .env")
+    return (
+        _gemini_url(model, project=project),
+        {"Authorization": f"Bearer {await _token()}", "Content-Type": "application/json"},
     )
 
 
@@ -287,10 +329,8 @@ THINKING_BUDGET = {"low": 0, "medium": 1024, "high": 8192, "max": 24576}
 async def _complete_gemini(
     *, system: dict, messages: list[dict], model: str, max_tokens: int,
     tools: list[dict] | None, effort: str = "medium",
+    dich: tuple[str, dict] | None = None,
 ) -> LLMResult:
-    if not settings.gcp_project_id or settings.gcp_project_id.startswith("your-"):
-        raise RuntimeError("Chưa đặt GCP_PROJECT_ID trong .env")
-
     contents, gem_tools = _to_gemini(messages, tools)
     sys_text = "\n\n".join(x for x in (system.get("stable"), system.get("volatile")) if x)
 
@@ -311,6 +351,8 @@ async def _complete_gemini(
     if gem_tools:
         body["tools"] = gem_tools
 
+    url, headers = dich or await _gemini_dich(model)
+
     started = time.perf_counter()
     # Mã tạm thời -> thử lại có giãn cách, thay vì để cả lượt trả lời hỏng.
     #
@@ -326,11 +368,8 @@ async def _complete_gemini(
     async with httpx.AsyncClient(timeout=120.0) as client:
         for attempt in range(MAX_RETRIES):
             r = await client.post(
-                _gemini_url(model),
-                headers={
-                    "Authorization": f"Bearer {await _token()}",
-                    "Content-Type": "application/json",
-                },
+                url,
+                headers=headers,
                 json=body,
             )
             if r.status_code < 400:
@@ -383,24 +422,42 @@ async def _complete_gemini(
 #  Claude (Vertex hoặc API trực tiếp)
 # ===============================================================
 
-@lru_cache
-def _anthropic_client():
-    if provider() == "anthropic":
-        from anthropic import Anthropic
+_ANTHROPIC_CACHE: dict[tuple, Any] = {}
 
-        if not settings.anthropic_api_key:
+
+def xoa_cache_client() -> None:
+    """Gọi khi khoá đổi. Giữ client cũ là chạy khoá cũ sau khi đã báo 'đã lưu'."""
+    _ANTHROPIC_CACHE.clear()
+
+
+def _anthropic_client(*, provider_name: str | None = None, api_key: str = ""):
+    from agent import cau_hinh_dong
+
+    p = (provider_name or provider()).strip().lower()
+    if p == "anthropic":
+        key = api_key or cau_hinh_dong.lay("ANTHROPIC_API_KEY")
+        if not key:
             raise RuntimeError(
-                "LLM_PROVIDER=anthropic nhưng thiếu ANTHROPIC_API_KEY trong .env"
+                "LLM_PROVIDER=anthropic nhưng thiếu ANTHROPIC_API_KEY. Nhập ở "
+                "dashboard → Cấu hình → Cài đặt API, hoặc đặt trong .env"
             )
-        return Anthropic(api_key=settings.anthropic_api_key)
+        khoa_cache = ("anthropic", key)
+        if khoa_cache not in _ANTHROPIC_CACHE:
+            from anthropic import Anthropic
+
+            _ANTHROPIC_CACHE[khoa_cache] = Anthropic(api_key=key)
+        return _ANTHROPIC_CACHE[khoa_cache]
 
     from anthropic import AnthropicVertex
 
     if not settings.gcp_project_id or settings.gcp_project_id.startswith("your-"):
         raise RuntimeError("Chưa đặt GCP_PROJECT_ID trong .env")
-    return AnthropicVertex(
-        project_id=settings.gcp_project_id, region=settings.gcp_region
-    )
+    khoa_cache = ("vertex", settings.gcp_project_id, settings.gcp_region)
+    if khoa_cache not in _ANTHROPIC_CACHE:
+        _ANTHROPIC_CACHE[khoa_cache] = AnthropicVertex(
+            project_id=settings.gcp_project_id, region=settings.gcp_region
+        )
+    return _ANTHROPIC_CACHE[khoa_cache]
 
 
 def _to_anthropic(messages: list[dict]) -> list[dict]:
@@ -443,7 +500,7 @@ def _to_anthropic(messages: list[dict]) -> list[dict]:
 
 async def _complete_claude(
     *, system: dict, messages: list[dict], model: str, max_tokens: int,
-    tools: list[dict] | None, effort: str,
+    tools: list[dict] | None, effort: str, client=None,
 ) -> LLMResult:
     # Vertex KHÔNG có automatic prompt caching -> đặt cache_control thủ công
     # lên khối ổn định; ngữ cảnh RAG biến động nằm SAU điểm cache.
@@ -468,7 +525,7 @@ async def _complete_claude(
         kwargs["tools"] = tools
 
     started = time.perf_counter()
-    resp = _anthropic_client().messages.create(**kwargs)
+    resp = (client or _anthropic_client()).messages.create(**kwargs)
 
     text_parts, tool_calls = [], []
     for block in resp.content:
@@ -515,7 +572,7 @@ async def complete(
     p = provider()
     model = model or settings.model_chat
 
-    if p == "gemini":
+    if p in ("gemini", "gemini_api"):
         return await _complete_gemini(
             system=system, messages=messages, model=model,
             max_tokens=max_tokens, tools=tools, effort=effort,
@@ -526,5 +583,49 @@ async def complete(
             max_tokens=max_tokens, tools=tools, effort=effort,
         )
     raise RuntimeError(
-        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: gemini | vertex | anthropic."
+        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: gemini_api | gemini | vertex | anthropic."
     )
+
+
+async def kiem_khoa(
+    *, provider_name: str, api_key: str = "", model: str = "", project: str = "",
+    timeout: float = 45.0,
+) -> tuple[bool, str, int]:
+    """
+    Gọi một câu 8 token bằng ĐÚNG tham số truyền vào, không đụng cấu hình
+    toàn cục. Đây là đường duy nhất để kiểm một khoá trước khi lưu — và
+    cũng là đường `suc_khoe` dùng, để không có hai bản kiểm lệch nhau.
+    """
+    from agent import cau_hinh_dong
+
+    p = provider_name.strip().lower()
+    model = model or cau_hinh_dong.lay("MODEL_CHEAP") or settings.model_cheap
+    system = cached_system("Trả lời đúng một chữ: ok")
+    messages = [{"role": "user", "content": "ok?"}]
+    t0 = time.perf_counter()
+    try:
+        if p in ("gemini", "gemini_api"):
+            dich = await _gemini_dich(model, provider_name=p, api_key=api_key, project=project)
+            r = await asyncio.wait_for(
+                _complete_gemini(system=system, messages=messages, model=model,
+                                 max_tokens=8, tools=None, effort="low", dich=dich),
+                timeout,
+            )
+        elif p in ("anthropic", "vertex"):
+            client = _anthropic_client(provider_name=p, api_key=api_key)
+            r = await asyncio.wait_for(
+                _complete_claude(system=system, messages=messages, model=model,
+                                 max_tokens=8, tools=None, effort="low", client=client),
+                timeout,
+            )
+        else:
+            return False, f"provider không hợp lệ: {provider_name!r}", 0
+    except asyncio.TimeoutError:
+        return False, f"quá {int(timeout)} giây không trả lời", int((time.perf_counter() - t0) * 1000)
+    except Exception as exc:  # noqa: BLE001
+        ms = int((time.perf_counter() - t0) * 1000)
+        loi = str(exc)
+        if "429" in loi or "exhaust" in loi.lower():
+            return False, "HẾT HẠN MỨC — khoá đúng nhưng nhà cung cấp từ chối phục vụ thêm", ms
+        return False, f"{type(exc).__name__}: {loi}"[:200], ms
+    return True, f"{r.model} · {r.latency_ms}ms", r.latency_ms

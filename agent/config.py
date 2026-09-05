@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # Cùng model, cùng giá. Đổi giá trị này là đổi đường đi, không đụng mã.
     llm_provider: str = "gemini"
     anthropic_api_key: str = ""
+    # Gemini qua Google AI Studio (provider gemini_api). Nhập được trên
+    # dashboard; ở đây chỉ là đường lui — xem agent/cau_hinh_dong.py.
+    gemini_api_key: str = ""
 
     # --- Vertex AI ---
     gcp_project_id: str = ""

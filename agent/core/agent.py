@@ -12,6 +12,7 @@ Ba cơ chế an toàn nằm ở đây, không nằm trong prompt:
 from __future__ import annotations
 
 import re
+import time
 from contextlib import suppress
 
 import uuid
@@ -71,7 +72,34 @@ class Reply:
     # — tool không biết mình đang chạy trên Zalo hay Chatwoot, và không nên
     # biết. Cùng cách `video_id` được xử lý.
     anh_can_gui: list[dict] = field(default_factory=list)
+    # Dấu vết cho phòng thử và bộ đo: agent ĐÃ LÀM GÌ, không chỉ nói gì.
+    # Mặc định rỗng để mọi chỗ dựng Reply hiện có không phải đổi.
+    cong_cu: list[dict] = field(default_factory=list)   # {ten, tham_so, ket_qua, ms, vong, thu_nghiem}
+    vong: list[dict] = field(default_factory=list)      # {cost_usd, tokens_in, tokens_out, latency_ms, so_cong_cu}
+    # Mã lớp lưới đã bắt. `escalate_reason` là câu cho người đọc và GIỮ
+    # NGUYÊN; mã này cho máy đọc, để dashboard không phải parse tiếng Việt.
+    luoi_bat: str | None = None
 
+
+_CAT_CHUOI = 400
+_CAT_DANH_SACH = 20
+
+
+def cat_ket_qua(out) -> object:
+    """
+    Bản cắt của kết quả công cụ để nhét vào Reply.
+
+    `tim_kien_thuc` trả 8 đoạn tài liệu, `goi_y_san_pham` trả cả danh mục.
+    Đưa nguyên vào phản hồi phòng thử là mỗi lượt vài trăm KB. Cắt ở đây,
+    một chỗ, thay vì để dashboard tự cắt.
+    """
+    if isinstance(out, str):
+        return out if len(out) <= _CAT_CHUOI else out[:_CAT_CHUOI] + "…"
+    if isinstance(out, list):
+        return [cat_ket_qua(x) for x in out[:_CAT_DANH_SACH]]
+    if isinstance(out, dict):
+        return {k: cat_ket_qua(v) for k, v in out.items()}
+    return out
 
 
 # ---------------------------------------------------------------
@@ -333,6 +361,7 @@ async def respond(
             text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
             escalate=True,
             escalate_reason=f"Vượt trần chi phí hội thoại ({spent:.4f} USD)",
+            luoi_bat="tran_hoi_thoai",
         )
 
     # CÙNG LỚP LƯỚI ẤY, PHẠM VI TOÀN CỤC.
@@ -355,6 +384,7 @@ async def respond(
             escalate_reason=(
                 f"Chạm trần chi phí ngày ({da_tieu:.2f}/{tran_ngay:.2f} USD)"
             ),
+            luoi_bat="tran_ngay",
         )
 
     # Quét prompt injection TRƯỚC khi tốn một lời gọi model nào. Thấy dấu
@@ -371,6 +401,7 @@ async def respond(
             escalate=True,
             escalate_reason="Tin nhắn có dấu hiệu can thiệp hệ thống: "
                             + ", ".join(dau_hieu),
+            luoi_bat="injection",
         )
 
     # ĐỌC: ══ CHẶNG 2 · DỰNG NGỮ CẢNH ═══════════════════════════════════
@@ -424,6 +455,11 @@ async def respond(
     video_id: str | None = None
     anh_can_gui: list[dict] = []
     final_text = ""
+    luoi_bat: str | None = None
+    cong_cu_da_goi: list[dict] = []
+    cac_vong: list[dict] = []
+    from agent.core import thu_nghiem
+    dang_thu = thu_nghiem.dang_thu.get()
 
     # Danh sách công cụ đọc MỘT LẦN mỗi lượt, không đọc lại mỗi vòng lặp.
     #
@@ -463,6 +499,11 @@ async def respond(
         tok_out += result.tokens_out
         cache_read += result.cache_read
         latency += result.latency_ms
+        cac_vong.append({
+            "cost_usd": result.cost_usd, "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out, "latency_ms": result.latency_ms,
+            "so_cong_cu": len(result.tool_calls),
+        })
 
         if not result.tool_calls:
             final_text = result.text
@@ -490,7 +531,15 @@ async def respond(
 
         tool_results: list[dict] = []
         for call in result.tool_calls:
+            bat_dau_tool = time.perf_counter()
             out = await tools.run_tool(call["name"], call["input"], conversation_id)
+            cong_cu_da_goi.append({
+                "ten": call["name"], "tham_so": call["input"],
+                "ket_qua": cat_ket_qua(out),
+                "ms": int((time.perf_counter() - bat_dau_tool) * 1000),
+                "vong": len(cac_vong),
+                "thu_nghiem": bool(dang_thu and isinstance(out, dict) and out.get("thu_nghiem")),
+            })
 
             # Hồ sơ dựng từ việc ĐÃ XẢY RA, không từ một lượt model riêng đi
             # "trích xuất thông tin khách hàng". Cách này không tốn thêm
@@ -529,6 +578,7 @@ async def respond(
             if call["name"] == "chuyen_nhan_vien":
                 escalate = True
                 escalate_reason = call["input"].get("ly_do", "")
+                luoi_bat = luoi_bat or "cong_cu_chuyen_nguoi"
 
             # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
             # nhớ gọi thêm `chuyen_nhan_vien`.
@@ -546,13 +596,15 @@ async def respond(
                 escalate_reason = escalate_reason or (
                     f"Công cụ {call['name']} yêu cầu người xử lý"
                 )
+                luoi_bat = luoi_bat or "cong_cu_yeu_cau"
 
             if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
                 anh_can_gui.append(
                     {"duong_dan": out["duong_dan"], "ten": out["ten"]}
                 )
 
-            if call["name"] == "tao_video" and out.get("da_nhan"):
+            # Trong phòng thử KHÔNG đặt video thật — tool đã mô phỏng, đây là lớp thứ hai.
+            if call["name"] == "tao_video" and out.get("da_nhan") and not dang_thu:
                 from agent.video import pipeline
 
                 video_id = await pipeline.request_video(
@@ -572,6 +624,7 @@ async def respond(
         final_text = final_text or "Em cần kiểm tra thêm, chuyển anh/chị cho nhân viên nhé."
         escalate = True
         escalate_reason = "Vượt số vòng gọi công cụ cho phép"
+        luoi_bat = luoi_bat or "het_vong"
 
     # ĐỌC: ══ CHẶNG 5 · BỐN LƯỚI CUỐI ═════════════════════════════════════
     # ĐỌC: Đây là hiện thực của nguyên tắc số một của dự án:
@@ -591,6 +644,7 @@ async def respond(
     if confidence < settings.confidence_floor and not co_du_lieu:
         escalate = True
         escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
+        luoi_bat = luoi_bat or "tin_cay_thap"
 
     # Chốt chặn cứng: luật tuân thủ không được phụ thuộc vào việc model
     # có nhớ gọi tool hay không.
@@ -599,6 +653,7 @@ async def respond(
         if buoc:
             escalate = True
             escalate_reason = buoc
+            luoi_bat = luoi_bat or "bat_buoc_chuyen"
 
     # LƯỚI AN TOÀN: model đôi khi VIẾT rằng sẽ chuyển người nhưng KHÔNG gọi
     # tool. Khách đọc thấy lời hứa, còn hội thoại thì không bao giờ tới tay
@@ -606,6 +661,7 @@ async def respond(
     if not escalate and _promises_handoff(final_text):
         escalate = True
         escalate_reason = "Agent nói sẽ chuyển người nhưng không gọi công cụ"
+        luoi_bat = luoi_bat or "hua_khong_goi"
 
     # LƯỚI THỨ SÁU: chặn chẩn đoán y tế trong CHÍNH câu trả lời.
     #
@@ -617,11 +673,17 @@ async def respond(
         if chan_doan:
             escalate = True
             escalate_reason = chan_doan
+            luoi_bat = luoi_bat or "chan_doan_y_te"
 
     # Cộng vào bộ đếm ngân sách ngày NGAY, không đợi lần làm mới đệm kế
     # tiếp. Đệm sống 30 giây, và ở đúng lúc đang chạm trần thì 30 giây tiêu
     # mù là quãng nguy hiểm nhất.
-    ngan_sach.ghi_nhan(total_cost)
+    # Phòng thử tiêu tiền thật nhưng không phải tiền của khách: vào sổ riêng
+    # để một buổi thử không đẩy hệ thống chạm trần và chuyển mọi khách sang người.
+    if dang_thu:
+        thu_nghiem.ghi_nhan(total_cost)
+    else:
+        ngan_sach.ghi_nhan(total_cost)
 
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",
@@ -638,4 +700,5 @@ async def respond(
         latency_ms=latency,
         model=settings.model_chat,
         video_id=video_id,
+        luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
     )

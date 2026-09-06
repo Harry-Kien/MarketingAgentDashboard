@@ -130,6 +130,51 @@ def test_sang_ngay_moi_thi_ve_0(monkeypatch):
     assert thu_nghiem.da_tieu_hom_nay() == 0.0
 
 
+def test_mo_phong_khong_nhan_khop_yeu():
+    """
+    Mô phỏng phải dùng cùng một ngưỡng khớp như bản thật: < 0.5 là
+    không chấp nhận. Trước: `diem <= 0` (bất kỳ điểm dương nào cũng được);
+    sau: `diem < 0.5` (ít nhất 50% từ phải khớp).
+    """
+    # Kiểm tính trung thực của test: `_score` trên từ này phải thực sự < 0.5
+    sp = {"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000}
+    # "mặt" = một từ không khớp gì ngoài "mặt" → 1/1 = 1.0 (quá cao!)
+    # Dùng "nhẹ" thay: "nhẹ" khớp với "nhẹ" (nhưng là một phần của "dịu nhẹ"
+    # hay là một từ riêng?) — thử xem, nếu vẫn >= 0.5 thì chọn query khác.
+    test_queries = ["nhẹ", "kem", "chống nắng"]
+    chosen_q = None
+    for q in test_queries:
+        score = tools._score(q, sp)
+        if score < 0.5:
+            chosen_q = q
+            break
+    assert chosen_q is not None, f"Không tìm được từ khiếp < 0.5; các từ {test_queries} có score >= 0.5"
+
+    kq = chay(thu_nghiem.mo_phong("tao_don_hang", {
+        "khach_da_xac_nhan": True, "khach_ten": "A", "khach_sdt": "0901234567",
+        "khach_dia_chi": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+        "items": [{"ten_san_pham": chosen_q, "so_luong": 1}],
+    }, [sp]))
+    assert kq["tao_duoc"] is False
+    assert "không tìm thấy" in kq["ly_do"].lower()
+
+
+def test_mo_phong_bat_sdt_va_dia_chi_nhu_that():
+    """
+    Mô phỏng phải kiểm phone >= 9 chữ số và address >= 12 ký tự,
+    đúng như bản thật tại tools.py dòng 960, 962.
+    """
+    # Sdt quá ngắn: "123" = 3 chữ số (< 9)
+    kq = chay(thu_nghiem.mo_phong("tao_don_hang", {
+        "khach_da_xac_nhan": True, "khach_ten": "A", "khach_sdt": "123",
+        "khach_dia_chi": "A",
+        "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 1}],
+    }, [{"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000}]))
+    assert kq["tao_duoc"] is False
+    assert "số điện thoại hợp lệ" in kq.get("thieu_thong_tin", [])
+    assert "địa chỉ đầy đủ" in kq.get("thieu_thong_tin", [])
+
+
 def test_ast_moi_cong_cu_ghi_deu_di_qua_chot_sandbox():
     """
     Thêm một công cụ ghi mới mà quên đưa vào CO_TAC_DUNG_PHU thì phòng thử

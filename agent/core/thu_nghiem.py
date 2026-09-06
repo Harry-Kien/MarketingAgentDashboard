@@ -92,13 +92,23 @@ def _mo_phong_don_hang(args: dict, products: list[dict]) -> dict:
                 "ly_do": "Khách chưa xác nhận. Hãy tóm tắt đơn đầy đủ rồi hỏi "
                          "khách xác nhận trước, chưa được lên đơn.",
                 "ghi_chu": "ĐANG THỬ: chốt xác nhận vẫn áp dụng như thật."}
+
+    # Chốt 2: đủ trường bắt buộc, không tự điền (phải khớp bản thật tại tools.py:953-963)
     thieu = [nhan for khoa, nhan in (("khach_ten", "họ tên"), ("khach_sdt", "số điện thoại"),
                                      ("khach_dia_chi", "địa chỉ"))
              if not str(args.get(khoa) or "").strip()]
+    # Kiểm phone: ít nhất 9 chữ số (bỏ ký tự không phải chữ số)
+    sdt = "".join(ch for ch in str(args.get("khach_sdt") or "") if ch.isdigit())
+    if len(sdt) < 9:
+        thieu.append("số điện thoại hợp lệ")
+    # Kiểm address: ít nhất 12 ký tự sau khi loại bỏ khoảng trắng
+    if len(str(args.get("khach_dia_chi") or "").strip()) < 12:
+        thieu.append("địa chỉ đầy đủ")
     if thieu:
         return {"thu_nghiem": True, "tao_duoc": False, "thieu_thong_tin": thieu,
                 "ly_do": "Thiếu thông tin giao hàng. Hỏi khách cho đủ, không tự điền.",
                 "ghi_chu": "ĐANG THỬ: chốt đủ thông tin vẫn áp dụng như thật."}
+
     items = args.get("items") or []
     if not items:
         return {"thu_nghiem": True, "tao_duoc": False, "ly_do": "Chưa có sản phẩm nào trong đơn.",
@@ -110,7 +120,10 @@ def _mo_phong_don_hang(args: dict, products: list[dict]) -> dict:
         q = str(it.get("ten_san_pham") or it.get("ma") or "")
         diem, sp = max(((_score(q, sp), sp) for sp in products), key=lambda x: x[0],
                        default=(0, None))
-        if sp is None or diem <= 0:
+        # Phòng thử phải dùng cùng ngưỡng như bản thật (tools.py:982):
+        # < 0.5 = không chấp nhận; spec đòi "mã sai trả đúng lỗi như bản thật",
+        # và ngưỡng lệch là phòng thử gắn nhầm hàng vào đơn giả.
+        if sp is None or diem < 0.5:
             return {"thu_nghiem": True, "tao_duoc": False,
                     "ly_do": f"Không tìm thấy sản phẩm {q!r} trong danh mục.",
                     "ghi_chu": "ĐANG THỬ: hỏi lại khách tên sản phẩm chính xác."}

@@ -871,6 +871,7 @@ class RuntimeBody(BaseModel):
     confidence_floor: float | None = None
     max_cost_per_conversation: float | None = None
     tran_chi_phi_ngay_usd: float | None = None
+    phong_thu_tran_ngay_usd: float | None = None
 
 
 @router.post("/runtime")
@@ -1097,6 +1098,16 @@ _MO_TA_CAU_HINH = {
         "y_nghia": "Vượt trần thì chuyển người, chưa tốn thêm lời gọi nào.",
         "tat_thi": "Hạ quá thấp thì hội thoại dài bị cắt giữa chừng và "
                    "chuyển người dù agent đang trả lời tốt.",
+    },
+    "phong_thu_tran_ngay_usd": {
+        "nhan": "Trần chi phí phòng thử mỗi NGÀY",
+        "kieu": "so",
+        "min": 0.0, "max": 50.0, "buoc": 0.5,
+        "don_vi": "USD · 0 = tắt",
+        "y_nghia": "Chi phí các lượt nhắn thử trên màn Phòng thử. Sổ riêng, "
+                   "không cộng vào trần chi phí ngày của khách thật.",
+        "tat_thi": "Đặt 0 là một buổi thử có thể tiêu không giới hạn — vẫn bị "
+                   "trần ngày chung chặn, nhưng lúc đó là MỌI khách bị chuyển người.",
     },
 }
 

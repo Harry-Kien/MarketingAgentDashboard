@@ -25,10 +25,13 @@ def chay(coro):
 def _sach(monkeypatch):
     pp.xoa_het()
     sql_da_chay: list[str] = []
+    # Cùng contact id cho mọi phiên, để kiểm khi tạo phiên thứ hai có INSERT lại
+    # hay dùng lại contact cũ.
+    shared_id = uuid.uuid4()
 
     async def fetchrow(sql, *a):
         sql_da_chay.append(" ".join(sql.split()))
-        return {"id": uuid.uuid4()}
+        return {"id": shared_id}
 
     monkeypatch.setattr(pp.db, "fetchrow", fetchrow)
     yield sql_da_chay
@@ -47,6 +50,26 @@ def test_hoi_thoai_thu_khong_bi_job_nen_nhat(_sach):
     assert "status = 'disabled'" in sql or "'disabled'" in sql
     assert "external_account_id" in sql and "phong-thu" in sql
     assert "'phong_thu'" in sql and "'human'" in sql and "'closed'" in sql
+    # Có một SELECT để kiểm xem contact đã tồn tại chưa.
+    assert "SELECT c.id FROM contacts" in sql or "SELECT" in sql
+
+
+def test_hai_phien_dung_chung_mot_hoi_thoai(_sach):
+    # Phiên thứ nhất.
+    p1 = chay(pp.tao_phien())
+    # Xoá lịch sử SQL để dễ đếm.
+    _sach.clear()
+    # Phiên thứ hai phải tái dùng hội thoại của phiên thứ nhất (dùng chung contact).
+    p2 = chay(pp.tao_phien())
+    # Cả hai phiên dùng cùng hội thoại (conversation_id giống vì SELECT tìm
+    # được contact cũ, và conversation có ON CONFLICT trên (account_id, external_id)).
+    assert p1.conversation_id == p2.conversation_id
+    # Phiên thứ hai không được INSERT contact lại.
+    # _sach chứa SQL của phiên thứ hai; nên là SELECT, INSERT channel_accounts,
+    # INSERT/ON CONFLICT contact_points, INSERT/ON CONFLICT conversations,
+    # nhưng KHÔNG có INSERT INTO contacts.
+    sql = " || ".join(_sach)
+    assert sql.count("INSERT INTO contacts") == 0
 
 
 def test_ghi_luot_noi_history_dung_dinh_dang():

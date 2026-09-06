@@ -66,6 +66,16 @@ def _don() -> None:
 
 
 async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
+    """
+    Tạo hoặc lấy hội thoại giả cho phòng thử.
+
+    VÌ SAO MỘT HỘI THOẠI CHO TẤT CẢ PHIÊN
+    -----------------------------------
+    Lịch sử lượt nằm trong RAM theo phiên (từng phiên độc lập). Hội thoại
+    giả chỉ để `respond()` đọc `cost_usd` và công cụ tra đơn lọc theo
+    `conversation_id`. Mỗi phiên tạo một hội thoại mới là tích luỹ rác
+    trong CSDL — một dòng cho mọi phiên là cách duy nhất không rác.
+    """
     tk = await db.fetchrow(
         """
         INSERT INTO channel_accounts (channel, display_name, external_account_id,
@@ -76,9 +86,17 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
         """
     )
     account_id = tk["id"]
+    # Kiểm xem đã có contact cho tài khoản này chưa, để tái dùng.
     lien_he = await db.fetchrow(
-        "INSERT INTO contacts (display_name) VALUES ($1) RETURNING id", "Khách thử"
+        "SELECT c.id FROM contacts c JOIN contact_points p ON p.contact_id = c.id "
+        "WHERE p.channel_account_id = $1 AND p.external_user_id = 'phong-thu' LIMIT 1",
+        account_id,
     )
+    if lien_he is None:
+        lien_he = await db.fetchrow(
+            "INSERT INTO contacts (display_name) VALUES ($1) RETURNING id", "Khách thử"
+        )
+    contact_id = lien_he["id"]
     diem = await db.fetchrow(
         """
         INSERT INTO contact_points (contact_id, channel_account_id, external_user_id)
@@ -86,7 +104,7 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
         ON CONFLICT (channel_account_id, external_user_id) DO UPDATE SET last_seen = now()
         RETURNING id
         """,
-        lien_he["id"], account_id, f"phong-thu:{phien_id}",
+        contact_id, account_id, "phong-thu",
     )
     conv = await db.fetchrow(
         """
@@ -97,7 +115,7 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
         ON CONFLICT (account_id, external_id) DO UPDATE SET updated_at = now()
         RETURNING id
         """,
-        account_id, lien_he["id"], diem["id"], f"phong-thu:{phien_id}",
+        account_id, contact_id, diem["id"], "phong-thu",
     )
     return conv["id"]
 

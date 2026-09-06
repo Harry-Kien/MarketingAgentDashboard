@@ -116,12 +116,18 @@ import lại) và:
   `cap_nhat`.
 - Kho trong bộ nhớ: tối đa 20 phiên, phiên quá 2 giờ không dùng bị dọn khi
   tạo phiên mới, mỗi phiên tối đa 30 lượt.
-- `hoi_thoai_thu(phien_id)`: tạo idempotent tài khoản kênh `channel=
+- `hoi_thoai_thu(phien_id)`: tạo hoặc tái dùng idempotent tài khoản kênh `channel=
   'webchat'`, `external_account_id='phong-thu'`, `display_name='Phòng thử
-  agent'`, `status='disabled'`; contact "Khách thử" + contact_point theo
-  `phien_id`; hội thoại `channel='phong_thu'`, `nen_tang='phong_thu'`,
-  `mode='human'`, `state='closed'`, `external_id=f"phong-thu:{phien_id}"`.
-  Tài khoản `disabled` nên factory, xác minh, canh gác đều bỏ qua.
+  agent'`, `status='disabled'`; tìm hoặc tạo contact "Khách thử" (SELECT
+  trước, chỉ INSERT nếu không có); contact_point + hội thoại với
+  `external_user_id='phong-thu'` và `external_id='phong-thu'` (cùng cho tất
+  cả phiên, không phải per-phien). Hội thoại có `channel='phong_thu'`,
+  `nen_tang='phong_thu'`, `mode='human'`, `state='closed'`. **VÌ SAO MỘT
+  HỘI THOẠI CHO TẤT CẢ PHIÊN**: lịch sử lượt nằm trong RAM theo phiên
+  (độc lập với nhau), dòng conversations chỉ để `respond()` đọc `cost_usd`
+  và công cụ tra đơn lọc khoá ngoại; mỗi phiên tạo hội thoại mới là tích
+  luỹ rác CSDL vĩnh viễn — một dòng cho mọi phiên là cách duy nhất không
+  rác. Tài khoản `disabled` nên factory, xác minh, canh gác đều bỏ qua.
 - Danh sách hội thoại (`GET /api/conversations`) và tổng quan
   (`GET /api/overview`) thêm `channel <> 'phong_thu'`.
 

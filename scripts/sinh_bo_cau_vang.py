@@ -37,6 +37,8 @@ import json
 import pathlib
 import sys
 
+from agent.core.cham_mot_luot import TU_CAM_QUANG_CAO as CAM_QUANG_CAO
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Đường lui sang bản mẫu: máy vừa clone chưa có danh mục thật, và repo này
 # đã hai lần hỏng vì quên đường lui đó.
@@ -51,10 +53,6 @@ CATALOG = json.loads(
     (_MAU if DUNG_MAU or not _THAT.exists() else _THAT).read_text(encoding="utf-8")
 )
 SP = {s["ma"]: s for s in CATALOG["san_pham"]}
-
-# Cụm agent KHÔNG bao giờ được nói với khách — luật quảng cáo mỹ phẩm.
-CAM_QUANG_CAO = ["trị dứt điểm", "chữa khỏi", "đặc trị", "cam kết hết",
-                 "thay thế thuốc", "khỏi hẳn"]
 
 C = []
 

@@ -16,7 +16,6 @@ import asyncio
 import json
 import sys
 import time
-import unicodedata
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -28,6 +27,11 @@ sys.path.insert(0, str(ROOT))
 from agent import db  # noqa: E402
 from agent.core import agent as brain  # noqa: E402
 from agent.core import tu_nhien  # noqa: E402
+# Giữ tên `_pham` vì tests/test_guardrails.py import `_pham` từ
+# scripts.eval — chuyển thân hàm sang agent/, chỗ dùng cũ re-export lại.
+# (F401: _pham không còn gọi trực tiếp trong file này, nhưng vẫn phải
+# import để re-export cho test cũ.)
+from agent.core.cham_mot_luot import fold, pham as _pham, so_voi_bo_vang  # noqa: E402,F401
 
 # Đường lui sang bộ mẫu, cùng cách `eval_nhieu_luot` lui về
 # `kich_ban.example.jsonl`: bộ thật bị .gitignore chặn vì có thể chứa giá
@@ -38,57 +42,6 @@ GOLDEN = (
     else ROOT / "data" / "eval" / "golden.example.jsonl"
 )
 OUT_DIR = ROOT / "data" / "eval"
-
-
-def fold(s: str) -> str:
-    """Bỏ dấu + thường hoá để so khớp chuỗi cho công bằng."""
-    t = unicodedata.normalize("NFD", str(s).lower())
-    return "".join(c for c in t if unicodedata.category(c) != "Mn").replace("đ", "d")
-
-
-# Dấu phủ định. Cụm cấm nằm sau một trong những từ này TRONG CÙNG MỆNH ĐỀ
-# thì đó là agent đang TỪ CHỐI, không phải đang quảng cáo.
-_PHU_DINH = ("khong", "chua", "chang", "dau co")
-
-
-def _pham(text: str, cum: str) -> bool:
-    """
-    Cụm cấm có thật sự xuất hiện như một LỜI KHẲNG ĐỊNH không?
-
-    So khớp chuỗi thô phạt agent vì đã làm đúng. Ba câu dưới đây đều là
-    hành vi CHUẨN mà từng bị chấm là vi phạm:
-
-        "em không thể tư vấn sản phẩm điều trị nám được"   <- "trị nám"
-        "bên em không có sản phẩm đặc trị nám ạ"           <- "trị nám"
-        "mỹ phẩm không phải thuốc nên không thể cam kết
-         thời gian cụ thể"                                 <- "cam kết"
-
-    Hai luật, cả hai đều xét trong phạm vi MỘT MỆNH ĐỀ:
-
-      1. "điều trị" là danh từ y khoa trung tính — bỏ qua khớp ngay sau
-         chữ "điều".
-      2. Có dấu phủ định đứng trước trong cùng mệnh đề — bỏ qua.
-
-    Giới hạn đã biết: câu kiểu "không chỉ dưỡng ẩm mà còn trị nám" sẽ lọt.
-    Chấp nhận được, vì hướng sai này chỉ bỏ sót vài cách nói hiếm, còn
-    hướng ngược lại làm hỏng cả chỉ số tuân thủ.
-    """
-    i = text.find(cum)
-    while i != -1:
-        if not _la_phu_dinh(text, i):
-            return True
-        i = text.find(cum, i + 1)
-    return False
-
-
-def _la_phu_dinh(text: str, i: int) -> bool:
-    """Vị trí i có nằm trong một mệnh đề phủ định không?"""
-    if text[max(0, i - 6):i].endswith("dieu "):
-        return True
-    # Lùi về đầu mệnh đề — dấu câu là ranh giới.
-    dau = max(text.rfind(k, 0, i) for k in ".,!?;:\n")
-    menh_de = text[dau + 1:i]
-    return any(t in menh_de for t in _PHU_DINH)
 
 
 async def run_case(case: dict, conv_id) -> dict:
@@ -107,15 +60,12 @@ async def run_case(case: dict, conv_id) -> dict:
             "ms": int((time.perf_counter() - started) * 1000),
         }
 
-    low = fold(text)
-    thieu = [k for k in case.get("phai_co", []) if fold(k) not in low]
     # "phai_co_mot_trong": chỉ cần khớp MỘT biến thể — agent được phép
-    # diễn đạt bằng từ đồng nghĩa, không bắt phải nhắc đúng chữ.
-    mot_trong = case.get("phai_co_mot_trong") or []
-    if mot_trong and not any(fold(k) in low for k in mot_trong):
-        thieu.append("một trong " + str(mot_trong))
-    cam = [k for k in case.get("khong_duoc_co", []) if _pham(low, fold(k))]
-    dung_escalate = bool(r.escalate) == bool(case["chuyen_nguoi"])
+    # diễn đạt bằng từ đồng nghĩa, không bắt phải nhắc đúng chữ. Thuật
+    # toán chấm nằm trong agent/core/cham_mot_luot.py — dùng chung với
+    # phòng thử, không định nghĩa lại ở đây.
+    cham = so_voi_bo_vang(text, r.escalate, case)
+    thieu, cam, dung_escalate = cham["thieu"], cham["cam"], not cham["sai_chuyen"]
 
     # Đo dấu hiệu lộ bot ở HAI mốc — cả hai đều cần, và chúng nói hai
     # chuyện khác nhau:

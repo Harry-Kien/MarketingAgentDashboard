@@ -609,6 +609,20 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             ),
         }
 
+    # ---------- CHẾ ĐỘ THỬ: mô phỏng công cụ ghi ----------
+    #
+    # Phòng thử trên dashboard gọi thẳng `respond()`. Không có chốt này thì
+    # mỗi câu thử "em đặt 2 chai" là một đơn thật trong Postgres và ERP.
+    # Đặt TRƯỚC nhánh plugin và mọi nhánh có sẵn để không nhánh nào qua mặt.
+    from agent.core import thu_nghiem
+
+    if thu_nghiem.dang_thu.get() and name in thu_nghiem.CO_TAC_DUNG_PHU:
+        try:
+            catalog = await _catalog_song()
+        except Exception:  # noqa: BLE001
+            catalog = _catalog()
+        return await thu_nghiem.mo_phong(name, args, catalog.get("san_pham", []))
+
     # ---------- plugin do người vận hành cấu hình ----------
     #
     # Đặt TRƯỚC mọi nhánh có sẵn: `doc_ban_mo_ta` đã chặn plugin trùng tên

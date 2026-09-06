@@ -322,6 +322,10 @@ class Settings(BaseSettings):
     # 25 USD/ngày là khoảng 1.000 lượt trả lời — rộng rãi cho một cửa
     # hàng, và vẫn là một con số hữu hạn khi có sự cố lúc 3 giờ sáng.
     tran_chi_phi_ngay_usd: float = 25.0
+    # Trần chi phí riêng cho PHÒNG THỬ agent trên dashboard, USD/ngày.
+    # Sổ riêng với `tran_chi_phi_ngay_usd`: một buổi thử không được đẩy hệ
+    # thống chạm trần và chuyển mọi khách thật sang người.
+    phong_thu_tran_ngay_usd: float = 1.0
     # Đơn từ mức này trở lên KHÔNG được agent tự chốt — vào hàng chờ duyệt.
     nguong_tu_chot_vnd: int = 1_000_000
 

@@ -40,6 +40,7 @@ KHOA_BEN_VUNG = (
     "confidence_floor",
     "max_cost_per_conversation",
     "tran_chi_phi_ngay_usd",
+    "phong_thu_tran_ngay_usd",
 )
 
 STATE: dict[str, object] = {
@@ -49,6 +50,7 @@ STATE: dict[str, object] = {
     "confidence_floor": settings.confidence_floor,
     "max_cost_per_conversation": settings.max_cost_per_conversation,
     "tran_chi_phi_ngay_usd": settings.tran_chi_phi_ngay_usd,
+    "phong_thu_tran_ngay_usd": settings.phong_thu_tran_ngay_usd,
 }
 
 # Giá trị mặc định, chụp lại TRƯỚC khi nạp từ CSDL. Dashboard hiện nó cạnh

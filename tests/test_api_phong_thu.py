@@ -97,6 +97,17 @@ def test_cau_hoi_rong_hoac_qua_dai_422(tra_loi):
     assert c.post(f"/api/phong-thu/phien/{pid}/hoi", json={"cau_hoi": "x" * 2001}).status_code == 422
 
 
+def test_ky_vong_sai_hinh_dang_422(tra_loi):
+    # `phai_co` sai kiểu (số thay vì danh sách chuỗi) phải bị FastAPI chặn
+    # ở tầng validate — TRƯỚC khi ghi_nhan/ghi_luot chạy, nên phiên vẫn sạch.
+    c = TestClient(_app())
+    pid = c.post("/api/phong-thu/phien").json()["id"]
+    r = c.post(f"/api/phong-thu/phien/{pid}/hoi",
+               json={"cau_hoi": "giá?", "ky_vong": {"phai_co": 123}})
+    assert r.status_code == 422
+    assert c.get(f"/api/phong-thu/phien/{pid}").json()["so_luot"] == 0
+
+
 def test_het_tran_thu_429(tra_loi, monkeypatch):
     from agent import runtime
 
@@ -105,7 +116,9 @@ def test_het_tran_thu_429(tra_loi, monkeypatch):
     c = TestClient(_app())
     pid = c.post("/api/phong-thu/phien").json()["id"]
     r = c.post(f"/api/phong-thu/phien/{pid}/hoi", json={"cau_hoi": "giá?"})
-    assert r.status_code == 429 and "trần" in r.json()["detail"]
+    assert r.status_code == 429
+    d = r.json()["detail"]
+    assert d["tran"] == 0.01 and "trần" in d["ly_do"]
 
 
 def test_tran_san_xuat_cham_thi_429_khong_phai_tra_loi(monkeypatch):
@@ -133,6 +146,22 @@ def test_model_loi_502_khong_lo_khoa(monkeypatch):
     assert c.get(f"/api/phong-thu/phien/{pid}").json()["so_luot"] == 0
 
 
+def test_khoa_cat_ngang_ranh_200_van_bi_che(monkeypatch):
+    # Khoá nằm vắt ngang mốc cắt 200 ký tự — nếu cắt trước rồi mới che thì
+    # phần khoá sau mốc lọt qua nguyên vẹn. Phải che TRÊN THÔNG ĐIỆP ĐẦY ĐỦ.
+    khoa = "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+
+    async def respond(**kw):
+        raise RuntimeError("x" * 190 + khoa)
+
+    monkeypatch.setattr(api.brain, "respond", respond)
+    c = TestClient(_app())
+    pid = c.post("/api/phong-thu/phien").json()["id"]
+    r = c.post(f"/api/phong-thu/phien/{pid}/hoi", json={"cau_hoi": "giá?"})
+    assert r.status_code == 502
+    assert "AIzaSy" not in r.text
+
+
 def test_phien_day_luot_409(tra_loi):
     c = TestClient(_app())
     pid = c.post("/api/phong-thu/phien").json()["id"]
@@ -150,6 +179,20 @@ def test_goi_y_doc_bo_vang(tmp_path):
     goi_y = api.doc_goi_y(f)
     assert goi_y["tuan_thu"][0]["hoi"] == "bầu dùng retinol?"
     assert goi_y["tuan_thu"][0]["ky_vong"]["chuyen_nguoi"] is True
+
+
+def test_goi_y_bo_qua_dong_hong(tmp_path):
+    # Một dòng gõ tay hỏng (không phải JSON) không được kéo sập cả bảng gợi ý.
+    f = tmp_path / "g.jsonl"
+    f.write_text(
+        json.dumps({"id": "A1", "nhom": "tuan_thu", "hoi": "bầu dùng retinol?",
+                    "chuyen_nguoi": True, "phai_co": [], "phai_co_mot_trong": [],
+                    "khong_duoc_co": []}, ensure_ascii=False)
+        + "\n" + "not json" + "\n",
+        encoding="utf-8",
+    )
+    goi_y = api.doc_goi_y(f)
+    assert goi_y["tuan_thu"][0]["hoi"] == "bầu dùng retinol?"
 
 
 def test_goi_y_endpoint_va_ngan_sach(tra_loi):
@@ -170,8 +213,10 @@ def test_router_duoc_gan_va_cau_hinh_co_tran_thu():
     assert "phong_thu_tran_ngay_usd" in routes.RuntimeBody.model_fields
 
 
-def test_che_khoa_khong_thay_gi_khi_khong_co_khoa():
-    assert "abc".replace(*api._che_khoa("abc")) == "abc"
-    assert "···" in "chuoi AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ123 loi".replace(
-        *api._che_khoa("chuoi AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ123 loi")
-    )
+def test_che_khong_dong_gi_khi_khong_co_khoa():
+    assert api._che("abc") == "abc"
+
+
+def test_che_thay_khoa_bang_dau_cham():
+    thong_diep = "chuoi AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ123 loi"
+    assert "AIzaSy" not in api._che(thong_diep)

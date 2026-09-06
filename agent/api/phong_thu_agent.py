@@ -8,6 +8,7 @@ không mang một câu trả lời chưa từng có.
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -35,9 +36,25 @@ NHAN_LUOI = {
 }
 
 
+class KyVong(BaseModel):
+    """
+    Hình dạng kỳ vọng cố định — validate TRƯỚC khi chạm ghi_nhan/ghi_luot.
+
+    Trước đây `ky_vong: dict` chấp nhận bất cứ gì, nên một giá trị sai kiểu
+    (vd. `phai_co: 123`) chỉ nổ bên trong `so_voi_bo_vang` — SAU KHI lượt đã
+    tốn tiền thật và đã ghi vào lịch sử phiên. Model này để FastAPI trả 422
+    trước khi hàm `hoi()` chạy dòng nào.
+    """
+
+    chuyen_nguoi: bool = False
+    phai_co: list[str] = Field(default_factory=list)
+    phai_co_mot_trong: list[str] = Field(default_factory=list)
+    khong_duoc_co: list[str] = Field(default_factory=list)
+
+
 class HoiBody(BaseModel):
     cau_hoi: str = Field(min_length=1, max_length=2000)
-    ky_vong: dict[str, Any] | None = None
+    ky_vong: KyVong | None = None
 
 
 def reply_thanh_dict(r: brain.Reply) -> dict:
@@ -58,7 +75,12 @@ def doc_goi_y(duong: Path) -> dict[str, list[dict]]:
     for dong in duong.read_text(encoding="utf-8").splitlines():
         if not dong.strip():
             continue
-        c = json.loads(dong)
+        try:
+            c = json.loads(dong)
+        except ValueError:
+            # Một dòng gõ tay hỏng không được kéo sập cả bảng gợi ý —
+            # bỏ qua dòng đó, các dòng còn lại vẫn hiện lên dashboard.
+            continue
         ra.setdefault(str(c.get("nhom", "khac")), []).append({
             "id": c.get("id", ""), "hoi": c.get("hoi", ""),
             "ky_vong": {k: c.get(k) for k in
@@ -103,8 +125,13 @@ async def hoi(pid: str, body: HoiBody, _: dict = Depends(bat_buoc_quan_tri)) -> 
         raise HTTPException(409, f"Phiên đã đủ {pp.TOI_DA_LUOT} lượt — tạo phiên mới")
     con, da_tieu, tran = thu_nghiem.con_tran()
     if not con:
-        raise HTTPException(429, f"Hết trần chi phí thử hôm nay ({da_tieu:.2f}/{tran:.2f} USD). "
-                                 "Nâng 'Trần chi phí phòng thử' trong Cấu hình nếu cần.")
+        # Cấu trúc hoá thay vì chuỗi — dashboard cần đọc `tran`/`da_tieu` để vẽ
+        # thanh ngân sách, không phải chỉ hiện lại câu chữ.
+        raise HTTPException(429, {
+            "ly_do": f"Hết trần chi phí thử hôm nay ({da_tieu:.2f}/{tran:.2f} USD). "
+                     "Nâng 'Trần chi phí phòng thử' trong Cấu hình nếu cần.",
+            "da_tieu": da_tieu, "tran": tran,
+        })
     bat_dau = time.perf_counter()
     try:
         with thu_nghiem.bat_thu():
@@ -113,8 +140,10 @@ async def hoi(pid: str, body: HoiBody, _: dict = Depends(bat_buoc_quan_tri)) -> 
                 question=cau_hoi, customer_ref="", channel="phong_thu",
             )
     except Exception as exc:  # noqa: BLE001 — lỗi model phải thành câu trả lời có mã, không phải 500
-        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:200]}".replace(
-            *_che_khoa(str(exc)))) from exc
+        # Che khoá TRƯỚC khi cắt: khoá dài ~39 ký tự có thể nằm vắt ngang mốc
+        # 200 — cắt trước rồi che thì phần khoá sau mốc cắt lọt qua nguyên vẹn.
+        thong_diep = _che(str(exc))
+        raise HTTPException(502, f"{type(exc).__name__}: {thong_diep[:200]}") from exc
     if reply.luoi_bat in ("tran_ngay",):
         # Không phải câu trả lời của agent — là hệ thống hết tiền. Trả 429
         # để dashboard không hiện nó như một lượt bình thường.
@@ -131,24 +160,26 @@ async def hoi(pid: str, body: HoiBody, _: dict = Depends(bat_buoc_quan_tri)) -> 
         ),
     }
     if body.ky_vong:
-        cham["so_voi_bo_vang"] = cham_mot_luot.so_voi_bo_vang(reply.text, reply.escalate, body.ky_vong)
+        cham["so_voi_bo_vang"] = cham_mot_luot.so_voi_bo_vang(
+            reply.text, reply.escalate, body.ky_vong.model_dump())
     d["cham"] = cham
     d["phien"] = {"id": p.id, "so_luot": len(p.luot), "chi_phi": p.chi_phi}
     return d
 
 
-def _che_khoa(thong_diep: str) -> tuple[str, str]:
+_RE_KHOA = re.compile(r"AIza[0-9A-Za-z_\-]{10,}|sk-ant-[0-9A-Za-z_\-]{10,}")
+
+
+def _che(thong_diep: str) -> str:
     """
-    Che chuỗi trông như khoá API trong thông điệp lỗi (AIza…, sk-ant-…).
+    Che MỌI chuỗi trông như khoá API trong thông điệp lỗi (AIza…, sk-ant-…).
 
     Nhà cung cấp hiếm khi echo khoá, nhưng phòng thử là màn hình người ta
-    chụp gửi nhau — một lần lộ là đủ. Trả về (cái cần thay, cái thay vào)
-    để dùng với str.replace; không thấy gì thì thay rỗng bằng rỗng.
+    chụp gửi nhau — một lần lộ là đủ. Dùng `re.sub` (không phải `re.search`
+    + `str.replace` một lần) vì thông điệp có thể chứa nhiều khoá, hoặc
+    cùng một khoá lặp lại nhiều lần trong traceback.
     """
-    import re
-
-    m = re.search(r"(AIza[0-9A-Za-z_\-]{10,}|sk-ant-[0-9A-Za-z_\-]{10,})", thong_diep)
-    return (m.group(1), "···") if m else ("", "")
+    return _RE_KHOA.sub("···", thong_diep)
 
 
 @router.get("/goi-y")

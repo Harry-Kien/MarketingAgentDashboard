@@ -36,7 +36,10 @@ async function api(path, options = {}) {
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch { /* giữ nguyên */ }
-    throw new Error(detail);
+    // 429 của Phòng thử trả detail là object ({ly_do, ...}), không phải chuỗi.
+    // Error() ép mọi message thành chuỗi bằng String() — không xử lý riêng thì
+    // toast hiện "[object Object]", người dùng không biết vì sao bị chặn.
+    throw new Error(typeof detail === "string" ? detail : (detail && detail.ly_do) || JSON.stringify(detail));
   }
   return res.status === 204 ? null : res.json();
 }
@@ -1952,6 +1955,7 @@ async function refresh() {
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
+    if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
     if (state.view === "cauhinh") { await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
@@ -3056,6 +3060,134 @@ $("#cauhinh-macdinh")?.addEventListener("click", async () => {
     toast("Đã quay về mặc định");
     await loadCauHinh();
   } catch (err) { toast(err.message, true); }
+});
+
+
+/* ---------------- phòng thử agent ---------------- */
+// Phiên sống ở máy chủ (RAM); ở đây chỉ giữ id, lượt đã hiện và kỳ vọng
+// của câu gợi ý vừa bấm. KHÔNG đưa vào vòng refresh() 6 giây: mỗi lượt
+// là một lời gọi model, và người dùng cần đọc kết quả yên ổn.
+state.phongThu = { phien: null, luot: [] };
+state.phongThuDaTai = false;
+let phongThuKyVong = null;
+
+const NHAN_LUOI_MAU = {
+  tran_hoi_thoai: "halt", tran_ngay: "halt", injection: "halt", tin_cay_thap: "assist",
+  bat_buoc_chuyen: "halt", hua_khong_goi: "assist", chan_doan_y_te: "halt",
+  cong_cu_chuyen_nguoi: "assist", cong_cu_yeu_cau: "assist", het_vong: "assist",
+};
+
+async function loadPhongThu() {
+  state.phongThuDaTai = true;
+  try {
+    if (!state.phongThu.phien) {
+      const p = await api("/phong-thu/phien", { method: "POST" });
+      state.phongThu.phien = p.id;
+    }
+    const goiY = await api("/phong-thu/goi-y");
+    $("#phongthu-goiy").innerHTML = Object.entries(goiY).map(([nhom, ds]) => `<div class="row">
+        <span class="row__flag"></span>
+        <span class="row__body"><span class="row__title">${esc(nhom)}</span>
+        <span class="row__sub">${ds.map((c) => `<button type="button" class="btn btn--sm" data-goiy="${esc(c.id)}"
+            data-hoi="${esc(c.hoi)}" data-kyvong='${esc(JSON.stringify(c.ky_vong))}'>${esc(c.hoi)}</button>`).join(" ")}</span></span>
+      </div>`).join("");
+    await veNganSachPhongThu();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function veNganSachPhongThu() {
+  const ns = await api("/phong-thu/ngan-sach");
+  $("#phongthu-ngansach").textContent = `Đã thử ${usd(ns.da_tieu)}${ns.tran > 0 ? " / trần " + usd(ns.tran) : ""}`;
+}
+
+function veChatPhongThu() {
+  const box = $("#phongthu-chat");
+  box.innerHTML = state.phongThu.luot.map((l) => `<div class="row">
+      <span class="row__flag"></span>
+      <span class="row__body"><span class="row__title">Khách</span><span class="row__sub">${esc(l.khach)}</span></span>
+    </div><div class="row">
+      <span class="row__flag row__flag--${esc(l.tone)}"></span>
+      <span class="row__body"><span class="row__title">Agent</span><span class="row__sub">${esc(l.agent)}</span>
+      <span class="row__sub">${usd(l.cost_usd)} · ${l.latency_ms} ms${l.escalate ? " · CHUYỂN NGƯỜI" : ""}</span></span>
+    </div>`).join("") || '<p class="empty">Chưa có lượt nào.</p>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function veBenTrongPhongThu(d) {
+  const luoi = d.luoi_bat
+    ? `<div class="row"><span class="row__flag row__flag--${esc(NHAN_LUOI_MAU[d.luoi_bat] || "assist")}"></span>
+        <span class="row__body"><span class="row__title">Lưới bắt: ${esc(d.nhan_luoi || d.luoi_bat)}</span>
+        <span class="row__sub">${esc(d.escalate_reason)}</span></span></div>`
+    : `<div class="row"><span class="row__flag row__flag--auto"></span>
+        <span class="row__body"><span class="row__title">Không lưới nào bắt</span></span></div>`;
+  const congCu = d.cong_cu.length ? d.cong_cu.map((c, i) => `<details class="row">
+      <summary class="row__body"><span class="row__title">${i + 1}. ${esc(c.ten)}${c.thu_nghiem ? " · ĐANG THỬ" : ""}</span>
+      <span class="row__sub">vòng ${c.vong} · ${c.ms} ms</span></summary>
+      <pre class="pre">${esc(JSON.stringify({ tham_so: c.tham_so, ket_qua: c.ket_qua }, null, 2))}</pre>
+    </details>`).join("") : '<p class="empty">Không gọi công cụ nào.</p>';
+  const cham = d.cham || {};
+  const tuCam = (cham.tu_cam || []).length ? `Từ cấm: ${esc(cham.tu_cam.join(", "))}` : "Không có từ cấm";
+  const ht = cham.hinh_thuc || {};
+  const loiHt = Object.entries(ht).filter(([k, v]) => k !== "dat" && v && (!Array.isArray(v) || v.length)).map(([k]) => k);
+  const boVang = cham.so_voi_bo_vang
+    ? `<div class="row"><span class="row__flag row__flag--${cham.so_voi_bo_vang.dat ? "auto" : "halt"}"></span>
+        <span class="row__body"><span class="row__title">So với bộ vàng: ${cham.so_voi_bo_vang.dat ? "ĐẠT" : "KHÔNG ĐẠT"}</span>
+        <span class="row__sub">${esc([...(cham.so_voi_bo_vang.thieu || []).map((t) => "thiếu " + t),
+          ...(cham.so_voi_bo_vang.cam || []).map((t) => "cấm " + t),
+          ...(cham.so_voi_bo_vang.sai_chuyen ? ["sai chuyển người"] : [])].join(" · ") || "đủ từ khoá, đúng chuyển người")}</span></span></div>`
+    : "";
+  const nguon = d.sources || [];
+  $("#phongthu-bentrong").innerHTML = `${luoi}
+    <div class="row"><span class="row__flag"></span>
+      <span class="row__body"><span class="row__title">Độ tin cậy ${pct(d.confidence)}${d.grounded ? " · có căn cứ" : " · KHÔNG căn cứ"}</span>
+      <span class="row__sub">${nguon.length ? esc(nguon.join(" · ")) : "không trích tài liệu nào"}</span></span></div>
+    <h3 class="panel__head">Công cụ đã gọi</h3>${congCu}
+    <div class="row"><span class="row__flag"></span>
+      <span class="row__body"><span class="row__title">${usd(d.cost_usd)} · ${d.latency_ms} ms · ${esc(d.model)}</span>
+      <span class="row__sub">${d.vong.length} vòng · ${d.tokens_in} vào / ${d.tokens_out} ra token</span></span></div>
+    <h3 class="panel__head">Chấm nhanh</h3>
+    <div class="row"><span class="row__flag"></span>
+      <span class="row__body"><span class="row__title">${tuCam}</span>
+      <span class="row__sub">${loiHt.length ? "Lỗi hình thức: " + esc(loiHt.join(", ")) : "Hình thức đạt"}</span></span></div>
+    ${boVang}`;
+}
+
+async function hoiPhongThu(cauHoi) {
+  const q = (cauHoi || "").trim();
+  if (!q) return;
+  if (!state.phongThu.phien) await loadPhongThu();
+  const body = { cau_hoi: q, ky_vong: phongThuKyVong };
+  phongThuKyVong = null;
+  try {
+    const d = await api(`/phong-thu/phien/${encodeURIComponent(state.phongThu.phien)}/hoi`,
+      { method: "POST", body: JSON.stringify(body) });
+    state.phongThu.luot.push({ khach: q, agent: d.tra_loi, cost_usd: d.cost_usd, latency_ms: d.latency_ms,
+      escalate: d.escalate, tone: d.luoi_bat ? (NHAN_LUOI_MAU[d.luoi_bat] || "assist") : "auto" });
+    veChatPhongThu();
+    veBenTrongPhongThu(d);
+    await veNganSachPhongThu();
+  } catch (e) { toast(e.message, true); }
+}
+
+$("#phongthu-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const o = e.target.querySelector("[name=cau_hoi]");
+  const q = o.value;
+  o.value = "";
+  await hoiPhongThu(q);
+});
+$("#phongthu-moi")?.addEventListener("click", async () => {
+  state.phongThu = { phien: null, luot: [] };
+  state.phongThuDaTai = false;
+  $("#phongthu-bentrong").innerHTML = '<p class="empty">Chưa có lượt nào.</p>';
+  veChatPhongThu();
+  await loadPhongThu();
+});
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-goiy]");
+  if (!b) return;
+  $("#phongthu-form [name=cau_hoi]").value = b.dataset.hoi;
+  try { phongThuKyVong = JSON.parse(b.dataset.kyvong); } catch { phongThuKyVong = null; }
 });
 
 

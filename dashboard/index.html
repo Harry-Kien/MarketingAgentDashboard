@@ -101,6 +101,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6M15 3v6"/><rect x="6" y="9" width="12" height="7" rx="2"/><path d="M12 16v5"/></svg>
       <span>Kỹ năng</span><b id="c-kynang" class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="phongthu">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>
+      <span>Phòng thử</span><b class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="hethong">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
       <span>Hệ thống</span><b id="c-hethong" class="rail__count"></b>
@@ -444,6 +448,34 @@
         <h2 class="panel__head">Tài liệu đã nạp</h2>
         <div id="docs" class="rows"></div>
       </section>
+    </section>
+
+    <!-- ============ PHÒNG THỬ AGENT ============ -->
+    <section class="view" data-view="phongthu">
+      <div class="split">
+        <section class="panel">
+          <h2 class="panel__head">Nhắn thử như khách</h2>
+          <p class="panel__note">Chạy agent thật, nhưng đơn, video và yêu cầu huỷ/đổi chỉ được MÔ PHỎNG. Tốn tiền model theo trần riêng.</p>
+          <div id="phongthu-chat" class="thread"></div>
+          <form id="phongthu-form" class="form">
+            <label class="field field--wide">
+              <span>Khách nhắn</span>
+              <textarea name="cau_hoi" rows="2" maxlength="2000" placeholder="Em da dầu, nên dùng gì ạ?"></textarea>
+            </label>
+            <div class="rowbtns">
+              <button type="submit" class="btn btn--primary">Gửi</button>
+              <button type="button" class="btn btn--sm" id="phongthu-moi">Phiên mới</button>
+              <span id="phongthu-ngansach" class="panel__note"></span>
+            </div>
+          </form>
+          <h3 class="panel__head">Gợi ý từ bộ câu vàng</h3>
+          <div id="phongthu-goiy" class="rows"></div>
+        </section>
+        <section class="panel">
+          <h2 class="panel__head">Bên trong lượt vừa rồi</h2>
+          <div id="phongthu-bentrong"><p class="empty">Chưa có lượt nào.</p></div>
+        </section>
+      </div>
     </section>
 
     <!-- ============ CẤU HÌNH AGENT ============ -->

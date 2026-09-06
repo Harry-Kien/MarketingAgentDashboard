@@ -133,7 +133,8 @@ async def overview() -> dict:
                count(*) FILTER (WHERE status = 'escalated')          AS escalated,
                count(*) FILTER (WHERE status = 'assist')             AS waiting,
                coalesce(sum(cost_usd), 0)                            AS cost
-        FROM conversations WHERE updated_at >= $1
+        -- hội thoại phòng thử không phải khách
+        FROM conversations WHERE updated_at >= $1 AND channel <> 'phong_thu'
         """,
         since,
     ) or {}
@@ -168,6 +169,8 @@ async def overview() -> dict:
         """
         SELECT id, status, outcome, customer_name, updated_at, cost_usd, msg_count
         FROM conversations
+        -- hội thoại phòng thử không phải khách
+        WHERE channel <> 'phong_thu'
         ORDER BY updated_at DESC
         LIMIT 72
         """
@@ -258,6 +261,8 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
                (SELECT content FROM messages m WHERE m.conversation_id = c.id
                 ORDER BY created_at DESC LIMIT 1) AS last_message
         FROM conversations c
+        -- hội thoại phòng thử không phải khách
+        WHERE c.channel <> 'phong_thu'
     """
     args: list = []
     if status == "can_nguoi":
@@ -270,9 +275,9 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
         # Trước đây khung "Chờ người xử lý" chỉ lọc `assist`, nên hội thoại
         # đã chuyển người biến mất khỏi màn hình trực. Đo trên dữ liệu thật:
         # 2 cái hiện, 7 cái không — bảy khách ngồi đợi mà không ai thấy.
-        sql += " WHERE c.status IN ('assist', 'escalated')"
+        sql += " AND c.status IN ('assist', 'escalated')"
     elif status and status != "all":
-        sql += " WHERE c.status = $1"
+        sql += " AND c.status = $1"
         args.append(status)
 
     # THỨ TỰ: hàng đợi trực xếp NGƯỢC với mọi màn hình khác.

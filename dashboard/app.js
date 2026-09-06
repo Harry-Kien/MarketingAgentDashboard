@@ -3137,6 +3137,11 @@ function veBenTrongPhongThu(d) {
           ...(cham.so_voi_bo_vang.sai_chuyen ? ["sai chuyển người"] : [])].join(" · ") || "đủ từ khoá, đúng chuyển người")}</span></span></div>`
     : "";
   const nguon = d.sources || [];
+  // Chi tiết từng vòng gọi model — số liệu thuần từ Reply.vong, không có
+  // chuỗi máy chủ nào lọt vào (mọi trường đều là number), nên không cần esc().
+  const cacVong = d.vong.map((v, i) => `<div class="row"><span class="row__flag"></span>
+      <span class="row__body"><span class="row__title">Vòng ${i + 1}: ${usd(v.cost_usd)} · ${v.latency_ms} ms</span>
+      <span class="row__sub">${v.tokens_in} vào / ${v.tokens_out} ra token · ${v.so_cong_cu} công cụ</span></span></div>`).join("");
   $("#phongthu-bentrong").innerHTML = `${luoi}
     <div class="row"><span class="row__flag"></span>
       <span class="row__body"><span class="row__title">Độ tin cậy ${pct(d.confidence)}${d.grounded ? " · có căn cứ" : " · KHÔNG căn cứ"}</span>
@@ -3145,6 +3150,7 @@ function veBenTrongPhongThu(d) {
     <div class="row"><span class="row__flag"></span>
       <span class="row__body"><span class="row__title">${usd(d.cost_usd)} · ${d.latency_ms} ms · ${esc(d.model)}</span>
       <span class="row__sub">${d.vong.length} vòng · ${d.tokens_in} vào / ${d.tokens_out} ra token</span></span></div>
+    ${cacVong}
     <h3 class="panel__head">Chấm nhanh</h3>
     <div class="row"><span class="row__flag"></span>
       <span class="row__body"><span class="row__title">${tuCam}</span>
@@ -3176,12 +3182,30 @@ $("#phongthu-form")?.addEventListener("submit", async (e) => {
   o.value = "";
   await hoiPhongThu(q);
 });
+// Xoá phiên trên máy chủ trước khi tạo hay bỏ hẳn — phiên bỏ đi thì trả
+// RAM tiến trình ngay, không đợi dọn theo TTL 2 giờ (agent/core/phong_thu_phien.py).
+async function xoaPhienPhongThuTrenMayChu() {
+  if (!state.phongThu.phien) return;
+  try {
+    await api(`/phong-thu/phien/${encodeURIComponent(state.phongThu.phien)}`, { method: "DELETE" });
+  } catch (e) { toast(e.message, true); }
+}
+
 $("#phongthu-moi")?.addEventListener("click", async () => {
+  await xoaPhienPhongThuTrenMayChu();
   state.phongThu = { phien: null, luot: [] };
   state.phongThuDaTai = false;
   $("#phongthu-bentrong").innerHTML = '<p class="empty">Chưa có lượt nào.</p>';
   veChatPhongThu();
   await loadPhongThu();
+});
+$("#phongthu-xoa")?.addEventListener("click", async () => {
+  await xoaPhienPhongThuTrenMayChu();
+  state.phongThu = { phien: null, luot: [] };
+  state.phongThuDaTai = false;
+  $("#phongthu-chat").innerHTML = '<p class="empty">Chưa có lượt nào.</p>';
+  $("#phongthu-bentrong").innerHTML = '<p class="empty">Chưa có lượt nào.</p>';
+  toast("Đã xoá phiên thử");
 });
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-goiy]");

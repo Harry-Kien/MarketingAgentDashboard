@@ -32,6 +32,12 @@ def test_ve_ben_trong_qua_esc():
         assert f"${{{ten}" not in src and f"${{d.{ten}" not in src, ten
     assert "esc(" in src and 'class="pre"' in src
     assert "JSON.stringify" in src and "esc(JSON.stringify" in src
+    # d.sources được gán vào biến cục bộ `nguon` trước khi join — kiểm bằng
+    # tên biến thật đó (không phải "${d.sources", đã cấm ở trên) để bỏ esc()
+    # quanh nguon.join(...) là test đỏ. Không dùng "${nguon" trần: chuỗi đó
+    # khớp cả "${nguon.length" hợp lệ ở nhánh điều kiện, gây báo đỏ oan.
+    assert "esc(nguon.join(" in src
+    assert "${nguon.join(" not in src
 
 
 def test_khong_tu_tai_lai_theo_vong_refresh():
@@ -47,3 +53,22 @@ def test_goi_y_dien_cau_va_ky_vong():
 def test_an_toan_nhap_lieu():
     src = _than_ham("hoiPhongThu")
     assert ".trim()" in src
+
+
+def test_co_nut_xoa_phien_va_goi_delete():
+    """Xoá phiên phải có nút thật VÀ phải gọi DELETE trên máy chủ — nếu
+    không, phiên bỏ đi vẫn nằm trong RAM tiến trình tới khi hết TTL 2 giờ."""
+    assert 'id="phongthu-xoa"' in HTML
+    # "Xoá phiên" không phải tên hàm riêng (_than_ham bắt `function <tên>`),
+    # nên lấy nguyên khối "phòng thử agent" bằng marker chú thích rồi tìm
+    # trong đó — khối kế tiếp là "cài đặt API".
+    dau = JS.index("/* ---------------- phòng thử agent")
+    cuoi = JS.index("/* ----------------", dau + 10)
+    khoi = JS[dau:cuoi]
+    assert 'method: "DELETE"' in khoi
+
+
+def test_hien_tung_vong():
+    """Chi phí/độ trễ/token phải hiện theo TỪNG vòng gọi model, không chỉ
+    tổng — d.vong là mảng, mỗi phần tử một vòng (agent/core/agent.py Reply.vong)."""
+    assert "d.vong.map" in _than_ham("veBenTrongPhongThu")

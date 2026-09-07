@@ -285,6 +285,36 @@ async def _ghi_plugin(g: Goi, bat: bool, boi: str) -> None:
         )
 
 
+async def _kiem_tran_plugin(g: Goi, hanh_dong: str) -> None:
+    """
+    Trần plugin: `kho_ky_nang.luu_plugin` chặn được đường thêm plugin RỜI
+    qua dashboard, nhưng bảng `ky_nang_cai_dat` còn HAI đường khác — cài
+    gói mới (`cai`) và bật lại một gói đã tắt (`bat_tat`, chỉ `UPDATE ...
+    SET bat`, không tự đi qua chốt nào). Ba đường cùng ghi vào một bảng thì
+    phải cùng qua MỘT chốt ở đây, không thì "vượt trần" chỉ đúng cho đường
+    có kiểm, còn hai đường kia lặng lẽ đẩy CSDL qua trần mà không ai báo.
+
+    Đếm bằng `fetch` rồi `len` chứ không `count(*)`: số dòng tối đa là
+    PLUGIN_TOI_DA + vài dòng tắt, và một câu trả về hàng thì CSDL giả
+    trong test mô phỏng được đúng bộ lọc, không phải đoán ra con số.
+    """
+    if not g.cong_cu:
+        return
+    ngoai_goi = await db.fetch(
+        "SELECT ten FROM ky_nang_cai_dat "
+        "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
+        g.ten,
+    )
+    tong = len(ngoai_goi) + len(g.cong_cu)
+    if tong > kho_ky_nang.PLUGIN_TOI_DA:
+        raise KhoDay(
+            f"{hanh_dong} gói này thành {tong} plugin đang bật, quá trần "
+            f"{kho_ky_nang.PLUGIN_TOI_DA}: đang bật ngoài gói {g.ten!r} là "
+            f"{len(ngoai_goi)}, gói thêm {len(g.cong_cu)}. Tắt bớt plugin "
+            "hoặc gói không dùng rồi thử lại."
+        )
+
+
 async def _doc_hien_hanh(ten: str) -> dict | None:
     return await db.fetchrow("SELECT ten, phien_ban, bat, noi_dung FROM goi_ky_nang WHERE ten = $1", ten)
 
@@ -329,28 +359,10 @@ async def cai(tho: dict, *, boi: str) -> Goi:
                     f"Công cụ {h['ten']!r} trong gói đã thuộc {chu}. "
                     "Đổi tên công cụ trong gói này, hoặc xoá/tắt cái đang chiếm trước."
                 )
-        # Trần plugin: `kho_ky_nang.luu_plugin` chặn được đường thêm plugin
-        # RỜI qua dashboard, nhưng cài gói là đường thứ hai vào cùng bảng
-        # `ky_nang_cai_dat` — không chặn ở đây thì hai gói mỗi gói 5 công cụ
-        # là vượt trần mà không ai báo, và MỌI lời gọi model từ đó mang thêm
-        # lược đồ của số công cụ vượt trần.
-        #
-        # Đếm bằng `fetch` rồi `len` chứ không `count(*)`: số dòng tối đa là
-        # PLUGIN_TOI_DA + vài dòng tắt, và một câu trả về hàng thì CSDL giả
-        # trong test mô phỏng được đúng bộ lọc, không phải đoán ra con số.
-        ngoai_goi = await db.fetch(
-            "SELECT ten FROM ky_nang_cai_dat "
-            "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
-            g.ten,
-        )
-        tong = len(ngoai_goi) + len(g.cong_cu)
-        if tong > kho_ky_nang.PLUGIN_TOI_DA:
-            raise KhoDay(
-                f"Cài gói này thành {tong} plugin đang bật, quá trần "
-                f"{kho_ky_nang.PLUGIN_TOI_DA}: đang bật ngoài gói {g.ten!r} là "
-                f"{len(ngoai_goi)}, gói thêm {len(g.cong_cu)}. Tắt bớt plugin "
-                "hoặc gói không dùng rồi cài lại."
-            )
+        # Trần plugin: xem chú thích ở `_kiem_tran_plugin` — cài gói là một
+        # trong ba đường vào cùng bảng `ky_nang_cai_dat`, cả ba dùng chung
+        # một chốt.
+        await _kiem_tran_plugin(g, "Cài")
     hien = await _doc_hien_hanh(g.ten)
     if hien is None:
         so = len(await db.fetch("SELECT ten FROM goi_ky_nang"))
@@ -402,6 +414,13 @@ async def bat_tat(ten: str, bat: bool, *, boi: str) -> None:
     if hien is None:
         raise GoiKhongTonTai(ten)
     g = doc_goi(_tu_jsonb(hien["noi_dung"]))
+    if bat:
+        # Trần plugin: xem chú thích ở `_kiem_tran_plugin` — bật lại một gói
+        # đã tắt là đường THỨ BA vào cùng bảng `ky_nang_cai_dat` (sau cài gói
+        # và lưu plugin rời), và chỉ `UPDATE ... SET bat` thì không tự đi
+        # qua chốt nào. Kiểm TRƯỚC UPDATE để giữ đúng bất biến "sai thì
+        # không ghi gì" — đọc gói xong mà vượt trần thì dừng, gói vẫn TẮT.
+        await _kiem_tran_plugin(g, "Bật")
     await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", bat, ten)
     await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", bat, ten)
     try:

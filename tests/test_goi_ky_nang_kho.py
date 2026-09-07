@@ -554,6 +554,32 @@ def test_plugin_dang_tat_khong_chiem_cho_trong_tran(kho):
     assert chay(g.cai(_goi(), boi="qt")).ten == "tu-van-da-nhay-cam"
 
 
+def test_bat_lai_goi_vuot_tran_plugin_thi_tu_choi_va_van_tat(kho):
+    """
+    `bat_tat(ten, True)` là đường THỨ BA vào bảng `ky_nang_cai_dat` (sau cài
+    gói và lưu plugin rời) — chỉ `UPDATE ... SET bat`, không tự đi qua chốt
+    trần nào. Thiếu kiểm ở đây thì bật lại một gói cũ khi trần đã đầy vẫn
+    qua được: gói vừa cài xong, xong tắt, giờ đầy plugin rời rồi bật lại
+    vẫn phải bị chặn, và gói phải NGUYÊN TRẠNG THÁI TẮT sau khi bị chặn.
+    """
+    from agent.ky_nang import goi as g
+    from agent.ky_nang import kho_ky_nang
+
+    chay(g.cai(_goi(), boi="qt"))
+    chay(g.bat_tat("tu-van-da-nhay-cam", False, boi="qt"))
+    assert kho.goi["tu-van-da-nhay-cam"]["bat"] is False
+    assert kho.plugin["bang_thanh_phan_ne"]["bat"] is False
+
+    for i in range(kho_ky_nang.PLUGIN_TOI_DA):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": True, "goi": None}
+
+    with pytest.raises(g.KhoDay) as e:
+        chay(g.bat_tat("tu-van-da-nhay-cam", True, boi="qt"))
+    assert str(kho_ky_nang.PLUGIN_TOI_DA) in str(e.value)
+    assert kho.goi["tu-van-da-nhay-cam"]["bat"] is False
+    assert kho.plugin["bang_thanh_phan_ne"]["bat"] is False
+
+
 # ---------------------------------------------------------------
 #  tao_boi của plugin trong gói là NGƯỜI cài (mục 10 review cuối)
 # ---------------------------------------------------------------

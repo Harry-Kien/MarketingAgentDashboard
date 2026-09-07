@@ -112,6 +112,20 @@ def dung_tai_lieu() -> str:
         "thích.\n"
     )
 
+    d.append(
+        "\n### Một dòng bảng, nhiều cách gọi\n\n"
+        "Ô *khách hỏi về* của `tra_bang` nhận nhiều cách gọi ngăn bằng gạch "
+        "đứng:\n\n"
+        "```\n"
+        "Hồ Chí Minh | Sài Gòn | TPHCM    →    Phí 25.000đ, giao 1-2 ngày\n"
+        "```\n\n"
+        "Cả ba đều ra đúng dòng ấy, và giá chỉ sửa **một** chỗ khi đổi. Phần "
+        "đầu là tên agent nhắc lại cho khách, nên viết nó cho tử tế.\n\n"
+        "Luật chống khoá nuốt nhau áp cho **từng** cách gọi, không phải cho "
+        "cả ô: với bộ so khớp thì mỗi cách gọi là một khoá thật, nên `sg` ở "
+        "dòng này và `sgn` ở dòng kia lồng nhau y như hai dòng lồng nhau.\n"
+    )
+
     d.append("\n### Giới hạn\n")
     d.append(f"\n- Nhiều nhất **{PLUGIN_TOI_DA}** plugin bật cùng lúc")
     d.append(f"- Mô tả nhiều nhất **{MO_TA_DAI_TOI_DA}** ký tự")

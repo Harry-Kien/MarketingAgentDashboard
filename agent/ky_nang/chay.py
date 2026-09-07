@@ -12,7 +12,7 @@ bắt mọi lời gọi `db.execute`/`db.fetch`/`llm.` xuất hiện ở đây l
 from __future__ import annotations
 
 
-from agent.ky_nang.ban_mo_ta import BanMoTa, bo_dau
+from agent.ky_nang.ban_mo_ta import BanMoTa, bo_dau, tach_bi_danh
 from agent.ky_nang.mang import LoiMang, lay
 
 
@@ -105,13 +105,25 @@ def _tra_bang(bm: BanMoTa, args: dict) -> dict:
     bang = bm.cau_hinh["bang"]
     can = bo_dau(khoa)
 
+    # Mỗi ô khoá có thể mang nhiều cách gọi ("Hồ Chí Minh | Sài Gòn"). So
+    # theo TỪNG bí danh chứ không theo cả ô: cả ô là một chuỗi dài mà không
+    # câu nào của khách chứa nổi, nên thêm cách gọi thứ hai sẽ làm hỏng
+    # đúng dòng vừa được làm tốt lên.
+    #
+    # `ten_hien` là phần đầu — thứ agent nhắc lại cho khách. Trả về "tphcm"
+    # thì câu trả lời đọc như máy.
+    dong = [(tach_bi_danh(k_) or [k_], v_) for k_, v_ in bang.items()]
+
     # Khớp đúng trước, khớp chứa sau. Khách gõ "hà nội" hay "Hà Nội" hay
     # "cửa hàng hà nội" đều phải ra một dòng.
-    for k_, v_ in bang.items():
-        if bo_dau(k_) == can:
-            return {"tim_thay": True, "khoa": k_, "gia_tri": v_}
+    for bi_danh, v_ in dong:
+        if any(bo_dau(b) == can for b in bi_danh):
+            return {"tim_thay": True, "khoa": bi_danh[0], "gia_tri": v_}
 
-    gan = [(k_, v_) for k_, v_ in bang.items() if can in bo_dau(k_) or bo_dau(k_) in can]
+    gan = [
+        (bi_danh[0], v_) for bi_danh, v_ in dong
+        if any(can in bo_dau(b) or bo_dau(b) in can for b in bi_danh)
+    ]
     if len(gan) == 1:
         return {"tim_thay": True, "khoa": gan[0][0], "gia_tri": gan[0][1]}
     if len(gan) > 1:

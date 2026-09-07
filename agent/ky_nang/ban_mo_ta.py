@@ -79,6 +79,25 @@ def bo_dau(s: str) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn")
 
 
+def tach_bi_danh(khoa: str) -> list[str]:
+    """
+    Một ô khoá thành các cách gọi: "Hồ Chí Minh | Sài Gòn | TPHCM".
+
+    Ở ĐÂY chứ không ở `chay.py`, cùng lý do với `bo_dau`: bộ kiểm lúc lưu
+    và bộ so khớp lúc chạy phải cắt y hệt nhau. Hai bản sao thì lúc nào đó
+    lệch, và khi ấy phép kiểm nói một đằng còn `_tra_bang` làm một nẻo —
+    không lỗi, không nhật ký.
+
+    Gạch đứng chứ không phải dấu phẩy: dấu phẩy nằm sẵn trong tên thật
+    ("Quận 1, TP.HCM"), gạch đứng thì không. Ô rỗng do gõ thừa ("A ||  B")
+    bị bỏ, không thành một bí danh rỗng khớp với mọi câu.
+
+    Không có gạch đứng thì trả đúng một phần tử — mọi bảng đã lưu chạy y
+    như trước.
+    """
+    return [p.strip() for p in str(khoa).split("|") if p.strip()]
+
+
 def khoa_long_nhau(bang: dict[str, str]) -> tuple[str, str] | None:
     """
     Cặp khoá mà cái này nằm lọt trong cái kia, hoặc None.
@@ -104,7 +123,11 @@ def khoa_long_nhau(bang: dict[str, str]) -> tuple[str, str] | None:
     Khoá KHÔNG lồng nhau thì trường hợp xấu nhất là khớp nhiều dòng, và
     nhánh ấy đã HỎI LẠI khách. Hỏi lại thì không ai bị trả lời sai.
     """
-    chuan = [(k, bo_dau(k)) for k in bang]
+    # So theo từng BÍ DANH, không theo cả ô. Với `_tra_bang` mỗi bí danh là
+    # một khoá thật, nên "sg" trong ô này và "sgn" trong ô kia lồng nhau y
+    # như hai dòng lồng nhau — cùng một cách hỏng, chỉ khác chỗ gõ. So cả ô
+    # thì "Sài Gòn | sg" và "Cần Thơ | sgn" trông không liên quan gì.
+    chuan = [(bd, bo_dau(bd)) for k in bang for bd in tach_bi_danh(k)]
     for i, (ka, a) in enumerate(chuan):
         for kb, b in chuan[i + 1:]:
             if a and b and (a in b or b in a):

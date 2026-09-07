@@ -584,6 +584,49 @@ def _goi_cua(name: str) -> str | None:
         return None
 
 
+def _loai_cua(name: str) -> str | None:
+    """Loại của plugin `name` (`tra_bang`, `tra_tai_lieu`…), hoặc None."""
+    from agent.ky_nang import kho_ky_nang
+
+    dem = kho_ky_nang._DEM
+    if not dem:
+        return None
+    for p in dem[1]:
+        if p.ten == name:
+            return p.loai
+    return None
+
+
+def _khoa_truot(name: str, args: dict, out: dict) -> str | None:
+    """
+    Khoá mà khách hỏi nhưng bảng chưa có — để dashboard xếp hạng thứ nên
+    bổ sung. None khi không phải ca ấy.
+
+    CHỈ cho `tra_bang`. Tham số của nó là một khoá tra cứu (tên khu vực,
+    tên dòng hàng) và gộp lại thành "hay hỏi nhất" được. Tham số của
+    `tra_tai_lieu` là CÂU HỎI CỦA KHÁCH viết nguyên văn: ghi nó vào
+    `events` là mở một bản sao nội dung hội thoại ở chỗ không chịu chính
+    sách lưu trữ của `conversations`, đổi lấy một cột gần như không gộp
+    được vì câu tự do không lặp lại.
+
+    Bộ đệm plugin hỏng thì trả None chứ không ném: mất cột này không được
+    kéo theo cả sự kiện số đo, hai thứ đó không cùng số phận.
+    """
+    try:
+        if _loai_cua(name) != "tra_bang":
+            return None
+        if out.get("tim_thay") is not False:
+            return None
+        # `_norm` của chính tệp này, không phải `bo_dau` của ban_mo_ta:
+        # thêm một bản sao thứ hai là lúc nào đó hai bên lệch nhau, và khi
+        # ấy khoá ghi xuống khác khoá dùng để so khớp — bảng xếp hạng chỉ
+        # ra những dòng người vận hành thêm vào rồi vẫn thấy trượt.
+        gt = str(next(iter(args.values()), "") or "").strip()
+        return _norm(gt)[:60] or None
+    except Exception:  # noqa: BLE001 — chỉ là một cột số đo
+        return None
+
+
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     """
     Thi hành công cụ và GHI SỐ ĐO: một sự kiện `cong_cu.goi` mỗi lần gọi.
@@ -627,6 +670,7 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
             ok=not (isinstance(out, dict) and "loi" in out),
             ms=int((time.perf_counter() - bat_dau) * 1000),
             thu_nghiem=bool(thu_nghiem.dang_thu.get()),
+            khong_khop=_khoa_truot(name, args, out) if isinstance(out, dict) else None,
         )
     except Exception:  # noqa: BLE001 — số đo hỏng không được làm hỏng kết quả
         pass

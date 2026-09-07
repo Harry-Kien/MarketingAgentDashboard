@@ -1713,3 +1713,17 @@ svg { flex: none; }
    dài) có chỗ; font theo bảng chứ không theo form. */
 .plugin-bang__khoa { min-width: 120px; font-size: 13px; }
 .plugin-bang__gia { min-width: 160px; font-size: 13px; }
+/* Khoá khách hỏi mà bảng chưa có: nút bấm được, mỗi cái mở form sửa với
+   dòng ấy điền sẵn. Xuống dòng chứ không cắt bằng ba chấm như cột phụ
+   khác — danh sách này là để đọc và bấm, không phải để liếc. */
+.row__sub--truot {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+.row__sub--truot .chip { font-size: 12px; padding: 2px 9px; cursor: pointer; }

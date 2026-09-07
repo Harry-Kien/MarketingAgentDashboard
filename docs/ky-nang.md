@@ -81,6 +81,19 @@ Vì sao không cho nạp mã: mã chạy trong tiến trình agent thì nó nằ
 Cả bốn loại đều **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, tiêu tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test đọc AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú thích.
 
 
+### Một dòng bảng, nhiều cách gọi
+
+Ô *khách hỏi về* của `tra_bang` nhận nhiều cách gọi ngăn bằng gạch đứng:
+
+```
+Hồ Chí Minh | Sài Gòn | TPHCM    →    Phí 25.000đ, giao 1-2 ngày
+```
+
+Cả ba đều ra đúng dòng ấy, và giá chỉ sửa **một** chỗ khi đổi. Phần đầu là tên agent nhắc lại cho khách, nên viết nó cho tử tế.
+
+Luật chống khoá nuốt nhau áp cho **từng** cách gọi, không phải cho cả ô: với bộ so khớp thì mỗi cách gọi là một khoá thật, nên `sg` ở dòng này và `sgn` ở dòng kia lồng nhau y như hai dòng lồng nhau.
+
+
 ### Giới hạn
 
 

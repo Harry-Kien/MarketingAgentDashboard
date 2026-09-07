@@ -2831,7 +2831,7 @@ function docBangDan(text) {
 function themDongBang(khoa = "", gia_tri = "") {
   const tb = $("#plugin-bang tbody");
   const tr = document.createElement("tr");
-  tr.innerHTML = `<td><input class="plugin-bang__khoa" placeholder="Kem chống nắng" maxlength="120"></td>
+  tr.innerHTML = `<td><input class="plugin-bang__khoa" placeholder="Hồ Chí Minh | Sài Gòn | TPHCM" maxlength="200"></td>
     <td><input class="plugin-bang__gia" placeholder="12 tháng sau khi mở nắp" maxlength="500"></td>
     <td><button type="button" class="btn btn--sm btn--ghost" data-bang-xoa title="Bỏ dòng">✕</button></td>`;
   tr.querySelector(".plugin-bang__khoa").value = khoa;
@@ -2891,6 +2891,46 @@ function doiLoaiPlugin(loai, { giuThamSo = false } = {}) {
     f.elements.thu_gia_tri.placeholder = meta.thu;
   }
   if (loai === "tra_bang" && !$("#plugin-bang tbody tr")) datBang({});
+}
+
+/* Nạp một plugin ĐÃ LƯU ngược vào form để sửa.
+ *
+ * Gán `.value` cho từng ô, không dựng HTML: bảng là chữ do người vận hành
+ * gõ, và nó vẫn là chuỗi đi qua máy chủ trước khi về đây.
+ *
+ * Ô tên nhận lại MÃ MÁY chứ không phải một nhãn tiếng Việt đoán ngược ra
+ * từ nó. `sinhMaPlugin` bỏ dấu nên không có đường về; đoán bừa một nhãn
+ * rồi sinh lại mã khác đi là lưu ra plugin THỨ HAI, còn bản cũ vẫn nằm đó
+ * với cấu hình cũ — hỏng im lặng, đúng kiểu repo này sợ. Mã máy đi qua
+ * `sinhMaPlugin` cho lại chính nó, nên lưu là ghi đè đúng chỗ. */
+function napPluginVaoForm(ten, bm) {
+  const f = $("#pluginform");
+  if (!f || !bm) return;
+  f.reset();
+  f.elements.nhan.value = ten;
+  f.elements.mo_ta.value = bm.mo_ta || "";
+  doiLoaiPlugin(bm.loai, { giuThamSo: true });
+  const t = (bm.tham_so || [])[0];
+  if (t) {
+    f.elements.tham_so_ten.value = t.ten || "";
+    f.elements.tham_so_mo_ta.value = t.mo_ta || "";
+  }
+  const ch = bm.cau_hinh || {};
+  if (bm.loai === "tra_bang") datBang(ch.bang || {});
+  if (bm.loai === "tra_tai_lieu") {
+    f.elements.nhom_tai_lieu.value = ch.nhom_tai_lieu || "";
+    f.elements.k.value = ch.k || 4;
+  }
+  if (bm.loai === "chuyen_chuyen_biet") f.elements.ly_do.value = ch.ly_do || "";
+  if (bm.loai === "goi_api_doc") {
+    f.elements.url.value = ch.url || "";
+    f.elements.han_giay.value = ch.han_giay || 5;
+  }
+  capNhatMaPlugin();
+  $("#plugin-ketqua").innerHTML = "";
+  for (const c of document.querySelectorAll("#plugin-mau .chip")) c.classList.remove("is-on");
+  f.scrollIntoView({ block: "start", behavior: "smooth" });
+  f.elements.mo_ta.focus();
 }
 
 function dienMauPlugin(ma) {
@@ -3108,6 +3148,14 @@ async function loadKyNang() {
           <span class="row__sub">gọi 7 ngày: ${p.so_lan_7_ngay || 0}${
             p.so_loi_7_ngay ? " (" + p.so_loi_7_ngay + " lỗi)" : ""}${
             p.goi ? " · gói " + esc(p.goi) : ""}</span>
+          ${(p.khong_khop || []).length ? `<span class="row__sub row__sub--truot">
+            Khách hỏi mà bảng chưa có: ${(p.khong_khop || []).map((x) =>
+              /* `gia_tri` là chữ model điền từ câu của khách, đi qua CSDL
+               * rồi vào innerHTML — esc() cả khoá lẫn số. */
+              `<button type="button" class="chip" data-them-khoa="${esc(x.gia_tri)}"
+                 data-them-vao="${esc(p.ten)}" title="Thêm dòng này vào bảng"
+                 >${esc(x.gia_tri)} (${esc(String(x.so_lan))})</button>`).join(" ")}
+          </span>` : ""}
         </span>
         <span class="row__side">
           ${p.goi
@@ -3116,7 +3164,12 @@ async function loadKyNang() {
              * người ta bỏ qua thông báo lỗi. Thay bằng nhãn nói nó thuộc gói
              * nào, để biết phải đi tắt/xoá ở panel Gói kỹ năng. */
             ? `<b class="pill">gói ${esc(p.goi)}</b>`
-            : `<button type="button" class="btn btn--sm btn--halt"
+            /* Nút Sửa theo đúng luật ấy: `ban_mo_ta` là null cho công cụ
+             * của gói, nên chỉ plugin rời mới có nút. Hiện nút cho cả hai
+             * rồi để `luu_plugin` từ chối là lại dạy người ta bỏ qua lỗi. */
+            : `${p.ban_mo_ta ? `<button type="button" class="btn btn--sm"
+                 data-plugin-sua="${esc(p.ten)}">Sửa</button> ` : ""}<button
+                 type="button" class="btn btn--sm btn--halt"
                  data-plugin-xoa="${esc(p.ten)}">Xoá</button>`}
         </span>
       </div>`).join("")
@@ -3146,6 +3199,36 @@ document.addEventListener("click", async (e) => {
         body: JSON.stringify({ ten: bt.dataset.kynang, bat }),
       });
       await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bk = e.target.closest("[data-them-khoa]");
+  if (bk) {
+    /* Bấm một khoá hay trượt là mở luôn form sửa với dòng ấy điền sẵn.
+     * Nếu chỉ hiện danh sách thì người vận hành phải tự nhớ rồi tự gõ lại,
+     * và bảng vẫn không lớn lên — đúng chỗ vòng cải thiện đứt. */
+    try {
+      const d = await api("/ky-nang");
+      const p = d.plugin.find((x) => x.ten === bk.dataset.themVao);
+      if (!p || !p.ban_mo_ta) { toast("Công cụ này sửa trong gói của nó", true); return; }
+      napPluginVaoForm(p.ten, p.ban_mo_ta);
+      const tr = themDongBang(bk.dataset.themKhoa, "");
+      tr.querySelector(".plugin-bang__gia").focus();
+      toast(`Điền câu trả lời cho "${bk.dataset.themKhoa}" rồi bấm Lưu và bật`);
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bs = e.target.closest("[data-plugin-sua]");
+  if (bs) {
+    /* Đọc lại từ máy chủ chứ không giữ bản mô tả trong DOM: người khác có
+     * thể vừa sửa chính plugin này, và nạp bản cũ vào form rồi bấm Lưu là
+     * âm thầm quay ngược thay đổi của họ. */
+    try {
+      const d = await api("/ky-nang");
+      const p = d.plugin.find((x) => x.ten === bs.dataset.pluginSua);
+      if (!p || !p.ban_mo_ta) { toast("Công cụ này sửa trong gói của nó", true); return; }
+      napPluginVaoForm(p.ten, p.ban_mo_ta);
+      toast(`Đang sửa "${p.ten}" — bấm Lưu và bật để ghi đè`);
     } catch (err) { toast(err.message, true); }
     return;
   }

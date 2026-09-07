@@ -236,6 +236,50 @@ async def xoa_plugin(ten: str, *, boi: str = "staff") -> bool:
     return so_dong > 0
 
 
+async def khong_khop_7_ngay(toi_da: int = 5) -> dict[str, list[dict]]:
+    """
+    Khoá khách hỏi mà bảng chưa có, gộp theo công cụ, 7 ngày, nhiều nhất
+    trước.
+
+    Bỏ lượt phòng thử cùng lý do `dem_goi_7_ngay`: thử mười lần một khoá
+    không có trong bảng thì đó là bạn đang thử chứ không phải nhu cầu của
+    khách, và nó sẽ đứng đầu bảng xếp hạng, tức bảng chỉ về chính nó.
+
+    CSDL hỏng thì trả rỗng. Đây là gợi ý cải thiện, không phải thứ được
+    phép làm chết bảng kỹ năng — cùng lối rơi của `dem_goi_7_ngay`.
+    """
+    try:
+        rows = await db.fetch(
+            """
+            SELECT detail->>'ten' AS ten, detail->>'khong_khop' AS gia_tri,
+                   count(*) AS so_lan
+            FROM events
+            WHERE kind = 'cong_cu.goi'
+              AND created_at > now() - interval '7 days'
+              AND detail->>'khong_khop' IS NOT NULL
+              AND coalesce(detail->>'thu_nghiem', 'false') <> 'true'
+            GROUP BY 1, 2
+            ORDER BY 1, 3 DESC
+            """
+        )
+    except Exception:  # noqa: BLE001 — gợi ý mất thì thôi, bảng vẫn phải vẽ
+        return {}
+    ra: dict[str, list[dict]] = {}
+    for r in rows:
+        # Bỏ qua hàng không đúng hình dạng thay vì ném. Hàm này chạy TRONG
+        # `liet_ke()`, nên một KeyError ở đây làm chết cả bảng kỹ năng —
+        # mất danh sách công cụ chỉ vì một cột gợi ý. Cùng lối rơi với
+        # nhánh `except` bên trên: tầng gợi ý không được mạnh hơn thứ nó
+        # phục vụ.
+        ten, gia_tri, so_lan = r.get("ten"), r.get("gia_tri"), r.get("so_lan")
+        if not ten or gia_tri is None or so_lan is None:
+            continue
+        muc = ra.setdefault(ten, [])
+        if len(muc) < toi_da:
+            muc.append({"gia_tri": gia_tri, "so_lan": int(so_lan)})
+    return ra
+
+
 async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
     """
     Toàn cảnh cho dashboard: kỹ năng có sẵn + plugin, kèm trạng thái.
@@ -252,6 +296,7 @@ async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
 
     if dem is None:
         dem = await _goi.dem_an_toan()
+    truot = await khong_khop_7_ngay()
 
     return {
         "co_san": [
@@ -275,11 +320,35 @@ async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
                 "ten": p.ten,
                 "loai": p.loai,
                 "mo_ta": p.mo_ta,
+                # Danh sách tên, KHÔNG phải object: cột phụ trên dashboard
+                # nối mảng này bằng dấu phẩy, đổi kiểu là in ra [object
+                # Object]. Hình dạng đầy đủ nằm ở `ban_mo_ta` bên dưới.
                 "tham_so": [t.ten for t in p.tham_so],
                 "bat": True,
                 "so_lan_7_ngay": dem.get(p.ten, {}).get("so_lan", 0),
                 "so_loi_7_ngay": dem.get(p.ten, {}).get("so_loi", 0),
                 "goi": goi_cua.get(p.ten),
+                # Khoá khách hỏi mà bảng chưa có — thứ đáng thêm vào bảng
+                # nhất, xếp theo số lần thật. Không có ô này thì bảng nằm im
+                # ở đúng kích cỡ ngày nó được tạo.
+                "khong_khop": truot.get(p.ten, []),
+                # Đủ để nạp NGƯỢC vào form sửa — thiếu `cau_hinh` thì đổi
+                # một dòng phí ship là gõ lại cả bảng, và người vận hành bỏ
+                # sau lần thứ hai.
+                #
+                # None cho công cụ THUỘC GÓI: `luu_plugin` đã từ chối sửa
+                # chúng (gói là nguồn sự thật, cài lại gói dựng đè bản sửa).
+                # Nói cùng một luật ở cả hai đầu để dashboard khỏi hiện một
+                # nút chỉ để báo lỗi khi bấm.
+                "ban_mo_ta": None if goi_cua.get(p.ten) else {
+                    "loai": p.loai,
+                    "mo_ta": p.mo_ta,
+                    "tham_so": [
+                        {"ten": t.ten, "mo_ta": t.mo_ta, "bat_buoc": t.bat_buoc}
+                        for t in p.tham_so
+                    ],
+                    "cau_hinh": p.cau_hinh,
+                },
             }
             for p in plugin
         ],

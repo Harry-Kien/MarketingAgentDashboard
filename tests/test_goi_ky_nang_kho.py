@@ -497,3 +497,59 @@ def test_cai_lai_gia_ban_than_khong_bi_chan(kho):
     chay(g.cai(_goi(), boi="qt"))
     x = chay(g.cai(_goi(phien_ban="1.1.0"), boi="qt"))
     assert x.phien_ban == "1.1.0"
+
+
+# ---------------------------------------------------------------
+#  kho_ky_nang.luu_plugin — cùng lỗi mã hoá JSONB hai lần, đường khác
+#  (plugin rời qua dashboard, không đi qua goi.py._ghi_plugin)
+# ---------------------------------------------------------------
+
+def test_luu_plugin_ghi_jsonb_bang_dict_khong_ma_hoa_hai_lan(monkeypatch):
+    """
+    `kho_ky_nang.luu_plugin` là đường RIÊNG để tạo một plugin rời từ form
+    "Tạo hoặc sửa plugin" trên dashboard — khác `goi.py._ghi_plugin` (đã có
+    test canh ở trên cho đường cài GÓI). Codec JSONB ở agent/db.py
+    (encoder=json.dumps) tự mã hoá khi thấy `$n::jsonb`; `json.dumps()`
+    thêm ở đây từng làm cột chứa một CHUỖI JSON thay vì object (mã hoá hai
+    lần) — `ban_mo_ta->>'mo_ta'` trả NULL và tiếng Việt hoá thành \\uXXXX.
+
+    Giả `db.execute`/`db.log_event` bằng monkeypatch thay vì dùng CSDL giả
+    dùng chung, vì `_CSDL` ở trên được viết riêng cho các hàm trong
+    `goi.py` (tham số cuối luôn là "goi") — dùng lại nó cho `luu_plugin`
+    (tham số cuối là "boi") sẽ đọc nhầm cột.
+    """
+    from agent.ky_nang import kho_ky_nang
+
+    kho_ky_nang.xoa_dem()  # cô lập khỏi mọi ca trước — _DEM là biến toàn cục
+
+    goi_execute: list[tuple[str, tuple]] = []
+
+    async def execute(sql, *a):
+        goi_execute.append((" ".join(sql.split()), a))
+        return "INSERT 0 1"
+
+    async def log_event(kind, **kw):
+        pass
+
+    monkeypatch.setattr(kho_ky_nang.db, "execute", execute)
+    monkeypatch.setattr(kho_ky_nang.db, "log_event", log_event)
+
+    tho = {
+        "ten": "tra_bao_hanh", "loai": "tra_bang",
+        "mo_ta": "Tra thời hạn bảo hành của một dòng sản phẩm theo tên dòng.",
+        "tham_so": [{"ten": "dong_san_pham", "mo_ta": "Tên dòng sản phẩm khách hỏi", "bat_buoc": True}],
+        "cau_hinh": {"bang": {"Kem Chống Nắng": "12 tháng sau khi mở nắp"}},
+    }
+    chay(kho_ky_nang.luu_plugin(tho, boi="qt"))
+
+    them = [a for s, a in goi_execute if s.startswith("INSERT INTO ky_nang_cai_dat")]
+    assert them, "luu_plugin không gọi INSERT INTO ky_nang_cai_dat"
+    tham_so_ban_mo_ta = them[0][1]
+    assert isinstance(tham_so_ban_mo_ta, dict), (
+        "ban_mo_ta truyền vào db.execute() phải là dict — codec JSONB tự "
+        f"json.dumps(); truyền {type(tham_so_ban_mo_ta).__name__} nghĩa là "
+        "mã hoá tay lần nữa, mã hoá HAI LẦN"
+    )
+    assert tham_so_ban_mo_ta["mo_ta"] == tho["mo_ta"]
+
+    kho_ky_nang.xoa_dem()  # không để bản đệm này rò sang test chạy sau

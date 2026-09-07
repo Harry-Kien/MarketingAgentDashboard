@@ -454,7 +454,18 @@ async def respond(
     goi_kich_hoat = await goi_ky_nang_mod.huong_dan_cho_luot(question)
     if goi_kich_hoat:
         phan_hd = "\n\n".join(f"## Hướng dẫn kỹ năng «{ten}»\n{hd}" for ten, hd in goi_kich_hoat)
-        context = f"{context}\n\n{phan_hd}" if context else phan_hd
+        # Dòng phân tách bắt buộc: phần ngay trên là NGỮ CẢNH TRA ĐƯỢC (mô
+        # hình được phép trích và dẫn nguồn), phần dưới là hướng dẫn nội bộ
+        # do người trong nhà viết. Ghép suông thì mô hình đọc cả khối như một
+        # tài liệu và trích nguyên văn hướng dẫn cho khách — lộ cách vận hành,
+        # và câu trả lời nghe như đọc quy trình nội bộ.
+        #
+        # Không còn nhánh `else`: `rag.as_context()` luôn trả một chuỗi khác
+        # rỗng (kể cả với danh sách đoạn rỗng), nên nhánh "context rỗng" là mã
+        # chết — mã chết trông như một lưới nhưng không canh gì.
+        context = (f"{context}\n\n---\n"
+                   "HƯỚNG DẪN NỘI BỘ (không phải tài liệu để trích dẫn):\n"
+                   f"{phan_hd}")
 
     # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
     # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.

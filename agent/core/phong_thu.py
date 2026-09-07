@@ -69,7 +69,12 @@ _DA_DICH = [(re.compile(m, re.IGNORECASE), ten) for m, ten in _MAU]
 def _fold(s: str) -> str:
     """Bỏ dấu tiếng Việt và gộp khoảng trắng, để so khớp không phụ thuộc dấu."""
     text = unicodedata.normalize("NFD", str(s or "").lower())
-    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    # "Mn" là dấu tiếng Việt. "Cf" là ký tự ĐỊNH DẠNG vô hình — zero-width
+    # space (U+200B), zero-width joiner, dấu chỉ chiều RTL... Chúng không
+    # hiện ra màn hình nhưng CẮT ĐÔI từ khoá: "bỏ<U+200B> qua hướng dẫn" đọc
+    # y hệt câu tấn công gốc mà mọi biểu thức chính quy ở trên đều trượt.
+    # Dán từ một trang web là đủ để dính, không cần cố ý né.
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Mn", "Cf"))
     text = text.replace("đ", "d")
     return " ".join(text.split())
 

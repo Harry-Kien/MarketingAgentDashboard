@@ -47,6 +47,11 @@ def test_huong_dan_vao_khoi_bien_dong(san):
     assert "Hướng dẫn kỹ năng «tu-van-da-nhay-cam»" in sys_["volatile"]
     assert "Hỏi tiền sử kích ứng trước." in sys_["volatile"] and "NGU CANH RAG" in sys_["volatile"]
     assert r.goi_ky_nang == ["tu-van-da-nhay-cam"]
+    # Phải có dòng phân tách: ghép suông thì mô hình đọc hướng dẫn nội bộ như
+    # một tài liệu tham chiếu và trích nguyên văn quy trình cho khách.
+    vol = sys_["volatile"]
+    assert "HƯỚNG DẪN NỘI BỘ (không phải tài liệu để trích dẫn):" in vol
+    assert vol.index("NGU CANH RAG") < vol.index("HƯỚNG DẪN NỘI BỘ") < vol.index("Hướng dẫn kỹ năng")
 
 
 def test_khong_goi_nao_thi_khong_them_gi(san, monkeypatch):

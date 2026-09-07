@@ -595,6 +595,13 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     bat_dau = time.perf_counter()
     out = await _run_tool_that(name, args, conversation_id)
     try:
+        # Vẫn GHI ở phòng thử — khác `bao_mat.injection` trong agent.py bỏ
+        # ghi hẳn. Số đo vận hành (số lần gọi, tỉ lệ lỗi) có một tầng ĐỌC
+        # riêng (`kho_ky_nang.dem_goi_7_ngay`) lọc theo cột `thu_nghiem` này,
+        # nên ghi cả hai rồi lọc lúc đọc là an toàn — cờ đi kèm ngay tại
+        # nguồn. Sự kiện an ninh thì người soát đọc thẳng bảng `events`,
+        # không qua tầng lọc nào; một "cuộc tấn công" giả do phòng thử tự
+        # tạo ra để chấm điểm sẽ lẫn với thật và không ai phân biệt nổi.
         await db.log_event(
             "cong_cu.goi",
             ten=name, goi=_goi_cua(name),

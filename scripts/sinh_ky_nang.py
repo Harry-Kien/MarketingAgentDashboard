@@ -27,6 +27,13 @@ from agent.ky_nang.ban_mo_ta import (  # noqa: E402
     PLUGIN_TOI_DA,
     THAM_SO_TOI_DA,
 )
+from agent.ky_nang.goi import (  # noqa: E402
+    CONG_CU_MOI_GOI_TOI_DA,
+    GOI_MOI_LUOT_TOI_DA,
+    GOI_TOI_DA,
+    HUONG_DAN_TOI_DA,
+    TAI_LIEU_MOI_GOI_TOI_DA,
+)
 from agent.ky_nang.so_dang_ky import SO_DANG_KY  # noqa: E402
 
 DICH_NHOM = {
@@ -124,6 +131,63 @@ def dung_tai_lieu() -> str:
         "Ba chốt, vì một chốt sẽ hỏng: mô tả bị soi bằng đúng bộ quét ấy "
         "trước khi lưu, bị chặn độ dài, và chỉ quản trị viên tạo được "
         "plugin. Mọi lần tạo đều vào nhật ký kiểm toán.\n"
+    )
+
+    d.append(
+        "\n## Gói kỹ năng\n\n"
+        "Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài một "
+        "lần, xuất ra được, có phiên bản — thứ mà plugin rời không có. "
+        "Cài ở dashboard → **Kỹ năng** → panel **Gói kỹ năng** (dán JSON, "
+        "chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói "
+        "mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.\n"
+    )
+    d.append("\n### Một gói gồm gì\n")
+    d.append(
+        "\n- **Hướng dẫn** (`huong_dan`) — mô tả việc, ví dụ *\"khi khách "
+        "hỏi về X thì hỏi lại Y, tra Z, không hứa W\"*.\n"
+        f"- **Công cụ** (`cong_cu`) — tối đa {CONG_CU_MOI_GOI_TOI_DA} bản mô "
+        "tả plugin, y hệt plugin rời ở mục trên.\n"
+        "- **Tài liệu** (`tai_lieu`) — nạp vào kho tri thức dưới nhãn của "
+        "gói, chỉ agent dùng gói đó mới trích được.\n"
+        "- **Từ khoá** (`tu_khoa`) và **phiên bản** (`phien_ban`).\n"
+    )
+    d.append(
+        "\n### Kích hoạt theo từ khoá, không phải model tự mở\n\n"
+        "Nội dung gói đổi theo lượt, nên hướng dẫn nạp vào **khối biến "
+        "động** của prompt (khối `SYSTEM` phải giữ nguyên một chuỗi ở mọi "
+        "lượt để điểm cache còn dùng được). Câu hỏi của khách được so từ "
+        "khoá sau khi bỏ dấu; gói nào khớp thì hướng dẫn của gói đó được "
+        "ghép vào, nhiều nhất "
+        f"**{GOI_MOI_LUOT_TOI_DA} gói mỗi lượt**. Không để model tự gọi "
+        "công cụ để \"mở\" hướng dẫn — cách đó tốn thêm một vòng gọi mô "
+        "hình mỗi lần dùng và không tất định.\n"
+    )
+    d.append(
+        "\n### Hướng dẫn là một mẩu prompt — bị quét như tin khách\n\n"
+        "`huong_dan` được ghép thẳng vào thứ model đọc, nên nó bị soi bằng "
+        "đúng bộ quét prompt injection dùng cho tin khách, cộng thêm **quét "
+        "từ cấm quảng cáo mỹ phẩm** (`cham_mot_luot.tu_cam`) — một dòng "
+        "\"luôn nói kem này chữa khỏi\" trong hướng dẫn là vi phạm Luật "
+        "Quảng cáo đi vòng qua mọi lớp lưới khác, vì các lớp lưới còn lại "
+        f"soi tin khách và câu trả lời, không soi hướng dẫn. Tối đa "
+        f"{HUONG_DAN_TOI_DA} ký tự, để ngữ cảnh không phình.\n"
+    )
+    d.append(
+        "\n### Tắt, xoá, khôi phục\n\n"
+        "Tắt gói thì gỡ luôn tài liệu của gói khỏi kho tri thức (bật lại "
+        "là nạp lại); công cụ của gói cũng tắt theo. Cài lại cùng tên khác "
+        "phiên bản thì bản cũ vào lịch sử, giữ tối đa **10 bản** mỗi gói, "
+        "khôi phục được bất kỳ bản nào trong đó. Xoá gói vẫn giữ lịch sử. "
+        f"Nhiều nhất **{GOI_TOI_DA}** gói; tài liệu mỗi gói tối đa "
+        f"{TAI_LIEU_MOI_GOI_TOI_DA}; trần {PLUGIN_TOI_DA} plugin bật cùng "
+        "lúc vẫn áp dụng, công cụ của gói tính vào trần đó.\n"
+    )
+    d.append(
+        "\n### Số lần gọi\n\n"
+        "Dashboard đếm số lần mỗi công cụ (viết sẵn, plugin rời, hay của "
+        "gói) được gọi trong 7 ngày gần nhất, và số lần lỗi — trừ những "
+        "lượt gọi trong Phòng thử, vì đó là hàng giả lập, không phải khách "
+        "thật.\n"
     )
     return "\n".join(d) + "\n"
 

@@ -97,3 +97,37 @@ Mô tả plugin được ghép thẳng vào phần công cụ mà model đọc. 
 
 Ba chốt, vì một chốt sẽ hỏng: mô tả bị soi bằng đúng bộ quét ấy trước khi lưu, bị chặn độ dài, và chỉ quản trị viên tạo được plugin. Mọi lần tạo đều vào nhật ký kiểm toán.
 
+
+## Gói kỹ năng
+
+Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài một lần, xuất ra được, có phiên bản — thứ mà plugin rời không có. Cài ở dashboard → **Kỹ năng** → panel **Gói kỹ năng** (dán JSON, chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.
+
+
+### Một gói gồm gì
+
+
+- **Hướng dẫn** (`huong_dan`) — mô tả việc, ví dụ *"khi khách hỏi về X thì hỏi lại Y, tra Z, không hứa W"*.
+- **Công cụ** (`cong_cu`) — tối đa 5 bản mô tả plugin, y hệt plugin rời ở mục trên.
+- **Tài liệu** (`tai_lieu`) — nạp vào kho tri thức dưới nhãn của gói, chỉ agent dùng gói đó mới trích được.
+- **Từ khoá** (`tu_khoa`) và **phiên bản** (`phien_ban`).
+
+
+### Kích hoạt theo từ khoá, không phải model tự mở
+
+Nội dung gói đổi theo lượt, nên hướng dẫn nạp vào **khối biến động** của prompt (khối `SYSTEM` phải giữ nguyên một chuỗi ở mọi lượt để điểm cache còn dùng được). Câu hỏi của khách được so từ khoá sau khi bỏ dấu; gói nào khớp thì hướng dẫn của gói đó được ghép vào, nhiều nhất **2 gói mỗi lượt**. Không để model tự gọi công cụ để "mở" hướng dẫn — cách đó tốn thêm một vòng gọi mô hình mỗi lần dùng và không tất định.
+
+
+### Hướng dẫn là một mẩu prompt — bị quét như tin khách
+
+`huong_dan` được ghép thẳng vào thứ model đọc, nên nó bị soi bằng đúng bộ quét prompt injection dùng cho tin khách, cộng thêm **quét từ cấm quảng cáo mỹ phẩm** (`cham_mot_luot.tu_cam`) — một dòng "luôn nói kem này chữa khỏi" trong hướng dẫn là vi phạm Luật Quảng cáo đi vòng qua mọi lớp lưới khác, vì các lớp lưới còn lại soi tin khách và câu trả lời, không soi hướng dẫn. Tối đa 4000 ký tự, để ngữ cảnh không phình.
+
+
+### Tắt, xoá, khôi phục
+
+Tắt gói thì gỡ luôn tài liệu của gói khỏi kho tri thức (bật lại là nạp lại); công cụ của gói cũng tắt theo. Cài lại cùng tên khác phiên bản thì bản cũ vào lịch sử, giữ tối đa **10 bản** mỗi gói, khôi phục được bất kỳ bản nào trong đó. Xoá gói vẫn giữ lịch sử. Nhiều nhất **20** gói; tài liệu mỗi gói tối đa 20; trần 12 plugin bật cùng lúc vẫn áp dụng, công cụ của gói tính vào trần đó.
+
+
+### Số lần gọi
+
+Dashboard đếm số lần mỗi công cụ (viết sẵn, plugin rời, hay của gói) được gọi trong 7 ngày gần nhất, và số lần lỗi — trừ những lượt gọi trong Phòng thử, vì đó là hàng giả lập, không phải khách thật.
+

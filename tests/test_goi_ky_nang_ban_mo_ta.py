@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import zipfile
 
 import pytest
 
 from agent.ky_nang import goi as g
+
+GOC = pathlib.Path(__file__).resolve().parent.parent
 
 
 def _goi(**doi):
@@ -81,6 +84,20 @@ def test_qua_nam_cong_cu_bi_tu_choi():
            "tham_so": [], "cau_hinh": {"bang": {"a": "b"}}} for i in range(6)]
     with pytest.raises(g.LoiGoi):
         g.doc_goi(_goi(cong_cu=cc))
+
+
+def test_goi_mau_hop_le():
+    """
+    Gói mẫu đi theo repo (`data/goi-ky-nang/`) phải THẬT SỰ nạp được — nó là
+    thứ người vận hành bấm "Cài" đầu tiên để thử, không phải chỉ nằm đó cho
+    có. `doc_goi` ném lỗi ở đây nghĩa là mọi máy vừa clone thử theo hướng
+    dẫn `docs/van-hanh.md` đều gặp lỗi ngay bước đầu tiên.
+    """
+    tep = GOC / "data" / "goi-ky-nang" / "tu-van-da-nhay-cam.example.json"
+    tho = json.loads(tep.read_text(encoding="utf-8"))
+    goi = g.doc_goi(tho)
+    assert len(goi.cong_cu) >= 1
+    assert len(goi.tai_lieu) >= 1
 
 
 def _zip(files: dict[str, str]) -> bytes:

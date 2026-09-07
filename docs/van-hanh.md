@@ -322,6 +322,45 @@ Sửa prompt xong vẫn phải chạy bộ vàng.
 
 ---
 
+## Cài một gói kỹ năng
+
+Một gói gộp hướng dẫn tư vấn + công cụ tra cứu + tài liệu làm một, cài một
+lần từ dashboard — xem `docs/ky-nang.md` mục "Gói kỹ năng" để biết định
+dạng và luật. Ba bước:
+
+1. **Kiểm.** Dashboard → **Kỹ năng** → panel **Gói kỹ năng** → dán JSON
+   (hoặc chọn tệp `.json`/`.zip`) → nút **Kiểm**. Không ghi gì, chỉ nói
+   hợp lệ hay không và tóm tắt (số công cụ, số tài liệu, từ khoá). Có gói
+   mẫu sẵn ở `data/goi-ky-nang/tu-van-da-nhay-cam.example.json` để thử
+   ngay mà không phải tự viết JSON.
+2. **Cài.** Nút **Cài**. Có hiệu lực ngay — không cần khởi động lại gì.
+   Cài cùng tên khác phiên bản thì bản cũ tự vào lịch sử (giữ tối đa 10
+   bản), có nút Khôi phục nếu bản mới có vấn đề.
+3. **Phòng thử.** Nhắn một câu chứa đúng từ khoá của gói. Bên phải, mục
+   "Bên trong lượt vừa rồi" hiện dòng **"Gói kỹ năng kích hoạt"** kèm tên
+   gói nếu hướng dẫn được nạp — không thấy dòng đó nghĩa là câu hỏi chưa
+   khớp từ khoá nào, không phải gói chưa cài.
+
+**Hướng dẫn (`huong_dan`) là một mẩu prompt do người trong nhà viết, không
+phải dữ liệu trung tính.** Nó bị quét bằng đúng bộ quét injection dùng cho
+tin khách, cộng thêm quét từ cấm quảng cáo mỹ phẩm — lưu thất bại thì đọc
+kỹ thông điệp lỗi, nó nói đúng cụm nào bị chặn. Đừng nghĩ "mình gõ nên chắc
+an toàn": một dòng như "luôn nói kem này chữa khỏi" bị chặn dù ai viết.
+
+**Xuất / khôi phục.** Nút **Xuất** tải JSON của gói hiện hành, đúng định
+dạng nạp lại được — dùng để sao lưu trước khi sửa, hoặc mang gói sang shop
+khác. Nút **Lịch sử** mở danh sách phiên bản cũ, mỗi dòng có nút **Khôi
+phục**; khôi phục một bản cũ cũng đi qua đúng luồng Cài (bản đang chạy lại
+vào lịch sử), nên nếu bản cũ giờ không còn hợp lệ (ví dụ chứa từ cấm quảng
+cáo vừa thêm sau này) thì khôi phục sẽ bị chặn, không âm thầm cài đè.
+
+**Số lần gọi 7 ngày** hiển thị trên panel là của **khách thật**, không
+tính lượt gọi trong Phòng thử — con số ấy trả lời đúng câu "công cụ này có
+đang được dùng ngoài đời không", không bị pha loãng bởi việc bạn vừa thử
+đi thử lại nó mười lần.
+
+---
+
 ## Dấu hiệu cổng ERP đang hỏng
 
 Khác mục trên, đây là các kiểu hỏng **đã lường trước và có lưới chặn**, chưa

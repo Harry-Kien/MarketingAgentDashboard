@@ -1,0 +1,40 @@
+{
+  "ten": "tu-van-da-nhay-cam",
+  "phien_ban": "1.0.0",
+  "mo_ta": "Tư vấn cho khách da nhạy cảm: hỏi tiền sử kích ứng trước, ưu tiên sản phẩm không hương liệu, không hứa hết đỏ.",
+  "tu_khoa": ["da nhạy cảm", "kích ứng", "ửng đỏ", "châm chích"],
+  "huong_dan": "Khi khách nói da nhạy cảm, dễ kích ứng, ửng đỏ hoặc châm chích, làm theo năm bước sau. KHÔNG hứa hết đỏ, hết kích ứng hay hợp da 100% — mỗi làn da phản ứng khác nhau, và một lời hứa sai ở đây là thứ khách nhớ lâu nhất khi có phản ứng xấu.\n\n1. Hỏi khách đã từng kích ứng với thành phần hay sản phẩm nào trước đây (mỹ phẩm, thuốc bôi, cả đồ ăn nếu khách chủ động nói) để tránh gợi ý lại đúng thứ từng gây phản ứng.\n2. Khi khách hỏi về một thành phần cụ thể, tra `bang_thanh_phan_ne` trước khi trả lời — đừng đoán theo cảm tính, vì da nhạy cảm phản ứng khác từng người.\n3. Ưu tiên gợi ý sản phẩm không hương liệu, nồng độ hoạt chất thấp, kết cấu dịu nhẹ; nói rõ đây là gợi ý ưu tiên theo mô tả của khách, không phải cam kết chắc chắn hợp da.\n4. Luôn khuyên khách thử sản phẩm mới trên một vùng da nhỏ (sau tai hoặc mặt trong cổ tay) trong 24–48 giờ trước khi dùng lên toàn mặt hoặc vùng da rộng.\n5. Nếu khách mô tả triệu chứng mang tính y khoa (sưng nặng, rát nhiều, nổi mụn nước, lan rộng, khó thở, sốt) thì dừng tư vấn mỹ phẩm ngay và chuyển người — đây không phải quyết định agent được tự đưa ra.",
+  "cong_cu": [
+    {
+      "ten": "bang_thanh_phan_ne",
+      "loai": "tra_bang",
+      "mo_ta": "Tra một thành phần mỹ phẩm xem có nằm trong danh sách nên tránh cho khách da nhạy cảm hay không, theo tên thành phần khách hỏi.",
+      "tham_so": [
+        {
+          "ten": "thanh_phan",
+          "mo_ta": "Tên thành phần khách hỏi, ví dụ 'hương liệu' hoặc 'retinol'.",
+          "bat_buoc": true
+        }
+      ],
+      "cau_hinh": {
+        "bang": {
+          "hương liệu tổng hợp": "Nên tránh — thường là nguyên nhân ửng đỏ, châm chích hàng đầu ở da nhạy cảm. Ưu tiên sản phẩm ghi rõ 'không hương liệu' (fragrance-free).",
+          "cồn khô": "Nên tránh với da đang kích ứng hoặc khô căng — alcohol denat/ethanol nồng độ cao làm mất lớp dầu bảo vệ, khiến da dễ ửng đỏ hơn.",
+          "tinh dầu đậm đặc": "Cân nhắc kỹ — tinh dầu cam, bạc hà, quế... nồng độ cao dễ gây châm chích dù là thành phần 'tự nhiên'. Nên thử vùng nhỏ trước.",
+          "aha nồng độ cao": "Nên tránh dùng ngay khi da đang ửng đỏ hoặc kích ứng; nếu muốn dùng thì bắt đầu nồng độ thấp, tần suất thưa, không dùng cùng lúc với retinol.",
+          "retinol mạnh": "Nên tránh nồng độ cao khi mới bắt đầu; da nhạy cảm nên hỏi thêm tần suất da khách đang dùng trước khi gợi ý, vì retinol dễ gây bong rát ban đầu."
+        }
+      }
+    }
+  ],
+  "tai_lieu": [
+    {
+      "tieu_de": "Thành phần nên tránh cho da nhạy cảm",
+      "noi_dung": "Da nhạy cảm là làn da dễ phản ứng với các tác nhân mà da thường không phản ứng: đỏ, châm chích, nóng rát, ngứa nhẹ sau khi dùng một sản phẩm mới. Phản ứng có thể xuất hiện ngay hoặc sau vài lần dùng, nên không phải cứ dùng lần đầu êm là chắc chắn hợp lâu dài.\n\nBốn nhóm thành phần hay bị khách da nhạy cảm phàn nàn nhất, theo phản hồi ghi nhận tại cửa hàng: hương liệu tổng hợp (kể cả trong sản phẩm ghi 'mùi nhẹ'), cồn khô ở nồng độ cao trong toner hoặc gel rửa mặt, tinh dầu đậm đặc dùng làm hương tự nhiên, và các hoạt chất tẩy tế bào chết nồng độ cao như AHA hoặc retinol khi da chưa quen.\n\nKhông có nghĩa những thành phần này luôn gây hại — nhiều khách vẫn dùng được ở nồng độ thấp, tần suất thưa. Vì vậy khi tư vấn, luôn hỏi rõ khách đã từng phản ứng với gì trước khi loại trừ hẳn một nhóm thành phần, và luôn nhắc khách thử trên vùng da nhỏ trước khi dùng rộng."
+    },
+    {
+      "tieu_de": "Cách thử sản phẩm mới trên da nhạy cảm",
+      "noi_dung": "Với khách tự nhận da nhạy cảm hoặc từng bị kích ứng, nên hướng dẫn thử vùng nhỏ (patch test) trước khi dùng sản phẩm mới lên toàn mặt, đặc biệt là sản phẩm chứa hoạt chất mạnh hoặc tinh dầu.\n\nCách làm: thoa một lượng nhỏ sản phẩm lên vùng da sau tai hoặc mặt trong cổ tay, để nguyên không rửa trong 24 đến 48 giờ, theo dõi xem có ửng đỏ, ngứa, châm chích hoặc nổi mẩn hay không. Nếu vùng thử vẫn bình thường sau thời gian đó mới dùng lên mặt, và nên bắt đầu ở tần suất thưa (cách ngày) trước khi dùng hàng ngày.\n\nNếu trong lúc thử xuất hiện phản ứng rõ (rát nhiều, sưng, nổi mụn nước), khuyên khách ngừng ngay, rửa sạch bằng nước mát, và không dùng sản phẩm đó nữa. Đây là hướng dẫn chăm sóc thông thường, không thay cho ý kiến của bác sĩ da liễu khi phản ứng nặng hoặc kéo dài."
+    }
+  ]
+}

@@ -617,10 +617,11 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     from agent.core import thu_nghiem
 
     if thu_nghiem.dang_thu.get() and name in thu_nghiem.CO_TAC_DUNG_PHU:
-        try:
-            catalog = await _catalog_song()
-        except Exception:  # noqa: BLE001
-            catalog = _catalog()
+        # Không bọc `try/except`: `_catalog_song()` đã có đường lui sang tệp
+        # bên trong nó. Bọc thêm một lớp là nuốt luôn những lỗi KHÁC — và
+        # phòng thử im lặng chạy trên danh mục rỗng thì mọi mã hàng đều
+        # "không có trong danh mục", một kết quả sai trông như đúng.
+        catalog = await _catalog_song()
         return await thu_nghiem.mo_phong(name, args, catalog.get("san_pham", []))
 
     # ---------- plugin do người vận hành cấu hình ----------

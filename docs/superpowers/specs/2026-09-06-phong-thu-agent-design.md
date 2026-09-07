@@ -53,9 +53,12 @@ ghi lượt thử vào `messages` (làm sai số liệu tổng quan và chi phí
 - `mo_phong(ten, args, products) -> dict`: kết quả giả đúng **hình dạng**
   bản thật để mô hình trả lời như thường, luôn có `thu_nghiem: True` và
   `ghi_chu` bắt đầu bằng `"ĐANG THỬ:"`:
-  - `tao_don_hang`: kiểm mã hàng có trong danh mục và số lượng > 0 (đọc
-    catalog, không đọc kho), trả `{da_tao: True, ma_don: "THU-<6 hex>",
-    tong_tien, ...}`; mã sai trả đúng lỗi như bản thật.
+  - `tao_don_hang`: kiểm mã hàng có trong danh mục và số lượng > 0, kiểm
+    **tồn kho ghi trong catalog** (không hỏi ERP) và áp **ngưỡng tự chốt**
+    `settings.nguong_tu_chot_vnd` như bản thật, trả `{tao_duoc: True,
+    ma_don: "THU-<6 hex>", tong_tien, trang_thai: "da_chot" | "cho_duyet",
+    ghi_chu_cho_agent, ...}`; mã sai, thiếu hàng hay thiếu thông tin trả
+    đúng lỗi như bản thật.
   - `tao_video`: `{dat_duoc: True, video_id: "thu-<6 hex>"}`.
   - `xin_huy_don`, `xin_doi_tra`: `{da_ghi_nhan: True, can_chuyen_nhan_vien:
     True}` — giữ nguyên hành vi chuyển người của bản thật.
@@ -181,8 +184,8 @@ Rail thêm mục **Phòng thử** sau *Kỹ năng*. Bố cục hai cột:
 4. `run_tool` mô phỏng bốn công cụ ghi; các công cụ đọc chạy thật; dấu vết
    được ghi vào `reply.cong_cu`/`reply.vong`; lưới đặt `reply.luoi_bat`.
 5. API nối `history` (user + assistant, đúng định dạng `respond()` nhận —
-   không nối `tool_calls` để lượt sau không mang dấu vết cũ), ghi
-   `thu_nghiem.ghi_nhan(reply.cost_usd)`, chấm nhanh, trả:
+   không nối `tool_calls` để lượt sau không mang dấu vết cũ), chấm nhanh,
+   trả:
    `{tra_loi, escalate, escalate_reason, luoi_bat, grounded, confidence,
    sources, cong_cu, vong, cost_usd, latency_ms, model, tokens_in,
    tokens_out, cham: {tu_cam, hinh_thuc, so_voi_bo_vang?}, phien: {so_luot,

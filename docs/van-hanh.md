@@ -289,6 +289,14 @@ gọi với tham số gì và trả gì, trích tài liệu nào, tốn bao nhi�
 vào Postgres, ERP hay hàng đợi. Các công cụ tra cứu chạy thật với dữ liệu
 thật. Không có gì được gửi ra kênh nào, và hồ sơ khách không bị đụng.
 
+**Mô phỏng tái hiện được gì.** Đơn thử vẫn đi qua đúng những chốt của bản
+thật: khách phải xác nhận, phải đủ họ tên / số điện thoại / địa chỉ, mã
+hàng phải có trong danh mục, ngưỡng duyệt vẫn áp (đơn to ra `cho_duyet`
+chứ không `da_chot`), và tồn kho ghi trong danh mục vẫn chặn. Nó KHÔNG tái
+hiện: tồn kho sống hỏi thẳng ERP lúc chốt (phòng thử đọc số trong danh
+mục, có thể cũ hơn), và trần chi phí một hội thoại (hội thoại thử không
+tích luỹ chi phí trong bảng `conversations` nên lưới ấy không bao giờ nổ).
+
 **Tiền.** Mỗi lượt là một lời gọi model thật. Chi phí vào sổ riêng với
 trần riêng — *Cấu hình → Trần chi phí phòng thử mỗi ngày* (mặc định 1
 USD). Hết trần thì phòng thử dừng, khách thật không bị ảnh hưởng. Ngược

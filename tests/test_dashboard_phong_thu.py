@@ -40,6 +40,18 @@ def test_ve_ben_trong_qua_esc():
     assert "${nguon.join(" not in src
 
 
+def test_ve_chat_qua_esc():
+    """
+    Lời khách và lời agent cũng là chuỗi từ máy chủ. Câu thử chứa `<script>`
+    mà nội suy trần thì phòng thử — màn hình chỉ quản trị mới vào được —
+    thành đường chạy mã ngay trong dashboard.
+    """
+    src = _than_ham("veChatPhongThu")
+    for ten in ("khach", "agent"):
+        assert f"${{l.{ten}}}" not in src, ten
+        assert f"esc(l.{ten})" in src, ten
+
+
 def test_khong_tu_tai_lai_theo_vong_refresh():
     src = _than_ham("refresh")
     assert "phongthu" in src

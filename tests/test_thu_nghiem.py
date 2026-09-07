@@ -175,30 +175,188 @@ def test_mo_phong_bat_sdt_va_dia_chi_nhu_that():
     assert "địa chỉ đầy đủ" in kq.get("thieu_thong_tin", [])
 
 
+# --------- bộ dò công cụ GHI, suy ra từ chính mã nguồn ---------
+#
+# VÌ SAO SUY RA CHỨ KHÔNG GÕ SẴN BỐN CÁI TÊN
+# ------------------------------------------
+# Bản trước của test này khẳng định `{"tao_don_hang", ...} <= ghi` với đúng
+# bốn tên gõ tay hai lần — trong test và trong `CO_TAC_DUNG_PHU`. Nó luôn
+# xanh, kể cả khi có công cụ ghi THỨ NĂM: tập gõ tay không lớn lên, nên
+# phép so `<=` vẫn đúng. Một lưới canh việc quên thêm tên mà chính nó lại
+# quên theo là xanh giả — thứ nguy hiểm hơn đỏ giả, vì không ai đi kiểm.
+#
+# Nay tập công cụ ghi được DẪN RA từ `tools.py`: nhánh nào của `run_tool`
+# gọi một hàm mà thân hàm ấy (hoặc thân hàm `_` nó gọi tiếp) có chạm
+# `db.execute`, có chuỗi SQL ghi, có `giu_hang` hay `request_video` thì tên
+# công cụ của nhánh đó PHẢI nằm trong `CO_TAC_DUNG_PHU`.
+_SQL_GHI = ("INSERT INTO", "UPDATE ", "DELETE FROM")
+_HAM_GHI = ("giu_hang", "request_video")
+
+
+def _ten_ham_duoc_goi(nut: ast.AST) -> str | None:
+    if not isinstance(nut, ast.Call):
+        return None
+    if isinstance(nut.func, ast.Name):
+        return nut.func.id
+    if isinstance(nut.func, ast.Attribute):
+        return nut.func.attr
+    return None
+
+
+def _la_db_execute(nut: ast.AST) -> bool:
+    return (isinstance(nut, ast.Attribute) and nut.attr == "execute"
+            and isinstance(nut.value, ast.Name) and nut.value.id == "db")
+
+
+def _co_dau_hieu_ghi(than: list[ast.stmt]) -> bool:
+    for goc in than:
+        for nut in ast.walk(goc):
+            if _la_db_execute(nut):
+                return True
+            if (isinstance(nut, ast.Constant) and isinstance(nut.value, str)
+                    and any(k in nut.value for k in _SQL_GHI)):
+                return True
+            if _ten_ham_duoc_goi(nut) in _HAM_GHI:
+                return True
+    return False
+
+
+def _ham_module(cay: ast.Module) -> dict[str, ast.stmt]:
+    return {n.name: n for n in cay.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _cong_cu_ghi_suy_ra(nguon: str) -> set[str]:
+    cay = ast.parse(nguon)
+    ham_mod = _ham_module(cay)
+    run_tool = ham_mod["run_tool"]
+
+    cap: list[tuple[str, str]] = []          # (tên công cụ, tên hàm giúp việc)
+    for nut in ast.walk(run_tool):
+        if not isinstance(nut, ast.If):
+            continue
+        t = nut.test
+        if not (isinstance(t, ast.Compare) and isinstance(t.left, ast.Name)
+                and t.left.id == "name" and len(t.ops) == 1
+                and isinstance(t.ops[0], ast.Eq) and t.comparators
+                and isinstance(t.comparators[0], ast.Constant)):
+            continue
+        ten_cong_cu = str(t.comparators[0].value)
+        for con in ast.walk(nut):
+            if (isinstance(con, ast.Await) and isinstance(con.value, ast.Call)
+                    and isinstance(con.value.func, ast.Name)):
+                cap.append((ten_cong_cu, con.value.func.id))
+
+    ghi: set[str] = set()
+    for ten_cong_cu, ten_ham in cap:
+        ham = ham_mod.get(ten_ham)
+        if ham is None:
+            continue
+        than = list(ham.body)
+        # Một tầng nữa: `_xin_huy_don` không tự ghi, nó gọi `_danh_dau_xin_huy`.
+        # Không đi xuống một tầng là bỏ sót đúng hai công cụ ghi.
+        for goc in list(ham.body):
+            for con in ast.walk(goc):
+                g = _ten_ham_duoc_goi(con)
+                if g and g.startswith("_") and g in ham_mod and g != ten_ham:
+                    than.extend(ham_mod[g].body)
+        if _co_dau_hieu_ghi(than):
+            ghi.add(ten_cong_cu)
+    return ghi
+
+
 def test_ast_moi_cong_cu_ghi_deu_di_qua_chot_sandbox():
     """
     Thêm một công cụ ghi mới mà quên đưa vào CO_TAC_DUNG_PHU thì phòng thử
-    lặng lẽ ghi thật. Test này đọc `run_tool`: mọi tên công cụ có nhánh
-    `name == "..."` gọi hàm bắt đầu bằng `_tao_`/`_danh_dau_` phải nằm
-    trong tập.
+    lặng lẽ ghi thật. Test này DẪN RA tập công cụ ghi từ `tools.py` rồi đòi
+    nó nằm gọn trong `CO_TAC_DUNG_PHU`.
     """
     nguon = (ROOT / "agent" / "core" / "tools.py").read_text(encoding="utf-8")
-    cay = ast.parse(nguon)
-    ham = next(n for n in ast.walk(cay)
-               if isinstance(n, ast.AsyncFunctionDef) and n.name == "run_tool")
-    ghi: set[str] = set()
-    for nut in ast.walk(ham):
-        if (isinstance(nut, ast.Compare) and isinstance(nut.left, ast.Name)
-                and nut.left.id == "name" and nut.comparators
-                and isinstance(nut.comparators[0], ast.Constant)):
-            ten = str(nut.comparators[0].value)
-            ghi.add(ten)
-    goi_ham = {
-        n.func.id for n in ast.walk(ham)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and (n.func.id.startswith("_tao_") or n.func.id.startswith("_danh_dau_"))
-    }
-    assert goi_ham, "không thấy lời gọi hàm ghi nào trong run_tool — test cần cập nhật"
-    assert {"tao_don_hang", "tao_video", "xin_huy_don", "xin_doi_tra"} <= ghi
-    assert {"tao_don_hang", "tao_video", "xin_huy_don", "xin_doi_tra"} <= thu_nghiem.CO_TAC_DUNG_PHU
+    ghi = _cong_cu_ghi_suy_ra(nguon)
+
+    # Bộ dò phải còn CHẠY ĐƯỢC. Đổi cách viết `run_tool` khiến nó không tìm
+    # thấy gì thì phép so `<=` bên dưới vẫn xanh — đúng kiểu xanh giả mà
+    # test này sinh ra để diệt.
+    assert ghi, "bộ dò không tìm thấy công cụ ghi nào — run_tool đã đổi hình, cập nhật test"
+    assert "tao_don_hang" in ghi, "bộ dò bỏ sót tao_don_hang — nó hỏng, không phải mã hỏng"
+
+    thieu = ghi - set(thu_nghiem.CO_TAC_DUNG_PHU)
+    assert not thieu, (
+        "Công cụ GHI chưa có trong thu_nghiem.CO_TAC_DUNG_PHU: "
+        + ", ".join(sorted(thieu))
+        + " — phòng thử sẽ ghi thật khi gọi tới nó."
+    )
     assert "thu_nghiem.dang_thu.get()" in nguon.split("async def run_tool", 1)[1]
+
+
+def test_bo_do_ast_bat_duoc_cong_cu_ghi_moi():
+    """
+    Kiểm tính trung thực của bộ dò: cho nó một `run_tool` giả có công cụ ghi
+    thứ năm thì nó phải thấy. Không có test này thì một bộ dò hỏng cũng im
+    lặng trả về tập rỗng, và `test_ast...` ở trên thành lời hứa suông.
+    """
+    gia = (
+        "async def run_tool(name, args, conversation_id=None):\n"
+        "    if name == 'xoa_don':\n"
+        "        return await _xoa_don(args)\n"
+        "    if name == 'xem_don':\n"
+        "        return await _xem_don(args)\n"
+        "\n"
+        "async def _xoa_don(args):\n"
+        "    return await db.execute('DELETE FROM orders WHERE id = $1', args)\n"
+        "\n"
+        "async def _xem_don(args):\n"
+        "    return await db.fetchrow('SELECT 1 FROM orders')\n"
+    )
+    assert _cong_cu_ghi_suy_ra(gia) == {"xoa_don"}
+
+
+def test_mo_phong_don_duoi_nguong_da_chot():
+    kq = chay(thu_nghiem.mo_phong("tao_don_hang", {
+        "khach_da_xac_nhan": True, "khach_ten": "A", "khach_sdt": "0901234567",
+        "khach_dia_chi": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+        "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 1}],
+    }, [{"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000}]))
+    assert kq["tao_duoc"] is True and kq["trang_thai"] == "da_chot"
+    assert "đã chốt" in kq["ghi_chu_cho_agent"]
+
+
+def test_mo_phong_don_vuot_nguong_thi_cho_duyet(monkeypatch):
+    """
+    Đơn to trong phòng thử phải ra `cho_duyet` y như thật. Bỏ chốt này thì
+    người vận hành không bao giờ thấy câu agent nói khi đơn vượt ngưỡng —
+    và nói nhầm "đã chốt" cho một đơn chờ duyệt là hứa sai với khách.
+    """
+    from agent.config import settings
+
+    monkeypatch.setattr(settings, "nguong_tu_chot_vnd", 1_000_000)
+    kq = chay(thu_nghiem.mo_phong("tao_don_hang", {
+        "khach_da_xac_nhan": True, "khach_ten": "A", "khach_sdt": "0901234567",
+        "khach_dia_chi": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+        "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 5}],
+    }, [{"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000}]))
+    assert kq["tao_duoc"] is True and kq["trang_thai"] == "cho_duyet"
+    assert "ghi_chu_cho_agent" in kq
+    assert "CHỜ NHÂN VIÊN DUYỆT" in kq["ghi_chu_cho_agent"]
+    assert kq["ghi_chu"].startswith("ĐANG THỬ")
+
+
+def test_mo_phong_het_hang_thi_tu_choi():
+    """Tồn kho ghi trong danh mục vẫn chặn — chỉ ERP là không được hỏi."""
+    args = {
+        "khach_da_xac_nhan": True, "khach_ten": "A", "khach_sdt": "0901234567",
+        "khach_dia_chi": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
+        "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 2}],
+    }
+    kq = chay(thu_nghiem.mo_phong("tao_don_hang", args, [
+        {"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000, "ton_kho": 1}]))
+    assert kq["tao_duoc"] is False and "chỉ còn 1" in kq["ly_do"]
+
+    kq0 = chay(thu_nghiem.mo_phong("tao_don_hang", args, [
+        {"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000, "ton_kho": 0}]))
+    assert kq0["tao_duoc"] is False and "hết hàng" in kq0["ly_do"]
+
+    # Không có trường `ton_kho` (danh mục mẫu) thì KHÔNG chặn.
+    kq_khong = chay(thu_nghiem.mo_phong("tao_don_hang", args, [
+        {"ma": "AS-CL01", "ten": "Sữa rửa mặt dịu nhẹ", "gia": 245000}]))
+    assert kq_khong["tao_duoc"] is True

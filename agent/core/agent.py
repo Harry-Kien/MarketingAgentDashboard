@@ -96,7 +96,12 @@ def cat_ket_qua(out) -> object:
     if isinstance(out, str):
         return out if len(out) <= _CAT_CHUOI else out[:_CAT_CHUOI] + "…"
     if isinstance(out, list):
-        return [cat_ket_qua(x) for x in out[:_CAT_DANH_SACH]]
+        # Nói RÕ là đã cắt. Cắt im lặng thì người đọc phòng thử tưởng công
+        # cụ chỉ trả về 20 mục — và đi sửa một lỗi không tồn tại.
+        cat = [cat_ket_qua(x) for x in out[:_CAT_DANH_SACH]]
+        if len(out) > _CAT_DANH_SACH:
+            cat.append(f"… ({len(out) - _CAT_DANH_SACH} mục nữa)")
+        return cat
     if isinstance(out, dict):
         return {k: cat_ket_qua(v) for k, v in out.items()}
     return out
@@ -390,12 +395,20 @@ async def respond(
     # Quét prompt injection TRƯỚC khi tốn một lời gọi model nào. Thấy dấu
     # hiệu thì chuyển người ngay — không chặn khách, vì người thật cũng có
     # thể gõ câu lạ, nhưng cũng không để model tự xoay xở với nó.
+    from agent.core import thu_nghiem
+    dang_thu = thu_nghiem.dang_thu.get()
+
     co_tan_cong, dau_hieu = phong_thu.quet(question)
     if co_tan_cong:
-        await db.log_event(
-            "bao_mat.injection", ref_id=conversation_id, dau_hieu=dau_hieu,
-            trich=str(question)[:200],
-        )
+        # Phòng thử KHÔNG để lại tác dụng phụ, và một dòng nhật ký cũng là
+        # tác dụng phụ: sự kiện an ninh GIẢ trộn lẫn với thật làm hỏng nhật
+        # ký — người soát `bao_mat.injection` sẽ đi truy một cuộc tấn công
+        # chưa từng có, đúng vào lúc cần phân biệt thật giả nhất.
+        if not dang_thu:
+            await db.log_event(
+                "bao_mat.injection", ref_id=conversation_id, dau_hieu=dau_hieu,
+                trich=str(question)[:200],
+            )
         return Reply(
             text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
             escalate=True,
@@ -458,8 +471,6 @@ async def respond(
     luoi_bat: str | None = None
     cong_cu_da_goi: list[dict] = []
     cac_vong: list[dict] = []
-    from agent.core import thu_nghiem
-    dang_thu = thu_nghiem.dang_thu.get()
 
     # Danh sách công cụ đọc MỘT LẦN mỗi lượt, không đọc lại mỗi vòng lặp.
     #
@@ -623,7 +634,11 @@ async def respond(
     else:
         final_text = final_text or "Em cần kiểm tra thêm, chuyển anh/chị cho nhân viên nhé."
         escalate = True
-        escalate_reason = "Vượt số vòng gọi công cụ cho phép"
+        # `or` chứ không gán đè: `luoi_bat` ngay dưới giữ NGUYÊN NHÂN ĐẦU
+        # TIÊN, nên `escalate_reason` cũng phải giữ nguyên nhân đầu tiên —
+        # lệch nhau là dashboard hiện một mã lưới và một câu giải thích của
+        # hai sự việc khác nhau.
+        escalate_reason = escalate_reason or "Vượt số vòng gọi công cụ cho phép"
         luoi_bat = luoi_bat or "het_vong"
 
     # ĐỌC: ══ CHẶNG 5 · BỐN LƯỚI CUỐI ═════════════════════════════════════

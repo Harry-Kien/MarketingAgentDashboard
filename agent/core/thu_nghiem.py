@@ -128,12 +128,52 @@ def _mo_phong_don_hang(args: dict, products: list[dict]) -> dict:
                     "ly_do": f"Không tìm thấy sản phẩm {q!r} trong danh mục.",
                     "ghi_chu": "ĐANG THỬ: hỏi lại khách tên sản phẩm chính xác."}
         sl = max(1, int(it.get("so_luong") or 1))
+
+        # Tồn kho: dùng con số CÓ TRONG DANH MỤC, và chỉ khi có.
+        #
+        # Bản thật đọc tồn SỐNG từ ERP (tools.py chốt 4); phòng thử không
+        # được gọi ERP, nên nó dùng số trong catalog — cũ hơn, nhưng đủ để
+        # tái hiện đúng lời từ chối mà khách sẽ nghe. Không có trường
+        # `ton_kho` thì BỎ QUA chốt này: danh mục mẫu không có nó, và chặn
+        # theo một số không tồn tại là phòng thử từ chối mọi đơn.
+        ton = sp.get("ton_kho")
+        if ton is not None:
+            ton = int(ton)
+            if ton <= 0:
+                return {"thu_nghiem": True, "tao_duoc": False,
+                        "ly_do": f"{sp['ten']} đang hết hàng, không lên đơn được.",
+                        "ghi_chu": "ĐANG THỬ: chốt tồn kho vẫn áp dụng, "
+                                   "nhưng đọc số trong danh mục chứ không hỏi ERP."}
+            if sl > ton:
+                return {"thu_nghiem": True, "tao_duoc": False,
+                        "ly_do": f"{sp['ten']} chỉ còn {ton} sản phẩm, không đủ {sl}.",
+                        "ghi_chu": "ĐANG THỬ: chốt tồn kho vẫn áp dụng, "
+                                   "nhưng đọc số trong danh mục chứ không hỏi ERP."}
+
         gia = int(sp.get("gia") or 0)
         dong.append({"ma": sp["ma"], "ten": sp["ten"], "so_luong": sl, "gia": gia})
         tong += gia * sl
+
+    # Chốt ngưỡng duyệt phải giống bản thật (tools.py chốt 5). Bỏ nó thì
+    # phòng thử luôn báo "đã chốt", và người vận hành không bao giờ nhìn
+    # thấy câu agent sẽ nói với khách khi đơn to — đúng lúc câu chữ quan
+    # trọng nhất, vì nói nhầm "đã chốt" cho đơn chờ duyệt là một lời hứa sai.
+    tu_chot = tong < settings.nguong_tu_chot_vnd
+    if not tu_chot:
+        return {
+            "thu_nghiem": True, "tao_duoc": True, "ma_don": _ma_thu(), "items": dong,
+            "tong_tien": tong, "trang_thai": "cho_duyet",
+            "ghi_chu_cho_agent": (
+                "Đơn giá trị lớn nên đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "
+                "nhận và sẽ có người gọi xác nhận, KHÔNG nói là đã chốt xong."
+            ),
+            "ghi_chu": "ĐANG THỬ: đơn vượt ngưỡng tự chốt nên KHÔNG chốt — "
+                       "chờ người duyệt, y như thật.",
+        }
     return {
         "thu_nghiem": True, "tao_duoc": True, "ma_don": _ma_thu(), "items": dong,
-        "tong_tien": tong,
+        "tong_tien": tong, "trang_thai": "da_chot",
+        "ghi_chu_cho_agent": "Đơn đã chốt. Báo mã đơn và tổng tiền cho khách.",
         "ghi_chu": "ĐANG THỬ: đơn KHÔNG được ghi vào hệ thống hay ERP. Trả lời "
                    "khách như đã lên đơn thành công với mã trên.",
     }

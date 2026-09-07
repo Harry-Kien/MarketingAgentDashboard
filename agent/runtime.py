@@ -135,8 +135,8 @@ async def dat_lai_mac_dinh(*, boi: str = "staff") -> dict:
     Bản đầu chạy `DELETE FROM cau_hinh_agent` trần. Bảng ấy là kho khoá–giá
     trị dùng chung, nên mọi thứ lưu thêm vào sau này — ví dụ xác nhận bảng
     giá — bị quét sạch khi ai đó bấm "Quay về mặc định" cho một việc hoàn
-    toàn khác. Nút ấy hứa đặt lại BỐN thiết lập agent, không hứa xoá thứ
-    người khác vừa xác nhận tuần trước.
+    toàn khác. Nút ấy hứa đặt lại các thiết lập trong `KHOA_BEN_VUNG`,
+    không hứa xoá thứ người khác vừa xác nhận tuần trước.
     """
     await db.execute(
         "DELETE FROM cau_hinh_agent WHERE khoa = ANY($1)",

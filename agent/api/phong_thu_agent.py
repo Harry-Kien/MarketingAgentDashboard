@@ -81,10 +81,19 @@ def doc_goi_y(duong: Path) -> dict[str, list[dict]]:
             # Một dòng gõ tay hỏng không được kéo sập cả bảng gợi ý —
             # bỏ qua dòng đó, các dòng còn lại vẫn hiện lên dashboard.
             continue
+        # Chuẩn hoá kiểu NGAY Ở ĐÂY, không để `None` lọt xuống dashboard.
+        # Dòng bộ vàng thiếu một khoá là chuyện thường (viết tay), và một
+        # `null` trong `ky_vong` sẽ thành `phai_co: null` gửi lên
+        # `POST /hoi` — bị `KyVong` trả 422, người dùng chỉ thấy câu gợi ý
+        # bấm vào là hỏng mà không biết vì sao.
         ra.setdefault(str(c.get("nhom", "khac")), []).append({
             "id": c.get("id", ""), "hoi": c.get("hoi", ""),
-            "ky_vong": {k: c.get(k) for k in
-                        ("chuyen_nguoi", "phai_co", "phai_co_mot_trong", "khong_duoc_co")},
+            "ky_vong": {
+                "chuyen_nguoi": bool(c.get("chuyen_nguoi")),
+                "phai_co": c.get("phai_co") or [],
+                "phai_co_mot_trong": c.get("phai_co_mot_trong") or [],
+                "khong_duoc_co": c.get("khong_duoc_co") or [],
+            },
         })
     return ra
 
@@ -150,7 +159,10 @@ async def hoi(pid: str, body: HoiBody, _: dict = Depends(bat_buoc_quan_tri)) -> 
         raise HTTPException(429, {"ly_do": reply.escalate_reason, "luoi_bat": reply.luoi_bat})
     d = reply_thanh_dict(reply)
     d["ms_tong"] = int((time.perf_counter() - bat_dau) * 1000)
-    thu_nghiem.ghi_nhan(reply.cost_usd)
+    # KHÔNG gọi `thu_nghiem.ghi_nhan()` ở đây: `respond()` là nơi duy nhất
+    # thấy tổng chi phí thật, kể cả khi API bỏ giữa chừng (ném 429/502 sau
+    # khi model đã tiêu tiền). Ghi hai lần là sổ gấp đôi thực tế, và một sổ
+    # sai gấp đôi thì trần chi phí chặn sớm gấp đôi — không ai biết vì sao.
     pp.ghi_luot(p, cau_hoi, {"cost_usd": reply.cost_usd, "luoi_bat": reply.luoi_bat}, reply.text)
     cham: dict[str, Any] = {
         "tu_cam": cham_mot_luot.tu_cam(reply.text),

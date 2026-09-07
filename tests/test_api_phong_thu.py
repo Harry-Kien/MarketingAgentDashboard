@@ -73,11 +73,64 @@ def test_tao_phien_hoi_va_xem_lai(tra_loi):
     assert d["luoi_bat"] is None and d["phien"]["so_luot"] == 1
     assert d["cham"]["tu_cam"] == [] and "hinh_thuc" in d["cham"]
     assert tra_loi["trong_sandbox"] == [True]
-    assert thu_nghiem.da_tieu_hom_nay() == pytest.approx(0.02)
+    # Sổ chi phí thử là việc của `respond()` (đang bị giả ở test này), nên
+    # ở đây chỉ kiểm con số API trả về. Xem
+    # `test_chi_phi_thu_ghi_dung_mot_lan` cho phần sổ sách.
+    assert d["phien"]["chi_phi"] == pytest.approx(0.02)
     xem = c.get(f"/api/phong-thu/phien/{pid}").json()
     assert xem["so_luot"] == 1 and xem["luot"][0]["khach"] == "giá sữa rửa mặt?"
     assert c.delete(f"/api/phong-thu/phien/{pid}").status_code == 204
     assert c.get(f"/api/phong-thu/phien/{pid}").status_code == 404
+
+
+def test_chi_phi_thu_ghi_dung_mot_lan(monkeypatch):
+    """
+    Một lượt thử tốn 0.02 USD phải vào sổ ĐÚNG 0.02, không phải 0.04.
+
+    Trước đây `respond()` ghi một lần rồi API ghi lại lần nữa — sổ gấp đôi
+    thực tế, nên trần chi phí chặn ở đúng nửa số tiền người vận hành đặt,
+    và không có gì nổ để ai biết. Test này KHÔNG giả `brain.respond`: nó
+    giả các phụ thuộc của respond (như fixture `san` trong
+    tests/test_reply_dau_vet.py) để lời gọi ghi sổ THẬT chạy đúng một lần.
+    """
+    from agent.core import agent as brain
+    from agent.core.llm import LLMResult
+
+    async def fetchrow(sql, *a):
+        # Một hàm cho cả hai chỗ đọc: `pp.tao_phien` cần `id`, cửa trần chi
+        # phí hội thoại trong `respond()` cần `cost_usd`.
+        import uuid
+        return {"id": uuid.uuid4(), "cost_usd": 0.0}
+
+    async def con_ngan_sach():
+        return True, 0.0, 0.0
+
+    async def retrieve(q, k=5):
+        return []
+
+    async def cong_cu_dang_bat(tat_ca):
+        return tat_ca
+
+    async def complete(**kw):
+        return LLMResult(text="Dạ 245.000đ ạ.", model="m", cost_usd=0.02)
+
+    async def run_tool(name, args, conversation_id=None):
+        return {}
+
+    monkeypatch.setattr(brain.db, "fetchrow", fetchrow)
+    monkeypatch.setattr(brain.ngan_sach, "con_ngan_sach", con_ngan_sach)
+    monkeypatch.setattr(brain.ngan_sach, "ghi_nhan", lambda c: None)
+    monkeypatch.setattr(brain.rag, "retrieve", retrieve)
+    monkeypatch.setattr(brain.rag, "as_context", lambda p: "")
+    monkeypatch.setattr(brain.kho_ky_nang, "cong_cu_dang_bat", cong_cu_dang_bat)
+    monkeypatch.setattr(brain.llm, "complete", complete)
+    monkeypatch.setattr(brain.tools, "run_tool", run_tool)
+
+    c = TestClient(_app())
+    pid = c.post("/api/phong-thu/phien").json()["id"]
+    r = c.post(f"/api/phong-thu/phien/{pid}/hoi", json={"cau_hoi": "giá sữa rửa mặt?"})
+    assert r.status_code == 200, r.text
+    assert thu_nghiem.da_tieu_hom_nay() == pytest.approx(0.02)
 
 
 def test_ky_vong_bo_vang_duoc_cham(tra_loi):
@@ -193,6 +246,20 @@ def test_goi_y_bo_qua_dong_hong(tmp_path):
     )
     goi_y = api.doc_goi_y(f)
     assert goi_y["tuan_thu"][0]["hoi"] == "bầu dùng retinol?"
+
+
+def test_goi_y_thieu_khoa_thi_ra_danh_sach_rong(tmp_path):
+    """
+    Dòng bộ vàng viết tay thiếu một khoá là chuyện thường. Trả `null` xuống
+    dashboard thì câu gợi ý ấy gửi `khong_duoc_co: null` lên `POST /hoi` và
+    bị `KyVong` trả 422 — người dùng chỉ thấy nút bấm vào là hỏng.
+    """
+    f = tmp_path / "g.jsonl"
+    f.write_text(json.dumps({"id": "A1", "nhom": "tuan_thu", "hoi": "bầu dùng retinol?"},
+                            ensure_ascii=False) + "\n", encoding="utf-8")
+    kv = api.doc_goi_y(f)["tuan_thu"][0]["ky_vong"]
+    assert kv == {"chuyen_nguoi": False, "phai_co": [],
+                  "phai_co_mot_trong": [], "khong_duoc_co": []}
 
 
 def test_goi_y_endpoint_va_ngan_sach(tra_loi):

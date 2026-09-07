@@ -118,3 +118,8 @@ tunnel.log
 tunnel.out
 sidecar*.log
 app.log
+# Log LỖI của uvicorn khi chạy nền — cùng lý do với `app.log` ở trên, và
+# thêm một lý do riêng: nó chứa dòng access log kèm URL đầy đủ của mọi
+# request. Đó đúng là đường mà token Meta từng rò ra (xem bảng "hỏng im
+# lặng" trong CLAUDE.md). Tệp này đã có trên máy dev và suýt vào commit.
+app.err.log

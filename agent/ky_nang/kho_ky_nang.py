@@ -6,6 +6,34 @@ khách và một lượt hỏi CSDL thêm cho mỗi tin nhắn là lãng phí. �
 ngay khi ghi, nên không có chuyện tắt một kỹ năng rồi nó vẫn chạy thêm vài
 phút — đó đúng là kiểu hỏng im lặng mà cả bảng này sinh ra để tránh.
 """
+# ĐỌC: ══ TRẠM B4 + C3 · HAI CÂU HỎI KHÁC NHAU, HAI THỜI ĐIỂM KHÁC NHAU ══
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   B4  cong_cu_dang_bat()  "CÔNG BỐ những gì?"  — một lần mỗi lượt
+# ĐỌC:   C3  dang_tat()          "CÓ ĐƯỢC LÀM không?" — mỗi lần mô hình gọi
+# ĐỌC:
+# ĐỌC: Hai hàm ấy trông như hỏi cùng một chuyện, và đó là lý do có người sẽ
+# ĐỌC: muốn gộp chúng lại. ĐỪNG. Chúng chạy ở hai thời điểm cách nhau vài
+# ĐỌC: giây tới vài ngày, và khoảng cách ấy chính là chỗ hỏng:
+# ĐỌC:
+# ĐỌC:   10:00  khách hỏi giá → mô hình gọi công cụ → lược đồ VÀO lịch sử
+# ĐỌC:   10:01  quản trị TẮT công cụ đó trên dashboard
+# ĐỌC:   10:02  khách hỏi tiếp → B4 đã bỏ công cụ khỏi lược đồ MỚI, nhưng
+# ĐỌC:          mô hình vẫn thấy nó trong LỊCH SỬ của lượt 10:00 và gọi lại
+# ĐỌC:
+# ĐỌC: B4 không với tới lượt 10:00 được nữa. Chỉ C3 chặn được, vì nó kiểm
+# ĐỌC: lúc THI HÀNH. Xem chốt thứ hai trong `agent/core/tools.py`.
+# ĐỌC:
+# ĐỌC: BA ĐƯỜNG GHI VÀO CÙNG BẢNG `ky_nang_cai_dat`, và cả ba phải qua cùng
+# ĐỌC: một chốt trần plugin — nếu không thì "vượt trần" chỉ đúng cho đường
+# ĐỌC: có kiểm, hai đường kia lặng lẽ đẩy CSDL qua trần:
+# ĐỌC:
+# ĐỌC:   luu_plugin()           ở tệp này          — thêm plugin rời
+# ĐỌC:   goi.cai()              cài một gói mới
+# ĐỌC:   goi.bat_tat(bat=True)  bật lại gói đã tắt — chỉ UPDATE, dễ quên nhất
+# ĐỌC:
+# ĐỌC: `_DEM` ở đây là đệm CÔNG CỤ; `goi._DEM` là đệm GÓI. Hai thứ khác
+# ĐỌC: nhau, phải xoá cả hai sau mỗi lần ghi.
 from __future__ import annotations
 
 import json

@@ -9,6 +9,32 @@ Ràng buộc "chỉ đọc" được canh bằng test đọc AST của chính t�
 phải bằng lời hứa trong đoạn chú thích này: `tests/test_ky_nang_plugin.py`
 bắt mọi lời gọi `db.execute`/`db.fetch`/`llm.` xuất hiện ở đây là đỏ.
 """
+# ĐỌC: ══ TRẠM C4 · NƠI MỘT KỸ NĂNG CẮM THÊM THẬT SỰ CHẠY ═════════════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   TRƯỚC  C2/C3  core/tools.py — run_tool() đã qua chốt hai và đã tìm
+# ĐỌC:                 ra bản mô tả khớp tên; tới đây là chắc chắn được chạy
+# ĐỌC:   SAU    C5     mang.py — chỉ với loại `goi_api_doc`
+# ĐỌC:
+# ĐỌC: `chay_plugin` là một bảng phân nhánh theo `bm.loai`, không hơn. Cả
+# ĐỌC: sức mạnh lẫn giới hạn của cơ chế plugin nằm ở chỗ bảng ấy ĐÓNG: gói
+# ĐỌC: của người vận hành chọn được nhánh nào chạy, không thêm được nhánh.
+# ĐỌC:
+# ĐỌC: THÊM LOẠI THỨ NĂM PHẢI SỬA BA CHỖ, và quên chỗ nào cũng hỏng khác nhau:
+# ĐỌC:   1. LOAI_PLUGIN ở ban_mo_ta.py     quên → bản mô tả bị từ chối lúc lưu
+# ĐỌC:   2. _kiem_cau_hinh ở ban_mo_ta.py  quên → cấu hình sai lọt tới lúc chạy
+# ĐỌC:   3. một nhánh trong chay_plugin    quên → rơi xuống nhánh cuối tệp
+# ĐỌC: Chỗ 3 có test canh: `test_moi_loai_khai_bao_deu_chay_duoc` đọc AST và
+# ĐỌC: bắt mọi tên trong LOAI_PLUGIN phải xuất hiện thành hằng chuỗi ở đây.
+# ĐỌC:
+# ĐỌC: MỌI NHÁNH TRẢ VỀ ĐỀU CÓ Ô `ghi_chu`, kể cả nhánh hỏng — đó không phải
+# ĐỌC: thói quen trình bày mà là một ràng buộc. Trả về dict rỗng thì mô hình
+# ĐỌC: tự nghĩ ra đường đi tiếp, và đường nó hay chọn là đoán bừa. Bài học
+# ĐỌC: rút ra từ `tim_kien_thuc`.
+# ĐỌC:
+# ĐỌC: KHÔNG BAO GIỜ THÊM LỜI GỌI GHI VÀO TỆP NÀY. Số đo đã ghi ở tầng trên
+# ĐỌC: (`run_tool`) đúng vì lý do đó: giữ tệp này thuần đọc thì test AST mới
+# ĐỌC: canh được lời hứa "plugin không ghi gì".
 from __future__ import annotations
 
 

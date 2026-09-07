@@ -1,4 +1,23 @@
 """API gói kỹ năng — chỉ quản trị. Bản gói sai là 422 và không ghi gì."""
+# ĐỌC: ══ TRẠM A2 · CỬA VÀO CỦA CHẶNG CÀI ═════════════════════════════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   TRƯỚC  A1  dashboard/app.js — panel Gói kỹ năng
+# ĐỌC:   SAU    A3  ky_nang/goi.py — tu_zip() rồi doc_goi()
+# ĐỌC:
+# ĐỌC: Tệp này KHÔNG kiểm nội dung gói. Nó chỉ làm ba việc mà tầng dưới
+# ĐỌC: không làm được: chặn quyền, chặn kích thước tệp, và dịch lỗi của
+# ĐỌC: `goi.py` sang mã HTTP. Mọi phép kiểm về gói nằm ở A3–A5.
+# ĐỌC:
+# ĐỌC: VÌ SAO CẢ ĐƯỜNG ĐỌC CŨNG CHỈ QUẢN TRỊ: `GET ""` trả về danh sách
+# ĐỌC: chính xác những gì agent làm được và làm không được. Với người muốn
+# ĐỌC: lách agent, đó là bản đồ — biết `tao_don_hang` đang tắt là biết
+# ĐỌC: không cần thử con đường ấy nữa. Người trực ca không cần bản đồ đó.
+# ĐỌC:
+# ĐỌC: HAI ĐƯỜNG CÀI, MỘT BỘ KIỂM: `POST ""` nhận JSON, `POST "/tep"` nhận
+# ĐỌC: tệp tải lên. Cả hai đổ về `_cai()` rồi `goi.cai()`, nên không có
+# ĐỌC: đường nào lỏng hơn đường nào. Thêm đường thứ ba thì cũng phải đi
+# ĐỌC: qua `_cai()`, đừng gọi thẳng `goi.cai()` từ handler mới.
 from __future__ import annotations
 
 import json

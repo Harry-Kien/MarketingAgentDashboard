@@ -26,6 +26,31 @@ tới IP đã kiểm rồi đặt lại header Host, và làm vậy là bỏ lu�
 chứng thư TLS. Nên rào số 1 mới là rào chính: danh sách host cho phép nằm
 trong `.env`, và không có đường nào sửa nó từ dashboard.
 """
+# ĐỌC: ══ TRẠM C5 · ĐƯỜNG RA MẠNG DUY NHẤT MÀ NGƯỜI VẬN HÀNH MỞ ĐƯỢC ══════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   TRƯỚC  C4  chay.py — chỉ nhánh `goi_api_doc` đi tới đây
+# ĐỌC:   SAU        hệ thống ngoài, rồi kết quả quay ngược lên mô hình
+# ĐỌC:
+# ĐỌC: Ba loại plugin còn lại chỉ chạm dữ liệu đã nằm trong nhà. Loại này
+# ĐỌC: khác hẳn: nó gửi một yêu cầu ra ngoài với địa chỉ do NGƯỜI GÕ, từ
+# ĐỌC: một tiến trình đang ngồi TRONG mạng nội bộ. Vì thế nó có tệp riêng
+# ĐỌC: thay vì một nhánh trong `chay.py` — để bốn rào ở dưới nằm gọn một
+# ĐỌC: chỗ và test soi được đúng một tệp.
+# ĐỌC:
+# ĐỌC: HAI HÀM, HAI THỜI ĐIỂM:
+# ĐỌC:   kiem_url()  gọi được KHÔNG CẦN mạng gửi đi — dashboard dùng nó để
+# ĐỌC:               báo lỗi ngay lúc người vận hành bấm Lưu, chứ không để
+# ĐỌC:               tới lúc khách hỏi mới lộ ra là địa chỉ sai
+# ĐỌC:   lay()       lúc chạy thật, gọi lại `kiem_url` rồi mới gửi
+# ĐỌC:
+# ĐỌC: `agent/api/tich_hop_kho.py` có một rào địa chỉ ẢNH GƯƠNG của rào ở
+# ĐỌC: đây, cho ứng dụng nhúng. Sửa luật ở một bên mà quên bên kia là mở
+# ĐỌC: lại đúng lỗ vừa bịt — hai tệp, một luật.
+# ĐỌC:
+# ĐỌC: Bốn rào đều có test canh trong `tests/test_ky_nang_plugin.py`, đọc
+# ĐỌC: bằng AST: một test bắt `follow_redirects` phải là False, một test
+# ĐỌC: bắt tệp này không được dùng động từ HTTP nào ngoài GET.
 from __future__ import annotations
 
 import ipaddress

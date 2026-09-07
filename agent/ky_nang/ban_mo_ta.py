@@ -25,6 +25,27 @@ nhà gõ vào — và nó đi vòng qua bộ quét, vì bộ quét soi tin của
 Nên mô tả bị soi bằng đúng bộ quét ấy trước khi lưu, bị chặn độ dài, và chỉ
 quản trị viên mới tạo được plugin. Ba chốt, vì một chốt sẽ hỏng.
 """
+# ĐỌC: ══ TRẠM A4 + B5 · CHỖ DỮ LIỆU BIẾN THÀNH NĂNG LỰC ═════════════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   A4  doc_ban_mo_ta()  lúc LƯU  — chữ người gõ → BanMoTa đã kiểm
+# ĐỌC:   B5  thanh_cong_cu()  lúc CHẠY — BanMoTa → JSON Schema mô hình đọc
+# ĐỌC:
+# ĐỌC: `thanh_cong_cu()` là dòng ranh giới của cả hệ thống plugin: trước nó
+# ĐỌC: mọi thứ chỉ là dữ liệu người vận hành gõ, sau nó là một năng lực mô
+# ĐỌC: hình nhìn thấy và có thể gọi. Vì ranh giới nằm ở đây, mọi phép kiểm
+# ĐỌC: đáng giá cũng phải nằm ở đây — qua được `doc_ban_mo_ta` là vào thẳng
+# ĐỌC: phần công cụ của prompt, không còn chốt nào ở giữa.
+# ĐỌC:
+# ĐỌC: HAI ĐƯỜNG DÙNG CHUNG BỘ KIỂM NÀY, cố ý:
+# ĐỌC:   plugin rời   kho_ky_nang.luu_plugin() gọi doc_ban_mo_ta()
+# ĐỌC:   trong gói    goi.doc_goi() cũng gọi doc_ban_mo_ta() cho từng công cụ
+# ĐỌC: Một công cụ đi vào bằng gói KHÔNG được lỏng hơn công cụ gõ tay.
+# ĐỌC:
+# ĐỌC: TỆP NÀY THUẦN: không CSDL, không mạng, không đọc cấu hình. Đó là lý
+# ĐỌC: do trần 12 plugin KHÔNG kiểm ở đây mà ở `kho_ky_nang.luu_plugin` —
+# ĐỌC: một hàm thuần không biết trong CSDL đang có bao nhiêu dòng. Giữ nguyên
+# ĐỌC: tính thuần ấy: nó là thứ cho phép test kiểm mọi luật bằng dict trần.
 from __future__ import annotations
 
 import re

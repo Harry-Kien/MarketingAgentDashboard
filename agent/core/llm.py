@@ -29,6 +29,31 @@ nào. Nó dựng danh sách `messages` theo dạng dưới đây, lớp này d�
 
 Dạng chuỗi thuần vẫn chạy y như cũ — mọi lời gọi hiện có không phải sửa.
 """
+# ĐỌC: ══ TRẠM C1 · ỐNG DẪN TỚI MÔ HÌNH ═══════════════════════════════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   TRƯỚC  B2  core/agent.py — respond() đã dựng xong system, messages
+# ĐỌC:              và danh sách công cụ ĐÃ LỌC theo bật/tắt
+# ĐỌC:   SAU    C2  core/tools.py — run_tool() thi hành ý định mô hình trả về
+# ĐỌC:
+# ĐỌC: Tệp này là ỐNG DẪN, không phải một agent thứ hai: nó không quyết định
+# ĐỌC: gì về nội dung, chỉ dịch định dạng và chuyển tiếp. Đó là lý do
+# ĐỌC: `test_chi_mot_noi_truyen_cong_cu_cho_model` loại trừ đúng tệp này khi
+# ĐỌC: đếm số nơi truyền `tools=` — đếm cả nó thì con số nói về số nhà cung
+# ĐỌC: cấp được hỗ trợ, không nói về số agent, và khẳng định trung tâm của
+# ĐỌC: kiến trúc mất hết ý nghĩa.
+# ĐỌC:
+# ĐỌC: BA THỨ ĐỔI THEO NHÀ CUNG CẤP, và phần trên không được biết thứ nào:
+# ĐỌC:   lược đồ công cụ   input_schema (trung lập) → parameters (Gemini)
+# ĐỌC:   khớp kết quả      Gemini theo TÊN hàm · Anthropic theo id
+# ĐỌC:                     Gemini không cấp id nên tệp này TỰ SINH id
+# ĐỌC:   điểm lưu đệm      Claude trên Vertex phải đặt cache_control THỦ CÔNG
+# ĐỌC:                     Gemini nối stable+volatile rồi cache ngầm
+# ĐỌC:
+# ĐỌC: `cached_system(stable, volatile)` chỉ đóng gói; hai hàm `_complete_*`
+# ĐỌC: mới đặt điểm cache. Phần ổn định phải là CÙNG MỘT CHUỖI ở mọi request
+# ĐỌC: thì điểm cache mới đọc lại được — nên hướng dẫn gói kỹ năng và ngữ
+# ĐỌC: cảnh RAG nằm ở phần `volatile`, không phải `stable`.
 from __future__ import annotations
 
 import asyncio

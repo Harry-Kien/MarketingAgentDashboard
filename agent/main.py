@@ -1182,6 +1182,9 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # ĐỌC: Đọc hàm này TRƯỚC khi đọc lifespan(). Nó là một đầu của luồng;
     # ĐỌC: agent/core/agent.py:respond() là phần giữa; outbox worker là đầu kia.
     # ĐỌC:
+    # ĐỌC: Địa chỉ trong bản đồ ba chặng: TRẠM B1. Bản đồ đầy đủ, gồm cả
+    # ĐỌC: chặng cài kỹ năng, ở agent/ky_nang/__init__.py.
+    # ĐỌC:
     # ĐỌC: Thứ tự sáu việc, và thứ tự này quan trọng:
     # ĐỌC:   1. _ingest_inbound  → chống trùng, lưu tin, COMMIT
     # ĐỌC:   2. kiểm standby / mode=human → người thật đang phụ trách thì đứng ngoài

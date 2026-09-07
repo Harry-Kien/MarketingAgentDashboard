@@ -446,6 +446,12 @@ async def respond(
         if (ngu_canh_khach := await ho_so_khach.lam_ngu_canh(customer_ref, channel)):
             context = f"{ngu_canh_khach}\n\n{context}" if context else ngu_canh_khach
 
+    # ĐỌC: TRẠM B3 — bản đồ ba chặng ở agent/ky_nang/__init__.py. Đây là
+    # ĐỌC: đường thứ NHẤT trong ba đường một gói đi vào lượt trả lời, và là
+    # ĐỌC: đường duy nhất phụ thuộc TỪ KHOÁ. Hai đường kia: lược đồ công cụ
+    # ĐỌC: ở dòng ~500 (B4), và tài liệu của gói đi lẫn trong ngữ cảnh RAG
+    # ĐỌC: ngay phía trên — kho tri thức là kho CHUNG, không chia theo gói.
+    #
     # Hướng dẫn của gói kỹ năng kích hoạt theo từ khoá — vào khối BIẾN ĐỘNG,
     # sau ngữ cảnh RAG. Đặt vào `SYSTEM` thì mỗi tổ hợp gói là một prefix
     # khác nhau và điểm cache chết cho mọi request. Xem agent/ky_nang/goi.py.
@@ -502,6 +508,11 @@ async def respond(
     # cụ ở vòng trước rồi mất nó ở vòng sau, ngay trong cùng một hội thoại.
     # Đọc một lần thì cả lượt dùng chung một bộ công cụ, và thay đổi có hiệu
     # lực từ tin nhắn kế tiếp.
+    #
+    # ĐỌC: TRẠM B4 — đường thứ HAI một gói đi vào lượt này, và nó KHÔNG cần
+    # ĐỌC: từ khoá: gói đang bật là công cụ của nó có mặt trong lược đồ, kể
+    # ĐỌC: cả ở những câu hỏi chẳng liên quan gì tới gói. Đây cũng là CHỐT
+    # ĐỌC: THỨ NHẤT của công tắc bật/tắt; chốt thứ hai ở tools.run_tool().
     cong_cu = await kho_ky_nang.cong_cu_dang_bat(tools.TOOLS)
 
     # ĐỌC: ══ CHẶNG 4 · VÒNG LẶP MÔ HÌNH ↔ CÔNG CỤ ════════════════════════

@@ -627,6 +627,18 @@ def _khoa_truot(name: str, args: dict, out: dict) -> str | None:
         return None
 
 
+# ĐỌC: ══ TRẠM C2 · CỬA THI HÀNH, DÙNG CHUNG CHO MỌI LOẠI KỸ NĂNG ═════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC:   TRƯỚC  C1  core/llm.py trả về ý định gọi công cụ; core/agent.py lặp
+# ĐỌC:              qua từng ý định và gọi hàm dưới đây
+# ĐỌC:   SAU    C3  ky_nang/kho_ky_nang.py — chốt hai, rồi tìm bản mô tả
+# ĐỌC:          C4  ky_nang/chay.py — nếu tên khớp một plugin
+# ĐỌC:
+# ĐỌC: MỌI kỹ năng đi qua đây: 11 công cụ viết sẵn, plugin rời, công cụ của
+# ĐỌC: gói, và công cụ MCP về sau. Đó là lý do số đo ghi ở đây chứ không ở
+# ĐỌC: `chay.py` (phải thuần, có test AST canh) và không ở `respond()` (chỉ
+# ĐỌC: thấy công cụ viết sẵn). Một cửa thì đếm được đủ, và chốt được đủ.
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     """
     Thi hành công cụ và GHI SỐ ĐO: một sự kiện `cong_cu.goi` mỗi lần gọi.

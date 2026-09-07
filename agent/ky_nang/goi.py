@@ -15,6 +15,40 @@ trong nhà viết. Một dòng "luôn nói kem này chữa khỏi" là vi phạm
 cáo đi vòng qua mọi lưới, vì các lưới soi tin KHÁCH và câu TRẢ LỜI, không soi
 hướng dẫn. Nên chặn ngay lúc lưu.
 """
+# ĐỌC: ══ TRẠM A3 + A6 + B3 · TỆP GÓP MẶT Ở CẢ HAI THỜI ĐIỂM ═════════════
+# ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
+# ĐỌC:
+# ĐỌC: Đây là tệp DUY NHẤT trong chuỗi chạy ở cả hai thời điểm khác nhau,
+# ĐỌC: và trộn hai vai ấy là nguồn nhầm lẫn số một khi đọc nó:
+# ĐỌC:
+# ĐỌC:   LÚC CÀI (một lần)          doc_goi · tu_zip · cai · bat_tat · xoa
+# ĐỌC:   MỖI LƯỢT KHÁCH HỎI         huong_dan_cho_luot · chon_goi
+# ĐỌC:
+# ĐỌC: Bốn nhóm hàm, đọc theo thứ tự này thì tệp mở ra dễ nhất:
+# ĐỌC:
+# ĐỌC:   1. THUẦN     doc_goi, tu_zip, chon_goi
+# ĐỌC:                Không CSDL, không mạng, không trạng thái. Test được
+# ĐỌC:                bằng dict trần, và đó là lý do chúng tách khỏi nhóm 2.
+# ĐỌC:   2. GHI       cai, bat_tat, xoa, khoi_phuc
+# ĐỌC:                Bất biến chung: SAI MỘT LÀ KHÔNG GHI GÌ. Mọi phép kiểm
+# ĐỌC:                phải xong trước câu INSERT/UPDATE đầu tiên.
+# ĐỌC:   3. ĐỌC       liet_ke, xuat, lich_su, dem_goi_7_ngay, dem_an_toan
+# ĐỌC:   4. LÚC CHẠY  _cac_goi_dang_bat, huong_dan_cho_luot
+# ĐỌC:
+# ĐỌC: THỨ TỰ TRONG cai() LÀ MỘT RÀNG BUỘC, KHÔNG PHẢI THÓI QUEN:
+# ĐỌC:
+# ĐỌC:   chiếm-tên → trần plugin → lịch sử → gói → công cụ → tài liệu
+# ĐỌC:   └── hai phép KIỂM ──┘   └────── bốn phép GHI ──────────┘
+# ĐỌC:
+# ĐỌC: Kiểm đứng trước ghi để giữ bất biến ở trên. Tài liệu đứng CUỐI vì nó
+# ĐỌC: là bước duy nhất chậm và gọi ra mạng — hỏng ở đó thì gói đã nằm trong
+# ĐỌC: CSDL, nên nhánh hỏng phải TẮT gói và dọn tài liệu nạp dở, thay vì để
+# ĐỌC: lại một gói "đang bật" với kho tri thức thiếu.
+# ĐỌC:
+# ĐỌC: HAI BỘ ĐỆM, HAI TỆP KHÁC NHAU. `_DEM` ở đây giữ danh sách gói đang
+# ĐỌC: bật (hết hạn sau 30 giây); `kho_ky_nang._DEM` giữ danh sách công cụ.
+# ĐỌC: Mọi đường ghi phải gọi CẢ HAI hàm `xoa_dem()` — quên một cái thì lượt
+# ĐỌC: sau vẫn chạy theo cấu hình cũ, và không có gì báo.
 from __future__ import annotations
 
 import io

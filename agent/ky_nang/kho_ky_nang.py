@@ -200,6 +200,17 @@ async def xoa_plugin(ten: str, *, boi: str = "staff") -> bool:
 async def liet_ke() -> dict:
     """Toàn cảnh cho dashboard: kỹ năng có sẵn + plugin, kèm trạng thái."""
     tat, plugin = await _doc()
+
+    # Nhập khẩu TRONG hàm, không ở đầu file: `goi.py` nhập khẩu ngược lại
+    # module này ở mức module (để test monkeypatch được `kho_ky_nang.xoa_dem`
+    # qua tên module) — nhập khẩu `goi` ở đầu file này sẽ thành vòng.
+    from agent.ky_nang import goi as _goi
+
+    try:
+        dem = await _goi.dem_goi_7_ngay()
+    except Exception:  # noqa: BLE001 — số đo hỏng không được làm hỏng bảng kỹ năng
+        dem = {}
+
     return {
         "co_san": [
             {
@@ -212,6 +223,8 @@ async def liet_ke() -> dict:
                 "can_kho_tri_thuc": k.can_kho_tri_thuc,
                 "tat_duoc": k.tat_duoc,
                 "bat": k.ten not in tat,
+                "so_lan_7_ngay": dem.get(k.ten, {}).get("so_lan", 0),
+                "so_loi_7_ngay": dem.get(k.ten, {}).get("so_loi", 0),
             }
             for k in SO_DANG_KY
         ],
@@ -222,6 +235,9 @@ async def liet_ke() -> dict:
                 "mo_ta": p.mo_ta,
                 "tham_so": [t.ten for t in p.tham_so],
                 "bat": True,
+                "so_lan_7_ngay": dem.get(p.ten, {}).get("so_lan", 0),
+                "so_loi_7_ngay": dem.get(p.ten, {}).get("so_loi", 0),
+                "goi": dem.get(p.ten, {}).get("goi"),
             }
             for p in plugin
         ],

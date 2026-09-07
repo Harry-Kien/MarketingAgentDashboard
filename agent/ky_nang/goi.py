@@ -19,12 +19,16 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
+import time
 import zipfile
 from dataclasses import dataclass, field
 
-from agent.core import phong_thu
+from agent import db
+from agent.core import phong_thu, rag
 from agent.core.cham_mot_luot import fold, tu_cam
+from agent.ky_nang import kho_ky_nang
 from agent.ky_nang.ban_mo_ta import BanMoTa, LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.so_dang_ky import ten_ky_nang_co_san
 
@@ -216,3 +220,218 @@ def chon_goi(cac_goi: list[Goi], cau_hoi: str) -> list[Goi]:
         if n:
             diem.append((-n, gk.ten, gk))
     return [x[2] for x in sorted(diem)[:GOI_MOI_LUOT_TOI_DA]]
+
+
+_log = logging.getLogger("agent.ky_nang.goi")
+_DEM: tuple[float, tuple[Goi, ...]] | None = None
+_DEM_GIAY = 30.0
+
+
+class GoiKhongTonTai(LookupError):
+    """Không có gói tên này."""
+
+
+class KhoDay(RuntimeError):
+    """Đã đủ GOI_TOI_DA gói."""
+
+
+def xoa_dem() -> None:
+    global _DEM
+    _DEM = None
+
+
+def _nguon(ten: str) -> str:
+    return f"goi:{ten}:"
+
+
+async def _nap_tai_lieu(g: Goi) -> None:
+    await rag.xoa_nguon(_nguon(g.ten))
+    for i, t in enumerate(g.tai_lieu):
+        await rag.ingest(f"[{g.ten}] {t['tieu_de']}", f"{_nguon(g.ten)}{i:02d}", t["noi_dung"])
+
+
+async def _ghi_plugin(g: Goi, bat: bool) -> None:
+    await db.execute("DELETE FROM ky_nang_cai_dat WHERE goi = $1", g.ten)
+    for bm, tho in zip(g.cong_cu, g.tho["cong_cu"], strict=True):
+        await db.execute(
+            """
+            INSERT INTO ky_nang_cai_dat (ten, bat, ban_mo_ta, tao_boi, goi)
+            VALUES ($1, $2, $3::jsonb, $4, $5)
+            ON CONFLICT (ten) DO UPDATE
+                SET ban_mo_ta = EXCLUDED.ban_mo_ta, bat = EXCLUDED.bat,
+                    goi = EXCLUDED.goi, sua_luc = now()
+            """,
+            bm.ten, bat, json.dumps(tho, ensure_ascii=False), "goi", g.ten,
+        )
+
+
+async def _doc_hien_hanh(ten: str) -> dict | None:
+    return await db.fetchrow("SELECT ten, phien_ban, bat, noi_dung FROM goi_ky_nang WHERE ten = $1", ten)
+
+
+async def cai(tho: dict, *, boi: str) -> Goi:
+    """
+    Kiểm toàn bộ TRƯỚC khi chạm CSDL: sai một là không ghi gì.
+
+    Thứ tự ghi: lịch sử → gói → plugin → tài liệu. Tài liệu đứng cuối vì
+    nó gọi API nhúng (chậm, có thể hỏng); hỏng ở đó thì gói đã có nhưng bị
+    tắt và người dùng được báo, thay vì một gói "đã cài" mà kho tri thức
+    trống — kiểu hỏng im lặng.
+    """
+    g = doc_goi(tho)
+    hien = await _doc_hien_hanh(g.ten)
+    if hien is None:
+        so = len(await db.fetch("SELECT ten FROM goi_ky_nang"))
+        if so >= GOI_TOI_DA:
+            raise KhoDay(f"Đã đủ {GOI_TOI_DA} gói. Xoá bớt gói không dùng.")
+    elif hien["phien_ban"] != g.phien_ban:
+        nd = hien["noi_dung"]
+        await db.execute(
+            "INSERT INTO goi_ky_nang_lich_su (ten, phien_ban, noi_dung, thay_boi) VALUES ($1, $2, $3::jsonb, $4)",
+            g.ten, hien["phien_ban"], nd if isinstance(nd, str) else json.dumps(nd, ensure_ascii=False), boi,
+        )
+    await db.execute(
+        """
+        INSERT INTO goi_ky_nang (ten, phien_ban, noi_dung, tao_boi)
+        VALUES ($1, $2, $3::jsonb, $4)
+        ON CONFLICT (ten) DO UPDATE
+            SET phien_ban = EXCLUDED.phien_ban, noi_dung = EXCLUDED.noi_dung, bat = TRUE, sua_luc = now()
+        """,
+        g.ten, g.phien_ban, json.dumps(g.tho, ensure_ascii=False), boi,
+    )
+    await _ghi_plugin(g, True)
+    try:
+        await _nap_tai_lieu(g)
+    except Exception as exc:  # noqa: BLE001 — gói đã ghi; báo rõ thay vì im
+        await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", False, g.ten)
+        await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", False, g.ten)
+        await db.log_event("ky_nang.goi_tai_lieu_hong", actor=boi, ten=g.ten, loi=f"{type(exc).__name__}: {exc}"[:200])
+        xoa_dem(); kho_ky_nang.xoa_dem()
+        raise RuntimeError(f"Gói đã lưu nhưng nạp tài liệu hỏng ({type(exc).__name__}); gói đang TẮT. "
+                           "Sửa rồi bật lại.") from exc
+    await db.log_event("ky_nang.goi_cai", actor=boi, ten=g.ten, phien_ban=g.phien_ban,
+                       so_cong_cu=len(g.cong_cu), so_tai_lieu=len(g.tai_lieu))
+    xoa_dem(); kho_ky_nang.xoa_dem()
+    return g
+
+
+async def bat_tat(ten: str, bat: bool, *, boi: str) -> None:
+    hien = await _doc_hien_hanh(ten)
+    if hien is None:
+        raise GoiKhongTonTai(ten)
+    g = doc_goi(hien["noi_dung"] if isinstance(hien["noi_dung"], dict) else json.loads(hien["noi_dung"]))
+    await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", bat, ten)
+    await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", bat, ten)
+    if bat:
+        await _nap_tai_lieu(g)
+    else:
+        await rag.xoa_nguon(_nguon(ten))
+    await db.log_event("ky_nang.goi_bat_tat", actor=boi, ten=ten, bat=str(bat))
+    xoa_dem(); kho_ky_nang.xoa_dem()
+
+
+async def xoa(ten: str, *, boi: str) -> bool:
+    if await _doc_hien_hanh(ten) is None:
+        raise GoiKhongTonTai(ten)
+    await db.execute("DELETE FROM ky_nang_cai_dat WHERE goi = $1", ten)
+    await rag.xoa_nguon(_nguon(ten))
+    await db.execute("DELETE FROM goi_ky_nang WHERE ten = $1", ten)
+    await db.log_event("ky_nang.goi_xoa", actor=boi, ten=ten)
+    xoa_dem(); kho_ky_nang.xoa_dem()
+    return True
+
+
+async def lich_su(ten: str) -> list[dict]:
+    rows = await db.fetch(
+        "SELECT id, phien_ban, thay_luc, thay_boi FROM goi_ky_nang_lich_su WHERE ten = $1 ORDER BY thay_luc DESC LIMIT 10", ten)
+    return [dict(r) for r in rows]
+
+
+async def khoi_phuc(ten: str, id_lich_su: int, *, boi: str) -> Goi:
+    r = await db.fetchrow("SELECT noi_dung FROM goi_ky_nang_lich_su WHERE id = $1 AND ten = $2", id_lich_su, ten)
+    if r is None:
+        raise GoiKhongTonTai(f"{ten}#{id_lich_su}")
+    nd = r["noi_dung"]
+    return await cai(nd if isinstance(nd, dict) else json.loads(nd), boi=boi)
+
+
+async def xuat(ten: str) -> dict | None:
+    hien = await _doc_hien_hanh(ten)
+    if hien is None:
+        return None
+    nd = hien["noi_dung"]
+    return nd if isinstance(nd, dict) else json.loads(nd)
+
+
+async def dem_goi_7_ngay() -> dict[str, dict]:
+    """
+    Số lần gọi và số lỗi mỗi công cụ trong 7 ngày, trừ lượt phòng thử.
+
+    `events.detail` là JSONB ghi qua codec (db.log_event), nên bool thành
+    JSON true/false và `detail->>'ok'` là chuỗi 'true'/'false'.
+    """
+    rows = await db.fetch(
+        """
+        SELECT detail->>'ten' AS ten, detail->>'goi' AS goi,
+               count(*) AS so_lan,
+               count(*) FILTER (WHERE (detail->>'ok') = 'false') AS so_loi
+        FROM events
+        WHERE kind = 'cong_cu.goi' AND created_at > now() - interval '7 days'
+          AND coalesce(detail->>'thu_nghiem', 'false') <> 'true'
+        GROUP BY 1, 2
+        """
+    )
+    return {r["ten"]: {"so_lan": int(r["so_lan"]), "so_loi": int(r["so_loi"]), "goi": r["goi"]} for r in rows}
+
+
+async def liet_ke() -> list[dict]:
+    rows = await db.fetch("SELECT ten, phien_ban, bat, noi_dung, tao_boi, sua_luc FROM goi_ky_nang ORDER BY ten")
+    dem = await dem_goi_7_ngay()
+    ra = []
+    for r in rows:
+        nd = r["noi_dung"] if isinstance(r["noi_dung"], dict) else json.loads(r["noi_dung"])
+        ten_cc = [c.get("ten") for c in nd.get("cong_cu") or []]
+        ra.append({
+            "ten": r["ten"], "phien_ban": r["phien_ban"], "bat": bool(r["bat"]),
+            "mo_ta": nd.get("mo_ta", ""), "tu_khoa": nd.get("tu_khoa", []),
+            "so_cong_cu": len(ten_cc), "so_tai_lieu": len(nd.get("tai_lieu") or []),
+            "so_lan_7_ngay": sum(dem.get(t, {}).get("so_lan", 0) for t in ten_cc),
+            "so_loi_7_ngay": sum(dem.get(t, {}).get("so_loi", 0) for t in ten_cc),
+            "sua_luc": dict(r).get("sua_luc"),
+        })
+    return ra
+
+
+async def _cac_goi_dang_bat() -> tuple[Goi, ...]:
+    global _DEM
+    if _DEM is not None and time.monotonic() - _DEM[0] < _DEM_GIAY:
+        return _DEM[1]
+    rows = await db.fetch("SELECT ten, noi_dung FROM goi_ky_nang WHERE bat")
+    ra: list[Goi] = []
+    for r in rows:
+        # "WHERE bat" ở CSDL thật đã lọc rồi, cột "bat" thậm chí không nằm
+        # trong SELECT — `.get("bat", True)` mặc định True nên không đổi gì
+        # ở đó. Lọc lại ở đây là lưới thứ hai cho CSDL giả trong test (nó so
+        # khớp ĐẦU câu SQL, không diễn giải WHERE) và cho bất cứ nơi nào sau
+        # này gọi hàm với một danh sách chưa lọc.
+        if not r.get("bat", True):
+            continue
+        nd = r["noi_dung"] if isinstance(r["noi_dung"], dict) else json.loads(r["noi_dung"])
+        try:
+            ra.append(doc_goi(nd))
+        except LoiGoi:
+            # Một gói hỏng trong CSDL không được làm chết lượt trả lời — bỏ
+            # qua gói đó và nói ra, đừng im.
+            _log.warning("gói kỹ năng %r trong CSDL không hợp lệ, bỏ qua", r["ten"])
+    _DEM = (time.monotonic(), tuple(ra))
+    return _DEM[1]
+
+
+async def huong_dan_cho_luot(cau_hoi: str) -> list[tuple[str, str]]:
+    """Hướng dẫn của các gói đang bật khớp câu hỏi; CSDL hỏng thì rỗng và cảnh báo."""
+    try:
+        cac_goi = await _cac_goi_dang_bat()
+    except Exception as exc:  # noqa: BLE001 — agent phải trả lời được dù kho gói hỏng
+        _log.warning("không đọc được gói kỹ năng (%s: %s) — lượt này không có hướng dẫn", type(exc).__name__, exc)
+        return []
+    return [(g.ten, g.huong_dan) for g in chon_goi(list(cac_goi), cau_hoi)]

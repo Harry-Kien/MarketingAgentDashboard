@@ -31,9 +31,14 @@ def _loi(exc: Exception) -> HTTPException:
 
 @router.get("")
 async def liet_ke(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
-    kn = await kho_ky_nang.liet_ke()
+    # ĐẾM MỘT LẦN cho cả hai bảng. Trước đây `kho_ky_nang.liet_ke()` và
+    # `g.liet_ke()` mỗi hàm tự gọi `dem_goi_7_ngay()` — hai lần quét 7 ngày
+    # bảng `events` cho MỘT lần vẽ màn hình, mà màn hình này tự làm mới 6
+    # giây một lần và `events` là bảng lớn nhất (mỗi lời gọi công cụ một dòng).
+    dem = await g.dem_an_toan()
+    kn = await kho_ky_nang.liet_ke(dem)
     return {
-        "goi": await g.liet_ke(),
+        "goi": await g.liet_ke(dem),
         "cong_cu": [{"ten": k["ten"], "so_lan": k.get("so_lan_7_ngay", 0), "so_loi": k.get("so_loi_7_ngay", 0)}
                     for k in [*kn["co_san"], *kn["plugin"]]],
         "goi_toi_da": g.GOI_TOI_DA,

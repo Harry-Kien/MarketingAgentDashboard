@@ -40,15 +40,24 @@ def kho(monkeypatch):
     async def xoa(ten, *, boi):
         if ten not in goi_da_luu: raise g.GoiKhongTonTai(ten)
         goi_da_luu.pop(ten); return True
-    async def liet_ke(): return [{"ten": t, "phien_ban": v["phien_ban"], "bat": True, "so_cong_cu": 0, "so_tai_lieu": 0, "so_lan_7_ngay": 0, "so_loi_7_ngay": 0, "mo_ta": v["mo_ta"], "tu_khoa": v["tu_khoa"], "sua_luc": None} for t, v in goi_da_luu.items()]
+    # Hai fake dưới đây tự đếm KHI VÀ CHỈ KHI không được truyền `dem`, y như
+    # hàm thật — nhờ vậy test "chỉ đếm một lần" thật sự đỏ nếu API quay lại
+    # gọi hai hàm này mà không truyền kết quả đếm xuống.
+    async def liet_ke(dem=None):
+        if dem is None: await g.dem_an_toan()
+        return _bang_goi()
+    def _bang_goi(): return [{"ten": t, "phien_ban": v["phien_ban"], "bat": True, "so_cong_cu": 0, "so_tai_lieu": 0, "so_lan_7_ngay": 0, "so_loi_7_ngay": 0, "mo_ta": v["mo_ta"], "tu_khoa": v["tu_khoa"], "sua_luc": None} for t, v in goi_da_luu.items()]
     async def lich_su(ten): return [{"id": 1, "phien_ban": "0.9.0", "thay_luc": None, "thay_boi": "qt"}] if ten in goi_da_luu else []
     async def khoi_phuc(ten, id_lich_su, *, boi):
         if ten not in goi_da_luu or id_lich_su != 1: raise g.GoiKhongTonTai(ten)
         return g.doc_goi(goi_da_luu[ten])
     async def xuat(ten): return goi_da_luu.get(ten)
-    async def liet_ke_kn(): return {"co_san": [{"ten": "tra_cuu_san_pham", "so_lan_7_ngay": 3, "so_loi_7_ngay": 0}], "plugin": [], "plugin_toi_da": 12}
+    async def liet_ke_kn(dem=None):
+        if dem is None: await g.dem_an_toan()
+        return {"co_san": [{"ten": "tra_cuu_san_pham", "so_lan_7_ngay": 3, "so_loi_7_ngay": 0}], "plugin": [], "plugin_toi_da": 12}
+    async def dem_an_toan(): return {}
 
-    for ten, ham in [("cai", cai), ("bat_tat", bat_tat), ("xoa", xoa), ("liet_ke", liet_ke), ("lich_su", lich_su), ("khoi_phuc", khoi_phuc), ("xuat", xuat)]:
+    for ten, ham in [("cai", cai), ("bat_tat", bat_tat), ("xoa", xoa), ("liet_ke", liet_ke), ("lich_su", lich_su), ("khoi_phuc", khoi_phuc), ("xuat", xuat), ("dem_an_toan", dem_an_toan)]:
         monkeypatch.setattr(g, ten, ham)
     monkeypatch.setattr(api.kho_ky_nang, "liet_ke", liet_ke_kn)
     return goi_da_luu
@@ -77,6 +86,23 @@ def test_cai_liet_ke_xuat_xoa(kho):
     assert "attachment" in x.headers.get("content-disposition", "")
     assert c.delete("/api/goi-ky-nang/tu-van-da-nhay-cam").status_code == 204
     assert c.get("/api/goi-ky-nang/tu-van-da-nhay-cam/xuat").status_code == 404
+
+
+def test_liet_ke_chi_dem_events_mot_lan(kho, monkeypatch):
+    """
+    Hai bảng trên cùng một màn hình từng tự đếm mỗi bảng một lần: hai lượt
+    quét 7 ngày bảng `events` cho MỘT lần vẽ, mà màn hình tự làm mới 6 giây
+    một lần và `events` lớn thêm một dòng mỗi lời gọi công cụ.
+    """
+    so_lan: list[int] = []
+
+    async def dem_an_toan():
+        so_lan.append(1); return {}
+    monkeypatch.setattr(g, "dem_an_toan", dem_an_toan)
+
+    c = TestClient(_app())
+    assert c.get("/api/goi-ky-nang").status_code == 200
+    assert len(so_lan) == 1
 
 
 def test_cai_sai_422_va_kho_day_409(kho, monkeypatch):

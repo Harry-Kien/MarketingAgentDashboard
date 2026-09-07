@@ -93,7 +93,10 @@ async def ghi(ten_bang_gia: str, *, boi: str) -> dict:
             SET gia_tri = EXCLUDED.gia_tri, sua_boi = EXCLUDED.sua_boi,
                 sua_luc = now()
         """,
-        KHOA, json.dumps(ban_ghi, ensure_ascii=False), boi,
+        # Truyền dict THẲNG: codec jsonb trong agent/db.py đã json.dumps;
+        # dumps thêm là cột lưu chuỗi JSON thay vì object. `doc()` vẫn giữ
+        # nhánh json.loads để đọc dòng cũ đã ghi hai lần.
+        KHOA, ban_ghi, boi,
     )
     await db.log_event("erp.xac_nhan_bang_gia", actor=boi, bang_gia=ten)
     return ban_ghi

@@ -225,3 +225,23 @@ def test_kiem_ket_noi_doc_xac_nhan():
     assert "da_xac_nhan" in nguon, (
         "kiem_ket_noi không tra xác nhận — mục Bảng giá sẽ vàng mãi mãi"
     )
+
+
+def test_ghi_truyen_dict_thang_vao_jsonb(monkeypatch):
+    """
+    Codec jsonb trong agent/db.py đã json.dumps; truyền chuỗi đã dumps là
+    mã hoá hai lần và cột lưu string thay vì object (đo được 07.09.2026).
+    """
+    ghi: list[tuple] = []
+
+    async def execute(sql, *a):
+        ghi.append(a)
+        return "INSERT 0 1"
+
+    async def log_event(kind, **kw):
+        return None
+
+    monkeypatch.setattr(xac_nhan.db, "execute", execute)
+    monkeypatch.setattr(xac_nhan.db, "log_event", log_event, raising=False)
+    chay(xac_nhan.ghi("bang_gia_thang_9", boi="qt"))
+    assert isinstance(ghi[0][1], dict) and ghi[0][1]["ten"] == "bang_gia_thang_9"

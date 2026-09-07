@@ -246,3 +246,33 @@ def test_main_nap_cau_hinh_luc_khoi_dong():
             )
             return
     raise AssertionError("không tìm thấy lifespan")
+
+
+# ---------------------------------------------------------------
+#  JSONB: codec trong agent/db.py đã json.dumps — không dumps thêm
+# ---------------------------------------------------------------
+
+
+def test_luu_truyen_gia_tri_thang_khong_dumps(bang):
+    """
+    Bản trước ghi `json.dumps(v)` vào `$2::jsonb` — codec dumps thêm lần
+    nữa, cột lưu một CHUỖI JSON ('"auto"', 'false') thay vì string/bool.
+    Đo được trên Postgres thật 07.09.2026: jsonb_typeof = 'string' cho mọi
+    dòng. Đọc lên vẫn ra nhờ nhánh json.loads nên không ai thấy.
+    """
+    chay(runtime.luu({"mode": "auto", "enabled": False}, boi="qt"))
+    assert bang.dong["mode"] == "auto"
+    assert bang.dong["enabled"] is False
+
+
+def test_nap_doc_duoc_ca_dong_moi_lan_dong_cu_ma_hoa_hai_lan(bang):
+    """
+    Hai dạng cùng nằm trong CSDL sau khi sửa: dòng cũ '"auto"' (loads ra
+    "auto"), dòng mới "auto" (loads ném). Ném mà bỏ qua là `mode` lặng lẽ
+    quay về mặc định sau mỗi lần khởi động.
+    """
+    bang.dong["mode"] = "auto"
+    bang.dong["enabled"] = json.dumps(False)
+    chay(runtime.nap())
+    assert runtime.STATE["mode"] == "auto"
+    assert runtime.STATE["enabled"] is False

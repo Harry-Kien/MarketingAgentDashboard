@@ -94,10 +94,14 @@ async def nap() -> dict:
             continue
         gt = r["gia_tri"]
         if isinstance(gt, str):
+            # Hai dạng cùng tồn tại trong CSDL: dòng cũ ghi mã hoá hai lần
+            # ('"auto"' — loads ra "auto"), dòng mới là chuỗi thường ("auto" —
+            # loads ném ValueError). Ném thì GIỮ NGUYÊN chuỗi, không bỏ qua:
+            # bỏ qua là `mode` lặng lẽ quay về mặc định sau mỗi lần khởi động.
             try:
                 gt = json.loads(gt)
             except ValueError:
-                continue
+                pass
         STATE[khoa] = gt
     return dict(STATE)
 
@@ -121,7 +125,11 @@ async def luu(fields: dict, *, boi: str = "staff") -> dict:
                 SET gia_tri = EXCLUDED.gia_tri, sua_boi = EXCLUDED.sua_boi,
                     sua_luc = now()
             """,
-            k, json.dumps(v), boi,
+            # Truyền giá trị THẲNG: codec jsonb trong agent/db.py đã json.dumps.
+            # Bản trước dumps thêm một lần nên cột lưu một CHUỖI JSON thay vì
+            # object/bool (jsonb_typeof = 'string') — đọc lên vẫn ra vì `nap`
+            # có nhánh json.loads, nên không ai thấy. Xem ghi nhớ JSONB.
+            k, v, boi,
         )
     return update(**fields)
 

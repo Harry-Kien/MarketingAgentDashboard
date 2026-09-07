@@ -147,8 +147,11 @@ def dung_tai_lieu() -> str:
         "hỏi về X thì hỏi lại Y, tra Z, không hứa W\"*.\n"
         f"- **Công cụ** (`cong_cu`) — tối đa {CONG_CU_MOI_GOI_TOI_DA} bản mô "
         "tả plugin, y hệt plugin rời ở mục trên.\n"
-        "- **Tài liệu** (`tai_lieu`) — nạp vào kho tri thức dưới nhãn của "
-        "gói, chỉ agent dùng gói đó mới trích được.\n"
+        "- **Tài liệu** (`tai_lieu`) — nạp vào **kho tri thức chung**, tiêu "
+        "đề mang nhãn `[tên gói]`. Nhãn chỉ để biết đoạn đến từ đâu và để gỡ "
+        "lại khi tắt gói; RAG vẫn trả các đoạn này về ở **mọi** câu hỏi khớp "
+        "ngữ nghĩa, kể cả lượt không kích hoạt gói nào. Vì thế tiêu đề và "
+        "nội dung tài liệu bị quét prompt injection y như hướng dẫn.\n"
         "- **Từ khoá** (`tu_khoa`) và **phiên bản** (`phien_ban`).\n"
     )
     d.append(

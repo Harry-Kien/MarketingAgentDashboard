@@ -108,7 +108,7 @@ Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài
 
 - **Hướng dẫn** (`huong_dan`) — mô tả việc, ví dụ *"khi khách hỏi về X thì hỏi lại Y, tra Z, không hứa W"*.
 - **Công cụ** (`cong_cu`) — tối đa 5 bản mô tả plugin, y hệt plugin rời ở mục trên.
-- **Tài liệu** (`tai_lieu`) — nạp vào kho tri thức dưới nhãn của gói, chỉ agent dùng gói đó mới trích được.
+- **Tài liệu** (`tai_lieu`) — nạp vào **kho tri thức chung**, tiêu đề mang nhãn `[tên gói]`. Nhãn chỉ để biết đoạn đến từ đâu và để gỡ lại khi tắt gói; RAG vẫn trả các đoạn này về ở **mọi** câu hỏi khớp ngữ nghĩa, kể cả lượt không kích hoạt gói nào. Vì thế tiêu đề và nội dung tài liệu bị quét prompt injection y như hướng dẫn.
 - **Từ khoá** (`tu_khoa`) và **phiên bản** (`phien_ban`).
 
 

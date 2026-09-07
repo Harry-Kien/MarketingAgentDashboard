@@ -336,10 +336,28 @@ dạng và luật. Ba bước:
 2. **Cài.** Nút **Cài**. Có hiệu lực ngay — không cần khởi động lại gì.
    Cài cùng tên khác phiên bản thì bản cũ tự vào lịch sử (giữ tối đa 10
    bản), có nút Khôi phục nếu bản mới có vấn đề.
-3. **Phòng thử.** Nhắn một câu chứa đúng từ khoá của gói. Bên phải, mục
+3. **Kiểm sau khi cài — không tốn tiền model.**
+
+   ```bash
+   python -m scripts.kiem_goi <ten-goi>
+   python -m scripts.kiem_goi <ten-goi> --nhanh   # bỏ lớp tài liệu
+   ```
+
+   Ba mảnh của gói nằm ở ba chỗ (hướng dẫn kích hoạt theo từ khoá, công
+   cụ trong bảng plugin, tài liệu trong kho tri thức) và mảnh nào hỏng
+   cũng **không nổ** — agent chỉ lặng lẽ trả lời như chưa từng có gói,
+   trong khi dashboard vẫn hiện "đang bật". Lệnh này đi qua cả ba, cộng
+   phép kiểm từ khoá có lấn câu nghiệp vụ khác không và gói có còn suất
+   trong hai suất mỗi lượt không. Mã thoát khác 0 khi có mảnh HỎNG; cảnh
+   báo không làm đỏ mã thoát. Chỉ lớp tài liệu ra mạng (một lượt
+   embedding, rẻ hơn sinh văn bản khoảng hai bậc), `--nhanh` bỏ nó.
+
+4. **Phòng thử.** Nhắn một câu chứa đúng từ khoá của gói. Bên phải, mục
    "Bên trong lượt vừa rồi" hiện dòng **"Gói kỹ năng kích hoạt"** kèm tên
    gói nếu hướng dẫn được nạp — không thấy dòng đó nghĩa là câu hỏi chưa
-   khớp từ khoá nào, không phải gói chưa cài.
+   khớp từ khoá nào, không phải gói chưa cài. Bước này **gọi model thật**,
+   và là thứ duy nhất `kiem_goi` không thay được: đọc câu trả lời xem
+   giọng văn và ranh giới tư vấn có đúng không.
 
 **Hướng dẫn (`huong_dan`) là một mẩu prompt do người trong nhà viết, không
 phải dữ liệu trung tính.** Nó bị quét bằng đúng bộ quét injection dùng cho

@@ -121,6 +121,18 @@ python -m scripts.chay_sidecar_zalo --hien   # xem log ngay trên terminal
 Bật xong vào dashboard → **Kết nối** → **Xác minh provider**. Phiên cũ tự
 khôi phục nếu còn hạn; hết hạn mới phải quét QR lại.
 
+Sau khi cài một **gói kỹ năng** từ dashboard, kiểm ba mảnh của nó đã tới nơi
+chưa — **không tốn tiền model**:
+
+```bash
+python -m scripts.kiem_goi <ten-goi>            # từ khoá, công cụ, tài liệu
+python -m scripts.kiem_goi <ten-goi> --nhanh    # bỏ lớp tài liệu, không ra mạng
+```
+
+Cần vì hướng dẫn, công cụ và tài liệu nằm ở ba chỗ khác nhau, và mảnh nào
+hỏng cũng im lặng: agent trả lời như chưa từng có gói, dashboard vẫn hiện
+"đang bật". Mã thoát khác 0 khi có mảnh HỎNG.
+
 Sinh lại tài liệu **sau khi đổi schema, thêm kỹ năng, hoặc chạy eval** (có
 test canh việc này):
 

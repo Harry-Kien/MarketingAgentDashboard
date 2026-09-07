@@ -3116,7 +3116,13 @@ async function loadKyNang() {
       </div>`).join("")
     : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
 
-  await loadGoiKyNang();
+  try {
+    await loadGoiKyNang();
+  } catch (err) {
+    // Lỗi của kho gói không được lan sang vòng làm mới 6 giây, và panel
+    // phải NÓI là không tải được — "Chưa có gói nào." khi CSDL hỏng là xanh giả.
+    $("#goi-ds").innerHTML = `<p class="empty">Không tải được gói kỹ năng: ${esc(err.message)}</p>`;
+  }
 }
 
 document.addEventListener("click", async (e) => {

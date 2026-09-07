@@ -31,6 +31,11 @@ def test_goi_dung_api():
 def test_cot_so_lan_goi_o_ky_nang_viet_san():
     src = _than_ham("loadKyNang")
     assert "so_lan_7_ngay" in src and "loadGoiKyNang()" in src
+    # loadGoiKyNang() lỗi (vd CSDL chưa migrate 0014) không được lan lên
+    # refresh() 6 giây, và panel #goi-ds phải NÓI ra là không tải được —
+    # "Chưa có gói nào." khi CSDL hỏng là xanh giả (hỏng im lặng).
+    assert re.search(r"try\s*\{\s*await loadGoiKyNang\(\);\s*\}\s*catch", src)
+    assert "Không tải được gói kỹ năng" in src
 
 
 def test_xuat_lich_su_khoi_phuc_co_nut():

@@ -329,11 +329,17 @@ lần từ dashboard — xem `docs/ky-nang.md` mục "Gói kỹ năng" để bi�
 dạng và luật. Ba bước:
 
 1. **Kiểm.** Dashboard → **Kỹ năng** → panel **Gói kỹ năng** → dán JSON
-   (hoặc chọn tệp `.json`/`.zip`) → nút **Kiểm**. Không ghi gì, chỉ nói
-   hợp lệ hay không và tóm tắt (số công cụ, số tài liệu, từ khoá). Có gói
-   mẫu sẵn ở `data/goi-ky-nang/tu-van-da-nhay-cam.example.json` để thử
-   ngay mà không phải tự viết JSON.
-2. **Cài.** Nút **Cài**. Có hiệu lực ngay — không cần khởi động lại gì.
+   (hoặc chọn tệp `.json`) → nút **Kiểm**. Không ghi gì, chỉ nói hợp lệ
+   hay không và tóm tắt (số công cụ, số tài liệu, từ khoá). Có gói mẫu
+   sẵn ở `data/goi-ky-nang/tu-van-da-nhay-cam.example.json` để thử ngay
+   mà không phải tự viết JSON.
+
+   Đã chọn tệp thì **tệp thắng ô dán** — nút Kiểm đọc tệp, không đọc phần
+   còn sót trong ô. Riêng tệp `.zip` thì nút Kiểm báo là không nhận: bộ
+   giải nén nằm ở máy chủ và chỉ chạy trên đường **Cài**, nơi nó vẫn kiểm
+   toàn bộ trước khi ghi bất cứ thứ gì.
+2. **Cài.** Nút **Cài**. Nhận cả `.json` lẫn `.zip`. Có hiệu lực ngay —
+   không cần khởi động lại gì.
    Cài cùng tên khác phiên bản thì bản cũ tự vào lịch sử (giữ tối đa 10
    bản), có nút Khôi phục nếu bản mới có vấn đề.
 3. **Kiểm sau khi cài — không tốn tiền model.**

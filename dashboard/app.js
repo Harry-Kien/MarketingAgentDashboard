@@ -3110,8 +3110,14 @@ async function loadKyNang() {
             p.goi ? " · gói " + esc(p.goi) : ""}</span>
         </span>
         <span class="row__side">
-          <button type="button" class="btn btn--sm btn--halt"
-            data-plugin-xoa="${esc(p.ten)}">Xoá</button>
+          ${p.goi
+            /* Công cụ của gói KHÔNG có nút Xoá: máy chủ từ chối xoá riêng nó
+             * (kho_ky_nang.xoa_plugin), và một nút luôn báo lỗi là nút dạy
+             * người ta bỏ qua thông báo lỗi. Thay bằng nhãn nói nó thuộc gói
+             * nào, để biết phải đi tắt/xoá ở panel Gói kỹ năng. */
+            ? `<b class="pill">gói ${esc(p.goi)}</b>`
+            : `<button type="button" class="btn btn--sm btn--halt"
+                 data-plugin-xoa="${esc(p.ten)}">Xoá</button>`}
         </span>
       </div>`).join("")
     : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
@@ -3186,6 +3192,9 @@ async function caiGoiKyNang(chiKiem) {
   const { tep, chu } = docFormGoi();
   const hop = $("#goi-ketqua");
   try {
+    /* Ưu tiên rõ ràng: đã chọn tệp thì TỆP thắng ô dán. Bản trước, nút Kiểm
+     * bỏ qua tệp và lặng lẽ kiểm nội dung còn sót trong ô dán — người dùng
+     * thấy "Hợp lệ" cho một gói KHÁC gói họ vừa chọn, rồi bấm Cài. */
     if (tep && !chiKiem) {
       // Tệp đi bằng FormData như gửi tệp trong hộp thư — KHÔNG đặt Content-Type,
       // trình duyệt tự thêm boundary.
@@ -3194,18 +3203,34 @@ async function caiGoiKyNang(chiKiem) {
       const d = await res.json();
       if (!res.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
       hop.innerHTML = `<p class="empty">Đã cài ${esc(d.ten)} v${esc(d.phien_ban)}.</p>`;
-    } else {
-      if (!chu) { toast("Dán JSON của gói hoặc chọn tệp", true); return; }
-      let tho; try { tho = JSON.parse(chu); } catch (e) { toast("JSON không hợp lệ: " + e.message, true); return; }
-      const d = await api(chiKiem ? "/goi-ky-nang/kiem" : "/goi-ky-nang", { method: "POST", body: JSON.stringify(tho) });
-      if (chiKiem) {
-        hop.innerHTML = d.hop_le
-          ? `<p class="empty">Hợp lệ: ${esc(d.tom_tat.ten)} v${esc(d.tom_tat.phien_ban)} · ${d.tom_tat.so_cong_cu} công cụ · ${d.tom_tat.so_tai_lieu} tài liệu · từ khoá ${esc(d.tom_tat.tu_khoa.join(", "))}</p>`
-          : `<p class="empty">Không hợp lệ: ${esc(d.loi)}</p>`;
+      toast("Đã cài và bật gói");
+      await loadKyNang();
+      return;
+    }
+    let tho;
+    if (tep) {
+      /* Nút Kiểm không được ghi gì, nên nó đọc tệp NGAY TRONG TRÌNH DUYỆT và
+       * gửi JSON tới /kiem — không có endpoint kiểm-từ-tệp ở máy chủ. Với
+       * .zip thì phải giải nén, mà bộ giải nén (goi.tu_zip) chỉ nằm trên
+       * đường Cài; nói thẳng ra thay vì im lặng kiểm nhầm ô dán. */
+      if (/\.zip$/i.test(tep.name)) {
+        toast("Kiểm chỉ nhận .json; tệp .zip bấm Cài (máy chủ kiểm trước khi ghi)", true);
         return;
       }
-      hop.innerHTML = `<p class="empty">Đã cài ${esc(d.ten)} v${esc(d.phien_ban)}.</p>`;
+      try { tho = JSON.parse(await tep.text()); }
+      catch (e) { toast("Tệp không phải JSON hợp lệ: " + e.message, true); return; }
+    } else {
+      if (!chu) { toast("Dán JSON của gói hoặc chọn tệp", true); return; }
+      try { tho = JSON.parse(chu); } catch (e) { toast("JSON không hợp lệ: " + e.message, true); return; }
     }
+    const d = await api(chiKiem ? "/goi-ky-nang/kiem" : "/goi-ky-nang", { method: "POST", body: JSON.stringify(tho) });
+    if (chiKiem) {
+      hop.innerHTML = d.hop_le
+        ? `<p class="empty">Hợp lệ: ${esc(d.tom_tat.ten)} v${esc(d.tom_tat.phien_ban)} · ${d.tom_tat.so_cong_cu} công cụ · ${d.tom_tat.so_tai_lieu} tài liệu · từ khoá ${esc(d.tom_tat.tu_khoa.join(", "))}</p>`
+        : `<p class="empty">Không hợp lệ: ${esc(d.loi)}</p>`;
+      return;
+    }
+    hop.innerHTML = `<p class="empty">Đã cài ${esc(d.ten)} v${esc(d.phien_ban)}.</p>`;
     toast("Đã cài và bật gói");
     await loadKyNang();
   } catch (e) { toast(e.message, true); }

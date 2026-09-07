@@ -38,6 +38,32 @@ def test_cot_so_lan_goi_o_ky_nang_viet_san():
     assert "Không tải được gói kỹ năng" in src
 
 
+def test_nut_kiem_nhan_tep_json_va_noi_ro_ve_zip():
+    """
+    Bản trước, nút Kiểm bỏ qua tệp đã chọn và lặng lẽ kiểm phần còn sót
+    trong ô dán — người dùng thấy "Hợp lệ" cho một gói KHÁC gói họ chọn.
+    Tệp phải THẮNG ô dán, và .zip (bộ giải nén chỉ có ở máy chủ) phải được
+    nói thẳng ra, không im lặng kiểm nhầm.
+    """
+    src = _than_ham("caiGoiKyNang")
+    assert "tep.text()" in src and "JSON.parse" in src
+    assert re.search(r"\.zip\$/i\.test\(tep\.name\)", src)
+    assert "Kiểm chỉ nhận .json" in src
+    # Nhánh gửi tệp thật (FormData) chỉ chạy khi KHÔNG phải chỉ kiểm.
+    assert "if (tep && !chiKiem)" in src
+
+
+def test_cong_cu_cua_goi_khong_co_nut_xoa():
+    """
+    Máy chủ từ chối xoá riêng công cụ của gói; một nút luôn báo lỗi là nút
+    dạy người ta bỏ qua thông báo lỗi. Thay bằng nhãn tên gói.
+    """
+    src = _than_ham("loadKyNang")
+    assert '<b class="pill">gói ${esc(p.goi)}</b>' in src
+    # Nút Xoá nằm ở nhánh NGƯỢC của điều kiện `p.goi`, tức là sau nhãn.
+    assert src.index("gói ${esc(p.goi)}") < src.index("data-plugin-xoa")
+
+
 def test_xuat_lich_su_khoi_phuc_co_nut():
     src = _than_ham("loadGoiKyNang")
     assert "data-goi-xuat" in src and "data-goi-lichsu" in src and "data-goi-battat" in src and "data-goi-xoa" in src

@@ -171,9 +171,22 @@ def test_mau_trong_giao_dien_luu_duoc():
     """
     import json
     import re
+    import shutil
+    import subprocess
 
+    # Mẫu nay là object JS (form tiếng Việt, không còn ô JSON), nên đọc bằng
+    # node thay vì regex chuỗi — mọi mẫu tra_bang đều phải qua bộ kiểm.
     js = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
-    m = re.search(r"tra_bang:\s*'((?:[^'\\]|\\.)*)'", js)
-    assert m, "không tìm thấy mẫu tra_bang trong app.js"
-    mau = json.loads(m.group(1).encode().decode("unicode_escape"))
-    doc_ban_mo_ta(tho(mau["bang"]))
+    m = re.search(r"const PLUGIN_MAU = \{.*?\n\};\n", js, re.S)
+    assert m, "không tìm thấy PLUGIN_MAU trong app.js"
+    node = shutil.which("node")
+    assert node, "cần node trên PATH"
+    r = subprocess.run(
+        [node, "-e", m.group(0) + "process.stdout.write(JSON.stringify(PLUGIN_MAU))"],
+        capture_output=True, text=True, encoding="utf-8", timeout=20,
+    )
+    assert r.returncode == 0, r.stderr
+    mau_bang = [v for v in json.loads(r.stdout).values() if v["loai"] == "tra_bang"]
+    assert mau_bang, "không có mẫu tra_bang nào trong giao diện"
+    for v in mau_bang:
+        doc_ban_mo_ta(tho(v["cau_hinh"]["bang"]))

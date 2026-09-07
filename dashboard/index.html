@@ -572,38 +572,81 @@
 
         <section class="panel">
           <h2 class="panel__head">Tạo hoặc sửa plugin</h2>
-          <form id="pluginform" class="form">
-            <label class="field">
-              <span>Tên công cụ</span>
-              <input name="ten" required maxlength="40" placeholder="tra_bao_hanh">
-            </label>
-            <label class="field">
-              <span>Loại</span>
-              <select name="loai" id="plugin-loai">
-                <option value="tra_bang">Tra bảng khoá → giá trị</option>
-                <option value="tra_tai_lieu">Hỏi kho tri thức (giới hạn nhóm)</option>
-                <option value="chuyen_chuyen_biet">Chuyển người kèm lý do riêng</option>
-                <option value="goi_api_doc">Gọi API chỉ đọc (cần danh sách cho phép)</option>
-              </select>
-            </label>
+          <p class="panel__note">
+            Không cần biết kỹ thuật: bấm một mẫu có sẵn hoặc chọn loại, điền
+            bằng tiếng Việt, bấm <b>Chạy thử</b> xem agent trả gì rồi mới
+            <b>Lưu và bật</b>.
+          </p>
+          <div class="chips" id="plugin-mau" aria-label="Mẫu có sẵn"></div>
+          <form id="pluginform" class="form" novalidate>
             <label class="field field--wide">
-              <span>Mô tả — model chọn công cụ DỰA TRÊN ô này</span>
+              <span>Tên kỹ năng <em class="hint">tiếng Việt có dấu, hệ thống tự đặt mã máy</em></span>
+              <input name="nhan" required maxlength="60" placeholder="Tra bảo hành theo dòng sản phẩm" autocomplete="off">
+              <small class="field__ma">Mã máy: <code id="plugin-ma">—</code></small>
+            </label>
+
+            <label class="field field--wide">
+              <span>Kỹ năng này làm gì</span>
+              <select name="loai" id="plugin-loai"></select>
+              <small class="field__giaithich" id="plugin-loai-giaithich"></small>
+            </label>
+
+            <label class="field field--wide">
+              <span>Khi nào agent dùng, khi nào không <em class="hint">agent chọn kỹ năng DỰA TRÊN ô này · 20–600 ký tự</em></span>
               <textarea name="mo_ta" required rows="3" minlength="20" maxlength="600"
                 placeholder="Tra thời hạn bảo hành của một dòng sản phẩm theo tên dòng. Không dùng cho câu hỏi về đổi trả."></textarea>
             </label>
-            <label class="field">
-              <span>Tên tham số</span>
-              <input name="tham_so_ten" maxlength="30" placeholder="dong_san_pham">
+
+            <div class="field field--wide" data-cauhinh="tra_bang">
+              <span>Bảng tra <em class="hint">khách hỏi về cột trái, agent trả lời cột phải · dán thẳng từ Excel được</em></span>
+              <table class="plugin-bang" id="plugin-bang">
+                <thead><tr><th>Khách hỏi về</th><th>Agent trả lời</th><th></th></tr></thead>
+                <tbody></tbody>
+              </table>
+              <div class="rowbtns">
+                <button type="button" class="btn btn--sm" id="plugin-bang-them">+ Thêm dòng</button>
+              </div>
+            </div>
+
+            <div class="field field--wide" data-cauhinh="tra_tai_lieu" hidden>
+              <span>Chỉ tra trong nhóm tài liệu <em class="hint">gõ một mẩu tên tài liệu đã nạp ở màn Tri thức</em></span>
+              <input name="nhom_tai_lieu" list="plugin-nhom-ds" maxlength="100" placeholder="bao-hanh">
+              <datalist id="plugin-nhom-ds"></datalist>
+              <span>Số đoạn lấy về <em class="hint">1–8, thường để 4</em></span>
+              <input name="k" type="number" min="1" max="8" value="4">
+            </div>
+
+            <div class="field field--wide" data-cauhinh="chuyen_chuyen_biet" hidden>
+              <span>Câu người trực sẽ đọc <em class="hint">để biết vì sao hội thoại tới tay mình</em></span>
+              <input name="ly_do" maxlength="200" placeholder="Khách hỏi hợp tác bán buôn">
+            </div>
+
+            <div class="field field--wide" data-cauhinh="goi_api_doc" hidden>
+              <span>Địa chỉ cần gọi <em class="hint">bắt đầu bằng https:// · chỗ điền giá trị viết {ma} · máy chủ phải nằm trong KY_NANG_HOST_CHO_PHEP</em></span>
+              <input name="url" maxlength="400" placeholder="https://noi-bo.example.com/tra/{ma}">
+              <span>Chờ tối đa (giây)</span>
+              <input name="han_giay" type="number" min="1" max="30" value="5">
+            </div>
+
+            <details class="field--wide plugin-nangcao" id="plugin-nangcao">
+              <summary>Nâng cao: tham số agent điền vào</summary>
+              <div class="plugin-nangcao__o">
+                <label class="field">
+                  <span>Mã tham số</span>
+                  <input name="tham_so_ten" maxlength="30" placeholder="dong_san_pham">
+                </label>
+                <label class="field">
+                  <span>Agent điền gì vào đây</span>
+                  <input name="tham_so_mo_ta" maxlength="200" placeholder="Tên dòng sản phẩm khách hỏi">
+                </label>
+              </div>
+            </details>
+
+            <label class="field field--wide" id="plugin-thu-o">
+              <span>Thử với câu khách hỏi</span>
+              <input name="thu_gia_tri" placeholder="Kem chống nắng" autocomplete="off">
             </label>
-            <label class="field">
-              <span>Mô tả tham số</span>
-              <input name="tham_so_mo_ta" maxlength="200" placeholder="Tên dòng sản phẩm khách hỏi">
-            </label>
-            <label class="field field--wide">
-              <span id="plugin-cauhinh-nhan">Cấu hình (JSON)</span>
-              <textarea name="cau_hinh" rows="5" id="plugin-cauhinh"
-                placeholder='{"bang": {"serum": "12 tháng"}}'></textarea>
-            </label>
+
             <div class="rowbtns">
               <button type="button" class="btn" id="plugin-thu">Chạy thử</button>
               <button type="submit" class="btn btn--primary">Lưu và bật</button>

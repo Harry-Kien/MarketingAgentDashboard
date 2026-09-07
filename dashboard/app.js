@@ -2712,26 +2712,364 @@ const NHOM_NHAN = {
   marketing: "Marketing", con_nguoi: "Con người",
 };
 
-/* Mẫu cấu hình cho từng loại. Ô cấu hình là JSON, và JSON gõ tay từ đầu thì
- * ai cũng gõ sai lần đầu — điền sẵn mẫu đúng thì người vận hành SỬA chứ
- * không VIẾT, và đó là khác biệt giữa dùng được và bỏ đó. */
-const PLUGIN_MAU = {
-  /* Khoá mẫu phải ĐỦ RIÊNG, và đây không phải chuyện thẩm mỹ.
-   *
-   * Mẫu cũ dùng khoá "serum". Danh mục cửa hàng này có BỐN sản phẩm chứa
-   * chữ ấy, nên một dòng "serum" trả lời thay cho cả bốn — chắc nịch, không
-   * mơ hồ, nên cũng không có nhánh hỏi lại nào chạy. Người vận hành SỬA mẫu
-   * chứ không VIẾT lại, nên mẫu xấu là cái bẫy được nhân bản.
-   *
-   * `ban_mo_ta.khoa_long_nhau` nay chặn khoá lồng nhau lúc lưu, nhưng mẫu
-   * vẫn nên dạy đúng ngay từ đầu thay vì đợi bị từ chối. */
-  tra_bang: '{\n  "bang": {\n    "Kem Chống Nắng": "12 tháng sau khi mở nắp",\n    "Sữa Rửa Mặt": "12 tháng sau khi mở nắp"\n  }\n}',
-  tra_tai_lieu: '{\n  "nhom_tai_lieu": "bao-hanh",\n  "k": 4\n}',
-  chuyen_chuyen_biet: '{\n  "ly_do": "Khách hỏi hợp tác bán buôn"\n}',
-  goi_api_doc: '{\n  "url": "https://noi-bo.example.com/tra/{ma}",\n  "han_giay": 5\n}',
+/* Bốn loại plugin, nói bằng tiếng Việt. Máy chủ chỉ biết mã (`tra_bang`…);
+ * người vận hành chỉ cần biết nhãn. Bảng này là chỗ DUY NHẤT dịch hai chiều,
+ * nên thêm loại thứ năm ở máy chủ mà quên đây thì test đọc form sẽ đỏ.
+ *
+ * `tham_so` là tham số mặc định: model điền gì vào công cụ. Người vận hành
+ * hầu như không cần đụng — hai loại tra cứu luôn nhận đúng một thứ (điều
+ * khách hỏi), chuyển người thì không nhận gì. Chỉ gọi API mới cần tự đặt,
+ * vì tên tham số phải khớp chỗ `{ma}` trong địa chỉ. */
+const PLUGIN_LOAI = {
+  tra_bang: {
+    nhan: "Tra bảng hỏi → đáp",
+    giai_thich: "Bạn nạp một bảng hai cột. Khách hỏi trúng cột trái, agent trả lời bằng cột phải. Không khớp thì agent nói chưa có thông tin, không đoán.",
+    tham_so: { ten: "khoa", mo_ta: "Điều khách đang hỏi, ví dụ tên sản phẩm hay tên chi nhánh" },
+    thu: "Kem chống nắng",
+  },
+  tra_tai_lieu: {
+    nhan: "Hỏi kho tri thức, giới hạn một nhóm tài liệu",
+    giai_thich: "Như kỹ năng tìm kiến thức có sẵn, nhưng chỉ tra trong những tài liệu có tên chứa mẩu chữ bạn đặt. Dùng khi một chủ đề cần nguồn riêng, không lẫn tài liệu khác.",
+    tham_so: { ten: "cau_hoi", mo_ta: "Câu hỏi của khách, giữ nguyên ý" },
+    thu: "Bảo hành bao lâu?",
+  },
+  chuyen_chuyen_biet: {
+    nhan: "Chuyển người kèm lý do riêng",
+    giai_thich: "Gặp đúng tình huống này, agent dừng lại và giao cho người trực kèm một câu lý do bạn viết sẵn. Không tốn tiền, không trả lời thay.",
+    tham_so: null,
+    thu: "",
+  },
+  goi_api_doc: {
+    nhan: "Gọi một hệ thống ngoài (chỉ đọc)",
+    giai_thich: "Agent GET một địa chỉ HTTPS bạn cho phép và đọc kết quả. Máy chủ đó phải nằm trong KY_NANG_HOST_CHO_PHEP ở .env — lớp chặn này cố ý nằm ngoài dashboard.",
+    tham_so: { ten: "ma", mo_ta: "Giá trị điền vào chỗ {ma} trong địa chỉ" },
+    thu: "SP001",
+  },
 };
 
+/* Mẫu có sẵn — người vận hành SỬA chứ không VIẾT, và đó là khác biệt giữa
+ * dùng được và bỏ đó. Mỗi mẫu là một bản mô tả hoàn chỉnh; test đưa từng
+ * mẫu qua `doc_ban_mo_ta` thật, nên mẫu sai không lọt ra được.
+ *
+ * Khoá mẫu phải ĐỦ RIÊNG: danh mục cửa hàng có bốn sản phẩm chứa chữ
+ * "serum", nên một dòng "serum" trả lời thay cho cả bốn — chắc nịch, không
+ * mơ hồ, nên cũng không có nhánh hỏi lại nào chạy. */
+const PLUGIN_MAU = {
+  bao_hanh: {
+    nhan: "Bảo hành theo dòng sản phẩm",
+    ten: "tra_bao_hanh",
+    loai: "tra_bang",
+    mo_ta: "Tra thời hạn bảo hành và hạn dùng sau khi mở nắp của một dòng sản phẩm theo tên dòng. Không dùng cho câu hỏi về đổi trả.",
+    tham_so: [{ ten: "khoa", mo_ta: "Tên dòng sản phẩm khách hỏi", bat_buoc: true }],
+    cau_hinh: { bang: {
+      "Kem Chống Nắng": "12 tháng sau khi mở nắp",
+      "Sữa Rửa Mặt": "12 tháng sau khi mở nắp",
+      "Nước Tẩy Trang": "12 tháng sau khi mở nắp",
+    } },
+  },
+  dia_chi: {
+    nhan: "Địa chỉ và giờ mở cửa",
+    ten: "tra_dia_chi_cua_hang",
+    loai: "tra_bang",
+    mo_ta: "Tra địa chỉ và giờ mở cửa của một chi nhánh theo tên khu vực hoặc tên đường. Không dùng cho câu hỏi giao hàng.",
+    tham_so: [{ ten: "khoa", mo_ta: "Tên khu vực, quận hoặc tên đường khách hỏi", bat_buoc: true }],
+    cau_hinh: { bang: {
+      "Dĩ An": "90 Cây Da Xề, Đông Hoà, Dĩ An — 8h đến 21h hằng ngày",
+      "Thủ Đức": "Số 1 Võ Văn Ngân, Thủ Đức — 8h đến 21h hằng ngày",
+    } },
+  },
+  ban_buon: {
+    nhan: "Chuyển bộ phận bán buôn",
+    ten: "chuyen_ban_buon",
+    loai: "chuyen_chuyen_biet",
+    mo_ta: "Khách hỏi giá sỉ, mở đại lý, hợp tác phân phối hoặc mua số lượng lớn từ 20 sản phẩm trở lên.",
+    tham_so: [],
+    cau_hinh: { ly_do: "Khách hỏi hợp tác bán buôn hoặc mở đại lý" },
+  },
+  chinh_sach: {
+    nhan: "Hỏi riêng tài liệu chính sách",
+    ten: "tra_chinh_sach",
+    loai: "tra_tai_lieu",
+    mo_ta: "Tra các câu hỏi về chính sách đổi trả, hoàn tiền và bảo hành trong đúng nhóm tài liệu chính sách của cửa hàng.",
+    tham_so: [{ ten: "cau_hoi", mo_ta: "Câu hỏi của khách, giữ nguyên ý", bat_buoc: true }],
+    cau_hinh: { nhom_tai_lieu: "chinh-sach", k: 4 },
+  },
+};
+
+/* Tên tiếng Việt → mã máy hợp lệ với `_TEN_RE` của máy chủ: chữ thường
+ * không dấu, số, gạch dưới, bắt đầu bằng chữ, 3–40 ký tự.
+ *
+ * Luôn trả về một mã hợp lệ kể cả khi nhãn rỗng hay toàn ký hiệu — lỗi
+ * "tên không hợp lệ" của máy chủ nói về chữ thường không dấu, đúng thứ ô
+ * này sinh ra để giấu đi, nên không được để nó lộ ra lần nữa. */
+function sinhMaPlugin(nhan) {
+  let s = String(nhan || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/_+/g, "_");
+  if (!/^[a-z]/.test(s)) s = "kn_" + s;
+  s = s.slice(0, 40).replace(/_+$/g, "");
+  while (s.length < 3) s += "_x";
+  return s;
+}
+
+/* Đọc chữ dán vào bảng: mỗi dòng một cặp, cách nhau bằng tab (Excel), dấu
+ * hai chấm, hoặc gạch đứng. Dòng trống bỏ qua; dòng không tách được thì giữ
+ * nguyên ở cột trái để người nhìn thấy và tự sửa, thay vì mất im lặng. */
+function docBangDan(text) {
+  const ra = [];
+  for (const dong of String(text || "").split(/\r?\n/)) {
+    const d = dong.trim();
+    if (!d) continue;
+    let k = -1;
+    for (const sep of ["\t", "|", ":"]) { const t = d.indexOf(sep); if (t > 0) { k = t; break; } }
+    if (k < 0) { ra.push([d, ""]); continue; }
+    ra.push([d.slice(0, k).trim(), d.slice(k + 1).trim()]);
+  }
+  return ra;
+}
+
+function themDongBang(khoa = "", gia_tri = "") {
+  const tb = $("#plugin-bang tbody");
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><input class="plugin-bang__khoa" placeholder="Kem chống nắng" maxlength="120"></td>
+    <td><input class="plugin-bang__gia" placeholder="12 tháng sau khi mở nắp" maxlength="500"></td>
+    <td><button type="button" class="btn btn--sm btn--ghost" data-bang-xoa title="Bỏ dòng">✕</button></td>`;
+  tr.querySelector(".plugin-bang__khoa").value = khoa;
+  tr.querySelector(".plugin-bang__gia").value = gia_tri;
+  tb.appendChild(tr);
+  return tr;
+}
+
+function docBang() {
+  const bang = {};
+  for (const tr of document.querySelectorAll("#plugin-bang tbody tr")) {
+    const k = tr.querySelector(".plugin-bang__khoa").value.trim();
+    const v = tr.querySelector(".plugin-bang__gia").value.trim();
+    if (!k && !v) continue;
+    if (!k || !v) throw new Error(`Dòng "${k || v}" thiếu một bên — cần đủ cả "khách hỏi về" và "agent trả lời".`);
+    if (bang[k] !== undefined) throw new Error(`"${k}" xuất hiện hai lần trong bảng. Giữ một dòng thôi.`);
+    bang[k] = v;
+  }
+  return bang;
+}
+
+function datBang(bang) {
+  $("#plugin-bang tbody").innerHTML = "";
+  for (const [k, v] of Object.entries(bang || {})) themDongBang(k, v);
+  if (!Object.keys(bang || {}).length) { themDongBang(); themDongBang(); }
+}
+
+/* Tên kỹ năng viết hoa cột trái để nhìn ra mẫu, nhưng mã máy mới là thứ gửi
+ * đi — hiện nó ngay dưới ô để không có bất ngờ lúc lưu. */
+function capNhatMaPlugin() {
+  const f = $("#pluginform");
+  if (!f) return;
+  $("#plugin-ma").textContent = sinhMaPlugin(f.elements.nhan.value);
+}
+
+function doiLoaiPlugin(loai, { giuThamSo = false } = {}) {
+  const f = $("#pluginform");
+  const meta = PLUGIN_LOAI[loai];
+  if (!f || !meta) return;
+  f.elements.loai.value = loai;
+  $("#plugin-loai-giaithich").textContent = meta.giai_thich;
+  for (const o of f.querySelectorAll("[data-cauhinh]")) o.hidden = o.dataset.cauhinh !== loai;
+  const nangCao = $("#plugin-nangcao");
+  const oThu = $("#plugin-thu-o");
+  if (!meta.tham_so) {
+    nangCao.hidden = true;
+    oThu.hidden = true;
+    f.elements.tham_so_ten.value = "";
+    f.elements.tham_so_mo_ta.value = "";
+  } else {
+    nangCao.hidden = false;
+    oThu.hidden = false;
+    if (!giuThamSo) {
+      f.elements.tham_so_ten.value = meta.tham_so.ten;
+      f.elements.tham_so_mo_ta.value = meta.tham_so.mo_ta;
+    }
+    f.elements.thu_gia_tri.placeholder = meta.thu;
+  }
+  if (loai === "tra_bang" && !$("#plugin-bang tbody tr")) datBang({});
+}
+
+function dienMauPlugin(ma) {
+  const m = PLUGIN_MAU[ma];
+  const f = $("#pluginform");
+  if (!m || !f) return;
+  f.reset();
+  f.elements.nhan.value = m.nhan;
+  f.elements.mo_ta.value = m.mo_ta;
+  doiLoaiPlugin(m.loai);
+  if (m.tham_so[0]) {
+    f.elements.tham_so_ten.value = m.tham_so[0].ten;
+    f.elements.tham_so_mo_ta.value = m.tham_so[0].mo_ta;
+  }
+  const ch = m.cau_hinh;
+  if (m.loai === "tra_bang") datBang(ch.bang);
+  if (m.loai === "tra_tai_lieu") { f.elements.nhom_tai_lieu.value = ch.nhom_tai_lieu; f.elements.k.value = ch.k || 4; }
+  if (m.loai === "chuyen_chuyen_biet") f.elements.ly_do.value = ch.ly_do;
+  if (m.loai === "goi_api_doc") { f.elements.url.value = ch.url; f.elements.han_giay.value = ch.han_giay || 5; }
+  capNhatMaPlugin();
+  $("#plugin-ketqua").innerHTML = "";
+  for (const c of document.querySelectorAll("#plugin-mau .chip")) c.classList.toggle("is-on", c.dataset.pluginMau === ma);
+  f.elements.nhan.focus();
+}
+
+/* Đọc form thành bản mô tả. Dùng chung cho nút "Chạy thử" và nút "Lưu" —
+ * hai đường khác nhau đọc form theo hai cách là chạy thử một thứ rồi lưu
+ * một thứ khác, và người vận hành không có cách nào biết.
+ *
+ * Kiểm ở đây chỉ để nói lỗi bằng câu ngắn NGAY tại ô; bộ kiểm thật vẫn là
+ * `doc_ban_mo_ta` ở máy chủ, và câu lỗi của nó cũng đã là tiếng Việt. */
+function docFormPlugin() {
+  const f = $("#pluginform");
+  const g = (n) => (f.elements[n]?.value || "").trim();
+  const loai = g("loai");
+  const meta = PLUGIN_LOAI[loai];
+  if (!meta) throw new Error("Chọn kỹ năng này làm gì trước.");
+  if (!g("nhan")) throw new Error("Đặt tên kỹ năng trước — tiếng Việt có dấu cũng được.");
+  if (g("mo_ta").length < 20) throw new Error("Mô tả quá ngắn. Viết rõ khi nào agent dùng và khi nào đừng dùng (ít nhất 20 ký tự).");
+
+  let cau_hinh = {};
+  if (loai === "tra_bang") {
+    cau_hinh = { bang: docBang() };
+    if (!Object.keys(cau_hinh.bang).length) throw new Error("Bảng đang trống. Thêm ít nhất một dòng.");
+  } else if (loai === "tra_tai_lieu") {
+    if (!g("nhom_tai_lieu")) throw new Error("Chọn hoặc gõ một mẩu tên nhóm tài liệu — bỏ trống thì kỹ năng này thành bản sao của tìm kiến thức.");
+    cau_hinh = { nhom_tai_lieu: g("nhom_tai_lieu"), k: parseInt(g("k") || "4", 10) };
+  } else if (loai === "chuyen_chuyen_biet") {
+    if (!g("ly_do")) throw new Error("Viết câu người trực sẽ đọc.");
+    cau_hinh = { ly_do: g("ly_do") };
+  } else if (loai === "goi_api_doc") {
+    if (!g("url").startsWith("https://")) throw new Error("Địa chỉ phải bắt đầu bằng https://");
+    cau_hinh = { url: g("url"), han_giay: parseFloat(g("han_giay") || "5") };
+  }
+
+  const tham_so = [];
+  if (meta.tham_so) {
+    const ten = g("tham_so_ten") || meta.tham_so.ten;
+    const mo_ta = g("tham_so_mo_ta") || meta.tham_so.mo_ta;
+    tham_so.push({ ten, mo_ta, bat_buoc: true });
+  }
+  return { ten: sinhMaPlugin(g("nhan")), loai, mo_ta: g("mo_ta"), tham_so, cau_hinh };
+}
+
+/* Kết quả chạy thử thành câu người đọc được. Đây là dữ liệu do người vận
+ * hành gõ vào bảng, nhưng vẫn là chuỗi đi vào innerHTML — esc() mọi thứ. */
+function hienKetQuaThu(loai, r) {
+  const dong = (nhan, gt, xau = false) => `<div class="row"><span class="row__flag ${
+    xau ? "row__flag--halt" : "row__flag--auto"}"></span><span class="row__body"><span class="row__title">${
+    esc(nhan)}</span><span class="row__sub row__sub--thu">${esc(gt)}</span></span></div>`;
+  const ghiChu = r && r.ghi_chu ? dong("Agent được dặn", r.ghi_chu) : "";
+  if (!r) return dong("Không có kết quả", "", true);
+  if (r.loi) return dong("Lỗi", r.loi, true) + ghiChu;
+  if (loai === "chuyen_chuyen_biet" || r.can_chuyen_nhan_vien) {
+    return dong("Chuyển cho người", "Lý do người trực thấy: " + (r.ly_do || "")) + ghiChu;
+  }
+  if (r.tim_thay === false) {
+    const nhieu = Array.isArray(r.nhieu_ket_qua) && r.nhieu_ket_qua.length
+      ? " Khớp nhiều dòng: " + r.nhieu_ket_qua.join(", ") : "";
+    return dong("Không tìm thấy", "Agent sẽ nói chưa có thông tin, không đoán." + nhieu, true) + ghiChu;
+  }
+  if (loai === "tra_bang") return dong("Tìm thấy: " + (r.khoa || ""), r.gia_tri || "") + ghiChu;
+  if (loai === "tra_tai_lieu" && Array.isArray(r.doan)) {
+    return r.doan.map((d) => dong("Tìm thấy trong " + (d.tai_lieu || ""), d.noi_dung || "")).join("") + ghiChu;
+  }
+  return dong("Tìm thấy", JSON.stringify(r).slice(0, 700)) + ghiChu;
+}
+
+/* Tên tài liệu đã nạp, cho ô "nhóm tài liệu" gợi ý. Tải MỘT lần khi mở
+ * màn, không theo vòng 6 giây — vòng đó vẽ lại datalist là vẽ thừa. */
+async function napNhomTaiLieuPlugin() {
+  if (state.pluginNhomDaTai) return;
+  try {
+    const ds = await api("/knowledge");
+    $("#plugin-nhom-ds").innerHTML = ds.map((d) => `<option value="${esc(d.title)}">`).join("");
+    state.pluginNhomDaTai = true;
+  } catch (e) { /* không có gợi ý thì vẫn gõ tay được */ }
+}
+
+function khoiTaoFormPlugin() {
+  const f = $("#pluginform");
+  if (!f || f.dataset.daKhoiTao) return;
+  f.dataset.daKhoiTao = "1";
+  $("#plugin-loai").innerHTML = Object.entries(PLUGIN_LOAI)
+    .map(([ma, m]) => `<option value="${ma}">${esc(m.nhan)}</option>`).join("");
+  $("#plugin-mau").innerHTML = Object.entries(PLUGIN_MAU)
+    .map(([ma, m]) => `<button type="button" class="chip" data-plugin-mau="${ma}">${esc(m.nhan)}</button>`).join("");
+  doiLoaiPlugin("tra_bang");
+  capNhatMaPlugin();
+
+  f.elements.nhan.addEventListener("input", capNhatMaPlugin);
+  $("#plugin-loai").addEventListener("change", (e) => doiLoaiPlugin(e.target.value));
+  $("#plugin-bang-them").addEventListener("click", () => themDongBang().querySelector("input").focus());
+  $("#plugin-mau").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-plugin-mau]");
+    if (c) dienMauPlugin(c.dataset.pluginMau);
+  });
+  $("#plugin-bang").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-bang-xoa]");
+    if (b) b.closest("tr").remove();
+  });
+  /* Dán nhiều dòng từ Excel vào bất kỳ ô nào của bảng: mỗi dòng dán thành
+   * một hàng, thay cho việc gõ từng ô. */
+  $("#plugin-bang").addEventListener("paste", (e) => {
+    const text = e.clipboardData?.getData("text") || "";
+    if (!/[\r\n\t]/.test(text)) return;
+    const cap = docBangDan(text);
+    if (!cap.length) return;
+    e.preventDefault();
+    const tr = e.target.closest("tr");
+    for (const [k, v] of cap) themDongBang(k, v);
+    if (tr && !tr.querySelector(".plugin-bang__khoa").value && !tr.querySelector(".plugin-bang__gia").value) tr.remove();
+  });
+}
+
+$("#plugin-thu")?.addEventListener("click", async () => {
+  const hop = $("#plugin-ketqua");
+  try {
+    const bm = docFormPlugin();
+    const args = {};
+    if (bm.tham_so.length) {
+      const v = $("#pluginform").elements.thu_gia_tri.value.trim();
+      if (!v) throw new Error("Gõ một câu khách hỏi vào ô \"Thử với câu khách hỏi\" rồi bấm Chạy thử.");
+      args[bm.tham_so[0].ten] = v;
+    }
+    hop.innerHTML = `<p class="empty">Đang chạy thử…</p>`;
+    const r = await api("/ky-nang/plugin/thu", {
+      method: "POST",
+      body: JSON.stringify({ ban_mo_ta: bm, args }),
+    });
+    hop.innerHTML = hienKetQuaThu(bm.loai, r.ket_qua);
+  } catch (e) {
+    hop.innerHTML = `<p class="empty plugin-loi">${esc(e.message)}</p>`;
+    toast(e.message, true);
+  }
+});
+
+$("#pluginform")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const bm = docFormPlugin();
+    await api("/ky-nang/plugin", { method: "POST", body: JSON.stringify(bm) });
+    e.target.reset();
+    doiLoaiPlugin("tra_bang");
+    datBang({});
+    capNhatMaPlugin();
+    $("#plugin-ketqua").innerHTML = "";
+    for (const c of document.querySelectorAll("#plugin-mau .chip")) c.classList.remove("is-on");
+    toast(`Đã lưu và bật "${bm.ten}"`);
+    await loadKyNang();
+  } catch (err) {
+    $("#plugin-ketqua").innerHTML = `<p class="empty plugin-loi">${esc(err.message)}</p>`;
+    toast(err.message, true);
+  }
+});
+
 async function loadKyNang() {
+  khoiTaoFormPlugin();
+  napNhomTaiLieuPlugin();
   const d = await api("/ky-nang");
   const tat = d.co_san.filter((k) => !k.bat).length;
   $("#c-kynang").textContent = tat ? `${tat} tắt` : "";
@@ -2763,7 +3101,7 @@ async function loadKyNang() {
         <span class="row__flag row__flag--auto"></span>
         <span class="row__body">
           <span class="row__title">${esc(p.ten)}</span>
-          <span class="row__sub">${esc(p.loai)}${
+          <span class="row__sub">${esc(PLUGIN_LOAI[p.loai]?.nhan || p.loai)}${
             p.tham_so.length ? " · tham số: " + esc(p.tham_so.join(", ")) : ""}</span>
           <span class="row__sub">${esc(p.mo_ta)}</span>
         </span>
@@ -2774,70 +3112,6 @@ async function loadKyNang() {
       </div>`).join("")
     : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
 }
-
-/* Đọc form thành bản mô tả. Dùng chung cho nút "Chạy thử" và nút "Lưu" —
- * hai đường khác nhau đọc form theo hai cách là chạy thử một thứ rồi lưu
- * một thứ khác, và người vận hành không có cách nào biết. */
-function docFormPlugin() {
-  const f = $("#pluginform");
-  const g = (n) => (f.elements[n]?.value || "").trim();
-  let cau_hinh = {};
-  const tho = g("cau_hinh");
-  if (tho) {
-    try {
-      cau_hinh = JSON.parse(tho);
-    } catch (e) {
-      throw new Error("Ô cấu hình không phải JSON hợp lệ: " + e.message);
-    }
-  }
-  const tham_so = [];
-  if (g("tham_so_ten")) {
-    tham_so.push({ ten: g("tham_so_ten"), mo_ta: g("tham_so_mo_ta"), bat_buoc: true });
-  }
-  return { ten: g("ten"), loai: g("loai"), mo_ta: g("mo_ta"), tham_so, cau_hinh };
-}
-
-$("#plugin-loai")?.addEventListener("change", (e) => {
-  const o = $("#plugin-cauhinh");
-  if (o && !o.value.trim()) o.value = PLUGIN_MAU[e.target.value] || "";
-});
-
-$("#plugin-thu")?.addEventListener("click", async () => {
-  const hop = $("#plugin-ketqua");
-  try {
-    const bm = docFormPlugin();
-    const args = {};
-    if (bm.tham_so.length) {
-      const v = prompt(`Giá trị thử cho tham số "${bm.tham_so[0].ten}":`, "");
-      if (v === null) return;
-      args[bm.tham_so[0].ten] = v;
-    }
-    const r = await api("/ky-nang/plugin/thu", {
-      method: "POST",
-      body: JSON.stringify({ ban_mo_ta: bm, args }),
-    });
-    hop.innerHTML = `<pre class="pre">${esc(JSON.stringify(r.ket_qua, null, 2))}</pre>`;
-  } catch (e) {
-    hop.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
-    toast(e.message, true);
-  }
-});
-
-$("#pluginform")?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try {
-    await api("/ky-nang/plugin", {
-      method: "POST",
-      body: JSON.stringify(docFormPlugin()),
-    });
-    e.target.reset();
-    $("#plugin-ketqua").innerHTML = "";
-    toast("Đã lưu và bật plugin");
-    await loadKyNang();
-  } catch (err) {
-    toast(err.message, true);
-  }
-});
 
 document.addEventListener("click", async (e) => {
   const bt = e.target.closest("[data-kynang]");
@@ -3146,6 +3420,7 @@ function veBenTrongPhongThu(d) {
     <div class="row"><span class="row__flag"></span>
       <span class="row__body"><span class="row__title">Độ tin cậy ${pct(d.confidence)}${d.grounded ? " · có căn cứ" : " · KHÔNG căn cứ"}</span>
       <span class="row__sub">${nguon.length ? esc(nguon.join(" · ")) : "không trích tài liệu nào"}</span></span></div>
+    ${(d.goi_ky_nang || []).length ? `<div class="row"><span class="row__flag row__flag--spend"></span><span class="row__body"><span class="row__title">Gói kỹ năng kích hoạt</span><span class="row__sub">${esc(d.goi_ky_nang.join(" · "))}</span></span></div>` : ""}
     <h3 class="panel__head">Công cụ đã gọi</h3>${congCu}
     <div class="row"><span class="row__flag"></span>
       <span class="row__body"><span class="row__title">${usd(d.cost_usd)} · ${d.latency_ms} ms · ${esc(d.model)}</span>

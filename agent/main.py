@@ -23,6 +23,7 @@ from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.api.cai_dat_api import router as cai_dat_api_router
 from agent.api.phong_thu_agent import router as phong_thu_router
+from agent.api.goi_ky_nang import router as goi_ky_nang_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
 from agent.api.erp import router as erp_router
@@ -793,6 +794,7 @@ app.include_router(native_webhooks_router)
 app.include_router(zalo_personal_webhook_router)
 app.include_router(cai_dat_api_router)
 app.include_router(phong_thu_router)
+app.include_router(goi_ky_nang_router)
 app.include_router(zalo_oa_webhook_router)
 app.include_router(webchat_router)
 app.include_router(oauth_meta_router)

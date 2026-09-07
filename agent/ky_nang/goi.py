@@ -155,14 +155,21 @@ def tu_zip(du_lieu: bytes) -> dict:
     except zipfile.BadZipFile as exc:
         raise LoiGoi("Tệp không phải zip hợp lệ.") from exc
     ten_tep = z.namelist()
-    if len(ten_tep) > TEP_ZIP_TOI_DA:
-        raise LoiGoi(f"Zip có hơn {TEP_ZIP_TOI_DA} tệp.")
     for n in ten_tep:
         # Zip slip: đường dẫn `../` hay tuyệt đối ghi ra ngoài thư mục đích.
         # Ở đây không ghi ra đĩa, nhưng chặn sớm để không ai tái dùng hàm này
-        # rồi bị.
+        # rồi bị. Kiểm trên MỌI entry, kể cả entry thư mục — tên thư mục
+        # cũng có thể mang "../".
         if n.startswith(("/", "\\")) or ".." in n.replace("\\", "/").split("/"):
             raise LoiGoi(f"Đường dẫn {n!r} trong zip không được phép.")
+    # Entry thư mục (kết thúc bằng "/") do Windows/7-Zip tự thêm khi nén cả
+    # một thư mục cha, không phải nội dung người viết gói bỏ vào. Đếm cả
+    # chúng vào TEP_ZIP_TOI_DA thì một gói 40 tài liệu hợp lệ bị từ chối chỉ
+    # vì công cụ nén tạo thêm vài entry rỗng — lỗi khó hiểu với người tạo
+    # gói, vì họ đếm đúng 40 tệp .md trong thư mục của mình.
+    tep_thuc = [n for n in ten_tep if not n.endswith("/")]
+    if len(tep_thuc) > TEP_ZIP_TOI_DA:
+        raise LoiGoi(f"Zip có hơn {TEP_ZIP_TOI_DA} tệp.")
     if "goi.json" not in ten_tep:
         raise LoiGoi("Zip thiếu goi.json.")
     try:
@@ -171,12 +178,24 @@ def tu_zip(du_lieu: bytes) -> dict:
         raise LoiGoi(f"goi.json không đọc được: {exc}") from exc
     if not isinstance(tho, dict):
         raise LoiGoi("goi.json phải là một đối tượng JSON.")
+
+    def _doc_van_ban(ten: str) -> str:
+        # VÌ SAO decode STRICT CHỨ KHÔNG "replace": "replace" nuốt lỗi bảng
+        # mã thành ký tự U+FFFD rồi lặng lẽ cho vào prompt — một tệp lưu sai
+        # bảng mã (vd cp1258 thay vì UTF-8) tới model dưới dạng vài ô vuông
+        # giữa văn bản, không lỗi, không nhật ký, không ai biết cho tới khi
+        # khách nhận câu trả lời tham chiếu một đoạn tài liệu đã hỏng.
+        try:
+            return z.read(ten).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise LoiGoi(f"{ten} không đọc được (không phải UTF-8): {exc}") from exc
+
     if "HUONG_DAN.md" in ten_tep and not tho.get("huong_dan"):
-        tho["huong_dan"] = z.read("HUONG_DAN.md").decode("utf-8", "replace")
+        tho["huong_dan"] = _doc_van_ban("HUONG_DAN.md")
     tai_lieu = list(tho.get("tai_lieu") or [])
-    for n in sorted(ten_tep):
+    for n in sorted(tep_thuc):
         if n.startswith("tai-lieu/") and n.endswith(".md"):
-            van_ban = z.read(n).decode("utf-8", "replace")
+            van_ban = _doc_van_ban(n)
             dong_dau = van_ban.strip().splitlines()[0] if van_ban.strip() else ""
             tieu_de = dong_dau.lstrip("# ").strip() if dong_dau.startswith("#") else n.rsplit("/", 1)[-1][:-3]
             noi_dung = van_ban.split("\n", 1)[1] if dong_dau.startswith("#") and "\n" in van_ban else van_ban

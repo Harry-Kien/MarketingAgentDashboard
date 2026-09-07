@@ -3083,7 +3083,8 @@ async function loadKyNang() {
         <span class="row__sub">${esc(NHOM_NHAN[k.nhom] || k.nhom)} ·
           ${esc(RUI_RO_NHAN[k.muc_rui_ro] || k.muc_rui_ro)}${
             k.can_erp ? " · cần ERP" : ""}${
-            k.can_kho_tri_thuc ? " · cần kho tri thức" : ""}</span>
+            k.can_kho_tri_thuc ? " · cần kho tri thức" : ""} ·
+          gọi 7 ngày: ${k.so_lan_7_ngay || 0}${k.so_loi_7_ngay ? " (" + k.so_loi_7_ngay + " lỗi)" : ""}</span>
         <span class="row__sub">${esc(k.tom_tat)}</span>
         <span class="row__sub"><em>Tắt thì:</em> ${esc(k.tat_thi_mat_gi)}</span>
       </span>
@@ -3104,6 +3105,9 @@ async function loadKyNang() {
           <span class="row__sub">${esc(PLUGIN_LOAI[p.loai]?.nhan || p.loai)}${
             p.tham_so.length ? " · tham số: " + esc(p.tham_so.join(", ")) : ""}</span>
           <span class="row__sub">${esc(p.mo_ta)}</span>
+          <span class="row__sub">gọi 7 ngày: ${p.so_lan_7_ngay || 0}${
+            p.so_loi_7_ngay ? " (" + p.so_loi_7_ngay + " lỗi)" : ""}${
+            p.goi ? " · gói " + esc(p.goi) : ""}</span>
         </span>
         <span class="row__side">
           <button type="button" class="btn btn--sm btn--halt"
@@ -3111,6 +3115,8 @@ async function loadKyNang() {
         </span>
       </div>`).join("")
     : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
+
+  await loadGoiKyNang();
 }
 
 document.addEventListener("click", async (e) => {
@@ -3140,6 +3146,96 @@ document.addEventListener("click", async (e) => {
       toast("Đã xoá");
       await loadKyNang();
     } catch (err) { toast(err.message, true); }
+  }
+});
+
+/* ---------------- gói kỹ năng ---------------- */
+async function loadGoiKyNang() {
+  const d = await api("/goi-ky-nang");
+  $("#goi-ds").innerHTML = d.goi.length ? d.goi.map((g) => `<div class="row">
+      <span class="row__flag ${g.bat ? "row__flag--auto" : "row__flag--halt"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(g.ten)} <b class="pill">v${esc(g.phien_ban)}</b>${g.bat ? "" : ' <b class="pill pill--halt">tắt</b>'}</span>
+        <span class="row__sub">${esc(g.mo_ta)}</span>
+        <span class="row__sub">${g.so_cong_cu} công cụ · ${g.so_tai_lieu} tài liệu · gọi 7 ngày: ${g.so_lan_7_ngay}${g.so_loi_7_ngay ? " (" + g.so_loi_7_ngay + " lỗi)" : ""} · từ khoá: ${esc((g.tu_khoa || []).join(", "))}</span>
+        <span class="row__sub" data-goi-lichsu-o="${esc(g.ten)}"></span>
+      </span>
+      <span class="row__side">
+        <button type="button" class="btn btn--sm" data-goi-battat="${esc(g.ten)}" data-bat="${g.bat ? "0" : "1"}">${g.bat ? "Tắt" : "Bật"}</button>
+        <button type="button" class="btn btn--sm" data-goi-xuat="${esc(g.ten)}">Xuất</button>
+        <button type="button" class="btn btn--sm" data-goi-lichsu="${esc(g.ten)}">Lịch sử</button>
+        <button type="button" class="btn btn--sm btn--halt" data-goi-xoa="${esc(g.ten)}">Xoá</button>
+      </span>
+    </div>`).join("") : `<p class="empty">Chưa có gói nào. Tối đa ${d.goi_toi_da}. Mẫu: data/goi-ky-nang/tu-van-da-nhay-cam.example.json</p>`;
+}
+
+function docFormGoi() {
+  const f = $("#goiform");
+  const tep = $("#goi-tep").files[0];
+  const chu = f.querySelector("[name=json]").value.trim();
+  return { tep, chu };
+}
+
+async function caiGoiKyNang(chiKiem) {
+  const { tep, chu } = docFormGoi();
+  const hop = $("#goi-ketqua");
+  try {
+    if (tep && !chiKiem) {
+      // Tệp đi bằng FormData như gửi tệp trong hộp thư — KHÔNG đặt Content-Type,
+      // trình duyệt tự thêm boundary.
+      const fd = new FormData(); fd.append("tep", tep);
+      const res = await fetch("/api" + "/goi-ky-nang/tep", { method: "POST", body: fd, credentials: "same-origin" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+      hop.innerHTML = `<p class="empty">Đã cài ${esc(d.ten)} v${esc(d.phien_ban)}.</p>`;
+    } else {
+      if (!chu) { toast("Dán JSON của gói hoặc chọn tệp", true); return; }
+      let tho; try { tho = JSON.parse(chu); } catch (e) { toast("JSON không hợp lệ: " + e.message, true); return; }
+      const d = await api(chiKiem ? "/goi-ky-nang/kiem" : "/goi-ky-nang", { method: "POST", body: JSON.stringify(tho) });
+      if (chiKiem) {
+        hop.innerHTML = d.hop_le
+          ? `<p class="empty">Hợp lệ: ${esc(d.tom_tat.ten)} v${esc(d.tom_tat.phien_ban)} · ${d.tom_tat.so_cong_cu} công cụ · ${d.tom_tat.so_tai_lieu} tài liệu · từ khoá ${esc(d.tom_tat.tu_khoa.join(", "))}</p>`
+          : `<p class="empty">Không hợp lệ: ${esc(d.loi)}</p>`;
+        return;
+      }
+      hop.innerHTML = `<p class="empty">Đã cài ${esc(d.ten)} v${esc(d.phien_ban)}.</p>`;
+    }
+    toast("Đã cài và bật gói");
+    await loadKyNang();
+  } catch (e) { toast(e.message, true); }
+}
+
+$("#goi-kiem")?.addEventListener("click", () => caiGoiKyNang(true));
+$("#goi-cai")?.addEventListener("click", () => caiGoiKyNang(false));
+document.addEventListener("click", async (e) => {
+  const bt = e.target.closest("[data-goi-battat]");
+  if (bt) {
+    try { await api(`/goi-ky-nang/${encodeURIComponent(bt.dataset.goiBattat)}/bat-tat`, { method: "POST", body: JSON.stringify({ bat: bt.dataset.bat === "1" }) }); await loadKyNang(); }
+    catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bx = e.target.closest("[data-goi-xoa]");
+  if (bx) {
+    if (!confirm(`Xoá gói "${bx.dataset.goiXoa}"? Lịch sử phiên bản vẫn giữ.`)) return;
+    try { await api(`/goi-ky-nang/${encodeURIComponent(bx.dataset.goiXoa)}`, { method: "DELETE" }); await loadKyNang(); }
+    catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bxu = e.target.closest("[data-goi-xuat]");
+  if (bxu) { window.open(`/api/goi-ky-nang/${encodeURIComponent(bxu.dataset.goiXuat)}/xuat`, "_blank"); return; }
+  const bl = e.target.closest("[data-goi-lichsu]");
+  if (bl) {
+    try {
+      const ds = await api(`/goi-ky-nang/${encodeURIComponent(bl.dataset.goiLichsu)}/lich-su`);
+      const o = document.querySelector(`[data-goi-lichsu-o="${CSS.escape(bl.dataset.goiLichsu)}"]`);
+      o.innerHTML = ds.length ? ds.map((h) => `v${esc(h.phien_ban)} (${esc(h.thay_boi)}) <button type="button" class="btn btn--sm" data-goi-khoiphuc="${esc(bl.dataset.goiLichsu)}" data-id="${h.id}">Khôi phục</button>`).join(" · ") : "Chưa có bản cũ.";
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bk = e.target.closest("[data-goi-khoiphuc]");
+  if (bk) {
+    try { await api(`/goi-ky-nang/${encodeURIComponent(bk.dataset.goiKhoiphuc)}/khoi-phuc/${encodeURIComponent(bk.dataset.id)}`, { method: "POST" }); toast("Đã khôi phục"); await loadKyNang(); }
+    catch (err) { toast(err.message, true); }
   }
 });
 

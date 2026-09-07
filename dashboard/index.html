@@ -562,6 +562,36 @@
 
       <div class="split">
         <section class="panel">
+          <h2 class="panel__head">Gói kỹ năng
+            <span class="panel__note">hướng dẫn + công cụ + tài liệu, cài một lần</span></h2>
+          <p class="panel__note">
+            Hướng dẫn của gói là một mẩu prompt do người trong nhà viết: nó bị quét
+            như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
+          </p>
+          <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
+        </section>
+        <section class="panel">
+          <h2 class="panel__head">Cài gói</h2>
+          <form id="goiform" class="form">
+            <label class="field field--wide">
+              <span>Dán JSON của gói</span>
+              <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
+            </label>
+            <label class="field field--wide">
+              <span>hoặc chọn tệp .json / .zip</span>
+              <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
+            </label>
+            <div class="rowbtns">
+              <button type="button" class="btn" id="goi-kiem">Kiểm</button>
+              <button type="button" class="btn btn--primary" id="goi-cai">Cài</button>
+            </div>
+          </form>
+          <div id="goi-ketqua" class="rows"></div>
+        </section>
+      </div>
+
+      <div class="split">
+        <section class="panel">
           <h2 class="panel__head">Kỹ năng cắm thêm</h2>
           <p class="panel__note">
             Thêm công cụ cho agent mà không sửa mã. Bản mô tả là dữ liệu, không

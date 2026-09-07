@@ -57,6 +57,9 @@ async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...]]:
         if not bat:
             continue
         if isinstance(tho, str):
+            # Codec ở agent/db.py trả JSONB thẳng thành dict — đường thường.
+            # Nhánh này chỉ còn cần cho dòng ghi TRƯỚC ngày sửa lỗi mã hoá
+            # hai lần ở luu_plugin() (cột khi đó thật sự chứa chuỗi JSON).
             tho = json.loads(tho)
         try:
             plugin.append(doc_ban_mo_ta(tho))
@@ -161,17 +164,18 @@ async def luu_plugin(tho: dict, *, boi: str = "staff") -> BanMoTa:
             SET ban_mo_ta = EXCLUDED.ban_mo_ta, bat = TRUE, sua_luc = now()
         """,
         bm.ten,
-        json.dumps(
-            {
-                "ten": bm.ten, "mo_ta": bm.mo_ta, "loai": bm.loai,
-                "tham_so": [
-                    {"ten": t.ten, "mo_ta": t.mo_ta, "bat_buoc": t.bat_buoc}
-                    for t in bm.tham_so
-                ],
-                "cau_hinh": bm.cau_hinh,
-            },
-            ensure_ascii=False,
-        ),
+        # $2::jsonb nhận thẳng dict — codec ở agent/db.py (set_type_codec
+        # encoder=json.dumps) tự mã hoá. json.dumps() thêm ở đây từng làm
+        # cột chứa một CHUỖI JSON thay vì object (mã hoá hai lần), nên
+        # "ban_mo_ta->>'mo_ta'" trả NULL và tiếng Việt hoá thành \uXXXX.
+        {
+            "ten": bm.ten, "mo_ta": bm.mo_ta, "loai": bm.loai,
+            "tham_so": [
+                {"ten": t.ten, "mo_ta": t.mo_ta, "bat_buoc": t.bat_buoc}
+                for t in bm.tham_so
+            ],
+            "cau_hinh": bm.cau_hinh,
+        },
         boi,
     )
     await db.log_event("ky_nang.plugin_luu", actor=boi, ten=bm.ten, loai=bm.loai)

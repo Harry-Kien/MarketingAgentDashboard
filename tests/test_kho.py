@@ -133,7 +133,7 @@ def test_run_tool_doc_danh_muc_song():
     Đọc file tĩnh thì agent trả lời bằng con số của ngày file được viết ra,
     và xác nhận đơn cho món đã hết từ lâu.
     """
-    src = inspect.getsource(tools.run_tool)
+    src = inspect.getsource(tools._run_tool_that)
     assert "await _catalog_song()" in src
 
 
@@ -156,7 +156,7 @@ def test_tool_khong_tu_gui_anh():
     Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không nên
     biết. Nó chỉ báo đường dẫn; lớp kênh mới gửi.
     """
-    src = inspect.getsource(tools.run_tool)
+    src = inspect.getsource(tools._run_tool_that)
     khoi = src[src.index('if name == "gui_anh_san_pham"'):][:900]
     assert "send_file" not in khoi and "adapter" not in khoi
 
@@ -195,14 +195,14 @@ def test_ma_thieu_anh_phai_KHAI_ra_ly_do():
 
 
 def test_khong_co_anh_thi_noi_that():
-    src = inspect.getsource(tools.run_tool)
+    src = inspect.getsource(tools._run_tool_that)
     khoi = src[src.index('if name == "gui_anh_san_pham"'):][:900]
     assert "Chưa có ảnh" in khoi and '"gui_duoc": False' in khoi
 
 
 def test_ten_mo_ho_thi_hoi_lai_khong_doan():
     """Gửi nhầm ảnh sản phẩm khác còn tệ hơn không gửi."""
-    src = inspect.getsource(tools.run_tool)
+    src = inspect.getsource(tools._run_tool_that)
     khoi = src[src.index('if name == "gui_anh_san_pham"'):][:900]
     assert "< 0.5" in khoi and "Hỏi lại tên" in khoi
 

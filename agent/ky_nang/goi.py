@@ -261,7 +261,11 @@ async def _ghi_plugin(g: Goi, bat: bool) -> None:
                 SET ban_mo_ta = EXCLUDED.ban_mo_ta, bat = EXCLUDED.bat,
                     goi = EXCLUDED.goi, sua_luc = now()
             """,
-            bm.ten, bat, json.dumps(tho, ensure_ascii=False), "goi", g.ten,
+            # Codec ở agent/db.py (set_type_codec encoder=json.dumps) đã tự
+            # mã hoá khi thấy $n::jsonb — truyền thêm json.dumps(tho) ở đây
+            # là mã hoá HAI LẦN: cột chứa một CHUỖI JSON, không phải object,
+            # nên "ban_mo_ta->>'mo_ta'" trả NULL và tiếng Việt hoá \uXXXX.
+            bm.ten, bat, tho, "goi", g.ten,
         )
 
 
@@ -269,26 +273,58 @@ async def _doc_hien_hanh(ten: str) -> dict | None:
     return await db.fetchrow("SELECT ten, phien_ban, bat, noi_dung FROM goi_ky_nang WHERE ten = $1", ten)
 
 
+def _tu_jsonb(x) -> dict:
+    """
+    Cột `noi_dung`/`ban_mo_ta` đọc qua codec (agent/db.py) về thẳng dict —
+    đường thường. Nhánh chuỗi chỉ phục vụ dữ liệu ghi TRƯỚC ngày sửa lỗi
+    mã hoá hai lần (khi đó `json.dumps()` được gọi thêm một lần trước khi
+    gửi cho $n::jsonb, nên cột thật sự chứa một CHUỖI JSON) — bỏ nhánh này
+    là dữ liệu cũ trên CSDL thật không đọc lại được nữa.
+    """
+    return x if isinstance(x, dict) else json.loads(x)
+
+
 async def cai(tho: dict, *, boi: str) -> Goi:
     """
     Kiểm toàn bộ TRƯỚC khi chạm CSDL: sai một là không ghi gì.
 
-    Thứ tự ghi: lịch sử → gói → plugin → tài liệu. Tài liệu đứng cuối vì
-    nó gọi API nhúng (chậm, có thể hỏng); hỏng ở đó thì gói đã có nhưng bị
-    tắt và người dùng được báo, thay vì một gói "đã cài" mà kho tri thức
-    trống — kiểu hỏng im lặng.
+    Thứ tự: chiếm-plugin-rời → lịch sử → gói → plugin → tài liệu. Chiếm
+    plugin rời đứng đầu vì nó cũng là một phép kiểm, không phải ghi — phải
+    xong trước bất kỳ INSERT/UPDATE nào để giữ đúng bất biến "sai một là
+    không ghi gì". Tài liệu đứng cuối vì nó gọi API nhúng (chậm, có thể
+    hỏng); hỏng ở đó thì gói đã có nhưng bị tắt và người dùng được báo,
+    thay vì một gói "đã cài" mà kho tri thức trống — kiểu hỏng im lặng.
     """
     g = doc_goi(tho)
+    if g.cong_cu:
+        # Một plugin rời (ai đó thêm tay qua dashboard, "goi" = NULL) hay
+        # công cụ của MỘT GÓI KHÁC đã chiếm cái tên đó — cho gói này ghi
+        # đè là một gói "cướp" tên công cụ của thứ khác mà không ai hay,
+        # vì `_ghi_plugin` chỉ DELETE theo "goi = tên gói MÌNH", không biết
+        # gì về chủ cũ của cái tên.
+        hang = await db.fetch(
+            "SELECT ten, goi FROM ky_nang_cai_dat WHERE ten = ANY($1)",
+            [c.ten for c in g.cong_cu],
+        )
+        for h in hang:
+            if h["goi"] is None or h["goi"] != g.ten:
+                chu = f"gói {h['goi']!r}" if h["goi"] else "một plugin rời (không thuộc gói nào)"
+                raise LoiGoi(
+                    f"Công cụ {h['ten']!r} trong gói đã thuộc {chu}. "
+                    "Đổi tên công cụ trong gói này, hoặc xoá/tắt cái đang chiếm trước."
+                )
     hien = await _doc_hien_hanh(g.ten)
     if hien is None:
         so = len(await db.fetch("SELECT ten FROM goi_ky_nang"))
         if so >= GOI_TOI_DA:
             raise KhoDay(f"Đã đủ {GOI_TOI_DA} gói. Xoá bớt gói không dùng.")
     elif hien["phien_ban"] != g.phien_ban:
-        nd = hien["noi_dung"]
         await db.execute(
             "INSERT INTO goi_ky_nang_lich_su (ten, phien_ban, noi_dung, thay_boi) VALUES ($1, $2, $3::jsonb, $4)",
-            g.ten, hien["phien_ban"], nd if isinstance(nd, str) else json.dumps(nd, ensure_ascii=False), boi,
+            # $3::jsonb nhận thẳng dict — xem chú thích mã hoá hai lần ở
+            # _ghi_plugin(). `_tu_jsonb` chỉ còn cần cho dữ liệu ghi TRƯỚC
+            # ngày sửa lỗi đó (khi ấy cột thật sự chứa một chuỗi JSON).
+            g.ten, hien["phien_ban"], _tu_jsonb(hien["noi_dung"]), boi,
         )
     await db.execute(
         """
@@ -297,7 +333,7 @@ async def cai(tho: dict, *, boi: str) -> Goi:
         ON CONFLICT (ten) DO UPDATE
             SET phien_ban = EXCLUDED.phien_ban, noi_dung = EXCLUDED.noi_dung, bat = TRUE, sua_luc = now()
         """,
-        g.ten, g.phien_ban, json.dumps(g.tho, ensure_ascii=False), boi,
+        g.ten, g.phien_ban, g.tho, boi,
     )
     await _ghi_plugin(g, True)
     try:
@@ -305,6 +341,14 @@ async def cai(tho: dict, *, boi: str) -> Goi:
     except Exception as exc:  # noqa: BLE001 — gói đã ghi; báo rõ thay vì im
         await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", False, g.ten)
         await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", False, g.ten)
+        try:
+            # Tài liệu nạp DỞ (một phần đã ingest trước khi lỗi) của gói vừa
+            # bị TẮT không được nằm lại trong kho tri thức — nó vẫn được
+            # RAG trả về cho khách dù gói đang tắt, một kiểu hỏng im lặng
+            # khác chồng lên lỗi gốc.
+            await rag.xoa_nguon(_nguon(g.ten))
+        except Exception as exc2:  # noqa: BLE001 — dọn dẹp thất bại không được che lỗi gốc
+            _log.warning("không xoá được tài liệu nạp dở của gói %r: %s", g.ten, exc2)
         await db.log_event("ky_nang.goi_tai_lieu_hong", actor=boi, ten=g.ten, loi=f"{type(exc).__name__}: {exc}"[:200])
         xoa_dem(); kho_ky_nang.xoa_dem()
         raise RuntimeError(f"Gói đã lưu nhưng nạp tài liệu hỏng ({type(exc).__name__}); gói đang TẮT. "
@@ -319,15 +363,30 @@ async def bat_tat(ten: str, bat: bool, *, boi: str) -> None:
     hien = await _doc_hien_hanh(ten)
     if hien is None:
         raise GoiKhongTonTai(ten)
-    g = doc_goi(hien["noi_dung"] if isinstance(hien["noi_dung"], dict) else json.loads(hien["noi_dung"]))
+    g = doc_goi(_tu_jsonb(hien["noi_dung"]))
     await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", bat, ten)
     await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", bat, ten)
-    if bat:
-        await _nap_tai_lieu(g)
-    else:
-        await rag.xoa_nguon(_nguon(ten))
-    await db.log_event("ky_nang.goi_bat_tat", actor=boi, ten=ten, bat=str(bat))
-    xoa_dem(); kho_ky_nang.xoa_dem()
+    try:
+        if bat:
+            await _nap_tai_lieu(g)
+        else:
+            await rag.xoa_nguon(_nguon(ten))
+    except Exception as exc:  # noqa: BLE001 — bật lại hỏng thì tắt luôn, đừng để gói "bật" mà kho tri thức trống/dở dang
+        await db.execute("UPDATE goi_ky_nang SET bat = $1, sua_luc = now() WHERE ten = $2", False, ten)
+        await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", False, ten)
+        try:
+            await rag.xoa_nguon(_nguon(ten))
+        except Exception as exc2:  # noqa: BLE001 — dọn dẹp thất bại không được che lỗi gốc
+            _log.warning("không xoá được tài liệu nạp dở khi bật lại gói %r: %s", ten, exc2)
+        await db.log_event("ky_nang.goi_tai_lieu_hong", actor=boi, ten=ten, loi=f"{type(exc).__name__}: {exc}"[:200])
+        raise RuntimeError(f"Bật gói {ten!r} hỏng khi nạp tài liệu ({type(exc).__name__}); gói đang TẮT. "
+                           "Sửa rồi bật lại.") from exc
+    finally:
+        # Chạy cả khi hỏng: một bộ nhớ đệm còn giữ danh sách gói/plugin CŨ
+        # (gói vẫn "bật") là đúng kiểu hỏng im lặng bài viết đầu file cảnh
+        # báo — lượt trả lời tiếp theo vẫn dùng hướng dẫn của gói đã tắt.
+        xoa_dem(); kho_ky_nang.xoa_dem()
+    await db.log_event("ky_nang.goi_bat_tat", actor=boi, ten=ten, bat=bat)
 
 
 async def xoa(ten: str, *, boi: str) -> bool:
@@ -351,16 +410,14 @@ async def khoi_phuc(ten: str, id_lich_su: int, *, boi: str) -> Goi:
     r = await db.fetchrow("SELECT noi_dung FROM goi_ky_nang_lich_su WHERE id = $1 AND ten = $2", id_lich_su, ten)
     if r is None:
         raise GoiKhongTonTai(f"{ten}#{id_lich_su}")
-    nd = r["noi_dung"]
-    return await cai(nd if isinstance(nd, dict) else json.loads(nd), boi=boi)
+    return await cai(_tu_jsonb(r["noi_dung"]), boi=boi)
 
 
 async def xuat(ten: str) -> dict | None:
     hien = await _doc_hien_hanh(ten)
     if hien is None:
         return None
-    nd = hien["noi_dung"]
-    return nd if isinstance(nd, dict) else json.loads(nd)
+    return _tu_jsonb(hien["noi_dung"])
 
 
 async def dem_goi_7_ngay() -> dict[str, dict]:
@@ -369,16 +426,22 @@ async def dem_goi_7_ngay() -> dict[str, dict]:
 
     `events.detail` là JSONB ghi qua codec (db.log_event), nên bool thành
     JSON true/false và `detail->>'ok'` là chuỗi 'true'/'false'.
+
+    `GROUP BY 1` CHỈ theo tên công cụ — không theo "goi" nữa. Một công cụ
+    đổi gói giữa tuần (cài lại dưới gói khác) từng ra HAI dòng cùng tên với
+    "goi" khác nhau; dict trả về ở cuối hàm giữ key là "ten" nên dòng sau
+    âm thầm ĐÈ dòng trước, số liệu của dòng bị đè biến mất không báo gì.
+    `max(detail->>'goi')` lấy gói gần nhất trong 7 ngày cho dòng gộp đó.
     """
     rows = await db.fetch(
         """
-        SELECT detail->>'ten' AS ten, detail->>'goi' AS goi,
+        SELECT detail->>'ten' AS ten, max(detail->>'goi') AS goi,
                count(*) AS so_lan,
                count(*) FILTER (WHERE (detail->>'ok') = 'false') AS so_loi
         FROM events
         WHERE kind = 'cong_cu.goi' AND created_at > now() - interval '7 days'
           AND coalesce(detail->>'thu_nghiem', 'false') <> 'true'
-        GROUP BY 1, 2
+        GROUP BY 1
         """
     )
     return {r["ten"]: {"so_lan": int(r["so_lan"]), "so_loi": int(r["so_loi"]), "goi": r["goi"]} for r in rows}
@@ -386,10 +449,14 @@ async def dem_goi_7_ngay() -> dict[str, dict]:
 
 async def liet_ke() -> list[dict]:
     rows = await db.fetch("SELECT ten, phien_ban, bat, noi_dung, tao_boi, sua_luc FROM goi_ky_nang ORDER BY ten")
-    dem = await dem_goi_7_ngay()
+    try:
+        dem = await dem_goi_7_ngay()
+    except Exception as exc:  # noqa: BLE001 — số đo hỏng không được làm chết bảng gói
+        _log.warning("không đếm được lượt gọi 7 ngày của gói: %s", exc)
+        dem = {}
     ra = []
     for r in rows:
-        nd = r["noi_dung"] if isinstance(r["noi_dung"], dict) else json.loads(r["noi_dung"])
+        nd = _tu_jsonb(r["noi_dung"])
         ten_cc = [c.get("ten") for c in nd.get("cong_cu") or []]
         ra.append({
             "ten": r["ten"], "phien_ban": r["phien_ban"], "bat": bool(r["bat"]),
@@ -406,17 +473,15 @@ async def _cac_goi_dang_bat() -> tuple[Goi, ...]:
     global _DEM
     if _DEM is not None and time.monotonic() - _DEM[0] < _DEM_GIAY:
         return _DEM[1]
+    # SELECT chỉ lấy "ten, noi_dung" — cột "bat" không nằm trong kết quả, nên
+    # bộ lọc "WHERE bat" ở CÂU SQL là nơi duy nhất thật sự lọc. (Từng có một
+    # `.get("bat", True)` tưởng là lưới thứ hai ở đây — nó luôn mặc định
+    # True vì cột đó không tồn tại trong hàng, nên không lọc được gì: xanh
+    # giả, không phải lưới.)
     rows = await db.fetch("SELECT ten, noi_dung FROM goi_ky_nang WHERE bat")
     ra: list[Goi] = []
     for r in rows:
-        # "WHERE bat" ở CSDL thật đã lọc rồi, cột "bat" thậm chí không nằm
-        # trong SELECT — `.get("bat", True)` mặc định True nên không đổi gì
-        # ở đó. Lọc lại ở đây là lưới thứ hai cho CSDL giả trong test (nó so
-        # khớp ĐẦU câu SQL, không diễn giải WHERE) và cho bất cứ nơi nào sau
-        # này gọi hàm với một danh sách chưa lọc.
-        if not r.get("bat", True):
-            continue
-        nd = r["noi_dung"] if isinstance(r["noi_dung"], dict) else json.loads(r["noi_dung"])
+        nd = _tu_jsonb(r["noi_dung"])
         try:
             ra.append(doc_goi(nd))
         except LoiGoi:

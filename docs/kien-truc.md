@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-45 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+47 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -135,7 +135,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
@@ -506,6 +506,7 @@ erDiagram
         TEXT tao_boi
         TIMESTAMPTZ tao_luc
         TIMESTAMPTZ sua_luc
+        TEXT goi
     }
     tich_hop_ung_dung {
         TEXT ten
@@ -531,6 +532,23 @@ erDiagram
         TIMESTAMPTZ sua_luc
         TIMESTAMPTZ kiem_luc
         TEXT kiem_ket_qua
+    }
+    goi_ky_nang {
+        TEXT ten
+        TEXT phien_ban
+        BOOLEAN bat
+        JSONB noi_dung
+        TEXT tao_boi
+        TIMESTAMPTZ tao_luc
+        TIMESTAMPTZ sua_luc
+    }
+    goi_ky_nang_lich_su {
+        BIGSERIAL id
+        TEXT ten
+        TEXT phien_ban
+        JSONB noi_dung
+        TIMESTAMPTZ thay_luc
+        TEXT thay_boi
     }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""

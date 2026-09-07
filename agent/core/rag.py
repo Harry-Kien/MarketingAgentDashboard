@@ -396,3 +396,15 @@ async def ingest(title: str, source: str, text: str) -> int:
              for i, (c, v) in enumerate(zip(pieces, vectors, strict=True))],
         )
     return len(pieces)
+
+
+async def xoa_nguon(prefix: str) -> int:
+    """
+    Xoá mọi tài liệu có `source` bắt đầu bằng `prefix`. Trả về số tài liệu.
+
+    Dùng cho gói kỹ năng: tài liệu của gói mang nguồn `goi:<ten>:<slug>`,
+    tắt gói là gỡ hết bằng một tiền tố thay vì nhớ từng id. `chunks` đi theo
+    nhờ ON DELETE CASCADE.
+    """
+    trang_thai = await db.execute("DELETE FROM documents WHERE source LIKE $1", prefix + "%")
+    return int(str(trang_thai).rsplit(" ", 1)[-1] or 0)

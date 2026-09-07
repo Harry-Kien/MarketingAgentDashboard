@@ -79,6 +79,8 @@ class Reply:
     # Mã lớp lưới đã bắt. `escalate_reason` là câu cho người đọc và GIỮ
     # NGUYÊN; mã này cho máy đọc, để dashboard không phải parse tiếng Việt.
     luoi_bat: str | None = None
+    # Tên các gói kỹ năng đã kích hoạt hướng dẫn ở lượt này (phòng thử hiện).
+    goi_ky_nang: list[str] = field(default_factory=list)
 
 
 _CAT_CHUOI = 400

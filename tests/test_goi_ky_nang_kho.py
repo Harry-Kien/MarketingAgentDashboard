@@ -98,6 +98,12 @@ class _CSDL:
         if "FROM goi_ky_nang" in s:
             return list(self.goi.values())
         if "FROM ky_nang_cai_dat" in s:
+            if "ban_mo_ta IS NOT NULL AND bat" in s:
+                # Câu đếm trần plugin: mọi plugin ĐANG BẬT không thuộc gói
+                # đang cài. Mô phỏng đúng bộ lọc của SQL, không trả cả bảng
+                # rồi để mã ứng dụng tự lọc lại.
+                return [dict(v) for v in self.plugin.values()
+                        if v.get("bat") and v["goi"] != a[0]]
             ten_can = a[0] if a else []
             return [dict(v) for v in self.plugin.values() if v["ten"] in ten_can]
         if "FROM events" in s:
@@ -500,6 +506,69 @@ def test_cai_lai_gia_ban_than_khong_bi_chan(kho):
 
 
 # ---------------------------------------------------------------
+#  Trần plugin khi cài gói (mục 1 review cuối)
+# ---------------------------------------------------------------
+
+def test_cai_goi_vuot_tran_plugin_thi_tu_choi(kho):
+    """
+    `luu_plugin` chặn được đường thêm plugin RỜI, nhưng cài gói là đường
+    thứ hai vào cùng bảng — không chặn thì hai gói năm công cụ là vượt trần
+    mà không ai báo, và mọi lời gọi model mang thêm lược đồ vượt trần.
+    """
+    from agent.ky_nang import goi as g
+    from agent.ky_nang import kho_ky_nang
+
+    for i in range(kho_ky_nang.PLUGIN_TOI_DA):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": True, "goi": None}
+
+    with pytest.raises(g.KhoDay) as e:
+        chay(g.cai(_goi(), boi="qt"))
+    # Câu báo phải NÊU SỐ: "quá trần" mà không nói bao nhiêu thì người vận
+    # hành không biết phải tắt mấy cái.
+    assert str(kho_ky_nang.PLUGIN_TOI_DA) in str(e.value)
+    assert kho.goi == {} and kho.lich_su == [] and kho.su_kien == []
+
+
+def test_cai_lai_khong_dem_cong_cu_cua_chinh_goi_do(kho):
+    """
+    Công cụ CỦA GÓI ĐANG CÀI không được đếm hai lần: cài lại một gói đã có
+    mà bị từ chối vì chính công cụ của nó là không nâng cấp được gói nào nữa.
+    """
+    from agent.ky_nang import goi as g
+    from agent.ky_nang import kho_ky_nang
+
+    for i in range(kho_ky_nang.PLUGIN_TOI_DA - 1):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": True, "goi": None}
+    chay(g.cai(_goi(), boi="qt"))          # vừa đủ trần
+    x = chay(g.cai(_goi(phien_ban="1.1.0"), boi="qt"))
+    assert x.phien_ban == "1.1.0"
+
+
+def test_plugin_dang_tat_khong_chiem_cho_trong_tran(kho):
+    """Trần đếm plugin ĐANG BẬT — cái đã tắt không tốn lược đồ nào."""
+    from agent.ky_nang import goi as g
+    from agent.ky_nang import kho_ky_nang
+
+    for i in range(kho_ky_nang.PLUGIN_TOI_DA):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": False, "goi": None}
+    assert chay(g.cai(_goi(), boi="qt")).ten == "tu-van-da-nhay-cam"
+
+
+# ---------------------------------------------------------------
+#  tao_boi của plugin trong gói là NGƯỜI cài (mục 10 review cuối)
+# ---------------------------------------------------------------
+
+def test_plugin_cua_goi_ghi_dung_nguoi_cai(kho):
+    from agent.ky_nang import goi as g
+
+    chay(g.cai(_goi(), boi="chi-lan"))
+    them = [a for s, a in kho.sql if s.startswith("INSERT INTO ky_nang_cai_dat")]
+    # (ten, bat, ban_mo_ta, tao_boi, goi) — hằng "goi" ở ô tao_boi làm nhật ký
+    # kiểm toán mất đúng cái nó sinh ra để giữ: ai đã cài.
+    assert them and them[0][3] == "chi-lan"
+
+
+# ---------------------------------------------------------------
 #  kho_ky_nang.luu_plugin — cùng lỗi mã hoá JSONB hai lần, đường khác
 #  (plugin rời qua dashboard, không đi qua goi.py._ghi_plugin)
 # ---------------------------------------------------------------
@@ -531,8 +600,12 @@ def test_luu_plugin_ghi_jsonb_bang_dict_khong_ma_hoa_hai_lan(monkeypatch):
     async def log_event(kind, **kw):
         pass
 
+    async def fetchrow(sql, *a):
+        return None      # chưa có dòng nào mang tên này
+
     monkeypatch.setattr(kho_ky_nang.db, "execute", execute)
     monkeypatch.setattr(kho_ky_nang.db, "log_event", log_event)
+    monkeypatch.setattr(kho_ky_nang.db, "fetchrow", fetchrow)
 
     tho = {
         "ten": "tra_bao_hanh", "loai": "tra_bang",
@@ -553,3 +626,116 @@ def test_luu_plugin_ghi_jsonb_bang_dict_khong_ma_hoa_hai_lan(monkeypatch):
     assert tham_so_ban_mo_ta["mo_ta"] == tho["mo_ta"]
 
     kho_ky_nang.xoa_dem()  # không để bản đệm này rò sang test chạy sau
+
+
+# ---------------------------------------------------------------
+#  Công cụ của GÓI không sửa/xoá được bằng đường plugin rời
+#  (mục 2 và 3 review cuối)
+# ---------------------------------------------------------------
+
+@pytest.fixture
+def kho_plugin(monkeypatch):
+    """CSDL giả tối thiểu cho hai đường plugin rời: execute + fetchrow."""
+    from agent.ky_nang import kho_ky_nang
+
+    trang_thai = {"xoa": "DELETE 0", "chu_goi": None}
+    da_chay: list[tuple[str, tuple]] = []
+
+    async def execute(sql, *a):
+        s = " ".join(sql.split()); da_chay.append((s, a))
+        return trang_thai["xoa"] if s.startswith("DELETE") else "INSERT 0 1"
+
+    async def fetchrow(sql, *a):
+        da_chay.append((" ".join(sql.split()), a))
+        return {"goi": trang_thai["chu_goi"]} if trang_thai["chu_goi"] else None
+
+    async def log_event(kind, **kw):
+        pass
+
+    monkeypatch.setattr(kho_ky_nang.db, "execute", execute)
+    monkeypatch.setattr(kho_ky_nang.db, "fetchrow", fetchrow)
+    monkeypatch.setattr(kho_ky_nang.db, "log_event", log_event)
+    kho_ky_nang.xoa_dem()
+    trang_thai["sql"] = da_chay
+    yield trang_thai
+    kho_ky_nang.xoa_dem()
+
+
+def test_xoa_plugin_chi_xoa_dong_khong_thuoc_goi(kho_plugin):
+    """
+    Câu DELETE phải mang `goi IS NULL`. Thiếu nó thì xoá được một mảnh của
+    gói đang bật: agent mất công cụ, hướng dẫn vẫn dạy nó gọi, dashboard vẫn
+    hiện gói "đang bật" — không nổ, không nhật ký.
+    """
+    from agent.ky_nang import ban_mo_ta, kho_ky_nang
+
+    kho_plugin["chu_goi"] = "tu-van-da-nhay-cam"
+    with pytest.raises(ban_mo_ta.LoiBanMoTa) as e:
+        chay(kho_ky_nang.xoa_plugin("bang_thanh_phan_ne", boi="qt"))
+    assert "tu-van-da-nhay-cam" in str(e.value)
+    xoa_sql = next(s for s, _ in kho_plugin["sql"] if s.startswith("DELETE FROM ky_nang_cai_dat"))
+    assert "goi IS NULL" in xoa_sql
+
+
+def test_xoa_plugin_khong_ton_tai_van_tra_false(kho_plugin):
+    """Không có dòng nào mang tên đó là chuyện KHÁC "thuộc gói" — trả False."""
+    from agent.ky_nang import kho_ky_nang
+
+    assert chay(kho_ky_nang.xoa_plugin("khong-co-tren-doi", boi="qt")) is False
+
+
+def test_xoa_plugin_roi_van_xoa_duoc(kho_plugin):
+    from agent.ky_nang import kho_ky_nang
+
+    kho_plugin["xoa"] = "DELETE 1"
+    assert chay(kho_ky_nang.xoa_plugin("plugin_roi", boi="qt")) is True
+
+
+def test_luu_plugin_tu_choi_ten_dang_thuoc_goi(kho_plugin):
+    """
+    Sửa công cụ của gói qua form plugin rời là một thay đổi lặng lẽ biến
+    mất ở lần cài lại gói — gói là nguồn sự thật.
+    """
+    from agent.ky_nang import ban_mo_ta, kho_ky_nang
+
+    kho_plugin["chu_goi"] = "tu-van-da-nhay-cam"
+    tho = {
+        "ten": "bang_thanh_phan_ne", "loai": "tra_bang",
+        "mo_ta": "Tra thành phần khách da nhạy cảm nên tránh, theo tên thành phần.",
+        "tham_so": [{"ten": "thanh_phan", "mo_ta": "Tên thành phần khách hỏi", "bat_buoc": True}],
+        "cau_hinh": {"bang": {"Hương liệu": "nên tránh"}},
+    }
+    with pytest.raises(ban_mo_ta.LoiBanMoTa) as e:
+        chay(kho_ky_nang.luu_plugin(tho, boi="qt"))
+    assert "tu-van-da-nhay-cam" in str(e.value)
+    assert not [s for s, _ in kho_plugin["sql"] if s.startswith("INSERT INTO ky_nang_cai_dat")]
+
+
+def test_doc_lay_cot_goi_lam_nhan_khong_lay_tu_so_do(monkeypatch):
+    """
+    Nhãn gói của plugin phải đọc từ cột `goi`, không từ bảng số đo 7 ngày:
+    một công cụ của gói CHƯA ai gọi lần nào trong tuần từng hiện ra như
+    plugin rời, và dashboard cho luôn nút Xoá.
+    """
+    from agent.ky_nang import goi as g, kho_ky_nang
+
+    async def fetch(sql, *a):
+        assert "goi" in sql, "SELECT phải lấy cả cột goi"
+        return [{"ten": "bang_thanh_phan_ne", "bat": True, "goi": "tu-van-da-nhay-cam",
+                 "ban_mo_ta": _goi()["cong_cu"][0]}]
+
+    async def dem_rong():
+        return {}
+
+    monkeypatch.setattr(kho_ky_nang.db, "fetch", fetch)
+    monkeypatch.setattr(g, "dem_an_toan", dem_rong)
+    kho_ky_nang.xoa_dem()
+    ra = chay(kho_ky_nang.liet_ke())
+    assert ra["plugin"][0]["goi"] == "tu-van-da-nhay-cam"
+
+    # `tools._goi_cua` dán nhãn số đo từ CHÍNH nguồn này, không từ bộ đệm gói
+    # (bộ đệm gói chỉ giữ gói đọc và kiểm được, nên một gói hỏng làm nhãn sai).
+    from agent.core import tools
+    assert tools._goi_cua("bang_thanh_phan_ne") == "tu-van-da-nhay-cam"
+    assert tools._goi_cua("tao_don_hang") is None
+    kho_ky_nang.xoa_dem()

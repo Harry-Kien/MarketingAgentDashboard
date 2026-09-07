@@ -567,19 +567,21 @@ def _tom_tat(sp: dict) -> dict:
 
 
 def _goi_cua(name: str) -> str | None:
-    """Tên gói sở hữu plugin `name`, đọc từ bộ đệm của kho gói; không có thì None."""
-    try:
-        from agent.ky_nang import goi as goi_mod
+    """
+    Tên gói sở hữu plugin `name`, đọc từ bộ đệm kho kỹ năng; không có thì None.
 
-        dem = goi_mod._DEM
-        if not dem:
-            return None
-        for g in dem[1]:
-            if any(c.ten == name for c in g.cong_cu):
-                return g.ten
+    Nguồn là cột `goi` trong `ky_nang_cai_dat` (bộ đệm `kho_ky_nang._DEM`),
+    không phải bộ đệm gói: bộ đệm gói chỉ giữ những gói đọc và KIỂM được, nên
+    một gói vừa hỏng bản mô tả sẽ khiến công cụ của nó ghi số đo dưới nhãn
+    "không thuộc gói nào" — nhãn sai, không lỗi, không ai biết.
+    """
+    try:
+        from agent.ky_nang import kho_ky_nang
+
+        dem = kho_ky_nang._DEM
+        return dem[2].get(name) if dem else None
     except Exception:  # noqa: BLE001 — chỉ là nhãn cho số đo
         return None
-    return None
 
 
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
@@ -593,7 +595,24 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     from agent.core import thu_nghiem
 
     bat_dau = time.perf_counter()
-    out = await _run_tool_that(name, args, conversation_id)
+    try:
+        out = await _run_tool_that(name, args, conversation_id)
+    except Exception as exc:  # noqa: BLE001 — ghi số đo rồi ném lại, không nuốt
+        # VÌ SAO PHẢI CÓ NHÁNH NÀY: `_run_tool_that` trả `{"loi": ...}` ở
+        # những đường hỏng nó lường trước, nhưng nó cũng NÉM — plugin http
+        # hết giờ, CSDL sập, một lỗi lập trình. Trước đây nhánh ném không ghi
+        # dòng nào, nên bảng số đo hiện "0 lỗi" cho đúng công cụ đang hỏng ở
+        # MỌI lần gọi: xanh giả, nguy hơn đỏ giả vì không ai đi kiểm.
+        try:
+            await db.log_event(
+                "cong_cu.goi",
+                ten=name, goi=_goi_cua(name), ok=False, loi=type(exc).__name__,
+                ms=int((time.perf_counter() - bat_dau) * 1000),
+                thu_nghiem=bool(thu_nghiem.dang_thu.get()),
+            )
+        except Exception:  # noqa: BLE001 — số đo hỏng không được che lỗi gốc
+            pass
+        raise
     try:
         # Vẫn GHI ở phòng thử — khác `bao_mat.injection` trong agent.py bỏ
         # ghi hẳn. Số đo vận hành (số lần gọi, tỉ lệ lỗi) có một tầng ĐỌC

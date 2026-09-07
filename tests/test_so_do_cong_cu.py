@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from agent.core import thu_nghiem, tools
 
 
@@ -49,6 +51,43 @@ def test_ghi_so_do_hong_khong_lam_hong_ket_qua(monkeypatch):
     monkeypatch.setattr(tools, "_run_tool_that", that)
     monkeypatch.setattr(tools, "_goi_cua", lambda name: None)
     assert chay(tools.run_tool("x", {})) == {"tim_thay": True}
+
+
+def test_cong_cu_nem_van_ghi_so_do_roi_nem_lai(monkeypatch):
+    """
+    `_run_tool_that` trả `{"loi": ...}` ở những đường hỏng nó lường trước,
+    nhưng nó cũng NÉM (plugin http hết giờ, CSDL sập, lỗi lập trình). Nhánh
+    ném không ghi dòng nào thì bảng số đo hiện "0 lỗi" cho đúng công cụ đang
+    hỏng ở mọi lần gọi — xanh giả, và không ai đi kiểm cái đang xanh.
+    """
+    ghi = []
+
+    async def log_event(kind, **kw): ghi.append(kw)
+    async def that(name, args, conversation_id=None): raise TimeoutError("plugin không trả lời")
+
+    monkeypatch.setattr(tools.db, "log_event", log_event)
+    monkeypatch.setattr(tools, "_run_tool_that", that)
+    monkeypatch.setattr(tools, "_goi_cua", lambda name: "goi-a")
+
+    with pytest.raises(TimeoutError):
+        chay(tools.run_tool("bang_thanh_phan_ne", {}))
+
+    assert len(ghi) == 1
+    assert ghi[0]["ok"] is False and ghi[0]["loi"] == "TimeoutError"
+    assert ghi[0]["ten"] == "bang_thanh_phan_ne" and ghi[0]["goi"] == "goi-a"
+
+
+def test_ghi_so_do_hong_o_nhanh_nem_khong_che_loi_goc(monkeypatch):
+    """Số đo hỏng không được nuốt mất lỗi thật của công cụ."""
+    async def log_event(kind, **kw): raise RuntimeError("CSDL sập")
+    async def that(name, args, conversation_id=None): raise ValueError("tham số sai")
+
+    monkeypatch.setattr(tools.db, "log_event", log_event)
+    monkeypatch.setattr(tools, "_run_tool_that", that)
+    monkeypatch.setattr(tools, "_goi_cua", lambda name: None)
+
+    with pytest.raises(ValueError, match="tham số sai"):
+        chay(tools.run_tool("x", {}))
 
 
 def test_chay_py_van_khong_ghi_csdl():

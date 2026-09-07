@@ -20,8 +20,15 @@ from agent.ky_nang.ban_mo_ta import (
 )
 from agent.ky_nang.so_dang_ky import KHONG_TAT_DUOC, SO_DANG_KY, ten_ky_nang_co_san
 
-# Đệm: (tên đang tắt, plugin đang bật). None = chưa đọc lần nào.
-_DEM: tuple[frozenset[str], tuple[BanMoTa, ...]] | None = None
+# Đệm: (tên đang tắt, plugin đang bật, gói sở hữu từng plugin).
+# None = chưa đọc lần nào.
+#
+# VÌ SAO GIỮ "gói sở hữu" NGAY Ở ĐÂY chứ không tra qua bảng số đo: nhãn gói
+# từng lấy từ `dem_goi_7_ngay()` (đếm sự kiện 7 ngày), nên một plugin của gói
+# CHƯA ai gọi lần nào trong tuần hiện ra như plugin rời — dashboard cho nút
+# "Xoá" và người vận hành xoá được một mảnh của gói đang bật. Cột `goi` trong
+# `ky_nang_cai_dat` mới là sự thật; số đo chỉ để đếm.
+_DEM: tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]] | None = None
 
 
 def xoa_dem() -> None:
@@ -30,26 +37,29 @@ def xoa_dem() -> None:
     _DEM = None
 
 
-async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...]]:
+async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]]:
     global _DEM
     if _DEM is not None:
         return _DEM
 
     try:
-        rows = await db.fetch("SELECT ten, bat, ban_mo_ta FROM ky_nang_cai_dat")
+        rows = await db.fetch("SELECT ten, bat, ban_mo_ta, goi FROM ky_nang_cai_dat")
     except Exception:
         # CSDL chưa migrate, hoặc đang chạy test không có CSDL. Rơi về "mọi
         # kỹ năng có sẵn đều bật, không có plugin" — đúng trạng thái trước
         # khi có tính năng này, nên hệ thống cũ vẫn chạy y như cũ.
-        _DEM = (frozenset(), ())
+        _DEM = (frozenset(), (), {})
         return _DEM
 
     tat: set[str] = set()
     plugin: list[BanMoTa] = []
+    goi_cua: dict[str, str] = {}
     for r in rows:
         ten = r["ten"]
         bat = bool(r["bat"])
         tho = r["ban_mo_ta"]
+        if r["goi"]:
+            goi_cua[ten] = r["goi"]
         if tho is None:
             if not bat:
                 tat.add(ten)
@@ -69,7 +79,7 @@ async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...]]:
             # biết công cụ đã biến mất, nên ghi nhật ký thành sự kiện.
             await _ghi_nhat_ky_plugin_hong(ten)
 
-    _DEM = (frozenset(tat), tuple(plugin))
+    _DEM = (frozenset(tat), tuple(plugin), goi_cua)
     return _DEM
 
 
@@ -87,7 +97,7 @@ async def cong_cu_dang_bat(tat_ca: list[dict]) -> list[dict]:
     `tat_ca` truyền vào thay vì nhập khẩu `tools.TOOLS` để tránh vòng nhập
     khẩu: `tools.py` gọi ngược lại module này.
     """
-    tat, plugin = await _doc()
+    tat, plugin, _ = await _doc()
     ra = [t for t in tat_ca if t["name"] not in tat]
     ra.extend(thanh_cong_cu(bm) for bm in plugin)
     return ra
@@ -97,7 +107,7 @@ async def dang_tat(ten: str) -> bool:
     """Kỹ năng này đang bị tắt? Dùng ở chốt thứ hai trong `run_tool`."""
     if ten in KHONG_TAT_DUOC:
         return False
-    tat, plugin = await _doc()
+    tat, plugin, _ = await _doc()
     if ten in tat:
         return True
     # Một plugin đã xoá hoặc đã tắt vẫn có thể bị model gọi, vì lược đồ của
@@ -108,7 +118,7 @@ async def dang_tat(ten: str) -> bool:
 
 
 async def tim_plugin(ten: str) -> BanMoTa | None:
-    _, plugin = await _doc()
+    _, plugin, _ = await _doc()
     for bm in plugin:
         if bm.ten == ten:
             return bm
@@ -147,9 +157,21 @@ async def luu_plugin(tho: dict, *, boi: str = "staff") -> BanMoTa:
     """Kiểm rồi lưu một plugin. Bản mô tả sai thì không có gì được ghi."""
     bm = doc_ban_mo_ta(tho)
 
+    # Công cụ của một GÓI không sửa được bằng đường plugin rời: gói là nguồn
+    # sự thật, và lần cài lại gói sau đó dựng lại y bản cũ — sửa ở đây là một
+    # thay đổi lặng lẽ biến mất, đúng kiểu hỏng không ai biết. Hỏi thẳng CSDL
+    # chứ không hỏi bộ đệm: dòng của gói đang TẮT không nằm trong bộ đệm,
+    # nhưng cái tên vẫn là của gói đó.
+    chu = await db.fetchrow("SELECT goi FROM ky_nang_cai_dat WHERE ten = $1", bm.ten)
+    if chu is not None and chu["goi"]:
+        raise LoiBanMoTa(
+            f"{bm.ten!r} là công cụ thuộc gói {chu['goi']!r} — sửa trong bản "
+            "gói rồi cài lại gói, đừng sửa riêng ở đây."
+        )
+
     # Trần số plugin kiểm ở đây chứ không ở `doc_ban_mo_ta`: bộ kiểm ấy là
     # hàm thuần, không biết trong CSDL đang có bao nhiêu dòng.
-    _, dang_co = await _doc()
+    _, dang_co, _ = await _doc()
     if bm.ten not in {p.ten for p in dang_co} and len(dang_co) >= PLUGIN_TOI_DA:
         raise LoiBanMoTa(
             f"Đã đủ {PLUGIN_TOI_DA} plugin đang bật. Mỗi công cụ thêm vào là "
@@ -191,29 +213,45 @@ async def xoa_plugin(ten: str, *, boi: str = "staff") -> bool:
     # dòng. `bool("DELETE 0")` là True — nên trả thẳng nó ra thì xoá một tên
     # không tồn tại vẫn báo thành công, và dashboard hiện "đã xoá" cho một
     # việc chưa từng xảy ra.
+    # `AND goi IS NULL`: xoá riêng một công cụ CỦA GÓI để lại một gói đang
+    # bật thiếu mảnh — agent mất công cụ, hướng dẫn vẫn dạy nó gọi, và
+    # dashboard vẫn hiện gói "đang bật". Không nổ, không nhật ký. Muốn bỏ
+    # thì tắt hoặc xoá cả gói.
     trang_thai = await db.execute(
-        "DELETE FROM ky_nang_cai_dat WHERE ten = $1 AND ban_mo_ta IS NOT NULL", ten
+        "DELETE FROM ky_nang_cai_dat WHERE ten = $1 AND ban_mo_ta IS NOT NULL AND goi IS NULL", ten
     )
     so_dong = int(str(trang_thai).rsplit(" ", 1)[-1] or 0)
+    if not so_dong:
+        # Không xoá được: hoặc chưa từng có tên này (trả False như cũ), hoặc
+        # nó thuộc một gói — hai chuyện rất khác nhau, phải nói ra chuyện thứ hai.
+        chu = await db.fetchrow("SELECT goi FROM ky_nang_cai_dat WHERE ten = $1", ten)
+        if chu is not None and chu["goi"]:
+            raise LoiBanMoTa(
+                f"{ten!r} là công cụ thuộc gói {chu['goi']!r} — tắt hoặc xoá "
+                "gói đó, không xoá riêng công cụ của nó."
+            )
     if so_dong:
         await db.log_event("ky_nang.plugin_xoa", actor=boi, ten=ten)
         xoa_dem()
     return so_dong > 0
 
 
-async def liet_ke() -> dict:
-    """Toàn cảnh cho dashboard: kỹ năng có sẵn + plugin, kèm trạng thái."""
-    tat, plugin = await _doc()
+async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
+    """
+    Toàn cảnh cho dashboard: kỹ năng có sẵn + plugin, kèm trạng thái.
+
+    `dem` nhận từ ngoài để một màn hình gọi CẢ hai bảng (kỹ năng và gói)
+    chỉ quét bảng `events` một lần; không truyền thì tự đếm.
+    """
+    tat, plugin, goi_cua = await _doc()
 
     # Nhập khẩu TRONG hàm, không ở đầu file: `goi.py` nhập khẩu ngược lại
     # module này ở mức module (để test monkeypatch được `kho_ky_nang.xoa_dem`
     # qua tên module) — nhập khẩu `goi` ở đầu file này sẽ thành vòng.
     from agent.ky_nang import goi as _goi
 
-    try:
-        dem = await _goi.dem_goi_7_ngay()
-    except Exception:  # noqa: BLE001 — số đo hỏng không được làm hỏng bảng kỹ năng
-        dem = {}
+    if dem is None:
+        dem = await _goi.dem_an_toan()
 
     return {
         "co_san": [
@@ -241,7 +279,7 @@ async def liet_ke() -> dict:
                 "bat": True,
                 "so_lan_7_ngay": dem.get(p.ten, {}).get("so_lan", 0),
                 "so_loi_7_ngay": dem.get(p.ten, {}).get("so_loi", 0),
-                "goi": dem.get(p.ten, {}).get("goi"),
+                "goi": goi_cua.get(p.ten),
             }
             for p in plugin
         ],

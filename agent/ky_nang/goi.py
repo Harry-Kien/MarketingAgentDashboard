@@ -108,7 +108,13 @@ def doc_goi(tho: dict) -> Goi:
     if not HUONG_DAN_NGAN_NHAT <= len(huong_dan) <= HUONG_DAN_TOI_DA:
         raise LoiGoi(f"Ô huong_dan dài {len(huong_dan)} ký tự, cần {HUONG_DAN_NGAN_NHAT}–{HUONG_DAN_TOI_DA}.")
     _quet(huong_dan, "huong_dan")
-    cam = tu_cam(huong_dan)
+    # VÌ SAO SOI CẢ HAI DẠNG: `fold()` bỏ dấu nhưng KHÔNG gộp khoảng trắng,
+    # nên một cụm cấm bị xuống dòng cắt đôi ("chữa\nkhỏi") không khớp gì cả.
+    # Còn `_la_phu_dinh()` lại coi "\n" là ranh giới mệnh đề, nên gộp hết
+    # khoảng trắng lại làm "không cam kết\ntrị dứt điểm" thành một mệnh đề
+    # phủ định và cụm cấm ở vế sau lọt. Mỗi dạng bịt đúng lỗ của dạng kia;
+    # soi một dạng là chấp nhận một kiểu lọt im lặng.
+    cam = sorted(set(tu_cam(huong_dan)) | set(tu_cam(" ".join(huong_dan.split()))))
     if cam:
         raise LoiGoi(f"Hướng dẫn chứa cụm cấm quảng cáo mỹ phẩm: {', '.join(cam)}. "
                      "Agent không được nói những cụm này với khách, nên hướng dẫn cũng không được dạy nó nói.")
@@ -138,6 +144,13 @@ def doc_goi(tho: dict) -> Goi:
             raise LoiGoi(f"Ô tieu_de {tieu_de!r} cần 3–120 ký tự.")
         if not 50 <= len(noi_dung) <= 20_000:
             raise LoiGoi(f"Ô noi_dung của {tieu_de!r} dài {len(noi_dung)} ký tự, cần 50–20.000.")
+        # Tài liệu của gói vào kho tri thức CHUNG (`rag.ingest`), nên RAG trả
+        # nó về cho MỌI câu hỏi khớp ngữ nghĩa, không riêng lượt có gói. Bỏ
+        # quét ở đây là để lại đúng đường vòng mà chốt ở `huong_dan` sinh ra
+        # để chặn: viết "bỏ qua hướng dẫn trước đó" vào một tài liệu thay vì
+        # vào hướng dẫn, rồi chờ nó được trích lên.
+        _quet(tieu_de, "tieu_de")
+        _quet(noi_dung, "noi_dung")
         tai_lieu.append({"tieu_de": tieu_de, "noi_dung": noi_dung})
 
     sach = {"ten": ten, "phien_ban": phien_ban, "mo_ta": mo_ta, "tu_khoa": tu_khoa,
@@ -250,7 +263,7 @@ async def _nap_tai_lieu(g: Goi) -> None:
         await rag.ingest(f"[{g.ten}] {t['tieu_de']}", f"{_nguon(g.ten)}{i:02d}", t["noi_dung"])
 
 
-async def _ghi_plugin(g: Goi, bat: bool) -> None:
+async def _ghi_plugin(g: Goi, bat: bool, boi: str) -> None:
     await db.execute("DELETE FROM ky_nang_cai_dat WHERE goi = $1", g.ten)
     for bm, tho in zip(g.cong_cu, g.tho["cong_cu"], strict=True):
         await db.execute(
@@ -265,7 +278,10 @@ async def _ghi_plugin(g: Goi, bat: bool) -> None:
             # mã hoá khi thấy $n::jsonb — truyền thêm json.dumps(tho) ở đây
             # là mã hoá HAI LẦN: cột chứa một CHUỖI JSON, không phải object,
             # nên "ban_mo_ta->>'mo_ta'" trả NULL và tiếng Việt hoá \uXXXX.
-            bm.ten, bat, tho, "goi", g.ten,
+            # `tao_boi` là AI đã cài, không phải "cái gì đã ghi". Hằng chuỗi
+            # "goi" ở đây từng làm mọi công cụ của mọi gói mang cùng một tác
+            # giả — nhật ký kiểm toán mất đúng cái nó sinh ra để giữ.
+            bm.ten, bat, tho, boi, g.ten,
         )
 
 
@@ -288,10 +304,10 @@ async def cai(tho: dict, *, boi: str) -> Goi:
     """
     Kiểm toàn bộ TRƯỚC khi chạm CSDL: sai một là không ghi gì.
 
-    Thứ tự: chiếm-plugin-rời → lịch sử → gói → plugin → tài liệu. Chiếm
-    plugin rời đứng đầu vì nó cũng là một phép kiểm, không phải ghi — phải
-    xong trước bất kỳ INSERT/UPDATE nào để giữ đúng bất biến "sai một là
-    không ghi gì". Tài liệu đứng cuối vì nó gọi API nhúng (chậm, có thể
+    Thứ tự: chiếm-plugin-rời → trần plugin → lịch sử → gói → plugin →
+    tài liệu. Hai phép kiểm đầu đứng trước vì chúng cũng là phép kiểm,
+    không phải ghi — phải xong trước bất kỳ INSERT/UPDATE nào để giữ đúng
+    bất biến "sai một là không ghi gì". Tài liệu đứng cuối vì nó gọi API nhúng (chậm, có thể
     hỏng); hỏng ở đó thì gói đã có nhưng bị tắt và người dùng được báo,
     thay vì một gói "đã cài" mà kho tri thức trống — kiểu hỏng im lặng.
     """
@@ -313,6 +329,28 @@ async def cai(tho: dict, *, boi: str) -> Goi:
                     f"Công cụ {h['ten']!r} trong gói đã thuộc {chu}. "
                     "Đổi tên công cụ trong gói này, hoặc xoá/tắt cái đang chiếm trước."
                 )
+        # Trần plugin: `kho_ky_nang.luu_plugin` chặn được đường thêm plugin
+        # RỜI qua dashboard, nhưng cài gói là đường thứ hai vào cùng bảng
+        # `ky_nang_cai_dat` — không chặn ở đây thì hai gói mỗi gói 5 công cụ
+        # là vượt trần mà không ai báo, và MỌI lời gọi model từ đó mang thêm
+        # lược đồ của số công cụ vượt trần.
+        #
+        # Đếm bằng `fetch` rồi `len` chứ không `count(*)`: số dòng tối đa là
+        # PLUGIN_TOI_DA + vài dòng tắt, và một câu trả về hàng thì CSDL giả
+        # trong test mô phỏng được đúng bộ lọc, không phải đoán ra con số.
+        ngoai_goi = await db.fetch(
+            "SELECT ten FROM ky_nang_cai_dat "
+            "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
+            g.ten,
+        )
+        tong = len(ngoai_goi) + len(g.cong_cu)
+        if tong > kho_ky_nang.PLUGIN_TOI_DA:
+            raise KhoDay(
+                f"Cài gói này thành {tong} plugin đang bật, quá trần "
+                f"{kho_ky_nang.PLUGIN_TOI_DA}: đang bật ngoài gói {g.ten!r} là "
+                f"{len(ngoai_goi)}, gói thêm {len(g.cong_cu)}. Tắt bớt plugin "
+                "hoặc gói không dùng rồi cài lại."
+            )
     hien = await _doc_hien_hanh(g.ten)
     if hien is None:
         so = len(await db.fetch("SELECT ten FROM goi_ky_nang"))
@@ -335,7 +373,7 @@ async def cai(tho: dict, *, boi: str) -> Goi:
         """,
         g.ten, g.phien_ban, g.tho, boi,
     )
-    await _ghi_plugin(g, True)
+    await _ghi_plugin(g, True, boi)
     try:
         await _nap_tai_lieu(g)
     except Exception as exc:  # noqa: BLE001 — gói đã ghi; báo rõ thay vì im
@@ -447,13 +485,26 @@ async def dem_goi_7_ngay() -> dict[str, dict]:
     return {r["ten"]: {"so_lan": int(r["so_lan"]), "so_loi": int(r["so_loi"]), "goi": r["goi"]} for r in rows}
 
 
-async def liet_ke() -> list[dict]:
-    rows = await db.fetch("SELECT ten, phien_ban, bat, noi_dung, tao_boi, sua_luc FROM goi_ky_nang ORDER BY ten")
+async def dem_an_toan() -> dict[str, dict]:
+    """
+    `dem_goi_7_ngay()` nhưng số đo hỏng không làm chết bảng — trả {} và NÓI ra.
+
+    Tách thành hàm riêng để một màn hình dùng chung MỘT kết quả đếm cho cả
+    bảng kỹ năng lẫn bảng gói: mỗi lời gọi công cụ thêm một dòng `events`, và
+    dashboard làm mới 6 giây một lần — quét hai lần cho cùng một màn hình là
+    nhân đôi công việc nặng nhất của trang này.
+    """
     try:
-        dem = await dem_goi_7_ngay()
+        return await dem_goi_7_ngay()
     except Exception as exc:  # noqa: BLE001 — số đo hỏng không được làm chết bảng gói
         _log.warning("không đếm được lượt gọi 7 ngày của gói: %s", exc)
-        dem = {}
+        return {}
+
+
+async def liet_ke(dem: dict[str, dict] | None = None) -> list[dict]:
+    rows = await db.fetch("SELECT ten, phien_ban, bat, noi_dung, tao_boi, sua_luc FROM goi_ky_nang ORDER BY ten")
+    if dem is None:
+        dem = await dem_an_toan()
     ra = []
     for r in rows:
         nd = _tu_jsonb(r["noi_dung"])

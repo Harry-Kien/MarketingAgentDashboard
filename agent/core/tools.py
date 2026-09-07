@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import time
 import unicodedata
 
 from agent import db
@@ -565,7 +566,48 @@ def _tom_tat(sp: dict) -> dict:
     }
 
 
+def _goi_cua(name: str) -> str | None:
+    """Tên gói sở hữu plugin `name`, đọc từ bộ đệm của kho gói; không có thì None."""
+    try:
+        from agent.ky_nang import goi as goi_mod
+
+        dem = goi_mod._DEM
+        if not dem:
+            return None
+        for g in dem[1]:
+            if any(c.ten == name for c in g.cong_cu):
+                return g.ten
+    except Exception:  # noqa: BLE001 — chỉ là nhãn cho số đo
+        return None
+    return None
+
+
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
+    """
+    Thi hành công cụ và GHI SỐ ĐO: một sự kiện `cong_cu.goi` mỗi lần gọi.
+
+    Ghi ở đây chứ không ở `chay.py` (bộ thi hành plugin phải thuần, có test
+    AST canh) và không ở `respond()` (công cụ MCP ngoài sau này cũng đi qua
+    đây). Ghi hỏng thì nuốt: số đo không được làm hỏng câu trả lời cho khách.
+    """
+    from agent.core import thu_nghiem
+
+    bat_dau = time.perf_counter()
+    out = await _run_tool_that(name, args, conversation_id)
+    try:
+        await db.log_event(
+            "cong_cu.goi",
+            ten=name, goi=_goi_cua(name),
+            ok=not (isinstance(out, dict) and "loi" in out),
+            ms=int((time.perf_counter() - bat_dau) * 1000),
+            thu_nghiem=bool(thu_nghiem.dang_thu.get()),
+        )
+    except Exception:  # noqa: BLE001 — số đo hỏng không được làm hỏng kết quả
+        pass
+    return out
+
+
+async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     # ĐỌC: ══ CÂY QUYẾT ĐỊNH — đọc từ trên xuống, THỨ TỰ CÓ Ý NGHĨA ═══════
     # ĐỌC:
     # ĐỌC:   1. chốt 2  · kỹ năng đang tắt?      → trả cờ chuyển người

@@ -65,6 +65,7 @@ def reply_thanh_dict(r: brain.Reply) -> dict:
         "cong_cu": r.cong_cu, "vong": r.vong, "cost_usd": r.cost_usd,
         "latency_ms": r.latency_ms, "model": r.model,
         "tokens_in": r.tokens_in, "tokens_out": r.tokens_out,
+        "goi_ky_nang": r.goi_ky_nang,
     }
 
 

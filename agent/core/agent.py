@@ -446,6 +446,16 @@ async def respond(
         if (ngu_canh_khach := await ho_so_khach.lam_ngu_canh(customer_ref, channel)):
             context = f"{ngu_canh_khach}\n\n{context}" if context else ngu_canh_khach
 
+    # Hướng dẫn của gói kỹ năng kích hoạt theo từ khoá — vào khối BIẾN ĐỘNG,
+    # sau ngữ cảnh RAG. Đặt vào `SYSTEM` thì mỗi tổ hợp gói là một prefix
+    # khác nhau và điểm cache chết cho mọi request. Xem agent/ky_nang/goi.py.
+    from agent.ky_nang import goi as goi_ky_nang_mod
+
+    goi_kich_hoat = await goi_ky_nang_mod.huong_dan_cho_luot(question)
+    if goi_kich_hoat:
+        phan_hd = "\n\n".join(f"## Hướng dẫn kỹ năng «{ten}»\n{hd}" for ten, hd in goi_kich_hoat)
+        context = f"{context}\n\n{phan_hd}" if context else phan_hd
+
     # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
     # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.
     # Ảnh khách gửi đi CÙNG lượt hỏi, không thành một lượt riêng.
@@ -718,4 +728,5 @@ async def respond(
         model=settings.model_chat,
         video_id=video_id,
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
+        goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
     )

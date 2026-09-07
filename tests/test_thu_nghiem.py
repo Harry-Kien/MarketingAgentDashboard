@@ -185,10 +185,11 @@ def test_mo_phong_bat_sdt_va_dia_chi_nhu_that():
 # phép so `<=` vẫn đúng. Một lưới canh việc quên thêm tên mà chính nó lại
 # quên theo là xanh giả — thứ nguy hiểm hơn đỏ giả, vì không ai đi kiểm.
 #
-# Nay tập công cụ ghi được DẪN RA từ `tools.py`: nhánh nào của `run_tool`
-# gọi một hàm mà thân hàm ấy (hoặc thân hàm `_` nó gọi tiếp) có chạm
-# `db.execute`, có chuỗi SQL ghi, có `giu_hang` hay `request_video` thì tên
-# công cụ của nhánh đó PHẢI nằm trong `CO_TAC_DUNG_PHU`.
+# Nay tập công cụ ghi được DẪN RA từ `tools.py`: nhánh nào của `_run_tool_that`
+# (thân sandbox thật sự — `run_tool` chỉ còn là lớp bọc ghi số đo) gọi một
+# hàm mà thân hàm ấy (hoặc thân hàm `_` nó gọi tiếp) có chạm `db.execute`,
+# có chuỗi SQL ghi, có `giu_hang` hay `request_video` thì tên công cụ của
+# nhánh đó PHẢI nằm trong `CO_TAC_DUNG_PHU`.
 _SQL_GHI = ("INSERT INTO", "UPDATE ", "DELETE FROM")
 _HAM_GHI = ("giu_hang", "request_video")
 
@@ -229,7 +230,7 @@ def _ham_module(cay: ast.Module) -> dict[str, ast.stmt]:
 def _cong_cu_ghi_suy_ra(nguon: str) -> set[str]:
     cay = ast.parse(nguon)
     ham_mod = _ham_module(cay)
-    run_tool = ham_mod["run_tool"]
+    run_tool = ham_mod["_run_tool_that"]
 
     cap: list[tuple[str, str]] = []          # (tên công cụ, tên hàm giúp việc)
     for nut in ast.walk(run_tool):
@@ -277,7 +278,7 @@ def test_ast_moi_cong_cu_ghi_deu_di_qua_chot_sandbox():
     # Bộ dò phải còn CHẠY ĐƯỢC. Đổi cách viết `run_tool` khiến nó không tìm
     # thấy gì thì phép so `<=` bên dưới vẫn xanh — đúng kiểu xanh giả mà
     # test này sinh ra để diệt.
-    assert ghi, "bộ dò không tìm thấy công cụ ghi nào — run_tool đã đổi hình, cập nhật test"
+    assert ghi, "bộ dò không tìm thấy công cụ ghi nào — _run_tool_that đã đổi hình, cập nhật test"
     assert "tao_don_hang" in ghi, "bộ dò bỏ sót tao_don_hang — nó hỏng, không phải mã hỏng"
 
     thieu = ghi - set(thu_nghiem.CO_TAC_DUNG_PHU)
@@ -286,7 +287,7 @@ def test_ast_moi_cong_cu_ghi_deu_di_qua_chot_sandbox():
         + ", ".join(sorted(thieu))
         + " — phòng thử sẽ ghi thật khi gọi tới nó."
     )
-    assert "thu_nghiem.dang_thu.get()" in nguon.split("async def run_tool", 1)[1]
+    assert "thu_nghiem.dang_thu.get()" in nguon.split("async def _run_tool_that", 1)[1]
 
 
 def test_bo_do_ast_bat_duoc_cong_cu_ghi_moi():
@@ -296,7 +297,7 @@ def test_bo_do_ast_bat_duoc_cong_cu_ghi_moi():
     lặng trả về tập rỗng, và `test_ast...` ở trên thành lời hứa suông.
     """
     gia = (
-        "async def run_tool(name, args, conversation_id=None):\n"
+        "async def _run_tool_that(name, args, conversation_id=None):\n"
         "    if name == 'xoa_don':\n"
         "        return await _xoa_don(args)\n"
         "    if name == 'xem_don':\n"

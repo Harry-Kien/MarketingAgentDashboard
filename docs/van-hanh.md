@@ -95,7 +95,10 @@ và triệu chứng là "sửa cấu hình rồi mà không thấy đổi gì".
 
 | Tin nhận được | Nghĩa | Việc cần làm |
 |---|---|---|
-| `[hong] Agent KHÔNG PHẢN HỒI` | App chết hoặc máy ngủ | Khởi động lại theo mục trên |
+| `[hong] Agent KHÔNG PHẢN HỒI` | App chết hoặc máy ngủ; lần sau còn hỏng người canh sẽ tự dựng lại | Chờ 5 phút xem có `[tu_dung_lai]` không |
+| `[tu_dung_lai] Agent chết — đã tự dựng lại` | Người canh đã gọi bốn bước của `khoi_dong` (Docker, Postgres, app, sidecar) và app đã trả lời lại | Xem `app.log` để biết vì sao chết; không cần bật gì |
+| `[tu_dung_lai_hong] tự dựng lại THẤT BẠI` | Một bước không lên được (Docker tắt, Postgres không nhận kết nối, app không lên sau 60 giây) | Đọc chi tiết trong tin, sửa tầng đó, chạy `python -m scripts.khoi_dong` |
+| `[bo_cuoc]` | Đã dựng lại 3 lần trong một giờ mà vẫn chết — lỗi không phải kiểu bật lại là xong | Xem `app.log`, chạy `san_sang`; sửa xong thì app tự được canh lại |
 | `[phuc_hoi] Agent đã sống lại` | Đã tự hồi phục | Không cần làm gì |
 | `[hong] Hệ thống đang hỏng` | App sống nhưng một thành phần hỏng | Chạy `san_sang` xem mục nào đỏ |
 | `[khach_cho] Có khách đang chờ người` | Có hội thoại đã chuyển người mà chưa ai nhận | Mở dashboard, vào mục Hội thoại |
@@ -105,6 +108,12 @@ dòng `Kho / ERP` và `Đơn chờ đồng bộ ERP`. Bấm *Kiểm sức khoẻ
 
 Báo động **chỉ gửi khi ĐỔI trạng thái**, không gửi lặp mỗi 5 phút. Im lặng
 kéo dài nghĩa là mọi thứ ổn — hoặc người canh cũng chết.
+
+Người canh **tự dựng lại** app sau hai lần hỏng liên tiếp (10 phút), tối đa
+ba lần mỗi giờ, và không đụng tunnel hay `.env`. Đo được 06.09.2026: app
+chết 5 tiếng mà chỉ có một tin báo — báo đúng mà không làm gì thì với khách
+cũng như không báo. Một lần trượt mạng không đủ để bật lại app đang sống,
+nên mới chờ hai lần.
 
 Người canh bên ngoài là task Windows tên `CanhGacMarketingAgent`, chạy mỗi
 5 phút. Kiểm nó còn sống:

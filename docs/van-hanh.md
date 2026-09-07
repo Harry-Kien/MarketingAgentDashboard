@@ -278,6 +278,33 @@ mở được: `san_sang` mục *Khoá API* chặn, nhật ký có
 
 ---
 
+## Thử agent trước khi cho khách gặp
+
+Dashboard → **Phòng thử**. Nhắn như khách, nhiều lượt. Bên phải hiện agent
+ĐÃ LÀM GÌ trong lượt vừa rồi: lớp lưới nào bắt và vì sao, công cụ nào được
+gọi với tham số gì và trả gì, trích tài liệu nào, tốn bao nhiêu.
+
+**"ĐANG THỬ" cạnh tên công cụ** nghĩa là công cụ đó chỉ được mô phỏng:
+`tao_don_hang`, `tao_video`, `xin_huy_don`, `xin_doi_tra` không ghi gì
+vào Postgres, ERP hay hàng đợi. Các công cụ tra cứu chạy thật với dữ liệu
+thật. Không có gì được gửi ra kênh nào, và hồ sơ khách không bị đụng.
+
+**Tiền.** Mỗi lượt là một lời gọi model thật. Chi phí vào sổ riêng với
+trần riêng — *Cấu hình → Trần chi phí phòng thử mỗi ngày* (mặc định 1
+USD). Hết trần thì phòng thử dừng, khách thật không bị ảnh hưởng. Ngược
+lại thì có: hệ thống chạm trần ngày chung thì phòng thử cũng dừng, vì đó
+là một túi tiền.
+
+**Gợi ý từ bộ câu vàng.** Bấm một câu là điền sẵn và mang theo kỳ vọng
+(có phải chuyển người không, từ khoá phải có, từ cấm). Lượt trả lời sẽ
+được chấm ĐẠT / KHÔNG ĐẠT so với kỳ vọng ấy.
+
+**Phòng thử không thay bộ vàng.** Nó trả lời "hôm nay agent làm gì với câu
+này"; `python -m scripts.eval` trả lời "nó có ổn định qua 56 câu không".
+Sửa prompt xong vẫn phải chạy bộ vàng.
+
+---
+
 ## Dấu hiệu cổng ERP đang hỏng
 
 Khác mục trên, đây là các kiểu hỏng **đã lường trước và có lưới chặn**, chưa

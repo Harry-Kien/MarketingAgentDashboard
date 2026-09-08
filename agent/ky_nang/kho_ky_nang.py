@@ -295,8 +295,21 @@ async def xoa_plugin(ten: str, *, boi: str = "staff") -> bool:
         # nó thuộc một gói — hai chuyện rất khác nhau, phải nói ra chuyện thứ hai.
         chu = await db.fetchrow("SELECT goi FROM ky_nang_cai_dat WHERE ten = $1", ten)
         if chu is not None and chu["goi"]:
+            goi_chu = str(chu["goi"])
+            # Cột `goi` mang HAI loại chủ: tên gói kỹ năng thật, và
+            # `mcp:<tên máy chủ>`. Nói "thuộc gói 'mcp:kho_erp'" là chỉ người
+            # vận hành đi tìm một gói không tồn tại ở panel Gói kỹ năng; chỗ
+            # gỡ nó nằm ở panel khác hẳn. Chuỗi `mcp:` sinh ra để KHÔNG phải
+            # hiện ra ngoài — dashboard đã tránh nó ở huy hiệu, câu lỗi này
+            # là chỗ cuối cùng còn để lọt.
+            if goi_chu.startswith("mcp:"):
+                raise LoiBanMoTa(
+                    f"{ten!r} là công cụ thuộc máy chủ MCP {goi_chu[4:]!r} — tắt "
+                    "hoặc xoá máy chủ ở panel Máy chủ MCP, không xoá riêng công "
+                    "cụ của nó."
+                )
             raise LoiBanMoTa(
-                f"{ten!r} là công cụ thuộc gói {chu['goi']!r} — tắt hoặc xoá "
+                f"{ten!r} là công cụ thuộc gói {goi_chu!r} — tắt hoặc xoá "
                 "gói đó, không xoá riêng công cụ của nó."
             )
     if so_dong:

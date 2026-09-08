@@ -64,6 +64,11 @@ class _CSDL:
             self.plugin[a[0]] = {"ten": a[0], "bat": a[1] if cu is None else cu["bat"], "ban_mo_ta": a[2], "goi": a[4]}
         elif s.startswith("UPDATE ky_nang_cai_dat SET bat = $1, ban_mo_ta"):
             self.plugin[a[2]].update({"bat": a[0], "ban_mo_ta": a[1]})
+        elif s.startswith("UPDATE ky_nang_cai_dat SET bat = FALSE, sua_luc = now() WHERE ten"):
+            # Đường tắt KHÔNG đụng `ban_mo_ta`: `bat_tat` dùng nó khi bản mô
+            # tả đã lưu không còn qua bộ kiểm, để bất biến "máy chủ tắt = mọi
+            # công cụ tắt" vẫn đứng được.
+            self.plugin[a[0]]["bat"] = False
         elif s.startswith("DELETE FROM ky_nang_cai_dat WHERE goi = $1 AND ten"):
             for t in [k for k, v in self.plugin.items() if v["goi"] == a[0] and k not in a[1]]:
                 self.plugin.pop(t)
@@ -171,7 +176,10 @@ def test_dong_bo_lai_giu_co_nguoi_dat_va_xoa_cong_cu_bien_mat(kho):
     # _co_nguoi_dat`), nên chính `dong_bo` phải đọc cờ cũ và ghi lại.
     from agent.ky_nang import kho_mcp
     chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
-    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", bat=True, ghi_cho_phep=True, boi="qt"))
+    # Hai lần bấm RIÊNG — gộp vào một lời gọi bị `dat_cong_cu` từ chối (xem
+    # `test_bat_va_cho_phep_ghi_trong_cung_mot_lan_bi_tu_choi`).
+    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", bat=True, boi="qt"))
+    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", ghi_cho_phep=True, boi="qt"))
     kho.cong_cu.pop(0)   # tra_ton biến mất ở máy chủ
     kq = chay(kho_mcp.dong_bo("kho", boi="qt"))
     assert "mcp_kho_tra_ton" not in kho.plugin
@@ -810,3 +818,70 @@ def test_dong_bo_bo_cong_cu_co_ten_thuoc_tinh_hay_enum_ra_lenh(kho, monkeypatch,
     assert kq["so_cong_cu"] == 0 and kq["so_bo"] == 1
     assert kq["bo"][0]["ten"] == "tra_ton" and dau in kq["bo"][0]["ly_do"]
     assert "mcp_kho_tra_ton" not in kho.plugin
+
+
+def test_bat_tat_mot_dong_hong_van_giu_bat_bien_may_chu_tat(kho, caplog):
+    """
+    `_ghi_cong_cu` chạy LẠI `doc_ban_mo_ta` trên bản mô tả ĐÃ NẰM TRONG CSDL,
+    và bản ấy có thể không còn qua bộ kiểm: trần lược đồ siết lại, một mẫu
+    injection mới thêm vào `phong_thu`, một dòng ghi trước khi có luật. Ném
+    ra giữa vòng lặp là máy chủ đã `bat = False`, vài công cụ đầu đã tắt,
+    phần còn lại VẪN BẬT — bất biến "máy chủ tắt = mọi công cụ tắt" bị phá,
+    im lặng, và người bấm nút chỉ thấy một câu lỗi không nói mình ở đâu.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is True
+    # Bản mô tả đã lưu hỏng theo đúng kiểu "luật siết lại sau khi đã ghi".
+    kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"]["cau_hinh"]["luoc_do"] = {"type": "string"}
+
+    with caplog.at_level(logging.WARNING, logger="agent.ky_nang.kho_mcp"):
+        chay(kho_mcp.bat_tat("kho", False, boi="qt"))   # KHÔNG được ném
+
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is False
+    assert any("mcp_kho_tra_ton" in r.getMessage() for r in caplog.records)
+    # Dòng lành vẫn được xử lý bình thường, không dừng giữa chừng.
+    assert kho.plugin["mcp_kho_ghi_don"]["ban_mo_ta"]["cau_hinh"]["bat_truoc"] is False
+    assert kho.may_chu["kho"]["bat"] is False
+
+
+def test_bat_lai_bo_qua_dong_hong_va_ghi_nhat_ky(kho, caplog):
+    """Nhánh BẬT: bỏ qua dòng hỏng, không ném — máy chủ đã bật rồi."""
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))
+    kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"]["cau_hinh"]["luoc_do"] = {"type": "string"}
+
+    with caplog.at_level(logging.WARNING, logger="agent.ky_nang.kho_mcp"):
+        chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+
+    assert kho.may_chu["kho"]["bat"] is True
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is False   # không bật lại dòng hỏng
+    assert any("mcp_kho_tra_ton" in r.getMessage() for r in caplog.records)
+
+
+def test_bat_va_cho_phep_ghi_trong_cung_mot_lan_bi_tu_choi(kho):
+    """
+    Luật "hai lần bấm" cho quyền ghi phải nằm trong MÃ, không chỉ trong hai
+    ô checkbox: API nhận cả hai cờ trong cùng một body, nên một lời gọi
+    `{"bat": true, "ghi_cho_phep": true}` mở quyền sửa dữ liệu ở hệ thống
+    người khác trong một lần, không ai từng thử công cụ ấy lần nào.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    assert kho.plugin["mcp_kho_ghi_don"]["bat"] is False
+
+    with pytest.raises(kho_mcp.LoiMayChu) as e:
+        chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", bat=True, ghi_cho_phep=True, boi="qt"))
+    assert "Phòng thử" in str(e.value)
+    assert kho.plugin["mcp_kho_ghi_don"]["bat"] is False
+    ch = kho.plugin["mcp_kho_ghi_don"]["ban_mo_ta"]["cau_hinh"]
+    assert ch["ghi_cho_phep"] is False    # không ghi nửa vời
+
+    # Hai lần bấm RIÊNG thì vẫn làm được — luật là về thứ tự, không phải cấm.
+    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", bat=True, boi="qt"))
+    kq = chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", ghi_cho_phep=True, boi="qt"))
+    assert kq["bat"] is True and kq["ghi_cho_phep"] is True

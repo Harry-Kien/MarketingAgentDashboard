@@ -670,7 +670,35 @@ async def bat_tat(ten: str, bat: bool, *, boi: str = "staff") -> None:
                 continue  # tắt lần thứ hai trở đi: không có gì đổi, không ghi
             ch["bat_truoc"] = dang_bat
             bm["cau_hinh"] = ch
-            await _ghi_cong_cu(r["ten"], False, bm)
+            try:
+                await _ghi_cong_cu(r["ten"], False, bm)
+            except LoiBanMoTa as exc:
+                # BẤT BIẾN PHẢI GIỮ ĐƯỢC KỂ CẢ KHI MỘT DÒNG HỎNG.
+                #
+                # `_ghi_cong_cu` chạy lại `doc_ban_mo_ta` trên bản mô tả ĐÃ
+                # NẰM TRONG CSDL, và bản ấy có thể không còn qua bộ kiểm:
+                # trần lược đồ siết lại, một mẫu injection mới được thêm vào
+                # `phong_thu`, một dòng cũ ghi trước khi có luật. Ném ra đây
+                # là vòng lặp dừng giữa chừng — máy chủ đã `bat = False`, vài
+                # công cụ đầu đã tắt, phần còn lại VẪN BẬT, và người bấm nút
+                # chỉ thấy một câu lỗi không nói mình đang ở đâu. Đó đúng là
+                # bất biến "máy chủ tắt = mọi công cụ tắt" bị phá, im lặng.
+                #
+                # Nên: tắt dòng ấy bằng câu SQL KHÔNG đụng `ban_mo_ta` (bản
+                # mô tả hỏng cứ để nguyên cho người sửa/đồng bộ lại), rồi đi
+                # tiếp. Mất `bat_truoc` của riêng dòng này là cái giá phải
+                # trả, và nó nhỏ hơn hẳn việc để một công cụ bật trên một máy
+                # chủ tắt.
+                _log.warning(
+                    "máy chủ MCP %r: công cụ %r có bản mô tả không qua bộ kiểm "
+                    "(%s) — vẫn tắt nó, nhưng không ghi được bat_truoc; "
+                    "đồng bộ lại để dựng lại bản mô tả.",
+                    ten, r["ten"], exc,
+                )
+                await db.execute(
+                    "UPDATE ky_nang_cai_dat SET bat = FALSE, sua_luc = now() WHERE ten = $1",
+                    r["ten"],
+                )
     else:
         # Gieo bằng số công cụ của CHÍNH máy chủ này đang bật, gồm cả công cụ
         # GHI mà vòng lặp bỏ qua. `kiem_tran_them` đã loại `goi = mcp:<tên>`
@@ -707,7 +735,19 @@ async def bat_tat(ten: str, bat: bool, *, boi: str = "staff") -> None:
                 # ghi JSONB thừa cho MỌI công cụ, mỗi lần bấm nút Bật.
                 continue
             bm["cau_hinh"] = ch
-            await _ghi_cong_cu(r["ten"], bat_moi, bm)
+            try:
+                await _ghi_cong_cu(r["ten"], bat_moi, bm)
+            except LoiBanMoTa as exc:
+                # Nhánh BẬT: bỏ qua dòng hỏng và đi tiếp, không tắt nó (nó
+                # đang tắt sẵn — `bat_truoc` chỉ được tiêu thụ cho công cụ
+                # đang tắt). Ném ra đây thì máy chủ đã bật mà phần lớn công
+                # cụ chưa kịp bật lại, và không có gì nói ra điều đó.
+                _log.warning(
+                    "máy chủ MCP %r: công cụ %r có bản mô tả không qua bộ kiểm "
+                    "(%s) — bỏ qua, không bật lại; đồng bộ lại để dựng lại "
+                    "bản mô tả.",
+                    ten, r["ten"], exc,
+                )
 
     await db.log_event("mcp.may_chu", actor=boi, ten=ten, viec="bat" if bat else "tat")
     xoa_dem()
@@ -734,6 +774,18 @@ async def dat_cong_cu(
     )
     if row is None or (row["goi"] or "") != goi_ten:
         raise MayChuKhongTonTai(f"{ten_cong_cu!r} không phải công cụ của máy chủ {ten!r}.")
+
+    # LUẬT HAI LẦN BẤM NẰM TRONG MÃ, KHÔNG CHỈ TRONG GIAO DIỆN.
+    #
+    # Tài liệu và dashboard đều nói quyền ghi cần đúng hai lần bấm riêng:
+    # bật công cụ, thử trong Phòng thử, rồi mới cho phép ghi ngoài đó. Nhưng
+    # đó mới là hai ô checkbox — API nhận cả hai cờ trong CÙNG một body, nên
+    # một lời gọi `{"bat": true, "ghi_cho_phep": true}` (script, curl, hoặc
+    # một bản dashboard sau này gộp form) mở quyền sửa dữ liệu ở hệ thống
+    # người khác trong một lần, không ai từng thử công cụ ấy lần nào. Luật
+    # sống trong giao diện là luật sẽ mất ở lần sửa giao diện kế tiếp.
+    if ghi_cho_phep and bat and not bool(row["bat"]):
+        raise LoiMayChu("Bật công cụ trước, thử trong Phòng thử, rồi mới cho phép ghi")
 
     bm_cu = _tu_jsonb(row["ban_mo_ta"])
     ch = dict(bm_cu.get("cau_hinh") or {})

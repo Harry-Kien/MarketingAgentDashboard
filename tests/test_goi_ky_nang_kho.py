@@ -703,6 +703,25 @@ def test_xoa_plugin_chi_xoa_dong_khong_thuoc_goi(kho_plugin):
     assert "goi IS NULL" in xoa_sql
 
 
+def test_xoa_cong_cu_mcp_chi_dung_panel_may_chu_mcp(kho_plugin):
+    """
+    Cột `goi` mang HAI loại chủ: tên gói thật, và `mcp:<tên máy chủ>`. Câu
+    "thuộc gói 'mcp:kho_erp'" chỉ người vận hành đi tìm một gói không tồn
+    tại ở panel Gói kỹ năng, trong khi chỗ gỡ nó nằm ở panel khác hẳn —
+    chuỗi `mcp:` vốn sinh ra để KHÔNG phải hiện ra ngoài.
+    """
+    from agent.ky_nang import ban_mo_ta, kho_ky_nang
+
+    kho_plugin["chu_goi"] = "mcp:kho_erp"
+    with pytest.raises(ban_mo_ta.LoiBanMoTa) as e:
+        chay(kho_ky_nang.xoa_plugin("bang_thanh_phan_ne", boi="qt"))
+    chu = str(e.value)
+    assert "máy chủ MCP" in chu and "kho_erp" in chu
+    assert "Máy chủ MCP" in chu          # nêu đúng tên panel để bấm vào
+    assert "mcp:kho_erp" not in chu      # không lộ chuỗi kỹ thuật
+    assert "thuộc gói" not in chu
+
+
 def test_xoa_plugin_khong_ton_tai_van_tra_false(kho_plugin):
     """Không có dòng nào mang tên đó là chuyện KHÁC "thuộc gói" — trả False."""
     from agent.ky_nang import kho_ky_nang

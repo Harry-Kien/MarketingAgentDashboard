@@ -25,7 +25,7 @@ def _bm(ghi: bool, ghi_cho_phep: bool = False):
         "tham_so": [],
         "cau_hinh": {"may_chu": "kho", "cong_cu_goc": "ghi_don",
                      "luoc_do": {"type": "object", "properties": {}}, "ghi": ghi, "ghi_cho_phep": ghi_cho_phep},
-    })
+    }, tu_dong_bo=True)   # công cụ mcp chỉ vào bằng đường đồng bộ, không tạo tay
 
 
 @pytest.fixture

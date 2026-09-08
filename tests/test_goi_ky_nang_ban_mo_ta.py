@@ -99,6 +99,24 @@ def test_cong_cu_qua_doc_ban_mo_ta():
     assert x.cong_cu[0].ten == "bang_thanh_phan_ne"
 
 
+def test_goi_khong_nhet_duoc_cong_cu_mcp():
+    """
+    Gói là tệp zip người ngoài gửi tới. Cho nó khai một công cụ `mcp` là cho
+    nó tự viết lược đồ mang tên một máy chủ CÓ THẬT, kèm cờ `ghi` — tức một
+    công cụ ghi trỏ vào đâu cũng được, mà trên dashboard lại trông y hệt
+    công cụ đã đồng bộ hợp lệ. Công cụ MCP chỉ vào bằng đường đồng bộ.
+    """
+    with pytest.raises(g.LoiGoi, match="đồng bộ"):
+        g.doc_goi(_goi(cong_cu=[{
+            "ten": "mcp_kho_ghi_don", "loai": "mcp",
+            "mo_ta": "Ghi đơn lên máy chủ kho theo mã sản phẩm khách đã chốt.",
+            "tham_so": [],
+            "cau_hinh": {"may_chu": "kho", "cong_cu_goc": "ghi_don", "ghi": True,
+                         "ghi_cho_phep": True,
+                         "luoc_do": {"type": "object", "properties": {}}},
+        }]))
+
+
 def test_qua_nam_cong_cu_bi_tu_choi():
     cc = [{"ten": f"bang_{i}", "loai": "tra_bang", "mo_ta": "Tra bảng thử số " + str(i) + " cho khách hỏi.",
            "tham_so": [], "cau_hinh": {"bang": {"a": "b"}}} for i in range(6)]

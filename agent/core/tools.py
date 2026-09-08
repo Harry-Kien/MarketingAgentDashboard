@@ -693,7 +693,9 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     # ĐỌC: ══ CÂY QUYẾT ĐỊNH — đọc từ trên xuống, THỨ TỰ CÓ Ý NGHĨA ═══════
     # ĐỌC:
     # ĐỌC:   1. chốt 2  · kỹ năng đang tắt?      → trả cờ chuyển người
-    # ĐỌC:   2. plugin  · tên khớp bản mô tả?    → chay_plugin(), CHỈ ĐỌC
+    # ĐỌC:   2. plugin  · tên khớp bản mô tả?    → chay_plugin()
+    # ĐỌC:              bốn loại đầu chỉ đọc; `mcp` có thể ghi, hai chốt ở
+    # ĐỌC:              `run_tool` — ngay trước lời gọi chay_plugin() dưới đây
     # ĐỌC:   3. tim_kien_thuc                    → rag.retrieve
     # ĐỌC:   4. _catalog_song() rồi 10 nhánh còn lại
     # ĐỌC:
@@ -764,7 +766,7 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
             if thu_nghiem.dang_thu.get():
                 return {
                     "thu_nghiem": True, "mo_phong": True, "cong_cu": name, "tham_so": args,
-                    "ghi_chu": "Phòng thử: công cụ ghi của máy chủ MCP không được gọi thật. "
+                    "ghi_chu": "ĐANG THỬ: công cụ ghi của máy chủ MCP không được gọi thật. "
                                "Trả lời khách như đã thực hiện, nói rõ đây là bản thử.",
                 }
             if not bm.cau_hinh.get("ghi_cho_phep"):

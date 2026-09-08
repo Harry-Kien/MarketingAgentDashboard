@@ -99,8 +99,15 @@ async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]]:
             # Nhánh này chỉ còn cần cho dòng ghi TRƯỚC ngày sửa lỗi mã hoá
             # hai lần ở luu_plugin() (cột khi đó thật sự chứa chuỗi JSON).
             tho = json.loads(tho)
+        # `tu_dong_bo` mở khoá loại `mcp`, vốn không tạo tay được. CSDL là
+        # đường TIN CẬY ở đúng chỗ này và chỉ ở đây: cột `goi` dạng
+        # "mcp:<máy chủ>" chỉ `kho_mcp.dong_bo()` mới ghi được — `luu_plugin`
+        # để trống cột ấy, `goi.cai` ghi tên gói. Đọc lại một dòng đã đồng bộ
+        # rồi từ chối nó thì công cụ MCP biến mất ngay sau lần xoá đệm kế
+        # tiếp, và biến mất gần như im lặng: chỗ bắt lỗi chỉ ghi một sự kiện.
+        tu_dong_bo = str(r["goi"] or "").startswith("mcp:")
         try:
-            plugin.append(doc_ban_mo_ta(tho))
+            plugin.append(doc_ban_mo_ta(tho, tu_dong_bo=tu_dong_bo))
         except LoiBanMoTa:
             # Một bản mô tả hỏng KHÔNG được làm chết cả agent. Bỏ qua đúng
             # plugin đó và đi tiếp — nhưng bỏ qua trong im lặng thì không ai

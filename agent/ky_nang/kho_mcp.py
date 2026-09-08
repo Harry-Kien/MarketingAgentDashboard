@@ -47,6 +47,12 @@ from agent.cau_hinh_dong import VaultChuaSanSang
 from agent.core import thu_nghiem
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang import mcp_khach as mk
+
+# Xuất lại hai tên này để `agent/api/mcp_may_chu.py` không phải `import
+# mcp_khach` trực tiếp — bài kiểm AST ở `test_ky_nang_plugin.py` chặn đúng
+# việc đó (chỉ `kho_mcp.py` được nhập khẩu `mcp_khach`), vì mọi bí mật, hạn
+# mức và nhật ký của máy chủ MCP phải đi qua lớp này, không có đường tắt.
+from agent.ky_nang.mcp_khach import MCP_MAY_CHU_TOI_DA, LoiMCP  # noqa: F401
 from agent.ky_nang.ban_mo_ta import _TEN_MAY_CHU_RE, LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.kho_ky_nang import KhoDay
 from agent.security.credential_vault import (

@@ -1,4 +1,4 @@
--- agent/migrations/versions/0016_mcp_may_chu.sql
+-- agent/migrations/versions/0017_mcp_may_chu.sql
 -- Máy chủ MCP bên ngoài mà agent được phép gọi công cụ.
 --
 -- VÌ SAO KHÔNG CÓ BẢNG CÔNG CỤ RIÊNG: công cụ của máy chủ ghi vào

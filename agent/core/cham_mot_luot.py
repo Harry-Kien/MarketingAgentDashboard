@@ -71,6 +71,26 @@ def tu_cam(text: str) -> list[str]:
     return sorted(c for c in TU_CAM_QUANG_CAO if pham(low, fold(c)))
 
 
+def tu_cam_hai_dang(text: str) -> list[str]:
+    """
+    Cụm cấm, soi CẢ hai dạng chữ: nguyên văn và bản đã gộp khoảng trắng.
+
+    Mỗi dạng bịt đúng lỗ của dạng kia, nên soi một dạng là chấp nhận một
+    kiểu lọt im lặng:
+
+      * `fold()` bỏ dấu nhưng KHÔNG gộp khoảng trắng, nên một cụm bị xuống
+        dòng cắt đôi ("chữa\nkhỏi") không khớp gì cả;
+      * `_la_phu_dinh()` lại coi xuống dòng là ranh giới mệnh đề, nên khi
+        đã gộp hết khoảng trắng thì "không cam kết\ntrị dứt điểm" thành một
+        mệnh đề phủ định và cụm cấm ở vế sau lọt.
+
+    Dùng ở HAI chỗ người trong nhà gõ chữ rồi chữ ấy tới tay khách: hướng
+    dẫn gói kỹ năng, và bản nháp AI do quản lý sửa. Một hàm, vì hai bản sao
+    thì sớm muộn lệch — và khi ấy một đường bị chặn, đường kia lọt.
+    """
+    return sorted(set(tu_cam(text)) | set(tu_cam(" ".join(text.split()))))
+
+
 def so_voi_bo_vang(text: str, escalate: bool, case: dict) -> dict:
     """Đúng thuật toán chấm của scripts/eval.py::run_case, tách ra để dùng lại."""
     low = fold(text)

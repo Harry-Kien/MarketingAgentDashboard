@@ -659,6 +659,88 @@ svg { flex: none; }
   border-style: dashed;
 }
 
+/* Ô sửa bản nháp — thay chỗ bong bóng, giữ nguyên vị trí trong luồng.
+ *
+ * Cùng bề rộng, cùng bo góc, cùng khoảng đệm với `.msg__bubble`: đang sửa
+ * thì chữ không được nhảy chỗ so với lúc đọc, nếu không người sửa mất một
+ * nhịp để tìm lại câu mình đang nhìn. */
+.msg--dangsua .msg__sua {
+  max-width: 78%;
+  border: 1px solid hsl(var(--primary) / .55);
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / .1);
+  overflow: hidden;
+}
+
+.msg__sua-o {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: hsl(var(--foreground));
+  font: inherit;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+}
+
+.msg__sua-chan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / .5);
+}
+
+.msg__sua-dem {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.msg__sua-nut { display: flex; gap: 6px; }
+
+/* Bản AI để đối chiếu. Cố ý KHÔNG dùng màu trạng thái: nó là thông tin,
+ * không phải cảnh báo — dùng vàng ở đây là dạy người ta rằng vàng đôi khi
+ * chẳng có nghĩa gì. */
+.msg__goc-nut {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.msg__goc {
+  max-width: 78%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-left: 2px solid hsl(var(--border));
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: hsl(var(--muted) / .6);
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.msg__goc-nhan {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
 .msg__meta {
   font-size: 11px;
   color: hsl(var(--muted-foreground));

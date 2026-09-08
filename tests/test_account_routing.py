@@ -85,8 +85,11 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
     job_id = uuid4()
     calls = []
 
-    async def queue(mid):
-        calls.append(mid)
+    # Chữ ký nhận thêm nội dung đã sửa và tên người duyệt (xem
+    # tests/test_sua_ban_nhap.py). Duyệt KHÔNG sửa vẫn phải là `noi_dung=None`
+    # — đó là đường cũ, và test này canh đúng đường ấy không đổi hành vi.
+    async def queue(mid, noi_dung=None, *, boi="", xac_nhan=False):
+        calls.append((mid, noi_dung))
         return QueuedOutbound(
             job_id=job_id,
             message_id=message_id,
@@ -96,7 +99,7 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
 
     monkeypatch.setattr(routes, "_queue_approved_draft", queue, raising=False)
 
-    result = asyncio.run(routes.approve_draft(str(message_id)))
+    result = asyncio.run(routes.approve_draft(str(message_id), None, {"ten_dang_nhap": "kien"}))
 
     assert result == {
         "ok": True,
@@ -105,7 +108,7 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
         "message_id": str(message_id),
         "duplicate": False,
     }
-    assert calls == [message_id]
+    assert calls == [(message_id, None)]
 
 
 def test_cua_so_gui_chi_doc_tin_cua_dung_account(monkeypatch):

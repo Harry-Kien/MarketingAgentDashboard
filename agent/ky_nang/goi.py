@@ -61,7 +61,7 @@ from dataclasses import dataclass, field
 
 from agent import db
 from agent.core import phong_thu, rag
-from agent.core.cham_mot_luot import fold, tu_cam
+from agent.core.cham_mot_luot import fold, tu_cam_hai_dang
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang.ban_mo_ta import BanMoTa, LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.so_dang_ky import ten_ky_nang_co_san
@@ -142,13 +142,10 @@ def doc_goi(tho: dict) -> Goi:
     if not HUONG_DAN_NGAN_NHAT <= len(huong_dan) <= HUONG_DAN_TOI_DA:
         raise LoiGoi(f"Ô huong_dan dài {len(huong_dan)} ký tự, cần {HUONG_DAN_NGAN_NHAT}–{HUONG_DAN_TOI_DA}.")
     _quet(huong_dan, "huong_dan")
-    # VÌ SAO SOI CẢ HAI DẠNG: `fold()` bỏ dấu nhưng KHÔNG gộp khoảng trắng,
-    # nên một cụm cấm bị xuống dòng cắt đôi ("chữa\nkhỏi") không khớp gì cả.
-    # Còn `_la_phu_dinh()` lại coi "\n" là ranh giới mệnh đề, nên gộp hết
-    # khoảng trắng lại làm "không cam kết\ntrị dứt điểm" thành một mệnh đề
-    # phủ định và cụm cấm ở vế sau lọt. Mỗi dạng bịt đúng lỗ của dạng kia;
-    # soi một dạng là chấp nhận một kiểu lọt im lặng.
-    cam = sorted(set(tu_cam(huong_dan)) | set(tu_cam(" ".join(huong_dan.split()))))
+    # Soi cả hai dạng chữ — lý do đầy đủ nằm ở `tu_cam_hai_dang`. Gọi hàm
+    # chung thay vì tự gộp khoảng trắng tại chỗ: bản nháp AI do quản lý sửa
+    # cũng cần đúng phép soi này, và hai bản sao thì sớm muộn lệch nhau.
+    cam = tu_cam_hai_dang(huong_dan)
     if cam:
         raise LoiGoi(f"Hướng dẫn chứa cụm cấm quảng cáo mỹ phẩm: {', '.join(cam)}. "
                      "Agent không được nói những cụm này với khách, nên hướng dẫn cũng không được dạy nó nói.")

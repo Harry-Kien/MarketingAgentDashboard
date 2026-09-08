@@ -169,7 +169,7 @@ erDiagram
         NUMERIC cost_usd
         JSONB attachments
         TEXT direction
-        _ con_3_cot_nua
+        _ con_6_cot_nua
     }
     documents {
         UUID id

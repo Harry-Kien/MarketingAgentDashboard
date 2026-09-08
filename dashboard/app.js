@@ -39,7 +39,13 @@ async function api(path, options = {}) {
     // 429 của Phòng thử trả detail là object ({ly_do, ...}), không phải chuỗi.
     // Error() ép mọi message thành chuỗi bằng String() — không xử lý riêng thì
     // toast hiện "[object Object]", người dùng không biết vì sao bị chặn.
-    throw new Error(typeof detail === "string" ? detail : (detail && detail.ly_do) || JSON.stringify(detail));
+    const err = new Error(typeof detail === "string" ? detail : (detail && detail.ly_do) || JSON.stringify(detail));
+    /* Giữ nguyên `detail` dạng object cho nơi gọi cần rẽ nhánh theo nội
+     * dung lỗi, không phải theo chuỗi chữ. Đọc lỗi bằng cách so chuỗi tiếng
+     * Việt là thứ hỏng ngay lần đầu ai đó sửa lại câu thông báo. */
+    err.chi_tiet = detail;
+    err.ma = res.status;
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 }
@@ -373,6 +379,10 @@ async function loadThread(id) {
       hhmm(m.created_at), who, m.delivery_status || "",
       m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
       m.grounded === false ? "KHÔNG có căn cứ" : "",
+      /* Nói ra là tin này đã qua tay người. Không nói thì con số "tin cậy
+       * 0.77" ngay cạnh đây trông như đang chấm câu đang hiện — mà nó chấm
+       * bản AI viết, tức là chấm một câu chữ khác. */
+      m.sua_boi ? "đã sửa bởi " + m.sua_boi : "",
       m.cost ? usd(m.cost) : "",
       m.latency_ms ? m.latency_ms + "ms" : "",
       (m.sources || []).length ? "có nguồn tham chiếu" : "",
@@ -416,12 +426,47 @@ async function loadThread(id) {
       .map((a) => (a.metadata && a.metadata.caption) || "").filter(Boolean);
     const chuTrung = m.content && tenTep.includes(m.content.trim());
 
-    return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""}">
+    /* Sửa NGAY TẠI bong bóng, không mở hộp thoại đè lên.
+     *
+     * Người sửa cần đọc lại câu khách vừa hỏi ngay phía trên trong lúc gõ —
+     * một hộp thoại che mất đúng thứ họ cần nhìn, và họ sẽ đóng/mở nó vài
+     * lần cho mỗi lần sửa. */
+    const dangSua = draft && state.dangSua === m.id;
+    const than = dangSua
+      ? `<div class="msg__sua">
+           <textarea class="msg__sua-o" data-sua-o rows="1"
+             aria-label="Sửa nội dung bản nháp">${esc(m.content || "")}</textarea>
+           <div class="msg__sua-chan">
+             <span class="msg__sua-dem" data-sua-dem></span>
+             <span class="msg__sua-nut">
+               <button type="button" class="btn btn--sm" data-edit-cancel>Huỷ</button>
+               <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>
+             </span>
+           </div>
+         </div>`
+      : (m.content && !chuTrung ? `<div class="msg__bubble">${esc(m.content)}</div>` : "");
+
+    /* Bản AI để đối chiếu, mặc định GẤP LẠI. Bung sẵn thì mỗi tin đã sửa
+     * chiếm hai lần chỗ trong luồng, và người trực cuộn nhiều gấp đôi để
+     * đọc một hội thoại — cái giá ấy trả mỗi ngày, còn nhu cầu đối chiếu
+     * thì thỉnh thoảng. */
+    const banGoc = m.noi_dung_goc
+      ? `<button type="button" class="msg__goc-nut" data-xem-goc="${m.id}">
+           ${state.xemGoc === m.id ? "ẩn bản AI" : "xem bản AI"}
+         </button>`
+      : "";
+
+    return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""} ${dangSua ? "msg--dangsua" : ""}">
       ${anh}
-      ${m.content && !chuTrung ? `<div class="msg__bubble">${esc(m.content)}</div>` : ""}
+      ${than}
+      ${m.noi_dung_goc && state.xemGoc === m.id
+        ? `<div class="msg__goc"><span class="msg__goc-nhan">Bản AI đã viết</span>${esc(m.noi_dung_goc)}</div>`
+        : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
-        ${draft ? `<button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
+        ${banGoc}
+        ${draft && !dangSua ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
+          <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
       </div>
     </div>`;
   }).join("");
@@ -443,6 +488,12 @@ async function loadThread(id) {
   const o_cu = $("#replyform") ? $('#replyform [name="text"]') : null;
   const dang_focus = o_cu && document.activeElement === o_cu;
   const con_tro = o_cu ? o_cu.selectionStart : null;
+  /* Ô SỬA BẢN NHÁP cũng phải giữ, và giữ vì đúng lý do ở trên — mạnh hơn
+   * nữa: chữ trong ô này là câu sắp gửi cho khách, không phải bản nháp riêng
+   * của người trực. Mất nó giữa chừng là mất một câu đã cân nhắc từng chữ. */
+  const o_sua_cu = $("[data-sua-o]");
+  const sua_dang_focus = o_sua_cu && document.activeElement === o_sua_cu;
+  const sua_con_tro = o_sua_cu ? o_sua_cu.selectionStart : null;
   const thread_cu = $("#thread");
   // Cách đáy dưới 40px thì coi như đang theo dõi tin mới -> cuộn tiếp.
   // Ở xa hơn nghĩa là đang đọc đoạn cũ -> giữ nguyên chỗ họ đang đọc.
@@ -525,11 +576,98 @@ async function loadThread(id) {
     });
   }
 
+  /* Ô sửa bản nháp: trả lại chữ đang gõ, tự giãn theo nội dung, đếm ký tự.
+   *
+   * `state.suaText` là nguồn sự thật giữa hai lần vẽ — thẻ <textarea> cũ đã
+   * bị vứt cùng cả panel, nên không đọc lại được từ DOM. */
+  const o_sua = $("[data-sua-o]");
+  if (o_sua) {
+    if (state.suaText != null) o_sua.value = state.suaText;
+    else state.suaText = o_sua.value;
+
+    const dem = $("[data-sua-dem]");
+    const gian = () => {
+      // Tự giãn theo nội dung: một câu tư vấn dài 1.200 ký tự nằm trong ô
+      // ba dòng thì người sửa phải cuộn trong lúc gõ, và không bao giờ nhìn
+      // được cả câu sắp gửi — đúng thứ họ cần nhìn nhất.
+      o_sua.style.height = "auto";
+      o_sua.style.height = Math.min(o_sua.scrollHeight, 420) + "px";
+      if (dem) dem.textContent = o_sua.value.trim().length + " / 4000 ký tự";
+    };
+    gian();
+
+    o_sua.addEventListener("input", () => { state.suaText = o_sua.value; gian(); });
+    o_sua.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        state.dangSua = null; state.suaText = null; loadThread(id); return;
+      }
+      /* Ctrl+Enter gửi, KHÔNG phải Enter trần như ô trả lời bên dưới.
+       * Ô kia soạn tin ngắn, ô này sửa một đoạn nhiều dòng có đánh số —
+       * Enter ở đây phải xuống dòng, không thì không sửa nổi đoạn dài. */
+      if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey) && !ev.isComposing) {
+        ev.preventDefault();
+        $(`[data-approve="${state.dangSua}"]`)?.click();
+      }
+    });
+
+    if (sua_dang_focus) {
+      o_sua.focus();
+      const vt = sua_con_tro == null ? o_sua.value.length : Math.min(sua_con_tro, o_sua.value.length);
+      o_sua.setSelectionRange(vt, vt);
+    } else if (state.suaVuaMo) {
+      o_sua.focus();
+      o_sua.setSelectionRange(o_sua.value.length, o_sua.value.length);
+      state.suaVuaMo = false;
+    }
+  }
+
+  $$("[data-edit]").forEach((b) => b.addEventListener("click", () => {
+    state.dangSua = b.dataset.edit;
+    state.suaText = null;      // lấy lại từ nội dung tin ở lần vẽ ngay sau đây
+    state.suaVuaMo = true;
+    loadThread(id);
+  }));
+
+  $$("[data-edit-cancel]").forEach((b) => b.addEventListener("click", () => {
+    state.dangSua = null; state.suaText = null; loadThread(id);
+  }));
+
+  $$("[data-xem-goc]").forEach((b) => b.addEventListener("click", () => {
+    state.xemGoc = state.xemGoc === b.dataset.xemGoc ? null : b.dataset.xemGoc;
+    loadThread(id);
+  }));
+
   $$("[data-approve]").forEach((b) =>
     b.addEventListener("click", async () => {
+      const mid = b.dataset.approve;
+      const coSua = state.dangSua === mid;
+      const gui = (xac_nhan) => api("/messages/" + mid + "/approve", {
+        method: "POST",
+        // Không sửa thì KHÔNG gửi body — đó đúng là đường cũ, và giữ nó
+        // nguyên vẹn nghĩa là nút "Duyệt và gửi" quen thuộc không đổi hành vi.
+        body: coSua ? JSON.stringify({ noi_dung: state.suaText || "", xac_nhan }) : undefined,
+      });
       try {
-        const r = await api("/messages/" + b.dataset.approve + "/approve", { method: "POST" });
-        toast(r.ok ? "Đã gửi cho khách." : "Không gửi được: " + r.detail, !r.ok);
+        let r;
+        try {
+          r = await gui(false);
+        } catch (e) {
+          /* 409 = có cụm cấm quảng cáo. Hỏi lại chứ không chặn: người bấm
+           * là người chịu trách nhiệm. Nhưng phải THẤY trước khi tin đi. */
+          const ct = e.chi_tiet;
+          if (!ct || !ct.can_xac_nhan) throw e;
+          const dong_y = confirm(
+            "Nội dung có cụm bị cấm trong quảng cáo mỹ phẩm:\n\n    "
+            + (ct.cum || []).join(", ")
+            + "\n\nAgent bị chặn không được nói những cụm này với khách.\n"
+            + "Vẫn gửi? Lần bỏ qua này sẽ vào nhật ký."
+          );
+          if (!dong_y) return;
+          r = await gui(true);
+        }
+        state.dangSua = null; state.suaText = null;
+        toast(r && r.ok ? (coSua ? "Đã gửi bản đã sửa." : "Đã gửi cho khách.")
+                        : "Không gửi được: " + (r && r.detail), !(r && r.ok));
         refresh();
       } catch (e) { toast(e.message, true); }
     })

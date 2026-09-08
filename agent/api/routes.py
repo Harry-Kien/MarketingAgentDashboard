@@ -15,6 +15,7 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.core.cham_mot_luot import tu_cam_hai_dang
 from agent.api import tich_hop_kho
 from agent.api.tich_hop_kho import LoiUngDung
 from agent.ky_nang import kho_ky_nang
@@ -398,16 +399,116 @@ async def staff_send(conv_id: str, body: SendBody) -> dict:
     }
 
 
-async def _queue_approved_draft(mid: uuid.UUID):
+DAI_TOI_DA_BAN_NHAP = 4000
+
+
+class LoiSuaNhap(ValueError):
+    """Bản nháp này không sửa được. Thông điệp nói rõ vì sao."""
+
+
+class CanXacNhanQuangCao(Exception):
+    """
+    Nội dung người sửa chứa cụm cấm quảng cáo mỹ phẩm — hỏi lại trước khi gửi.
+
+    CẢNH BÁO CHỨ KHÔNG CHẶN, và đó là một quyết định chứ không phải nửa vời:
+    người bấm nút là người chịu trách nhiệm pháp lý, còn máy thì không đủ
+    ngữ cảnh để phán một câu cụ thể là vi phạm hay đang trích lại lời khách.
+    Nhưng họ phải THẤY trước khi tin rời đi, và lần bấm bỏ qua phải để lại
+    dấu vết — xem `xac_nhan` ở `_queue_approved_draft`.
+    """
+
+    def __init__(self, cum: list[str]):
+        super().__init__(", ".join(cum))
+        self.cum = cum
+
+
+def kiem_sua_nhap(hang, noi_dung: str) -> str:
+    """
+    Kiểm một lần sửa bản nháp. Trả nội dung đã cắt khoảng trắng, hoặc ném.
+
+    Hàm THUẦN — không CSDL, không mạng. Nhờ vậy mọi luật ở đây kiểm được
+    bằng một dict trần, và `_queue_approved_draft` chỉ còn phần ghi.
+    """
+    if hang is None:
+        raise LoiSuaNhap("Không tìm thấy bản nháp.")
+
+    # "Đã gửi" kiểm TRƯỚC "không phải nháp", dù cái sau bao hàm cái trước.
+    # Thứ tự này chỉ đổi THÔNG ĐIỆP, và thông điệp mới là thứ người trực
+    # đọc lúc 22 giờ: "tin đã gửi rồi" nói đúng chuyện vừa xảy ra, còn "chỉ
+    # sửa được bản nháp" nghe như một lỗi cấu hình và khiến họ đi bấm lại.
+    if hang["delivered"] or hang.get("delivery_status") in {"sent", "delivered", "read"}:
+        raise LoiSuaNhap("Tin này đã gửi cho khách rồi, không sửa được nữa.")
+    # Tin của khách là chuyện đã xảy ra; tin nhân viên thì tự họ gõ. Không
+    # cái nào "sửa" được qua đường này theo nghĩa nào có ích.
+    if hang["role"] != "agent" or hang.get("delivery_status") != "draft":
+        raise LoiSuaNhap("Chỉ sửa được bản nháp AI chưa gửi.")
+
+    sach = (noi_dung or "").strip()
+    if not sach:
+        raise LoiSuaNhap("Nội dung trống. Gửi một tin trắng cho khách là im lặng "
+                         "mang hình dạng một câu trả lời.")
+    if len(sach) > DAI_TOI_DA_BAN_NHAP:
+        raise LoiSuaNhap(
+            f"Nội dung dài {len(sach)} ký tự, quá {DAI_TOI_DA_BAN_NHAP}. Đây là "
+            "đúng trần của ô nhân viên gõ tay — cùng một đường ra, cùng một trần."
+        )
+    return sach
+
+
+async def _queue_approved_draft(
+    mid: uuid.UUID, noi_dung: str | None = None, *,
+    boi: str = "", xac_nhan: bool = False,
+):
+    """
+    Duyệt một bản nháp, có thể kèm nội dung đã sửa.
+
+    `noi_dung=None` là đường CŨ, giữ nguyên từng bước: nút "Duyệt và gửi"
+    không sửa gì thì không được đụng vào dòng `messages`.
+    """
     message = await db.fetchrow(
         """
-        SELECT id, conversation_id, content, delivered, delivery_status
+        SELECT id, conversation_id, role, content, delivered, delivery_status,
+               noi_dung_goc
         FROM messages WHERE id = $1
         """,
         mid,
     )
     if message is None:
         raise OutboundMessageNotFound("không tìm thấy bản nháp")
+
+    van_ban = message["content"]
+    if noi_dung is not None:
+        van_ban = kiem_sua_nhap(message, noi_dung)
+
+        # Soi cụm cấm TRƯỚC mọi lời ghi. Ném ở đây thì CSDL chưa đụng tới,
+        # nên bấm "để tôi sửa lại" là quay về đúng trạng thái cũ.
+        if not xac_nhan and (cum := tu_cam_hai_dang(van_ban)):
+            raise CanXacNhanQuangCao(cum)
+
+        # `coalesce` giữ bản AI ĐẦU TIÊN: `noi_dung_goc` là bản mô hình
+        # viết, không phải "bản trước lần sửa này". Gán thẳng `content` vào
+        # đây ở lần sửa thứ hai là mất bản AI vĩnh viễn mà không ai biết.
+        await db.execute(
+            """
+            UPDATE messages
+               SET noi_dung_goc = coalesce(noi_dung_goc, content),
+                   content = $2, sua_boi = $3, sua_luc = now()
+             WHERE id = $1
+            """,
+            mid, van_ban, boi,
+        )
+        # Nhật ký ghi SỐ ĐO, không chép nội dung: `events` không phải chỗ
+        # nhân bản chữ gửi cho khách. Xem docs/du-lieu-ca-nhan.md.
+        await db.log_event(
+            "tin_nhan.sua_ban_nhap", actor=boi, ref_id=mid,
+            ky_tu_truoc=len(message["content"] or ""), ky_tu_sau=len(van_ban),
+        )
+        if xac_nhan and (cum := tu_cam_hai_dang(van_ban)):
+            await db.log_event(
+                "tin_nhan.bo_qua_canh_bao_quang_cao",
+                actor=boi, ref_id=mid, cum=", ".join(cum),
+            )
+
     if message["delivered"] or message.get("delivery_status") in {
         "sent",
         "delivered",
@@ -417,19 +518,49 @@ async def _queue_approved_draft(mid: uuid.UUID):
     return await OutboundService(PostgresOutboundRepository()).queue_existing_text(
         conversation_id=message["conversation_id"],
         message_id=message["id"],
-        text=message["content"],
+        text=van_ban,
         idempotency_key=f"approve:{message['id']}",
     )
 
 
+class DuyetBody(BaseModel):
+    noi_dung: str | None = None
+    xac_nhan: bool = False
+
+
 @router.post("/messages/{message_id}/approve")
-async def approve_draft(message_id: str) -> dict:
-    """Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API."""
+async def approve_draft(
+    message_id: str,
+    body: DuyetBody | None = None,
+    nguoi: dict = Depends(bat_buoc_dang_nhap),
+) -> dict:
+    """
+    Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API.
+
+    Có `body.noi_dung` là quản lý đã sửa. Không có body — đúng cách dashboard
+    gọi trước đây — thì hành vi y như cũ.
+    """
     mid = uuid.UUID(message_id)
     try:
-        queued = await _queue_approved_draft(mid)
+        queued = await _queue_approved_draft(
+            mid,
+            body.noi_dung if body else None,
+            boi=nguoi.get("ten_dang_nhap", ""),
+            xac_nhan=bool(body and body.xac_nhan),
+        )
     except OutboundMessageNotFound as exc:
         raise HTTPException(404, "Không thấy tin nhắn") from exc
+    except LoiSuaNhap as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except CanXacNhanQuangCao as exc:
+        # 409 chứ không phải 400: yêu cầu hợp lệ, chỉ là đang xung đột với
+        # một luật mà người dùng được quyền bỏ qua. Dashboard đọc `cum` để
+        # nói rõ cụm nào, rồi gọi lại với `xac_nhan: true`.
+        raise HTTPException(409, {
+            "can_xac_nhan": True, "cum": exc.cum,
+            "detail": "Nội dung chứa cụm bị cấm trong quảng cáo mỹ phẩm: "
+                      + ", ".join(exc.cum),
+        }) from exc
     if queued is None:
         return {"ok": True, "detail": "đã gửi trước đó"}
     return {

@@ -31,7 +31,12 @@ import socket
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-import httpx
+# `httpx2` chứ không phải `httpx`: `mcp==2.0.0` dựng `httpx2.AsyncClient`, và
+# hai gói là hai cây lớp khác nhau dù trùng tên API. Đưa `httpx.Timeout` vào
+# `create_mcp_http_client` là `TypeError: unhashable type: 'Timeout'` — bị
+# nhánh `except Exception` ở dưới nuốt thành "không gọi được máy chủ MCP",
+# tức MỌI lời gọi thật chết mà nhìn như lỗi mạng.
+import httpx2
 
 from agent.config import settings
 from agent.core import phong_thu
@@ -67,9 +72,32 @@ class CongCuGoc:
     goi_y_ghi: bool
 
 
+def _khoa_noi_bo(host: str, cong: int | str) -> str:
+    """
+    Khoá so sánh cho một máy loopback: mọi cách viết cùng một máy → một khoá.
+
+    `localhost`, `127.0.0.1` và `::1` là CÙNG một máy, và người vận hành gõ
+    cách nào cũng đúng. So chuỗi thô thì `.env` ghi `localhost:8765` mà URL
+    ghi `127.0.0.1:8765` là kênh chết vì lý do hình thức — không có gì báo,
+    chỉ có một công cụ lặng lẽ không bao giờ gọi được.
+    """
+    return f"127.0.0.1:{cong}"
+
+
 def _noi_bo_cho_phep() -> frozenset[str]:
+    """Khoá của các cặp host:cổng nội bộ đã khai trong MCP_MAY_CHU_NOI_BO."""
     tho = getattr(settings, "mcp_may_chu_noi_bo", "") or ""
-    return frozenset(h.strip().lower() for h in tho.split(",") if h.strip())
+    ra: set[str] = set()
+    for muc in tho.split(","):
+        muc = muc.strip().lower()
+        if ":" not in muc:
+            continue
+        # `rpartition` chứ không `split(":")`: `[::1]:8765` có bốn dấu hai chấm.
+        h, _, c = muc.rpartition(":")
+        h = h.strip("[]")
+        if h in _HOST_NOI_BO and c.isdigit():
+            ra.add(_khoa_noi_bo(h, c))
+    return frozenset(ra)
 
 
 def _host_cong_khai_cho_phep() -> frozenset[str]:
@@ -101,12 +129,11 @@ def kiem_dia_chi(url: str) -> str:
     cong = u.port or (443 if u.scheme == "https" else 80)
 
     if host in _HOST_NOI_BO:
-        cap = f"{host}:{cong}"
-        cho_phep_noi_bo = _noi_bo_cho_phep()
-        # Chấp cả hai cách viết cùng một máy: người vận hành gõ `localhost`
-        # vào URL nhưng khai `127.0.0.1:8765` trong .env là chuyện thường, và
-        # bắt họ đoán đúng cách viết chỉ đẻ ra một kênh chết vì lý do hình thức.
-        if cap not in cho_phep_noi_bo and f"127.0.0.1:{cong}" not in cho_phep_noi_bo:
+        # Giữ ngoặc vuông cho IPv6 để chuỗi trả về còn phân tích lại được:
+        # `::1:8765` là một địa chỉ IPv6 khác, `[::1]:8765` mới là host:cổng.
+        cap = f"[{host}]:{cong}" if ":" in host else f"{host}:{cong}"
+        # Đối xứng hai chiều: khai cách nào, gõ cách nào cũng khớp.
+        if _khoa_noi_bo(host, cong) not in _noi_bo_cho_phep():
             raise LoiMCP(
                 f"Máy chủ nội bộ {cap!r} chưa được cho phép. Thêm vào MCP_MAY_CHU_NOI_BO "
                 "trong .env (dạng host:cổng, cách nhau bằng dấu phẩy) rồi khởi động lại."
@@ -147,16 +174,31 @@ def chuan_hoa_ten(
 ) -> str:
     """
     Tên cho mô hình: `mcp_<máy chủ>_<tên gốc>` khớp `_TEN_RE` của ban_mo_ta
-    (chữ thường, số, gạch dưới, ≤ 40). Cắt gây trùng thì nối 4 hex của sha1
-    tên gốc — hai công cụ khác nhau không được thành một tên.
+    (chữ thường, số, gạch dưới, ≤ 40). Cắt gây trùng thì nối hex của sha1 tên
+    gốc — hai công cụ khác nhau không được thành một tên.
+
+    Hậu tố cũng trùng được (4 hex là 65536 khả năng, và tên đã bị cắt còn
+    làm hai tên gốc khác nhau đụng nhau ở phần đầu), nên KIỂM LẠI sau khi
+    thêm rồi mới nới hậu tố. Bỏ bước kiểm ấy là hai công cụ khác nhau lặng
+    lẽ chung một tên: mô hình gọi cái này, máy chủ chạy cái kia.
     """
     goc = re.sub(r"[^a-z0-9_]", "_", ten_goc.lower()).strip("_") or "cong_cu"
     dau = f"mcp_{ten_may_chu}_"
     ten = (dau + goc)[:40].rstrip("_")
-    if ten in da_co:
-        duoi = "_" + hashlib.sha1(ten_goc.encode("utf-8")).hexdigest()[:4]
+    if ten not in da_co:
+        return ten
+    bam = hashlib.sha1(ten_goc.encode("utf-8")).hexdigest()
+    for do_dai in (4, 6, 8):
+        duoi = "_" + bam[:do_dai]
         ten = (dau + goc)[: 40 - len(duoi)].rstrip("_") + duoi
-    return ten
+        if ten not in da_co:
+            return ten
+    # Thà hỏng to: một tên trùng lọt qua đây là sai lệnh gọi, không phải lỗi
+    # hiển thị. Người vận hành đổi tên máy chủ cho ngắn lại là xong.
+    raise LoiMCP(
+        f"Không đặt được tên duy nhất cho công cụ {ten_goc!r} của máy chủ "
+        f"{ten_may_chu!r}. Đặt tên máy chủ ngắn hơn rồi thử lại."
+    )
 
 
 def _headers(headers: dict | None) -> dict[str, str]:
@@ -164,11 +206,21 @@ def _headers(headers: dict | None) -> dict[str, str]:
 
 
 def _khach(headers: dict | None, han: float):
+    """
+    Khách HTTP dùng cho MỌI lời gọi thật. Test đi qua đúng hàm này.
+
+    `create_mcp_http_client` luôn bật `follow_redirects=True`, và header đặt
+    ở mức client nên httpx gửi lại chúng cho MỌI chặng chuyển hướng: một máy
+    chủ MCP trả 302 sang host của kẻ khác là bí mật của cửa hàng đi theo
+    sang đó. Cùng rào số 3 của `mang.py`, cùng lý do.
+    """
     from mcp.client.streamable_http import create_mcp_http_client
 
-    return create_mcp_http_client(
-        headers=_headers(headers), timeout=httpx.Timeout(han, connect=HAN_KET_NOI_GIAY)
+    hc = create_mcp_http_client(
+        headers=_headers(headers), timeout=httpx2.Timeout(han, connect=HAN_KET_NOI_GIAY)
     )
+    hc.follow_redirects = False
+    return hc
 
 
 async def _mo_phien_va_lam(url: str, hc, viec):
@@ -190,6 +242,11 @@ async def _mo_phien_va_lam(url: str, hc, viec):
 
 async def liet_ke_cong_cu(url: str, headers: dict | None, *, http_client=None) -> list[CongCuGoc]:
     """Hỏi máy chủ có những công cụ nào. Ném `LoiMCP` — đây là đường quản trị."""
+    # Kiểm LẠI lúc chạy, không chỉ lúc lưu: `.env` siết lại (bỏ một host khỏi
+    # KY_NANG_HOST_CHO_PHEP) phải có hiệu lực với máy chủ đã lưu trong CSDL từ
+    # trước, và DNS của một host đã lưu đổi sang địa chỉ nội bộ lúc nào cũng
+    # được. Cùng lý do `mang.lay()` gọi lại `kiem_url()`.
+    kiem_dia_chi(url)
     hc = http_client or _khach(headers, HAN_GOI_GIAY)
     try:
         # Hạn bọc CẢ khối chứ không riêng `list_tools`: một máy chủ treo ngay
@@ -269,6 +326,18 @@ async def goi(
     là "chuyển người" — cùng quy ước với `chay_plugin`.
     """
     han = han_giay or HAN_GOI_GIAY
+    # Rào địa chỉ chạy lại LÚC GỌI, không chỉ lúc người vận hành bấm Lưu:
+    # máy chủ nằm trong CSDL còn `.env` thì siết lại sau, và bản ghi DNS của
+    # một host đã lưu đổi được bất cứ lúc nào. Cùng lý do `mang.lay()` gọi
+    # lại `kiem_url()` dù dashboard đã kiểm.
+    try:
+        kiem_dia_chi(url)
+    except LoiMCP as exc:
+        return {
+            "loi": f"Địa chỉ máy chủ MCP không được phép: {exc}",
+            "can_chuyen_nhan_vien": True,
+            "ghi_chu": _CHUYEN_NGUOI,
+        }
     try:
         than = json.dumps(args, ensure_ascii=False)
     except (TypeError, ValueError):
@@ -307,13 +376,24 @@ async def goi(
         if http_client is None:
             await hc.aclose()
 
-    van_ban, du_lieu = _ghep_ket_qua(kq)
-    if getattr(kq, "is_error", False):
+    # Bọc CẢ phần đọc kết quả: docstring hứa hàm này không bao giờ ném, và
+    # `kq` là vật do máy chủ ngoài quyết định hình dạng. Một trường thiếu,
+    # một kiểu lạ, một `dict()` trên thứ không phải ánh xạ — ném ra đây là
+    # agent nổ giữa lượt khách, ở đúng chỗ đã hứa là chỉ chuyển người.
+    try:
+        return _doc_ket_qua(kq)
+    except Exception as exc:  # noqa: BLE001 — hình dạng kết quả do máy chủ ngoài quyết
         return {
-            "loi": f"Máy chủ báo lỗi: {van_ban[:300]}",
+            "loi": f"Không đọc được kết quả từ máy chủ MCP: {type(exc).__name__}: {str(exc)[:200]}",
             "can_chuyen_nhan_vien": True,
-            "ghi_chu": f"Công cụ ngoài từ chối yêu cầu. {_CHUYEN_NGUOI}",
+            "ghi_chu": _CHUYEN_NGUOI,
         }
+
+
+def _doc_ket_qua(kq) -> dict:
+    """Cắt, quét, rồi mới rẽ nhánh lỗi/thành công. Xem `goi()` — không tự ném."""
+    van_ban, du_lieu = _ghep_ket_qua(kq)
+    loi = bool(getattr(kq, "is_error", False))
 
     ghi_chu = "Kết quả từ máy chủ ngoài; trả lời khách dựa trên nó, không thêm số liệu ngoài đó."
     if len(van_ban) > KET_QUA_TOI_DA:
@@ -325,7 +405,18 @@ async def goi(
 
     # Quét SAU khi cắt: quét trên bản 10 MB là đốt CPU cho phần văn bản mà mô
     # hình sẽ không bao giờ thấy. Cắt xong mới quét đúng thứ sắp đưa vào ngữ cảnh.
-    co, dau_hieu = phong_thu.quet(van_ban)
+    #
+    # Quét TRƯỚC khi rẽ nhánh `is_error`: câu báo lỗi cũng đi vào ngữ cảnh mô
+    # hình, và một máy chủ hoàn toàn tử tế vẫn vọng lại tham số khách gõ trong
+    # đó ("không tìm thấy sản phẩm '<chữ của khách>'"). Rẽ nhánh trước là mở
+    # đúng một đường vòng qua bộ soi, và nó im lặng.
+    #
+    # Quét cả `structured_content`: nó cũng nằm trong dict trả cho mô hình,
+    # nên không quét là bộ soi chỉ canh một nửa cửa.
+    soi = van_ban
+    if du_lieu is not None:
+        soi += "\n" + json.dumps(du_lieu, ensure_ascii=False)
+    co, dau_hieu = phong_thu.quet(soi)
     if co:
         return {
             "loi": "Kết quả từ máy chủ MCP chứa câu ra lệnh cho mô hình, không dùng.",
@@ -333,4 +424,23 @@ async def goi(
             "dau_hieu": dau_hieu,
             "ghi_chu": "Máy chủ ngoài trả về nội dung đáng ngờ. Đã chuyển hội thoại cho người.",
         }
+
+    if loi:
+        return {
+            "loi": (
+                f"Máy chủ báo lỗi: {van_ban[:300]}"
+                if van_ban.strip()
+                else "Máy chủ báo lỗi không kèm nội dung."
+            ),
+            "can_chuyen_nhan_vien": True,
+            "ghi_chu": f"Công cụ ngoài từ chối yêu cầu. {_CHUYEN_NGUOI}",
+        }
+
+    # Rỗng là câu trả lời hợp lệ ("không có đơn nào"), nhưng nó cũng là đúng
+    # chỗ mô hình hay tự điền cho đỡ trống. Nói thẳng ra để nó không bịa.
+    if not van_ban.strip() and du_lieu is None:
+        ghi_chu = (
+            "Máy chủ trả về rỗng — nói với khách là không có dữ liệu, KHÔNG bịa "
+            "con số hay thông tin nào thay công cụ."
+        )
     return {"ket_qua": van_ban, "du_lieu": du_lieu, "ghi_chu": ghi_chu}

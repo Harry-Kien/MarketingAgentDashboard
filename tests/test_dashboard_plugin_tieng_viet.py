@@ -80,9 +80,14 @@ def test_form_khong_con_o_json():
 def test_moi_loai_plugin_co_o_cau_hinh_rieng():
     form = _form_plugin()
     co = set(re.findall(r'data-cauhinh="([^"]+)"', form))
-    assert co == set(LOAI_PLUGIN), (
-        f"form có {sorted(co)}, máy chủ có {sorted(LOAI_PLUGIN)} — "
-        "thêm loại plugin thì phải thêm ô cấu hình cho nó"
+    # `mcp` không có ô ở đây: không ai gõ tay cau_hinh của nó — luoc_do lấy
+    # NGUYÊN từ máy chủ lúc đồng bộ (kho_mcp.dong_bo), người chỉ bấm "Kiểm"
+    # rồi "Thêm" ở panel Máy chủ MCP riêng (spec §5.5). Form này chỉ giữ
+    # những loại người vận hành thật sự GÕ TAY cấu hình.
+    can_go_tay = set(LOAI_PLUGIN) - {"mcp"}
+    assert co == can_go_tay, (
+        f"form có {sorted(co)}, cần có {sorted(can_go_tay)} — "
+        "thêm loại plugin gõ TAY thì phải thêm ô cấu hình cho nó"
     )
 
 

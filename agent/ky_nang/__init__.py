@@ -1,14 +1,20 @@
 """
 Sổ đăng ký kỹ năng (skill) của agent, và cơ chế thêm kỹ năng KHÔNG cần sửa mã.
 
-Sáu module:
+Tám module:
 
   so_dang_ky.py   khai báo 11 công cụ viết sẵn: nhóm, mức rủi ro, tắt được không
   ban_mo_ta.py    kiểm bản mô tả plugin do người vận hành viết
-  chay.py         thi hành plugin — bốn loại, tất cả CHỈ ĐỌC
-  mang.py         gọi HTTP cho loại `goi_api_doc`, có bốn rào SSRF
+  chay.py         thi hành plugin — năm loại; bốn loại đầu CHỈ ĐỌC, loại `mcp`
+                  giao việc cho kho_mcp.py qua một nhánh riêng
+  mang.py         gọi HTTP cho loại `goi_api_doc`, có bốn rào SSRF — đường ra
+                  mạng THỨ NHẤT
   kho_ky_nang.py  đọc/ghi cài đặt bật-tắt, dựng lược đồ công cụ cho mỗi lượt
   goi.py          gói kỹ năng: hướng dẫn + công cụ + tài liệu + phiên bản
+  kho_mcp.py      CSDL của loại `mcp`: máy chủ, bí mật, đồng bộ công cụ —
+                  điểm neo DUY NHẤT gọi sang mcp_khach.py (Task 4 hoàn thiện)
+  mcp_khach.py    gọi máy chủ MCP ngoài qua HTTP — đường ra mạng THỨ HAI, chỉ
+                  được gọi TỪ kho_mcp.py, không nơi nào khác trong repo
 
 Vì sao có lớp này: `TOOLS` trong `agent/core/tools.py` là một danh sách
 phẳng, mô tả cho MODEL đọc. Nó không nói cho NGƯỜI biết công cụ nào nguy
@@ -44,8 +50,11 @@ chỉ ấy quy về đúng bảng dưới đây, nên đọc một file bất k�
     C1  core/llm.py  complete()         dịch sang định dạng nhà cung cấp, gọi HTTP
     C2  core/tools.py  run_tool()       ghi số đo, rồi CHỐT THỨ HAI
     C3  kho_ky_nang.py  dang_tat / tim_plugin
-    C4  chay.py  chay_plugin()          bốn loại, tất cả CHỈ ĐỌC
-    C5  mang.py  lay()                  chỉ với `goi_api_doc`
+    C4  chay.py  chay_plugin()          năm loại; bốn loại đầu CHỈ ĐỌC
+    C5  mang.py  lay()                  chỉ với `goi_api_doc` — đường ra mạng THỨ NHẤT
+    C6  kho_mcp.py  goi_cong_cu()       chỉ với `mcp`, tự gọi mcp_khach.py —
+                                        đường ra mạng THỨ HAI. Nhánh mcp của
+                                        chay_plugin() là cửa DUY NHẤT dẫn tới C6
 
 MỘT GÓI ĐI VÀO MỘT LƯỢT BẰNG BA ĐƯỜNG RỜI NHAU, ĐÂY LÀ CHỖ HAY HIỂU NHẦM
 NHẤT: hướng dẫn qua B3 (cần từ khoá khớp), công cụ qua B4 (chỉ cần gói đang

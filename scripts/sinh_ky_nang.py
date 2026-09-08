@@ -53,6 +53,7 @@ DICH_LOAI = {
     "tra_bang": "Tra một bảng khoá→giá trị do người vận hành nạp lên",
     "chuyen_chuyen_biet": "Chuyển người kèm lý do và hàng đợi riêng",
     "goi_api_doc": "GET một endpoint HTTPS đã nằm trong danh sách cho phép",
+    "mcp": "Gọi một công cụ đã đồng bộ từ máy chủ MCP ngoài (xem mục Máy chủ MCP)",
 }
 
 
@@ -106,10 +107,13 @@ def dung_tai_lieu() -> str:
         d.append(f"| `{loai}` | {DICH_LOAI[loai]} |")
 
     d.append(
-        "\nCả bốn loại đều **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, "
-        "tiêu tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test "
-        "đọc AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú "
-        "thích.\n"
+        "\nBốn loại đầu **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, tiêu "
+        "tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test đọc "
+        "AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú "
+        "thích. Loại `mcp` có thể GHI trên máy chủ ngoài nếu quản trị đánh "
+        "dấu `ghi=true` — hai chốt riêng canh việc đó tại `run_tool`: phòng "
+        "thử không gọi thật, và ngoài phòng thử cần bật thêm `ghi_cho_phep` "
+        "mới chạy, chưa bật thì chuyển người.\n"
     )
 
     d.append(

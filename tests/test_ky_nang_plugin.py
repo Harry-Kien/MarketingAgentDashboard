@@ -395,3 +395,41 @@ def test_gia_tri_model_dien_duoc_ma_hoa_vao_url(monkeypatch):
     ))
     asyncio.run(chay_plugin(bm, {"ma": "a?b=c#d/../e"}))
     assert da_goi == ["https://x.example.com/tra/a%3Fb%3Dc%23d%2F..%2Fe"]
+
+
+# ---------------------------------------------------------------
+#  4. Loại plugin `mcp` — lược đồ tham số lấy NGUYÊN từ máy chủ
+# ---------------------------------------------------------------
+
+def _mcp(**doi):
+    d = {"ten": "mcp_kho_tra_ton", "loai": "mcp",
+         "mo_ta": "Tra tồn kho theo mã sản phẩm ở máy chủ kho. Không dùng cho câu hỏi giá.",
+         "tham_so": [],
+         "cau_hinh": {"may_chu": "kho", "cong_cu_goc": "tra_ton",
+                      "luoc_do": {"type": "object", "properties": {"ma": {"type": "string"}}, "required": ["ma"]}}}
+    d.update(doi); return d
+
+
+def test_mcp_ban_mo_ta_tot_thi_qua():
+    bm = doc_ban_mo_ta(_mcp())
+    assert bm.loai == "mcp" and bm.cau_hinh["ghi"] is False and bm.cau_hinh["ghi_cho_phep"] is False
+    assert thanh_cong_cu(bm)["input_schema"]["properties"]["ma"]["type"] == "string"
+
+
+@pytest.mark.parametrize("cau_hinh, chu", [
+    ({"cong_cu_goc": "x", "luoc_do": {"type": "object", "properties": {}}}, "may_chu"),
+    ({"may_chu": "kho", "luoc_do": {"type": "object", "properties": {}}}, "cong_cu_goc"),
+    ({"may_chu": "kho", "cong_cu_goc": "x", "luoc_do": {"type": "string"}}, "luoc_do"),
+    ({"may_chu": "kho", "cong_cu_goc": "x", "luoc_do": {"type": "object", "properties": {f"p{i}": {"type": "string"} for i in range(21)}}}, "20"),
+    ({"may_chu": "kho", "cong_cu_goc": "x", "luoc_do": {"type": "object", "properties": {"a": {"type": "lạ"}}}}, "type"),
+    ({"may_chu": "kho", "cong_cu_goc": "x", "luoc_do": {"type": "object", "properties": {}}, "ghi": "có"}, "ghi"),
+])
+def test_mcp_cau_hinh_sai_bi_chan(cau_hinh, chu):
+    with pytest.raises(LoiBanMoTa) as e:
+        doc_ban_mo_ta(_mcp(cau_hinh=cau_hinh))
+    assert chu in str(e.value)
+
+
+def test_mcp_ghi_cho_phep_khong_the_bat_khi_khong_ghi():
+    bm = doc_ban_mo_ta(_mcp(cau_hinh={**_mcp()["cau_hinh"], "ghi": False, "ghi_cho_phep": True}))
+    assert bm.cau_hinh["ghi_cho_phep"] is False   # cờ chỉ có nghĩa với công cụ ghi

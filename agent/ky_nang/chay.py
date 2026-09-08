@@ -65,6 +65,12 @@ async def chay_plugin(bm: BanMoTa, args: dict) -> dict:
         }
     if bm.loai == "goi_api_doc":
         return await _goi_api_doc(bm, args)
+    if bm.loai == "mcp":
+        # Máy chủ MCP: bí mật và nhật ký nằm ở kho_mcp, đường mạng ở mcp_khach.
+        # Import lười để tệp này vẫn thuần và test AST vẫn soi được.
+        from agent.ky_nang import kho_mcp
+
+        return await kho_mcp.goi_cong_cu(bm, args)
 
     # Không tới được nếu `doc_ban_mo_ta` làm đúng việc. Vẫn để nhánh này,
     # vì thêm loại thứ năm mà quên viết nhánh chạy thì đây là chỗ nó hiện

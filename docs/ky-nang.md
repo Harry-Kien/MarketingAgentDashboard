@@ -66,7 +66,7 @@ Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 
 ## Kỹ năng cắm thêm (plugin)
 
-Thêm công cụ cho agent **không cần viết Python**: chọn một trong 4 loại rồi cấu hình. Bản mô tả là **dữ liệu**, không phải mã.
+Thêm công cụ cho agent **không cần viết Python**: chọn một trong 5 loại rồi cấu hình. Bản mô tả là **dữ liệu**, không phải mã.
 
 Vì sao không cho nạp mã: mã chạy trong tiến trình agent thì nó nằm **cùng phía** với sáu lớp lưới an toàn — đọc được biến môi trường, gọi được cơ sở dữ liệu, và sửa được chính hàm `respond()` đang canh nó. Kỹ năng cắm thêm không được phép mạnh hơn kỹ năng viết sẵn, mà mã tuỳ ý thì luôn mạnh hơn.
 
@@ -77,8 +77,9 @@ Vì sao không cho nạp mã: mã chạy trong tiến trình agent thì nó nằ
 | `tra_bang` | Tra một bảng khoá→giá trị do người vận hành nạp lên |
 | `chuyen_chuyen_biet` | Chuyển người kèm lý do và hàng đợi riêng |
 | `goi_api_doc` | GET một endpoint HTTPS đã nằm trong danh sách cho phép |
+| `mcp` | Gọi một công cụ đã đồng bộ từ máy chủ MCP ngoài (xem mục Máy chủ MCP) |
 
-Cả bốn loại đều **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, tiêu tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test đọc AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú thích.
+Bốn loại đầu **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, tiêu tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test đọc AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú thích. Loại `mcp` có thể GHI trên máy chủ ngoài nếu quản trị đánh dấu `ghi=true` — hai chốt riêng canh việc đó tại `run_tool`: phòng thử không gọi thật, và ngoài phòng thử cần bật thêm `ghi_cho_phep` mới chạy, chưa bật thì chuyển người.
 
 
 ### Một dòng bảng, nhiều cách gọi

@@ -60,19 +60,27 @@ class LoiBanMoTa(ValueError):
     """Bản mô tả plugin không hợp lệ. Thông điệp nói rõ sửa thế nào."""
 
 
-# Bốn loại plugin. Danh sách này ĐÓNG — thêm loại là phải sửa mã và viết
+# Năm loại plugin. Danh sách này ĐÓNG — thêm loại là phải sửa mã và viết
 # test, đúng như ý đồ. Người vận hành cấu hình được, không mở rộng được.
 #
 #   tra_tai_lieu       hỏi kho tri thức, giới hạn trong một nhóm tài liệu
 #   tra_bang           tra một bảng khoá→giá trị do người vận hành nạp lên
 #   chuyen_chuyen_biet chuyển người kèm lý do và hàng đợi riêng
 #   goi_api_doc        GET một endpoint HTTPS đã được ghi vào danh sách cho phép
-LOAI_PLUGIN = ("tra_tai_lieu", "tra_bang", "chuyen_chuyen_biet", "goi_api_doc")
+#   mcp                gọi một công cụ đã đồng bộ từ máy chủ MCP ngoài
+LOAI_PLUGIN = ("tra_tai_lieu", "tra_bang", "chuyen_chuyen_biet", "goi_api_doc", "mcp")
 
 # Tên công cụ đi vào lược đồ gửi cho model. Ràng buộc theo chuẩn tên hàm để
 # không provider nào từ chối, và không tên nào cần thoát ký tự.
 _TEN_RE = re.compile(r"^[a-z][a-z0-9_]{2,39}$")
 _TEN_THAM_SO_RE = re.compile(r"^[a-z][a-z0-9_]{1,29}$")
+
+# Kiểu JSON Schema hợp lệ cho một thuộc tính lược đồ `mcp`. Không phải danh
+# sách đầy đủ của chuẩn JSON Schema — chỉ những kiểu model cần điền đúng.
+_KIEU_JSON = {"string", "integer", "number", "boolean", "array", "object"}
+LUOC_DO_THUOC_TINH_TOI_DA = 20
+# Tên máy chủ MCP: khớp cột `mcp_may_chu.ten` — chữ thường, số, gạch dưới.
+_TEN_MAY_CHU_RE = re.compile(r"^[a-z][a-z0-9_]{1,19}$")
 
 # Trần độ dài. Không phải để tiết kiệm — để chặn việc nhét cả một prompt
 # thứ hai vào ô mô tả. 600 ký tự đủ viết mô tả tử tế cho một công cụ; mô tả
@@ -356,6 +364,41 @@ def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
                 )
         return {"url": url, "han_giay": float(ch.get("han_giay", 5.0))}
 
+    if loai == "mcp":
+        # Công cụ của máy chủ MCP: lược đồ tham số lấy NGUYÊN từ máy chủ, vì
+        # `ThamSo` chỉ biết chuỗi còn máy chủ khai số/mảng — dựng lại là mô
+        # hình điền sai kiểu. Vẫn kiểm hình dạng: đây là thứ đi vào lời gọi
+        # model ở MỌI lượt.
+        may_chu = _chu(ch.get("may_chu", ""), "cau_hinh.may_chu")
+        if not _TEN_MAY_CHU_RE.match(may_chu):
+            raise LoiBanMoTa("mcp cần cau_hinh.may_chu là tên máy chủ (chữ thường, số, gạch dưới, 2–20 ký tự).")
+        goc = _chu(ch.get("cong_cu_goc", ""), "cau_hinh.cong_cu_goc")
+        if not 1 <= len(goc) <= 100:
+            raise LoiBanMoTa("mcp cần cau_hinh.cong_cu_goc — tên công cụ ở máy chủ, 1–100 ký tự.")
+        luoc_do = ch.get("luoc_do")
+        if not isinstance(luoc_do, dict) or luoc_do.get("type") != "object":
+            raise LoiBanMoTa("cau_hinh.luoc_do phải là JSON Schema object (type = 'object').")
+        thuoc_tinh = luoc_do.get("properties") or {}
+        if not isinstance(thuoc_tinh, dict):
+            raise LoiBanMoTa("cau_hinh.luoc_do.properties phải là object.")
+        if len(thuoc_tinh) > LUOC_DO_THUOC_TINH_TOI_DA:
+            raise LoiBanMoTa(f"Lược đồ có {len(thuoc_tinh)} thuộc tính, quá {LUOC_DO_THUOC_TINH_TOI_DA}.")
+        for k, v in thuoc_tinh.items():
+            if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
+                raise LoiBanMoTa(f"Thuộc tính {k!r} trong luoc_do thiếu type hợp lệ ({', '.join(sorted(_KIEU_JSON))}).")
+        for k in ("ghi", "ghi_cho_phep"):
+            if k in ch and not isinstance(ch[k], bool):
+                raise LoiBanMoTa(f"cau_hinh.{k} phải là true/false.")
+        ghi = bool(ch.get("ghi", False))
+        return {
+            "may_chu": may_chu, "cong_cu_goc": goc,
+            "luoc_do": {"type": "object", "properties": thuoc_tinh,
+                        "required": [r for r in (luoc_do.get("required") or []) if r in thuoc_tinh]},
+            "ghi": ghi,
+            # Cờ "cho phép ghi ngoài phòng thử" chỉ có nghĩa với công cụ ghi.
+            "ghi_cho_phep": bool(ch.get("ghi_cho_phep", False)) if ghi else False,
+        }
+
     raise LoiBanMoTa(f"Loại {loai!r} chưa có bộ kiểm cấu hình.")
 
 
@@ -364,15 +407,22 @@ def thanh_cong_cu(bm: BanMoTa) -> dict:
     Đổi bản mô tả thành lược đồ công cụ gửi cho model — cùng dạng với
     `TOOLS`, để `agent.py` không cần biết công cụ nào là plugin.
     """
-    thuoc_tinh = {
-        t.ten: {"type": "string", "description": t.mo_ta} for t in bm.tham_so
-    }
-    return {
-        "name": bm.ten,
-        "description": bm.mo_ta,
-        "input_schema": {
+    # Loại `mcp`: lược đồ lấy NGUYÊN từ máy chủ (đã kiểm ở `_kiem_cau_hinh`),
+    # không dựng lại từ `tham_so` — `ThamSo` chỉ biết chuỗi, còn máy chủ MCP
+    # khai cả số và mảng.
+    if bm.loai == "mcp":
+        input_schema = bm.cau_hinh["luoc_do"]
+    else:
+        thuoc_tinh = {
+            t.ten: {"type": "string", "description": t.mo_ta} for t in bm.tham_so
+        }
+        input_schema = {
             "type": "object",
             "properties": thuoc_tinh,
             "required": [t.ten for t in bm.tham_so if t.bat_buoc],
-        },
+        }
+    return {
+        "name": bm.ten,
+        "description": bm.mo_ta,
+        "input_schema": input_schema,
     }

@@ -1,0 +1,116 @@
+"""Dashboard: panel Máy chủ MCP. Theo mẫu tests/test_dashboard_goi_ky_nang.py."""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+HTML = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+JS = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
+
+
+def _than_ham(ten):
+    m = re.search(r"(?:async )?function " + ten + r"\(.*?\n\}\n", JS, re.S)
+    assert m, ten
+    return m.group(0)
+
+
+def _khoi_form(id_form):
+    i = HTML.index(f'id="{id_form}"')
+    j = HTML.index("</form>", i)
+    return HTML[i:j]
+
+
+def test_panel_va_form_co_mat():
+    assert 'id="mcp-ds"' in HTML
+    assert 'id="mcpform"' in HTML
+    assert 'id="mcp-kiem"' in HTML and 'id="mcp-them"' in HTML
+    assert 'id="mcp-ketqua"' in HTML
+
+
+def test_form_co_du_truong_va_canh_bao_host():
+    khoi = _khoi_form("mcpform")
+    assert 'name="ten"' in khoi and r'pattern="[a-z][a-z0-9_]{1,19}"' in khoi
+    assert 'name="nhan"' in khoi
+    assert 'name="dia_chi"' in khoi
+    assert 'name="headers"' in khoi
+    # Cảnh báo host cố ý không sửa được ở dashboard — cùng lý do với
+    # KY_NANG_HOST_CHO_PHEP ở panel "Không chỉnh được ở đây".
+    assert "KY_NANG_HOST_CHO_PHEP" in khoi and "MCP_MAY_CHU_NOI_BO" in khoi
+
+
+def test_loadMcp_dung_api_va_esc():
+    src = _than_ham("loadMcp")
+    assert "/mcp" in src and "esc(" in src
+    # Không được nội suy trần — mọi chuỗi máy chủ (khách tự đặt tên, nhãn,
+    # host, mô tả công cụ) phải đi qua esc() trước khi vào innerHTML.
+    for bieu_thuc in ("m.nhan", "m.host", "c.mo_ta", "c.ten"):
+        assert f"${{{bieu_thuc}}}" not in src, bieu_thuc
+
+
+def test_loadMcp_co_du_nut_va_cong_tac():
+    src = _than_ham("loadMcp")
+    for thuoc_tinh in (
+        "data-mcp-dongbo", "data-mcp-battat", "data-mcp-xoa",
+        "data-mcp-cc", "data-mcp-ghi",
+    ):
+        assert thuoc_tinh in src, thuoc_tinh
+
+
+def test_moi_row_trong_loadMcp_deu_co_flag():
+    """
+    Hàng công cụ đi PHẲNG, không lồng trong `.row__body` của hàng máy chủ —
+    lồng `<div>` vào trong phần tử dòng (`<span>`) là sai kiểu HTML, và mỗi
+    hàng `.row` độc lập vẫn phải có `.row__flag` làm con đầu tiên, nếu không
+    nội dung tụt vào cột 3px và biến mất (tests/test_row_co_du_cot.py).
+    """
+    src = _than_ham("loadMcp")
+    assert src.count('<div class="row">') >= 2
+    assert 'class="row__flag' in src
+
+
+def test_loadKyNang_goi_loadMcp_trong_try_va_tu_bao_loi():
+    src = _than_ham("loadKyNang")
+    assert "await loadMcp();" in src
+    assert re.search(r"try\s*\{\s*await loadMcp\(\);\s*\}\s*catch", src), (
+        "loadMcp() lỗi (vd vault chưa cấu hình) không được lan lên vòng làm "
+        "mới 6 giây, và panel #mcp-ds phải NÓI ra là không tải được."
+    )
+    assert "Không tải được máy chủ MCP" in src
+
+
+def test_plugin_row_uu_tien_p_mcp_truoc_p_goi():
+    """
+    Cột `goi` mang cả hai loại chủ: tên gói THẬT và "mcp:<tên máy>". Kiểm
+    `p.goi` trước `p.mcp` thì huy hiệu hiện trần "gói mcp:<tên máy>" — đúng
+    chuỗi kỹ thuật mà khoá `mcp` sinh ra để KHÔNG phải hiện.
+    """
+    src = _than_ham("loadKyNang")
+    assert "p.mcp" in src
+    nhan_mcp = '<b class="pill">MCP · ${esc(p.mcp)}</b>'
+    nhan_goi = '<b class="pill">gói ${esc(p.goi)}</b>'
+    assert nhan_mcp in src
+    # Nhánh MCP phải đứng TRƯỚC nhánh gói trong chính khối `row__side` —
+    # so trên hai nhãn thật (không phải trên "p.mcp"/"p.goi" trần, vì cụm
+    # đó còn xuất hiện sớm hơn ở dòng "gọi 7 ngày ... gói ..." phía trên).
+    assert src.index(nhan_mcp) < src.index(nhan_goi)
+    # Vẫn giữ đúng nhánh cũ và thứ tự cũ mà test_dashboard_goi_ky_nang.py
+    # canh: nhãn "gói ..." đứng trước nút Xoá.
+    assert src.index(nhan_goi) < src.index("data-plugin-xoa")
+    # Công cụ của máy chủ MCP cũng KHÔNG có nút Xoá riêng — máy chủ đồng bộ
+    # sẽ tự đặt lại nó ở lần đồng bộ kế tiếp.
+    assert src.index(nhan_mcp) < src.index("data-plugin-xoa")
+
+
+def test_kiemMcp_va_themMcp_dung_duong_va_esc():
+    kiem = _than_ham("kiemMcp")
+    assert "/mcp/kiem" in kiem and "esc(" in kiem
+    them = _than_ham("themMcp")
+    assert '"/mcp"' in them and "esc(" in them
+    assert "await loadKyNang();" in them
+
+
+def test_docFormMcp_bat_dong_header_thieu_dau_hai_cham():
+    src = _than_ham("docFormMcp")
+    assert 'indexOf(":")' in src
+    assert "return null" in src

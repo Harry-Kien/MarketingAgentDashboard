@@ -569,17 +569,26 @@ def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
                 "hình — công cụ cần nhiều tham số đến thế thì tách ở phía máy "
                 "chủ MCP."
             )
-        for k in ("ghi", "ghi_cho_phep"):
+        for k in ("ghi", "ghi_cho_phep", "bat_truoc"):
             if k in ch and not isinstance(ch[k], bool):
                 raise LoiBanMoTa(f"cau_hinh.{k} phải là true/false.")
         ghi = bool(ch.get("ghi", False))
-        return {
+        ra = {
             "may_chu": may_chu, "cong_cu_goc": goc,
             "luoc_do": luoc_do_sach,
             "ghi": ghi,
             # Cờ "cho phép ghi ngoài phòng thử" chỉ có nghĩa với công cụ ghi.
             "ghi_cho_phep": bool(ch.get("ghi_cho_phep", False)) if ghi else False,
         }
+        # `bat_truoc`: công cụ này có đang bật lúc TẮT máy chủ không —
+        # `kho_mcp.bat_tat` ghi vào lúc tắt và xoá đi lúc bật lại. Hàm này lọc
+        # khoá lạ (xem `_KHOA_LUOC_DO`), nên không kể tên ở đây là cờ rụng
+        # ngay lần ghi đầu và việc khôi phục lặng lẽ không bao giờ chạy. Chỉ
+        # kèm khi CÓ: mọi công cụ đều mang một khoá luôn False thì không phân
+        # biệt được "chưa từng tắt" với "tắt rồi, lúc ấy đang tắt".
+        if "bat_truoc" in ch:
+            ra["bat_truoc"] = bool(ch["bat_truoc"])
+        return ra
 
     raise LoiBanMoTa(f"Loại {loai!r} chưa có bộ kiểm cấu hình.")
 

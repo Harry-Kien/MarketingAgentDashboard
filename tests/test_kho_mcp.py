@@ -54,14 +54,14 @@ class _CSDL:
         elif s.startswith("DELETE FROM mcp_may_chu"):
             self.may_chu.pop(a[0], None)
         elif s.startswith("INSERT INTO ky_nang_cai_dat"):
+            # `ON CONFLICT DO UPDATE SET ban_mo_ta = EXCLUDED.ban_mo_ta` thay
+            # CẢ bản mô tả, kể cả `cau_hinh`. Fixture này từng tự khôi phục
+            # `ghi`/`ghi_cho_phep` từ dòng cũ, nên `test_dong_bo_lai_giu_co_
+            # nguoi_dat_...` xanh dù `dong_bo` có đọc lại cờ cũ hay không —
+            # xanh giả, đúng ở chỗ nguy hiểm nhất. Chỉ `bat` mới nằm ngoài
+            # DO UPDATE, và chỉ nó được giữ ở đây.
             cu = self.plugin.get(a[0])
             self.plugin[a[0]] = {"ten": a[0], "bat": a[1] if cu is None else cu["bat"], "ban_mo_ta": a[2], "goi": a[4]}
-            if cu is not None:   # giữ cờ người đặt, chỉ cập nhật mo_ta/luoc_do
-                ch = cu["ban_mo_ta"]["cau_hinh"]
-                self.plugin[a[0]]["ban_mo_ta"]["cau_hinh"].update({"ghi": ch["ghi"], "ghi_cho_phep": ch["ghi_cho_phep"]})
-        elif s.startswith("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi"):
-            for v in self.plugin.values():
-                if v["goi"] == a[1]: v["bat"] = a[0]
         elif s.startswith("UPDATE ky_nang_cai_dat SET bat = $1, ban_mo_ta"):
             self.plugin[a[2]].update({"bat": a[0], "ban_mo_ta": a[1]})
         elif s.startswith("DELETE FROM ky_nang_cai_dat WHERE goi = $1 AND ten"):
@@ -166,6 +166,9 @@ def test_tran_12_thi_cong_cu_moi_tat(kho):
 
 
 def test_dong_bo_lai_giu_co_nguoi_dat_va_xoa_cong_cu_bien_mat(kho):
+    # Xanh nhờ MÃ chứ không nhờ fixture: CSDL giả không còn tự ghép lại
+    # `ghi`/`ghi_cho_phep` từ dòng cũ (xem `test_csdl_gia_khong_tu_khoi_phuc
+    # _co_nguoi_dat`), nên chính `dong_bo` phải đọc cờ cũ và ghi lại.
     from agent.ky_nang import kho_mcp
     chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
     chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", bat=True, ghi_cho_phep=True, boi="qt"))
@@ -258,6 +261,238 @@ def test_goi_hong_ghi_nhat_ky_kem_ten_may_chu(kho, monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="agent.ky_nang.kho_mcp"):
         assert chay(kho_mcp.goi_cong_cu(bm, {"ma": "x"}))["can_chuyen_nhan_vien"] is True
     assert any("kho" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------
+#  Sửa theo review Task 4
+# ---------------------------------------------------------------
+
+def _doc_them(ten="tra_gia", mo_ta="Tra giá bán lẻ theo mã sản phẩm ở kho."):
+    """Một công cụ ĐỌC nữa — fixture chỉ có một, không đủ để thấy thứ tự."""
+    return mk.CongCuGoc(ten, mo_ta, {"type": "object", "properties": {}}, False)
+
+
+def test_csdl_gia_khong_tu_khoi_phuc_co_nguoi_dat(kho):
+    """
+    Lưới canh chính CSDL giả (mục 2 review).
+
+    `INSERT ... ON CONFLICT DO UPDATE SET ban_mo_ta = EXCLUDED.ban_mo_ta`
+    của Postgres thay CẢ bản mô tả, `cau_hinh` trong đó. Fixture từng tự
+    ghép lại `ghi`/`ghi_cho_phep` từ dòng cũ, nên bài kiểm "đồng bộ lại giữ
+    cờ người đặt" xanh dù `dong_bo` có đọc lại cờ cũ hay không — xanh giả.
+    Nếu ai đó thêm lại lối tắt ấy, test này đỏ.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    kho.plugin["mcp_kho_ghi_don"]["ban_mo_ta"]["cau_hinh"]["ghi_cho_phep"] = True
+    chay(kho.execute(
+        "INSERT INTO ky_nang_cai_dat (ten, bat, ban_mo_ta, tao_boi, goi) VALUES ...",
+        "mcp_kho_ghi_don", False, {"ten": "mcp_kho_ghi_don", "cau_hinh": {"ghi": False}},
+        "qt", "mcp:kho",
+    ))
+    assert kho.plugin["mcp_kho_ghi_don"]["ban_mo_ta"]["cau_hinh"] == {"ghi": False}
+
+
+def test_bat_lai_dem_ca_cong_cu_ghi_dang_bat(kho):
+    """
+    Mục 1 review: vòng lặp bật lại BỎ QUA công cụ ghi, nên nó cũng không đếm
+    chúng — mà `kiem_tran_them` đã loại cả `goi = mcp:<tên>` khỏi vế "đang
+    bật ngoài". Cái gì vòng lặp không đếm thì KHÔNG AI đếm, và trần 12 nới
+    ra âm thầm đúng bằng số công cụ ghi đang bật.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))       # ghi bat_truoc cho tra_ton
+    # Quản trị đã bật tay công cụ GHI; 11 plugin rời cũng đang bật.
+    kho.plugin["mcp_kho_ghi_don"]["bat"] = True
+    for i in range(11):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": True, "goi": None,
+                                  "ban_mo_ta": {"cau_hinh": {"ghi": False, "ghi_cho_phep": False}}}
+
+    chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is False   # 11 + 1 ghi = đã đủ 12
+    assert sum(1 for v in kho.plugin.values() if v["bat"]) == 12
+
+
+def test_bat_lai_giu_nguyen_cong_cu_doc_nguoi_da_tat(kho):
+    """
+    Mục 3 review: tắt máy chủ để bảo trì rồi bật lại KHÔNG được xoá việc
+    người vận hành đã tắt bớt công cụ nhiễu. Xoá kiểu ấy im lặng: chỉ lộ ra
+    khi thấy mô hình gọi lại đúng công cụ đã tắt.
+    """
+    from agent.ky_nang import kho_mcp
+
+    kho.cong_cu.append(_doc_them())
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] and kho.plugin["mcp_kho_tra_gia"]["bat"]
+
+    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_tra_ton", bat=False, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))
+    assert all(not v["bat"] for v in kho.plugin.values())
+
+    chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is False    # người đã cố ý tắt
+    assert kho.plugin["mcp_kho_tra_gia"]["bat"] is True     # đang bật lúc tắt máy chủ
+    assert kho.plugin["mcp_kho_ghi_don"]["bat"] is False    # công cụ GHI không tự bật
+    # Cờ tạm phải biến mất sau khi dùng, không đọng lại trong bản mô tả.
+    for t in ("mcp_kho_tra_ton", "mcp_kho_tra_gia", "mcp_kho_ghi_don"):
+        assert "bat_truoc" not in kho.plugin[t]["ban_mo_ta"]["cau_hinh"]
+
+
+def test_bat_lai_khong_ghi_lai_ban_mo_ta_khi_khong_co_gi_doi(kho):
+    """Mục 8 review: bật một máy chủ đang bật thì không có đường ghi JSONB nào chạy."""
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    kho.sql.clear()
+    chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+    assert not [s for s in kho.sql if s.startswith("UPDATE ky_nang_cai_dat")]
+
+
+def test_dat_cong_cu_may_chu_tat_thi_tu_choi(kho):
+    """
+    Mục 6 review: bật một công cụ trên máy chủ ĐANG TẮT là công tắc xanh
+    trên một máy chủ đỏ — mô hình vẫn không gọi được, và không có gì nối hai
+    việc ấy với nhau.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))
+    with pytest.raises(kho_mcp.LoiMayChu) as e:
+        chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_tra_ton", bat=True, boi="qt"))
+    assert "bật máy chủ trước" in str(e.value).lower()
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is False
+    # Đổi cờ ghi thì vẫn được: nó không bật gì cả.
+    chay(kho_mcp.dat_cong_cu("kho", "mcp_kho_ghi_don", ghi_cho_phep=True, boi="qt"))
+
+
+def test_dong_bo_cham_tran_thi_thoi_hoi_va_tat_phan_con_lai(kho, monkeypatch):
+    """
+    Mục 9 review: `so_bat` không tăng sau lần chạm trần đầu tiên, nên mọi
+    lần hỏi sau chắc chắn cũng chạm — mỗi lần hỏi là một câu SQL thừa.
+    """
+    from agent.ky_nang import kho_ky_nang, kho_mcp
+
+    kho.cong_cu.append(_doc_them())
+    for i in range(12):
+        kho.plugin[f"roi_{i}"] = {"ten": f"roi_{i}", "bat": True, "goi": None,
+                                  "ban_mo_ta": {"cau_hinh": {"ghi": False, "ghi_cho_phep": False}}}
+    goc, so_lan = kho_ky_nang.kiem_tran_them, []
+
+    async def dem(chu, so_them, hanh_dong):
+        so_lan.append(so_them)
+        await goc(chu, so_them, hanh_dong)
+
+    monkeypatch.setattr(kho_ky_nang, "kiem_tran_them", dem)
+    kq = chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    assert so_lan == [1], f"hỏi trần {len(so_lan)} lần sau khi đã chạm trần"
+    assert kq["so_bat"] == 0 and "trần" in (kq["ghi_chu"] or "").lower()
+    assert not kho.plugin["mcp_kho_tra_ton"]["bat"] and not kho.plugin["mcp_kho_tra_gia"]["bat"]
+
+
+def test_loi_khong_mang_url_day_du_ra_suc_khoe_va_su_kien(kho, monkeypatch, caplog):
+    """
+    Mục 4 review: chuỗi truy vấn của URL có thể CHÍNH LÀ token (`?key=...`),
+    và câu lỗi từ `mcp_khach` thường chép nguyên URL đang gọi. Chuỗi ấy đi
+    vào ba nơi sống lâu — nhật ký, `mcp_may_chu.suc_khoe`, bảng `events`.
+    Đúng kiểu hỏng đã gặp với `httpx` ghi URL đầy đủ ở mức INFO.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def hong(url, headers, *, http_client=None):
+        raise mk.LoiMCP("Không nối được http://127.0.0.1:8765/mcp?key=abc — hết hạn.")
+
+    monkeypatch.setattr(mk, "liet_ke_cong_cu", hong)
+    kq = chay(kho_mcp.dong_bo("kho", boi="qt"))
+
+    assert kq["ok"] is False and "key=abc" not in kq["loi"] and "127.0.0.1:8765" in kq["loi"]
+    assert "key=abc" not in json.dumps(kho.may_chu["kho"]["suc_khoe"], ensure_ascii=False)
+    assert "key=abc" not in json.dumps(kho.su_kien, ensure_ascii=False, default=str)
+
+    # Đường gọi lúc chạy cũng phải che — cùng một chuỗi lỗi, ba nơi khác nhau.
+    from agent.ky_nang.ban_mo_ta import doc_ban_mo_ta
+
+    bm = doc_ban_mo_ta(kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"], tu_dong_bo=True)
+
+    async def chan(url, headers, ten_goc, args, **k):
+        return {"loi": "gọi http://127.0.0.1:8765/mcp?key=abc thất bại",
+                "can_chuyen_nhan_vien": True, "ghi_chu": "x"}
+
+    monkeypatch.setattr(mk, "goi", chan)
+    with caplog.at_level(logging.WARNING, logger="agent.ky_nang.kho_mcp"):
+        chay(kho_mcp.goi_cong_cu(bm, {"ma": "x"}))
+    assert not any("key=abc" in r.getMessage() for r in caplog.records)
+
+
+def test_injection_khong_ghi_su_kien_trong_phong_thu(kho, monkeypatch):
+    """
+    Mục 5a review: cùng lối với `bao_mat.injection` — người đang thử tự gõ
+    câu đáng ngờ vào một máy chủ giả thì đó là bài thử, không phải sự cố.
+    Ghi thật thì bảng sự cố đầy tiếng ồn do chính mình tạo ra, và tiếng ồn
+    ấy che mất sự cố thật.
+    """
+    from agent.core import thu_nghiem
+    from agent.ky_nang import kho_mcp
+    from agent.ky_nang.ban_mo_ta import doc_ban_mo_ta
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    bm = doc_ban_mo_ta(kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"], tu_dong_bo=True)
+
+    async def xau(url, headers, ten_goc, args, **k):
+        return {"loi": "x", "can_chuyen_nhan_vien": True, "dau_hieu": ["ignore"]}
+
+    monkeypatch.setattr(mk, "goi", xau)
+    with thu_nghiem.bat_thu():
+        chay(kho_mcp.goi_cong_cu(bm, {"ma": "x"}))
+    assert not any(k == "bao_mat.mcp_injection" for k, _ in kho.su_kien)
+
+    chay(kho_mcp.goi_cong_cu(bm, {"ma": "x"}))       # ngoài Phòng thử thì phải ghi
+    assert any(k == "bao_mat.mcp_injection" for k, _ in kho.su_kien)
+
+
+def test_kho_ky_nang_liet_ke_gan_nhan_mcp(kho, monkeypatch):
+    """
+    Mục 5b review: dashboard đọc khoá `mcp` để hiện huy hiệu "MCP · <máy
+    chủ>". Không có test thì việc tách `mcp:` khỏi cột `goi` là một dòng chú
+    thích, và ngày nó rơi thì công cụ MCP hiện ra như plugin rời — kèm nút
+    Xoá mà `xoa_plugin` sẽ từ chối.
+    """
+    from agent.ky_nang import goi as g, kho_ky_nang, kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def dem_rong():
+        return {}
+
+    monkeypatch.setattr(g, "dem_an_toan", dem_rong)
+    kho_ky_nang.xoa_dem()
+    ra = chay(kho_ky_nang.liet_ke())
+    p = next(x for x in ra["plugin"] if x["ten"] == "mcp_kho_tra_ton")
+    assert p["goi"] == "mcp:kho" and p["mcp"] == "kho"
+    # Công cụ có chủ không sửa được bằng form — cùng luật với công cụ của gói.
+    assert p["ban_mo_ta"] is None
+    kho_ky_nang.xoa_dem()
+
+
+def test_liet_ke_dem_hong_van_ve_bang(kho, monkeypatch):
+    """Mục 7 review: `liet_ke` đi qua `goi.dem_an_toan`, không chép lại try/except."""
+    from agent.ky_nang import goi as g, kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def hong():
+        raise RuntimeError("đo hỏng")
+
+    monkeypatch.setattr(g, "dem_goi_7_ngay", hong)
+    ds = chay(kho_mcp.liet_ke())
+    assert ds[0]["ten"] == "kho" and ds[0]["so_cong_cu"] == 2
+    assert all(c["so_lan_7_ngay"] == 0 for c in ds[0]["cong_cu"])
 
 
 def test_kiem_ket_noi_khong_ghi_gi_va_bao_ly_do_bo(kho):

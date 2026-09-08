@@ -258,6 +258,39 @@ def _luc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Bất kỳ URL http(s) nào trong một chuỗi. Dừng ở khoảng trắng và ở vài ký tự
+# đóng hay gặp trong câu lỗi (dấu ngoặc, nháy) để không nuốt luôn phần văn bản
+# sau URL.
+_URL_TRONG_CHU = re.compile(r"https?://[^\s\"'<>)\]}]+", re.I)
+
+
+def _host(dia_chi: str) -> str:
+    """Chỉ phần host:port của một URL — phần an toàn để hiện và để ghi lại."""
+    return (urlparse(dia_chi).netloc or "").lower() or "máy chủ MCP"
+
+
+def _che_dia_chi(loi, dia_chi: str) -> str:
+    """
+    Chuỗi lỗi của máy chủ MCP → cùng chuỗi ấy nhưng URL rút về mỗi host.
+
+    VÌ SAO. Câu lỗi từ `mcp_khach` thường chép nguyên URL đang gọi, và chuỗi
+    truy vấn của URL ấy có thể CHÍNH LÀ token (`?key=...`). Chuỗi này đi vào
+    ba nơi sống lâu — nhật ký, cột `mcp_may_chu.suc_khoe`, bảng `events` —
+    nên để nguyên là bí mật nằm sẵn ở ba chỗ mà không ai coi là kho bí mật.
+    Đây đúng kiểu hỏng đã gặp một lần với `httpx` ghi URL đầy đủ ở mức INFO.
+
+    Che theo REGEX trước rồi mới theo `dia_chi`: che theo `dia_chi` trước thì
+    "http://h/mcp?key=abc" chỉ rụng phần "http://h/mcp", còn "?key=abc" ở lại
+    và không còn dạng URL để regex bắt.
+    """
+    s = str(loi)
+    s = _URL_TRONG_CHU.sub(lambda m: _host(m.group(0)), s)
+    dc = (dia_chi or "").strip()
+    if dc:
+        s = s.replace(dc, _host(dc))
+    return s
+
+
 async def kiem_ket_noi(dia_chi: str, headers: dict | None = None) -> dict:
     """
     Xem trước: nối, liệt kê, chạy đủ bộ kiểm — nhưng KHÔNG ghi gì.
@@ -271,7 +304,8 @@ async def kiem_ket_noi(dia_chi: str, headers: dict | None = None) -> dict:
         mk.kiem_dia_chi(dia_chi)
         cong_cu = await mk.liet_ke_cong_cu(dia_chi, headers)
     except mk.LoiMCP as exc:
-        return {"ok": False, "so_cong_cu": 0, "cong_cu": [], "loi": str(exc)}
+        return {"ok": False, "so_cong_cu": 0, "cong_cu": [],
+                "loi": _che_dia_chi(exc, dia_chi)}
 
     nhan, bo = _cat_cong_cu(cong_cu)
     ra: list[dict] = [{"ten": b["ten"], "ly_do_bo": b["ly_do"]} for b in bo]
@@ -288,7 +322,7 @@ async def kiem_ket_noi(dia_chi: str, headers: dict | None = None) -> dict:
                 _ban_mo_ta("kiem", c, ten_model, bool(c.goi_y_ghi), False), tu_dong_bo=True
             )
         except (mk.LoiMCP, LoiBanMoTa) as exc:
-            muc["ly_do_bo"] = str(exc)
+            muc["ly_do_bo"] = _che_dia_chi(exc, dia_chi)
         else:
             da_dat.add(ten_model)
             so += 1
@@ -368,7 +402,7 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
         return await _ket_thuc(
             ten, boi,
             {"ok": False, "so_cong_cu": 0, "so_bat": 0, "so_bo": 0, "bo": [],
-             "ghi_chu": None, "loi": str(exc), "luc": _luc()},
+             "ghi_chu": None, "loi": _che_dia_chi(exc, mc["dia_chi"]), "luc": _luc()},
         )
 
     nhan, bo = _cat_cong_cu(cong_cu)
@@ -413,7 +447,7 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
             # Mô tả có câu ra lệnh, lược đồ quá lớn, kiểu tham số lạ... — bỏ
             # ĐÚNG công cụ đó và NÓI RA. Bỏ im là dashboard hiện máy chủ
             # xanh, agent thì thiếu công cụ, và không ai nối được hai việc.
-            bo.append({"ten": c.ten, "ly_do": str(exc)})
+            bo.append({"ten": c.ten, "ly_do": _che_dia_chi(exc, mc["dia_chi"])})
             continue
         da_dat.add(ten_model)
         ke_hoach.append({
@@ -428,8 +462,17 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
     # "xanh", rồi không hiểu vì sao agent không dùng công cụ nào.
     ghi_chu = None
     so_bat = sum(1 for k in ke_hoach if not k["moi"] and k["bat"])
+    day = False
     for k in ke_hoach:
         if not k["moi"] or k["ghi"]:
+            continue
+        if day:
+            # Đã chạm trần ở một công cụ trước: `so_bat` không tăng nữa nên
+            # mọi lần hỏi sau chắc chắn cũng chạm, và mỗi lần hỏi là một câu
+            # SQL. Đánh dấu tắt luôn, dùng lại ĐÚNG câu ghi chú của lần chạm
+            # đầu — hai câu khác nhau cho cùng một nguyên nhân thì người đọc
+            # dashboard tưởng là hai sự cố.
+            k["bat"] = False
             continue
         try:
             # `so_bat + 1` là TỔNG số công cụ của máy chủ này sẽ bật, không
@@ -438,8 +481,9 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
             # vừa bật ở vòng trước.
             await kho_ky_nang.kiem_tran_them(goi_ten, so_bat + 1, "Đồng bộ máy chủ MCP")
         except KhoDay as exc:
+            day = True
             k["bat"] = False
-            ghi_chu = ghi_chu or f"{exc} Công cụ mới để TẮT; bật tay sau khi tắt bớt."
+            ghi_chu = f"{exc} Công cụ mới để TẮT; bật tay sau khi tắt bớt."
         else:
             k["bat"] = True
             so_bat += 1
@@ -490,49 +534,102 @@ async def _ket_thuc(ten: str, boi: str, kq: dict) -> dict:
     return kq
 
 
+async def _ghi_cong_cu(ten_cong_cu: str, bat: bool, bm: dict) -> None:
+    """
+    Ghi `bat` + bản mô tả của MỘT công cụ MCP, luôn qua `doc_ban_mo_ta`.
+
+    VÌ SAO đi qua bộ kiểm ở đây chứ không ghi thẳng dict: đây là đường ghi
+    `ban_mo_ta` thứ ba (sau `dong_bo` và `dat_cong_cu`), và một đường ghi
+    không qua bộ kiểm là chỗ duy nhất cần để một `cau_hinh` sai hình dạng
+    vào CSDL — nó chỉ nổ sau đó, ở `kho_ky_nang._doc()`, dưới dạng công cụ
+    biến mất kèm một dòng sự kiện không ai đọc.
+    """
+    await db.execute(
+        "UPDATE ky_nang_cai_dat SET bat = $1, ban_mo_ta = $2::jsonb, sua_luc = now() "
+        "WHERE ten = $3",
+        bat, _tho(doc_ban_mo_ta(bm, tu_dong_bo=True)), ten_cong_cu,
+    )
+
+
 async def bat_tat(ten: str, bat: bool, *, boi: str = "staff") -> None:
     """
     Tắt máy chủ = tắt MỌI công cụ của nó (chốt thứ hai ở `run_tool` chặn cả
-    lược đồ còn sót trong lịch sử hội thoại). Bật lại = bật các công cụ ĐỌC
-    còn chỗ dưới trần; công cụ GHI giữ tắt.
+    lược đồ còn sót trong lịch sử hội thoại), và ghi lại công cụ nào ĐANG bật
+    lúc tắt vào `cau_hinh.bat_truoc`.
 
-    Bật lại KHÔNG khôi phục đúng trạng thái trước khi tắt, có chủ ý: cờ
-    "được ghi" là một quyết định có người bấm, và khôi phục tự động quyền
-    ghi vào hệ thống người khác thì lần bấm ấy không bao giờ xảy ra.
+    Bật lại = bật lại đúng các công cụ ĐỌC có `bat_truoc = True`, còn chỗ
+    dưới trần. Hai nửa của cùng một luật:
+
+    * Nửa thứ nhất — công cụ ĐỌC người đã cố ý TẮT phải ở nguyên trạng thái
+      tắt. Trước đây bật máy chủ bật lại mọi công cụ đọc, nên một lần tắt máy
+      chủ để bảo trì là xoá sạch việc người vận hành đã tắt bớt công cụ nhiễu;
+      xoá mà không báo, và người ta chỉ phát hiện khi thấy mô hình gọi lại
+      đúng công cụ đã tắt.
+    * Nửa thứ hai — công cụ GHI KHÔNG bao giờ tự bật lại, kể cả khi
+      `bat_truoc = True`. Cờ "được ghi" là một quyết định có người bấm; khôi
+      phục tự động quyền ghi vào hệ thống người khác thì lần bấm ấy không bao
+      giờ xảy ra.
+
+    `bat_truoc` là ý muốn của MỘT lần tắt: lần bật kế tiếp tiêu thụ nó rồi
+    xoá, kể cả khi trần không cho bật. Giữ lại thì lần bật sau nữa nó tự bật
+    đè lên đúng việc người vừa làm là tắt bớt cho dưới trần.
     """
     if await _doc_may_chu(ten) is None:
         raise MayChuKhongTonTai(f"Không có máy chủ MCP tên {ten!r}.")
     goi_ten = _goi(ten)
 
     await db.execute("UPDATE mcp_may_chu SET bat = $1, sua_luc = now() WHERE ten = $2", bat, ten)
+    rows = await db.fetch(
+        "SELECT ten, bat, ban_mo_ta FROM ky_nang_cai_dat WHERE goi = $1", goi_ten
+    )
+
     if not bat:
-        await db.execute("UPDATE ky_nang_cai_dat SET bat = $1 WHERE goi = $2", False, goi_ten)
-    else:
-        rows = await db.fetch(
-            "SELECT ten, bat, ban_mo_ta FROM ky_nang_cai_dat WHERE goi = $1", goi_ten
-        )
-        so_bat = 0
         for r in rows:
             bm = _tu_jsonb(r["ban_mo_ta"])
-            if (bm.get("cau_hinh") or {}).get("ghi"):
+            ch = dict(bm.get("cau_hinh") or {})
+            dang_bat = bool(r["bat"])
+            if not dang_bat and ch.get("bat_truoc") is False:
+                continue  # tắt lần thứ hai: không có gì đổi, không ghi
+            ch["bat_truoc"] = dang_bat
+            bm["cau_hinh"] = ch
+            await _ghi_cong_cu(r["ten"], False, bm)
+    else:
+        # Gieo bằng số công cụ của CHÍNH máy chủ này đang bật, gồm cả công cụ
+        # GHI mà vòng lặp bỏ qua. `kiem_tran_them` đã loại `goi = mcp:<tên>`
+        # khỏi vế "đang bật ngoài", nên cái gì vòng lặp không đếm thì KHÔNG
+        # AI đếm: một công cụ ghi đang bật là trần 12 nới ra âm thầm thành 13.
+        so_bat = sum(1 for r in rows if bool(r["bat"]))
+        day = False
+        for r in rows:
+            bm = _tu_jsonb(r["ban_mo_ta"])
+            ch = dict(bm.get("cau_hinh") or {})
+            co_co = "bat_truoc" in ch
+            muon = bool(ch.pop("bat_truoc", False))
+            bat_moi = bool(r["bat"])
+            if muon and not bat_moi and not ch.get("ghi") and not day:
+                try:
+                    await kho_ky_nang.kiem_tran_them(goi_ten, so_bat + 1, "Bật máy chủ MCP")
+                except KhoDay as exc:
+                    # Không ném: máy chủ ĐÃ bật, và một ngoại lệ ở đây để lại
+                    # trạng thái nửa vời mà người bấm không biết đã tới đâu.
+                    # Nói ra bằng nhật ký thay vì im. `day` để không hỏi CSDL
+                    # thêm lần nào nữa — `so_bat` không tăng thì câu trả lời
+                    # không đổi.
+                    day = True
+                    _log.warning(
+                        "máy chủ MCP %r: dừng bật công cụ ở cái thứ %d — %s",
+                        ten, so_bat + 1, exc,
+                    )
+                else:
+                    bat_moi = True
+                    so_bat += 1
+            if not co_co:
+                # Không có cờ để xoá, và không có cờ thì cũng không bật gì —
+                # nên không có gì đổi. Ghi lại `ban_mo_ta` ở đây là một đường
+                # ghi JSONB thừa cho MỌI công cụ, mỗi lần bấm nút Bật.
                 continue
-            try:
-                await kho_ky_nang.kiem_tran_them(goi_ten, so_bat + 1, "Bật máy chủ MCP")
-            except KhoDay as exc:
-                # Không ném: máy chủ ĐÃ bật, và một ngoại lệ ở đây để lại
-                # trạng thái nửa vời mà người bấm không biết đã tới đâu.
-                # Nói ra bằng nhật ký thay vì im.
-                _log.warning(
-                    "máy chủ MCP %r: dừng bật công cụ ở cái thứ %d — %s",
-                    ten, so_bat + 1, exc,
-                )
-                break
-            so_bat += 1
-            await db.execute(
-                "UPDATE ky_nang_cai_dat SET bat = $1, ban_mo_ta = $2::jsonb, sua_luc = now() "
-                "WHERE ten = $3",
-                True, bm, r["ten"],
-            )
+            bm["cau_hinh"] = ch
+            await _ghi_cong_cu(r["ten"], bat_moi, bm)
 
     await db.log_event("mcp.may_chu", actor=boi, ten=ten, viec="bat" if bat else "tat")
     xoa_dem()
@@ -549,7 +646,8 @@ async def dat_cong_cu(
     boi: str = "staff",
 ) -> dict:
     """Đặt cờ cho MỘT công cụ. Chỉ đổi thứ được truyền vào, giữ nguyên phần còn lại."""
-    if await _doc_may_chu(ten) is None:
+    mc = await _doc_may_chu(ten)
+    if mc is None:
         raise MayChuKhongTonTai(f"Không có máy chủ MCP tên {ten!r}.")
     goi_ten = _goi(ten)
 
@@ -566,6 +664,14 @@ async def dat_cong_cu(
     if ghi_cho_phep is not None:
         ch["ghi_cho_phep"] = bool(ghi_cho_phep)
     bat_moi = bool(row["bat"]) if bat is None else bool(bat)
+
+    if bat_moi and not bool(mc["bat"]):
+        # Máy chủ tắt = mọi công cụ của nó tắt (`bat_tat`), và `goi_cong_cu`
+        # chặn lần thứ ba lúc chạy. Cho bật một công cụ ở đây thì dashboard
+        # hiện công tắc XANH trên một máy chủ ĐỎ, mô hình vẫn không gọi được,
+        # và không có gì nối hai việc ấy với nhau. Nói thẳng thay vì bật một
+        # cái công tắc không có tác dụng.
+        raise LoiMayChu("Máy chủ đang tắt — bật máy chủ trước")
 
     if bat_moi and not bool(row["bat"]):
         # Đếm TỔNG số công cụ của máy chủ này sẽ bật, không phải "thêm 1":
@@ -625,16 +731,15 @@ async def liet_ke() -> list[dict]:
         "SELECT ten, nhan, dia_chi, bat, key_version, suc_khoe, tao_boi "
         "FROM mcp_may_chu ORDER BY ten"
     )
-    try:
-        # Nhập khẩu TRONG hàm như `kho_ky_nang.liet_ke`: `goi` nhập khẩu
-        # ngược lại `kho_ky_nang`, và số đo là thứ phụ — không đáng để một
-        # vòng nhập khẩu ở mức module.
-        from agent.ky_nang import goi as _goi_mod
+    # Nhập khẩu TRONG hàm như `kho_ky_nang.liet_ke`: `goi` nhập khẩu ngược
+    # lại `kho_ky_nang`, và số đo là thứ phụ — không đáng để một vòng nhập
+    # khẩu ở mức module.
+    from agent.ky_nang import goi as _goi_mod
 
-        dem = await _goi_mod.dem_goi_7_ngay()
-    except Exception as exc:  # noqa: BLE001 — số đo hỏng không được làm chết bảng
-        _log.warning("không đếm được lượt gọi 7 ngày của công cụ MCP: %s", exc)
-        dem = {}
+    # `dem_an_toan` CHÍNH LÀ khối try/except này, đã có sẵn: chép lại là hai
+    # nơi quyết định "số đo hỏng thì làm gì", và ngày chúng lệch nhau thì một
+    # bảng chết còn bảng kia sống.
+    dem = await _goi_mod.dem_an_toan()
 
     ra: list[dict] = []
     for r in rows:
@@ -722,7 +827,9 @@ async def goi_cong_cu(bm, args) -> dict:
         if not thu_nghiem.dang_thu.get():
             await db.log_event(
                 "bao_mat.mcp_injection", may_chu=ten, cong_cu=bm.ten,
-                trich=str(kq.get("dau_hieu"))[:200],
+                # Che URL cả ở đây: `dau_hieu` là chữ của máy chủ ngoài, và
+                # nó có thể chép lại chính URL kèm token vào câu nó gửi về.
+                trich=_che_dia_chi(kq.get("dau_hieu"), mc["dia_chi"])[:200],
             )
     elif kq.get("loi"):
         # VÌ SAO GHI NHẬT KÝ Ở ĐÂY. `.env` siết lại SAU khi máy chủ đã lưu
@@ -734,6 +841,6 @@ async def goi_cong_cu(bm, args) -> dict:
         # nhìn thấy được.
         _log.warning(
             "máy chủ MCP %r: công cụ %r không gọi được — %s",
-            ten, bm.ten, str(kq["loi"])[:200],
+            ten, bm.ten, _che_dia_chi(kq["loi"], mc["dia_chi"])[:200],
         )
     return kq

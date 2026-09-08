@@ -46,8 +46,9 @@ from agent.ky_nang import kho_mcp  # noqa: E402
 DAT = "dat"
 HONG = "hong"
 BO_QUA = "bo_qua"
+CANH_BAO = "canh_bao"
 
-_NHAN = {DAT: "[đạt]   ", HONG: "[hỏng]  ", BO_QUA: "[bỏ qua]"}
+_NHAN = {DAT: "[đạt]   ", HONG: "[hỏng]  ", BO_QUA: "[bỏ qua]", CANH_BAO: "[cảnh báo]"}
 
 
 @dataclass
@@ -58,7 +59,7 @@ class Muc:
 
 
 def ma_thoat(mucs: list[Muc]) -> int:
-    """0 nếu không có mục nào HỎNG. Bỏ qua không làm đỏ mã thoát."""
+    """0 nếu không có mục nào HỎNG. Bỏ qua và cảnh báo không làm đỏ mã thoát."""
     return 1 if any(m.trang_thai == HONG for m in mucs) else 0
 
 
@@ -137,8 +138,16 @@ def dien_giai(kq: dict, ket_qua_goi: dict | None) -> list[Muc]:
 
     bo = kq["bo_dong_bo_gan_nhat"]
     if bo:
+        # CẢNH BÁO, không HỎNG: một công cụ bị bộ soi bỏ lúc Đồng bộ (mô tả
+        # có câu ra lệnh, lược đồ quá lớn...) là chuyện BÌNH THƯỜNG với một
+        # máy chủ vẫn hoạt động tốt — dòng này gần như luôn có mặt (ví dụ
+        # máy chủ giả "kho" trong test luôn khai một công cụ đáng ngờ). Tính
+        # là HỎNG thì mã thoát khác 0 VĨNH VIỄN cho một máy chủ vốn không có
+        # gì sai, và một bảng luôn đỏ là bảng người ta thôi đọc. Vẫn liệt kê
+        # lý do — người vận hành tra lại được khi cần — chỉ không kéo mã
+        # thoát của lệnh kiểm.
         ra.append(Muc(
-            "Công cụ bị bỏ ở lần Đồng bộ gần nhất", HONG,
+            "Công cụ bị bỏ ở lần Đồng bộ gần nhất", CANH_BAO,
             "; ".join(f"{b.get('ten')}: {b.get('ly_do')}" for b in bo),
         ))
     else:

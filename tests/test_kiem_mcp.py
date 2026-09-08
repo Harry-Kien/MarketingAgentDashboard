@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from scripts.kiem_mcp import (
     BO_QUA,
+    CANH_BAO,
     DAT,
     HONG,
     Muc,
@@ -137,10 +138,14 @@ def test_dien_giai_khop_nguyen_thi_dat():
 
 
 def test_dien_giai_bo_dong_bo_gan_nhat_hien_ly_do():
+    # CẢNH BÁO, không HỎNG: bị bỏ lúc Đồng bộ là chuyện bình thường với một
+    # máy chủ vẫn hoạt động tốt (xem chú thích ở `dien_giai`) — không được
+    # kéo mã thoát của lệnh kiểm khác 0 vĩnh viễn.
     kq = _kq(bo=[{"ten": "xau", "ly_do": "mô tả có câu ra lệnh"}])
     mucs = dien_giai(kq, None)
     m = next(x for x in mucs if x.ten == "Công cụ bị bỏ ở lần Đồng bộ gần nhất")
-    assert m.trang_thai == HONG and "xau" in m.chi_tiet and "câu ra lệnh" in m.chi_tiet
+    assert m.trang_thai == CANH_BAO and "xau" in m.chi_tiet and "câu ra lệnh" in m.chi_tiet
+    assert ma_thoat(mucs) == 0
 
 
 def test_dien_giai_khong_co_ung_vien_thi_bo_qua():
@@ -180,3 +185,8 @@ def test_ma_thoat_co_hong_thi_1():
 
 def test_ma_thoat_danh_sach_rong_thi_0():
     assert ma_thoat([]) == 0
+
+
+def test_ma_thoat_chi_canh_bao_thi_0():
+    mucs = [Muc("a", DAT, ""), Muc("b", CANH_BAO, "")]
+    assert ma_thoat(mucs) == 0

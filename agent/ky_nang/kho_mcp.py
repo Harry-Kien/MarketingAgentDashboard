@@ -994,4 +994,29 @@ async def goi_cong_cu_da_luu(ten: str, ten_model: str) -> dict:
     if row is None or (row["goi"] or "") != goi_ten:
         raise MayChuKhongTonTai(f"{ten_model!r} không phải công cụ của máy chủ {ten!r}.")
     bm = doc_ban_mo_ta(_tu_jsonb(row["ban_mo_ta"]), tu_dong_bo=True)
-    return await goi_cong_cu(bm, {})
+
+    # Chốt GHI ở ĐÂY, TRƯỚC khi gọi — không chỉ nhờ `chon_cong_cu_thu` lọc
+    # bên `scripts/kiem_mcp.py`. Ràng buộc nằm trong mã hai lần: script chọn
+    # công cụ là lớp thứ nhất (đọc kỹ để không tự gọi công cụ ghi), còn hàm
+    # này là lớp thứ hai — ai gọi thẳng `goi_cong_cu_da_luu` sau này (REPL,
+    # một script kiểm khác, một đường gọi thêm) mà quên lọc thì vẫn không
+    # đổi được dữ liệu ở hệ thống người khác chỉ vì đang "kiểm cho chắc".
+    if bool((bm.cau_hinh or {}).get("ghi")):
+        return _chuyen_nguoi(f"Công cụ GHI ({ten_model!r}) không được gọi thử từ script kiểm.")
+
+    kq = await goi_cong_cu(bm, {})
+
+    # Che URL trong kết quả TRẢ VỀ, không chỉ trong nhật ký: `scripts/
+    # kiem_mcp.py` in `loi`/`ghi_chu` thẳng ra terminal, và chuỗi lỗi của
+    # máy chủ MCP có thể chép nguyên URL đang gọi — chuỗi truy vấn của URL
+    # ấy có thể CHÍNH LÀ token xác thực (`?key=...`). `goi_cong_cu` chỉ che
+    # URL lúc GHI NHẬT KÝ (`_log.warning`), chưa từng che trong dict trả về.
+    dia_chi = ""
+    if kq.get("loi") or kq.get("ghi_chu"):
+        mc = await _doc_may_chu(ten)
+        dia_chi = mc["dia_chi"] if mc else ""
+    if kq.get("loi"):
+        kq["loi"] = _che_dia_chi(kq["loi"], dia_chi)
+    if kq.get("ghi_chu"):
+        kq["ghi_chu"] = _che_dia_chi(kq["ghi_chu"], dia_chi)
+    return kq

@@ -673,3 +673,48 @@ def test_goi_cong_cu_da_luu_khong_thuoc_may_chu_thi_bao_khong_ton_tai(kho):
     chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
     with pytest.raises(kho_mcp.MayChuKhongTonTai):
         chay(kho_mcp.goi_cong_cu_da_luu("kho", "khong_co"))
+
+
+def test_goi_cong_cu_da_luu_khong_goi_cong_cu_ghi(kho, monkeypatch):
+    """
+    Chốt tường minh trong `goi_cong_cu_da_luu`, KHÔNG chỉ dựa vào việc
+    `scripts/kiem_mcp.py` lọc trước khi chọn công cụ để thử — ràng buộc nằm
+    trong mã hai lần. `mk.goi` ném nếu bị gọi: một script kiểm không ai giám
+    sát không được phép đổi dữ liệu ở hệ thống người khác.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def khong_duoc_goi(*a, **k):
+        raise AssertionError("không được gọi mk.goi cho một công cụ GHI")
+
+    monkeypatch.setattr(mk, "goi", khong_duoc_goi)
+    kq = chay(kho_mcp.goi_cong_cu_da_luu("kho", "mcp_kho_ghi_don"))
+    assert kq["can_chuyen_nhan_vien"] is True
+    assert "GHI" in kq["loi"]
+
+
+def test_goi_cong_cu_da_luu_che_url_trong_loi_tra_ve(kho, monkeypatch):
+    """
+    `scripts/kiem_mcp.py` in `kq["loi"]` thẳng ra terminal — chuỗi lỗi của
+    máy chủ MCP có thể chép nguyên URL đang gọi kèm token xác thực trong
+    chuỗi truy vấn. `goi_cong_cu` trước đây chỉ che URL lúc ghi nhật ký, còn
+    dict TRẢ VỀ (thứ script đọc) thì chưa từng che.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def loi_lo_url(url, headers, ten_goc, args, **k):
+        return {
+            "loi": "Không gọi được máy chủ MCP: http://127.0.0.1:8765/mcp?key=abc bị từ chối",
+            "can_chuyen_nhan_vien": True,
+            "ghi_chu": "Xem http://127.0.0.1:8765/mcp?key=abc để biết thêm.",
+        }
+
+    monkeypatch.setattr(mk, "goi", loi_lo_url)
+    kq = chay(kho_mcp.goi_cong_cu_da_luu("kho", "mcp_kho_tra_ton"))
+    assert "key=abc" not in kq["loi"]
+    assert "key=abc" not in kq["ghi_chu"]
+    assert "127.0.0.1:8765" in kq["loi"]  # host vẫn hiện, chỉ query string bị che

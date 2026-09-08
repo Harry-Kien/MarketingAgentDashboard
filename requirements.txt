@@ -58,6 +58,12 @@ anthropic[vertex]==0.123.0
 # CẢNH BÁO: 2.0 đổi bố cục gói so với 1.x — mcp.server.mcpserver.MCPServer
 # thay cho mcp.server.fastmcp.FastMCP. Đừng nâng mà không sửa mã.
 mcp[cli]==2.0.0
+# `agent/ky_nang/mcp_khach.py` import THẲNG httpx2. Đây KHÔNG phải httpx đổi
+# tên: `mcp` 2.0 dựng `httpx2.AsyncClient`, và trộn `httpx.Timeout` vào đó là
+# TypeError ngay lúc dựng khách — mọi lời gọi MCP chết dưới dạng "không gọi
+# được máy chủ". Hiện nó về máy nhờ đi kèm `mcp`; ngày `mcp` đổi khách HTTP
+# thì import này gãy mà không ai ngờ. Cái gì mình import thì mình khai.
+httpx2==2.12.0
 
 # --- Video ----------------------------------------------------
 # Chuẩn hoá ảnh sản phẩm (xoay theo EXIF, xoá EXIF, hạ kích thước) và vẽ

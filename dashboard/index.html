@@ -683,7 +683,37 @@
         <!-- Chỗ để sẵn cho form máy chủ MCP (Task 6 của kế hoạch MCP điền
              vào đây, thay vì thêm một khối rời thứ tám). -->
         <div data-them-o="mcp" hidden id="them-mcp">
-          <p class="empty">Nối máy chủ MCP chưa bật ở bản này.</p>
+
+                    <form id="mcpform" class="form">
+                      <label class="field">
+                        <span>Tên <em class="hint">chữ thường, số, gạch dưới</em></span>
+                        <input name="ten" required pattern="[a-z][a-z0-9_]{1,19}" maxlength="20"
+                          placeholder="kho_erp" autocomplete="off">
+                      </label>
+                      <label class="field">
+                        <span>Nhãn hiển thị</span>
+                        <input name="nhan" required maxlength="60" placeholder="Kho ERP nội bộ">
+                      </label>
+                      <label class="field field--wide">
+                        <span>Địa chỉ</span>
+                        <input name="dia_chi" required maxlength="400"
+                          placeholder="https://.../mcp hoặc http://127.0.0.1:8765/mcp">
+                      </label>
+                      <label class="field field--wide">
+                        <span>Headers <em class="hint">mỗi dòng một cặp "Tên: giá trị" · được mã hoá, không hiện lại</em></span>
+                        <textarea name="headers" rows="3" placeholder="Authorization: Bearer ..."></textarea>
+                      </label>
+                      <p class="panel__note">
+                        Địa chỉ phải nằm trong <code>KY_NANG_HOST_CHO_PHEP</code> hoặc
+                        <code>MCP_MAY_CHU_NOI_BO</code> trong <code>.env</code> — cố ý
+                        không sửa được ở đây.
+                      </p>
+                      <div class="rowbtns">
+                        <button type="button" class="btn" id="mcp-kiem">Kiểm</button>
+                        <button type="button" class="btn btn--primary" id="mcp-them">Thêm</button>
+                      </div>
+                    </form>
+                    <div id="mcp-ketqua" class="rows"></div>
         </div>
       </section>
 
@@ -698,7 +728,16 @@
           quét như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
         </p>
         <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
-        <div id="nguon-mcp"></div>
+        <div id="nguon-mcp">
+                    <h3 class="panel__head">Máy chủ MCP
+                      <span class="panel__note">nối máy chủ công cụ ngoài theo Model Context Protocol</span></h3>
+                    <p class="panel__note">
+                      Công cụ lấy về từ một máy chủ MCP vào thẳng danh sách plugin bên
+                      dưới, có chủ là máy chủ đã nối — giống hệt công cụ của một gói.
+                      Mặc định mọi công cụ chỉ ĐỌC; phải bật tay từng công cụ mới GHI.
+                    </p>
+                    <div id="mcp-ds" class="rows"><p class="empty">Chưa có máy chủ MCP nào.</p></div>
+        </div>
       </section>
     </section>
 

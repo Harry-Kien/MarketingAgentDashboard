@@ -34,6 +34,16 @@ from agent.ky_nang.goi import (  # noqa: E402
     HUONG_DAN_TOI_DA,
     TAI_LIEU_MOI_GOI_TOI_DA,
 )
+# Lấy qua `kho_mcp`, không `import agent.ky_nang.mcp_khach` thẳng: bài kiểm
+# AST ở `tests/test_ky_nang_plugin.py` chặn mọi tệp trong `scripts/` nhập
+# khẩu `mcp_khach` — chỉ `kho_mcp.py` được, vì nó giữ CẢ bí mật lẫn nhật ký.
+# `kho_mcp` xuất lại đúng bốn hằng này cho mục đích này.
+from agent.ky_nang.kho_mcp import (  # noqa: E402
+    CONG_CU_MOI_MAY_CHU_TOI_DA,
+    HAN_GOI_GIAY,
+    KET_QUA_TOI_DA,
+    MCP_MAY_CHU_TOI_DA,
+)
 from agent.ky_nang.so_dang_ky import SO_DANG_KY  # noqa: E402
 
 DICH_NHOM = {
@@ -53,6 +63,7 @@ DICH_LOAI = {
     "tra_bang": "Tra một bảng khoá→giá trị do người vận hành nạp lên",
     "chuyen_chuyen_biet": "Chuyển người kèm lý do và hàng đợi riêng",
     "goi_api_doc": "GET một endpoint HTTPS đã nằm trong danh sách cho phép",
+    "mcp": "Gọi một công cụ đã đồng bộ từ máy chủ MCP ngoài (xem mục Máy chủ MCP)",
 }
 
 
@@ -106,10 +117,13 @@ def dung_tai_lieu() -> str:
         d.append(f"| `{loai}` | {DICH_LOAI[loai]} |")
 
     d.append(
-        "\nCả bốn loại đều **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, "
-        "tiêu tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test "
-        "đọc AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú "
-        "thích.\n"
+        "\nBốn loại đầu **chỉ đọc**: không loại nào ghi cơ sở dữ liệu, tiêu "
+        "tiền, hay gửi gì cho khách. Ràng buộc ấy được canh bằng test đọc "
+        "AST của `agent/ky_nang/chay.py`, không bằng lời hứa trong chú "
+        "thích. Loại `mcp` có thể GHI trên máy chủ ngoài nếu quản trị đánh "
+        "dấu `ghi=true` — hai chốt riêng canh việc đó tại `run_tool`: phòng "
+        "thử không gọi thật, và ngoài phòng thử cần bật thêm `ghi_cho_phep` "
+        "mới chạy, chưa bật thì chuyển người.\n"
     )
 
     d.append(
@@ -205,6 +219,92 @@ def dung_tai_lieu() -> str:
         "gói) được gọi trong 7 ngày gần nhất, và số lần lỗi — trừ những "
         "lượt gọi trong Phòng thử, vì đó là hàng giả lập, không phải khách "
         "thật.\n"
+    )
+
+    d.append(
+        "\n## Máy chủ MCP\n\n"
+        "Nối một máy chủ ngoài chạy Model Context Protocol làm nguồn công "
+        "cụ — không viết Python, cũng không phải gói kỹ năng. Chỉ "
+        "**Streamable HTTP**, không stdio: stdio nghĩa là tiến trình agent "
+        "tự chạy mã của máy chủ đó trong CÙNG tiến trình, tức là mã ấy "
+        "đứng cùng phía với sáu lớp lưới an toàn thay vì đứng ngoài như một "
+        "nguồn không tin cậy — đúng nguyên tắc \"kỹ năng cắm thêm là DỮ "
+        "LIỆU, không phải mã\" ở đầu tài liệu này. HTTP giữ nó ở đúng phía "
+        "bên kia.\n"
+    )
+    d.append(
+        "\n### Rào địa chỉ — hai biến `.env`, không sửa được từ dashboard\n\n"
+        "- `KY_NANG_HOST_CHO_PHEP` — host công khai được phép gọi tới (dùng "
+        "chung với plugin `goi_api_doc`).\n"
+        "- `MCP_MAY_CHU_NOI_BO` — máy chủ MCP chạy ngay trên máy này, dạng "
+        "`host:cổng`; dải nội bộ khác (10.x, 192.168.x...) không bao giờ "
+        "được phép dù có khai hay không.\n\n"
+        "Cả hai chỉ sửa được ở `.env` rồi khởi động lại — cố ý KHÔNG có ô "
+        "nhập trên dashboard. Đây là rào SSRF: cho sửa từ dashboard là cho "
+        "một tài khoản nhân viên tự mở đường agent gọi vào mạng trong hoặc "
+        "ra một host bất kỳ, không qua ai duyệt.\n"
+    )
+    d.append(
+        "\n### Công cụ MCP là plugin có chủ\n\n"
+        "Mỗi công cụ đồng bộ về nằm trong CÙNG bảng plugin, cột `goi` mang "
+        "giá trị `mcp:<tên máy chủ>` — mọi chốt đã có cho plugin (trần, tắt "
+        f"lúc thi hành, số đo 7 ngày) áp dụng nguyên xi, tính vào trần "
+        f"**{PLUGIN_TOI_DA}** plugin bật cùng lúc như plugin rời và công cụ "
+        "của gói.\n"
+    )
+    d.append("\n### Giới hạn\n")
+    d.append(f"\n- Nhiều nhất **{MCP_MAY_CHU_TOI_DA}** máy chủ.")
+    d.append(
+        f"- Mỗi lần đồng bộ nhận tối đa **{CONG_CU_MOI_MAY_CHU_TOI_DA}** "
+        "công cụ mỗi máy chủ; công cụ dư bị bỏ có lý do, không âm thầm mất."
+    )
+    d.append(
+        f"- Mỗi lời gọi hạn **{HAN_GOI_GIAY:g} giây**; máy chủ không trả "
+        "lời kịp thì agent chuyển người, không đoán kết quả thay công cụ."
+    )
+    d.append(
+        f"- Kết quả bị cắt còn tối đa **{KET_QUA_TOI_DA}** ký tự VÀ bị quét "
+        "bằng đúng bộ soi prompt injection dùng cho tin khách trước khi vào "
+        "ngữ cảnh model — máy chủ ngoài là nguồn không tin cậy như tin "
+        "khách.\n"
+    )
+    d.append(
+        "\n### Đọc mặc định bật, ghi phải bật tay — hai lần\n\n"
+        "Công cụ ĐỌC tự bật khi còn chỗ dưới trần. Công cụ GHI (đổi dữ liệu "
+        "trên hệ thống người khác) mặc định TẮT, và bật nó lên cần đúng hai "
+        "lần bấm riêng: bật công cụ, rồi bật thêm \"cho phép ghi ngoài "
+        "phòng thử\" — hai lần bấm RIÊNG, gộp cả hai vào một lời gọi API bị "
+        "từ chối. Cờ \"cho phép ghi\" được GIỮ qua đồng bộ lại và qua "
+        "tắt/bật máy chủ (công việc kiểm duyệt của quản trị không bị một "
+        "lần bảo trì xoá đi); chỉ công tắc **Bật** của công cụ ghi là không "
+        "tự bật lại — nó phải có người bấm. Trong Phòng thử, mọi công cụ "
+        "ghi bị MÔ PHỎNG chứ không gọi thật, dù đã bật \"cho phép ghi\" — "
+        "thử trong Phòng thử không bao giờ đổi dữ liệu ở hệ thống người "
+        "khác.\n"
+    )
+    d.append(
+        "\n### Đồng bộ: qua bộ kiểm, hỏng thì bỏ có lý do\n\n"
+        "Mô tả và lược đồ (schema) của mỗi công cụ máy chủ khai phải qua "
+        "đúng bộ kiểm bản mô tả plugin (soi injection, chặn độ dài, chặn "
+        "kiểu tham số lạ) trước khi vào bảng plugin. Công cụ nào không qua "
+        "thì bị BỎ, không phải cả máy chủ — lý do ghi lại trong kết quả "
+        "đồng bộ và sự kiện `mcp.dong_bo`, hiện trên dashboard. Máy chủ "
+        "hỏng lúc đồng bộ (mạng chập, timeout) giữ NGUYÊN công cụ cũ, "
+        "không xoá sạch giữa ngày.\n"
+    )
+    d.append(
+        "\n### Hỏng → chuyển người\n\n"
+        "Mọi nhánh hỏng của một lời gọi công cụ MCP — địa chỉ bị rào chặn "
+        "sau khi đã lưu, máy chủ chết hay timeout, kết quả chứa câu ra lệnh "
+        "cho model — đều trả về cùng một điều: KHÔNG đoán số liệu thay "
+        "công cụ, chuyển hội thoại cho người.\n\n"
+        "```bash\n"
+        "python -m scripts.kiem_mcp <ten-may-chu>\n"
+        "```\n\n"
+        "Kiểm một máy chủ đã lưu mà không tốn tiền model: địa chỉ có qua "
+        "rào không, nối được không, công cụ máy chủ so với công cụ đã lưu, "
+        "công cụ nào bị bỏ ở lần đồng bộ gần nhất, gọi thử một công cụ ĐỌC. "
+        "Xem `docs/van-hanh.md` mục \"Nối một máy chủ MCP\".\n"
     )
     return "\n".join(d) + "\n"
 

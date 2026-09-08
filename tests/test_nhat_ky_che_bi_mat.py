@@ -171,10 +171,14 @@ def test_httpx_khong_con_ghi_o_muc_INFO():
     """
     Ca canh ĐÚNG đường đã rò. `httpx` ở INFO là ghi URL đầy đủ kèm query
     string cho mọi lời gọi ra ngoài.
+
+    `httpx2`/`httpcore2` là gói khác, cây logger khác — `mcp==2.0.0` dùng nó
+    cho đường ra máy chủ MCP. Hạ mỗi `httpx` là đóng một nửa cửa và không ai
+    biết nửa còn lại đang mở.
     """
     dung_nhat_ky()
-    assert logging.getLogger("httpx").level >= logging.WARNING
-    assert logging.getLogger("httpcore").level >= logging.WARNING
+    for ten in ("httpx", "httpcore", "httpx2", "httpcore2"):
+        assert logging.getLogger(ten).level >= logging.WARNING, ten
 
 
 def test_main_goi_dung_nhat_ky_ngay_dau_lifespan():

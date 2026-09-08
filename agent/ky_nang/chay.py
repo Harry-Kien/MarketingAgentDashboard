@@ -1,13 +1,20 @@
 """
-Thi hành plugin. Bốn loại, tất cả CHỈ ĐỌC.
+Thi hành plugin. Năm loại: bốn loại đầu chỉ đọc; `mcp` có thể ghi, hai chốt
+ở `run_tool`.
 
-Không hàm nào trong tệp này ghi cơ sở dữ liệu, gọi model, tiêu tiền, hay gửi
-gì cho khách. Chúng nhận tham số model điền, trả về một dict dữ liệu, và
-agent quyết định nói gì — sau khi đi qua đủ sáu lớp lưới.
+Không hàm nào trong CHÍNH TỆP NÀY ghi cơ sở dữ liệu, gọi model, tiêu tiền,
+hay gửi gì cho khách. Chúng nhận tham số model điền, trả về một dict dữ
+liệu, và agent quyết định nói gì — sau khi đi qua đủ sáu lớp lưới.
 
 Ràng buộc "chỉ đọc" được canh bằng test đọc AST của chính tệp này, không
 phải bằng lời hứa trong đoạn chú thích này: `tests/test_ky_nang_plugin.py`
 bắt mọi lời gọi `db.execute`/`db.fetch`/`llm.` xuất hiện ở đây là đỏ.
+
+Nhánh `mcp` là ngoại lệ duy nhất, và nó không làm test AST kia mất nghĩa:
+việc ghi xảy ra ở MÁY CHỦ NGOÀI, tệp này chỉ chuyển tiếp sang
+`kho_mcp.goi_cong_cu()`. Chốt cho việc ghi ấy nằm cao hơn một tầng, trong
+`run_tool`: phòng thử không gọi thật, và ngoài phòng thử phải bật rõ
+`ghi_cho_phep` cho từng công cụ, chưa bật thì chuyển người.
 """
 # ĐỌC: ══ TRẠM C4 · NƠI MỘT KỸ NĂNG CẮM THÊM THẬT SỰ CHẠY ═════════════════
 # ĐỌC: Bản đồ đầy đủ ba chặng: agent/ky_nang/__init__.py
@@ -20,7 +27,7 @@ bắt mọi lời gọi `db.execute`/`db.fetch`/`llm.` xuất hiện ở đây l
 # ĐỌC: sức mạnh lẫn giới hạn của cơ chế plugin nằm ở chỗ bảng ấy ĐÓNG: gói
 # ĐỌC: của người vận hành chọn được nhánh nào chạy, không thêm được nhánh.
 # ĐỌC:
-# ĐỌC: THÊM LOẠI THỨ NĂM PHẢI SỬA BA CHỖ, và quên chỗ nào cũng hỏng khác nhau:
+# ĐỌC: THÊM MỘT LOẠI NỮA PHẢI SỬA BA CHỖ, và quên chỗ nào cũng hỏng khác nhau:
 # ĐỌC:   1. LOAI_PLUGIN ở ban_mo_ta.py     quên → bản mô tả bị từ chối lúc lưu
 # ĐỌC:   2. _kiem_cau_hinh ở ban_mo_ta.py  quên → cấu hình sai lọt tới lúc chạy
 # ĐỌC:   3. một nhánh trong chay_plugin    quên → rơi xuống nhánh cuối tệp
@@ -65,6 +72,12 @@ async def chay_plugin(bm: BanMoTa, args: dict) -> dict:
         }
     if bm.loai == "goi_api_doc":
         return await _goi_api_doc(bm, args)
+    if bm.loai == "mcp":
+        # Máy chủ MCP: bí mật và nhật ký nằm ở kho_mcp, đường mạng ở mcp_khach.
+        # Import lười để tệp này vẫn thuần và test AST vẫn soi được.
+        from agent.ky_nang import kho_mcp
+
+        return await kho_mcp.goi_cong_cu(bm, args)
 
     # Không tới được nếu `doc_ban_mo_ta` làm đúng việc. Vẫn để nhánh này,
     # vì thêm loại thứ năm mà quên viết nhánh chạy thì đây là chỗ nó hiện

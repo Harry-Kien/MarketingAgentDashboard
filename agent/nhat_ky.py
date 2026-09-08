@@ -222,8 +222,11 @@ def dung_nhat_ky() -> None:
     # `httpx` ghi URL đầy đủ ở INFO — đúng đường đã rò token Meta. Lời gọi
     # ERP đã có nhật ký riêng trong `Cong`, nên hạ xuống WARNING không mất
     # thông tin nào đang được dùng.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # `httpx2`/`httpcore2` là gói KHÁC (mcp 2.0 dùng nó, không dùng httpx), có
+    # cây logger riêng — hạ `httpx` không hạ nó. Bỏ sót là URL máy chủ MCP vào
+    # log ở INFO, mà URL ấy hoàn toàn có thể mang `?key=…` do người vận hành dán.
+    for ten in ("httpx", "httpcore", "httpx2", "httpcore2"):
+        logging.getLogger(ten).setLevel(logging.WARNING)
 
     loc = LocBiMat()
     for logger in [logging.getLogger()] + [

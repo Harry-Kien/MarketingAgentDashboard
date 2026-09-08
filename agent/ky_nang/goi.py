@@ -275,8 +275,11 @@ class GoiKhongTonTai(LookupError):
     """Không có gói tên này."""
 
 
-class KhoDay(RuntimeError):
-    """Đã đủ GOI_TOI_DA gói."""
+# Bí danh, KHÔNG phải lớp thứ hai. Trần plugin giờ do `kho_ky_nang` canh
+# (đường MCP cũng đi qua nó), và hai lớp `KhoDay` khác nhau nghĩa là API bắt
+# `goi.KhoDay` sẽ để lọt ngoại lệ của đường MCP — trả 500 thay vì 409, im
+# lặng đúng ở chỗ người vận hành cần biết mình đã chạm trần.
+KhoDay = kho_ky_nang.KhoDay
 
 
 def xoa_dem() -> None:
@@ -328,22 +331,13 @@ async def _kiem_tran_plugin(g: Goi, hanh_dong: str) -> None:
     Đếm bằng `fetch` rồi `len` chứ không `count(*)`: số dòng tối đa là
     PLUGIN_TOI_DA + vài dòng tắt, và một câu trả về hàng thì CSDL giả
     trong test mô phỏng được đúng bộ lọc, không phải đoán ra con số.
+
+    Phép đếm dời sang `kho_ky_nang.kiem_tran_them` từ đợt MCP: đường thứ tư
+    (đồng bộ máy chủ MCP) cũng ghi vào bảng này và cũng phải qua ĐÚNG chốt
+    ấy. Giữ bản sao ở đây là hai bản sẽ lệch nhau, và lúc lệch thì một đường
+    đẩy CSDL qua trần mà không ai báo.
     """
-    if not g.cong_cu:
-        return
-    ngoai_goi = await db.fetch(
-        "SELECT ten FROM ky_nang_cai_dat "
-        "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
-        g.ten,
-    )
-    tong = len(ngoai_goi) + len(g.cong_cu)
-    if tong > kho_ky_nang.PLUGIN_TOI_DA:
-        raise KhoDay(
-            f"{hanh_dong} gói này thành {tong} plugin đang bật, quá trần "
-            f"{kho_ky_nang.PLUGIN_TOI_DA}: đang bật ngoài gói {g.ten!r} là "
-            f"{len(ngoai_goi)}, gói thêm {len(g.cong_cu)}. Tắt bớt plugin "
-            "hoặc gói không dùng rồi thử lại."
-        )
+    await kho_ky_nang.kiem_tran_them(g.ten, len(g.cong_cu), f"{hanh_dong} gói này")
 
 
 async def _doc_hien_hanh(ten: str) -> dict | None:

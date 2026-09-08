@@ -3403,6 +3403,17 @@ async function loadKyNang() {
     // phải NÓI là không tải được — "Chưa có gói nào." khi CSDL hỏng là xanh giả.
     $("#goi-ds").innerHTML = `<p class="empty">Không tải được gói kỹ năng: ${esc(err.message)}</p>`;
   }
+
+  // Cùng lý do với gói: máy chủ MCP đọc riêng một bảng
+  // (`mcp_may_chu`), lỗi ở đó (vault chưa cấu hình, cột thiếu) không được
+  // làm chết cả màn Kỹ năng, và panel phải NÓI ra thay vì im lặng hiện
+  // "Chưa có máy chủ MCP nào." — trông giống chưa từng ai nối, khác hẳn
+  // sự thật là đã nối nhưng đang đọc lỗi.
+  try {
+    await loadMcp();
+  } catch (err) {
+    $("#mcp-ds").innerHTML = `<p class="empty">Không tải được máy chủ MCP: ${esc(err.message)}</p>`;
+  }
 }
 
 function khoiTaoThemKyNang() {
@@ -3586,6 +3597,238 @@ document.addEventListener("click", async (e) => {
   if (bk) {
     try { await api(`/goi-ky-nang/${encodeURIComponent(bk.dataset.goiKhoiphuc)}/khoi-phuc/${encodeURIComponent(bk.dataset.id)}`, { method: "POST" }); toast("Đã khôi phục"); await loadKyNang(); }
     catch (err) { toast(err.message, true); }
+  }
+});
+
+/* ---------------- máy chủ MCP ---------------- */
+
+// Hai huy hiệu dùng chung cho cả bảng máy chủ và ô Kiểm — một chỗ đổi màu,
+// không phải sửa ở hai nơi mỗi khi luật ĐỌC/GHI đổi.
+const MCP_PILL_DOC = '<b class="pill">ĐỌC</b>';
+const MCP_PILL_GHI = '<b class="pill pill--halt">GHI</b>';
+
+function moTaCat120(s) {
+  const t = String(s || "");
+  return t.length > 120 ? t.slice(0, 120) + "…" : t;
+}
+
+async function loadMcp() {
+  const d = await api("/mcp");
+  $("#mcp-ds").innerHTML = d.may_chu.length ? d.may_chu.map((m) => {
+    const sk = m.suc_khoe || {};
+    const dongBo = sk.ok === true
+      ? '<b class="pill">đồng bộ ok</b>'
+      : sk.ok === false
+      ? `<b class="pill pill--halt">lỗi đồng bộ${sk.loi ? ": " + esc(sk.loi) : ""}</b>`
+      : "";
+    const luc = sk.luc ? ` · lúc ${clock(sk.luc)}` : "";
+    const bo = (sk.bo || []).length
+      ? `<span class="row__sub row__sub--truot">Công cụ bị bỏ: ${
+          sk.bo.map((b) => `${esc(b.ten)} (${esc(b.ly_do)})`).join(" · ")
+        }</span>`
+      : "";
+    // Hàng máy chủ + hàng công cụ đi PHẲNG trong cùng một `#mcp-ds`, không
+    // lồng `<div>` bên trong `<span class="row__body">` — lồng khối vào
+    // trong phần tử dòng là HTML sai kiểu, trình duyệt tự "sửa" bằng cách
+    // đẩy nó ra ngoài luồng .row, và lưới `.row { grid-template-columns }`
+    // vỡ bố cục ngay từ hàng công cụ đầu tiên. Mỗi hàng công cụ tự nêu tên
+    // máy chủ để không cần khối bao ngoài mà vẫn biết nó thuộc máy nào.
+    const congCu = (m.cong_cu || []).map((c) => {
+      const badge = c.ghi ? MCP_PILL_GHI : MCP_PILL_DOC;
+      const goi7 = c.so_lan_7_ngay != null
+        ? ` · gọi 7 ngày: ${c.so_lan_7_ngay}${c.so_loi_7_ngay ? " (" + c.so_loi_7_ngay + " lỗi)" : ""}`
+        : "";
+      const choPhepGhi = c.ghi ? `
+          <label class="hint"><input type="checkbox" data-mcp-ghi
+            data-may-chu="${esc(m.ten)}" data-ten="${esc(c.ten)}"
+            ${c.ghi_cho_phep ? "checked" : ""}> cho phép ghi ngoài phòng thử</label>
+          <span class="row__sub row__sub--truot">Bật rồi công cụ này SỬA được dữ liệu thật, không chỉ đọc.</span>`
+        : "";
+      return `<div class="row">
+        <span class="row__flag ${c.bat ? "row__flag--auto" : "row__flag--halt"}"></span>
+        <span class="row__body">
+          <span class="row__title">${esc(m.nhan)} · ${esc(c.ten)} ${badge}</span>
+          <span class="row__sub">${esc(moTaCat120(c.mo_ta))}${goi7}</span>
+          ${choPhepGhi}
+        </span>
+        <span class="row__side">
+          <label class="hint"><input type="checkbox" data-mcp-cc
+            data-may-chu="${esc(m.ten)}" data-ten="${esc(c.ten)}"
+            ${c.bat ? "checked" : ""}> bật</label>
+        </span>
+      </div>`;
+    }).join("");
+    return `<div class="row">
+      <span class="row__flag ${m.bat ? "row__flag--auto" : "row__flag--halt"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(m.nhan)}${m.bat ? "" : ' <b class="pill pill--halt">tắt</b>'} ${dongBo}</span>
+        <span class="row__sub">${esc(m.host)} · ${m.so_bat || 0}/${m.so_cong_cu || 0} công cụ bật${luc}</span>
+        ${bo}
+      </span>
+      <span class="row__side">
+        <button type="button" class="btn btn--sm" data-mcp-dongbo="${esc(m.ten)}">Đồng bộ</button>
+        <button type="button" class="btn btn--sm ${m.bat ? "btn--halt" : ""}"
+          data-mcp-battat="${esc(m.ten)}" data-bat="${m.bat ? "0" : "1"}">${m.bat ? "Tắt" : "Bật"}</button>
+        <button type="button" class="btn btn--sm btn--halt" data-mcp-xoa="${esc(m.ten)}">Xoá</button>
+      </span>
+    </div>${congCu}`;
+  }).join("") : `<p class="empty">Chưa có máy chủ MCP nào. Tối đa ${d.may_chu_toi_da}.</p>`;
+}
+
+// Đọc form Nối máy chủ MCP. Trả về `null` (và tự toast lỗi) khi một dòng
+// header không có dấu ":" — không ném exception ở đây vì lỗi này KHÔNG
+// phải lỗi máy chủ, hỏi lại người gõ trước khi tốn một lượt gọi API.
+function docFormMcp() {
+  const f = $("#mcpform");
+  const fd = new FormData(f);
+  const ten = String(fd.get("ten") || "").trim();
+  const nhan = String(fd.get("nhan") || "").trim();
+  const dia_chi = String(fd.get("dia_chi") || "").trim();
+  const headers = {};
+  for (const dong_tho of String(fd.get("headers") || "").split("\n")) {
+    const dong = dong_tho.trim();
+    if (!dong) continue;
+    const i = dong.indexOf(":");
+    if (i < 0) {
+      toast(`Dòng header không có dấu ":": "${dong}"`, true);
+      return null;
+    }
+    headers[dong.slice(0, i).trim()] = dong.slice(i + 1).trim();
+  }
+  return { ten, nhan, dia_chi, headers: Object.keys(headers).length ? headers : null };
+}
+
+async function kiemMcp() {
+  const dl = docFormMcp();
+  if (!dl) return;
+  if (!dl.dia_chi) { toast("Điền địa chỉ trước khi Kiểm", true); return; }
+  const hop = $("#mcp-ketqua");
+  try {
+    const d = await api("/mcp/kiem", {
+      method: "POST", body: JSON.stringify({ dia_chi: dl.dia_chi, headers: dl.headers }),
+    });
+    if (!d.ok) { hop.innerHTML = `<p class="empty">Không nối được: ${esc(d.loi)}</p>`; return; }
+    hop.innerHTML = (d.cong_cu || []).map((c) => c.ly_do_bo
+      ? `<div class="row"><span class="row__flag row__flag--halt"></span>
+          <span class="row__body"><span class="row__title">${esc(c.ten)}</span>
+          <span class="row__sub row__sub--truot">Bị bỏ: ${esc(c.ly_do_bo)}</span></span></div>`
+      : `<div class="row"><span class="row__flag row__flag--auto"></span>
+          <span class="row__body"><span class="row__title">${esc(c.ten)} ${c.ghi_goi_y ? MCP_PILL_GHI : MCP_PILL_DOC}</span>
+          <span class="row__sub">${esc(moTaCat120(c.mo_ta))}</span></span></div>`
+    ).join("") || '<p class="empty">Máy chủ không có công cụ nào.</p>';
+  } catch (e) { toast(e.message, true); }
+}
+
+async function themMcp() {
+  const dl = docFormMcp();
+  if (!dl) return;
+  if (!dl.ten || !dl.nhan || !dl.dia_chi) { toast("Điền đủ tên, nhãn và địa chỉ", true); return; }
+  try {
+    const d = await api("/mcp", {
+      method: "POST",
+      body: JSON.stringify({ ten: dl.ten, nhan: dl.nhan, dia_chi: dl.dia_chi, headers: dl.headers }),
+    });
+    /* 201 KHÔNG có nghĩa là đã nối được. Máy chủ vẫn được tạo khi lần đồng
+     * bộ đầu hỏng — cố ý, để một lần mạng chập không làm mất bản ghi và bí
+     * mật vừa mã hoá. Nhưng báo "Đã nối" cho một máy chủ chưa hề nối được
+     * là người vận hành bỏ đi làm việc khác, còn agent thì thiếu công cụ:
+     * sai địa chỉ, sai header và DNS hỏng đều trông y hệt một máy chủ thật
+     * không có công cụ nào. Nói ra, kèm việc phải làm tiếp. */
+    if (!d.ok) {
+      $("#mcp-ketqua").innerHTML = `<p class="empty">Đã tạo "${esc(d.ten)}" nhưng chưa nối được: ${
+        esc(d.loi || "không rõ lý do")} — sửa địa chỉ/header rồi bấm Đồng bộ.</p>`;
+      toast(`Đã tạo "${d.ten}" nhưng chưa nối được máy chủ MCP`, true);
+    } else {
+      $("#mcp-ketqua").innerHTML = `<p class="empty">Đã nối "${esc(d.ten)}": ${d.so_bat}/${d.so_cong_cu} công cụ bật${
+        d.so_bo ? ", " + d.so_bo + " bị bỏ" : ""}.</p>`;
+      toast(`Đã nối máy chủ MCP "${d.ten}"`);
+    }
+    $("#mcpform").reset();
+    mcpTenGoTay = false;
+    await loadKyNang();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* Gợi ý ô Tên từ ô Nhãn (spec §5.5). Dùng lại `sinhMaPlugin` — cùng một
+ * phép bỏ dấu, cùng một luật "luôn ra mã hợp lệ" — rồi cắt về 20 ký tự cho
+ * khớp `_TEN_MAY_CHU_RE` ở máy chủ, vốn chặt hơn tên plugin (40).
+ *
+ * VÌ SAO PHẢI CÓ. Ô Tên đòi chữ thường không dấu, còn người vận hành nghĩ
+ * bằng tiếng Việt có dấu; không gợi ý thì lỗi "tên không hợp lệ" xuất hiện
+ * sau khi đã gõ xong cả form, ở đúng ô mà máy tự điền được. */
+function sinhMaMcp(nhan) {
+  return sinhMaPlugin(nhan).slice(0, 20).replace(/_+$/g, "");
+}
+
+/* Người đã tự gõ vào ô Tên thì THÔI gợi ý — đè lên chữ người đang gõ là
+ * kiểu hỏng khó chịu nhất của mọi ô tự điền. Cờ được đặt lại khi form reset
+ * (xem `themMcp`), vì form trống là một lần nhập mới. */
+let mcpTenGoTay = false;
+
+$("#mcpform")?.addEventListener("input", (e) => {
+  const f = $("#mcpform");
+  if (e.target === f.elements.ten) {
+    mcpTenGoTay = String(f.elements.ten.value).trim() !== "";
+    return;
+  }
+  if (e.target === f.elements.nhan && !mcpTenGoTay) {
+    f.elements.ten.value = sinhMaMcp(f.elements.nhan.value);
+  }
+});
+
+$("#mcp-kiem")?.addEventListener("click", kiemMcp);
+$("#mcp-them")?.addEventListener("click", themMcp);
+
+document.addEventListener("click", async (e) => {
+  const bd = e.target.closest("[data-mcp-dongbo]");
+  if (bd) {
+    try {
+      await api(`/mcp/${encodeURIComponent(bd.dataset.mcpDongbo)}/dong-bo`, { method: "POST" });
+      toast("Đã đồng bộ với máy chủ MCP.");
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bt = e.target.closest("[data-mcp-battat]");
+  if (bt) {
+    try {
+      await api(`/mcp/${encodeURIComponent(bt.dataset.mcpBattat)}/bat-tat`, {
+        method: "POST", body: JSON.stringify({ bat: bt.dataset.bat === "1" }),
+      });
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bx = e.target.closest("[data-mcp-xoa]");
+  if (bx) {
+    if (!confirm(`Xoá hẳn máy chủ MCP "${bx.dataset.mcpXoa}"? Mọi công cụ của nó cũng mất theo.`)) return;
+    try {
+      await api(`/mcp/${encodeURIComponent(bx.dataset.mcpXoa)}`, { method: "DELETE" });
+      toast("Đã xoá máy chủ MCP.");
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+  }
+});
+
+document.addEventListener("change", async (e) => {
+  const cc = e.target.closest("[data-mcp-cc]");
+  if (cc) {
+    try {
+      await api(`/mcp/${encodeURIComponent(cc.dataset.mayChu)}/cong-cu/${encodeURIComponent(cc.dataset.ten)}`, {
+        method: "POST", body: JSON.stringify({ bat: cc.checked }),
+      });
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); cc.checked = !cc.checked; }
+    return;
+  }
+  const gh = e.target.closest("[data-mcp-ghi]");
+  if (gh) {
+    try {
+      await api(`/mcp/${encodeURIComponent(gh.dataset.mayChu)}/cong-cu/${encodeURIComponent(gh.dataset.ten)}`, {
+        method: "POST", body: JSON.stringify({ ghi_cho_phep: gh.checked }),
+      });
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); gh.checked = !gh.checked; }
   }
 });
 

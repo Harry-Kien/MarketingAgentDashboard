@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-47 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+48 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -135,7 +135,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
@@ -549,6 +549,17 @@ erDiagram
         JSONB noi_dung
         TIMESTAMPTZ thay_luc
         TEXT thay_boi
+    }
+    mcp_may_chu {
+        TEXT ten
+        TEXT nhan
+        TEXT dia_chi
+        BOOLEAN bat
+        INTEGER key_version
+        BYTEA nonce
+        BYTEA ciphertext
+        JSONB suc_khoe
+        _ con_3_cot_nua
     }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""

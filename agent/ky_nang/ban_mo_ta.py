@@ -10,10 +10,11 @@ trong tiến trình agent thì nó nằm CÙNG PHÍA với sáu lớp lưới an
 `respond()` đang canh nó. Một kỹ năng nạp thêm không được phép mạnh hơn kỹ
 năng viết sẵn, mà mã tuỳ ý thì luôn mạnh hơn.
 
-Thay vào đó plugin là DỮ LIỆU: chọn một trong bốn loại có sẵn rồi cấu hình.
-Bốn loại đều CHỈ ĐỌC — không loại nào ghi cơ sở dữ liệu, tiêu tiền, hay gửi
-gì cho khách. Chúng trả dữ liệu về cho agent, và câu trả lời cuối vẫn phải
-đi qua đủ sáu lớp lưới.
+Thay vào đó plugin là DỮ LIỆU: chọn một trong năm loại có sẵn rồi cấu hình.
+Bốn loại đầu chỉ đọc — không loại nào ghi cơ sở dữ liệu, tiêu tiền, hay gửi
+gì cho khách; loại `mcp` có thể ghi trên máy chủ ngoài, hai chốt ở
+`run_tool` canh việc đó. Chúng trả dữ liệu về cho agent, và câu trả lời
+cuối vẫn phải đi qua đủ sáu lớp lưới.
 
 LỖ HỔNG THẬT SỰ CỦA CƠ CHẾ NÀY LÀ Ô "MÔ TẢ".
 
@@ -48,6 +49,7 @@ quản trị viên mới tạo được plugin. Ba chốt, vì một chốt sẽ
 # ĐỌC: tính thuần ấy: nó là thứ cho phép test kiểm mọi luật bằng dict trần.
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -60,19 +62,66 @@ class LoiBanMoTa(ValueError):
     """Bản mô tả plugin không hợp lệ. Thông điệp nói rõ sửa thế nào."""
 
 
-# Bốn loại plugin. Danh sách này ĐÓNG — thêm loại là phải sửa mã và viết
+# Năm loại plugin. Danh sách này ĐÓNG — thêm loại là phải sửa mã và viết
 # test, đúng như ý đồ. Người vận hành cấu hình được, không mở rộng được.
 #
 #   tra_tai_lieu       hỏi kho tri thức, giới hạn trong một nhóm tài liệu
 #   tra_bang           tra một bảng khoá→giá trị do người vận hành nạp lên
 #   chuyen_chuyen_biet chuyển người kèm lý do và hàng đợi riêng
 #   goi_api_doc        GET một endpoint HTTPS đã được ghi vào danh sách cho phép
-LOAI_PLUGIN = ("tra_tai_lieu", "tra_bang", "chuyen_chuyen_biet", "goi_api_doc")
+#   mcp                gọi một công cụ đã đồng bộ từ máy chủ MCP ngoài
+LOAI_PLUGIN = ("tra_tai_lieu", "tra_bang", "chuyen_chuyen_biet", "goi_api_doc", "mcp")
 
 # Tên công cụ đi vào lược đồ gửi cho model. Ràng buộc theo chuẩn tên hàm để
 # không provider nào từ chối, và không tên nào cần thoát ký tự.
 _TEN_RE = re.compile(r"^[a-z][a-z0-9_]{2,39}$")
 _TEN_THAM_SO_RE = re.compile(r"^[a-z][a-z0-9_]{1,29}$")
+
+# Kiểu JSON Schema hợp lệ cho một thuộc tính lược đồ `mcp`. Không phải danh
+# sách đầy đủ của chuẩn JSON Schema — chỉ những kiểu model cần điền đúng.
+_KIEU_JSON = {"string", "integer", "number", "boolean", "array", "object"}
+LUOC_DO_THUOC_TINH_TOI_DA = 20
+
+# Khoá JSON Schema được GIỮ LẠI cho một thuộc tính; mọi khoá khác bị bỏ.
+#
+# VÌ SAO PHẢI LỌC, KHÔNG CHỈ KIỂM. Lược đồ là chữ do MÁY CHỦ NGOÀI viết cho
+# mô hình đọc, và nó đi vào lời gọi model ở MỌI lượt — cùng vị trí, cùng
+# trọng lượng với ô `mo_ta` mà tệp này canh gắt gao từ đầu. Chỉ kiểm `type`
+# rồi cho cả dict đi tiếp nghĩa là bất cứ khoá nào cũng lọt: `title`,
+# `$comment`, `default`, hay một khoá tự chế chứa nguyên một prompt. Danh
+# sách trắng thì khoá mới ở phía máy chủ rơi ra ngoài một cách im lặng
+# nhưng VÔ HẠI; danh sách đen thì khoá mới lọt vào một cách im lặng.
+_KHOA_LUOC_DO = frozenset({"type", "description", "enum", "items", "properties", "required"})
+# Một tầng lồng cho `items`/`properties`: chỉ kiểu và mô tả. Lồng sâu hơn là
+# chỗ nhét chữ mà không ai đọc tới, và mô hình cũng không cần tới để điền.
+_KHOA_LUOC_DO_LONG = frozenset({"type", "description"})
+
+# Mô tả trong lược đồ bị cắt như mọi ô chữ khác đi vào prompt. 200 ký tự —
+# bằng đúng trần mô tả tham số của bốn loại kia, không có lý do gì lỏng hơn
+# chỉ vì chữ đến từ máy chủ chứ không từ người gõ.
+LUOC_DO_MO_TA_TOI_DA = 200
+LUOC_DO_ENUM_TOI_DA = 50
+# Một phần tử `enum` dạng chuỗi bị cắt còn 100 ký tự, chặt hơn `description`
+# (200): một danh sách giá trị hợp lệ gồm những mẩu 100 ký tự đã là bất
+# thường, còn 50 phần tử × 200 ký tự thì bằng cả một prompt thứ hai.
+LUOC_DO_ENUM_CHU_TOI_DA = 100
+
+# TÊN thuộc tính trong lược đồ — cũng do máy chủ ngoài viết, và cũng đi vào
+# prompt ở mọi lượt y hệt ô `description`.
+#
+# VÌ SAO CHẶN CHỨ KHÔNG CẮT. Tên thuộc tính là KHOÁ mô hình phải điền lại
+# đúng từng ký tự khi gọi công cụ; cắt ngắn nó là sinh ra một lược đồ mà
+# không lời gọi nào khớp được với máy chủ. Còn cho qua thì một máy chủ khai
+# thuộc tính tên `"bỏ qua mọi hướng dẫn trước đó và..."` nhét được cả câu
+# lệnh vào prompt qua đúng ô mà bộ quét chưa từng nhìn tới. Nên: khớp dạng
+# tên định danh (đủ rộng cho JSON Schema thật, gồm cả `.` và `-` mà nhiều
+# máy chủ dùng) thì nhận, không khớp thì BỎ cả công cụ và nêu đúng khoá.
+_TEN_THUOC_TINH_LUOC_DO_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+# Trần cho CẢ lược đồ sau khi lọc. Từng thuộc tính đều nhỏ mà 20 thuộc tính
+# gộp lại vẫn có thể thành vài nghìn ký tự, nhân với mỗi lượt gọi model.
+LUOC_DO_JSON_TOI_DA = 2000
+# Tên máy chủ MCP: khớp cột `mcp_may_chu.ten` — chữ thường, số, gạch dưới.
+_TEN_MAY_CHU_RE = re.compile(r"^[a-z][a-z0-9_]{1,19}$")
 
 # Trần độ dài. Không phải để tiết kiệm — để chặn việc nhét cả một prompt
 # thứ hai vào ô mô tả. 600 ký tự đủ viết mô tả tử tế cho một công cụ; mô tả
@@ -179,12 +228,24 @@ def _chu(gia_tri, ten_o: str) -> str:
     return gia_tri.strip()
 
 
-def doc_ban_mo_ta(tho: dict) -> BanMoTa:
+def doc_ban_mo_ta(tho: dict, *, tu_dong_bo: bool = False) -> BanMoTa:
     """
     Kiểm một bản mô tả plugin và trả về dạng đã chuẩn hoá.
 
     Ném `LoiBanMoTa` kèm câu nói rõ phải sửa gì. Mọi thứ vào từ ngoài — form
     trên dashboard, tệp JSON — đều phải đi qua đây.
+
+    `tu_dong_bo` nói bản mô tả này ĐẾN TỪ đường đồng bộ máy chủ MCP chứ không
+    do người gõ. Chỉ HAI nơi được phép truyền True, và cả hai đều không nhận
+    chữ của người:
+
+      * `kho_mcp.dong_bo()` — nơi DUY NHẤT dựng công cụ loại `mcp`, từ danh
+        sách `tools/list` của máy chủ (Task 4 viết hàm này)
+      * `kho_ky_nang._doc()` — đọc lại dòng đã lưu có cột `goi` bắt đầu bằng
+        "mcp:", và cột ấy chỉ `dong_bo()` mới ghi được
+
+    Mọi đường người-gõ (`kho_ky_nang.luu_plugin`, `goi.doc_goi`, form
+    dashboard, `POST /api/ky-nang/plugin/thu`) KHÔNG truyền cờ này.
     """
     if not isinstance(tho, dict):
         raise LoiBanMoTa("Bản mô tả phải là một object JSON.")
@@ -209,6 +270,20 @@ def doc_ban_mo_ta(tho: dict) -> BanMoTa:
     if loai not in LOAI_PLUGIN:
         raise LoiBanMoTa(
             f"Loại {loai!r} không có. Chọn một trong: {', '.join(LOAI_PLUGIN)}."
+        )
+
+    # Loại `mcp` KHÔNG gõ tay được — khác hẳn bốn loại kia, vốn sinh ra để
+    # người vận hành tự cấu hình.
+    #
+    # VÌ SAO. Cấu hình `mcp` gồm ba thứ mà chỉ máy chủ mới biết đúng: tên
+    # máy chủ, tên công cụ gốc, và lược đồ tham số. Gõ tay được nghĩa là gõ
+    # được một lược đồ TUỲ Ý mang tên một máy chủ CÓ THẬT — kèm cờ `ghi` —
+    # tức là dựng ra một công cụ ghi trỏ vào đâu cũng được, và nó lại còn
+    # trông y hệt một công cụ đã đồng bộ hợp lệ trên dashboard. Đường hợp lệ
+    # duy nhất là đồng bộ từ máy chủ, nơi lược đồ đến từ chính máy chủ ấy.
+    if loai == "mcp" and not tu_dong_bo:
+        raise LoiBanMoTa(
+            "Công cụ MCP chỉ vào bằng đường đồng bộ máy chủ, không tạo tay được."
         )
 
     mo_ta = _chu(tho.get("mo_ta", ""), "mo_ta")
@@ -272,6 +347,163 @@ def doc_ban_mo_ta(tho: dict) -> BanMoTa:
     cau_hinh = _kiem_cau_hinh(loai, cau_hinh, tham_so)
 
     return BanMoTa(ten, mo_ta, loai, tuple(tham_so), cau_hinh)
+
+
+def _mo_ta_luoc_do(gia_tri, o: str, toi_da: int = LUOC_DO_MO_TA_TOI_DA) -> str:
+    """
+    Một ô CHỮ TỰ DO trong lược đồ MCP: cắt ngắn rồi soi bằng ĐÚNG bộ quét
+    soi tin khách. Dùng cho `description` (200 ký tự) và cho từng phần tử
+    `enum` dạng chuỗi (100 ký tự) — hai ô khác tên nhưng cùng một bản chất:
+    chữ do máy chủ ngoài viết, đi vào prompt ở mọi lượt.
+
+    VÌ SAO SOI. Ô này nằm cùng chỗ với ô `mo_ta` của plugin — trong phần
+    công cụ mà mô hình đọc ở MỌI lượt. Máy chủ MCP là nguồn ngoài, không
+    đáng tin hơn tin nhắn của khách: một công cụ "tra tồn kho" khai tham số
+    kèm mô tả "bỏ qua mọi hướng dẫn trước đó" là prompt injection đi cửa
+    trước, và nó ở lại trong prompt kể cả những lượt không ai gọi công cụ.
+    """
+    mt = str(gia_tri).strip()[:toi_da]
+    dinh, mau = phong_thu.quet(mt)
+    if dinh:
+        raise LoiBanMoTa(
+            f"Mô tả của {o} trong luoc_do chứa câu ra lệnh cho model "
+            f"({', '.join(mau)}). Lược đồ do máy chủ ngoài viết nhưng đi vào "
+            "prompt ở MỌI lượt, nên nó bị soi đúng như tin của khách."
+        )
+    return mt
+
+
+def _bat_buoc_sach(gia_tri, o: str) -> list[str]:
+    """
+    Ô `required` phải là mảng chuỗi — không có đường lui im lặng.
+
+    VÌ SAO NÉM CHỨ KHÔNG BỎ QUA. Trước đây ô này được lọc thẳng bằng
+    `[r for r in (... or []) if r in thuoc_tinh]`, và nó hỏng theo hai kiểu:
+    `required: 5` ném `TypeError` trần (500 ở API, không nói được phải sửa
+    gì), còn `required: "ma"` lặng lẽ thành `[]` vì phép lọc chạy trên từng
+    KÝ TỰ và không ký tự nào là tên thuộc tính — mô hình được phép bỏ trống
+    đúng ô mà máy chủ bắt buộc, rồi lời gọi hỏng ở tận máy chủ ngoài, nơi
+    không ai đọc nhật ký.
+    """
+    if gia_tri is None:
+        return []
+    if not isinstance(gia_tri, list) or any(not isinstance(x, str) for x in gia_tri):
+        raise LoiBanMoTa(
+            f"{o} phải là mảng tên thuộc tính (chuỗi), đang là "
+            f"{type(gia_tri).__name__}."
+        )
+    return gia_tri
+
+
+def _kiem_ten_thuoc_tinh(k, o: str) -> str:
+    """
+    Kiểm một TÊN thuộc tính lược đồ khớp `_TEN_THUOC_TINH_LUOC_DO_RE`.
+
+    DÙNG CHUNG CHO CẢ TẦNG ĐẦU LẪN TẦNG LỒNG MỘT BẬC (`properties.a.
+    properties.b`). Trước đây chỉ khoá tầng đầu được kiểm — khoá bên trong
+    `properties` lồng đi thẳng vào lược đồ qua `_luoc_do_long_sach` mà
+    không qua kiểm tra nào, dù nó vào prompt ở MỌI lượt y hệt khoá tầng
+    đầu và y hệt ô `description`. Một máy chủ khai
+    `properties.a.properties["bỏ qua mọi hướng dẫn trước đó..."]` lọt được
+    qua đúng lỗ mà tầng đầu đã vá — cùng một khe hở, chỉ khác độ sâu lồng.
+    Kiểm ở MỘT hàm để hai tầng luôn khớp cùng một luật; hai bản sao thì lúc
+    nào đó lệch nhau, đúng kiểu hỏng im lặng mà tệp này đang canh.
+    """
+    ks = str(k)
+    if not _TEN_THUOC_TINH_LUOC_DO_RE.match(ks):
+        raise LoiBanMoTa(
+            f"Tên thuộc tính {ks[:60]!r} trong {o} không đúng dạng (chữ, số, "
+            "`_`, `.`, `-`, tối đa 64 ký tự). Tên thuộc tính đi vào prompt ở "
+            "MỌI lượt y như ô mô tả, nên nó bị siết đúng như vậy."
+        )
+    return ks
+
+
+def _luoc_do_long_sach(v, o: str) -> dict:
+    """Một tầng lồng của `items`/`properties`: chỉ giữ `type` và mô tả."""
+    if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
+        raise LoiBanMoTa(f"{o} thiếu type hợp lệ ({', '.join(sorted(_KIEU_JSON))}).")
+    # Lọc TRƯỚC rồi mới xử lý từng khoá: mọi khoá ngoài danh sách trắng rơi
+    # ra ở đây, cố ý và không báo lỗi — máy chủ thêm khoá mới thì công cụ vẫn
+    # dùng được, chỉ mất phần thừa.
+    ra = {kk: v[kk] for kk in _KHOA_LUOC_DO_LONG if kk in v}
+    if "description" in ra:
+        ra["description"] = _mo_ta_luoc_do(ra["description"], o)
+    return ra
+
+
+def _thuoc_tinh_sach(k: str, v) -> dict:
+    """Một thuộc tính lược đồ, chỉ còn những khoá trong `_KHOA_LUOC_DO`."""
+    o = f"thuộc tính {k!r}"
+    # TÊN thuộc tính cũng do máy chủ ngoài viết. Kiểm nó TRƯỚC cả `type`:
+    # câu lỗi phải nêu đúng khoá đang hỏng, mà chính khoá ấy mới là thứ
+    # không được đưa nguyên văn vào prompt. Xem `_TEN_THUOC_TINH_LUOC_DO_RE`.
+    _kiem_ten_thuoc_tinh(k, "luoc_do")
+    if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
+        raise LoiBanMoTa(
+            f"Thuộc tính {k!r} trong luoc_do thiếu type hợp lệ "
+            f"({', '.join(sorted(_KIEU_JSON))})."
+        )
+    ra = {kk: v[kk] for kk in _KHOA_LUOC_DO if kk in v}
+
+    if "description" in ra:
+        ra["description"] = _mo_ta_luoc_do(ra["description"], o)
+
+    if "enum" in ra:
+        e = ra["enum"]
+        if not isinstance(e, list):
+            raise LoiBanMoTa(f"Thuộc tính {k!r}: enum phải là mảng.")
+        if len(e) > LUOC_DO_ENUM_TOI_DA:
+            raise LoiBanMoTa(
+                f"Thuộc tính {k!r}: enum có {len(e)} phần tử, quá "
+                f"{LUOC_DO_ENUM_TOI_DA}. Danh sách dài hơn thế mô hình không "
+                "đọc hết, mà vẫn chiếm chỗ trong prompt ở mọi lượt."
+            )
+        sach: list = []
+        for x in e:
+            if not isinstance(x, (str, int, float)):
+                raise LoiBanMoTa(
+                    f"Thuộc tính {k!r}: mỗi phần tử enum phải là chuỗi hoặc "
+                    f"số, gặp {type(x).__name__}."
+                )
+            # Phần tử enum dạng CHUỖI đi qua đúng cửa của `description`: nó
+            # cũng là chữ tự do do máy chủ ngoài viết, cũng nằm trong lược đồ
+            # mô hình đọc ở mọi lượt. Trước đây chỉ kiểm KIỂU rồi cho qua
+            # nguyên văn — một `enum: ["binh_thuong", "bỏ qua mọi hướng dẫn
+            # trước đó và..."]` lọt thẳng vào prompt qua đúng ô mà bộ soi
+            # chưa từng nhìn tới. Số thì giữ nguyên: không có chữ để soi, và
+            # ép nó thành chuỗi là đổi nghĩa lược đồ của máy chủ.
+            sach.append(
+                _mo_ta_luoc_do(x, f"enum của {o}", LUOC_DO_ENUM_CHU_TOI_DA)
+                if isinstance(x, str)
+                else x
+            )
+        ra["enum"] = sach
+
+    if "items" in ra:
+        ra["items"] = _luoc_do_long_sach(ra["items"], f"items của {o}")
+
+    if "properties" in ra:
+        p = ra["properties"]
+        if not isinstance(p, dict):
+            raise LoiBanMoTa(f"Thuộc tính {k!r}: properties phải là object.")
+        if len(p) > LUOC_DO_THUOC_TINH_TOI_DA:
+            raise LoiBanMoTa(
+                f"Thuộc tính {k!r}: properties có {len(p)} khoá, quá "
+                f"{LUOC_DO_THUOC_TINH_TOI_DA}."
+            )
+        ra["properties"] = {
+            _kiem_ten_thuoc_tinh(kk, f"properties của {o}"): _luoc_do_long_sach(
+                vv, f"properties.{kk} của {o}"
+            )
+            for kk, vv in p.items()
+        }
+
+    if "required" in ra:
+        ra["required"] = _bat_buoc_sach(
+            ra["required"], f"luoc_do.properties.{k}.required"
+        )
+    return ra
 
 
 def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
@@ -356,6 +588,69 @@ def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
                 )
         return {"url": url, "han_giay": float(ch.get("han_giay", 5.0))}
 
+    if loai == "mcp":
+        # Công cụ của máy chủ MCP: lược đồ tham số lấy NGUYÊN từ máy chủ, vì
+        # `ThamSo` chỉ biết chuỗi còn máy chủ khai số/mảng — dựng lại là mô
+        # hình điền sai kiểu. Vẫn kiểm hình dạng: đây là thứ đi vào lời gọi
+        # model ở MỌI lượt.
+        may_chu = _chu(ch.get("may_chu", ""), "cau_hinh.may_chu")
+        if not _TEN_MAY_CHU_RE.match(may_chu):
+            raise LoiBanMoTa("mcp cần cau_hinh.may_chu là tên máy chủ (chữ thường, số, gạch dưới, 2–20 ký tự).")
+        goc = _chu(ch.get("cong_cu_goc", ""), "cau_hinh.cong_cu_goc")
+        if not 1 <= len(goc) <= 100:
+            raise LoiBanMoTa("mcp cần cau_hinh.cong_cu_goc — tên công cụ ở máy chủ, 1–100 ký tự.")
+        luoc_do = ch.get("luoc_do")
+        if not isinstance(luoc_do, dict) or luoc_do.get("type") != "object":
+            raise LoiBanMoTa("cau_hinh.luoc_do phải là JSON Schema object (type = 'object').")
+        thuoc_tinh = luoc_do.get("properties") or {}
+        if not isinstance(thuoc_tinh, dict):
+            raise LoiBanMoTa("cau_hinh.luoc_do.properties phải là object.")
+        if len(thuoc_tinh) > LUOC_DO_THUOC_TINH_TOI_DA:
+            raise LoiBanMoTa(f"Lược đồ có {len(thuoc_tinh)} thuộc tính, quá {LUOC_DO_THUOC_TINH_TOI_DA}.")
+        # Lọc, chứ không chỉ kiểm rồi cho cả dict máy chủ gửi đi tiếp: xem
+        # `_KHOA_LUOC_DO`. Lược đồ này là chữ máy chủ ngoài viết cho mô hình
+        # đọc ở MỌI lượt, nên nó qua đúng bộ quét và đúng loạt trần như ô
+        # `mo_ta` mà người trong nhà gõ.
+        thuoc_tinh_sach = {k: _thuoc_tinh_sach(k, v) for k, v in thuoc_tinh.items()}
+        bat_buoc = [
+            r for r in _bat_buoc_sach(luoc_do.get("required"), "luoc_do.required")
+            if r in thuoc_tinh_sach
+        ]
+        luoc_do_sach = {
+            "type": "object", "properties": thuoc_tinh_sach, "required": bat_buoc,
+        }
+        # Trần trên CẢ lược đồ, đo sau khi lọc: từng thuộc tính đều dưới trần
+        # riêng mà 20 cái gộp lại vẫn thành vài nghìn ký tự, và số ấy nhân với
+        # mỗi lượt gọi mô hình chứ không phải một lần lúc lưu.
+        do_dai = len(json.dumps(luoc_do_sach, ensure_ascii=False))
+        if do_dai > LUOC_DO_JSON_TOI_DA:
+            raise LoiBanMoTa(
+                f"Lược đồ dài {do_dai} ký tự sau khi lọc, quá "
+                f"{LUOC_DO_JSON_TOI_DA}. Cả lược đồ này đi vào MỌI lời gọi mô "
+                "hình — công cụ cần nhiều tham số đến thế thì tách ở phía máy "
+                "chủ MCP."
+            )
+        for k in ("ghi", "ghi_cho_phep", "bat_truoc"):
+            if k in ch and not isinstance(ch[k], bool):
+                raise LoiBanMoTa(f"cau_hinh.{k} phải là true/false.")
+        ghi = bool(ch.get("ghi", False))
+        ra = {
+            "may_chu": may_chu, "cong_cu_goc": goc,
+            "luoc_do": luoc_do_sach,
+            "ghi": ghi,
+            # Cờ "cho phép ghi ngoài phòng thử" chỉ có nghĩa với công cụ ghi.
+            "ghi_cho_phep": bool(ch.get("ghi_cho_phep", False)) if ghi else False,
+        }
+        # `bat_truoc`: công cụ này có đang bật lúc TẮT máy chủ không —
+        # `kho_mcp.bat_tat` ghi vào lúc tắt và xoá đi lúc bật lại. Hàm này lọc
+        # khoá lạ (xem `_KHOA_LUOC_DO`), nên không kể tên ở đây là cờ rụng
+        # ngay lần ghi đầu và việc khôi phục lặng lẽ không bao giờ chạy. Chỉ
+        # kèm khi CÓ: mọi công cụ đều mang một khoá luôn False thì không phân
+        # biệt được "chưa từng tắt" với "tắt rồi, lúc ấy đang tắt".
+        if "bat_truoc" in ch:
+            ra["bat_truoc"] = bool(ch["bat_truoc"])
+        return ra
+
     raise LoiBanMoTa(f"Loại {loai!r} chưa có bộ kiểm cấu hình.")
 
 
@@ -364,15 +659,22 @@ def thanh_cong_cu(bm: BanMoTa) -> dict:
     Đổi bản mô tả thành lược đồ công cụ gửi cho model — cùng dạng với
     `TOOLS`, để `agent.py` không cần biết công cụ nào là plugin.
     """
-    thuoc_tinh = {
-        t.ten: {"type": "string", "description": t.mo_ta} for t in bm.tham_so
-    }
-    return {
-        "name": bm.ten,
-        "description": bm.mo_ta,
-        "input_schema": {
+    # Loại `mcp`: lược đồ lấy NGUYÊN từ máy chủ (đã kiểm ở `_kiem_cau_hinh`),
+    # không dựng lại từ `tham_so` — `ThamSo` chỉ biết chuỗi, còn máy chủ MCP
+    # khai cả số và mảng.
+    if bm.loai == "mcp":
+        input_schema = bm.cau_hinh["luoc_do"]
+    else:
+        thuoc_tinh = {
+            t.ten: {"type": "string", "description": t.mo_ta} for t in bm.tham_so
+        }
+        input_schema = {
             "type": "object",
             "properties": thuoc_tinh,
             "required": [t.ten for t in bm.tham_so if t.bat_buoc],
-        },
+        }
+    return {
+        "name": bm.ten,
+        "description": bm.mo_ta,
+        "input_schema": input_schema,
     }

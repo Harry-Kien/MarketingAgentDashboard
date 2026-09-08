@@ -59,6 +59,40 @@ from agent.ky_nang.so_dang_ky import KHONG_TAT_DUOC, SO_DANG_KY, ten_ky_nang_co_
 _DEM: tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]] | None = None
 
 
+class KhoDay(RuntimeError):
+    """Vượt một trần: plugin đang bật, gói, hay máy chủ MCP."""
+
+
+async def kiem_tran_them(chu: str | None, so_them: int, hanh_dong: str) -> None:
+    """
+    Trần plugin đang bật, dùng CHUNG cho mọi đường ghi vào `ky_nang_cai_dat`:
+    plugin rời, gói (cài/bật lại), máy chủ MCP (đồng bộ/bật công cụ). Một
+    bảng, một chốt — xem chú thích ở `goi._kiem_tran_plugin` vì sao.
+
+    Ở ĐÂY chứ không ở `goi.py`: đường MCP không được nhập khẩu `goi` (vòng
+    nhập khẩu), nên chốt nằm bên ấy thì đường thứ ba lặng lẽ không qua chốt
+    nào — đúng kiểu hỏng mà chính chú thích kia sinh ra để chặn.
+
+    `chu` là chủ sở hữu đang được tính lại (tên gói, hay `mcp:<máy chủ>`).
+    Công cụ của chính chủ ấy KHÔNG đếm vào "đang bật ngoài", vì `so_them` đã
+    là con số cuối cùng của chủ ấy sau thao tác; đếm cả hai đầu là tính hai
+    lần và trần đầy sớm hơn thật.
+    """
+    if so_them <= 0:
+        return
+    ngoai = await db.fetch(
+        "SELECT ten FROM ky_nang_cai_dat "
+        "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
+        chu or "",
+    )
+    tong = len(ngoai) + so_them
+    if tong > PLUGIN_TOI_DA:
+        raise KhoDay(
+            f"{hanh_dong} thành {tong} plugin đang bật, quá trần {PLUGIN_TOI_DA}: đang bật "
+            f"ngoài {chu!r} là {len(ngoai)}, thêm {so_them}. Tắt bớt plugin không dùng rồi thử lại."
+        )
+
+
 def xoa_dem() -> None:
     """Gọi sau MỌI lần ghi. Cũng dùng trong test để tách các ca khỏi nhau."""
     global _DEM
@@ -99,8 +133,15 @@ async def _doc() -> tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]]:
             # Nhánh này chỉ còn cần cho dòng ghi TRƯỚC ngày sửa lỗi mã hoá
             # hai lần ở luu_plugin() (cột khi đó thật sự chứa chuỗi JSON).
             tho = json.loads(tho)
+        # `tu_dong_bo` mở khoá loại `mcp`, vốn không tạo tay được. CSDL là
+        # đường TIN CẬY ở đúng chỗ này và chỉ ở đây: cột `goi` dạng
+        # "mcp:<máy chủ>" chỉ `kho_mcp.dong_bo()` mới ghi được — `luu_plugin`
+        # để trống cột ấy, `goi.cai` ghi tên gói. Đọc lại một dòng đã đồng bộ
+        # rồi từ chối nó thì công cụ MCP biến mất ngay sau lần xoá đệm kế
+        # tiếp, và biến mất gần như im lặng: chỗ bắt lỗi chỉ ghi một sự kiện.
+        tu_dong_bo = str(r["goi"] or "").startswith("mcp:")
         try:
-            plugin.append(doc_ban_mo_ta(tho))
+            plugin.append(doc_ban_mo_ta(tho, tu_dong_bo=tu_dong_bo))
         except LoiBanMoTa:
             # Một bản mô tả hỏng KHÔNG được làm chết cả agent. Bỏ qua đúng
             # plugin đó và đi tiếp — nhưng bỏ qua trong im lặng thì không ai
@@ -254,8 +295,21 @@ async def xoa_plugin(ten: str, *, boi: str = "staff") -> bool:
         # nó thuộc một gói — hai chuyện rất khác nhau, phải nói ra chuyện thứ hai.
         chu = await db.fetchrow("SELECT goi FROM ky_nang_cai_dat WHERE ten = $1", ten)
         if chu is not None and chu["goi"]:
+            goi_chu = str(chu["goi"])
+            # Cột `goi` mang HAI loại chủ: tên gói kỹ năng thật, và
+            # `mcp:<tên máy chủ>`. Nói "thuộc gói 'mcp:kho_erp'" là chỉ người
+            # vận hành đi tìm một gói không tồn tại ở panel Gói kỹ năng; chỗ
+            # gỡ nó nằm ở panel khác hẳn. Chuỗi `mcp:` sinh ra để KHÔNG phải
+            # hiện ra ngoài — dashboard đã tránh nó ở huy hiệu, câu lỗi này
+            # là chỗ cuối cùng còn để lọt.
+            if goi_chu.startswith("mcp:"):
+                raise LoiBanMoTa(
+                    f"{ten!r} là công cụ thuộc máy chủ MCP {goi_chu[4:]!r} — tắt "
+                    "hoặc xoá máy chủ ở panel Máy chủ MCP, không xoá riêng công "
+                    "cụ của nó."
+                )
             raise LoiBanMoTa(
-                f"{ten!r} là công cụ thuộc gói {chu['goi']!r} — tắt hoặc xoá "
+                f"{ten!r} là công cụ thuộc gói {goi_chu!r} — tắt hoặc xoá "
                 "gói đó, không xoá riêng công cụ của nó."
             )
     if so_dong:
@@ -356,6 +410,16 @@ async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
                 "so_lan_7_ngay": dem.get(p.ten, {}).get("so_lan", 0),
                 "so_loi_7_ngay": dem.get(p.ten, {}).get("so_loi", 0),
                 "goi": goi_cua.get(p.ten),
+                # Huy hiệu "MCP · <máy chủ>" thay cho "gói". Cùng cột `goi`
+                # mang hai loại chủ (tên gói không bao giờ chứa dấu hai
+                # chấm), nên tách ngay ở đây: để dashboard tự cắt chuỗi là
+                # luật nằm ở hai nơi, và nơi thứ hai viết bằng JavaScript
+                # không có test nào canh.
+                "mcp": (
+                    goi_cua[p.ten][4:]
+                    if str(goi_cua.get(p.ten) or "").startswith("mcp:")
+                    else None
+                ),
                 # Khoá khách hỏi mà bảng chưa có — thứ đáng thêm vào bảng
                 # nhất, xếp theo số lần thật. Không có ô này thì bảng nằm im
                 # ở đúng kích cỡ ngày nó được tạo.

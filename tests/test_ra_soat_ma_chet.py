@@ -96,13 +96,7 @@ def test_moi_cau_hinh_deu_co_noi_doc():
     )
     # Ba biến dưới đây được cấu hình cho công cụ NGOÀI đọc, hoặc giữ cho
     # tương thích ngược; chúng không phải công tắc điều khiển hành vi.
-    #
-    # `mcp_may_chu_noi_bo` là hàng riêng: kế hoạch "máy chủ MCP làm nguồn
-    # công cụ" cố ý tách Task 1 (bảng + biến này) khỏi Task 2
-    # (`agent/ky_nang/mcp_khach.py` — nơi thật sự đọc nó để mở rào SSRF cho
-    # loopback). Bỏ dòng này khi Task 2 landing, kẻo nó che một biến khác
-    # thật sự chết câm.
-    MIEN = {"model_hard", "messenger_page_id", "langfuse_host", "mcp_may_chu_noi_bo"}
+    MIEN = {"model_hard", "messenger_page_id", "langfuse_host"}
 
     thua = [t for t in ten
             if t not in MIEN and len(re.findall(r"\b" + t + r"\b", tat)) <= 1]

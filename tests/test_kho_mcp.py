@@ -507,6 +507,73 @@ def test_kiem_ket_noi_khong_ghi_gi_va_bao_ly_do_bo(kho):
 
 
 # ---------------------------------------------------------------
+#  Sửa vòng 2 (review Task 4)
+# ---------------------------------------------------------------
+
+def test_tat_lan_hai_khong_de_bat_truoc(kho):
+    """
+    Điểm 1: tắt máy chủ hai lần liên tiếp (double-click, thử lại sau lỗi
+    mạng) không được đè `bat_truoc` xuống False. Trước khi sửa, so sánh
+    `ch.get("bat_truoc") is False` ở nhánh TẮT lấy `dang_bat` HIỆN TẠI (đã là
+    False sau lần tắt đầu) ghi đè lên đúng cờ vừa ghi — công cụ đọc từng bật
+    thì không bao giờ bật lại được nữa.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))  # tra_ton đang bật lúc tắt
+    assert kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"]["cau_hinh"]["bat_truoc"] is True
+
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))  # tắt lần 2 (double-click)
+    assert kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"]["cau_hinh"]["bat_truoc"] is True
+
+    chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is True  # bật lại đúng như trước khi tắt
+
+
+def test_dong_bo_luc_may_chu_tat_khong_bat_cong_cu_moi(kho, monkeypatch):
+    """
+    Điểm 2: đồng bộ khi máy chủ đang TẮT không được lén bật công cụ đọc mới
+    — bất biến "máy chủ tắt = mọi công cụ tắt" (giữ bởi `bat_tat`/
+    `dat_cong_cu`) phải đứng vững qua một lần đồng bộ. Công cụ đọc (cũ lẫn
+    mới) ghi `bat_truoc = True` để `bat_tat` bật lại đúng khi máy chủ bật;
+    trần không bị hỏi ở đây — nó sẽ được kiểm lúc bật máy chủ.
+    """
+    from agent.ky_nang import kho_ky_nang, kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    chay(kho_mcp.bat_tat("kho", False, boi="qt"))
+    kho.cong_cu.append(_doc_them())  # công cụ đọc mới xuất hiện ở máy chủ
+
+    goc = kho_ky_nang.kiem_tran_them
+    goi_lai = []
+
+    async def dem(chu, so_them, hanh_dong):
+        goi_lai.append((chu, so_them))
+        await goc(chu, so_them, hanh_dong)
+
+    monkeypatch.setattr(kho_ky_nang, "kiem_tran_them", dem)
+    kq = chay(kho_mcp.dong_bo("kho", boi="qt"))
+
+    assert not goi_lai, "không được kiểm trần lúc máy chủ đang tắt"
+    assert kq["so_bat"] == 0
+    assert all(not v["bat"] for v in kho.plugin.values())
+    assert "tắt" in (kq["ghi_chu"] or "").lower()
+
+    tra_ton = kho.plugin["mcp_kho_tra_ton"]["ban_mo_ta"]["cau_hinh"]
+    tra_gia = kho.plugin["mcp_kho_tra_gia"]["ban_mo_ta"]["cau_hinh"]
+    ghi_don = kho.plugin["mcp_kho_ghi_don"]["ban_mo_ta"]["cau_hinh"]
+    assert tra_ton["bat_truoc"] is True   # công cụ cũ, giữ ý đã ghi lúc bat_tat
+    assert tra_gia["bat_truoc"] is True   # công cụ đọc MỚI, coi như đáng bật
+    assert "bat_truoc" not in ghi_don     # công cụ GHI không bao giờ tự bật lại
+
+    chay(kho_mcp.bat_tat("kho", True, boi="qt"))
+    assert kho.plugin["mcp_kho_tra_ton"]["bat"] is True
+    assert kho.plugin["mcp_kho_tra_gia"]["bat"] is True
+    assert kho.plugin["mcp_kho_ghi_don"]["bat"] is False
+
+
+# ---------------------------------------------------------------
 #  Task 7: kiem_may_chu_da_luu / goi_cong_cu_da_luu — nguồn của kiem_mcp.py
 # ---------------------------------------------------------------
 

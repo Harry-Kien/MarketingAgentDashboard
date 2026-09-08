@@ -203,19 +203,29 @@ def _tho(bm) -> dict:
     }
 
 
-def _ban_mo_ta(ten: str, c, ten_cho_model: str, ghi: bool, ghi_cho_phep: bool) -> dict:
+def _ban_mo_ta(
+    ten: str, c, ten_cho_model: str, ghi: bool, ghi_cho_phep: bool,
+    *, bat_truoc: bool | None = None,
+) -> dict:
+    cau_hinh = {
+        "may_chu": ten,
+        "cong_cu_goc": c.ten,
+        "luoc_do": c.luoc_do,
+        "ghi": ghi,
+        "ghi_cho_phep": ghi_cho_phep,
+    }
+    # Chỉ kèm khi CÓ giá trị — cùng luật với `_kiem_cau_hinh`: một khoá luôn
+    # có mặt (kể cả rỗng) thì không phân biệt được "chưa từng tắt" với "tắt
+    # rồi, lúc ấy đang tắt". `dong_bo()` truyền giá trị khi máy chủ đang TẮT
+    # (xem đó), mọi đường gọi khác (kể cả `kiem_ket_noi`) để mặc định None.
+    if bat_truoc is not None:
+        cau_hinh["bat_truoc"] = bat_truoc
     return {
         "ten": ten_cho_model,
         "loai": "mcp",
         "mo_ta": c.mo_ta,
         "tham_so": [],
-        "cau_hinh": {
-            "may_chu": ten,
-            "cong_cu_goc": c.ten,
-            "luoc_do": c.luoc_do,
-            "ghi": ghi,
-            "ghi_cho_phep": ghi_cho_phep,
-        },
+        "cau_hinh": cau_hinh,
     }
 
 
@@ -399,6 +409,12 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
     if mc is None:
         raise MayChuKhongTonTai(f"Không có máy chủ MCP tên {ten!r}.")
     goi_ten = _goi(ten)
+    # Bất biến "máy chủ tắt = mọi công cụ tắt" (giữ bởi `bat_tat`/
+    # `dat_cong_cu`) phải đứng vững qua một lần đồng bộ. Không có cờ này thì
+    # công cụ ĐỌC MỚI xuất hiện lúc máy chủ đang tắt được ghi thẳng `bat =
+    # True` — công tắc xanh trên một máy chủ đỏ, `goi_cong_cu` vẫn từ chối
+    # gọi, và không có gì nối hai việc ấy với nhau.
+    may_chu_dang_tat = not bool(mc["bat"])
 
     try:
         headers = _giai_ma_headers(mc)
@@ -446,9 +462,19 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
         # sau không được xoá quyết định ấy.
         ghi = bool(ch_cu["ghi"]) if "ghi" in ch_cu else bool(c.goi_y_ghi)
         ghi_cho_phep = bool(ch_cu.get("ghi_cho_phep", False))
+        # Máy chủ đang TẮT: công cụ ĐỌC (ghi vẫn không bao giờ tự bật, xem
+        # `bat_tat`) mang cờ `bat_truoc` để lần BẬT máy chủ kế tiếp khôi
+        # phục đúng — công cụ đã có từ trước giữ ý người đặt (`ch_cu`), công
+        # cụ mới xuất hiện coi như "đáng bật" (mặc định True), y hệt cách nó
+        # được xử lý nếu máy chủ đang bật. Máy chủ đang bật thì không kèm cờ
+        # này — `dong_bo` bên dưới tự quyết `bat` theo trần như cũ.
+        bat_truoc = None
+        if may_chu_dang_tat and not ghi:
+            bat_truoc = bool(ch_cu["bat_truoc"]) if "bat_truoc" in ch_cu else True
         try:
             bm = doc_ban_mo_ta(
-                _ban_mo_ta(ten, c, ten_model, ghi, ghi_cho_phep), tu_dong_bo=True
+                _ban_mo_ta(ten, c, ten_model, ghi, ghi_cho_phep, bat_truoc=bat_truoc),
+                tu_dong_bo=True,
             )
         except LoiBanMoTa as exc:
             # Mô tả có câu ra lệnh, lược đồ quá lớn, kiểu tham số lạ... — bỏ
@@ -464,36 +490,47 @@ async def dong_bo(ten: str, *, boi: str = "staff") -> dict:
             "ghi": ghi,
         })
 
-    # Trần 12: công cụ ĐỌC mới tự bật nếu còn chỗ, hết chỗ thì để tắt và nói
-    # rõ ra — im lặng ở đây là người vận hành nối xong máy chủ, thấy nó
-    # "xanh", rồi không hiểu vì sao agent không dùng công cụ nào.
     ghi_chu = None
-    so_bat = sum(1 for k in ke_hoach if not k["moi"] and k["bat"])
-    day = False
-    for k in ke_hoach:
-        if not k["moi"] or k["ghi"]:
-            continue
-        if day:
-            # Đã chạm trần ở một công cụ trước: `so_bat` không tăng nữa nên
-            # mọi lần hỏi sau chắc chắn cũng chạm, và mỗi lần hỏi là một câu
-            # SQL. Đánh dấu tắt luôn, dùng lại ĐÚNG câu ghi chú của lần chạm
-            # đầu — hai câu khác nhau cho cùng một nguyên nhân thì người đọc
-            # dashboard tưởng là hai sự cố.
+    if may_chu_dang_tat:
+        # Máy chủ đang tắt: KHÔNG công cụ nào được bật, và trần không cần
+        # kiểm ở đây — nó sẽ được kiểm ĐÚNG LÚC bật máy chủ lại, ở `bat_tat`,
+        # nơi công cụ ĐỌC có `bat_truoc = True` (đặt ở trên) mới thật sự
+        # giành chỗ dưới trần. Kiểm ở đây chỉ tốn một câu SQL cho một con số
+        # `bat_tat` sẽ tính lại từ đầu.
+        for k in ke_hoach:
             k["bat"] = False
-            continue
-        try:
-            # `so_bat + 1` là TỔNG số công cụ của máy chủ này sẽ bật, không
-            # phải "thêm một": `kiem_tran_them` đã loại chủ này khỏi vế
-            # "đang bật ngoài", nên truyền 1 là bỏ quên chính các công cụ
-            # vừa bật ở vòng trước.
-            await kho_ky_nang.kiem_tran_them(goi_ten, so_bat + 1, "Đồng bộ máy chủ MCP")
-        except KhoDay as exc:
-            day = True
-            k["bat"] = False
-            ghi_chu = f"{exc} Công cụ mới để TẮT; bật tay sau khi tắt bớt."
-        else:
-            k["bat"] = True
-            so_bat += 1
+        so_bat = 0
+        ghi_chu = "Máy chủ đang tắt; công cụ sẽ bật khi bật máy chủ."
+    else:
+        # Trần 12: công cụ ĐỌC mới tự bật nếu còn chỗ, hết chỗ thì để tắt và
+        # nói rõ ra — im lặng ở đây là người vận hành nối xong máy chủ, thấy
+        # nó "xanh", rồi không hiểu vì sao agent không dùng công cụ nào.
+        so_bat = sum(1 for k in ke_hoach if not k["moi"] and k["bat"])
+        day = False
+        for k in ke_hoach:
+            if not k["moi"] or k["ghi"]:
+                continue
+            if day:
+                # Đã chạm trần ở một công cụ trước: `so_bat` không tăng nữa
+                # nên mọi lần hỏi sau chắc chắn cũng chạm, và mỗi lần hỏi là
+                # một câu SQL. Đánh dấu tắt luôn, dùng lại ĐÚNG câu ghi chú
+                # của lần chạm đầu — hai câu khác nhau cho cùng một nguyên
+                # nhân thì người đọc dashboard tưởng là hai sự cố.
+                k["bat"] = False
+                continue
+            try:
+                # `so_bat + 1` là TỔNG số công cụ của máy chủ này sẽ bật,
+                # không phải "thêm một": `kiem_tran_them` đã loại chủ này
+                # khỏi vế "đang bật ngoài", nên truyền 1 là bỏ quên chính các
+                # công cụ vừa bật ở vòng trước.
+                await kho_ky_nang.kiem_tran_them(goi_ten, so_bat + 1, "Đồng bộ máy chủ MCP")
+            except KhoDay as exc:
+                day = True
+                k["bat"] = False
+                ghi_chu = f"{exc} Công cụ mới để TẮT; bật tay sau khi tắt bớt."
+            else:
+                k["bat"] = True
+                so_bat += 1
 
     giu = [k["bm"].ten for k in ke_hoach]
     await db.execute(
@@ -595,8 +632,16 @@ async def bat_tat(ten: str, bat: bool, *, boi: str = "staff") -> None:
             bm = _tu_jsonb(r["ban_mo_ta"])
             ch = dict(bm.get("cau_hinh") or {})
             dang_bat = bool(r["bat"])
-            if not dang_bat and ch.get("bat_truoc") is False:
-                continue  # tắt lần thứ hai: không có gì đổi, không ghi
+            # Đã tắt VÀ đã ghi nhận (`bat_truoc` đã có mặt, bất kể giá trị)
+            # thì đây là một lần tắt LẶP — double-click, thử lại sau lỗi
+            # mạng. Trước đây so sánh `ch.get("bat_truoc") is False` nên một
+            # công cụ đọc từng bật (`bat_truoc = True`, ghi ở lần tắt đầu)
+            # bị lần tắt lặp này ĐÈ xuống False bằng chính `dang_bat` hiện
+            # tại (đã là False) — bật máy chủ lại sau đó không khôi phục
+            # được công cụ ấy nữa. So bằng sự CÓ MẶT của khoá, không so giá
+            # trị: giá trị đã ghi ở lần tắt thật sự là cái duy nhất đáng giữ.
+            if not dang_bat and "bat_truoc" in ch:
+                continue  # tắt lần thứ hai trở đi: không có gì đổi, không ghi
             ch["bat_truoc"] = dang_bat
             bm["cau_hinh"] = ch
             await _ghi_cong_cu(r["ten"], False, bm)

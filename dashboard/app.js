@@ -3498,13 +3498,53 @@ async function themMcp() {
       method: "POST",
       body: JSON.stringify({ ten: dl.ten, nhan: dl.nhan, dia_chi: dl.dia_chi, headers: dl.headers }),
     });
-    $("#mcp-ketqua").innerHTML = `<p class="empty">Đã nối "${esc(d.ten)}": ${d.so_bat}/${d.so_cong_cu} công cụ bật${
-      d.so_bo ? ", " + d.so_bo + " bị bỏ" : ""}.</p>`;
-    toast(`Đã nối máy chủ MCP "${d.ten}"`);
+    /* 201 KHÔNG có nghĩa là đã nối được. Máy chủ vẫn được tạo khi lần đồng
+     * bộ đầu hỏng — cố ý, để một lần mạng chập không làm mất bản ghi và bí
+     * mật vừa mã hoá. Nhưng báo "Đã nối" cho một máy chủ chưa hề nối được
+     * là người vận hành bỏ đi làm việc khác, còn agent thì thiếu công cụ:
+     * sai địa chỉ, sai header và DNS hỏng đều trông y hệt một máy chủ thật
+     * không có công cụ nào. Nói ra, kèm việc phải làm tiếp. */
+    if (!d.ok) {
+      $("#mcp-ketqua").innerHTML = `<p class="empty">Đã tạo "${esc(d.ten)}" nhưng chưa nối được: ${
+        esc(d.loi || "không rõ lý do")} — sửa địa chỉ/header rồi bấm Đồng bộ.</p>`;
+      toast(`Đã tạo "${d.ten}" nhưng chưa nối được máy chủ MCP`, true);
+    } else {
+      $("#mcp-ketqua").innerHTML = `<p class="empty">Đã nối "${esc(d.ten)}": ${d.so_bat}/${d.so_cong_cu} công cụ bật${
+        d.so_bo ? ", " + d.so_bo + " bị bỏ" : ""}.</p>`;
+      toast(`Đã nối máy chủ MCP "${d.ten}"`);
+    }
     $("#mcpform").reset();
+    mcpTenGoTay = false;
     await loadKyNang();
   } catch (e) { toast(e.message, true); }
 }
+
+/* Gợi ý ô Tên từ ô Nhãn (spec §5.5). Dùng lại `sinhMaPlugin` — cùng một
+ * phép bỏ dấu, cùng một luật "luôn ra mã hợp lệ" — rồi cắt về 20 ký tự cho
+ * khớp `_TEN_MAY_CHU_RE` ở máy chủ, vốn chặt hơn tên plugin (40).
+ *
+ * VÌ SAO PHẢI CÓ. Ô Tên đòi chữ thường không dấu, còn người vận hành nghĩ
+ * bằng tiếng Việt có dấu; không gợi ý thì lỗi "tên không hợp lệ" xuất hiện
+ * sau khi đã gõ xong cả form, ở đúng ô mà máy tự điền được. */
+function sinhMaMcp(nhan) {
+  return sinhMaPlugin(nhan).slice(0, 20).replace(/_+$/g, "");
+}
+
+/* Người đã tự gõ vào ô Tên thì THÔI gợi ý — đè lên chữ người đang gõ là
+ * kiểu hỏng khó chịu nhất của mọi ô tự điền. Cờ được đặt lại khi form reset
+ * (xem `themMcp`), vì form trống là một lần nhập mới. */
+let mcpTenGoTay = false;
+
+$("#mcpform")?.addEventListener("input", (e) => {
+  const f = $("#mcpform");
+  if (e.target === f.elements.ten) {
+    mcpTenGoTay = String(f.elements.ten.value).trim() !== "";
+    return;
+  }
+  if (e.target === f.elements.nhan && !mcpTenGoTay) {
+    f.elements.ten.value = sinhMaMcp(f.elements.nhan.value);
+  }
+});
 
 $("#mcp-kiem")?.addEventListener("click", kiemMcp);
 $("#mcp-them")?.addEventListener("click", themMcp);

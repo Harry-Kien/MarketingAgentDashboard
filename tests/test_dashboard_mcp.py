@@ -44,7 +44,10 @@ def test_loadMcp_dung_api_va_esc():
     assert "/mcp" in src and "esc(" in src
     # Không được nội suy trần — mọi chuỗi máy chủ (khách tự đặt tên, nhãn,
     # host, mô tả công cụ) phải đi qua esc() trước khi vào innerHTML.
-    for bieu_thuc in ("m.nhan", "m.host", "c.mo_ta", "c.ten"):
+    # `sk.loi`, `b.ten`, `b.ly_do` cũng là chữ của MÁY CHỦ NGOÀI — câu lỗi
+    # đồng bộ và lý do bỏ công cụ đều do nó viết, và cả ba đi thẳng vào
+    # innerHTML. Chúng NGUY hơn `m.nhan` (người trong nhà gõ), không kém.
+    for bieu_thuc in ("m.nhan", "m.host", "c.mo_ta", "c.ten", "sk.loi", "b.ten", "b.ly_do"):
         assert f"${{{bieu_thuc}}}" not in src, bieu_thuc
 
 
@@ -114,3 +117,63 @@ def test_docFormMcp_bat_dong_header_thieu_dau_hai_cham():
     src = _than_ham("docFormMcp")
     assert 'indexOf(":")' in src
     assert "return null" in src
+
+
+def _khoi_listener(neo: str) -> str:
+    """Khối `document.addEventListener(...)` chứa `neo`, cắt tới `});`."""
+    j = JS.index(neo)
+    i = JS.rindex("document.addEventListener(", 0, j)
+    k = JS.index("\n});", j)
+    return JS[i:k]
+
+
+def test_themMcp_noi_that_khi_dong_bo_hong():
+    """
+    201 KHÔNG có nghĩa là đã nối được: máy chủ vẫn được tạo khi lần đồng bộ
+    đầu hỏng (cố ý — một lần mạng chập không được làm mất bản ghi và bí mật
+    vừa mã hoá). Báo "Đã nối" ở ca ấy là người vận hành bỏ đi làm việc khác
+    còn agent thì thiếu công cụ; sai địa chỉ, sai header và DNS hỏng đều
+    trông y hệt một máy chủ thật không có công cụ nào.
+    """
+    src = _than_ham("themMcp")
+    assert "d.ok" in src
+    assert "chưa nối được" in src
+    assert "bấm Đồng bộ" in src
+    assert "esc(d.loi" in src, "câu lỗi do máy chủ ngoài viết — phải qua esc()"
+    # Nhánh hỏng phải là toast ĐỎ, không phải toast xanh như lúc thành công.
+    assert re.search(r"chưa nối được[^\n]*, true\)", src), "toast nhánh hỏng phải là toast đỏ"
+
+
+def test_change_hoan_tac_checkbox_khi_api_loi():
+    """
+    Hai công tắc này ĐỔI TRẠNG THÁI TRÌNH DUYỆT NGAY khi bấm, còn máy chủ
+    thì có thể từ chối (trần 12 công cụ, máy chủ đang tắt, luật hai lần bấm
+    cho quyền ghi). Không hoàn tác thì ô vuông hiện một trạng thái mà CSDL
+    không có — nguy nhất ở ô "cho phép ghi": người vận hành tưởng đã bật.
+    """
+    src = _khoi_listener('[data-mcp-cc]')
+    assert "[data-mcp-cc]" in src and "[data-mcp-ghi]" in src
+    for hoan in ("cc.checked = !cc.checked", "gh.checked = !gh.checked"):
+        assert hoan in src, hoan
+        # và nó phải nằm TRONG `catch`, không phải chạy vô điều kiện
+        assert re.search(
+            r"catch\s*\([^)]*\)\s*\{[^{}]*" + re.escape(hoan), src
+        ), f"{hoan} phải nằm trong catch"
+
+
+def test_goi_y_ten_tu_nhan_va_khong_de_len_chu_nguoi_go():
+    """
+    Ô Tên đòi chữ thường không dấu, người vận hành nghĩ bằng tiếng Việt có
+    dấu — không gợi ý thì lỗi "tên không hợp lệ" nổ sau khi đã gõ xong cả
+    form, ở đúng ô máy tự điền được. Nhưng đè lên chữ người đang gõ còn tệ
+    hơn, nên phải có cờ "đã gõ tay".
+    """
+    src = _than_ham("sinhMaMcp")
+    assert "sinhMaPlugin" in src, "dùng lại phép bỏ dấu đã có, không chép lại"
+    assert "20" in src, "tên máy chủ MCP chặt hơn tên plugin (20 vs 40)"
+    i = JS.index("function sinhMaMcp")
+    khoi = JS[i:JS.index("$(\"#mcp-kiem\")", i)]
+    assert "mcpTenGoTay" in khoi
+    assert "elements.nhan" in khoi and "elements.ten" in khoi
+    # Form reset xong thì gợi ý sống lại — form trống là một lần nhập mới.
+    assert "mcpTenGoTay = false" in _than_ham("themMcp")

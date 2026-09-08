@@ -90,8 +90,15 @@ async def them(body: ThemBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict
     # `kho_mcp.them()` trả kết quả ĐỒNG BỘ (không có khoá "ten" — nó không
     # biết tên máy chủ, chỉ biết công cụ của nó); "ten" ở đây lấy từ đúng
     # tên đã gửi lên, vì tên hợp lệ đã ở đúng dạng chuẩn hoá (chữ thường).
+    #
+    # `ok`/`loi` PHẢI đi kèm. Máy chủ được TẠO kể cả khi lần đồng bộ đầu
+    # hỏng — cố ý: một lần mạng chập không được làm mất bản ghi và bí mật vừa
+    # mã hoá. Nhưng 201 kèm "0/0 công cụ" thì dashboard xưa nay báo "Đã nối"
+    # với một máy chủ chưa hề nối được, và người vận hành bỏ đi làm việc
+    # khác. Sai địa chỉ, sai header, DNS hỏng — cả ba trông y hệt một máy
+    # chủ thật không có công cụ nào.
     return {"ten": body.ten, "so_cong_cu": kq["so_cong_cu"], "so_bat": kq["so_bat"],
-            "so_bo": kq["so_bo"], "bo": kq["bo"]}
+            "so_bo": kq["so_bo"], "bo": kq["bo"], "ok": kq["ok"], "loi": kq["loi"]}
 
 
 @router.post("/{ten}/dong-bo")

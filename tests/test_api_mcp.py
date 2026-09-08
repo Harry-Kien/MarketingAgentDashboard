@@ -106,7 +106,28 @@ def test_them_201(kho):
     d = r.json()
     assert d["ten"] == "kho_trung_tam" and d["so_cong_cu"] == 1 and d["so_bat"] == 1
     assert d["so_bo"] == 0 and d["bo"] == []
+    assert d["ok"] is True and d["loi"] is None
     assert "kho_trung_tam" in kho["may_chu"]
+
+
+def test_them_dong_bo_hong_van_201_nhung_noi_that(kho, monkeypatch):
+    """
+    Máy chủ vẫn được TẠO khi lần đồng bộ đầu hỏng — cố ý, để một lần mạng
+    chập không làm mất bản ghi và bí mật vừa mã hoá. Nhưng nếu response chỉ
+    có `so_cong_cu: 0` thì dashboard không phân biệt được "máy chủ thật
+    không có công cụ nào" với "sai địa chỉ / sai header / DNS hỏng", và nó
+    báo "Đã nối" cho cả bốn ca.
+    """
+    async def them_hong(ten, nhan, dia_chi, headers, *, boi):
+        return {"ok": False, "so_cong_cu": 0, "so_bat": 0, "so_bo": 0, "bo": [],
+                "loi": "Không nối được máy chủ MCP: ConnectError"}
+    monkeypatch.setattr(api.kho_mcp, "them", them_hong)
+
+    r = TestClient(_app()).post("/api/mcp", json=_than())
+    assert r.status_code == 201, r.text
+    d = r.json()
+    assert d["ok"] is False
+    assert "ConnectError" in d["loi"]
 
 
 def test_ten_sai_422(kho):

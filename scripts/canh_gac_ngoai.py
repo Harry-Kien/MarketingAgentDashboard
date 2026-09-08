@@ -226,6 +226,68 @@ def _song_sau_dung_lai() -> bool:
     return _song()[0]
 
 
+
+
+def _sidecar_song() -> bool:
+    try:
+        with urllib.request.urlopen(
+                (settings.zalo_sidecar_url or "http://127.0.0.1:3210").rstrip("/") + "/healthz", timeout=CHO_GIAY) as r:
+            return r.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def _can_sidecar() -> bool:
+    """
+    Máy này có dùng Zalo cá nhân không — đọc CẤU HÌNH, không đọc CSDL.
+
+    Hỏi bảng `channel_accounts` thì đúng hơn về mặt ngữ nghĩa, nhưng nó
+    làm người canh chết chung với thứ nó đang canh: Postgres sập là lúc
+    người canh cần chạy nhất. `tests/test_canh_gac.py` canh đúng ràng buộc
+    ấy và đã bắt được bản nháp đầu của hàm này.
+
+    `zalo_sidecar_secret` rỗng nghĩa là sidecar chưa từng được cấu hình —
+    nó không chạy là ĐÚNG, và báo động ở đó là đỏ vĩnh viễn.
+    """
+    return bool((settings.zalo_sidecar_secret or "").strip())
+
+
+def _bat_sidecar() -> tuple[bool, str]:
+    from scripts import khoi_dong as k
+
+    return k.buoc_sidecar()
+
+
+def _lo_sidecar() -> None:
+    """
+    Sidecar chết MỘT MÌNH thì bật riêng nó, không dựng lại cả chuỗi.
+
+    LỖI THẬT, đo được 08.09.2026: sidecar chết, app vẫn trả healthz 200,
+    nên `_song()` nói "sống" và người canh không làm gì. `dung_lai()` vốn
+    đã có bước sidecar — nó chỉ không bao giờ chạy, vì cửa vào là "app
+    chết". Chỗ hỏng nằm ở phát hiện, không ở dựng lại.
+
+    Nặng hơn vẻ ngoài của nó: khi chưa có HTTPS công khai thì Zalo cá nhân
+    là kênh DUY NHẤT còn nhận được tin, nên sidecar chết là hệ thống không
+    nhận tin từ đâu cả — mà mọi đèn vẫn xanh.
+
+    Không gọi `dung_lai()`: hàm ấy tắt và bật lại app. App đang phục vụ tốt
+    mà bị tắt vì sidecar chết là tự tạo một khoảng chết thứ hai để chữa
+    khoảng chết thứ nhất.
+    """
+    if _sidecar_song() or not _can_sidecar():
+        return
+    ok, mo_ta = _bat_sidecar()
+    if ok:
+        # Chữa xong vẫn phải báo: tự chữa trong im lặng thì không ai biết
+        # nó hay chết ở đâu, và cũng không ai đi tìm nguyên nhân gốc.
+        _bao("tu_dung_lai", f"sidecar Zalo đã chết một mình — đã bật lại ({mo_ta})")
+    else:
+        _bao("hong", f"sidecar Zalo chết và KHÔNG bật lại được ({mo_ta}). "
+                     "Kênh Zalo cá nhân đang đứt — chạy "
+                     "python -m scripts.chay_sidecar_zalo --hien để xem lỗi.")
+
+
 def main() -> int:
     truoc = _doc_truoc()
     song, ly_do = _song()
@@ -249,6 +311,11 @@ def main() -> int:
         _bao("phuc_hoi", f"{DIA_CHI} trả lời bình thường trở lại")
     else:
         print(f"[{moi['trang_thai']}] {ly_do}")
+
+    # Chỉ khi app SỐNG. App chết thì `dung_lai()` đã dựng cả bốn bước, và
+    # bật riêng thêm lần nữa là hai tiến trình sidecar tranh cổng 3210.
+    if song:
+        _lo_sidecar()
 
     _ghi(moi)
     # Mã thoát khác 0 khi hỏng, để Task Scheduler và cron cũng biết.

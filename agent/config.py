@@ -338,6 +338,12 @@ class Settings(BaseSettings):
     # khoản quản trị là chiếm luôn đường ra mạng của máy chủ.
     ky_nang_host_cho_phep: str = ""
 
+    # Máy chủ MCP chạy NGAY TRÊN máy này mà agent được gọi, dạng host:cổng
+    # cách nhau bằng dấu phẩy (ví dụ "127.0.0.1:8765"). Rào SSRF cấm mọi địa
+    # chỉ nội bộ, nhưng máy chủ MCP hay chạy ở loopback — nên mở từng cặp
+    # host:cổng một, và chỉ từ .env, không từ dashboard (cùng lý do ở trên).
+    mcp_may_chu_noi_bo: str = ""
+
     # --- Kho / ERP ---
     # tep = đọc data/catalog.json (MẶC ĐỊNH — giữ clone sạch chạy được).
     # Đổi giá trị này là đổi nguồn dữ liệu sản phẩm, không đụng agent.

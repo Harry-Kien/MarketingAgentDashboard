@@ -80,7 +80,7 @@ Ba phương án đã cân nhắc:
 
 ## 4. Dữ liệu
 
-### 4.1 Bảng mới — migration `0016_mcp_may_chu.sql`
+### 4.1 Bảng mới — migration `0017_mcp_may_chu.sql`
 
 ```sql
 CREATE TABLE IF NOT EXISTS mcp_may_chu (

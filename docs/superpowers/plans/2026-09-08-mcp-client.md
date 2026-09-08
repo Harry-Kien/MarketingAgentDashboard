@@ -24,7 +24,7 @@
 
 ## Cấu trúc file
 
-- Create: `agent/migrations/versions/0016_mcp_may_chu.sql`
+- Create: `agent/migrations/versions/0017_mcp_may_chu.sql`
 - Modify: `agent/config.py` (`mcp_may_chu_noi_bo`), `.env.example`, `scripts/sinh_so_do.py` (`NHOM`), `docs/kien-truc.md` (sinh)
 - Create: `agent/ky_nang/mcp_khach.py`
 - Modify: `agent/ky_nang/ban_mo_ta.py` (loại `mcp`), `agent/ky_nang/chay.py` (nhánh), `agent/core/tools.py` (chốt ghi/sandbox), `agent/ky_nang/kho_ky_nang.py` (`KhoDay`, `kiem_tran_them`, `liet_ke` nhãn mcp), `agent/ky_nang/goi.py` (`_kiem_tran_plugin` dùng chung)
@@ -39,7 +39,7 @@
 ### Task 1: Nền — migration 0016, cấu hình, sơ đồ
 
 **Files:**
-- Create: `agent/migrations/versions/0016_mcp_may_chu.sql`
+- Create: `agent/migrations/versions/0017_mcp_may_chu.sql`
 - Modify: `agent/config.py` (sau `ky_nang_host_cho_phep`, dòng ~339), `.env.example` (sau `KY_NANG_HOST_CHO_PHEP=`, dòng ~251), `scripts/sinh_so_do.py` (`NHOM`, nhóm chứa `ky_nang_cai_dat`), `docs/kien-truc.md` (sinh lại)
 - Test: `tests/test_kho_mcp.py` (phần 1)
 
@@ -69,7 +69,7 @@ def chay(coro):
 
 
 def test_migration_0016_tao_bang_mcp_may_chu():
-    sql = (ROOT / "agent" / "migrations" / "versions" / "0016_mcp_may_chu.sql").read_text(encoding="utf-8")
+    sql = (ROOT / "agent" / "migrations" / "versions" / "0017_mcp_may_chu.sql").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS mcp_may_chu" in sql
     for cot in ("ten", "nhan", "dia_chi", "bat", "key_version", "nonce", "ciphertext", "suc_khoe", "tao_boi"):
         assert re.search(rf"^\s+{cot}\s", sql, re.M), cot
@@ -88,7 +88,7 @@ def test_env_example_va_settings_co_bien_noi_bo():
 - [ ] **Step 3: Migration**
 
 ```sql
--- agent/migrations/versions/0016_mcp_may_chu.sql
+-- agent/migrations/versions/0017_mcp_may_chu.sql
 -- Máy chủ MCP bên ngoài mà agent được phép gọi công cụ.
 --
 -- VÌ SAO KHÔNG CÓ BẢNG CÔNG CỤ RIÊNG: công cụ của máy chủ ghi vào
@@ -143,7 +143,7 @@ MCP_MAY_CHU_NOI_BO=
 - [ ] **Step 5: Xanh, toàn bộ, commit**
 
 ```bash
-git add agent/migrations/versions/0016_mcp_may_chu.sql agent/config.py .env.example scripts/sinh_so_do.py docs/kien-truc.md tests/test_kho_mcp.py
+git add agent/migrations/versions/0017_mcp_may_chu.sql agent/config.py .env.example scripts/sinh_so_do.py docs/kien-truc.md tests/test_kho_mcp.py
 git commit -m "Máy chủ MCP: bảng, biến cho phép máy chủ nội bộ, sơ đồ"
 ```
 

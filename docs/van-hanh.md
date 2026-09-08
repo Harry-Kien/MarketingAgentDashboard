@@ -385,6 +385,58 @@ tính lượt gọi trong Phòng thử — con số ấy trả lời đúng câu
 
 ---
 
+## Nối một máy chủ MCP
+
+Nối một máy chủ ngoài chạy Model Context Protocol làm nguồn công cụ — xem
+`docs/ky-nang.md` mục "Máy chủ MCP" cho luật đầy đủ (giới hạn, rào địa chỉ,
+đọc/ghi). Năm bước:
+
+0. **Mở `.env`, thêm host.** Máy chủ chạy trên máy khác (công khai) thì
+   thêm vào `KY_NANG_HOST_CHO_PHEP`; máy chủ chạy ngay trên máy này thì
+   thêm `host:cổng` vào `MCP_MAY_CHU_NOI_BO` (ví dụ `127.0.0.1:8765`). Cả
+   hai biến cố ý KHÔNG có ô nhập trên dashboard — đây là rào SSRF, sửa
+   được từ dashboard là cho một tài khoản nhân viên tự mở đường agent gọi
+   ra một host bất kỳ mà không ai duyệt. Sửa xong **khởi động lại** agent.
+1. **Kiểm.** Dashboard → **Kỹ năng** → panel **Máy chủ MCP** → điền địa
+   chỉ (và header xác thực nếu cần) → nút **Kiểm**. Không ghi gì, chỉ nối
+   thử và liệt kê công cụ sẽ có, kèm công cụ bị bỏ và lý do (mô tả có câu
+   ra lệnh, lược đồ quá lớn...).
+2. **Thêm.** Nút **Thêm** tạo máy chủ rồi đồng bộ ngay — công cụ ĐỌC tự
+   bật nếu còn chỗ dưới trần 12 plugin, công cụ GHI luôn để tắt.
+3. **Xem công cụ, bật cái cần.** Bảng công cụ dưới mỗi máy chủ có công tắc
+   Bật cho từng cái. Công cụ GHI có thêm công tắc "cho phép ghi ngoài
+   phòng thử" — **chỉ bật nó SAU KHI đã thử công cụ đó trong Phòng thử**
+   (bước 4); bật trước khi thử là cho một công cụ chưa ai kiểm được phép
+   đổi dữ liệu ở hệ thống người khác ngay lượt khách kế tiếp.
+4. **Phòng thử.** Nhắn một câu khiến model gọi tới công cụ vừa bật. Công
+   cụ GHI trong Phòng thử luôn bị MÔ PHỎNG — không gọi thật máy chủ ngoài,
+   dù đã bật "cho phép ghi" — nên bước này an toàn để thử trước khi bật cờ
+   đó ngoài đời.
+
+**Đọc dòng đỏ đồng bộ.** Panel hiện lần đồng bộ gần nhất ok/lỗi. Đỏ vì
+"không nối được" nghĩa là mạng hoặc địa chỉ có vấn đề — công cụ CŨ vẫn giữ
+nguyên, agent không mất năng lực giữa chừng. Dòng "N công cụ bị bỏ" kèm
+tên và lý do là chuyện khác: máy chủ vẫn nối được, nhưng một vài công cụ
+của nó không qua bộ kiểm bản mô tả (mô tả có câu ra lệnh, lược đồ sai
+dạng, tên đụng plugin khác) — sửa ở phía máy chủ MCP rồi Đồng bộ lại, hoặc
+chấp nhận thiếu công cụ đó.
+
+**Kiểm sau khi thêm — không tốn tiền model.**
+
+```bash
+python -m scripts.kiem_mcp <ten-may-chu>
+```
+
+Kiểm một máy chủ đã lưu: địa chỉ có qua rào không, nối được không, công cụ
+máy chủ đang khai so với công cụ đã lưu (thiếu/thừa), công cụ nào bị bỏ ở
+lần Đồng bộ gần nhất, và gọi thử THẬT một công cụ ĐỌC đang bật không có
+tham số bắt buộc (nếu có công cụ nào đủ điều kiện — không có thì bỏ qua,
+không phải lỗi). Không có cờ `--nhanh`: khác `kiem_goi`, cả lệnh chỉ có
+đúng một việc và việc đó vốn đã cần ra mạng. Mã thoát khác 0 khi có mục
+HỎNG.
+
+---
+
 ## Dấu hiệu cổng ERP đang hỏng
 
 Khác mục trên, đây là các kiểu hỏng **đã lường trước và có lưới chặn**, chưa

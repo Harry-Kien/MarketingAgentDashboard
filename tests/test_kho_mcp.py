@@ -504,3 +504,105 @@ def test_kiem_ket_noi_khong_ghi_gi_va_bao_ly_do_bo(kho):
     bo = [c for c in kq["cong_cu"] if c.get("ly_do_bo")]
     assert [c["ten"] for c in bo] == ["xau"]
     assert not kho.may_chu and not kho.plugin
+
+
+# ---------------------------------------------------------------
+#  Task 7: kiem_may_chu_da_luu / goi_cong_cu_da_luu — nguồn của kiem_mcp.py
+# ---------------------------------------------------------------
+
+def test_kiem_may_chu_da_luu_khong_ton_tai(kho):
+    from agent.ky_nang import kho_mcp
+
+    with pytest.raises(kho_mcp.MayChuKhongTonTai):
+        chay(kho_mcp.kiem_may_chu_da_luu("khong_co"))
+
+
+def test_kiem_may_chu_da_luu_tra_su_that_tho_khong_tu_loc(kho):
+    """
+    Máy chủ giả khai CẢ BA công cụ (kể cả "xau", bị bộ kiểm bỏ lúc `them()`
+    đồng bộ) — `kiem_may_chu_da_luu` KHÔNG tự lọc lại danh sách máy chủ trả
+    về, chỉ đọc nguyên; diễn giải "xau" là thiếu-vì-bị-bỏ là việc của
+    `scripts/kiem_mcp.py` (so `cong_cu_may_chu` với `cong_cu_da_luu`, cộng
+    `bo_dong_bo_gan_nhat`).
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    kq = chay(kho_mcp.kiem_may_chu_da_luu("kho"))
+    assert kq["loi_dia_chi"] is None and kq["dia_chi_host"] == "127.0.0.1:8765"
+    assert kq["noi_duoc"] is True and kq["loi_ket_noi"] is None
+    assert set(kq["cong_cu_may_chu"]) == {"tra_ton", "ghi_don", "xau"}
+    goc_luu = {c["cong_cu_goc"] for c in kq["cong_cu_da_luu"]}
+    assert goc_luu == {"tra_ton", "ghi_don"}  # "xau" bị bộ kiểm bỏ, không vào đây
+    ghi = next(c for c in kq["cong_cu_da_luu"] if c["cong_cu_goc"] == "ghi_don")
+    assert ghi["ghi"] is True and ghi["bat"] is False
+    tra = next(c for c in kq["cong_cu_da_luu"] if c["cong_cu_goc"] == "tra_ton")
+    assert tra["ghi"] is False and tra["bat"] is True and tra["required"] == ["ma"]
+
+
+def test_kiem_may_chu_da_luu_bao_cong_cu_bi_bo_lan_dong_bo_truoc(kho):
+    """`bo_dong_bo_gan_nhat` lấy từ `suc_khoe.bo` đã ghi lúc `them()` đồng bộ."""
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    kq = chay(kho_mcp.kiem_may_chu_da_luu("kho"))
+    assert kq["bo_dong_bo_gan_nhat"] == [
+        {"ten": "xau", "ly_do": kho.may_chu["kho"]["suc_khoe"]["bo"][0]["ly_do"]}
+    ]
+
+
+def test_kiem_may_chu_da_luu_dia_chi_bi_rao_thi_khong_thu_noi(kho, monkeypatch):
+    """
+    `.env` siết lại SAU khi máy chủ đã lưu: `kiem_dia_chi` ném lỗi, hàm dừng
+    NGAY — không gọi `liet_ke_cong_cu` để lặp lại đúng lỗi đó bằng một vòng
+    mạng thừa.
+    """
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    def rao(url):
+        raise mk.LoiMCP("host ngoài danh sách")
+
+    async def khong_duoc_goi(*a, **k):
+        raise AssertionError("không được gọi liet_ke_cong_cu khi địa chỉ đã bị rào")
+
+    monkeypatch.setattr(mk, "kiem_dia_chi", rao)
+    monkeypatch.setattr(mk, "liet_ke_cong_cu", khong_duoc_goi)
+    kq = chay(kho_mcp.kiem_may_chu_da_luu("kho"))
+    assert kq["loi_dia_chi"] and "host ngoài danh sách" in kq["loi_dia_chi"]
+    assert kq["noi_duoc"] is False and kq["cong_cu_may_chu"] == []
+    # Công cụ đã lưu vẫn hiện ra — người vận hành cần biết cấu hình hiện có
+    # dù máy chủ đang không gọi được.
+    assert {c["cong_cu_goc"] for c in kq["cong_cu_da_luu"]} == {"tra_ton", "ghi_don"}
+
+
+def test_kiem_may_chu_da_luu_mang_hong_thi_bao_loi_ket_noi(kho, monkeypatch):
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+
+    async def hong(url, headers, *, http_client=None):
+        raise mk.LoiMCP("Máy chủ không trả lời trong 10s.")
+
+    monkeypatch.setattr(mk, "liet_ke_cong_cu", hong)
+    kq = chay(kho_mcp.kiem_may_chu_da_luu("kho"))
+    assert kq["loi_dia_chi"] is None
+    assert kq["noi_duoc"] is False and "10s" in kq["loi_ket_noi"]
+
+
+def test_goi_cong_cu_da_luu_goi_dung_cong_cu_goc(kho):
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    kq = chay(kho_mcp.goi_cong_cu_da_luu("kho", "mcp_kho_tra_ton"))
+    assert kq["ket_qua"] == "ok"
+    assert kho.goi_that[0][2] == "tra_ton"  # gọi đúng tên GỐC, không phải tên cho model
+
+
+def test_goi_cong_cu_da_luu_khong_thuoc_may_chu_thi_bao_khong_ton_tai(kho):
+    from agent.ky_nang import kho_mcp
+
+    chay(kho_mcp.them("kho", "Kho", "http://127.0.0.1:8765/mcp", None, boi="qt"))
+    with pytest.raises(kho_mcp.MayChuKhongTonTai):
+        chay(kho_mcp.goi_cong_cu_da_luu("kho", "khong_co"))

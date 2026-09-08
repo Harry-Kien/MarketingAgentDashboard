@@ -48,11 +48,18 @@ from agent.core import thu_nghiem
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang import mcp_khach as mk
 
-# Xuất lại hai tên này để `agent/api/mcp_may_chu.py` không phải `import
+# Xuất lại các hằng và `LoiMCP` để `agent/api/mcp_may_chu.py` và
+# `scripts/sinh_ky_nang.py`/`scripts/kiem_mcp.py` không phải `import
 # mcp_khach` trực tiếp — bài kiểm AST ở `test_ky_nang_plugin.py` chặn đúng
 # việc đó (chỉ `kho_mcp.py` được nhập khẩu `mcp_khach`), vì mọi bí mật, hạn
 # mức và nhật ký của máy chủ MCP phải đi qua lớp này, không có đường tắt.
-from agent.ky_nang.mcp_khach import MCP_MAY_CHU_TOI_DA, LoiMCP  # noqa: F401
+from agent.ky_nang.mcp_khach import (  # noqa: F401
+    CONG_CU_MOI_MAY_CHU_TOI_DA,
+    HAN_GOI_GIAY,
+    KET_QUA_TOI_DA,
+    MCP_MAY_CHU_TOI_DA,
+    LoiMCP,
+)
 from agent.ky_nang.ban_mo_ta import _TEN_MAY_CHU_RE, LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.kho_ky_nang import KhoDay
 from agent.security.credential_vault import (
@@ -844,3 +851,102 @@ async def goi_cong_cu(bm, args) -> dict:
             ten, bm.ten, _che_dia_chi(kq["loi"], mc["dia_chi"])[:200],
         )
     return kq
+
+
+async def kiem_may_chu_da_luu(ten: str) -> dict:
+    """
+    Kiểm một máy chủ MCP ĐÃ LƯU — nguồn dữ liệu duy nhất của
+    `scripts/kiem_mcp.py`.
+
+    VÌ SAO GỘP MẠNG + BÍ MẬT VÀO ĐÂY, KHÔNG ĐỂ SCRIPT TỰ GỌI. `scripts/`
+    không được nhập khẩu `mcp_khach` trực tiếp (bài kiểm AST ở
+    `test_ky_nang_plugin.py` chặn mọi nơi trừ tệp này), và header xác thực
+    chỉ được giải mã ở đây. Script kiểm chỉ còn việc DIỄN GIẢI — so
+    thiếu/thừa, chọn công cụ để thử — bằng hàm thuần của riêng nó, ăn thẳng
+    dict trả về từ hàm này.
+
+    Trả về SỰ THẬT thô, không tự kết luận đạt/hỏng: script quyết định thế
+    nào là hỏng, hàm này chỉ nói "địa chỉ có qua rào không", "nối được
+    không", "máy chủ đang khai gì", "đã lưu gì", "lần đồng bộ trước bỏ gì".
+    KHÔNG gọi công cụ nào — xem `goi_cong_cu_da_luu`, tách riêng để việc
+    CHỌN công cụ nào để thử ở lại là một hàm thuần.
+    """
+    mc = await _doc_may_chu(ten)
+    if mc is None:
+        raise MayChuKhongTonTai(f"Không có máy chủ MCP tên {ten!r}.")
+
+    # Đọc công cụ ĐÃ LƯU trước, không phụ thuộc việc nối máy chủ có thành
+    # công hay không: người vận hành vẫn cần biết cấu hình hiện có kể cả
+    # khi máy chủ đang chết.
+    rows = await db.fetch(
+        "SELECT ten, bat, ban_mo_ta FROM ky_nang_cai_dat WHERE goi = $1", _goi(ten)
+    )
+    cong_cu_da_luu: list[dict] = []
+    for r in rows:
+        ch = _tu_jsonb(r["ban_mo_ta"]).get("cau_hinh") or {}
+        cong_cu_da_luu.append({
+            "ten_model": r["ten"],
+            "cong_cu_goc": ch.get("cong_cu_goc", ""),
+            "bat": bool(r["bat"]),
+            "ghi": bool(ch.get("ghi", False)),
+            "required": list((ch.get("luoc_do") or {}).get("required") or []),
+        })
+
+    ra: dict = {
+        "dia_chi_host": None,
+        "loi_dia_chi": None,
+        "noi_duoc": False,
+        "loi_ket_noi": None,
+        "cong_cu_may_chu": [],
+        "cong_cu_da_luu": cong_cu_da_luu,
+        # Lần đồng bộ gần nhất bỏ công cụ nào vì lý do gì — đã nằm sẵn
+        # trong `suc_khoe` (ghi ở `_ket_thuc`), không cần hỏi lại máy chủ.
+        "bo_dong_bo_gan_nhat": _tu_jsonb(mc["suc_khoe"]).get("bo") or [],
+    }
+
+    try:
+        # Kiểm LẠI đúng luật `goi_cong_cu` áp dụng lúc chạy thật: `.env` có
+        # thể đã siết lại SAU khi máy chủ này được lưu.
+        ra["dia_chi_host"] = mk.kiem_dia_chi(mc["dia_chi"])
+    except mk.LoiMCP as exc:
+        # Địa chỉ đã bị rào chặn thì không thử nối tiếp — `liet_ke_cong_cu`
+        # sẽ gọi lại đúng `kiem_dia_chi` và ném đúng lỗi này, thử thêm chỉ
+        # tốn một vòng mạng để lặp lại điều đã biết.
+        ra["loi_dia_chi"] = _che_dia_chi(exc, mc["dia_chi"])
+        return ra
+
+    try:
+        headers = _giai_ma_headers(mc)
+    except (VaultChuaSanSang, InvalidCredentialCiphertext) as exc:
+        ra["loi_ket_noi"] = _che_dia_chi(exc, mc["dia_chi"])
+        return ra
+
+    try:
+        cong_cu = await mk.liet_ke_cong_cu(mc["dia_chi"], headers)
+    except mk.LoiMCP as exc:
+        ra["loi_ket_noi"] = _che_dia_chi(exc, mc["dia_chi"])
+        return ra
+
+    ra["noi_duoc"] = True
+    ra["cong_cu_may_chu"] = sorted(c.ten for c in cong_cu)
+    return ra
+
+
+async def goi_cong_cu_da_luu(ten: str, ten_model: str) -> dict:
+    """
+    Gọi THẬT một công cụ đã lưu của máy chủ `ten`, dùng cho
+    `scripts/kiem_mcp.py` sau khi nó tự chọn công cụ (hàm thuần, xem
+    `chon_cong_cu_thu` ở `scripts/kiem_mcp.py`).
+
+    Đi qua ĐÚNG `goi_cong_cu` mà một lượt khách thật dùng — không phải một
+    đường tắt riêng cho script kiểm — nên mọi chốt (máy chủ tắt, bí mật
+    không mở được, cắt/quét kết quả) áp dụng y hệt.
+    """
+    goi_ten = _goi(ten)
+    row = await db.fetchrow(
+        "SELECT ten, bat, ban_mo_ta, goi FROM ky_nang_cai_dat WHERE ten = $1", ten_model
+    )
+    if row is None or (row["goi"] or "") != goi_ten:
+        raise MayChuKhongTonTai(f"{ten_model!r} không phải công cụ của máy chủ {ten!r}.")
+    bm = doc_ban_mo_ta(_tu_jsonb(row["ban_mo_ta"]), tu_dong_bo=True)
+    return await goi_cong_cu(bm, {})

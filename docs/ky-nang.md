@@ -145,3 +145,51 @@ Tắt gói thì gỡ luôn tài liệu của gói khỏi kho tri thức (bật l
 
 Dashboard đếm số lần mỗi công cụ (viết sẵn, plugin rời, hay của gói) được gọi trong 7 ngày gần nhất, và số lần lỗi — trừ những lượt gọi trong Phòng thử, vì đó là hàng giả lập, không phải khách thật.
 
+
+## Máy chủ MCP
+
+Nối một máy chủ ngoài chạy Model Context Protocol làm nguồn công cụ — không viết Python, cũng không phải gói kỹ năng. Chỉ **Streamable HTTP**, không stdio: stdio nghĩa là tiến trình agent tự chạy mã của máy chủ đó trong CÙNG tiến trình, tức là mã ấy đứng cùng phía với sáu lớp lưới an toàn thay vì đứng ngoài như một nguồn không tin cậy — đúng nguyên tắc "kỹ năng cắm thêm là DỮ LIỆU, không phải mã" ở đầu tài liệu này. HTTP giữ nó ở đúng phía bên kia.
+
+
+### Rào địa chỉ — hai biến `.env`, không sửa được từ dashboard
+
+- `KY_NANG_HOST_CHO_PHEP` — host công khai được phép gọi tới (dùng chung với plugin `goi_api_doc`).
+- `MCP_MAY_CHU_NOI_BO` — máy chủ MCP chạy ngay trên máy này, dạng `host:cổng`; dải nội bộ khác (10.x, 192.168.x...) không bao giờ được phép dù có khai hay không.
+
+Cả hai chỉ sửa được ở `.env` rồi khởi động lại — cố ý KHÔNG có ô nhập trên dashboard. Đây là rào SSRF: cho sửa từ dashboard là cho một tài khoản nhân viên tự mở đường agent gọi vào mạng trong hoặc ra một host bất kỳ, không qua ai duyệt.
+
+
+### Công cụ MCP là plugin có chủ
+
+Mỗi công cụ đồng bộ về nằm trong CÙNG bảng plugin, cột `goi` mang giá trị `mcp:<tên máy chủ>` — mọi chốt đã có cho plugin (trần, tắt lúc thi hành, số đo 7 ngày) áp dụng nguyên xi, tính vào trần **12** plugin bật cùng lúc như plugin rời và công cụ của gói.
+
+
+### Giới hạn
+
+
+- Nhiều nhất **5** máy chủ.
+- Mỗi lần đồng bộ nhận tối đa **20** công cụ mỗi máy chủ; công cụ dư bị bỏ có lý do, không âm thầm mất.
+- Mỗi lời gọi hạn **10 giây**; máy chủ không trả lời kịp thì agent chuyển người, không đoán kết quả thay công cụ.
+- Kết quả bị cắt còn tối đa **8000** ký tự VÀ bị quét bằng đúng bộ soi prompt injection dùng cho tin khách trước khi vào ngữ cảnh model — máy chủ ngoài là nguồn không tin cậy như tin khách.
+
+
+### Đọc mặc định bật, ghi phải bật tay — hai lần
+
+Công cụ ĐỌC tự bật khi còn chỗ dưới trần. Công cụ GHI (đổi dữ liệu trên hệ thống người khác) mặc định TẮT, và bật nó lên cần đúng hai lần bấm riêng: bật công cụ, rồi bật thêm "cho phép ghi ngoài phòng thử" — quyết định thứ hai này KHÔNG tự khôi phục khi đồng bộ lại hay khi tắt/bật lại máy chủ. Trong Phòng thử, mọi công cụ ghi bị MÔ PHỎNG chứ không gọi thật, dù đã bật "cho phép ghi" — thử trong Phòng thử không bao giờ đổi dữ liệu ở hệ thống người khác.
+
+
+### Đồng bộ: qua bộ kiểm, hỏng thì bỏ có lý do
+
+Mô tả và lược đồ (schema) của mỗi công cụ máy chủ khai phải qua đúng bộ kiểm bản mô tả plugin (soi injection, chặn độ dài, chặn kiểu tham số lạ) trước khi vào bảng plugin. Công cụ nào không qua thì bị BỎ, không phải cả máy chủ — lý do ghi lại trong kết quả đồng bộ và sự kiện `mcp.dong_bo`, hiện trên dashboard. Máy chủ hỏng lúc đồng bộ (mạng chập, timeout) giữ NGUYÊN công cụ cũ, không xoá sạch giữa ngày.
+
+
+### Hỏng → chuyển người
+
+Mọi nhánh hỏng của một lời gọi công cụ MCP — địa chỉ bị rào chặn sau khi đã lưu, máy chủ chết hay timeout, kết quả chứa câu ra lệnh cho model — đều trả về cùng một điều: KHÔNG đoán số liệu thay công cụ, chuyển hội thoại cho người.
+
+```bash
+python -m scripts.kiem_mcp <ten-may-chu>
+```
+
+Kiểm một máy chủ đã lưu mà không tốn tiền model: địa chỉ có qua rào không, nối được không, công cụ máy chủ so với công cụ đã lưu, công cụ nào bị bỏ ở lần đồng bộ gần nhất, gọi thử một công cụ ĐỌC. Xem `docs/van-hanh.md` mục "Nối một máy chủ MCP".
+

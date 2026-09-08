@@ -133,6 +133,19 @@ Cần vì hướng dẫn, công cụ và tài liệu nằm ở ba chỗ khác nh
 hỏng cũng im lặng: agent trả lời như chưa từng có gói, dashboard vẫn hiện
 "đang bật". Mã thoát khác 0 khi có mảnh HỎNG.
 
+Sau khi nối một **máy chủ MCP**, kiểm nó đã sống chưa — cũng **không tốn
+tiền model**:
+
+```bash
+python -m scripts.kiem_mcp <ten-may-chu>
+```
+
+Nối máy chủ xong rồi gọi tới, hoặc gọi thử một công cụ ĐỌC không tham số
+bắt buộc, so công cụ đã lưu với công cụ máy chủ đang khai — mảnh nào lệch
+cũng im lặng y hệt gói kỹ năng: dashboard vẫn hiện máy chủ "đang bật" dù
+công cụ đã đổi ở phía máy chủ mà chưa Đồng bộ lại. Mã thoát khác 0 khi có
+mục HỎNG.
+
 Sinh lại tài liệu **sau khi đổi schema, thêm kỹ năng, hoặc chạy eval** (có
 test canh việc này):
 

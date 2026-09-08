@@ -550,63 +550,40 @@
 
     <!-- ============ KỸ NĂNG (SKILL) VÀ PLUGIN ============ -->
     <section class="view" data-view="kynang">
+      <!-- KHỐI 1 · agent đang làm được gì. MỘT danh sách cho cả bốn nguồn:
+           viết sẵn, tự tạo, của gói, của máy chủ MCP. Ba danh sách rời thì
+           không chỗ nào hiện được tổng suất cắm thêm, mà trần 12 lại đếm
+           chung — người vận hành chỉ biết mình chạm trần lúc bị từ chối. -->
       <section class="panel">
-        <h2 class="panel__head">Kỹ năng viết sẵn
-          <span class="panel__note">bật/tắt có hiệu lực từ tin nhắn kế tiếp</span></h2>
+        <h2 class="panel__head">Kỹ năng agent đang có
+          <span class="panel__note" id="kynang-dem"></span></h2>
         <p class="panel__note">
           Tắt một kỹ năng KHÔNG làm agent im lặng về việc đó — nó chuyển hội
           thoại cho người. Đọc cột “tắt thì mất gì” trước khi bấm.
         </p>
-        <div id="kynang-cosan" class="rows"><p class="empty">Đang tải…</p></div>
+        <div class="chips" id="kynang-loc" aria-label="Lọc theo nguồn">
+          <button type="button" class="chip is-on" data-loc-nguon="tat-ca">Tất cả</button>
+          <button type="button" class="chip" data-loc-nguon="viet-san">Viết sẵn</button>
+          <button type="button" class="chip" data-loc-nguon="tu-tao">Tự tạo</button>
+          <button type="button" class="chip" data-loc-nguon="goi">Từ gói</button>
+          <button type="button" class="chip" data-loc-nguon="mcp">Từ MCP</button>
+        </div>
+        <div id="kynang-tatca" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
 
-      <div class="split">
-        <section class="panel">
-          <h2 class="panel__head">Gói kỹ năng
-            <span class="panel__note">hướng dẫn + công cụ + tài liệu, cài một lần</span></h2>
-          <p class="panel__note">
-            Hướng dẫn của gói là một mẩu prompt do người trong nhà viết: nó bị quét
-            như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
-          </p>
-          <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
-        </section>
-        <section class="panel">
-          <h2 class="panel__head">Cài gói</h2>
-          <form id="goiform" class="form">
-            <label class="field field--wide">
-              <span>Dán JSON của gói</span>
-              <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
-            </label>
-            <label class="field field--wide">
-              <span>hoặc chọn tệp .json / .zip</span>
-              <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
-            </label>
-            <div class="rowbtns">
-              <button type="button" class="btn" id="goi-kiem">Kiểm</button>
-              <button type="button" class="btn btn--primary" id="goi-cai">Cài</button>
-            </div>
-          </form>
-          <div id="goi-ketqua" class="rows"></div>
-        </section>
-      </div>
+      <!-- KHỐI 2 · thêm cái mới thế nào. MỘT nút, ba lựa chọn, mỗi lựa chọn
+           một câu nói khi nào dùng nó. Ba form đặt cạnh nhau trông ngang
+           hàng là lý do người vận hành đứng lại ở đây. -->
+      <section class="panel">
+        <h2 class="panel__head">Thêm kỹ năng</h2>
+        <div class="chips" id="them-chon" aria-label="Cách thêm kỹ năng">
+          <button type="button" class="chip is-on" data-them="bang">Tự viết bảng hỏi đáp</button>
+          <button type="button" class="chip" data-them="goi">Cài gói có sẵn</button>
+          <button type="button" class="chip" data-them="mcp">Nối máy chủ MCP</button>
+        </div>
+        <p class="panel__note" id="them-giaithich"></p>
 
-      <div class="split">
-        <section class="panel">
-          <h2 class="panel__head">Kỹ năng cắm thêm</h2>
-          <p class="panel__note">
-            Thêm công cụ cho agent mà không sửa mã. Bản mô tả là dữ liệu, không
-            phải mã — bốn loại đều chỉ đọc.
-          </p>
-          <div id="kynang-plugin" class="rows"><p class="empty">Chưa có plugin nào.</p></div>
-        </section>
-
-        <section class="panel">
-          <h2 class="panel__head">Tạo hoặc sửa plugin</h2>
-          <p class="panel__note">
-            Không cần biết kỹ thuật: bấm một mẫu có sẵn hoặc chọn loại, điền
-            bằng tiếng Việt, bấm <b>Chạy thử</b> xem agent trả gì rồi mới
-            <b>Lưu và bật</b>.
-          </p>
+        <div data-them-o="bang">
           <div class="chips" id="plugin-mau" aria-label="Mẫu có sẵn"></div>
           <form id="pluginform" class="form" novalidate>
             <label class="field field--wide">
@@ -683,11 +660,48 @@
             </div>
           </form>
           <div id="plugin-ketqua" class="rows"></div>
-        </section>
-      </div>
+        </div>
+
+        <div data-them-o="goi" hidden>
+          <form id="goiform" class="form">
+            <label class="field field--wide">
+              <span>Dán JSON của gói</span>
+              <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
+            </label>
+            <label class="field field--wide">
+              <span>hoặc chọn tệp .json / .zip</span>
+              <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
+            </label>
+            <div class="rowbtns">
+              <button type="button" class="btn" id="goi-kiem">Kiểm</button>
+              <button type="button" class="btn btn--primary" id="goi-cai">Cài</button>
+            </div>
+          </form>
+          <div id="goi-ketqua" class="rows"></div>
+        </div>
+
+        <!-- Chỗ để sẵn cho form máy chủ MCP (Task 6 của kế hoạch MCP điền
+             vào đây, thay vì thêm một khối rời thứ tám). -->
+        <div data-them-o="mcp" hidden id="them-mcp">
+          <p class="empty">Nối máy chủ MCP chưa bật ở bản này.</p>
+        </div>
+      </section>
+
+      <!-- KHỐI 3 · nguồn tôi đã nối ra sao. Gói và máy chủ MCP nằm chung:
+           với người vận hành cả hai đều là "nơi kỹ năng đến từ", và mỗi
+           dòng mang đúng nút quản lý của loại nó. -->
+      <section class="panel">
+        <h2 class="panel__head">Nguồn đã nối
+          <span class="panel__note">gói kỹ năng và máy chủ MCP</span></h2>
+        <p class="panel__note">
+          Hướng dẫn của gói là một mẩu prompt do người trong nhà viết: nó bị
+          quét như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
+        </p>
+        <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
+        <div id="nguon-mcp"></div>
+      </section>
     </section>
 
-    <!-- ============ CUSTOMER 360 ============ -->
     <section class="view" data-view="khachhang">
       <div class="customer360">
         <aside class="panel customer360__list">

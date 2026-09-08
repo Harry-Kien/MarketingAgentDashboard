@@ -29,7 +29,7 @@ def test_goi_dung_api():
 
 
 def test_cot_so_lan_goi_o_ky_nang_viet_san():
-    src = _than_ham("loadKyNang")
+    src = _than_ham("gopKyNang") + _than_ham("loadKyNang")
     assert "so_lan_7_ngay" in src and "loadGoiKyNang()" in src
     # loadGoiKyNang() lỗi (vd CSDL chưa migrate 0014) không được lan lên
     # refresh() 6 giây, và panel #goi-ds phải NÓI ra là không tải được —
@@ -58,10 +58,13 @@ def test_cong_cu_cua_goi_khong_co_nut_xoa():
     Máy chủ từ chối xoá riêng công cụ của gói; một nút luôn báo lỗi là nút
     dạy người ta bỏ qua thông báo lỗi. Thay bằng nhãn tên gói.
     """
-    src = _than_ham("loadKyNang")
-    assert '<b class="pill">gói ${esc(p.goi)}</b>' in src
-    # Nút Xoá nằm ở nhánh NGƯỢC của điều kiện `p.goi`, tức là sau nhãn.
-    assert src.index("gói ${esc(p.goi)}") < src.index("data-plugin-xoa")
+    src = _than_ham("veDongKyNang")
+    # Nhãn tên gói phải có, và tên gói phải qua esc(): nó là chữ từ máy chủ.
+    assert re.search(r'gói \$\{esc\(\w+\.goi', src), "mất nhãn tên gói"
+    # Nút Xoá chỉ được vẽ ở nhánh dành riêng cho công cụ TỰ TẠO. Kiểm theo
+    # nhánh chứ không theo thứ tự xuất hiện: thứ tự đúng một cách tình cờ
+    # vẫn xanh, còn nhánh thì nói đúng ràng buộc.
+    assert src.index('nguon === "tu_tao"') < src.index("data-plugin-xoa")
 
 
 def test_xuat_lich_su_khoi_phuc_co_nut():

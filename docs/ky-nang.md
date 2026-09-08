@@ -113,7 +113,7 @@ Ba chốt, vì một chốt sẽ hỏng: mô tả bị soi bằng đúng bộ qu
 
 ## Gói kỹ năng
 
-Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài một lần, xuất ra được, có phiên bản — thứ mà plugin rời không có. Cài ở dashboard → **Kỹ năng** → panel **Gói kỹ năng** (dán JSON, chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.
+Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài một lần, xuất ra được, có phiên bản — thứ mà plugin rời không có. Cài ở dashboard → **Kỹ năng** → khối **Thêm kỹ năng** → **Cài gói có sẵn** (dán JSON, chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.
 
 
 ### Một gói gồm gì

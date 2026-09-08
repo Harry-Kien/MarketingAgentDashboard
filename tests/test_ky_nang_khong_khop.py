@@ -190,13 +190,13 @@ def _than_ham(ten: str) -> str:
 
 
 def test_dashboard_hien_khoa_hay_truot():
-    src = _than_ham("loadKyNang")
+    src = _than_ham("veDongKyNang")
     assert "khong_khop" in src, "đếm rồi mà không hiện thì cũng như không đếm"
 
 
 def test_khoa_truot_qua_esc():
     """Khoá là chữ do model điền từ câu khách — chuỗi máy chủ vào innerHTML."""
-    src = _than_ham("loadKyNang")
+    src = _than_ham("veDongKyNang")
     i = src.index("khong_khop")
     quanh = src[max(0, i - 400):i + 400]
     assert re.search(r"esc\(\s*\w+\.gia_tri", quanh), "gia_tri chưa qua esc()"

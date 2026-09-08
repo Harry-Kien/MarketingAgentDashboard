@@ -328,7 +328,8 @@ Một gói gộp hướng dẫn tư vấn + công cụ tra cứu + tài liệu l
 lần từ dashboard — xem `docs/ky-nang.md` mục "Gói kỹ năng" để biết định
 dạng và luật. Ba bước:
 
-1. **Kiểm.** Dashboard → **Kỹ năng** → panel **Gói kỹ năng** → dán JSON
+1. **Kiểm.** Dashboard → **Kỹ năng** → khối **Thêm kỹ năng** →
+   chọn **Cài gói có sẵn** → dán JSON
    (hoặc chọn tệp `.json`) → nút **Kiểm**. Không ghi gì, chỉ nói hợp lệ
    hay không và tóm tắt (số công cụ, số tài liệu, từ khoá). Có gói mẫu
    sẵn ở `data/goi-ky-nang/tu-van-da-nhay-cam.example.json` để thử ngay

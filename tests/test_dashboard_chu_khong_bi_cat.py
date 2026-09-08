@@ -38,8 +38,7 @@ HTML = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
 # Vùng mà `.row__sub` LÀ nội dung, không phải nhãn phụ.
 VUNG_PHAI_XUONG_DONG = (
     "#cauhinh-ds",
-    "#kynang-cosan",
-    "#kynang-plugin",
+    "#kynang-tatca",
     "#tichhop-ds",
 )
 
@@ -91,7 +90,7 @@ def test_man_cau_hinh_va_ky_nang_deu_dung_row_sub():
     thành vô dụng, và chữ lại bị cắt — im lặng như cũ.
     """
     js = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
-    for ham in ("loadCauHinh", "loadKyNang"):
+    for ham in ("loadCauHinh", "veDongKyNang"):
         i = js.find(f"function {ham}")
         assert i != -1, f"không tìm thấy {ham} trong app.js"
         than = js[i:i + 2600]

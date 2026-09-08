@@ -104,6 +104,17 @@ def test_sinh_ma_tu_tieng_viet(nhan, mong):
     assert _TEN_RE.match(ra)
 
 
+def test_o_ten_rong_thi_khong_hien_ma_bia():
+    """
+    Lỗi thấy khi chụp màn hình: ô tên còn trống mà dòng dưới đã hiện
+    "Mã máy: kn_x". `sinhMaPlugin("")` phải trả một mã hợp lệ vì máy chủ
+    đòi thế, nhưng đem mã ấy hiện ra thì người vận hành đọc được một cái
+    tên họ chưa hề đặt, và tưởng hệ thống đã quyết hộ.
+    """
+    src = _than_ham("capNhatMaPlugin")
+    assert "—" in src or "trim()" in src,         "mã máy hiện vô điều kiện, kể cả khi ô tên còn trống"
+
+
 @pytest.mark.parametrize("nhan", ["123 lý do", "", "!!!", "x" * 80])
 def test_ma_sinh_ra_luon_qua_bo_kiem_may_chu(nhan):
     ra = _node(_than_ham("sinhMaPlugin")
@@ -158,6 +169,6 @@ def test_bang_dan_tu_excel():
 
 
 def test_danh_sach_plugin_hien_ten_loai_tieng_viet():
-    src = _than_ham("loadKyNang")
+    src = _than_ham("gopKyNang")
     assert "esc(p.loai)" not in src, "loại hiện mã máy (tra_bang) thay vì tên tiếng Việt"
     assert "PLUGIN_LOAI[" in src

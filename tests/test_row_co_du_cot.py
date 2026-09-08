@@ -108,7 +108,7 @@ def test_bat_duoc_ca_khi_flag_co_bien_the_mau():
 
 @pytest.mark.parametrize(
     "vung",
-    ["#cauhinh-ds", "#kynang-cosan", "#kynang-plugin", "#tichhop-ds",
+    ["#cauhinh-ds", "#kynang-tatca", "#tichhop-ds",
      "#cauhinh-lichsu"],
 )
 def test_chu_giai_thich_van_duoc_xuong_dong(vung):

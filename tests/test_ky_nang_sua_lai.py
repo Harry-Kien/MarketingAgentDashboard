@@ -126,7 +126,7 @@ def _than_ham(ten: str) -> str:
 
 
 def test_nut_sua_chi_hien_khi_sua_duoc():
-    src = _than_ham("loadKyNang")
+    src = _than_ham("veDongKyNang")
     assert "data-plugin-sua" in src, "không có nút Sửa"
     i = src.index("data-plugin-sua")
     truoc = src[max(0, i - 260):i]

@@ -1692,8 +1692,7 @@ svg { flex: none; }
  * Có test canh: tests/test_dashboard_chu_khong_bi_cat.py
  */
 #cauhinh-ds .row__sub,
-#kynang-cosan .row__sub,
-#kynang-plugin .row__sub,
+#kynang-tatca .row__sub,
 #tichhop-ds .row__sub {
   white-space: normal;
   overflow: visible;
@@ -1704,12 +1703,12 @@ svg { flex: none; }
 /* Xuống dòng rồi thì phần thân cần chỗ thở, và cột phải không được co lại
    thành một vạch khi câu bên trái dài ra. */
 #cauhinh-ds .row,
-#kynang-cosan .row {
+#kynang-tatca .row {
   align-items: flex-start;
   gap: .9rem;
 }
 #cauhinh-ds .row__body,
-#kynang-cosan .row__body { min-width: 0; }
+#kynang-tatca .row__body { min-width: 0; }
 
 /* Hai vùng còn lại của màn Cấu hình cũng cần chữ xuống dòng.
  *
@@ -1809,3 +1808,18 @@ svg { flex: none; }
   margin-top: 3px;
 }
 .row__sub--truot .chip { font-size: 12px; padding: 2px 9px; cursor: pointer; }
+
+/* --- Màn Kỹ năng gộp: một danh sách, một điểm thêm ---
+   Huy hiệu nguồn phải đọc được ngay ở dòng tiêu đề, vì nó quyết định chỗ
+   người vận hành phải đi sửa: tự tạo sửa tại chỗ, của gói phải cài lại
+   gói, của MCP phải đồng bộ lại máy chủ. */
+.pill--tu-tao {
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+}
+#kynang-loc, #them-chon { padding: 0 0 10px; }
+#them-giaithich { padding: 0 0 14px; max-width: 62ch; }
+/* Khung form của cách thêm KHÔNG được chọn phải biến mất hẳn: `.field` đặt
+   display:flex nên nó thắng thuộc tính hidden, và ba form sẽ hiện cùng lúc
+   — đúng thứ màn này gộp lại để tránh. */
+[data-them-o][hidden] { display: none !important; }

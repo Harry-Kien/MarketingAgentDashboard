@@ -3002,7 +3002,13 @@ function datBang(bang) {
 function capNhatMaPlugin() {
   const f = $("#pluginform");
   if (!f) return;
-  $("#plugin-ma").textContent = sinhMaPlugin(f.elements.nhan.value);
+  /* Ô tên còn trống thì hiện gạch ngang, không hiện mã.
+   *
+   * `sinhMaPlugin("")` buộc phải trả một mã HỢP LỆ vì máy chủ đòi thế,
+   * nhưng đem mã ấy hiện ra là người vận hành đọc được một cái tên họ
+   * chưa hề đặt, và tưởng hệ thống đã quyết hộ. */
+  const nhan = f.elements.nhan.value.trim();
+  $("#plugin-ma").textContent = nhan ? sinhMaPlugin(nhan) : "—";
 }
 
 function doiLoaiPlugin(loai, { giuThamSo = false } = {}) {
@@ -3245,73 +3251,150 @@ $("#pluginform")?.addEventListener("submit", async (e) => {
   }
 });
 
+/* Ba cách thêm kỹ năng, mỗi cách một câu nói KHI NÀO dùng nó.
+ *
+ * Chỗ khó của màn này chưa bao giờ là số ô nhập, mà là câu "tôi nên dùng
+ * đường nào". Trước đây hai form đặt cạnh nhau trông ngang hàng và không
+ * chỗ nào trả lời câu đó. */
+const THEM_CACH = {
+  bang: {
+    nhan: "Tự viết bảng hỏi đáp",
+    giai_thich: "Cho số liệu ngắn của shop: phí ship, bảo hành, địa chỉ, giờ mở cửa. Bạn gõ bảng hai cột bằng tiếng Việt, không cần biết kỹ thuật. Đây là cách hay dùng nhất.",
+  },
+  goi: {
+    nhan: "Cài gói có sẵn",
+    giai_thich: "Khi một chủ đề cần cả hướng dẫn tư vấn, công cụ tra cứu và tài liệu đi cùng nhau. Gói có phiên bản và lịch sử, khôi phục được nếu bản mới tệ hơn.",
+  },
+  mcp: {
+    nhan: "Nối máy chủ MCP",
+    giai_thich: "Khi công cụ đã nằm ở hệ thống khác và bạn muốn agent gọi sang. Địa chỉ phải nằm trong danh sách cho phép ở .env, và công cụ mặc định chỉ đọc.",
+  },
+};
+
+function doiCachThem(cach) {
+  const meta = THEM_CACH[cach];
+  if (!meta) return;
+  $("#them-giaithich").textContent = meta.giai_thich;
+  for (const c of document.querySelectorAll("#them-chon .chip")) {
+    c.classList.toggle("is-on", c.dataset.them === cach);
+  }
+  for (const o of document.querySelectorAll("[data-them-o]")) {
+    o.hidden = o.dataset.themO !== cach;
+  }
+}
+
+/* Bốn nguồn, một hình dạng dòng.
+ *
+ * Kỹ năng viết sẵn và công cụ cắm thêm có hai hình dạng dữ liệu khác nhau
+ * (một bên có `nhom`/`tat_thi_mat_gi`, bên kia có `loai`/`tham_so`), nên
+ * hàm này chuẩn hoá về một `nguon` rồi mới vẽ. Trộn hai vòng lặp vẽ khác
+ * nhau vào một danh sách là hai chỗ phải nhớ sửa mỗi lần đổi cột.
+ *
+ * `nguon` quyết định nút nào hiện, và điều đó KHÔNG phải để cho đẹp: chỗ
+ * đi sửa mỗi loại một khác. Plugin rời sửa tại chỗ, công cụ của gói phải
+ * cài lại gói, công cụ MCP phải đồng bộ lại máy chủ. Hiện nút Sửa cho cả
+ * ba rồi để máy chủ từ chối là dạy người ta bỏ qua thông báo lỗi. */
+function veDongKyNang(k) {
+  const nguon = k.nguon;
+  const bat = k.bat !== false;
+  const huy_hieu = {
+    viet_san: '<b class="pill">viết sẵn</b>',
+    tu_tao: '<b class="pill pill--tu-tao">tự tạo</b>',
+    goi: `<b class="pill">gói ${esc(k.goi || "")}</b>`,
+    mcp: `<b class="pill">MCP · ${esc(k.mcp || "")}</b>`,
+  }[nguon] || "";
+
+  const truot = (k.khong_khop || []).length
+    ? `<span class="row__sub row__sub--truot">
+         Khách hỏi mà bảng chưa có: ${(k.khong_khop || []).map((x) =>
+           /* Chữ model điền từ câu của khách, qua CSDL rồi vào innerHTML. */
+           `<button type="button" class="chip" data-them-khoa="${esc(x.gia_tri)}"
+              data-them-vao="${esc(k.ten)}" title="Thêm dòng này vào bảng"
+              >${esc(x.gia_tri)} (${esc(String(x.so_lan))})</button>`).join(" ")}
+       </span>`
+    : "";
+
+  const nut = nguon === "viet_san"
+    ? (k.tat_duoc
+        ? `<button type="button" class="btn btn--sm ${bat ? "btn--halt" : ""}"
+             data-kynang="${esc(k.ten)}" data-bat="${bat ? "0" : "1"}">${
+             bat ? "Tắt" : "Bật"}</button>`
+        : "")
+    : nguon === "tu_tao"
+      ? `${k.ban_mo_ta ? `<button type="button" class="btn btn--sm"
+             data-plugin-sua="${esc(k.ten)}">Sửa</button> ` : ""}<button
+             type="button" class="btn btn--sm btn--halt"
+             data-plugin-xoa="${esc(k.ten)}">Xoá</button>`
+      : "";
+
+  return `<div class="row" data-nguon="${esc(nguon)}">
+      <span class="row__flag ${bat ? "row__flag--auto" : "row__flag--halt"}"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(k.ten)} ${huy_hieu}
+          ${k.muc_rui_ro === "hanh_dong" ? '<b class="pill pill--halt">HÀNH ĐỘNG</b>' : ""}
+          ${nguon === "viet_san" && !k.tat_duoc ? '<b class="pill">không tắt được</b>' : ""}</span>
+        <span class="row__sub">${esc(k.dong_phu)}</span>
+        <span class="row__sub">${esc(k.tom_tat)}</span>
+        ${k.tat_thi_mat_gi ? `<span class="row__sub"><em>Tắt thì:</em> ${esc(k.tat_thi_mat_gi)}</span>` : ""}
+        ${truot}
+      </span>
+      <span class="row__side">${nut}</span>
+    </div>`;
+}
+
+/* Gộp bốn nguồn về một hình dạng. Chuẩn hoá ở ĐÂY chứ không ở `veDongKyNang`
+ * để hàm vẽ không phải biết hình dạng nào của máy chủ là của nguồn nào. */
+function gopKyNang(d) {
+  const ra = d.co_san.map((k) => ({
+    ...k,
+    nguon: "viet_san",
+    dong_phu: `${NHOM_NHAN[k.nhom] || k.nhom} · ${RUI_RO_NHAN[k.muc_rui_ro] || k.muc_rui_ro}`
+      + (k.can_erp ? " · cần ERP" : "")
+      + (k.can_kho_tri_thuc ? " · cần kho tri thức" : "")
+      + ` · gọi 7 ngày: ${k.so_lan_7_ngay || 0}`
+      + (k.so_loi_7_ngay ? ` (${k.so_loi_7_ngay} lỗi)` : ""),
+  }));
+  for (const p of d.plugin) {
+    ra.push({
+      ...p,
+      nguon: p.mcp ? "mcp" : p.goi ? "goi" : "tu_tao",
+      tom_tat: p.mo_ta,
+      dong_phu: (PLUGIN_LOAI[p.loai]?.nhan || p.loai)
+        + (p.tham_so.length ? ` · tham số: ${p.tham_so.join(", ")}` : "")
+        + ` · gọi 7 ngày: ${p.so_lan_7_ngay || 0}`
+        + (p.so_loi_7_ngay ? ` (${p.so_loi_7_ngay} lỗi)` : ""),
+    });
+  }
+  return ra;
+}
+
+function locKyNang(nguon) {
+  state.locKyNang = nguon;
+  for (const c of document.querySelectorAll("#kynang-loc .chip")) {
+    c.classList.toggle("is-on", c.dataset.locNguon === nguon);
+  }
+  const map = { "viet-san": "viet_san", "tu-tao": "tu_tao", goi: "goi", mcp: "mcp" };
+  for (const r of document.querySelectorAll("#kynang-tatca .row")) {
+    r.hidden = nguon !== "tat-ca" && r.dataset.nguon !== map[nguon];
+  }
+}
+
 async function loadKyNang() {
   khoiTaoFormPlugin();
+  khoiTaoThemKyNang();
   napNhomTaiLieuPlugin();
   const d = await api("/ky-nang");
   const tat = d.co_san.filter((k) => !k.bat).length;
   $("#c-kynang").textContent = tat ? `${tat} tắt` : "";
 
-  $("#kynang-cosan").innerHTML = d.co_san.map((k) => `<div class="row">
-      <span class="row__flag ${k.bat ? "row__flag--auto" : "row__flag--halt"}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(k.ten)}
-          ${k.muc_rui_ro === "hanh_dong" ? '<b class="pill pill--halt">HÀNH ĐỘNG</b>' : ""}
-          ${k.tat_duoc ? "" : '<b class="pill">không tắt được</b>'}</span>
-        <span class="row__sub">${esc(NHOM_NHAN[k.nhom] || k.nhom)} ·
-          ${esc(RUI_RO_NHAN[k.muc_rui_ro] || k.muc_rui_ro)}${
-            k.can_erp ? " · cần ERP" : ""}${
-            k.can_kho_tri_thuc ? " · cần kho tri thức" : ""} ·
-          gọi 7 ngày: ${k.so_lan_7_ngay || 0}${k.so_loi_7_ngay ? " (" + k.so_loi_7_ngay + " lỗi)" : ""}</span>
-        <span class="row__sub">${esc(k.tom_tat)}</span>
-        <span class="row__sub"><em>Tắt thì:</em> ${esc(k.tat_thi_mat_gi)}</span>
-      </span>
-      <span class="row__side">
-        ${k.tat_duoc
-          ? `<button type="button" class="btn btn--sm ${k.bat ? "btn--halt" : ""}"
-               data-kynang="${esc(k.ten)}" data-bat="${k.bat ? "0" : "1"}">${
-               k.bat ? "Tắt" : "Bật"}</button>`
-          : ""}
-      </span>
-    </div>`).join("");
-
-  $("#kynang-plugin").innerHTML = d.plugin.length
-    ? d.plugin.map((p) => `<div class="row">
-        <span class="row__flag row__flag--auto"></span>
-        <span class="row__body">
-          <span class="row__title">${esc(p.ten)}</span>
-          <span class="row__sub">${esc(PLUGIN_LOAI[p.loai]?.nhan || p.loai)}${
-            p.tham_so.length ? " · tham số: " + esc(p.tham_so.join(", ")) : ""}</span>
-          <span class="row__sub">${esc(p.mo_ta)}</span>
-          <span class="row__sub">gọi 7 ngày: ${p.so_lan_7_ngay || 0}${
-            p.so_loi_7_ngay ? " (" + p.so_loi_7_ngay + " lỗi)" : ""}${
-            p.goi ? " · gói " + esc(p.goi) : ""}</span>
-          ${(p.khong_khop || []).length ? `<span class="row__sub row__sub--truot">
-            Khách hỏi mà bảng chưa có: ${(p.khong_khop || []).map((x) =>
-              /* `gia_tri` là chữ model điền từ câu của khách, đi qua CSDL
-               * rồi vào innerHTML — esc() cả khoá lẫn số. */
-              `<button type="button" class="chip" data-them-khoa="${esc(x.gia_tri)}"
-                 data-them-vao="${esc(p.ten)}" title="Thêm dòng này vào bảng"
-                 >${esc(x.gia_tri)} (${esc(String(x.so_lan))})</button>`).join(" ")}
-          </span>` : ""}
-        </span>
-        <span class="row__side">
-          ${p.goi
-            /* Công cụ của gói KHÔNG có nút Xoá: máy chủ từ chối xoá riêng nó
-             * (kho_ky_nang.xoa_plugin), và một nút luôn báo lỗi là nút dạy
-             * người ta bỏ qua thông báo lỗi. Thay bằng nhãn nói nó thuộc gói
-             * nào, để biết phải đi tắt/xoá ở panel Gói kỹ năng. */
-            ? `<b class="pill">gói ${esc(p.goi)}</b>`
-            /* Nút Sửa theo đúng luật ấy: `ban_mo_ta` là null cho công cụ
-             * của gói, nên chỉ plugin rời mới có nút. Hiện nút cho cả hai
-             * rồi để `luu_plugin` từ chối là lại dạy người ta bỏ qua lỗi. */
-            : `${p.ban_mo_ta ? `<button type="button" class="btn btn--sm"
-                 data-plugin-sua="${esc(p.ten)}">Sửa</button> ` : ""}<button
-                 type="button" class="btn btn--sm btn--halt"
-                 data-plugin-xoa="${esc(p.ten)}">Xoá</button>`}
-        </span>
-      </div>`).join("")
-    : `<p class="empty">Chưa có plugin nào. Tối đa ${d.plugin_toi_da}.</p>`;
+  const tat_ca = gopKyNang(d);
+  $("#kynang-tatca").innerHTML = tat_ca.map(veDongKyNang).join("");
+  /* Trần 12 đếm CHUNG plugin rời, công cụ của gói và công cụ MCP. Ba danh
+   * sách rời thì không chỗ nào hiện được tổng, và người vận hành chỉ biết
+   * mình chạm trần đúng lúc bị từ chối. */
+  $("#kynang-dem").textContent =
+    `${tat_ca.length} kỹ năng · ${d.plugin.length}/${d.plugin_toi_da} suất cắm thêm đã dùng`;
+  locKyNang(state.locKyNang || "tat-ca");
 
   try {
     await loadGoiKyNang();
@@ -3320,6 +3403,21 @@ async function loadKyNang() {
     // phải NÓI là không tải được — "Chưa có gói nào." khi CSDL hỏng là xanh giả.
     $("#goi-ds").innerHTML = `<p class="empty">Không tải được gói kỹ năng: ${esc(err.message)}</p>`;
   }
+}
+
+function khoiTaoThemKyNang() {
+  const hop = $("#them-chon");
+  if (!hop || hop.dataset.daKhoiTao) return;
+  hop.dataset.daKhoiTao = "1";
+  doiCachThem("bang");
+  hop.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-them]");
+    if (b) doiCachThem(b.dataset.them);
+  });
+  $("#kynang-loc").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-loc-nguon]");
+    if (b) locKyNang(b.dataset.locNguon);
+  });
 }
 
 document.addEventListener("click", async (e) => {

@@ -59,6 +59,40 @@ from agent.ky_nang.so_dang_ky import KHONG_TAT_DUOC, SO_DANG_KY, ten_ky_nang_co_
 _DEM: tuple[frozenset[str], tuple[BanMoTa, ...], dict[str, str]] | None = None
 
 
+class KhoDay(RuntimeError):
+    """Vượt một trần: plugin đang bật, gói, hay máy chủ MCP."""
+
+
+async def kiem_tran_them(chu: str | None, so_them: int, hanh_dong: str) -> None:
+    """
+    Trần plugin đang bật, dùng CHUNG cho mọi đường ghi vào `ky_nang_cai_dat`:
+    plugin rời, gói (cài/bật lại), máy chủ MCP (đồng bộ/bật công cụ). Một
+    bảng, một chốt — xem chú thích ở `goi._kiem_tran_plugin` vì sao.
+
+    Ở ĐÂY chứ không ở `goi.py`: đường MCP không được nhập khẩu `goi` (vòng
+    nhập khẩu), nên chốt nằm bên ấy thì đường thứ ba lặng lẽ không qua chốt
+    nào — đúng kiểu hỏng mà chính chú thích kia sinh ra để chặn.
+
+    `chu` là chủ sở hữu đang được tính lại (tên gói, hay `mcp:<máy chủ>`).
+    Công cụ của chính chủ ấy KHÔNG đếm vào "đang bật ngoài", vì `so_them` đã
+    là con số cuối cùng của chủ ấy sau thao tác; đếm cả hai đầu là tính hai
+    lần và trần đầy sớm hơn thật.
+    """
+    if so_them <= 0:
+        return
+    ngoai = await db.fetch(
+        "SELECT ten FROM ky_nang_cai_dat "
+        "WHERE ban_mo_ta IS NOT NULL AND bat AND (goi IS NULL OR goi <> $1)",
+        chu or "",
+    )
+    tong = len(ngoai) + so_them
+    if tong > PLUGIN_TOI_DA:
+        raise KhoDay(
+            f"{hanh_dong} thành {tong} plugin đang bật, quá trần {PLUGIN_TOI_DA}: đang bật "
+            f"ngoài {chu!r} là {len(ngoai)}, thêm {so_them}. Tắt bớt plugin không dùng rồi thử lại."
+        )
+
+
 def xoa_dem() -> None:
     """Gọi sau MỌI lần ghi. Cũng dùng trong test để tách các ca khỏi nhau."""
     global _DEM
@@ -363,6 +397,16 @@ async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
                 "so_lan_7_ngay": dem.get(p.ten, {}).get("so_lan", 0),
                 "so_loi_7_ngay": dem.get(p.ten, {}).get("so_loi", 0),
                 "goi": goi_cua.get(p.ten),
+                # Huy hiệu "MCP · <máy chủ>" thay cho "gói". Cùng cột `goi`
+                # mang hai loại chủ (tên gói không bao giờ chứa dấu hai
+                # chấm), nên tách ngay ở đây: để dashboard tự cắt chuỗi là
+                # luật nằm ở hai nơi, và nơi thứ hai viết bằng JavaScript
+                # không có test nào canh.
+                "mcp": (
+                    goi_cua[p.ten][4:]
+                    if str(goi_cua.get(p.ten) or "").startswith("mcp:")
+                    else None
+                ),
                 # Khoá khách hỏi mà bảng chưa có — thứ đáng thêm vào bảng
                 # nhất, xếp theo số lần thật. Không có ô này thì bảng nằm im
                 # ở đúng kích cỡ ngày nó được tạo.

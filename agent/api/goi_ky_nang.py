@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from agent.api.routes import bat_buoc_quan_tri
 from agent.ky_nang import goi as g
+from agent.ky_nang import nhap_skill_md
 from agent.ky_nang import kho_ky_nang
 
 router = APIRouter(prefix="/api/goi-ky-nang", tags=["goi-ky-nang"])
@@ -88,6 +89,20 @@ async def cai(body: dict, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
     return await _cai(body, nguoi)
 
 
+def _co_tep(du_lieu: bytes, ten: str) -> bool:
+    """Zip có tệp tên này ở bất kỳ tầng nào? Zip hỏng thì trả False và để
+    bộ đọc thật nêu lỗi — hai chỗ cùng báo một lỗi là hai thông điệp khác
+    nhau cho cùng một sự việc."""
+    import io
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(du_lieu)) as z:
+            return any(n.rsplit("/", 1)[-1] == ten for n in z.namelist())
+    except zipfile.BadZipFile:
+        return False
+
+
 @router.post("/tep", status_code=201)
 async def cai_tu_tep(tep: UploadFile = File(...), nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
     du_lieu = await tep.read()
@@ -96,9 +111,16 @@ async def cai_tu_tep(tep: UploadFile = File(...), nguoi: dict = Depends(bat_buoc
     ten = (tep.filename or "").lower()
     try:
         if ten.endswith(".zip"):
-            tho = g.tu_zip(du_lieu)
+            # Hai định dạng zip, nhận cả hai: gói của repo (`goi.json`) và
+            # chuẩn Agent Skills (`SKILL.md`). Nhìn vào NỘI DUNG chứ không
+            # bắt người vận hành khai trước — họ tải một tệp về và không có
+            # lý do gì phải biết nó viết theo chuẩn nào.
+            tho = (g.tu_zip(du_lieu) if _co_tep(du_lieu, "goi.json")
+                   else nhap_skill_md.tu_skill_md(du_lieu))
         else:
             tho = json.loads(du_lieu.decode("utf-8"))
+    except nhap_skill_md.LoiSkillMd as exc:
+        raise HTTPException(422, str(exc)) from exc
     except g.LoiGoi as exc:
         raise HTTPException(422, str(exc)) from exc
     except (ValueError, UnicodeDecodeError) as exc:

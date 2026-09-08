@@ -169,6 +169,23 @@ def dung_tai_lieu() -> str:
         "chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói "
         "mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.\n"
     )
+    d.append(
+        "\n### Nhập gói viết theo chuẩn Agent Skills\n\n"
+        "Ô chọn tệp cũng nhận zip theo **chuẩn Agent Skills**: một `SKILL.md` "
+        "với frontmatter YAML `name` và `description`, thân file là hướng "
+        "dẫn, các `.md` khác thành tài liệu. Hệ thống nhìn vào nội dung zip "
+        "để biết định dạng nào, không bắt người vận hành khai trước.\n\n"
+        "Hai chỗ hai chuẩn khác nhau, và cả hai đều có lý do:\n\n"
+        "- **Từ khoá.** Chuẩn kia để mô hình đọc `description` rồi tự quyết; "
+        "ở đây so khớp là tất định — rẻ hơn một lượt gọi model và đo được. "
+        "Khai `keywords` trong frontmatter thì dùng đúng nó; không khai thì "
+        "sinh từ `name`, và nên đọc lại vì từ khoá sinh tự động hiếm khi "
+        "đúng ý.\n"
+        "- **`scripts/` bị TỪ CHỐI, không phải bỏ qua.** Kỹ năng ở đây là "
+        "dữ liệu, không chạy mã. Bỏ qua trong im lặng thì gói vẫn cài được "
+        "nhưng chạy với ít năng lực hơn người viết tưởng, rồi hỏng giữa "
+        "chừng mà không ai biết vì sao.\n"
+    )
     d.append("\n### Một gói gồm gì\n")
     d.append(
         "\n- **Hướng dẫn** (`huong_dan`) — mô tả việc, ví dụ *\"khi khách "

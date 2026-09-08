@@ -117,6 +117,16 @@ Ba chốt, vì một chốt sẽ hỏng: mô tả bị soi bằng đúng bộ qu
 Một gói đóng **hướng dẫn + công cụ + tài liệu** làm một, cài một lần, xuất ra được, có phiên bản — thứ mà plugin rời không có. Cài ở dashboard → **Kỹ năng** → khối **Thêm kỹ năng** → **Cài gói có sẵn** (dán JSON, chọn tệp `.json`/`.zip`, hoặc gọi thẳng `/api/goi-ky-nang`). Gói mẫu đi theo repo ở `data/goi-ky-nang/` để thử ngay.
 
 
+### Nhập gói viết theo chuẩn Agent Skills
+
+Ô chọn tệp cũng nhận zip theo **chuẩn Agent Skills**: một `SKILL.md` với frontmatter YAML `name` và `description`, thân file là hướng dẫn, các `.md` khác thành tài liệu. Hệ thống nhìn vào nội dung zip để biết định dạng nào, không bắt người vận hành khai trước.
+
+Hai chỗ hai chuẩn khác nhau, và cả hai đều có lý do:
+
+- **Từ khoá.** Chuẩn kia để mô hình đọc `description` rồi tự quyết; ở đây so khớp là tất định — rẻ hơn một lượt gọi model và đo được. Khai `keywords` trong frontmatter thì dùng đúng nó; không khai thì sinh từ `name`, và nên đọc lại vì từ khoá sinh tự động hiếm khi đúng ý.
+- **`scripts/` bị TỪ CHỐI, không phải bỏ qua.** Kỹ năng ở đây là dữ liệu, không chạy mã. Bỏ qua trong im lặng thì gói vẫn cài được nhưng chạy với ít năng lực hơn người viết tưởng, rồi hỏng giữa chừng mà không ai biết vì sao.
+
+
 ### Một gói gồm gì
 
 

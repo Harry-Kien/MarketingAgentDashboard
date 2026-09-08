@@ -680,8 +680,15 @@
               <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
             </label>
             <label class="field field--wide">
-              <span>hoặc chọn tệp .json / .zip</span>
+              <span>hoặc chọn tệp <em class="hint">.json, hoặc .zip theo một trong hai chuẩn</em></span>
               <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
+              <small class="field__giaithich">
+                Zip nhận cả gói của hệ thống này (có <code>goi.json</code>) lẫn
+                chuẩn Agent Skills (có <code>SKILL.md</code> với
+                <code>name</code> và <code>description</code>). Gói theo chuẩn
+                kia mang thư mục <code>scripts/</code> sẽ bị từ chối: kỹ năng ở
+                đây là dữ liệu, không chạy mã.
+              </small>
             </label>
             <div class="rowbtns">
               <button type="button" class="btn" id="goi-kiem">Kiểm</button>

@@ -222,6 +222,80 @@ async def dat_bat_tat(ten: str, bat: bool, *, boi: str = "staff") -> None:
     xoa_dem()
 
 
+LICH_SU_GIU = 10
+
+
+class BanCuKhongCo(LookupError):
+    """Không có bản cũ mang số ấy cho plugin này."""
+
+
+async def _ghi_lich_su(ten: str, boi: str) -> None:
+    """
+    Cất bản ĐANG CHẠY trước khi đè lên nó.
+
+    Ghi bản CŨ chứ không phải bản mới: ghi bản mới thì lịch sử trùng lặp
+    với `ky_nang_cai_dat` và không lùi được bước nào.
+
+    Chưa có gì để đè thì không ghi — tạo mới không đè lên cái gì, và một
+    hàng rỗng ở đó là mời người ta "khôi phục" về trạng thái không tồn tại.
+
+    Ghi hỏng KHÔNG được chặn việc lưu: người vận hành đang sửa một bảng giá
+    và mất đường lùi thì tệ, nhưng mất luôn cả lần sửa thì tệ hơn.
+    """
+    try:
+        cu = await db.fetchrow(
+            "SELECT ban_mo_ta, goi FROM ky_nang_cai_dat WHERE ten = $1", ten)
+        if cu is None or cu["ban_mo_ta"] is None or cu["goi"]:
+            return
+        tho = cu["ban_mo_ta"]
+        if isinstance(tho, str):
+            tho = json.loads(tho)
+        await db.execute(
+            "INSERT INTO ky_nang_lich_su (ten, noi_dung, thay_boi) "
+            "VALUES ($1, $2::jsonb, $3)", ten, tho, boi)
+        # Cắt ngay tại chỗ ghi. Dọn theo lịch riêng thì bảng phình giữa hai
+        # lần dọn, mà mỗi cú bấm "thêm khoá khách hay hỏi" là một bản nữa.
+        await db.execute(
+            "DELETE FROM ky_nang_lich_su WHERE ten = $1 AND id NOT IN "
+            "(SELECT id FROM ky_nang_lich_su WHERE ten = $1 ORDER BY id DESC LIMIT $2)",
+            ten, LICH_SU_GIU)
+    except Exception:  # noqa: BLE001 — mất đường lùi còn hơn mất lần sửa
+        pass
+
+
+async def lich_su_plugin(ten: str) -> list[dict]:
+    """
+    Các bản cũ, mới nhất trước. KHÔNG trả `noi_dung`.
+
+    Danh sách này chỉ để CHỌN; cấu hình đầy đủ của mười bản là một khối
+    chữ lớn đi qua mạng mỗi lần mở màn Kỹ năng, và màn ấy tự làm mới.
+    """
+    rows = await db.fetch(
+        "SELECT id, thay_luc, thay_boi FROM ky_nang_lich_su "
+        "WHERE ten = $1 ORDER BY id DESC LIMIT $2", ten, LICH_SU_GIU)
+    return [dict(r) for r in rows]
+
+
+async def khoi_phuc_plugin(ten: str, id_ban: int, *, boi: str = "staff") -> BanMoTa:
+    """
+    Đưa một bản cũ trở lại, ĐI QUA `luu_plugin` như mọi đường ghi khác.
+
+    Không ghi thẳng vào bảng: một bản cũ có thể không còn hợp lệ theo luật
+    thêm sau này — khoá lồng nhau chẳng hạn, cấm từ ngày có
+    `khoa_long_nhau`. Cài đè nó lặng lẽ là mở lại đúng lỗ hổng mà luật ấy
+    sinh ra để bịt. Đi qua `luu_plugin` cũng có nghĩa bản ĐANG chạy vào
+    lịch sử, nên lùi được cả cú lùi.
+    """
+    r = await db.fetchrow(
+        "SELECT noi_dung FROM ky_nang_lich_su WHERE id = $1 AND ten = $2", id_ban, ten)
+    if r is None:
+        raise BanCuKhongCo(f"{ten}#{id_ban}")
+    tho = r["noi_dung"]
+    if isinstance(tho, str):
+        tho = json.loads(tho)
+    return await luu_plugin(dict(tho, ten=ten), boi=boi)
+
+
 async def luu_plugin(tho: dict, *, boi: str = "staff") -> BanMoTa:
     """Kiểm rồi lưu một plugin. Bản mô tả sai thì không có gì được ghi."""
     bm = doc_ban_mo_ta(tho)
@@ -246,6 +320,8 @@ async def luu_plugin(tho: dict, *, boi: str = "staff") -> BanMoTa:
             f"Đã đủ {PLUGIN_TOI_DA} plugin đang bật. Mỗi công cụ thêm vào là "
             "thêm lược đồ trong MỌI lời gọi model — tắt bớt cái không dùng."
         )
+
+    await _ghi_lich_su(bm.ten, boi)
 
     await db.execute(
         """

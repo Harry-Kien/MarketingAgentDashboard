@@ -3322,7 +3322,9 @@ function veDongKyNang(k) {
         : "")
     : nguon === "tu_tao"
       ? `${k.ban_mo_ta ? `<button type="button" class="btn btn--sm"
-             data-plugin-sua="${esc(k.ten)}">Sửa</button> ` : ""}<button
+             data-plugin-sua="${esc(k.ten)}">Sửa</button>
+           <button type="button" class="btn btn--sm"
+             data-plugin-lichsu="${esc(k.ten)}">Lịch sử</button> ` : ""}<button
              type="button" class="btn btn--sm btn--halt"
              data-plugin-xoa="${esc(k.ten)}">Xoá</button>`
       : "";
@@ -3465,6 +3467,43 @@ document.addEventListener("click", async (e) => {
     } catch (err) { toast(err.message, true); }
     return;
   }
+  const bl = e.target.closest("[data-plugin-lichsu]");
+  if (bl) {
+    const ten = bl.dataset.pluginLichsu;
+    try {
+      const ds = await api(`/ky-nang/plugin/${encodeURIComponent(ten)}/lich-su`);
+      /* Vẽ ngay dưới ô kết quả của form, không mở hộp thoại: người đang so
+       * bản cũ với bản đang chạy cần nhìn thấy cả hai. */
+      $("#plugin-ketqua").innerHTML = ds.length
+        ? `<p class="panel__note">Bản cũ của <b>${esc(ten)}</b> — khôi phục sẽ
+             ghi đè bản đang chạy, và bản đang chạy vào lịch sử.</p>`
+          + ds.map((x) => `<div class="row">
+              <span class="row__flag row__flag--spend"></span>
+              <span class="row__body">
+                <span class="row__title">${esc(new Date(x.thay_luc).toLocaleString("vi-VN"))}</span>
+                <span class="row__sub">người sửa: ${esc(x.thay_boi)}</span>
+              </span>
+              <span class="row__side"><button type="button" class="btn btn--sm"
+                data-plugin-khoiphuc="${esc(ten)}" data-id="${esc(String(x.id))}"
+                >Khôi phục</button></span>
+            </div>`).join("")
+        : `<p class="empty">${esc(ten)} chưa từng được sửa lần nào.</p>`;
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const bkp = e.target.closest("[data-plugin-khoiphuc]");
+  if (bkp) {
+    const ten = bkp.dataset.pluginKhoiphuc;
+    if (!confirm(`Khôi phục "${ten}" về bản này? Bản đang chạy sẽ vào lịch sử.`)) return;
+    try {
+      await api(`/ky-nang/plugin/${encodeURIComponent(ten)}/khoi-phuc/${encodeURIComponent(bkp.dataset.id)}`,
+                { method: "POST" });
+      $("#plugin-ketqua").innerHTML = "";
+      toast(`Đã khôi phục "${ten}"`);
+      await loadKyNang();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
   const bs = e.target.closest("[data-plugin-sua]");
   if (bs) {
     /* Đọc lại từ máy chủ chứ không giữ bản mô tả trong DOM: người khác có
@@ -3595,7 +3634,7 @@ document.addEventListener("click", async (e) => {
   }
   const bk = e.target.closest("[data-goi-khoiphuc]");
   if (bk) {
-    try { await api(`/goi-ky-nang/${encodeURIComponent(bk.dataset.goiKhoiphuc)}/khoi-phuc/${encodeURIComponent(bk.dataset.id)}`, { method: "POST" }); toast("Đã khôi phục"); await loadKyNang(); }
+    try { await api(`/goi-ky-nang/${encodeURIComponent(bk.dataset.goiKhoiphuc)}/khoi-phuc/${encodeURIComponent(bkp.dataset.id)}`, { method: "POST" }); toast("Đã khôi phục"); await loadKyNang(); }
     catch (err) { toast(err.message, true); }
   }
 });

@@ -1076,6 +1076,33 @@ async def xoa_ky_nang_plugin(
     return {"da_xoa": ten}
 
 
+@router.get("/ky-nang/plugin/{ten}/lich-su")
+async def lich_su_ky_nang_plugin(
+    ten: str, _: dict = Depends(bat_buoc_quan_tri)
+) -> list[dict]:
+    """Các bản cũ của một plugin rời, mới nhất trước. Không kèm nội dung."""
+    return await kho_ky_nang.lich_su_plugin(ten)
+
+
+@router.post("/ky-nang/plugin/{ten}/khoi-phuc/{id_ban}")
+async def khoi_phuc_ky_nang_plugin(
+    ten: str, id_ban: int, nguoi: dict = Depends(bat_buoc_quan_tri)
+) -> dict:
+    """
+    Đưa một bản cũ trở lại. Đi qua đúng `luu_plugin`, nên bản cũ vẫn phải
+    qua bộ kiểm — một bản lưu trước ngày có luật mới có thể không còn hợp
+    lệ, và cài đè nó lặng lẽ là mở lại lỗ hổng luật ấy sinh ra để bịt.
+    """
+    try:
+        bm = await kho_ky_nang.khoi_phuc_plugin(
+            ten, id_ban, boi=nguoi["ten_dang_nhap"])
+    except kho_ky_nang.BanCuKhongCo as exc:
+        raise HTTPException(404, f"Không có bản cũ #{id_ban} của {ten!r}.") from exc
+    except LoiBanMoTa as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ten": bm.ten, "loai": bm.loai}
+
+
 class ThuPluginBody(BaseModel):
     ban_mo_ta: dict
     args: dict = Field(default_factory=dict)

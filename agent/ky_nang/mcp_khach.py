@@ -152,6 +152,20 @@ def kiem_dia_chi(url: str) -> str:
         raise LoiMCP(f"Địa chỉ không đọc được: {exc}") from exc
     if u.scheme not in ("http", "https"):
         raise LoiMCP(f"Chỉ chấp nhận http/https, không phải {u.scheme!r}.")
+    # Từ chối userinfo (`https://user:pass@host/mcp`) hẳn, không lặng lẽ bỏ.
+    #
+    # VÌ SAO. Cột `mcp_may_chu.dia_chi` KHÔNG mã hoá — chỉ header mới được
+    # mã hoá theo phạm vi. Một bí mật gõ vào ô Địa chỉ nằm nguyên văn trong
+    # CSDL và trong mọi bản sao lưu. Tệ hơn: `kiem_dia_chi` xưa nay đọc
+    # `u.hostname` nên phần userinfo lọt qua rào không một tiếng động, còn
+    # `kho_mcp._host()` lại đọc `netloc` (giữ nguyên `user:pass@`) — nên
+    # chính bí mật ấy đi lên dashboard, vào `suc_khoe`, vào `events` và vào
+    # nhật ký. Nói ngay lúc bấm Lưu, kèm chỗ đặt đúng.
+    if u.username or u.password:
+        raise LoiMCP(
+            "Địa chỉ không được chứa tên đăng nhập/mật khẩu — đặt bí mật vào ô "
+            "Headers, ô đó được mã hoá còn địa chỉ thì không."
+        )
     host = (u.hostname or "").lower()
     if not host:
         raise LoiMCP("Địa chỉ không có host.")

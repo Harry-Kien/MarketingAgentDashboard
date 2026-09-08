@@ -97,6 +97,24 @@ def test_ipv6_tra_ve_chuoi_phan_tich_lai_duoc(monkeypatch):
     assert lai.hostname == "::1" and lai.port == 8765
 
 
+@pytest.mark.parametrize("url", [
+    "https://tok3n:s3cret@mcp.vidu.vn/mcp",
+    "https://tok3n@mcp.vidu.vn/mcp",
+    "http://ai:do@127.0.0.1:8765/mcp",
+])
+def test_userinfo_trong_dia_chi_bi_tu_choi(cho_phep, monkeypatch, url):
+    """
+    `urlparse().hostname` bỏ phần `user:pass@` nên rào địa chỉ CHO QUA — còn
+    `kho_mcp._host()` xưa đọc `netloc`, vốn GIỮ nguyên phần ấy, nên chính bí
+    mật đi lên dashboard, vào `suc_khoe`, vào `events` và vào nhật ký. Cột
+    `dia_chi` cũng không hề mã hoá. Chặn ở cửa vào, và nói rõ chỗ đặt đúng.
+    """
+    _dns(monkeypatch, "8.8.8.8")
+    with pytest.raises(mk.LoiMCP) as e:
+        mk.kiem_dia_chi(url)
+    assert "Headers" in str(e.value)
+
+
 def test_sai_cong_thi_van_bi_chan(monkeypatch):
     """Đối xứng ở CÁCH VIẾT host, không phải ở cổng — cổng vẫn là rào thật."""
     monkeypatch.setattr(mk.settings, "mcp_may_chu_noi_bo", "localhost:8765")

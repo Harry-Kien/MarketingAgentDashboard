@@ -282,8 +282,34 @@ _URL_TRONG_CHU = re.compile(r"https?://[^\s\"'<>)\]}]+", re.I)
 
 
 def _host(dia_chi: str) -> str:
-    """Chỉ phần host:port của một URL — phần an toàn để hiện và để ghi lại."""
-    return (urlparse(dia_chi).netloc or "").lower() or "máy chủ MCP"
+    """
+    Chỉ phần host:port của một URL — phần an toàn để hiện và để ghi lại.
+
+    VÌ SAO DỰNG LẠI TỪ `hostname`, KHÔNG DÙNG `netloc`. `netloc` giữ nguyên
+    phần userinfo: với `https://tok3n:s3cret@mcp.example.com/mcp` nó trả về
+    `tok3n:s3cret@mcp.example.com`, tức là chính bí mật — và chuỗi này đi
+    lên dashboard (`liet_ke`), vào cột `mcp_may_chu.suc_khoe`, vào bảng
+    `events` và vào nhật ký. Hàm này sinh ra để CHE bí mật; dùng `netloc`
+    là nó tự tay chép bí mật vào đúng ba nơi sống lâu mà nó phải bảo vệ.
+    `mcp_khach.kiem_dia_chi` đã từ chối userinfo ở cửa vào, nhưng hàm này
+    còn chạy trên chuỗi lỗi do MÁY CHỦ NGOÀI viết — nơi rào ấy không với tới.
+    """
+    try:
+        u = urlparse(dia_chi)
+        host = (u.hostname or "").lower()
+        cong = u.port
+    except ValueError:
+        # Cổng ngoài 0-65535 làm `u.port` ném; ở đây không có gì để báo cho ai
+        # nên lui về câu chung, không để ngoại lệ thoát ra từ một hàm mà mọi
+        # nhánh hỏng đều gọi tới.
+        return "máy chủ MCP"
+    if not host:
+        return "máy chủ MCP"
+    # Giữ ngoặc vuông cho IPv6 — cùng lý do `mcp_khach.kiem_dia_chi`: `::1:80`
+    # là một địa chỉ khác, `[::1]:80` mới là host:cổng.
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{host}:{cong}" if cong else host
 
 
 def _che_dia_chi(loi, dia_chi: str) -> str:
@@ -815,7 +841,9 @@ async def liet_ke() -> list[dict]:
         ra.append({
             "ten": r["ten"],
             "nhan": r["nhan"],
-            "host": (urlparse(r["dia_chi"]).netloc or "").lower(),
+            # `_host` chứ không `netloc`: `netloc` giữ cả `user:pass@`, và
+            # ô này đi thẳng lên màn hình dashboard.
+            "host": _host(r["dia_chi"]),
             "bat": bool(r["bat"]),
             "co_bi_mat": r["key_version"] is not None,
             "suc_khoe": _tu_jsonb(r["suc_khoe"]),
@@ -872,6 +900,23 @@ async def goi_cong_cu(bm, args) -> dict:
         return _chuyen_nguoi(f"Không mở được bí mật của máy chủ MCP {ten!r}.")
 
     kq = await mk.goi(mc["dia_chi"], headers, str(bm.cau_hinh.get("cong_cu_goc") or ""), args)
+
+    # Che URL trong DICT trả về, TRƯỚC mọi nhánh dưới đây.
+    #
+    # VÌ SAO Ở NGAY ĐÂY. `mcp_khach.goi` bọc lỗi mạng thành
+    # `f"...{type(exc).__name__}: {str(exc)[:200]}"`, và `httpx2` nhúng URL
+    # ĐẦY ĐỦ vào thông điệp lỗi của nó — kể cả chuỗi truy vấn, vốn có thể
+    # CHÍNH LÀ token (`?key=...`). Trước đây chỗ này chỉ che lúc ghi nhật ký
+    # (`_log.warning` bên dưới), còn dict thì đi thẳng vào ngữ cảnh mô hình,
+    # rồi vào lịch sử hội thoại, rồi có khi vào câu trả lời cho khách. Nhật
+    # ký là nơi ÍT rủi ro nhất trong ba nơi ấy, mà lại là nơi duy nhất được
+    # che — đúng kiểu hỏng im lặng: không ai đọc dict để phát hiện.
+    #
+    # Che ở đây chứ không ở `mcp_khach.goi` vì tệp đó thuần mạng, không biết
+    # `_che_dia_chi` (nó sống cùng bí mật ở tệp này).
+    for k in ("loi", "ghi_chu"):
+        if kq.get(k):
+            kq[k] = _che_dia_chi(kq[k], mc["dia_chi"])
 
     if kq.get("dau_hieu"):
         # Bỏ qua trong Phòng thử như `bao_mat.injection`: người đang thử tự
@@ -1004,19 +1049,8 @@ async def goi_cong_cu_da_luu(ten: str, ten_model: str) -> dict:
     if bool((bm.cau_hinh or {}).get("ghi")):
         return _chuyen_nguoi(f"Công cụ GHI ({ten_model!r}) không được gọi thử từ script kiểm.")
 
-    kq = await goi_cong_cu(bm, {})
-
-    # Che URL trong kết quả TRẢ VỀ, không chỉ trong nhật ký: `scripts/
-    # kiem_mcp.py` in `loi`/`ghi_chu` thẳng ra terminal, và chuỗi lỗi của
-    # máy chủ MCP có thể chép nguyên URL đang gọi — chuỗi truy vấn của URL
-    # ấy có thể CHÍNH LÀ token xác thực (`?key=...`). `goi_cong_cu` chỉ che
-    # URL lúc GHI NHẬT KÝ (`_log.warning`), chưa từng che trong dict trả về.
-    dia_chi = ""
-    if kq.get("loi") or kq.get("ghi_chu"):
-        mc = await _doc_may_chu(ten)
-        dia_chi = mc["dia_chi"] if mc else ""
-    if kq.get("loi"):
-        kq["loi"] = _che_dia_chi(kq["loi"], dia_chi)
-    if kq.get("ghi_chu"):
-        kq["ghi_chu"] = _che_dia_chi(kq["ghi_chu"], dia_chi)
-    return kq
+    # KHÔNG che URL lại ở đây: `goi_cong_cu` đã che `loi`/`ghi_chu` cho MỌI
+    # đường gọi (xem chú thích trong đó). Chép lại phép che ở tầng này là hai
+    # nơi quyết định "che thế nào", và ngày chúng lệch nhau thì đường nào
+    # không được sửa sẽ rò bí mật mà vẫn trông như đã có rào.
+    return await goi_cong_cu(bm, {})

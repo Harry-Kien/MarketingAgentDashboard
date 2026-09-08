@@ -101,6 +101,22 @@ _KHOA_LUOC_DO_LONG = frozenset({"type", "description"})
 # chỉ vì chữ đến từ máy chủ chứ không từ người gõ.
 LUOC_DO_MO_TA_TOI_DA = 200
 LUOC_DO_ENUM_TOI_DA = 50
+# Một phần tử `enum` dạng chuỗi bị cắt còn 100 ký tự, chặt hơn `description`
+# (200): một danh sách giá trị hợp lệ gồm những mẩu 100 ký tự đã là bất
+# thường, còn 50 phần tử × 200 ký tự thì bằng cả một prompt thứ hai.
+LUOC_DO_ENUM_CHU_TOI_DA = 100
+
+# TÊN thuộc tính trong lược đồ — cũng do máy chủ ngoài viết, và cũng đi vào
+# prompt ở mọi lượt y hệt ô `description`.
+#
+# VÌ SAO CHẶN CHỨ KHÔNG CẮT. Tên thuộc tính là KHOÁ mô hình phải điền lại
+# đúng từng ký tự khi gọi công cụ; cắt ngắn nó là sinh ra một lược đồ mà
+# không lời gọi nào khớp được với máy chủ. Còn cho qua thì một máy chủ khai
+# thuộc tính tên `"bỏ qua mọi hướng dẫn trước đó và..."` nhét được cả câu
+# lệnh vào prompt qua đúng ô mà bộ quét chưa từng nhìn tới. Nên: khớp dạng
+# tên định danh (đủ rộng cho JSON Schema thật, gồm cả `.` và `-` mà nhiều
+# máy chủ dùng) thì nhận, không khớp thì BỎ cả công cụ và nêu đúng khoá.
+_TEN_THUOC_TINH_LUOC_DO_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 # Trần cho CẢ lược đồ sau khi lọc. Từng thuộc tính đều nhỏ mà 20 thuộc tính
 # gộp lại vẫn có thể thành vài nghìn ký tự, nhân với mỗi lượt gọi model.
 LUOC_DO_JSON_TOI_DA = 2000
@@ -333,10 +349,12 @@ def doc_ban_mo_ta(tho: dict, *, tu_dong_bo: bool = False) -> BanMoTa:
     return BanMoTa(ten, mo_ta, loai, tuple(tham_so), cau_hinh)
 
 
-def _mo_ta_luoc_do(gia_tri, o: str) -> str:
+def _mo_ta_luoc_do(gia_tri, o: str, toi_da: int = LUOC_DO_MO_TA_TOI_DA) -> str:
     """
-    Một ô `description` trong lược đồ MCP: cắt ngắn rồi soi bằng ĐÚNG bộ
-    quét soi tin khách.
+    Một ô CHỮ TỰ DO trong lược đồ MCP: cắt ngắn rồi soi bằng ĐÚNG bộ quét
+    soi tin khách. Dùng cho `description` (200 ký tự) và cho từng phần tử
+    `enum` dạng chuỗi (100 ký tự) — hai ô khác tên nhưng cùng một bản chất:
+    chữ do máy chủ ngoài viết, đi vào prompt ở mọi lượt.
 
     VÌ SAO SOI. Ô này nằm cùng chỗ với ô `mo_ta` của plugin — trong phần
     công cụ mà mô hình đọc ở MỌI lượt. Máy chủ MCP là nguồn ngoài, không
@@ -344,7 +362,7 @@ def _mo_ta_luoc_do(gia_tri, o: str) -> str:
     kèm mô tả "bỏ qua mọi hướng dẫn trước đó" là prompt injection đi cửa
     trước, và nó ở lại trong prompt kể cả những lượt không ai gọi công cụ.
     """
-    mt = str(gia_tri).strip()[:LUOC_DO_MO_TA_TOI_DA]
+    mt = str(gia_tri).strip()[:toi_da]
     dinh, mau = phong_thu.quet(mt)
     if dinh:
         raise LoiBanMoTa(
@@ -393,6 +411,15 @@ def _luoc_do_long_sach(v, o: str) -> dict:
 def _thuoc_tinh_sach(k: str, v) -> dict:
     """Một thuộc tính lược đồ, chỉ còn những khoá trong `_KHOA_LUOC_DO`."""
     o = f"thuộc tính {k!r}"
+    # TÊN thuộc tính cũng do máy chủ ngoài viết. Kiểm nó TRƯỚC cả `type`:
+    # câu lỗi phải nêu đúng khoá đang hỏng, mà chính khoá ấy mới là thứ
+    # không được đưa nguyên văn vào prompt. Xem `_TEN_THUOC_TINH_LUOC_DO_RE`.
+    if not _TEN_THUOC_TINH_LUOC_DO_RE.match(str(k)):
+        raise LoiBanMoTa(
+            f"Tên thuộc tính {str(k)[:60]!r} trong luoc_do không đúng dạng "
+            "(chữ, số, `_`, `.`, `-`, tối đa 64 ký tự). Tên thuộc tính đi vào "
+            "prompt ở MỌI lượt y như ô mô tả, nên nó bị siết đúng như vậy."
+        )
     if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
         raise LoiBanMoTa(
             f"Thuộc tính {k!r} trong luoc_do thiếu type hợp lệ "
@@ -413,13 +440,26 @@ def _thuoc_tinh_sach(k: str, v) -> dict:
                 f"{LUOC_DO_ENUM_TOI_DA}. Danh sách dài hơn thế mô hình không "
                 "đọc hết, mà vẫn chiếm chỗ trong prompt ở mọi lượt."
             )
+        sach: list = []
         for x in e:
             if not isinstance(x, (str, int, float)):
                 raise LoiBanMoTa(
                     f"Thuộc tính {k!r}: mỗi phần tử enum phải là chuỗi hoặc "
                     f"số, gặp {type(x).__name__}."
                 )
-        ra["enum"] = list(e)
+            # Phần tử enum dạng CHUỖI đi qua đúng cửa của `description`: nó
+            # cũng là chữ tự do do máy chủ ngoài viết, cũng nằm trong lược đồ
+            # mô hình đọc ở mọi lượt. Trước đây chỉ kiểm KIỂU rồi cho qua
+            # nguyên văn — một `enum: ["binh_thuong", "bỏ qua mọi hướng dẫn
+            # trước đó và..."]` lọt thẳng vào prompt qua đúng ô mà bộ soi
+            # chưa từng nhìn tới. Số thì giữ nguyên: không có chữ để soi, và
+            # ép nó thành chuỗi là đổi nghĩa lược đồ của máy chủ.
+            sach.append(
+                _mo_ta_luoc_do(x, f"enum của {o}", LUOC_DO_ENUM_CHU_TOI_DA)
+                if isinstance(x, str)
+                else x
+            )
+        ra["enum"] = sach
 
     if "items" in ra:
         ra["items"] = _luoc_do_long_sach(ra["items"], f"items của {o}")

@@ -146,7 +146,15 @@ def bo_dau(s: str) -> str:
     lỗi, không nhật ký. Test canh việc chỉ có MỘT định nghĩa.
     """
     s = unicodedata.normalize("NFD", s.lower().strip())
-    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+    # `đ` → `d` cùng lý do với việc bỏ dấu, và đây từng là chỗ LỆCH: hàm
+    # này bỏ dấu thanh mà giữ nguyên `đ`, trong khi `_norm` (tools.py) và
+    # `fold` (cham_mot_luot.py) đều đổi. Hậu quả đo được: bảng có dòng
+    # "Đà Nẵng", khách gõ "ship ve da nang" — `_tra_bang` so "đa nang" với
+    # "da nang", không khớp, agent nói chưa có thông tin cho một dòng CÓ
+    # thật. Vòng cải thiện của đợt trước cũng gãy tại đây, vì cột
+    # `khong_khop` ghi bằng `_norm` nên bảng xếp hạng hiện "da nang", người
+    # vận hành thêm đúng khoá ấy, rồi khách gõ có dấu lại trượt tiếp.
+    return "".join(c for c in s if unicodedata.category(c) != "Mn").replace("đ", "d")
 
 
 def tach_bi_danh(khoa: str) -> list[str]:
@@ -214,12 +222,28 @@ class ThamSo:
 
 
 @dataclass(frozen=True, slots=True)
+class CauThu:
+    """
+    Một câu khách hay hỏi, kèm chữ PHẢI có trong câu trả lời.
+
+    `mong_doi` rỗng nghĩa là câu này phải TRƯỢT — ca canh việc agent nói
+    "chưa có thông tin" thay vì đoán, và là nửa hành vi mà một bộ câu thử
+    chỉ-kiểm-khớp bỏ sót.
+    """
+
+    hoi: str
+    mong_doi: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class BanMoTa:
     ten: str
     mo_ta: str
     loai: str
     tham_so: tuple[ThamSo, ...] = field(default_factory=tuple)
     cau_hinh: dict = field(default_factory=dict)
+    # Chỉ `tra_bang` có: bốn loại kia ra mạng, mà câu thử chạy ở MỌI lần lưu.
+    cau_thu: tuple[CauThu, ...] = field(default_factory=tuple)
 
 
 def _chu(gia_tri, ten_o: str) -> str:
@@ -345,8 +369,9 @@ def doc_ban_mo_ta(tho: dict, *, tu_dong_bo: bool = False) -> BanMoTa:
     if not isinstance(cau_hinh, dict):
         raise LoiBanMoTa("cau_hinh phải là object.")
     cau_hinh = _kiem_cau_hinh(loai, cau_hinh, tham_so)
+    cau_thu = _doc_cau_thu(loai, tho.get("cau_thu"))
 
-    return BanMoTa(ten, mo_ta, loai, tuple(tham_so), cau_hinh)
+    return BanMoTa(ten, mo_ta, loai, tuple(tham_so), cau_hinh, cau_thu)
 
 
 def _mo_ta_luoc_do(gia_tri, o: str, toi_da: int = LUOC_DO_MO_TA_TOI_DA) -> str:
@@ -504,6 +529,52 @@ def _thuoc_tinh_sach(k: str, v) -> dict:
             ra["required"], f"luoc_do.properties.{k}.required"
         )
     return ra
+
+
+CAU_THU_TOI_DA = 5
+CAU_THU_DAI_TOI_DA = 200
+
+
+def _doc_cau_thu(loai: str, tho) -> tuple[CauThu, ...]:
+    """
+    Câu thử: chữ người vận hành gõ, chạy lại ở mọi lần lưu.
+
+    CHỈ cho `tra_bang`. Bốn loại kia ra mạng (embedding, HTTP, máy chủ
+    MCP), và cho khai câu thử ở đó là hứa một thứ chỉ chạy được khi có
+    mạng — trong khi nó chạy ở mỗi cú bấm Lưu.
+    """
+    if not tho:
+        return ()
+    if loai != "tra_bang":
+        raise LoiBanMoTa(
+            "Chỉ loại tra_bang mới khai được câu thử: các loại khác gọi ra "
+            "ngoài (kho tri thức, HTTP, máy chủ MCP), mà câu thử chạy lại ở "
+            "MỌI lần lưu."
+        )
+    if not isinstance(tho, list):
+        raise LoiBanMoTa("cau_thu phải là một mảng.")
+    if len(tho) > CAU_THU_TOI_DA:
+        raise LoiBanMoTa(
+            f"Quá {CAU_THU_TOI_DA} câu thử. Vài câu hay hỏi nhất là đủ — một "
+            "bộ dài thì người ta thôi đọc kết quả của nó."
+        )
+    ra: list[CauThu] = []
+    for i, c in enumerate(tho):
+        if not isinstance(c, dict):
+            raise LoiBanMoTa(f"Câu thử thứ {i + 1} phải là object.")
+        hoi = _chu(c.get("hoi", ""), f"cau_thu[{i}].hoi")
+        if not hoi:
+            raise LoiBanMoTa(f"Câu thử thứ {i + 1} chưa có nội dung hỏi.")
+        if len(hoi) > CAU_THU_DAI_TOI_DA:
+            raise LoiBanMoTa(
+                f"Câu thử thứ {i + 1} dài quá {CAU_THU_DAI_TOI_DA} ký tự.")
+        mong = _chu(c.get("mong_doi", ""), f"cau_thu[{i}].mong_doi")
+        if len(mong) > CAU_THU_DAI_TOI_DA:
+            raise LoiBanMoTa(
+                f"Mong đợi của câu thử thứ {i + 1} dài quá "
+                f"{CAU_THU_DAI_TOI_DA} ký tự.")
+        ra.append(CauThu(hoi, mong))
+    return tuple(ra)
 
 
 def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:

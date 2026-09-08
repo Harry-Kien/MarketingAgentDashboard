@@ -1823,3 +1823,8 @@ svg { flex: none; }
    display:flex nên nó thắng thuộc tính hidden, và ba form sẽ hiện cùng lúc
    — đúng thứ màn này gộp lại để tránh. */
 [data-them-o][hidden] { display: none !important; }
+
+/* Ô câu thử dùng chung khung với bảng tra: cùng một thao tác gõ, cùng một
+   cách nhìn. Cột phải để trống là CÓ NGHĨA (câu ấy phải không khớp), nên
+   không tô nó như một ô đang thiếu. */
+.cauthu__hoi, .cauthu__mong { width: 100%; }

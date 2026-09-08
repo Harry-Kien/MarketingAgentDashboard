@@ -342,6 +342,10 @@ async def luu_plugin(tho: dict, *, boi: str = "staff") -> BanMoTa:
                 for t in bm.tham_so
             ],
             "cau_hinh": bm.cau_hinh,
+            # Không lưu thì câu thử biến mất ngay sau lần Lưu đầu tiên —
+            # người vận hành gõ xong, thấy nó chạy, rồi lần sau mở lại thì
+            # trống trơn và không hiểu vì sao.
+            "cau_thu": [{"hoi": c.hoi, "mong_doi": c.mong_doi} for c in bm.cau_thu],
         },
         boi,
     )
@@ -516,6 +520,11 @@ async def liet_ke(dem: dict[str, dict] | None = None) -> dict:
                         for t in p.tham_so
                     ],
                     "cau_hinh": p.cau_hinh,
+                    # Không trả thì mở form Sửa xong bấm Lưu là câu thử bị
+                    # xoá sạch — người vận hành không đụng vào nó lần nào.
+                    "cau_thu": [
+                        {"hoi": c.hoi, "mong_doi": c.mong_doi} for c in p.cau_thu
+                    ],
                 },
             }
             for p in plugin

@@ -2997,6 +2997,55 @@ function datBang(bang) {
   if (!Object.keys(bang || {}).length) { themDongBang(); themDongBang(); }
 }
 
+function themDongCauThu(hoi = "", mong_doi = "") {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><input class="cauthu__hoi" placeholder="đi biển" maxlength="200"></td>
+    <td><input class="cauthu__mong" placeholder="kháng nước" maxlength="200"></td>
+    <td><button type="button" class="btn btn--sm btn--ghost" data-cauthu-xoa title="Bỏ câu thử">✕</button></td>`;
+  tr.querySelector(".cauthu__hoi").value = hoi;
+  tr.querySelector(".cauthu__mong").value = mong_doi;
+  $("#plugin-cauthu tbody").appendChild(tr);
+  return tr;
+}
+
+function docCauThu() {
+  const ra = [];
+  for (const tr of document.querySelectorAll("#plugin-cauthu tbody tr")) {
+    const hoi = tr.querySelector(".cauthu__hoi").value.trim();
+    const mong = tr.querySelector(".cauthu__mong").value.trim();
+    /* Cột phải để trống là CÓ NGHĨA: câu ấy phải không khớp. Chỉ bỏ dòng
+     * khi cả hai ô đều trống. */
+    if (!hoi) continue;
+    ra.push({ hoi, mong_doi: mong });
+  }
+  return ra;
+}
+
+function datCauThu(ds) {
+  $("#plugin-cauthu tbody").innerHTML = "";
+  for (const c of ds || []) themDongCauThu(c.hoi, c.mong_doi);
+}
+
+/* Kết quả câu thử sau mỗi lần Lưu. Trượt thì phải NHÌN THẤY, nên nó nằm
+ * ngay ô kết quả chứ không phải một toast biến mất sau ba giây. */
+function hienCauThu(ds) {
+  if (!ds || !ds.length) return "";
+  const truot = ds.filter((x) => !x.dat);
+  const dong = (x) => `<div class="row">
+      <span class="row__flag ${x.dat ? "row__flag--auto" : "row__flag--halt"}"></span>
+      <span class="row__body">
+        <span class="row__title">${x.dat ? "Đạt" : "TRƯỢT"}: ${esc(x.hoi)}</span>
+        <span class="row__sub row__sub--thu">${x.mong_doi
+          ? "mong đợi có: " + esc(x.mong_doi)
+          : "mong đợi KHÔNG khớp dòng nào"} · agent trả: ${esc(x.nhan_duoc)}</span>
+      </span>
+    </div>`;
+  return `<p class="panel__note${truot.length ? " plugin-loi" : ""}">Câu thử: ${
+    ds.length - truot.length}/${ds.length} đạt${
+    truot.length ? " — sửa bảng hoặc sửa câu thử cho khớp lại." : "."}</p>`
+    + ds.map(dong).join("");
+}
+
 /* Tên kỹ năng viết hoa cột trái để nhìn ra mẫu, nhưng mã máy mới là thứ gửi
  * đi — hiện nó ngay dưới ô để không có bất ngờ lúc lưu. */
 function capNhatMaPlugin() {
@@ -3060,7 +3109,7 @@ function napPluginVaoForm(ten, bm) {
     f.elements.tham_so_mo_ta.value = t.mo_ta || "";
   }
   const ch = bm.cau_hinh || {};
-  if (bm.loai === "tra_bang") datBang(ch.bang || {});
+  if (bm.loai === "tra_bang") { datBang(ch.bang || {}); datCauThu(bm.cau_thu); }
   if (bm.loai === "tra_tai_lieu") {
     f.elements.nhom_tai_lieu.value = ch.nhom_tai_lieu || "";
     f.elements.k.value = ch.k || 4;
@@ -3136,7 +3185,8 @@ function docFormPlugin() {
     const mo_ta = g("tham_so_mo_ta") || meta.tham_so.mo_ta;
     tham_so.push({ ten, mo_ta, bat_buoc: true });
   }
-  return { ten: sinhMaPlugin(g("nhan")), loai, mo_ta: g("mo_ta"), tham_so, cau_hinh };
+  return { ten: sinhMaPlugin(g("nhan")), loai, mo_ta: g("mo_ta"), tham_so, cau_hinh,
+           cau_thu: loai === "tra_bang" ? docCauThu() : [] };
 }
 
 /* Kết quả chạy thử thành câu người đọc được. Đây là dữ liệu do người vận
@@ -3188,6 +3238,11 @@ function khoiTaoFormPlugin() {
   f.elements.nhan.addEventListener("input", capNhatMaPlugin);
   $("#plugin-loai").addEventListener("change", (e) => doiLoaiPlugin(e.target.value));
   $("#plugin-bang-them").addEventListener("click", () => themDongBang().querySelector("input").focus());
+  $("#plugin-cauthu-them").addEventListener("click", () => themDongCauThu().querySelector("input").focus());
+  $("#plugin-cauthu").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cauthu-xoa]");
+    if (b) b.closest("tr").remove();
+  });
   $("#plugin-mau").addEventListener("click", (e) => {
     const c = e.target.closest("[data-plugin-mau]");
     if (c) dienMauPlugin(c.dataset.pluginMau);
@@ -3236,14 +3291,18 @@ $("#pluginform")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     const bm = docFormPlugin();
-    await api("/ky-nang/plugin", { method: "POST", body: JSON.stringify(bm) });
+    const ket = await api("/ky-nang/plugin", { method: "POST", body: JSON.stringify(bm) });
     e.target.reset();
     doiLoaiPlugin("tra_bang");
     datBang({});
     capNhatMaPlugin();
-    $("#plugin-ketqua").innerHTML = "";
+    datCauThu([]);
+    $("#plugin-ketqua").innerHTML = hienCauThu(ket.cau_thu);
     for (const c of document.querySelectorAll("#plugin-mau .chip")) c.classList.remove("is-on");
-    toast(`Đã lưu và bật "${bm.ten}"`);
+    const truot = (ket.cau_thu || []).filter((x) => !x.dat).length;
+    toast(truot
+      ? `Đã lưu "${bm.ten}" — ${truot} câu thử TRƯỢT, xem bên dưới`
+      : `Đã lưu và bật "${bm.ten}"`, !!truot);
     await loadKyNang();
   } catch (err) {
     $("#plugin-ketqua").innerHTML = `<p class="empty plugin-loi">${esc(err.message)}</p>`;

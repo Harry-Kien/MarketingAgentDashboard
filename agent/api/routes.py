@@ -20,6 +20,7 @@ from agent.api import tich_hop_kho
 from agent.api.tich_hop_kho import LoiUngDung
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang.ban_mo_ta import LoiBanMoTa, doc_ban_mo_ta
+from agent.ky_nang.cau_thu import chay_cau_thu
 from agent.ky_nang.chay import chay_plugin
 from agent.omnichannel.outbound_service import (
     ConversationNotFound,
@@ -1060,7 +1061,13 @@ async def luu_ky_nang_plugin(
         bm = await kho_ky_nang.luu_plugin(body, boi=nguoi["ten_dang_nhap"])
     except LoiBanMoTa as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ten": bm.ten, "loai": bm.loai}
+    # Chạy câu thử NGAY sau khi lưu, không đợi ai bấm nút.
+    #
+    # Một nút "chạy câu thử" riêng thì không ai bấm, và bộ câu thử không
+    # được chạy là bộ câu thử không canh gì. Không CHẶN lưu khi trượt:
+    # người vận hành có thể đang sửa dở (đổi khoá trước, sửa câu thử sau),
+    # và chặn ở đó dạy họ cách nhanh nhất là xoá câu thử đi.
+    return {"ten": bm.ten, "loai": bm.loai, "cau_thu": await chay_cau_thu(bm)}
 
 
 @router.delete("/ky-nang/plugin/{ten}")

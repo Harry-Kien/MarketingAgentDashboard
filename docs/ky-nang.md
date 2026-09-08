@@ -175,7 +175,7 @@ Mỗi công cụ đồng bộ về nằm trong CÙNG bảng plugin, cột `goi` 
 
 ### Đọc mặc định bật, ghi phải bật tay — hai lần
 
-Công cụ ĐỌC tự bật khi còn chỗ dưới trần. Công cụ GHI (đổi dữ liệu trên hệ thống người khác) mặc định TẮT, và bật nó lên cần đúng hai lần bấm riêng: bật công cụ, rồi bật thêm "cho phép ghi ngoài phòng thử" — quyết định thứ hai này KHÔNG tự khôi phục khi đồng bộ lại hay khi tắt/bật lại máy chủ. Trong Phòng thử, mọi công cụ ghi bị MÔ PHỎNG chứ không gọi thật, dù đã bật "cho phép ghi" — thử trong Phòng thử không bao giờ đổi dữ liệu ở hệ thống người khác.
+Công cụ ĐỌC tự bật khi còn chỗ dưới trần. Công cụ GHI (đổi dữ liệu trên hệ thống người khác) mặc định TẮT, và bật nó lên cần đúng hai lần bấm riêng: bật công cụ, rồi bật thêm "cho phép ghi ngoài phòng thử" — hai lần bấm RIÊNG, gộp cả hai vào một lời gọi API bị từ chối. Cờ "cho phép ghi" được GIỮ qua đồng bộ lại và qua tắt/bật máy chủ (công việc kiểm duyệt của quản trị không bị một lần bảo trì xoá đi); chỉ công tắc **Bật** của công cụ ghi là không tự bật lại — nó phải có người bấm. Trong Phòng thử, mọi công cụ ghi bị MÔ PHỎNG chứ không gọi thật, dù đã bật "cho phép ghi" — thử trong Phòng thử không bao giờ đổi dữ liệu ở hệ thống người khác.
 
 
 ### Đồng bộ: qua bộ kiểm, hỏng thì bỏ có lý do

@@ -26,6 +26,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import logging
 import re
 import socket
 from dataclasses import dataclass
@@ -53,6 +54,8 @@ THAN_GUI_TOI_DA = 16 * 1024
 
 _HOST_NOI_BO = {"127.0.0.1", "localhost", "::1"}
 
+_log = logging.getLogger("agent.ky_nang.mcp_khach")
+
 # Một câu duy nhất cho mọi nhánh hỏng. Viết sẵn vì nhánh hỏng nào cũng phải
 # nói CÙNG một điều với mô hình: không có số liệu thì không được đoán số liệu.
 _CHUYEN_NGUOI = "KHÔNG đoán kết quả thay công cụ — đã chuyển hội thoại cho người."
@@ -72,7 +75,7 @@ class CongCuGoc:
     goi_y_ghi: bool
 
 
-def _khoa_noi_bo(host: str, cong: int | str) -> str:
+def _khoa_noi_bo(cong: int | str) -> str:
     """
     Khoá so sánh cho một máy loopback: mọi cách viết cùng một máy → một khoá.
 
@@ -80,23 +83,49 @@ def _khoa_noi_bo(host: str, cong: int | str) -> str:
     cách nào cũng đúng. So chuỗi thô thì `.env` ghi `localhost:8765` mà URL
     ghi `127.0.0.1:8765` là kênh chết vì lý do hình thức — không có gì báo,
     chỉ có một công cụ lặng lẽ không bao giờ gọi được.
+
+    Không nhận tham số `host`: khoá chỉ phụ thuộc cổng (mọi host loopback quy
+    về cùng một khoá `127.0.0.1:<cổng>`), nên giữ tham số không dùng chỉ để
+    người đọc tưởng nhầm nó có vai trò.
     """
     return f"127.0.0.1:{cong}"
 
 
 def _noi_bo_cho_phep() -> frozenset[str]:
-    """Khoá của các cặp host:cổng nội bộ đã khai trong MCP_MAY_CHU_NOI_BO."""
+    """
+    Khoá của các cặp host:cổng nội bộ đã khai trong MCP_MAY_CHU_NOI_BO.
+
+    Mục sai dạng (thiếu cổng, dán cả URL, gõ thừa khoảng trắng...) từng bị bỏ
+    IM LẶNG — người vận hành đọc `.env` thấy máy chủ đã khai, nhưng nó không
+    bao giờ vào được tập cho phép; công cụ chết mà không ai biết vì sao. Ghi
+    log mỗi mục bị bỏ, nêu đúng mục đó, để lỗi hiện ra ngay lúc đọc `.env`
+    thay vì đợi khách hỏi mới lộ ra máy chủ không gọi được.
+    """
     tho = getattr(settings, "mcp_may_chu_noi_bo", "") or ""
     ra: set[str] = set()
-    for muc in tho.split(","):
-        muc = muc.strip().lower()
+    for muc_goc in tho.split(","):
+        muc_goc = muc_goc.strip()
+        if not muc_goc:
+            continue  # mục rỗng do dấu phẩy thừa — không phải lỗi định dạng
+        muc = muc_goc.lower()
         if ":" not in muc:
+            _log.warning(
+                "MCP_MAY_CHU_NOI_BO: bỏ qua mục %r — thiếu cổng, đúng dạng là host:cổng.",
+                muc_goc,
+            )
             continue
         # `rpartition` chứ không `split(":")`: `[::1]:8765` có bốn dấu hai chấm.
         h, _, c = muc.rpartition(":")
         h = h.strip("[]")
         if h in _HOST_NOI_BO and c.isdigit():
-            ra.add(_khoa_noi_bo(h, c))
+            ra.add(_khoa_noi_bo(c))
+        else:
+            _log.warning(
+                "MCP_MAY_CHU_NOI_BO: bỏ qua mục %r — không đúng dạng host:cổng "
+                "(host phải là 127.0.0.1/localhost/::1, cổng phải là số, không có "
+                "khoảng trắng hay tiền tố http://).",
+                muc_goc,
+            )
     return frozenset(ra)
 
 
@@ -126,14 +155,22 @@ def kiem_dia_chi(url: str) -> str:
     host = (u.hostname or "").lower()
     if not host:
         raise LoiMCP("Địa chỉ không có host.")
-    cong = u.port or (443 if u.scheme == "https" else 80)
+    try:
+        # `u.port` tự phân tích lại phần cổng của URL và NÉM `ValueError` nếu
+        # nó ngoài khoảng 0-65535 (vd `:99999`) — khác `u.hostname`, vốn chỉ
+        # trả chuỗi thô không kiểm gì. Không bọc thì lỗi này lọt qua đúng một
+        # `except LoiMCP` ở `goi()`, ném thẳng loại sai ra ngoài hàm hứa
+        # "luôn trả dict", và `liet_ke_cong_cu` cũng ném nhầm loại cho dashboard.
+        cong = u.port or (443 if u.scheme == "https" else 80)
+    except ValueError as exc:
+        raise LoiMCP(f"Cổng trong địa chỉ không hợp lệ: {exc}") from exc
 
     if host in _HOST_NOI_BO:
         # Giữ ngoặc vuông cho IPv6 để chuỗi trả về còn phân tích lại được:
         # `::1:8765` là một địa chỉ IPv6 khác, `[::1]:8765` mới là host:cổng.
         cap = f"[{host}]:{cong}" if ":" in host else f"{host}:{cong}"
         # Đối xứng hai chiều: khai cách nào, gõ cách nào cũng khớp.
-        if _khoa_noi_bo(host, cong) not in _noi_bo_cho_phep():
+        if _khoa_noi_bo(cong) not in _noi_bo_cho_phep():
             raise LoiMCP(
                 f"Máy chủ nội bộ {cap!r} chưa được cho phép. Thêm vào MCP_MAY_CHU_NOI_BO "
                 "trong .env (dạng host:cổng, cách nhau bằng dấu phẩy) rồi khởi động lại."
@@ -396,12 +433,20 @@ def _doc_ket_qua(kq) -> dict:
     loi = bool(getattr(kq, "is_error", False))
 
     ghi_chu = "Kết quả từ máy chủ ngoài; trả lời khách dựa trên nó, không thêm số liệu ngoài đó."
+    # `da_bo` phân biệt "máy chủ thật sự trả về rỗng" với "có dữ liệu nhưng bị
+    # cắt/bỏ vì quá dài" — hai ca cần một câu HOÀN TOÀN khác cho mô hình. Gộp
+    # chung từng khiến ca thứ hai (structured_content 20 KB đơn hàng bị bỏ vì
+    # vượt KET_QUA_TOI_DA, còn phần chữ vốn rỗng) rơi vào nhánh "rỗng" bên
+    # dưới và mô hình bảo khách "không có đơn" trong khi đơn có thật.
+    da_bo = False
     if len(van_ban) > KET_QUA_TOI_DA:
         van_ban = van_ban[:KET_QUA_TOI_DA] + "\n[... đã cắt]"
         ghi_chu += " Kết quả đã bị cắt vì quá dài."
+        da_bo = True
     if du_lieu is not None and len(json.dumps(du_lieu, ensure_ascii=False)) > KET_QUA_TOI_DA:
         du_lieu = None
         ghi_chu += " Phần dữ liệu có cấu trúc bị bỏ vì quá dài."
+        da_bo = True
 
     # Quét SAU khi cắt: quét trên bản 10 MB là đốt CPU cho phần văn bản mà mô
     # hình sẽ không bao giờ thấy. Cắt xong mới quét đúng thứ sắp đưa vào ngữ cảnh.
@@ -438,9 +483,20 @@ def _doc_ket_qua(kq) -> dict:
 
     # Rỗng là câu trả lời hợp lệ ("không có đơn nào"), nhưng nó cũng là đúng
     # chỗ mô hình hay tự điền cho đỡ trống. Nói thẳng ra để nó không bịa.
+    #
+    # CHỈ vào nhánh "rỗng" khi không có gì bị bỏ (`not da_bo`): rỗng vì bị bỏ
+    # do quá lớn không phải "không có dữ liệu" — có dữ liệu thật, chỉ là
+    # không đưa hết vào ngữ cảnh được. Nói "rỗng"/"không có dữ liệu" ở ca đó
+    # là chính agent bịa ra một sự thật sai cho khách.
     if not van_ban.strip() and du_lieu is None:
-        ghi_chu = (
-            "Máy chủ trả về rỗng — nói với khách là không có dữ liệu, KHÔNG bịa "
-            "con số hay thông tin nào thay công cụ."
-        )
+        if da_bo:
+            ghi_chu += (
+                " Kết quả THẬT SỰ có dữ liệu nhưng quá lớn để đưa hết vào — KHÔNG suy đoán "
+                "hay khẳng định với khách, chuyển người nếu khách cần số liệu cụ thể."
+            )
+        else:
+            ghi_chu = (
+                "Máy chủ trả về rỗng — nói với khách là không có dữ liệu, KHÔNG bịa "
+                "con số hay thông tin nào thay công cụ."
+            )
     return {"ket_qua": van_ban, "du_lieu": du_lieu, "ghi_chu": ghi_chu}

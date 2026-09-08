@@ -428,6 +428,67 @@ def test_goi_khong_bao_gio_nem(monkeypatch, noi_bo):
     assert kq["can_chuyen_nhan_vien"] is True and "TypeError" in kq["loi"]
 
 
+# ---------------- vòng 2: nhánh "rỗng" khi dữ liệu bị BỎ vì quá dài ----------------
+
+def test_du_lieu_bi_bo_vi_qua_lon_khong_noi_la_rong(monkeypatch, noi_bo):
+    """
+    Content rỗng + `structured_content` vượt `KET_QUA_TOI_DA` bị bỏ: trước đây
+    điều kiện "rỗng" ghi đè `ghi_chu` thành "không có dữ liệu", và mô hình bảo
+    khách "không có đơn" trong khi có hàng chục KB đơn thật đã bị bỏ vì quá
+    lớn, không phải vì không tồn tại.
+    """
+    du_lieu_khong_lo = {"don": ["x" * 100] * (mk.KET_QUA_TOI_DA // 50)}
+    _thay_ket_qua(monkeypatch, _KetQuaGia(structured_content=du_lieu_khong_lo))
+    kq = chay(mk.goi(URL, None, "tra_ton", {}, http_client=object()))
+    assert kq["du_lieu"] is None
+    assert "rỗng" not in kq["ghi_chu"].lower()
+    assert "không có dữ liệu" not in kq["ghi_chu"].lower()
+    assert "quá lớn" in kq["ghi_chu"]
+
+
+# ---------------- vòng 2: ValueError từ u.port không lọt ra ngoài LoiMCP ----------------
+
+def test_cong_ngoai_khoang_khong_nem_sai_loai(cho_phep, monkeypatch):
+    """
+    `u.port` tự kiểm khoảng 0-65535 và NÉM `ValueError` nếu vượt — khác mọi
+    thuộc tính khác của `urlparse`. Không bọc thì `goi()` (chỉ bắt `LoiMCP`)
+    ném thẳng `ValueError` ra ngoài hàm đã hứa luôn trả dict, còn
+    `liet_ke_cong_cu` ném sai loại cho dashboard.
+    """
+    url = "http://127.0.0.1:99999/mcp"
+    with pytest.raises(mk.LoiMCP):
+        mk.kiem_dia_chi(url)
+    kq = chay(mk.goi(url, None, "tra_ton", {}, http_client=object()))
+    assert kq["can_chuyen_nhan_vien"] is True
+    with pytest.raises(mk.LoiMCP):
+        chay(mk.liet_ke_cong_cu(url, None, http_client=object()))
+
+
+# ---------------- vòng 2: mục .env sai dạng bị bỏ phải LÊN LOG ----------------
+
+@pytest.mark.parametrize("muc_sai", ["localhost", "127.0.0.1: 8765", "http://localhost:8765"])
+def test_muc_env_sai_dang_bi_bo_thi_len_log(monkeypatch, caplog, muc_sai):
+    """
+    `localhost` (thiếu cổng), `127.0.0.1: 8765` (khoảng trắng thừa),
+    `http://localhost:8765` (dán cả URL) đều từng bị bỏ mà không ai biết —
+    người vận hành đọc `.env` thấy máy chủ đã khai nhưng công cụ không bao
+    giờ gọi được. Phải có một dòng log nêu đúng mục sai.
+    """
+    monkeypatch.setattr(mk.settings, "mcp_may_chu_noi_bo", muc_sai)
+    with caplog.at_level("WARNING", logger="agent.ky_nang.mcp_khach"):
+        ra = mk._noi_bo_cho_phep()
+    assert ra == frozenset()
+    assert muc_sai in caplog.text
+
+
+# ---------------- vòng 2: _khoa_noi_bo không còn tham số host thừa ----------------
+
+def test_khoa_noi_bo_khong_con_tham_so_host():
+    """Nit: tham số `host` chưa từng dùng trong thân hàm — bỏ hẳn cho gọn."""
+    import inspect
+    assert list(inspect.signature(mk._khoa_noi_bo).parameters) == ["cong"]
+
+
 def test_mcp_khach_khong_cham_csdl_khong_goi_model():
     import ast
     from pathlib import Path

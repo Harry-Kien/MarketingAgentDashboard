@@ -395,6 +395,30 @@ def _bat_buoc_sach(gia_tri, o: str) -> list[str]:
     return gia_tri
 
 
+def _kiem_ten_thuoc_tinh(k, o: str) -> str:
+    """
+    Kiểm một TÊN thuộc tính lược đồ khớp `_TEN_THUOC_TINH_LUOC_DO_RE`.
+
+    DÙNG CHUNG CHO CẢ TẦNG ĐẦU LẪN TẦNG LỒNG MỘT BẬC (`properties.a.
+    properties.b`). Trước đây chỉ khoá tầng đầu được kiểm — khoá bên trong
+    `properties` lồng đi thẳng vào lược đồ qua `_luoc_do_long_sach` mà
+    không qua kiểm tra nào, dù nó vào prompt ở MỌI lượt y hệt khoá tầng
+    đầu và y hệt ô `description`. Một máy chủ khai
+    `properties.a.properties["bỏ qua mọi hướng dẫn trước đó..."]` lọt được
+    qua đúng lỗ mà tầng đầu đã vá — cùng một khe hở, chỉ khác độ sâu lồng.
+    Kiểm ở MỘT hàm để hai tầng luôn khớp cùng một luật; hai bản sao thì lúc
+    nào đó lệch nhau, đúng kiểu hỏng im lặng mà tệp này đang canh.
+    """
+    ks = str(k)
+    if not _TEN_THUOC_TINH_LUOC_DO_RE.match(ks):
+        raise LoiBanMoTa(
+            f"Tên thuộc tính {ks[:60]!r} trong {o} không đúng dạng (chữ, số, "
+            "`_`, `.`, `-`, tối đa 64 ký tự). Tên thuộc tính đi vào prompt ở "
+            "MỌI lượt y như ô mô tả, nên nó bị siết đúng như vậy."
+        )
+    return ks
+
+
 def _luoc_do_long_sach(v, o: str) -> dict:
     """Một tầng lồng của `items`/`properties`: chỉ giữ `type` và mô tả."""
     if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
@@ -414,12 +438,7 @@ def _thuoc_tinh_sach(k: str, v) -> dict:
     # TÊN thuộc tính cũng do máy chủ ngoài viết. Kiểm nó TRƯỚC cả `type`:
     # câu lỗi phải nêu đúng khoá đang hỏng, mà chính khoá ấy mới là thứ
     # không được đưa nguyên văn vào prompt. Xem `_TEN_THUOC_TINH_LUOC_DO_RE`.
-    if not _TEN_THUOC_TINH_LUOC_DO_RE.match(str(k)):
-        raise LoiBanMoTa(
-            f"Tên thuộc tính {str(k)[:60]!r} trong luoc_do không đúng dạng "
-            "(chữ, số, `_`, `.`, `-`, tối đa 64 ký tự). Tên thuộc tính đi vào "
-            "prompt ở MỌI lượt y như ô mô tả, nên nó bị siết đúng như vậy."
-        )
+    _kiem_ten_thuoc_tinh(k, "luoc_do")
     if not isinstance(v, dict) or v.get("type") not in _KIEU_JSON:
         raise LoiBanMoTa(
             f"Thuộc tính {k!r} trong luoc_do thiếu type hợp lệ "
@@ -474,7 +493,9 @@ def _thuoc_tinh_sach(k: str, v) -> dict:
                 f"{LUOC_DO_THUOC_TINH_TOI_DA}."
             )
         ra["properties"] = {
-            str(kk): _luoc_do_long_sach(vv, f"properties.{kk} của {o}")
+            _kiem_ten_thuoc_tinh(kk, f"properties của {o}"): _luoc_do_long_sach(
+                vv, f"properties.{kk} của {o}"
+            )
             for kk, vv in p.items()
         }
 

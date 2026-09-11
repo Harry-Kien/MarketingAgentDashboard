@@ -65,7 +65,7 @@ không ai kiểm.
 
 ```bash
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
-python -m pytest -q               # ~1575 test, khoảng 1 phút, không gọi API
+python -m pytest -q               # ~2760 test, khoảng 3 phút, không gọi API model
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
 
@@ -212,6 +212,38 @@ python -m scripts.sinh_token MCP_TOKEN
 
 Không dùng `python -c "...print(token)"` — nó để lại bí mật trong lịch sử
 terminal và trong ảnh chụp màn hình.
+
+**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 36 quyền,
+và `kiem_moi_route_co_quyen(app)` chạy lúc khởi động: route nào dưới `/api`
+hay `/tich-hop` chưa có `Depends(can_quyen("..."))` và cũng không nằm trong
+`MIEN_TRU` thì **máy chủ không lên**.
+
+```python
+@router.get("/bao-cao-moi")
+async def bao_cao_moi(_q: dict = Depends(can_quyen("bao_cao.doc"))) -> dict:
+```
+
+Cố ý hỏng-đóng. Gắn `Depends` từng endpoint là cơ chế hỏng-MỞ — quên một
+cái là cái đó phơi ra, không ai báo. Dời chốt sang lúc khởi động giữ được
+tính hỏng-đóng mà vẫn để quyền nằm ngay cạnh endpoint.
+
+Tên quyền lạ thì `KeyError` ngay lúc import, cũng không khởi động được.
+Thêm quyền mới vào `QUYEN` rồi mới dùng được.
+
+**Lỡ tự khoá mình ra ngoài thì vào lại thế nào.** API chặn ba ngả dẫn tới
+chỗ "không còn ai có `nguoi_dung.sua`", nhưng nếu bằng cách nào đó vẫn xảy
+ra — sửa tay trong CSDL, hoặc khoá đúng tài khoản quản trị cuối cùng:
+
+```bash
+docker compose exec postgres psql -U agent -d marketing_agent -c \
+  "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id) \
+   SELECT nd.id, vt.id FROM nguoi_dung nd, vai_tro vt \
+   WHERE nd.ten_dang_nhap = 'TEN_CUA_BAN' AND vt.ten = 'Quản trị' \
+   ON CONFLICT DO NOTHING;"
+```
+
+Ghi ở đây vì không có mục này thì sự cố ấy là sự cố không lối thoát, và nó
+xảy ra đúng vào lúc không ai còn vào được dashboard để đọc hướng dẫn.
 
 **Không chép mã ZaloCRM vào repo.** Nó là AGPL-3.0; chép vào là toàn bộ hệ
 thống phải công bố mã nguồn. Submodule trỏ vào fork của chủ dự án, giao

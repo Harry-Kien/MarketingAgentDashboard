@@ -2075,6 +2075,213 @@ $("#loginform").addEventListener("submit", async (e) => {
   }
 });
 
+/* ---------------- nhân sự: vai trò và quyền ---------------- */
+/*
+ * VÌ SAO MÀN NÀY HIỆN "QUYỀN THẬT" CHỨ KHÔNG CHỈ HIỆN VAI TRÒ
+ *
+ * Một người có thể mang nhiều vai trò, và vai trò `Quản trị` lấy quyền
+ * thẳng từ mã chứ không từ CSDL. Nhìn danh sách vai trò thì không suy ra
+ * được người ấy làm được gì — và khi có ai đó vào được màn lẽ ra không
+ * được, câu hỏi đầu tiên luôn là "vì sao".
+ *
+ * `GET /api/nguoi-dung/{id}/quyen` trả lời đúng câu ấy: từng quyền, kèm
+ * tên vai trò đã cấp nó.
+ */
+
+const nhanSu = { vaiTro: [], danhMuc: {}, dangSua: null };
+
+function nsDongNguoi(n) {
+  const vai = (n.vai_tro_ten || []).map((t) => `<span class="pill">${esc(t)}</span>`).join(" ")
+    || '<span class="pill pill--warn">chưa có vai trò nào</span>';
+  const coVai = (n.vai_tro_ten || []).length > 0;
+  return `<div class="row" data-nguoi="${esc(n.id)}">
+    <span class="row__flag row__flag--${n.khoa ? "halt" : coVai ? "auto" : "assist"}"></span>
+    <div class="row__main">
+      <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
+      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}</span>
+    </div>
+    <div class="row__side">${vai}</div>
+    <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
+    <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
+  </div>`;
+}
+
+function nsDongVaiTro(v) {
+  /* Vai trò hệ thống hiện khoá và KHÔNG có nút xoá.
+   *
+   * Nút xoá bấm vào rồi báo 409 cũng "an toàn", nhưng nó dạy người dùng
+   * rằng thông báo lỗi là chuyện bình thường — và lần sau họ bấm qua một
+   * cảnh báo thật. */
+  const soQuyen = v.toan_quyen
+    ? "toàn bộ quyền (lấy từ mã)"
+    : `${v.quyen.length} quyền`;
+  const nut = v.toan_quyen
+    ? ""
+    : `<button type="button" class="btn btn--sm btn--ghost" data-suavai="${esc(v.id)}">Sửa</button>`
+      + (v.he_thong ? "" : `<button type="button" class="btn btn--sm btn--ghost" data-xoavai="${esc(v.id)}">Xoá</button>`);
+  return `<div class="row">
+    <span class="row__flag row__flag--${v.toan_quyen ? "halt" : "auto"}"></span>
+    <div class="row__main">
+      <b>${esc(v.ten)}</b>${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}
+      <span class="row__sub">${esc(v.mo_ta || "—")}</span>
+    </div>
+    <div class="row__side">
+      <span class="pill">${soQuyen}</span>
+      <span class="pill">${v.so_nguoi} người</span>
+    </div>
+    ${nut}
+  </div>`;
+}
+
+async function loadNhanSu() {
+  const [nguoi, vt, dm] = await Promise.all([
+    api("/nguoi-dung"), api("/vai-tro"), api("/quyen"),
+  ]);
+  nhanSu.vaiTro = vt.vai_tro;
+  nhanSu.danhMuc = dm.nhom;
+
+  const ds = nguoi.nguoi_dung || nguoi.items || nguoi;
+  $("#nsNguoi").innerHTML = ds.length
+    ? ds.map(nsDongNguoi).join("")
+    : '<p class="empty">Chưa có nhân viên nào.</p>';
+  $("#nsVaiTro").innerHTML = nhanSu.vaiTro.map(nsDongVaiTro).join("");
+  const chuaVai = ds.filter((n) => !(n.vai_tro_ten || []).length).length;
+  $("#c-nhansu").textContent = chuaVai ? String(chuaVai) : "";
+  $("#c-nhansu").title = chuaVai
+    ? `${chuaVai} nhân viên chưa được cấp vai trò nào` : "";
+}
+
+function nsVeBangQuyen(dangCo) {
+  const co = new Set(dangCo || []);
+  return Object.entries(nhanSu.danhMuc).map(([nhom, ds]) => `
+    <fieldset class="quyen__nhom">
+      <legend>${esc(nhom)}</legend>
+      ${ds.map((q) => `<label class="quyen__o">
+        <input type="checkbox" name="quyen" value="${esc(q.ma)}"${co.has(q.ma) ? " checked" : ""}>
+        <span>${esc(q.nhan)}</span><code>${esc(q.ma)}</code>
+      </label>`).join("")}
+    </fieldset>`).join("");
+}
+
+function nsMoSua(v) {
+  nhanSu.dangSua = v;
+  $("#nsSuaTieuDe").textContent = v ? `Sửa vai trò “${v.ten}”` : "Tạo vai trò mới";
+  const f = $("#nsFormVaiTro");
+  f.ten.value = v ? v.ten : "";
+  f.mo_ta.value = v ? v.mo_ta : "";
+  $("#nsQuyen").innerHTML = nsVeBangQuyen(v ? v.quyen : []);
+  $("#nsPanelSua").hidden = false;
+  $("#nsPanelSua").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+$("#nsThemVaiTro")?.addEventListener("click", () => nsMoSua(null));
+$("#nsHuySua")?.addEventListener("click", () => { $("#nsPanelSua").hidden = true; });
+
+$("#nsFormVaiTro")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const than = {
+    ten: f.ten.value.trim(),
+    mo_ta: f.mo_ta.value.trim(),
+    quyen: $$('input[name="quyen"]:checked', f).map((i) => i.value),
+  };
+  try {
+    if (nhanSu.dangSua) {
+      await api(`/vai-tro/${nhanSu.dangSua.id}`, { method: "PUT", body: JSON.stringify(than) });
+      toast("Đã lưu vai trò.");
+    } else {
+      await api("/vai-tro", { method: "POST", body: JSON.stringify(than) });
+      toast("Đã tạo vai trò.");
+    }
+    $("#nsPanelSua").hidden = true;
+    await loadNhanSu();
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#nsVaiTro")?.addEventListener("click", async (e) => {
+  const sua = e.target.closest("[data-suavai]");
+  if (sua) {
+    nsMoSua(nhanSu.vaiTro.find((v) => v.id === sua.dataset.suavai));
+    return;
+  }
+  const xoa = e.target.closest("[data-xoavai]");
+  if (!xoa) return;
+  const v = nhanSu.vaiTro.find((x) => x.id === xoa.dataset.xoavai);
+  /* Nói SỐ NGƯỜI bị ảnh hưởng, không hỏi "bạn có chắc không".
+   * "Có chắc không" là câu hỏi không mang thông tin nào — người ta bấm OK
+   * theo phản xạ. "3 người sẽ mất các quyền này" thì họ dừng lại. */
+  const loi = v.so_nguoi
+    ? `Xoá vai trò “${v.ten}”? ${v.so_nguoi} người đang mang nó sẽ mất các quyền này.`
+    : `Xoá vai trò “${v.ten}”? Chưa ai được gán vai trò này.`;
+  if (!confirm(loi)) return;
+  try {
+    await api(`/vai-tro/${v.id}`, { method: "DELETE" });
+    toast("Đã xoá vai trò.");
+    await loadNhanSu();
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#nsNguoi")?.addEventListener("click", async (e) => {
+  const xem = e.target.closest("[data-xemquyen]");
+  if (xem) {
+    try {
+      const d = await api(`/nguoi-dung/${xem.dataset.xemquyen}/quyen`);
+      $("#nsGiaiThichTieuDe").textContent =
+        `Quyền của ${d.nguoi_dung.ho_ten || d.nguoi_dung.ten_dang_nhap}`;
+      const dong = Object.entries(d.quyen);
+      $("#nsGiaiThich").innerHTML = dong.length
+        ? dong.map(([ma, tuVai]) => `<div class="row">
+            <span class="row__flag row__flag--auto"></span>
+            <div class="row__main"><b>${esc(ma)}</b>
+              <span class="row__sub">cấp bởi: ${esc(tuVai.join(", "))}</span></div>
+          </div>`).join("")
+        : '<p class="empty">Chưa được cấp quyền nào. Người này đăng nhập được nhưng mọi màn đều trống.</p>';
+      $("#nsPanelGiaiThich").hidden = false;
+      $("#nsPanelGiaiThich").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+
+  const gan = e.target.closest("[data-ganvai]");
+  if (!gan) return;
+  const id = gan.dataset.ganvai;
+  try {
+    const hien = await api(`/nguoi-dung/${id}/quyen`);
+    const dangCo = new Set(hien.vai_tro);
+    const chon = nhanSu.vaiTro.map((v) =>
+      `${dangCo.has(v.ten) ? "[x]" : "[ ]"} ${v.ten}`).join("\n");
+    const tra = prompt(
+      `Gán vai trò cho ${hien.nguoi_dung.ho_ten || hien.nguoi_dung.ten_dang_nhap}.\n`
+      + `Gõ tên các vai trò, cách nhau bằng dấu phẩy. Để trống là gỡ hết.\n\n${chon}`,
+      hien.vai_tro.join(", "));
+    if (tra === null) return;
+    const ten = tra.split(",").map((s) => s.trim()).filter(Boolean);
+    const la = ten.filter((t) => !nhanSu.vaiTro.some((v) => v.ten === t));
+    if (la.length) { toast("Không có vai trò: " + la.join(", "), true); return; }
+    const ids = nhanSu.vaiTro.filter((v) => ten.includes(v.ten)).map((v) => v.id);
+    await api(`/nguoi-dung/${id}/vai-tro`, {
+      method: "PUT", body: JSON.stringify({ vai_tro: ids }),
+    });
+    toast("Đã gán vai trò.");
+    await loadNhanSu();
+  } catch (err) { toast(err.message, true); }
+});
+
+$("#nsThemNguoi")?.addEventListener("click", async () => {
+  const ten = prompt("Tên đăng nhập của nhân viên mới:");
+  if (!ten) return;
+  const mk = prompt("Mật khẩu ban đầu (ít nhất 8 ký tự):");
+  if (!mk) return;
+  try {
+    await api("/nguoi-dung", {
+      method: "POST",
+      body: JSON.stringify({ ten_dang_nhap: ten.trim(), mat_khau: mk, ho_ten: ten.trim() }),
+    });
+    toast("Đã tạo. Nhớ gán vai trò — chưa gán thì họ đăng nhập được nhưng mọi màn đều trống.");
+    await loadNhanSu();
+  } catch (err) { toast(err.message, true); }
+});
+
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
@@ -2095,6 +2302,7 @@ async function refresh() {
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
     if (state.view === "cauhinh") { await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);

@@ -1828,3 +1828,50 @@ svg { flex: none; }
    cách nhìn. Cột phải để trống là CÓ NGHĨA (câu ấy phải không khớp), nên
    không tô nó như một ô đang thiếu. */
 .cauthu__hoi, .cauthu__mong { width: 100%; }
+
+/* --- Màn Nhân sự: bảng chọn quyền ---
+   Nhóm theo tiền tố (`khach.*`, `hoi_thoai.*`) chứ không đổ một danh sách
+   phẳng 36 ô tick. Danh sách phẳng dài như thế thì người ta tick theo linh
+   cảm; nhóm lại thì họ đọc được "phần khách hàng" như một khối và thấy
+   ngay mình đang cấp gì.
+
+   Mã quyền hiện CẠNH nhãn chứ không thay nhãn: nhãn để hiểu, mã để đối
+   chiếu với thông báo 403 ("Thiếu quyền: khach.xoa") khi có người báo
+   không vào được một màn nào đó. */
+.quyen { display: grid; gap: 12px; margin: 8px 0 14px; }
+.quyen__nhom {
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  margin: 0;
+}
+.quyen__nhom legend {
+  padding: 0 6px;
+  font-weight: 600;
+  font-size: .85rem;
+  text-transform: capitalize;
+}
+.quyen__o {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.quyen__o input { margin: 0; }
+.quyen__o code {
+  margin-left: auto;
+  opacity: .55;
+  font-size: .78rem;
+}
+
+/* Hàng nút của một form: Lưu và Huỷ đứng cạnh nhau, không xuống dòng. */
+.form__row { display: flex; gap: 8px; align-items: center; }
+
+/* Huy hiệu cảnh báo — dùng cho "chưa có vai trò nào".
+   Người chưa được cấp vai trò đăng nhập được nhưng mọi màn đều trống, và
+   họ sẽ báo là "dashboard hỏng". Phải nhìn thấy ngay ở danh sách. */
+.pill--warn {
+  background: hsl(var(--warning) / .14);
+  color: hsl(var(--warning));
+}

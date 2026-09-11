@@ -2271,9 +2271,21 @@ async def doi_mat_khau(body: DoiMatKhauIn,
 
 @router.get("/nguoi-dung")
 async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -> dict:
+    # Kèm TÊN VAI TRÒ, không chỉ cột `vai_tro` cũ.
+    #
+    # Cột ấy giờ là nhãn hiển thị, không còn quyết định quyền — xem
+    # `agent/core/xac_thuc.py`. Màn Nhân sự hiện nó thay cho vai trò thật là
+    # nói dối người vận hành ở đúng chỗ họ cần sự thật nhất.
     rows = await db.fetch(
-        "SELECT id, ten_dang_nhap, ho_ten, vai_tro, khoa, tao_luc, dang_nhap_cuoi "
-        "FROM nguoi_dung ORDER BY tao_luc"
+        "SELECT nd.id, nd.ten_dang_nhap, nd.ho_ten, nd.vai_tro, nd.khoa, "
+        "       nd.tao_luc, nd.dang_nhap_cuoi, "
+        "       COALESCE(array_agg(vt.ten ORDER BY vt.ten) "
+        "                FILTER (WHERE vt.ten IS NOT NULL), "
+        "                ARRAY[]::text[]) AS vai_tro_ten "
+        "FROM nguoi_dung nd "
+        "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
+        "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+        "GROUP BY nd.id ORDER BY nd.tao_luc"
     )
     for r in rows:
         r["id"] = str(r["id"])

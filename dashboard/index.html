@@ -113,6 +113,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.8"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.8-1.8"/></svg>
       <span>Kết nối</span><b class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="nhansu">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Nhân sự</span><b id="c-nhansu" class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="nhatky">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
       <span>Nhật ký</span><b class="rail__count"></b>
@@ -864,6 +868,54 @@
           <p class="empty">Bấm <b>Kiểm tra</b> để xem hệ thống nào đang sống.</p>
         </div>
         <p class="empty" id="hethongvisao" style="text-align:left"></p>
+      </section>
+    </section>
+
+    <!-- ============ NHÂN SỰ ============ -->
+    <section class="view" data-view="nhansu">
+      <section class="panel">
+        <h2 class="panel__head">Nhân viên
+          <span class="panel__note">ai được làm gì · bấm một người để xem quyền thật của họ</span>
+          <button type="button" id="nsThemNguoi" class="btn btn--sm">Thêm nhân viên</button></h2>
+        <div id="nsNguoi" class="rows">
+          <p class="empty">Đang tải…</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__head">Vai trò
+          <span class="panel__note">một vai trò là một tập quyền · gán cho nhân viên, đổi một lần là cả nhóm đổi theo</span>
+          <button type="button" id="nsThemVaiTro" class="btn btn--sm">Tạo vai trò</button></h2>
+        <div id="nsVaiTro" class="rows">
+          <p class="empty">Đang tải…</p>
+        </div>
+      </section>
+
+      <section class="panel" id="nsPanelSua" hidden>
+        <h2 class="panel__head" id="nsSuaTieuDe">Sửa vai trò</h2>
+        <form id="nsFormVaiTro" class="form">
+          <label class="field">
+            <span>Tên vai trò</span>
+            <input name="ten" required maxlength="80" placeholder="Trưởng nhóm CSKH" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Mô tả <em class="hint">để người sau hiểu vai trò này dành cho ai</em></span>
+            <input name="mo_ta" maxlength="500" placeholder="Trả lời khách và giao việc trong ca" autocomplete="off">
+          </label>
+          <div id="nsQuyen" class="quyen"></div>
+          <div class="form__row">
+            <button type="submit" class="btn">Lưu vai trò</button>
+            <button type="button" id="nsHuySua" class="btn btn--ghost">Huỷ</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" id="nsPanelGiaiThich" hidden>
+        <h2 class="panel__head" id="nsGiaiThichTieuDe">Quyền của người này</h2>
+        <p class="kit__note">Mỗi dòng nói rõ <b>vai trò nào</b> cấp quyền ấy. Không có
+          màn này thì khi đông vai trò, không ai trả lời được vì sao một người
+          vào được màn nào đó.</p>
+        <div id="nsGiaiThich" class="rows"></div>
       </section>
     </section>
 

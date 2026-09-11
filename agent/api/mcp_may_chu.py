@@ -16,7 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from agent.api.routes import bat_buoc_quan_tri
+from agent.api.routes import can_quyen
 from agent.cau_hinh_dong import VaultChuaSanSang
 from agent.ky_nang import kho_ky_nang
 from agent.ky_nang import kho_mcp
@@ -62,7 +62,7 @@ def _loi(exc: Exception) -> HTTPException:
 
 
 @router.get("")
-async def liet_ke(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def liet_ke(_: dict = Depends(can_quyen("mcp.doc"))) -> dict:
     return {
         "may_chu": await kho_mcp.liet_ke(),
         "may_chu_toi_da": kho_mcp.MCP_MAY_CHU_TOI_DA,
@@ -71,7 +71,7 @@ async def liet_ke(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 
 @router.post("/kiem")
-async def kiem(body: KiemBody, _: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def kiem(body: KiemBody, _: dict = Depends(can_quyen("mcp.sua"))) -> dict:
     # KHÔNG ghi gì: `kiem_ket_noi` không đụng CSDL, chỉ nối thử và liệt kê —
     # đúng lý do nút "Kiểm" tồn tại (xem chú thích ở kho_mcp.kiem_ket_noi).
     try:
@@ -81,7 +81,7 @@ async def kiem(body: KiemBody, _: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 
 @router.post("", status_code=201)
-async def them(body: ThemBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def them(body: ThemBody, nguoi: dict = Depends(can_quyen("mcp.sua"))) -> dict:
     try:
         kq = await kho_mcp.them(body.ten, body.nhan, body.dia_chi, body.headers,
                                  boi=nguoi["ten_dang_nhap"])
@@ -102,7 +102,7 @@ async def them(body: ThemBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict
 
 
 @router.post("/{ten}/dong-bo")
-async def dong_bo(ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def dong_bo(ten: str, nguoi: dict = Depends(can_quyen("mcp.sua"))) -> dict:
     try:
         return await kho_mcp.dong_bo(ten, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001
@@ -110,7 +110,7 @@ async def dong_bo(ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 
 @router.post("/{ten}/bat-tat", status_code=204)
-async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(can_quyen("mcp.sua"))) -> Response:
     try:
         await kho_mcp.bat_tat(ten, body.bat, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001
@@ -120,7 +120,7 @@ async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(bat_buoc_qua
 
 @router.post("/{ten}/cong-cu/{ten_cong_cu}", status_code=204)
 async def dat_cong_cu(
-    ten: str, ten_cong_cu: str, body: CongCuBody, nguoi: dict = Depends(bat_buoc_quan_tri)
+    ten: str, ten_cong_cu: str, body: CongCuBody, nguoi: dict = Depends(can_quyen("mcp.sua"))
 ) -> Response:
     try:
         await kho_mcp.dat_cong_cu(
@@ -133,7 +133,7 @@ async def dat_cong_cu(
 
 
 @router.delete("/{ten}", status_code=204)
-async def xoa(ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def xoa(ten: str, nguoi: dict = Depends(can_quyen("mcp.sua"))) -> Response:
     try:
         await kho_mcp.xoa(ten, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001

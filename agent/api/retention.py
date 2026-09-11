@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from agent import db
 
-from .routes import bat_buoc_quan_tri
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/data-retention", tags=["data-retention"])
@@ -188,7 +188,7 @@ async def _call(operation):
 
 @router.get("/jobs")
 async def list_retention_jobs(
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("khach.xoa")),
     repository: PostgresRetentionRepository = Depends(get_retention_repository),
 ):
     return {"jobs": await repository.list_jobs()}
@@ -197,7 +197,7 @@ async def list_retention_jobs(
 @router.post("/jobs/{job_id}/approve")
 async def approve_retention_job(
     job_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("khach.xoa")),
     repository: PostgresRetentionRepository = Depends(get_retention_repository),
 ):
     return await _call(repository.approve(job_id, actor_id=_actor(user)))
@@ -206,7 +206,7 @@ async def approve_retention_job(
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_retention_job(
     job_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("khach.xoa")),
     repository: PostgresRetentionRepository = Depends(get_retention_repository),
 ):
     return await _call(repository.cancel(job_id, actor_id=_actor(user)))
@@ -215,7 +215,7 @@ async def cancel_retention_job(
 @router.post("/jobs/{job_id}/execute-dry-run")
 async def execute_retention_dry_run(
     job_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("khach.xoa")),
     repository: PostgresRetentionRepository = Depends(get_retention_repository),
 ):
     return await _call(repository.execute_dry_run(job_id, actor_id=_actor(user)))

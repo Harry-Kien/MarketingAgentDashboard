@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent import db
 
-from .routes import bat_buoc_quan_tri
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/routing", tags=["routing-admin"])
@@ -173,7 +173,7 @@ def _actor(user: dict) -> UUID:
 
 @router.get("")
 async def routing_config(
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("dinh_tuyen.doc")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.list_config()
@@ -182,7 +182,7 @@ async def routing_config(
 @router.post("/teams", status_code=status.HTTP_201_CREATED)
 async def create_team(
     body: TeamIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.create_team(
@@ -195,7 +195,7 @@ async def upsert_team_member(
     team_id: UUID,
     user_id: UUID,
     body: TeamMemberIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.upsert_member(
@@ -206,7 +206,7 @@ async def upsert_team_member(
 @router.post("/rules", status_code=status.HTTP_201_CREATED)
 async def create_routing_rule(
     body: RoutingRuleIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.create_rule(actor_id=_actor(user), **body.model_dump())
@@ -215,7 +215,7 @@ async def create_routing_rule(
 @router.put("/sla-policies")
 async def upsert_sla_policy(
     body: SlaPolicyIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.upsert_sla(actor_id=_actor(user), **body.model_dump())

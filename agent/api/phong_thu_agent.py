@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from agent.api.routes import bat_buoc_quan_tri
+from agent.api.routes import can_quyen
 from agent.core import agent as brain
 from agent.core import cham_mot_luot, cham_nhieu_luot, phong_thu_phien as pp, thu_nghiem
 
@@ -107,26 +107,26 @@ def _phien(pid: str) -> pp.Phien:
 
 
 @router.post("/phien", status_code=201)
-async def tao_phien(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def tao_phien(_: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
     p = await pp.tao_phien()
     return {"id": p.id}
 
 
 @router.get("/phien/{pid}")
-async def xem_phien(pid: str, _: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def xem_phien(pid: str, _: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
     p = _phien(pid)
     return {"id": p.id, "so_luot": len(p.luot), "chi_phi": p.chi_phi, "luot": p.luot}
 
 
 @router.delete("/phien/{pid}", status_code=204)
-async def xoa_phien(pid: str, _: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def xoa_phien(pid: str, _: dict = Depends(can_quyen("phong_thu.dung"))) -> Response:
     _phien(pid)
     pp.xoa_phien(pid)
     return Response(status_code=204)
 
 
 @router.post("/phien/{pid}/hoi")
-async def hoi(pid: str, body: HoiBody, _: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def hoi(pid: str, body: HoiBody, _: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
     p = _phien(pid)
     cau_hoi = body.cau_hoi.strip()
     if not cau_hoi:
@@ -196,11 +196,11 @@ def _che(thong_diep: str) -> str:
 
 
 @router.get("/goi-y")
-async def goi_y(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def goi_y(_: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
     return doc_goi_y(BO_VANG if BO_VANG.exists() else BO_VANG_MAU)
 
 
 @router.get("/ngan-sach")
-async def ngan_sach(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def ngan_sach(_: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
     _, da_tieu, tran = thu_nghiem.con_tran()
     return {"da_tieu": da_tieu, "tran": tran}

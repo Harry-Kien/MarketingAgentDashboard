@@ -11,6 +11,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.api import phong_thu_agent as api
+from conftest import nguoi_thu, toan_quyen
+
 from agent.api import routes
 from agent.core import phong_thu_phien as pp
 from agent.core import thu_nghiem
@@ -20,9 +22,11 @@ from agent.core.agent import Reply
 def _app(quan_tri=True):
     app = FastAPI()
     app.include_router(api.router)
-    app.dependency_overrides[routes.bat_buoc_quan_tri] = (
-        (lambda: {"ten_dang_nhap": "qt", "vai_tro": "quan_tri"}) if quan_tri
-        else routes.bat_buoc_quan_tri
+    # Ghi đè `nguoi_da_dang_nhap`, không phải `can_quyen(...)`: hàm sau trả
+    # một closure MỚI mỗi lần gọi nên không có gì để nhắm vào.
+    app.dependency_overrides[routes.nguoi_da_dang_nhap] = (
+        (lambda: toan_quyen()) if quan_tri
+        else (lambda: nguoi_thu())      # đã đăng nhập, chưa có quyền nào
     )
     return app
 

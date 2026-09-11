@@ -6,7 +6,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.api.retention import get_retention_repository, router
-from agent.api.routes import bat_buoc_quan_tri
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 
 
 class _Repository:
@@ -33,8 +34,8 @@ def test_retention_can_admin_approve_va_dry_run_co_audit_actor():
     app = FastAPI()
     app.include_router(router)
     repository = _Repository()
-    user = {"id": uuid4(), "vai_tro": "quan_tri"}
-    app.dependency_overrides[bat_buoc_quan_tri] = lambda: user
+    user = nguoi_thu("khach.xoa", id=uuid4(), vai_tro="quan_tri")
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_retention_repository] = lambda: repository
     client = TestClient(app)
     job_id = uuid4()

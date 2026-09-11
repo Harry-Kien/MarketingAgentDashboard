@@ -5,6 +5,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from conftest import nguoi_thu, toan_quyen
+
 from agent.api import mcp_may_chu as api
 from agent.api import routes
 from agent.ky_nang import kho_mcp as km
@@ -12,8 +14,8 @@ from agent.ky_nang import kho_mcp as km
 
 def _app(quan_tri=True):
     app = FastAPI(); app.include_router(api.router)
-    app.dependency_overrides[routes.bat_buoc_quan_tri] = (
-        (lambda: {"ten_dang_nhap": "qt", "vai_tro": "quan_tri"}) if quan_tri else routes.bat_buoc_quan_tri)
+    app.dependency_overrides[routes.nguoi_da_dang_nhap] = (
+        (lambda: toan_quyen()) if quan_tri else (lambda: nguoi_thu()))
     return app
 
 

@@ -6,6 +6,7 @@ Chạy: python -m scripts._chen_danh_sach_hoan
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 os.environ.setdefault("GCP_PROJECT_ID", "test")
@@ -14,7 +15,16 @@ from agent.core.quyen import MIEN_TRU, moi_route  # noqa: E402
 from agent.main import app  # noqa: E402
 
 DICH = Path(__file__).resolve().parent.parent / "agent" / "core" / "quyen.py"
-CU = "DANH_SACH_HOAN: frozenset[tuple[str, str]] = frozenset()"
+
+# Bắt cả dạng rỗng `frozenset()` lẫn dạng đã có nội dung `frozenset({...})`.
+# Chạy được NHIỀU LẦN là điều kiện để danh sách thu nhỏ dần sau mỗi việc —
+# script chỉ chạy được một lần thì lần thứ hai người ta sẽ sửa tay, và sửa
+# tay 159 dòng là sai sót.
+MAU = re.compile(
+    r"DANH_SACH_HOAN: frozenset\[tuple\[str, str\]\] = frozenset\("
+    r"(?:\)|\{.*?\n\}\))",
+    re.DOTALL,
+)
 
 
 def main() -> None:
@@ -31,16 +41,19 @@ def main() -> None:
                 continue
             ds.add((pt, duong))
 
-    dong = [f'    ("{pt}", "{duong}"),'
-            for pt, duong in sorted(ds, key=lambda x: (x[1], x[0]))]
-    moi = ("DANH_SACH_HOAN: frozenset[tuple[str, str]] = frozenset({\n"
-           + "\n".join(dong) + "\n})")
+    if ds:
+        dong = [f'    ("{pt}", "{duong}"),'
+                for pt, duong in sorted(ds, key=lambda x: (x[1], x[0]))]
+        moi = ("DANH_SACH_HOAN: frozenset[tuple[str, str]] = frozenset({\n"
+               + "\n".join(dong) + "\n})")
+    else:
+        moi = "DANH_SACH_HOAN: frozenset[tuple[str, str]] = frozenset()"
 
     noi_dung = DICH.read_text(encoding="utf-8")
-    if CU not in noi_dung:
-        raise SystemExit("Không tìm thấy dòng DANH_SACH_HOAN rỗng để thay.")
-    DICH.write_text(noi_dung.replace(CU, moi), encoding="utf-8")
-    print(f"Đã chèn {len(ds)} cặp vào {DICH.name}")
+    if not MAU.search(noi_dung):
+        raise SystemExit("Không tìm thấy khối DANH_SACH_HOAN để thay.")
+    DICH.write_text(MAU.sub(lambda _: moi, noi_dung), encoding="utf-8")
+    print(f"Còn {len(ds)} route chưa khai quyền.")
 
 
 if __name__ == "__main__":

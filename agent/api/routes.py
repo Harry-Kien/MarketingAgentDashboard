@@ -85,6 +85,29 @@ async def bat_buoc_quan_tri(request: Request) -> dict:
     return nguoi
 
 
+async def nguoi_da_dang_nhap(request: Request) -> dict:
+    """
+    Người đang đăng nhập — ưu tiên bản middleware đã đọc.
+
+    Middleware `chan_neu_chua_dang_nhap` đã đọc phiên và gắn vào
+    `request.state.nguoi`. Đọc lại là gọi CSDL hai lần mỗi request, và truy
+    vấn phiên giờ có thêm ba LEFT JOIN nên nó không còn rẻ như trước.
+
+    VÌ SAO TÁCH RA THÀNH HÀM RIÊNG THAY VÌ VIẾT THẲNG TRONG `can_quyen`
+    -------------------------------------------------------------------
+    `can_quyen()` trả về một closure MỚI mỗi lần gọi, nên
+    `app.dependency_overrides[...]` không nhắm vào nó được — mà đó là cách
+    toàn bộ test API giả lập người đăng nhập. Hàm này là một đối tượng duy
+    nhất, ổn định, nên test ghi đè đúng một chỗ:
+
+        app.dependency_overrides[routes.nguoi_da_dang_nhap] = lambda: nguoi
+    """
+    nguoi = getattr(request.state, "nguoi", None)
+    if nguoi is None:
+        nguoi = await bat_buoc_dang_nhap(request)
+    return nguoi
+
+
 def can_quyen(*quyen: str):
     """
     Dependency đòi ĐỦ các quyền được nêu. Nhiều quyền = PHẢI CÓ TẤT CẢ.
@@ -95,22 +118,12 @@ def can_quyen(*quyen: str):
     khởi động được, ngay trước mặt người vừa gõ sai — thay vì một 403 bí ẩn
     vào lúc có người thật sự cần dùng endpoint ấy, khi không còn ai nhớ đã
     sửa gì.
-
-    VÌ SAO ĐỌC `request.state.nguoi` TRƯỚC
-    --------------------------------------
-    Middleware `chan_neu_chua_dang_nhap` đã đọc phiên và gắn người vào đó.
-    Đọc lại là gọi CSDL hai lần mỗi request, và truy vấn phiên giờ có thêm
-    ba LEFT JOIN nên nó không còn rẻ như trước. Vẫn có đường lui cho những
-    chỗ middleware không chạm tới.
     """
     for q in quyen:
         if q not in QUYEN:
             raise KeyError(f"Quyền không có trong danh mục: {q}")
 
-    async def kiem(request: Request) -> dict:
-        nguoi = getattr(request.state, "nguoi", None)
-        if nguoi is None:
-            nguoi = await bat_buoc_dang_nhap(request)
+    async def kiem(nguoi: dict = Depends(nguoi_da_dang_nhap)) -> dict:
         thieu = [q for q in quyen if not xac_thuc.duoc_phep(nguoi, q)]
         if thieu:
             raise HTTPException(403, f"Thiếu quyền: {', '.join(thieu)}")

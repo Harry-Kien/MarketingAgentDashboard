@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 
 from agent import cau_hinh_dong as cd
 from agent.api import cai_dat_api
-from agent.api.routes import bat_buoc_dang_nhap, bat_buoc_quan_tri
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.security.credential_vault import CredentialVault
 
 
@@ -58,14 +59,13 @@ def kho(monkeypatch):
 def _app(*, admin: bool):
     app = FastAPI()
     app.include_router(cai_dat_api.router)
-    user = {"id": uuid4(), "ten_dang_nhap": "a", "vai_tro": "quan_tri" if admin else "nhan_vien"}
-    app.dependency_overrides[bat_buoc_dang_nhap] = lambda: user
-    if admin:
-        app.dependency_overrides[bat_buoc_quan_tri] = lambda: user
-    else:
-        def deny():
-            raise HTTPException(403, "Việc này cần quyền quản trị")
-        app.dependency_overrides[bat_buoc_quan_tri] = deny
+    # Người không phải quản trị vẫn ĐỌC được cấu hình (`cau_hinh.doc`) nhưng
+    # không sửa được — đúng như trước khi có lớp quyền, chỉ là giờ nói ra
+    # bằng tên quyền thay vì bằng một nhánh `if vai_tro`.
+    quyen = ("cau_hinh.doc", "cau_hinh.sua") if admin else ("cau_hinh.doc",)
+    user = nguoi_thu(*quyen, ten="a", id=uuid4(),
+                     vai_tro="quan_tri" if admin else "nhan_vien")
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     return TestClient(app)
 
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agent import db
 
-from .routes import bat_buoc_quan_tri
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/outbox", tags=["outbox-admin"])
@@ -181,7 +181,7 @@ async def list_outbox_jobs(
     status: str = "dead",
     account_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=200),
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("outbox.doc")),
     repository: PostgresOutboxAdminRepository = Depends(
         get_outbox_admin_repository
     ),
@@ -198,7 +198,7 @@ async def list_outbox_jobs(
 @router.post("/jobs/{job_id}/retry")
 async def retry_outbox_job(
     job_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("outbox.sua")),
     repository: PostgresOutboxAdminRepository = Depends(
         get_outbox_admin_repository
     ),
@@ -210,7 +210,7 @@ async def retry_outbox_job(
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_outbox_job(
     job_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("outbox.sua")),
     repository: PostgresOutboxAdminRepository = Depends(
         get_outbox_admin_repository
     ),

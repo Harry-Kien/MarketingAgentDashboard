@@ -5,7 +5,8 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent.api.routes import bat_buoc_quan_tri
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.api.routing_admin import get_routing_admin_repository, router
 
 
@@ -37,8 +38,9 @@ def _client():
     app = FastAPI()
     app.include_router(router)
     repository = _Repository()
-    user = {"id": uuid4(), "vai_tro": "quan_tri"}
-    app.dependency_overrides[bat_buoc_quan_tri] = lambda: user
+    user = nguoi_thu("dinh_tuyen.doc", "dinh_tuyen.sua", id=uuid4(),
+                     vai_tro="quan_tri")
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_routing_admin_repository] = lambda: repository
     return TestClient(app), repository
 

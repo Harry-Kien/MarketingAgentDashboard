@@ -23,7 +23,7 @@ from agent.core import llm
 from agent.erp.erpnext import NguonErpNext
 from agent.shipping import ghn
 
-from .routes import bat_buoc_dang_nhap, bat_buoc_quan_tri
+from .routes import can_quyen
 
 router = APIRouter(prefix="/api/cai-dat-api", tags=["cai-dat-api"])
 
@@ -116,12 +116,12 @@ async def kiem_nhom(nhom: str, ghi_de: dict[str, str]) -> dict[str, Any]:
 
 
 @router.get("")
-async def liet_ke(_: dict = Depends(bat_buoc_dang_nhap)) -> dict[str, Any]:
+async def liet_ke(_: dict = Depends(can_quyen("cau_hinh.doc"))) -> dict[str, Any]:
     return {"muc": cau_hinh_dong.liet_ke(), "vault_san_sang": cau_hinh_dong.vault_san_sang()}
 
 
 @router.put("/{khoa}", status_code=status.HTTP_204_NO_CONTENT)
-async def dat(khoa: str, body: GiaTriIn, user: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def dat(khoa: str, body: GiaTriIn, user: dict = Depends(can_quyen("cau_hinh.sua"))) -> Response:
     try:
         await cau_hinh_dong.dat(khoa, body.gia_tri, sua_boi=_actor(user))
     except cau_hinh_dong.KhoaKhongHopLe as exc:
@@ -132,7 +132,7 @@ async def dat(khoa: str, body: GiaTriIn, user: dict = Depends(bat_buoc_quan_tri)
 
 
 @router.delete("/{khoa}", status_code=status.HTTP_204_NO_CONTENT)
-async def xoa(khoa: str, user: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def xoa(khoa: str, user: dict = Depends(can_quyen("cau_hinh.sua"))) -> Response:
     try:
         await cau_hinh_dong.xoa(khoa, sua_boi=_actor(user))
     except cau_hinh_dong.KhoaKhongHopLe as exc:
@@ -141,7 +141,7 @@ async def xoa(khoa: str, user: dict = Depends(bat_buoc_quan_tri)) -> Response:
 
 
 @router.post("/kiem-tra")
-async def kiem_tra(body: KiemTraIn, _: dict = Depends(bat_buoc_quan_tri)) -> dict[str, Any]:
+async def kiem_tra(body: KiemTraIn, _: dict = Depends(can_quyen("cau_hinh.sua"))) -> dict[str, Any]:
     if body.nhom not in NHOM_HOP_LE:
         raise HTTPException(422, f"nhóm không hợp lệ: {body.nhom!r}")
     ket = await kiem_nhom(body.nhom, body.gia_tri)

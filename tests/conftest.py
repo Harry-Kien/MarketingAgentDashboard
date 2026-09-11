@@ -21,6 +21,39 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def nguoi_thu(*quyen: str, ten: str = "kt", **them) -> dict:
+    """
+    Dựng một người đăng nhập giả cho test API.
+
+    Dùng với `app.dependency_overrides[routes.nguoi_da_dang_nhap]`. Đó là
+    ĐIỂM GHI ĐÈ DUY NHẤT: `can_quyen()` trả closure mới mỗi lần gọi nên
+    không ghi đè thẳng vào nó được.
+
+    Gọi không đối số = người đã đăng nhập nhưng KHÔNG có quyền nào. Mặc
+    định ấy có chủ ý: test muốn kiểm một endpoint thì phải nói ra endpoint
+    ấy cần quyền gì, và câu nói ấy chính là tài liệu.
+
+    `toan_quyen()` ở dưới dành cho test không quan tâm tới phân quyền.
+    """
+    nguoi = {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "ten_dang_nhap": ten,
+        "ho_ten": ten,
+        "vai_tro": "nhan_vien",
+        "khoa": False,
+        "quyen": frozenset(quyen),
+    }
+    nguoi.update(them)
+    return nguoi
+
+
+def toan_quyen(ten: str = "qt", **them) -> dict:
+    """Người có mọi quyền — tương đương vai trò `Quản trị`."""
+    from agent.core.quyen import QUYEN
+
+    return nguoi_thu(*QUYEN, ten=ten, vai_tro="quan_tri", **them)
+
+
 @pytest.fixture
 def csdl_kiem_thu():
     """

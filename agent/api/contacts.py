@@ -18,6 +18,8 @@ from agent.omnichannel.identity import (
     PostgresIdentityRepository,
 )
 
+from agent.core import pham_vi
+
 from .routes import can_quyen
 
 
@@ -93,13 +95,25 @@ class PostgresContactRepository:
         query: str,
         account_id: UUID | None,
         limit: int,
+        nguoi: dict[str, Any] | None = None,
+        muc: str = pham_vi.MUC_MAC_DINH,
     ) -> list[dict[str, Any]]:
+        # Mệnh đề phạm vi đến từ MỘT chỗ duy nhất — xem `agent/core/pham_vi.py`.
+        # Viết tay ở đây là bản sao thứ hai của bốn nhánh lọc, và bản sao sẽ
+        # lệch mà không nổ.
+        loc, tham_so_pham_vi = pham_vi.dieu_kien_khach(
+            nguoi=nguoi or {"id": user_id, "quyen": frozenset()},
+            muc=muc, so_tham_so=5, bi_danh="contact",
+        )
         async with self._pool_provider().acquire() as connection:
             rows = await connection.fetch(
-                """
+                f"""
                 SELECT contact.id, contact.display_name, contact.phone,
                        contact.email, contact.profile, contact.status,
                        contact.version, contact.first_seen, contact.last_seen,
+                       contact.owner_user_id,
+                       chu.ho_ten AS owner_ho_ten,
+                       chu.ten_dang_nhap AS owner_ten_dang_nhap,
                        ($2 OR EXISTS (
                            SELECT 1 FROM contact_points pii_point
                            JOIN account_memberships pii_membership
@@ -117,7 +131,9 @@ class PostgresContactRepository:
                            WHERE count_conversation.contact_id = contact.id
                        ) AS conversation_count
                 FROM contacts contact
+                LEFT JOIN nguoi_dung chu ON chu.id = contact.owner_user_id
                 WHERE contact.status <> 'deleted'
+                  AND {loc}
                   AND EXISTS (
                       SELECT 1 FROM contact_points visible_point
                       LEFT JOIN account_memberships visible_membership
@@ -142,6 +158,7 @@ class PostgresContactRepository:
                 query,
                 account_id,
                 max(1, min(limit, 100)),
+                *tham_so_pham_vi,
             )
         return [dict(row) for row in rows]
 
@@ -543,14 +560,31 @@ async def list_contacts(
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> list[dict[str, Any]]:
     user_id, is_admin = _scope(user)
+    muc = await pham_vi.doc_muc()
     rows = await repository.list_visible(
         user_id=user_id,
         is_admin=is_admin,
         query=q.strip(),
         account_id=account_id,
         limit=limit,
+        nguoi=user,
+        muc=muc,
     )
-    return [mask_contact_pii(row) for row in rows]
+    ra = []
+    for row in rows:
+        # Hai cờ đi KÈM từng khách, không phải một cờ chung cho cả danh sách:
+        # cùng một màn hình có thể vừa có khách của mình (trả lời được) vừa
+        # có khách của người khác (không). Một cờ chung thì hoặc khoá nhầm,
+        # hoặc mở nhầm.
+        cong_khai = mask_contact_pii(row)
+        cong_khai["duoc_tra_loi"] = pham_vi.duoc_tra_loi(user, row, muc=muc)
+        if not pham_vi.duoc_xem_noi_dung(user, row, muc=muc):
+            cong_khai["phone"] = _mask_phone(cong_khai.get("phone"))
+            cong_khai["email"] = _mask_email(cong_khai.get("email"))
+            cong_khai["pii_masked"] = True
+            cong_khai["an_noi_dung"] = True
+        ra.append(cong_khai)
+    return ra
 
 
 @router.get("/merge/preview")

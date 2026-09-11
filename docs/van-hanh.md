@@ -476,6 +476,54 @@ vào `data/catalog.json` — nửa đó **không** nằm trong ERP, và cố ý 
 
 ---
 
+## Giao khách cho nhân viên
+
+Dashboard → **Khách hàng** → chọn một khách → **Giao / thu hồi**. Gõ tên
+đăng nhập của nhân viên; để trống là thu hồi, khách quay về của chung.
+
+Ba chip lọc ngay trên danh sách: *Tất cả* · *Khách của tôi* · *Chưa có chủ*.
+
+**Không giao được cho người không có quyền `hoi_thoai.tra_loi`** — hệ thống
+chặn ở 422. Lý do: khách ấy sẽ chết câm. Có chủ nên người khác thấy "đã có
+người phụ trách" và không vào, mà chủ thì không gửi được tin. Nó không hỏng,
+nó chỉ im, và triệu chứng duy nhất là một khách hàng thôi nhắn lại.
+
+Mọi lần giao và thu hồi đều ghi vào `contact_owner_history` kèm lý do và
+người thao tác. Bấm **Lịch sử giao** để xem.
+
+### Nhân viên thấy khách của nhau tới đâu
+
+Dashboard → **Cấu hình** → panel đầu tiên. Bốn mức:
+
+| Mức | Nhân viên B thấy gì về khách của A |
+|---|---|
+| **Không áp dụng** | Thấy và trả lời được như thường. **Mặc định xuất xưởng.** |
+| Thấy tên, không đọc được | Thấy trong danh sách, biết A phụ trách; không đọc tin, không thấy số điện thoại và email |
+| Đọc được, không trả lời được | Đọc đủ hội thoại — tiện bàn giao ca — nhưng nút gửi bị khoá |
+| Ẩn hẳn | Biến mất khỏi danh sách, không mở được, tìm không ra |
+
+Mặc định là **Không áp dụng** có chủ ý: bật một tính năng phân quyền mà đổi
+ngay quyền của mọi người đang làm việc là cách tạo sự cố. Giao khách xong
+rồi hãy bật.
+
+Ba điều luôn đúng ở mọi mức:
+
+- **Khách chưa giao là của chung** — mọi nhân viên đều thấy và trả lời được.
+- Quản trị, và ai có `khach.xem_tat_ca`, không bị mức nào hạn chế.
+- Trục `account_memberships` vẫn siết tiếp phía sau: mức tầm nhìn không cho
+  ai thấy kênh họ không phải thành viên.
+
+### Ô "Khách chưa có chủ" trên trang Ca trực
+
+Nó chỉ hiện khi **có**, và hiện kèm tuổi của khách vô chủ lâu nhất.
+
+Vì đã chọn "khách chưa giao là của chung, không tự gán chủ", khách vô chủ
+sẽ tích lại — đó là hệ quả biết trước, không phải lỗi. Ô này để nó không
+tích lại trong im lặng. "412 khách" là con số quen mắt sau một tuần; "lâu
+nhất 62 ngày" thì không.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |

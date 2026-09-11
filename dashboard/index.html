@@ -485,6 +485,18 @@
 
     <!-- ============ CẤU HÌNH AGENT ============ -->
     <section class="view" data-view="cauhinh">
+      <section class="panel">
+        <h2 class="panel__head">Nhân viên thấy khách của nhau tới đâu
+          <span class="panel__note">áp dụng ngay, không cần khởi động lại</span></h2>
+        <p class="panel__note">
+          Chỉ có tác dụng với khách <b>đã được giao</b> cho ai đó. Khách chưa
+          giao luôn là của chung — mọi nhân viên đều thấy và trả lời được, ở
+          cả bốn mức. Quản trị và người có quyền <code>khach.xem_tat_ca</code>
+          không bị mức nào hạn chế.
+        </p>
+        <div id="tamnhin" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
+
       <section class="panel" id="api-panel">
         <h2 class="panel__head">Cài đặt API
           <span class="panel__note" id="api-vault"></span></h2>
@@ -771,6 +783,11 @@
             <input name="q" maxlength="120" placeholder="Tìm theo tên…" aria-label="Tìm khách hàng">
             <button class="btn btn--sm" type="submit">Tìm</button>
           </form>
+          <div class="filterbar" id="contactloc" role="group" aria-label="Lọc khách theo người phụ trách">
+            <button type="button" class="chip is-on" data-chuloc="tat_ca">Tất cả</button>
+            <button type="button" class="chip" data-chuloc="cua_toi">Khách của tôi</button>
+            <button type="button" class="chip" data-chuloc="vo_chu">Chưa có chủ</button>
+          </div>
           <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
         </aside>
         <section class="panel customer360__detail" id="contactdetail">

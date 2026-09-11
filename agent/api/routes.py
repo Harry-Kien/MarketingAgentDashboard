@@ -236,6 +236,24 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
         "FROM outbox_jobs WHERE status = 'dead'"
     ) or {}
 
+    # KHÁCH CHƯA CÓ CHỦ — cùng lý lẽ với tin chết ở trên, cũng không cắt
+    # theo 24 giờ.
+    #
+    # Chủ dự án chọn "khách chưa giao là của chung, không tự gán chủ". Hệ
+    # quả đã biết trước: phần lớn khách sẽ ở mãi trạng thái vô chủ. Một hàng
+    # chờ không ai đếm thì không ai thấy — nên nó phải là một con số thường
+    # trực, kèm TUỔI của khách vô chủ lâu nhất.
+    #
+    # Con số đứng im ở 400 thì người ta còn thấy. "Lâu nhất 62 ngày" thì họ
+    # dừng lại.
+    #
+    # Dùng đúng mệnh đề của `/api/khach-vo-chu`: hai định nghĩa lệch nhau là
+    # con số nói một đằng, danh sách hiện một nẻo.
+    vo_chu = await db.fetchrow(
+        "SELECT count(*) AS n, min(first_seen) AS lau_nhat FROM contacts "
+        "WHERE owner_user_id IS NULL AND status = 'active'"
+    ) or {}
+
     total = int(conv.get("total") or 0)
     handled = int(conv.get("handled") or 0)
     replies = int(msg.get("replies") or 0)
@@ -273,6 +291,12 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
             "so": int(chet.get("n") or 0),
             "gan_nhat": (
                 chet["gan_nhat"].isoformat() if chet.get("gan_nhat") else None
+            ),
+        },
+        "khach_vo_chu": {
+            "so": int(vo_chu.get("n") or 0),
+            "lau_nhat": (
+                vo_chu["lau_nhat"].isoformat() if vo_chu.get("lau_nhat") else None
             ),
         },
         "runtime": dict(runtime.STATE),

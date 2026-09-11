@@ -1874,6 +1874,12 @@ svg { flex: none; }
    thấy trên màn Nhân sự trước khi sửa. */
 .row__nut { display: flex; gap: 6px; margin-top: 4px; }
 
+/* Mỗi mức tầm nhìn là một hàng chọn được, không phải một mục trong <select>.
+   <select> giấu ba lựa chọn còn lại và giấu luôn hệ quả của chúng — mà hệ
+   quả mới là thứ người quản trị cần đọc trước khi chọn. */
+.tamnhin__o { cursor: pointer; }
+.tamnhin__o input { margin-right: 6px; }
+
 /* Huy hiệu cảnh báo — dùng cho "chưa có vai trò nào".
    Người chưa được cấp vai trò đăng nhập được nhưng mọi màn đều trống, và
    họ sẽ báo là "dashboard hỏng". Phải nhìn thấy ngay ở danh sách. */

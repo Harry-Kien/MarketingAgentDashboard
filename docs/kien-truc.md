@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-52 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+53 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -139,7 +139,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
-| **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` |
+| **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` |
 | **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
 
 Invariant định tuyến quan trọng nhất là `(account_id, external_id)`, không
@@ -404,7 +404,7 @@ erDiagram
         TEXT status
         UUID merged_into
         INT version
-        _ con_2_cot_nua
+        _ con_3_cot_nua
     }
     contact_points {
         UUID id
@@ -589,6 +589,14 @@ erDiagram
         TIMESTAMPTZ thay_luc
         TEXT thay_boi
     }
+    contact_owner_history {
+        BIGSERIAL id
+        UUID contact_id
+        UUID owner_user_id
+        UUID actor_id
+        TEXT ly_do
+        TIMESTAMPTZ luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -601,11 +609,14 @@ erDiagram
     nguoi_dung ||--o{ contact_merges : ""
     contacts ||--o{ contact_notes : ""
     nguoi_dung ||--o{ contact_notes : ""
+    contacts ||--o{ contact_owner_history : ""
+    nguoi_dung ||--o{ contact_owner_history : ""
     channel_accounts ||--o{ contact_points : ""
     contacts ||--o{ contact_points : ""
     contacts ||--o{ contact_tags : ""
     nguoi_dung ||--o{ contact_tags : ""
     contacts ||--o{ contacts : ""
+    nguoi_dung ||--o{ contacts : ""
     conversations ||--o{ conversation_assignments : ""
     nguoi_dung ||--o{ conversation_assignments : ""
     teams ||--o{ conversation_assignments : ""

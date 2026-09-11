@@ -50,6 +50,13 @@ async function api(path, options = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+function ngayTu(iso) {
+  /* Số NGÀY tính tới nay. Trả số nguyên, không "khoảng 2 tháng": ô chỉ số
+     cần một con số so sánh được giữa các lần nhìn, không cần một câu văn. */
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(ms / 86400000));
+}
+
 function toast(message, bad = false) {
   const el = $("#toast");
   el.textContent = message;
@@ -223,6 +230,21 @@ async function loadOverview() {
      * biết, đúng vì không có chỗ nào đếm chúng. */
     (o.tin_chet && o.tin_chet.so
       ? cell("Tin KHÔNG gửi được", o.tin_chet.so, "khách không nhận được", 1, "halt")
+      : ""),
+    /* KHÁCH CHƯA CÓ CHỦ — cùng lý lẽ với ô trên: chỉ hiện khi CÓ.
+     *
+     * Chủ dự án chọn "khách chưa giao là của chung, không tự gán chủ", nên
+     * khách vô chủ sẽ tích lại — đó là hệ quả đã biết trước, và một hàng
+     * chờ không ai đếm thì không ai thấy.
+     *
+     * Kèm TUỔI của khách vô chủ lâu nhất, không chỉ số lượng: "412 khách"
+     * là một con số người ta quen mắt sau một tuần; "lâu nhất 62 ngày" thì
+     * không. */
+    (o.khach_vo_chu && o.khach_vo_chu.so
+      ? cell("Khách chưa có chủ", o.khach_vo_chu.so,
+             o.khach_vo_chu.lau_nhat
+               ? `lâu nhất ${ngayTu(o.khach_vo_chu.lau_nhat)} ngày`
+               : "chưa giao cho ai", 1, "assist")
       : ""),
     cell("Đã chuyển người", o.conversations.escalated, "cuộc",
          o.conversations.total ? o.conversations.escalated / o.conversations.total : 0, "halt"),
@@ -808,21 +830,89 @@ $("#contactsearch")?.addEventListener("submit", (ev) => {
   loadContacts();
 });
 
+function chuKhach(contact) {
+  /* Hiện TÊN người phụ trách, không hiện UUID và không để trống.
+   *
+   * Để trống thì "chưa giao cho ai" trông hệt như "chưa tải xong", và người
+   * trực không biết mình có được vào hay không. */
+  if (contact.owner_ho_ten || contact.owner_ten_dang_nhap) {
+    return `<span class="pill">${esc(contact.owner_ho_ten || contact.owner_ten_dang_nhap)}</span>`;
+  }
+  return '<span class="pill pill--warn">chưa có chủ</span>';
+}
+
 async function loadContacts() {
   const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}`);
+  /* Lọc Ở PHÍA GIAO DIỆN là có chủ ý và chỉ hợp lệ vì nó KHÔNG phải lớp bảo
+   * vệ: máy chủ đã lọc theo mức tầm nhìn trước khi trả về. Ba chip này chỉ
+   * thu hẹp thứ người dùng đã được phép thấy. */
+  const loc = state.chuLoc || "tat_ca";
+  const hien = contacts.filter((c) =>
+    loc === "cua_toi" ? c.owner_user_id && c.owner_user_id === state.toiId
+    : loc === "vo_chu" ? !c.owner_user_id
+    : true);
   $("#c-khachhang").textContent = contacts.length || "";
-  $("#contactlist").innerHTML = contacts.length ? contacts.map((contact) => `
+  $("#contactlist").innerHTML = hien.length ? hien.map((contact) => `
     <button type="button" class="row row--avatar ${state.openContact === contact.id ? "is-on" : ""}" data-contact="${contact.id}">
       <span class="avatar">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
       <span class="row__body"><span class="row__title">${esc(contact.display_name || "Khách")}</span>
         <span class="row__sub">${esc(contact.phone || contact.email || "Chưa có PII xác minh")} · ${contact.contact_point_count || 0} danh tính</span></span>
-      <span class="row__side"><span class="row__time">${clock(contact.last_seen)}</span></span>
-    </button>`).join("") : '<p class="empty">Không tìm thấy khách hàng trong phạm vi tài khoản của bạn.</p>';
+      <span class="row__side">${chuKhach(contact)}<span class="row__time">${clock(contact.last_seen)}</span></span>
+    </button>`).join("")
+    : `<p class="empty">${loc === "cua_toi"
+        ? "Chưa có khách nào được giao cho bạn."
+        : loc === "vo_chu"
+          ? "Mọi khách trong phạm vi của bạn đều đã có người phụ trách."
+          : "Không tìm thấy khách hàng trong phạm vi tài khoản của bạn."}</p>`;
   $$("#contactlist [data-contact]").forEach((row) => row.addEventListener("click", () => {
     state.openContact = row.dataset.contact;
     loadContacts();
   }));
   if (state.openContact) await loadContactDetail(state.openContact);
+}
+
+$("#contactloc")?.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-chuloc]");
+  if (!chip) return;
+  state.chuLoc = chip.dataset.chuloc;
+  $$("#contactloc .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
+  loadContacts();
+});
+
+async function giaoKhach(id, chuHienTai) {
+  /* Gán bằng TÊN ĐĂNG NHẬP chứ không bằng UUID: người quản lý biết "thao",
+     không biết `a3f1…`. Đổi tên sang id ngay tại đây, và tên lạ thì báo
+     ngay chứ không gửi một UUID rỗng lên máy chủ. */
+  let ds;
+  try { ds = (await api("/nguoi-dung")).nguoi_dung; }
+  catch (e) { toast(e.message, true); return; }
+
+  const ten = prompt(
+    "Giao khách này cho ai? Gõ tên đăng nhập.\n"
+    + "Để TRỐNG là thu hồi — khách quay về của chung.\n\n"
+    + ds.map((n) => `${n.ten_dang_nhap} — ${n.ho_ten || ""}`).join("\n"),
+    chuHienTai || "");
+  if (ten === null) return;
+
+  const ly_do = prompt("Lý do (ghi vào lịch sử giao khách):", "Phân công ca trực");
+  if (!ly_do) return;
+
+  try {
+    if (!ten.trim()) {
+      await api(`/contacts/${id}/chu-so-huu?ly_do=${encodeURIComponent(ly_do)}`,
+                { method: "DELETE" });
+      toast("Đã thu hồi. Khách quay về của chung.");
+    } else {
+      const nv = ds.find((n) => n.ten_dang_nhap === ten.trim());
+      if (!nv) { toast(`Không có nhân viên tên “${ten.trim()}”.`, true); return; }
+      await api(`/contacts/${id}/chu-so-huu`, {
+        method: "PUT",
+        body: JSON.stringify({ owner_user_id: nv.id, ly_do }),
+      });
+      toast(`Đã giao cho ${nv.ho_ten || nv.ten_dang_nhap}.`);
+    }
+    await loadContacts();
+  } catch (e) { toast(e.message, true); }
 }
 
 async function loadContactDetail(id) {
@@ -849,6 +939,18 @@ async function loadContactDetail(id) {
       <span class="privacy-pill">${contact.pii_masked ? "PII đã ẩn theo quyền" : "PII được phép xem"}</span></div>
     <div class="profile-grid"><div><span>Trạng thái</span><b>${esc(contact.status)}</b></div><div><span>Phiên bản</span><b>${contact.version}</b></div>
       <div><span>Lần đầu</span><b>${clock(contact.first_seen)}</b></div><div><span>Gần nhất</span><b>${clock(contact.last_seen)}</b></div></div>
+    <h3 class="subhead">Người phụ trách</h3>
+    <div class="profile-actions">
+      <div class="profile-tags">${chuKhach(contact)}</div>
+      <div class="inline-action">
+        <button type="button" class="btn btn--sm" id="contact-giao"
+                data-contact-giao="${esc(contact.id)}"
+                data-chu="${esc(contact.owner_ten_dang_nhap || "")}">Giao / thu hồi</button>
+        <button type="button" class="btn btn--sm btn--ghost"
+                data-contact-lichsu="${esc(contact.id)}">Lịch sử giao</button>
+      </div>
+    </div>
+    <div id="contact-lichsu-giao"></div>
     <h3 class="subhead">Nhãn chăm sóc</h3>
     <div class="profile-actions"><div class="profile-tags">${tags || '<span class="empty">Chưa có nhãn.</span>'}</div>
       <form id="contact-tag-form" class="inline-action"><input name="tag" maxlength="80" required placeholder="VIP, cần gọi lại…"><button class="btn btn--sm" type="submit">Thêm nhãn</button></form></div>
@@ -864,6 +966,27 @@ async function loadContactDetail(id) {
     <form id="contact-note-form" class="note-form"><textarea name="body" maxlength="5000" required placeholder="Thông tin cần bàn giao cho đội chăm sóc…"></textarea>
       <select name="visibility"><option value="team">Cả đội</option><option value="manager">Quản lý</option></select><button class="btn btn--sm" type="submit">Lưu ghi chú</button></form>
     <h3 class="subhead">Hội thoại</h3><div class="timeline">${conversations || '<p class="empty">Chưa có hội thoại.</p>'}</div>`;
+
+  $("[data-contact-giao]")?.addEventListener("click", (ev) =>
+    giaoKhach(ev.currentTarget.dataset.contactGiao, ev.currentTarget.dataset.chu));
+
+  $("[data-contact-lichsu]")?.addEventListener("click", async (ev) => {
+    const hop = $("#contact-lichsu-giao");
+    if (hop.innerHTML) { hop.innerHTML = ""; return; }   // bấm lần hai là đóng
+    try {
+      const ds = (await api(`/contacts/${ev.currentTarget.dataset.contactLichsu}`
+                            + "/chu-so-huu/lich-su")).lich_su;
+      hop.innerHTML = ds.length
+        ? `<div class="contact-notes">${ds.map((d) => `
+            <article class="contact-note">
+              <p>${d.owner_ho_ten
+                    ? `Giao cho <b>${esc(d.owner_ho_ten)}</b>`
+                    : "<b>Thu hồi</b> — khách quay về của chung"} · ${esc(d.ly_do)}</p>
+              <small>${esc(d.actor_ten_dang_nhap || "?")} · ${clock(d.luc)}</small>
+            </article>`).join("")}</div>`
+        : '<p class="empty">Khách này chưa từng được giao cho ai.</p>';
+    } catch (e) { toast(e.message, true); }
+  });
 
   $("#contact-tag-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2040,6 +2163,11 @@ $("#pdpdform").addEventListener("submit", async (e) => {
 async function kiemPhien() {
   try {
     const nguoi = await api("/toi");
+    // Bộ lọc "Khách của tôi" so `owner_user_id` với id này. Không nhớ lại
+    // đây thì bộ lọc ấy luôn rỗng — và rỗng trông hệt như "chưa ai giao
+    // khách cho bạn", nên không ai nhận ra là nó hỏng.
+    state.toiId = nguoi.id;
+    state.toiQuyen = new Set(nguoi.quyen || []);
     $("#cong").classList.add("is-off");
     const nhan = $("#rail-nguoi");
     if (nhan) nhan.innerHTML =
@@ -2073,6 +2201,39 @@ $("#loginform").addEventListener("submit", async (e) => {
     $("#loginerr").textContent = err.message || "Đăng nhập không thành công";
     btn.disabled = false;
   }
+});
+
+/* ---------------- tầm nhìn khách của người khác ---------------- */
+
+async function loadTamNhin() {
+  const d = await api("/tam-nhin-khach");
+  /* Mỗi mức hiện kèm HỆ QUẢ, không chỉ tên.
+   *
+   * Một ô chọn bốn giá trị mà không giải thích thì người ta chọn bừa rồi
+   * không hiểu vì sao nhân viên kêu mất khách — và người bị gọi đầu tiên
+   * là người vừa triển khai. */
+  $("#tamnhin").innerHTML = d.cac_muc.map((m) => `
+    <label class="row tamnhin__o">
+      <span class="row__flag row__flag--${m.ma === d.muc ? "auto" : "assist"}"></span>
+      <span class="row__main">
+        <b><input type="radio" name="tamnhin" value="${esc(m.ma)}"${
+          m.ma === d.muc ? " checked" : ""}> ${esc(m.nhan)}${
+          m.ma === d.mac_dinh ? ' <span class="pill">mặc định</span>' : ""}</b>
+        <span class="row__sub">${esc(m.he_qua)}</span>
+      </span>
+    </label>`).join("");
+}
+
+$("#tamnhin")?.addEventListener("change", async (e) => {
+  const o = e.target.closest('input[name="tamnhin"]');
+  if (!o) return;
+  try {
+    await api("/tam-nhin-khach", {
+      method: "PUT", body: JSON.stringify({ muc: o.value }),
+    });
+    toast("Đã đổi. Áp dụng từ lần tải màn Khách hàng kế tiếp.");
+    await loadTamNhin();
+  } catch (err) { toast(err.message, true); await loadTamNhin(); }
 });
 
 /* ---------------- nhân sự: vai trò và quyền ---------------- */
@@ -2304,7 +2465,7 @@ async function refresh() {
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadTamNhin(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {

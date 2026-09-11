@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from agent.api.contacts import (
     get_contact_repository,
     get_identity_service,
+    get_muc_tam_nhin,
     mask_contact_pii,
     router,
 )
@@ -84,6 +85,8 @@ def _client():
     app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_contact_repository] = lambda: repository
     app.dependency_overrides[get_identity_service] = lambda: identity
+    # Mức tầm nhìn mặc định: A2 lên mà không ai bật thì không đổi gì.
+    app.dependency_overrides[get_muc_tam_nhin] = lambda: "tat"
     return TestClient(app), repository, identity, user
 
 

@@ -160,8 +160,15 @@ def test_khong_cho_nao_quyet_dinh_quyen_bang_cot_vai_tro():
     assert not vi_pham, f"Còn quyết định quyền bằng vai_tro: {vi_pham}"
 
 
-# Quyền chưa có chỗ dùng sau A1. Danh sách này phải RỖNG khi A2 xong.
-QUYEN_HOAN_SANG_A2 = {"khach.giao"}
+# Quyền chưa có chỗ dùng.
+#
+# Trong A1 tập này có `khach.giao` — quyền ấy chỉ có endpoint khi A2 dựng
+# xong việc giao khách. A2 đã xong, nên tập phải RỖNG.
+#
+# Giữ hằng lại thay vì xoá: lần sau có ai thêm một quyền "để dành cho bản
+# sau", họ sẽ thấy đúng chỗ để khai nó — kèm áp lực phải dọn, vì tên hằng
+# nói rõ đây là nợ chứ không phải chỗ đậu.
+QUYEN_CHUA_DUNG: set[str] = set()
 
 
 def test_moi_quyen_deu_co_it_nhat_mot_route_dung():
@@ -185,7 +192,7 @@ def test_moi_quyen_deu_co_it_nhat_mot_route_dung():
     # mở cửa một đường nào. Khai tường minh ở đây thay vì nới lỏng phép
     # kiểm — nới lỏng là bỏ luôn khả năng bắt quyền chết.
     doc_trong_truy_van = {"hoi_thoai.xem_tat_ca", "khach.xem_tat_ca"}
-    chet = set(quyen.QUYEN) - da_dung - doc_trong_truy_van - QUYEN_HOAN_SANG_A2
+    chet = set(quyen.QUYEN) - da_dung - doc_trong_truy_van - QUYEN_CHUA_DUNG
     assert not chet, f"Quyền không có chỗ dùng: {sorted(chet)}"
 
 

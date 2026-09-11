@@ -173,6 +173,8 @@ class PostgresContactRepository:
             contact = await connection.fetchrow(
                 """
                 SELECT contact.*,
+                       chu.ho_ten AS owner_ho_ten,
+                       chu.ten_dang_nhap AS owner_ten_dang_nhap,
                        ($3 OR EXISTS (
                            SELECT 1 FROM contact_points point
                            JOIN account_memberships membership
@@ -182,6 +184,7 @@ class PostgresContactRepository:
                            WHERE point.contact_id = contact.id
                        )) AS can_view_pii
                 FROM contacts contact
+                LEFT JOIN nguoi_dung chu ON chu.id = contact.owner_user_id
                 WHERE contact.id = $1
                   AND EXISTS (
                       SELECT 1 FROM contact_points point
@@ -526,6 +529,21 @@ def get_identity_service() -> IdentityService:
     return IdentityService(PostgresIdentityRepository())
 
 
+async def get_muc_tam_nhin() -> str:
+    """
+    Mức tầm nhìn đang đặt, dưới dạng dependency.
+
+    Gọi thẳng `pham_vi.doc_muc()` trong thân endpoint cũng chạy được, nhưng
+    khi ấy mọi test dùng kho giả đều phải dựng một CSDL thật chỉ để đọc một
+    thiết lập — và cách rẻ hơn mà người ta sẽ chọn là cho `doc_muc()` nuốt
+    lỗi "chưa có pool" rồi trả mặc định. Nuốt lỗi ở đó là biến "CSDL chưa
+    sẵn sàng" thành "mọi người thấy mọi khách", im lặng.
+
+    Là dependency thì test ghi đè một dòng, và mã thật vẫn nổ khi mất CSDL.
+    """
+    return await pham_vi.doc_muc()
+
+
 def _scope(user: Mapping[str, Any]) -> tuple[UUID, bool]:
     """
     (id người dùng, có thấy khách của MỌI kênh không).
@@ -558,9 +576,9 @@ async def list_contacts(
     limit: int = Query(50, ge=1, le=100),
     user: dict = Depends(can_quyen("khach.doc")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
+    muc: str = Depends(get_muc_tam_nhin),
 ) -> list[dict[str, Any]]:
     user_id, is_admin = _scope(user)
-    muc = await pham_vi.doc_muc()
     rows = await repository.list_visible(
         user_id=user_id,
         is_admin=is_admin,
@@ -765,3 +783,250 @@ async def request_contact_retention(
         dry_run=body.dry_run,
         actor_id=actor_id,
     )
+
+
+# =====================================================================
+#  Giao khách cho nhân viên
+# =====================================================================
+# Ba thứ phải ghi CÙNG một giao dịch: cột chủ, dòng lịch sử, nhật ký kiểm
+# toán. Ghi cột mà mất lịch sử thì sáu tháng sau không ai trả lời được "ai
+# giao khách này cho Thảo, và lúc nào" — và câu hỏi ấy luôn được hỏi vào
+# đúng lúc có chuyện.
+
+class ChuSoHuuIn(BaseModel):
+    owner_user_id: UUID
+    ly_do: str = Field(min_length=3, max_length=500)
+
+
+async def _khach_ton_tai(conn, contact_id: UUID) -> None:
+    co = await conn.fetchval(
+        "SELECT 1 FROM contacts WHERE id = $1 AND status <> 'deleted'",
+        contact_id)
+    if not co:
+        raise HTTPException(404, "Không tìm thấy khách hàng")
+
+
+async def _ghi_chu_so_huu(conn, *, contact_id: UUID, chu: UUID | None,
+                          actor: dict, ly_do: str) -> None:
+    await conn.execute(
+        "UPDATE contacts SET owner_user_id = $2, updated_at = now() "
+        "WHERE id = $1", contact_id, chu)
+    await conn.execute(
+        "INSERT INTO contact_owner_history "
+        "(contact_id, owner_user_id, actor_id, ly_do) VALUES ($1,$2,$3,$4)",
+        contact_id, chu,
+        UUID(str(actor["id"])) if actor.get("id") else None, ly_do)
+
+
+@router.put("/{contact_id}/chu-so-huu")
+async def giao_khach(
+    contact_id: UUID,
+    body: ChuSoHuuIn,
+    user: dict = Depends(can_quyen("khach.giao")),
+) -> dict[str, Any]:
+    """
+    Giao khách cho một nhân viên.
+
+    Chặn giao cho người KHÔNG có `hoi_thoai.tra_loi`. Không chặn thì khách
+    ấy chết câm: có chủ nên người khác thấy "đã có người phụ trách" và không
+    vào, mà chủ thì không gửi được tin. Nó không hỏng — nó chỉ im, và triệu
+    chứng duy nhất là một khách hàng thôi nhắn lại.
+    """
+    async with db.pool().acquire() as connection:
+        async with connection.transaction():
+            await _khach_ton_tai(connection, contact_id)
+
+            nhan = await connection.fetchrow(
+                "SELECT nd.ho_ten, nd.ten_dang_nhap, nd.khoa, "
+                "       COALESCE(bool_or(vq.quyen = 'hoi_thoai.tra_loi' "
+                "               OR (vt.he_thong AND vt.ten = 'Quản trị')), "
+                "                false) AS tra_loi_duoc "
+                "FROM nguoi_dung nd "
+                "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
+                "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+                "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
+                "WHERE nd.id = $1 GROUP BY nd.id",
+                body.owner_user_id)
+            if nhan is None:
+                raise HTTPException(404, "Không tìm thấy nhân viên")
+            if nhan["khoa"]:
+                raise HTTPException(422, (
+                    "Tài khoản này đang bị khoá — giao khách cho họ là khách "
+                    "không có ai trả lời."))
+            if not nhan["tra_loi_duoc"]:
+                raise HTTPException(422, (
+                    f"“{nhan['ho_ten'] or nhan['ten_dang_nhap']}” không có "
+                    "quyền hoi_thoai.tra_loi. Giao khách cho họ là khách có "
+                    "chủ nhưng không ai trả lời được — người khác thấy đã có "
+                    "người phụ trách nên cũng không vào."))
+
+            await _ghi_chu_so_huu(connection, contact_id=contact_id,
+                                  chu=body.owner_user_id, actor=user,
+                                  ly_do=body.ly_do.strip())
+
+    await db.log_event("khach.giao", actor=user.get("ten_dang_nhap", "?"),
+                       ref_id=contact_id, owner=str(body.owner_user_id),
+                       ly_do=body.ly_do.strip())
+    return {"contact_id": str(contact_id),
+            "owner_user_id": str(body.owner_user_id),
+            "owner_ho_ten": nhan["ho_ten"] or nhan["ten_dang_nhap"]}
+
+
+@router.delete("/{contact_id}/chu-so-huu")
+async def thu_hoi_khach(
+    contact_id: UUID,
+    ly_do: str = Query(min_length=3, max_length=500),
+    user: dict = Depends(can_quyen("khach.giao")),
+) -> dict[str, Any]:
+    """
+    Thu hồi: khách quay về trạng thái của chung.
+
+    Vẫn ghi lịch sử với `owner_user_id = NULL`. Thu hồi là một sự kiện thật;
+    không ghi thì khoảng trống giữa hai lần giao trở nên vô hình, và "từ lúc
+    nào khách này không còn ai phụ trách" là câu hỏi không trả lời được.
+    """
+    async with db.pool().acquire() as connection:
+        async with connection.transaction():
+            await _khach_ton_tai(connection, contact_id)
+            await _ghi_chu_so_huu(connection, contact_id=contact_id, chu=None,
+                                  actor=user, ly_do=ly_do.strip())
+
+    await db.log_event("khach.thu_hoi", actor=user.get("ten_dang_nhap", "?"),
+                       ref_id=contact_id, ly_do=ly_do.strip())
+    return {"contact_id": str(contact_id), "owner_user_id": None}
+
+
+@router.get("/{contact_id}/chu-so-huu/lich-su")
+async def lich_su_chu_so_huu(
+    contact_id: UUID,
+    _q: dict = Depends(can_quyen("khach.doc")),
+) -> dict[str, Any]:
+    ds = await db.fetch(
+        "SELECT ls.id, ls.owner_user_id, ls.ly_do, ls.luc, "
+        "       chu.ho_ten AS owner_ho_ten, "
+        "       ai.ten_dang_nhap AS actor_ten_dang_nhap "
+        "FROM contact_owner_history ls "
+        "LEFT JOIN nguoi_dung chu ON chu.id = ls.owner_user_id "
+        "LEFT JOIN nguoi_dung ai ON ai.id = ls.actor_id "
+        "WHERE ls.contact_id = $1 ORDER BY ls.luc DESC, ls.id DESC LIMIT 100",
+        contact_id)
+    for d in ds:
+        d["owner_user_id"] = (str(d["owner_user_id"])
+                              if d["owner_user_id"] else None)
+        d["luc"] = d["luc"].isoformat()
+    return {"lich_su": ds}
+
+
+# Router thứ hai, prefix `/api` chứ không `/api/contacts`.
+#
+# Không nhét `/vo-chu` vào router trên được: `/{contact_id}` đã khai ở phía
+# trước, và FastAPI khớp theo THỨ TỰ KHAI — nên `/api/contacts/vo-chu` sẽ
+# rơi vào `contact_detail` với `contact_id="vo-chu"`, trả 422 về kiểu UUID.
+# Một lỗi 422 khó hiểu ở một đường vừa thêm là thứ mất nửa ngày để tìm.
+router_vo_chu = APIRouter(prefix="/api", tags=["customer-360"])
+
+
+class TamNhinIn(BaseModel):
+    muc: str
+
+
+# Nhãn và HỆ QUẢ của từng mức, gửi kèm cho dashboard.
+#
+# Một ô chọn bốn giá trị mà không giải thích thì người ta chọn bừa, rồi
+# không hiểu vì sao nhân viên kêu mất khách. Câu giải thích phải đi cùng
+# lựa chọn, không nằm trong tài liệu ở đâu đó.
+MO_TA_MUC = {
+    "tat": ("Không áp dụng",
+            "Mọi nhân viên thấy và trả lời được mọi khách trong kênh của "
+            "mình, hệt như trước. Giao khách vẫn ghi nhận, chỉ là chưa dùng "
+            "để hạn chế ai."),
+    "an_noi_dung": ("Thấy tên, không đọc được",
+                    "Nhân viên thấy khách của người khác trong danh sách và "
+                    "biết ai phụ trách, nhưng không đọc tin nhắn, không thấy "
+                    "số điện thoại và email."),
+    "chi_doc": ("Đọc được, không trả lời được",
+                "Nhân viên đọc đủ hội thoại của khách người khác — tiện bàn "
+                "giao ca — nhưng nút gửi bị khoá."),
+    "an": ("Ẩn hẳn",
+           "Khách của người khác biến mất khỏi danh sách, không mở được, "
+           "tìm cũng không ra. Chặt nhất, và cũng là mức dễ làm người trực "
+           "tưởng hệ thống mất dữ liệu nhất."),
+}
+
+
+@router_vo_chu.get("/tam-nhin-khach")
+async def doc_tam_nhin(
+    _q: dict = Depends(can_quyen("cau_hinh.doc")),
+) -> dict[str, Any]:
+    dang_dat = await pham_vi.doc_muc()
+    return {
+        "muc": dang_dat,
+        "mac_dinh": pham_vi.MUC_MAC_DINH,
+        "cac_muc": [
+            {"ma": m, "nhan": MO_TA_MUC[m][0], "he_qua": MO_TA_MUC[m][1]}
+            for m in pham_vi.MUC_TAM_NHIN
+        ],
+    }
+
+
+@router_vo_chu.put("/tam-nhin-khach")
+async def dat_tam_nhin(
+    body: TamNhinIn,
+    nguoi: dict = Depends(can_quyen("nguoi_dung.sua")),
+) -> dict[str, Any]:
+    """
+    Đổi mức tầm nhìn.
+
+    Quyền `nguoi_dung.sua` chứ không `cau_hinh.sua`: đây là một chính sách
+    về AI THẤY GÌ, cùng họ với gán vai trò — không phải một tham số vận
+    hành như ngưỡng tự tin hay trần chi phí.
+    """
+    if body.muc not in pham_vi.MUC_TAM_NHIN:
+        raise HTTPException(422, (
+            f"Mức không hợp lệ: {body.muc!r}. "
+            f"Chỉ nhận: {', '.join(pham_vi.MUC_TAM_NHIN)}"))
+    await db.execute(
+        "INSERT INTO cau_hinh_agent (khoa, gia_tri, sua_boi, sua_luc) "
+        "VALUES ($1, $2, $3, now()) "
+        "ON CONFLICT (khoa) DO UPDATE SET gia_tri = $2, sua_boi = $3, "
+        "sua_luc = now()",
+        pham_vi.KHOA_CAU_HINH, body.muc, nguoi.get("ten_dang_nhap", "?"))
+    await db.log_event("tam_nhin_khach.dat",
+                       actor=nguoi.get("ten_dang_nhap", "?"), muc=body.muc)
+    return {"muc": body.muc}
+
+
+@router_vo_chu.get("/khach-vo-chu")
+async def khach_vo_chu(
+    limit: int = Query(50, ge=1, le=200),
+    _q: dict = Depends(can_quyen("khach.doc")),
+) -> dict[str, Any]:
+    """
+    Khách chưa được giao cho ai.
+
+    Chủ dự án chọn "mọi người thấy, không tự gán chủ", nên khách vô chủ sẽ
+    TÍCH LẠI — đó là hệ quả đã biết trước. Chặn bằng mã chứ không bằng lời
+    nhắc: endpoint này nuôi một chỉ số thường trực trên trang Ca trực.
+
+    Số đếm và danh sách dùng CHUNG một mệnh đề. Hai định nghĩa "vô chủ" lệch
+    nhau là con số nói một đằng, danh sách hiện một nẻo — rồi người ta thôi
+    tin cả hai, và thôi nhìn cả hai.
+    """
+    dieu_kien = "owner_user_id IS NULL AND status = 'active'"
+    tong = await db.fetchrow(
+        f"SELECT count(*) AS so, min(first_seen) AS lau_nhat "  # noqa: S608
+        f"FROM contacts WHERE {dieu_kien}")
+    ds = await db.fetch(
+        f"SELECT id, display_name, first_seen, last_seen "      # noqa: S608
+        f"FROM contacts WHERE {dieu_kien} "
+        f"ORDER BY first_seen LIMIT $1", limit)
+    for d in ds:
+        d["id"] = str(d["id"])
+        for k in ("first_seen", "last_seen"):
+            d[k] = d[k].isoformat()
+    lau_nhat = tong["lau_nhat"]
+    return {
+        "so": tong["so"],
+        "ngay_lau_nhat": lau_nhat.isoformat() if lau_nhat else None,
+        "khach": ds,
+    }

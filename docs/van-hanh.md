@@ -505,6 +505,56 @@ vào `data/catalog.json` — nửa đó **không** nằm trong ERP, và cố ý 
 
 ---
 
+## Nhân viên đăng nhập thế nào
+
+Cùng một màn hình với bạn: `http://127.0.0.1:8000`, tên đăng nhập và mật
+khẩu. **Không có cổng riêng cho nhân viên**, và không ai tự đăng ký được —
+hệ thống này nắm dữ liệu khách hàng, nên tài khoản chỉ do quản trị cấp.
+
+Cấp một tài khoản mới, ba việc trong một màn:
+
+1. **Nhân sự** → **Thêm nhân viên**. Điền tên đăng nhập, họ tên, mật khẩu
+   ban đầu (từ 8 ký tự).
+2. Chọn **vai trò** ngay trong form ấy.
+3. Báo họ vào **đổi mật khẩu** (góc dưới trái, cạnh nút *thoát*).
+
+Bước 2 đừng bỏ. Người chưa có vai trò nào **vẫn đăng nhập được** nhưng mọi
+màn đều trống — và không có dòng nào trên màn hình nói cho họ biết vì sao.
+Phân quyền ở đây hỏng-đóng: không được cấp thì không thấy, chứ không phải
+thấy rồi mới bị chặn. Thanh bên hiện một huy hiệu đỏ đếm số người đang ở
+tình trạng này.
+
+Bước 3 cũng đừng bỏ. Bỏ nó thì quản trị biết mật khẩu của mọi nhân viên,
+vĩnh viễn — và ngày có tranh cãi về việc ai đã xem hồ sơ khách nào, không
+ai chứng minh được gì.
+
+### Ai đang có mặt trong hệ thống
+
+Đầu bảng **Nhân sự** đếm sẵn: *bao nhiêu tài khoản · bao nhiêu đang làm ·
+bao nhiêu đã khoá · bao nhiêu chưa có vai trò*. Mỗi dòng hiện lần đăng nhập
+gần nhất — đó là cách nhanh nhất tìm ra tài khoản cấp rồi bỏ đó, hoặc tài
+khoản của người đã nghỉ mà chưa ai khoá.
+
+### Nhân viên nghỉ việc
+
+Bấm **Khoá** trên dòng của họ. Nó khoá tài khoản **và đá mọi phiên đang mở
+ngay lập tức**. Khoá mà không xoá phiên thì người vừa bị khoá vẫn ngồi
+trong hệ thống tới lúc phiên hết hạn — bảy ngày, với dữ liệu khách hàng
+trong tay.
+
+Không xoá tài khoản: xoá là mất dấu vết ai đã làm gì. Khoá giữ lại lịch sử
+mà vẫn chặn được đường vào.
+
+Bạn không tự khoá được chính mình — máy chủ chặn, không phải màn hình ẩn
+nút. Đó là để không ai một mình biến hệ thống thành không còn quản trị nào.
+
+### Lỡ không còn ai vào được
+
+Xem mục *Lỡ tự khoá mình ra ngoài thì vào lại thế nào* trong `CLAUDE.md` —
+một câu lệnh SQL cấp lại vai trò Quản trị.
+
+---
+
 ## Giao khách cho nhân viên
 
 Dashboard → **Khách hàng** → chọn một khách → **Giao / thu hồi**. Gõ tên

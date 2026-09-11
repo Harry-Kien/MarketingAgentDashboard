@@ -2257,7 +2257,15 @@ async function kiemPhien() {
     const nhan = $("#rail-nguoi");
     if (nhan) nhan.innerHTML =
       `${esc(nguoi.ho_ten || nguoi.ten_dang_nhap)}`
+      + ` · <a href="#" id="doimk" style="color:inherit">đổi mật khẩu</a>`
       + ` · <a href="#" id="logout" style="color:inherit">thoát</a>`;
+    const doi = $("#doimk");
+    if (doi) doi.addEventListener("click", (e) => {
+      e.preventDefault();
+      $("#mkerr").textContent = "";
+      $("#congMk").classList.remove("is-off");
+      $("#mkform").mat_khau_moi.focus();
+    });
     const out = $("#logout");
     if (out) out.addEventListener("click", async (e) => {
       e.preventDefault();
@@ -2270,6 +2278,46 @@ async function kiemPhien() {
     return false;
   }
 }
+
+$("#mkhuy")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  $("#mkform").reset();
+  $("#congMk").classList.add("is-off");
+});
+
+/*
+ * Đổi mật khẩu của chính mình.
+ *
+ * Ô "gõ lại" kiểm ở đây chứ không gửi lên máy chủ: gõ nhầm mật khẩu mới
+ * rồi bị đá ra khỏi mọi thiết bị là một tình huống không lối thoát cho
+ * người không phải quản trị — họ không tự mở lại được.
+ *
+ * Đổi xong máy chủ xoá mọi phiên, kể cả phiên đang dùng. Nên tải lại trang
+ * để về màn đăng nhập, thay vì để người dùng bấm tiếp rồi gặp 401 ở một
+ * thao tác ngẫu nhiên nào đó và tưởng hệ thống hỏng.
+ */
+$("#mkform")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.currentTarget;
+  const d = Object.fromEntries(new FormData(f).entries());
+  if (d.mat_khau_moi !== d.nhac_lai) {
+    $("#mkerr").textContent = "Hai ô không giống nhau.";
+    return;
+  }
+  const nut = f.querySelector("button[type=submit]");
+  nut.disabled = true;
+  try {
+    await api("/toi/doi-mat-khau", {
+      method: "POST",
+      body: JSON.stringify({ mat_khau_moi: d.mat_khau_moi }),
+    });
+    alert("Đã đổi. Đăng nhập lại bằng mật khẩu mới.");
+    location.reload();
+  } catch (err) {
+    $("#mkerr").textContent = err.message;
+    nut.disabled = false;
+  }
+});
 
 $("#loginform").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -2675,13 +2723,16 @@ function nsDongNguoi(n) {
     <span class="row__flag row__flag--${n.khoa ? "halt" : coVai ? "auto" : "assist"}"></span>
     <div class="row__main">
       <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
-      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}</span>
+      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}${
+        n.dang_nhap_cuoi ? " · vào lần cuối " + clock(n.dang_nhap_cuoi) : " · chưa đăng nhập lần nào"}</span>
     </div>
     <div class="row__side">
       <span>${vai}</span>
       <span class="row__nut">
         <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
         <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-khoa="${esc(n.ten_dang_nhap)}"
+          data-dangkhoa="${n.khoa ? "1" : ""}">${n.khoa ? "Mở khoá" : "Khoá"}</button>
       </span>
     </div>
   </div>`;
@@ -2729,6 +2780,26 @@ async function loadNhanSu() {
   $("#c-nhansu").textContent = chuaVai ? String(chuaVai) : "";
   $("#c-nhansu").title = chuaVai
     ? `${chuaVai} nhân viên chưa được cấp vai trò nào` : "";
+
+  // TỔNG SỐ phải hiện ra. Huy hiệu trên thanh bên đếm số người CHƯA có vai
+  // trò — một con số cảnh báo, không phải con số tồn kho. Người vận hành
+  // hỏi "có bao nhiêu nhân viên" thì trước đây phải tự đếm bằng mắt.
+  const dangLam = ds.filter((n) => !n.khoa).length;
+  const daKhoa = ds.length - dangLam;
+  $("#nsDem").textContent = [
+    `${ds.length} tài khoản`,
+    `${dangLam} đang làm`,
+    daKhoa ? `${daKhoa} đã khoá` : "",
+    chuaVai ? `${chuaVai} chưa có vai trò` : "",
+  ].filter(Boolean).join(" · ");
+
+  // Ô vai trò trong form thêm người: dựng lại mỗi lần tải để vai trò vừa
+  // tạo xuất hiện ngay, không phải tải lại trang.
+  const oVai = $("#nsVaiTroMoi");
+  if (oVai) {
+    oVai.innerHTML = '<option value="">— chưa gán, cấp sau —</option>'
+      + nhanSu.vaiTro.map((v) => `<option value="${esc(v.id)}">${esc(v.ten)}</option>`).join("");
+  }
 }
 
 function nsVeBangQuyen(dangCo) {
@@ -2802,6 +2873,31 @@ $("#nsVaiTro")?.addEventListener("click", async (e) => {
 });
 
 $("#nsNguoi")?.addEventListener("click", async (e) => {
+  /*
+   * Khoá / mở khoá ngay trên dòng. API đã có từ lâu nhưng không màn hình
+   * nào gọi tới — nghĩa là nhân viên nghỉ việc chỉ chặn được bằng cách vào
+   * psql gõ tay, và việc phải gõ tay là việc người ta hoãn lại.
+   *
+   * Lời xác nhận nói ĐIỀU SẼ XẢY RA (phiên đang mở bị đá ra ngay), không
+   * hỏi "có chắc không" — câu ấy không mang thông tin nào.
+   */
+  const kh = e.target.closest("[data-khoa]");
+  if (kh) {
+    const ten = kh.dataset.khoa;
+    const dangKhoa = !!kh.dataset.dangkhoa;
+    const loi = dangKhoa
+      ? `Mở khoá “${ten}”? Họ đăng nhập lại được ngay.`
+      : `Khoá “${ten}”? Mọi phiên đang mở của họ bị đá ra ngay lập tức.`;
+    if (!confirm(loi)) return;
+    try {
+      await api(`/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=${!dangKhoa}`,
+                { method: "POST" });
+      toast(dangKhoa ? `Đã mở khoá ${ten}.` : `Đã khoá ${ten} và đá mọi phiên.`);
+      await loadNhanSu();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+
   const xem = e.target.closest("[data-xemquyen]");
   if (xem) {
     try {
@@ -2847,19 +2943,67 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message, true); }
 });
 
-$("#nsThemNguoi")?.addEventListener("click", async () => {
-  const ten = prompt("Tên đăng nhập của nhân viên mới:");
+$("#nsThemNguoi")?.addEventListener("click", () => {
+  $("#nsFormNguoi").classList.toggle("is-hidden");
+  if (!$("#nsFormNguoi").classList.contains("is-hidden")) {
+    $("#nsFormNguoi").ten_dang_nhap.focus();
+  }
+});
+
+$("#nsHuyNguoi")?.addEventListener("click", () => {
+  $("#nsFormNguoi").reset();
+  $("#nsFormNguoi").classList.add("is-hidden");
+});
+
+/*
+ * Tạo nhân viên và gán vai trò trong MỘT thao tác.
+ *
+ * Tách hai bước là để lại một khoảng người vừa tạo chưa có quyền gì: họ
+ * đăng nhập được, thấy dashboard trống trơn, và không có gì nói cho họ biết
+ * vì sao. Người tạo thì tưởng đã xong.
+ *
+ * Gán vai trò hỏng KHÔNG được nuốt: tài khoản đã tạo rồi, nên phải nói rõ
+ * tạo xong nhưng chưa cấp quyền, chứ không phải báo lỗi chung chung khiến
+ * người ta bấm tạo lại và gặp "tên đã tồn tại".
+ */
+$("#nsFormNguoi")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.currentTarget;
+  const d = Object.fromEntries(new FormData(f).entries());
+  const ten = String(d.ten_dang_nhap || "").trim();
   if (!ten) return;
-  const mk = prompt("Mật khẩu ban đầu (ít nhất 8 ký tự):");
-  if (!mk) return;
+  const nut = f.querySelector("button[type=submit]");
+  nut.disabled = true;
   try {
-    await api("/nguoi-dung", {
+    const moi = await api("/nguoi-dung", {
       method: "POST",
-      body: JSON.stringify({ ten_dang_nhap: ten.trim(), mat_khau: mk, ho_ten: ten.trim() }),
+      body: JSON.stringify({
+        ten_dang_nhap: ten,
+        mat_khau: d.mat_khau,
+        ho_ten: String(d.ho_ten || "").trim() || ten,
+      }),
     });
-    toast("Đã tạo. Nhớ gán vai trò — chưa gán thì họ đăng nhập được nhưng mọi màn đều trống.");
+    if (d.vai_tro_id) {
+      try {
+        await api(`/nguoi-dung/${moi.id}/vai-tro`, {
+          method: "PUT", body: JSON.stringify({ vai_tro: [d.vai_tro_id] }),
+        });
+        toast(`Đã tạo ${ten} và cấp vai trò. Báo họ đổi mật khẩu ở mục Tôi.`);
+      } catch (err) {
+        toast(`Đã tạo ${ten} nhưng CHƯA cấp được vai trò: ${err.message}`
+          + " — bấm Gán vai trò trên dòng của họ.", true);
+      }
+    } else {
+      toast(`Đã tạo ${ten}. Chưa có vai trò nên họ vào được mà mọi màn đều trống.`);
+    }
+    f.reset();
+    f.classList.add("is-hidden");
     await loadNhanSu();
-  } catch (err) { toast(err.message, true); }
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    nut.disabled = false;
+  }
 });
 
 /* ---------------- vòng làm mới ---------------- */

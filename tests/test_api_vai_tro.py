@@ -296,3 +296,91 @@ def test_uuid_khong_ton_tai_thi_404(csdl_kiem_thu):
         assert khach.delete(f"/api/vai-tro/{la}").status_code == 404
         assert khach.put(f"/api/vai-tro/{la}", json={
             "ten": "X", "mo_ta": "", "quyen": []}).status_code == 404
+
+
+def _app_day_du(url: str, nguoi: dict) -> FastAPI:
+    """
+    Như `_app_thu` nhưng gắn THÊM `routes.router`.
+
+    Cần cả hai vì màn Nhân sự đi qua hai module: tạo tài khoản nằm ở
+    `routes.py`, gán vai trò nằm ở `quyen.py`. Test riêng từng cái thì xanh
+    cả hai mà đường người dùng thật vẫn có thể gãy ở chỗ nối.
+    """
+    from agent.api import routes as api_routes
+
+    app = _app_thu(url, nguoi)
+    app.include_router(api_routes.router)
+    return app
+
+
+def test_tao_nhan_vien_roi_gan_vai_tro_ngay_trong_mot_luot(csdl_kiem_thu):
+    """
+    Đúng đường màn Nhân sự đi khi chọn vai trò trong form thêm người.
+
+    Tách hai bước để lại một khoảng người vừa tạo chưa có quyền gì: họ đăng
+    nhập được, thấy mọi màn trống, và không gì nói cho họ biết vì sao.
+    """
+    with TestClient(_app_day_du(csdl_kiem_thu, toan_quyen())) as khach:
+        nv = next(v for v in khach.get("/api/vai-tro").json()["vai_tro"]
+                  if v["ten"] == "Nhân viên")
+
+        r = khach.post("/api/nguoi-dung", json={
+            "ten_dang_nhap": "lan.nv",
+            "mat_khau": "mat-khau-thu-nghiem",
+            "ho_ten": "Nguyễn Thị Lan",
+        })
+        assert r.status_code == 200, r.text
+        uid = r.json()["id"]
+
+        assert khach.put(f"/api/nguoi-dung/{uid}/vai-tro",
+                         json={"vai_tro": [nv["id"]]}).status_code == 200
+
+        ds = khach.get("/api/nguoi-dung").json()["nguoi_dung"]
+        moi = next(n for n in ds if n["ten_dang_nhap"] == "lan.nv")
+        assert moi["vai_tro_ten"] == ["Nhân viên"]
+        assert moi["khoa"] is False
+        # Chưa vào lần nào -> màn hình phải nói được điều đó.
+        assert moi["dang_nhap_cuoi"] is None
+
+
+def test_danh_sach_du_truong_de_man_hinh_dem_va_khoa(csdl_kiem_thu):
+    """
+    Màn Nhân sự đếm "bao nhiêu tài khoản / đang làm / đã khoá" và vẽ nút
+    Khoá từ chính danh sách này. Thiếu `khoa` thì con số sai trong im lặng,
+    thiếu `ten_dang_nhap` thì nút Khoá không biết gọi ai.
+    """
+    with TestClient(_app_day_du(csdl_kiem_thu, toan_quyen())) as khach:
+        ds = khach.get("/api/nguoi-dung").json()["nguoi_dung"]
+        assert ds, "phải có ít nhất người đang thao tác"
+        for k in ("id", "ten_dang_nhap", "ho_ten", "khoa",
+                  "dang_nhap_cuoi", "vai_tro_ten"):
+            assert k in ds[0], f"thiếu trường {k}"
+
+
+def test_khoa_nhan_vien_thi_da_luon_moi_phien_dang_mo(csdl_kiem_thu):
+    """
+    Khoá mà không xoá phiên thì người vừa bị khoá vẫn ngồi trong hệ thống
+    tới lúc phiên hết hạn — với hệ thống nắm dữ liệu khách, đó là bảy ngày
+    quá nhiều.
+    """
+    with TestClient(_app_day_du(csdl_kiem_thu, toan_quyen())) as khach:
+        uid = khach.post("/api/nguoi-dung", json={
+            "ten_dang_nhap": "nghi.viec",
+            "mat_khau": "mat-khau-thu-nghiem",
+            "ho_ten": "Đã nghỉ",
+        }).json()["id"]
+        asyncio.run(_chay_sql(
+            csdl_kiem_thu,
+            "INSERT INTO phien (token, nguoi_dung_id, het_han) "
+            "VALUES ('phien-thu', $1, now() + interval '1 day') RETURNING token",
+            UUID(uid)))
+
+        assert khach.post("/api/nguoi-dung/nghi.viec/khoa?khoa=true"
+                          ).status_code == 200
+        con = asyncio.run(_chay_sql(
+            csdl_kiem_thu,
+            "SELECT count(*) FROM phien WHERE nguoi_dung_id = $1", UUID(uid)))
+        assert con == 0, "khoá xong mà phiên vẫn còn"
+
+        ds = khach.get("/api/nguoi-dung").json()["nguoi_dung"]
+        assert next(n for n in ds if n["ten_dang_nhap"] == "nghi.viec")["khoa"]

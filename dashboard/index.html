@@ -151,8 +151,36 @@
       </label>
       <button type="submit" class="btn btn--primary">Đăng nhập</button>
       <p class="cong__loi" id="loginerr"></p>
-      <p class="cong__note">Chưa có tài khoản? Chạy trên máy chủ:
+      <p class="cong__note"><b>Nhân viên:</b> tài khoản do quản trị cấp ở màn
+        <i>Nhân sự</i>. Không tự đăng ký được — hệ thống này nắm dữ liệu khách.</p>
+      <p class="cong__note"><b>Lần đầu dựng, chưa có ai:</b> chạy trên máy chủ
         <code>python -m scripts.tao_tai_khoan admin "mật khẩu" --quan-tri</code></p>
+    </form>
+  </div>
+
+  <!-- Đổi mật khẩu. Dùng lại đúng lớp phủ của màn đăng nhập thay vì dựng
+       một kiểu hộp thoại thứ hai cho riêng nó.
+
+       Trước bản này KHÔNG có màn nào gọi /api/toi/doi-mat-khau, nghĩa là
+       mật khẩu ban đầu do quản trị đặt sống mãi — quản trị biết mật khẩu
+       của mọi nhân viên, vĩnh viễn. -->
+  <div class="cong is-off" id="congMk">
+    <form class="cong__form" id="mkform">
+      <h1 class="cong__ten">Đổi mật khẩu</h1>
+      <p class="cong__phu">Mọi thiết bị đang đăng nhập sẽ bị đá ra, kể cả máy này.</p>
+      <label class="field">
+        <span>Mật khẩu mới</span>
+        <input name="mat_khau_moi" type="password" autocomplete="new-password"
+               minlength="8" required autofocus>
+      </label>
+      <label class="field">
+        <span>Gõ lại</span>
+        <input name="nhac_lai" type="password" autocomplete="new-password"
+               minlength="8" required>
+      </label>
+      <button type="submit" class="btn btn--primary">Đổi</button>
+      <p class="cong__loi" id="mkerr"></p>
+      <p class="cong__note"><a href="#" id="mkhuy">Thôi, quay lại</a></p>
     </form>
   </div>
 
@@ -944,8 +972,34 @@
     <section class="view" data-view="nhansu">
       <section class="panel">
         <h2 class="panel__head">Nhân viên
-          <span class="panel__note">ai được làm gì · bấm một người để xem quyền thật của họ</span>
+          <span class="panel__note" id="nsDem">đang đếm…</span>
           <button type="button" id="nsThemNguoi" class="btn btn--sm">Thêm nhân viên</button></h2>
+        <!-- Form thay cho ba cái prompt() trước đây. prompt() hiện mật khẩu
+             dạng chữ thường ngay giữa màn hình — ai đứng sau lưng cũng đọc
+             được, và ảnh chụp màn hình thì đi khắp nơi. -->
+        <form id="nsFormNguoi" class="form is-hidden">
+          <div class="form__row">
+            <label class="field"><span>Tên đăng nhập</span>
+              <input name="ten_dang_nhap" autocomplete="off" required
+                     placeholder="lan.nv"></label>
+            <label class="field"><span>Họ tên</span>
+              <input name="ho_ten" autocomplete="off" placeholder="Nguyễn Thị Lan"></label>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Mật khẩu ban đầu</span>
+              <input name="mat_khau" type="password" autocomplete="new-password"
+                     minlength="8" required></label>
+            <label class="field"><span>Vai trò</span>
+              <select name="vai_tro_id" id="nsVaiTroMoi"></select></label>
+          </div>
+          <p class="panel__note">Gán vai trò ngay tại đây: tạo xong mà chưa có
+            vai trò thì họ đăng nhập được nhưng mọi màn đều trống, và không có
+            gì trên màn hình nói cho họ biết vì sao.</p>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--primary btn--sm">Tạo tài khoản</button>
+            <button type="button" id="nsHuyNguoi" class="btn btn--sm btn--ghost">Huỷ</button>
+          </div>
+        </form>
         <div id="nsNguoi" class="rows">
           <p class="empty">Đang tải…</p>
         </div>

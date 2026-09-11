@@ -1880,6 +1880,14 @@ svg { flex: none; }
 .tamnhin__o { cursor: pointer; }
 .tamnhin__o input { margin-right: 6px; }
 
+/* Ô nhập của trường khách tuỳ biến. Vẽ theo KIỂU chứ không đổ hết thành ô
+   chữ: ô đúng kiểu là lớp phòng thứ nhất (người trực không gõ sai được),
+   máy chủ là lớp thứ hai. Bỏ lớp thứ nhất thì họ gõ sai rồi mới biết, mỗi
+   lần một lần. */
+.tk__o { margin-bottom: 8px; }
+.tk__nhieu { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0; }
+.tk__nhieu label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
 /* Huy hiệu cảnh báo — dùng cho "chưa có vai trò nào".
    Người chưa được cấp vai trò đăng nhập được nhưng mọi màn đều trống, và
    họ sẽ báo là "dashboard hỏng". Phải nhìn thấy ngay ở danh sách. */

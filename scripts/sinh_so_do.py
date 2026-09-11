@@ -78,7 +78,7 @@ NHOM = {
     "Customer 360": [
         "contacts", "contact_points", "contact_tags", "contact_notes",
         "contact_consents", "contact_merges", "data_retention_jobs",
-        "contact_owner_history",
+        "contact_owner_history", "truong_khach",
     ],
     "Routing và SLA": [
         "teams", "team_members", "routing_rules", "routing_cursors",

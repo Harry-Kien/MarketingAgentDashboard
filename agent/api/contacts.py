@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -18,7 +19,7 @@ from agent.omnichannel.identity import (
     PostgresIdentityRepository,
 )
 
-from agent.core import pham_vi
+from agent.core import pham_vi, truong_khach
 
 from .routes import can_quyen
 
@@ -924,6 +925,217 @@ async def lich_su_chu_so_huu(
 # rơi vào `contact_detail` với `contact_id="vo-chu"`, trả 422 về kiểu UUID.
 # Một lỗi 422 khó hiểu ở một đường vừa thêm là thứ mất nửa ngày để tìm.
 router_vo_chu = APIRouter(prefix="/api", tags=["customer-360"])
+
+
+# =====================================================================
+#  Trường thông tin khách do người vận hành tự thêm
+# =====================================================================
+
+class TruongIn(BaseModel):
+    ma: str
+    nhan: str = Field(min_length=1, max_length=80)
+    kieu: str
+    goi_y: str = Field("", max_length=300)
+    bat_buoc: bool = False
+    lua_chon: list[str] = Field(default_factory=list)
+    hien_danh_sach: bool = False
+    thu_tu: int = 100
+
+
+class TruongSuaIn(BaseModel):
+    """
+    Sửa được mọi thứ TRỪ `ma` và `kieu`.
+
+    `ma` là khoá trong `contacts.profile` — đổi nó là mọi giá trị đã lưu
+    thành mồ côi, vô hình trên màn hình và không ai gỡ được.
+
+    `kieu` thì tệ hơn: đổi `chu` sang `so` không làm cho các giá trị đã lưu
+    trở thành số. Chúng nằm nguyên đó dưới dạng chuỗi, và từ đó mỗi lần đọc
+    là một lần kiểu nói một đằng dữ liệu một nẻo. Muốn đổi kiểu thì xoá
+    trường rồi tạo lại — và lúc ấy hệ thống sẽ hỏi rõ về số giá trị sắp mất.
+    """
+    nhan: str = Field(min_length=1, max_length=80)
+    goi_y: str = Field("", max_length=300)
+    bat_buoc: bool = False
+    lua_chon: list[str] = Field(default_factory=list)
+    hien_danh_sach: bool = False
+    thu_tu: int = 100
+
+
+class HoSoIn(BaseModel):
+    gia_tri: dict[str, Any]
+
+
+async def _danh_sach_truong() -> list[dict[str, Any]]:
+    ds = await db.fetch(
+        "SELECT ma, nhan, kieu, goi_y, bat_buoc, lua_chon, hien_danh_sach, "
+        "       thu_tu FROM truong_khach ORDER BY thu_tu, ma")
+    for d in ds:
+        # Codec JSONB đã giải mã; dữ liệu cũ có thể còn là chuỗi JSON.
+        if isinstance(d["lua_chon"], str):
+            import json
+            d["lua_chon"] = json.loads(d["lua_chon"])
+    return ds
+
+
+@router_vo_chu.get("/truong-khach")
+async def liet_ke_truong(
+    _q: dict = Depends(can_quyen("khach.doc")),
+) -> dict[str, Any]:
+    return {
+        "truong": await _danh_sach_truong(),
+        "kieu": [{"ma": k, "nhan": truong_khach.NHAN_KIEU[k]}
+                 for k in truong_khach.KIEU],
+        "toi_da": truong_khach.SO_TRUONG_TOI_DA,
+    }
+
+
+@router_vo_chu.post("/truong-khach", status_code=201)
+async def them_truong(
+    body: TruongIn,
+    nguoi: dict = Depends(can_quyen("cau_hinh.sua")),
+) -> dict[str, Any]:
+    try:
+        ma = truong_khach.kiem_ma(body.ma)
+    except truong_khach.TruongHong as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if body.kieu not in truong_khach.KIEU:
+        raise HTTPException(422, f"Kiểu không hợp lệ: {body.kieu!r}")
+    if body.kieu in ("chon", "nhieu_chon") and not body.lua_chon:
+        raise HTTPException(422, (
+            "Kiểu chọn phải có ít nhất một lựa chọn — không thì đó là một ô "
+            "người dùng không chọn được gì, và nó trông hệt một ô đang tải."))
+
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            so = await conn.fetchval("SELECT count(*) FROM truong_khach")
+            if so >= truong_khach.SO_TRUONG_TOI_DA:
+                raise HTTPException(409, (
+                    f"Đã đủ {truong_khach.SO_TRUONG_TOI_DA} trường. Một hồ sơ "
+                    "khách dài hơn thế thì không ai điền hết, và ô trống thì "
+                    "không phân biệt được với 'chưa hỏi'."))
+            try:
+                await conn.execute(
+                    "INSERT INTO truong_khach (ma, nhan, kieu, goi_y, "
+                    "bat_buoc, lua_chon, hien_danh_sach, thu_tu) "
+                    "VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+                    ma, body.nhan.strip(), body.kieu, body.goi_y.strip(),
+                    body.bat_buoc, body.lua_chon, body.hien_danh_sach,
+                    body.thu_tu)
+            except asyncpg.UniqueViolationError as exc:
+                raise HTTPException(
+                    409, f"Đã có trường mã “{ma}”.") from exc
+
+    await db.log_event("truong_khach.them", actor=nguoi.get("ten_dang_nhap", "?"),
+                       ma=ma, kieu=body.kieu)
+    return {"ma": ma, **body.model_dump(exclude={"ma"})}
+
+
+@router_vo_chu.put("/truong-khach/{ma}")
+async def sua_truong(
+    ma: str,
+    body: TruongSuaIn,
+    nguoi: dict = Depends(can_quyen("cau_hinh.sua")),
+) -> dict[str, Any]:
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            cu = await conn.fetchrow(
+                "SELECT kieu, lua_chon FROM truong_khach WHERE ma = $1 "
+                "FOR UPDATE", ma)
+            if cu is None:
+                raise HTTPException(404, "Không tìm thấy trường")
+            if cu["kieu"] in ("chon", "nhieu_chon") and not body.lua_chon:
+                raise HTTPException(422, "Kiểu chọn phải có ít nhất một lựa chọn.")
+            await conn.execute(
+                "UPDATE truong_khach SET nhan=$2, goi_y=$3, bat_buoc=$4, "
+                "lua_chon=$5, hien_danh_sach=$6, thu_tu=$7, sua_luc=now() "
+                "WHERE ma = $1",
+                ma, body.nhan.strip(), body.goi_y.strip(), body.bat_buoc,
+                body.lua_chon, body.hien_danh_sach, body.thu_tu)
+
+    await db.log_event("truong_khach.sua", actor=nguoi.get("ten_dang_nhap", "?"),
+                       ma=ma)
+    return {"ma": ma, **body.model_dump()}
+
+
+@router_vo_chu.delete("/truong-khach/{ma}")
+async def xoa_truong(
+    ma: str,
+    xoa_ca_gia_tri: bool = Query(False),
+    nguoi: dict = Depends(can_quyen("cau_hinh.sua")),
+) -> dict[str, Any]:
+    """
+    Xoá một trường.
+
+    Nếu còn hồ sơ khách đang giữ giá trị của trường ấy thì TỪ CHỐI, và nói
+    ra con số — trừ khi người dùng khẳng định `xoa_ca_gia_tri=true`.
+
+    Vì sao không lặng lẽ để giá trị nằm lại: đó là dữ liệu cá nhân không
+    còn hiện ở đâu trên màn hình, không ai gỡ được, và không ai biết mình
+    đang giữ (Nghị định 13/2023/NĐ-CP). "Xoá định nghĩa" mà dữ liệu vẫn nằm
+    trong CSDL là đúng nghĩa giữ dữ liệu quá hạn trong im lặng.
+    """
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            co = await conn.fetchval(
+                "SELECT 1 FROM truong_khach WHERE ma = $1 FOR UPDATE", ma)
+            if not co:
+                raise HTTPException(404, "Không tìm thấy trường")
+
+            so_ho_so = await conn.fetchval(
+                "SELECT count(*) FROM contacts WHERE profile ? $1", ma)
+            if so_ho_so and not xoa_ca_gia_tri:
+                raise HTTPException(409, (
+                    f"{so_ho_so} hồ sơ khách đang có giá trị ở trường này. "
+                    "Xoá trường sẽ xoá luôn các giá trị ấy — gọi lại với "
+                    "xoa_ca_gia_tri=true nếu đúng là bạn muốn vậy."))
+
+            if so_ho_so:
+                await conn.execute(
+                    "UPDATE contacts SET profile = profile - $1, "
+                    "updated_at = now() WHERE profile ? $1", ma)
+            await conn.execute("DELETE FROM truong_khach WHERE ma = $1", ma)
+
+    await db.log_event("truong_khach.xoa", actor=nguoi.get("ten_dang_nhap", "?"),
+                       ma=ma, so_ho_so_mat_gia_tri=so_ho_so)
+    return {"ma": ma, "so_ho_so_da_xoa_gia_tri": so_ho_so}
+
+
+@router.put("/{contact_id}/truong")
+async def dat_truong_khach(
+    contact_id: UUID,
+    body: HoSoIn,
+    user: dict = Depends(can_quyen("khach.sua")),
+) -> dict[str, Any]:
+    """
+    Ghi giá trị các trường tuỳ biến cho một khách.
+
+    Kiểm kiểu ở MÃ, không chỉ ở giao diện — xem
+    `agent/core/truong_khach.py`. Chỉ gộp những khoá gửi lên; khoá không
+    gửi thì giữ nguyên, để sửa một ô không xoá mất các ô còn lại.
+    """
+    dinh_nghia = await _danh_sach_truong()
+    try:
+        sach = truong_khach.kiem_ho_so(dinh_nghia, body.gia_tri)
+    except truong_khach.TruongHong as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # Khoá gửi lên với giá trị rỗng nghĩa là XOÁ ô ấy — `kiem_ho_so` đã bỏ
+    # chúng khỏi `sach`, nên phải trừ riêng, không thì ô rỗng không xoá được.
+    xoa = [k for k in body.gia_tri if k not in sach]
+
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _khach_ton_tai(conn, contact_id)
+            moi = await conn.fetchval(
+                "UPDATE contacts SET profile = (profile - $2::text[]) || $3, "
+                "updated_at = now() WHERE id = $1 RETURNING profile",
+                contact_id, xoa, sach)
+
+    await db.log_event("khach.truong", actor=user.get("ten_dang_nhap", "?"),
+                       ref_id=contact_id, truong=sorted(body.gia_tri))
+    import json
+    return {"profile": json.loads(moi) if isinstance(moi, str) else moi}
 
 
 class TamNhinIn(BaseModel):

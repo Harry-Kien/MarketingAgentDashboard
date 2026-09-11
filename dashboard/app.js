@@ -915,6 +915,42 @@ async function giaoKhach(id, chuHienTai) {
   } catch (e) { toast(e.message, true); }
 }
 
+function oTruongKhach(contact) {
+  /* Vẽ ô nhập theo KIỂU. Vẽ tất cả thành ô chữ cũng "chạy" — máy chủ vẫn
+     kiểm — nhưng khi ấy người trực gõ sai rồi mới biết, mỗi lần một lần.
+     Ô đúng kiểu là lớp phòng thứ nhất; máy chủ là lớp thứ hai. */
+  if (!truongKhach.ds.length) return "";
+  const co = contact.profile || {};
+  const o = truongKhach.ds.map((t) => {
+    const v = co[t.ma];
+    const id = `tk-${t.ma}`;
+    let nhap;
+    if (t.kieu === "chon") {
+      nhap = `<select id="${id}" data-tk="${esc(t.ma)}">
+        <option value="">— chưa chọn —</option>
+        ${(t.lua_chon || []).map((c) =>
+          `<option${c === v ? " selected" : ""}>${esc(c)}</option>`).join("")}
+      </select>`;
+    } else if (t.kieu === "nhieu_chon") {
+      nhap = `<span class="tk__nhieu">${(t.lua_chon || []).map((c) => `
+        <label><input type="checkbox" data-tk-nhieu="${esc(t.ma)}" value="${esc(c)}"${
+          Array.isArray(v) && v.includes(c) ? " checked" : ""}> ${esc(c)}</label>`).join("")}</span>`;
+    } else if (t.kieu === "dung_sai") {
+      nhap = `<input type="checkbox" id="${id}" data-tk="${esc(t.ma)}"${v ? " checked" : ""}>`;
+    } else {
+      const loai = t.kieu === "so" ? "number" : t.kieu === "ngay" ? "date" : "text";
+      nhap = `<input type="${loai}" id="${id}" data-tk="${esc(t.ma)}"
+                     value="${v === undefined || v === null ? "" : esc(String(v))}"
+                     placeholder="${esc(t.goi_y || "")}">`;
+    }
+    return `<label class="field tk__o" for="${id}">
+      <span>${esc(t.nhan)}${t.bat_buoc ? " *" : ""}</span>${nhap}</label>`;
+  }).join("");
+  return `<h3 class="subhead">Thông tin thêm</h3>
+    <form id="contact-truong-form" class="form">${o}
+      <button class="btn btn--sm" type="submit">Lưu thông tin thêm</button></form>`;
+}
+
 async function loadContactDetail(id) {
   let contact;
   try { contact = await api(`/contacts/${id}`); }
@@ -951,6 +987,7 @@ async function loadContactDetail(id) {
       </div>
     </div>
     <div id="contact-lichsu-giao"></div>
+    ${oTruongKhach(contact)}
     <h3 class="subhead">Nhãn chăm sóc</h3>
     <div class="profile-actions"><div class="profile-tags">${tags || '<span class="empty">Chưa có nhãn.</span>'}</div>
       <form id="contact-tag-form" class="inline-action"><input name="tag" maxlength="80" required placeholder="VIP, cần gọi lại…"><button class="btn btn--sm" type="submit">Thêm nhãn</button></form></div>
@@ -966,6 +1003,30 @@ async function loadContactDetail(id) {
     <form id="contact-note-form" class="note-form"><textarea name="body" maxlength="5000" required placeholder="Thông tin cần bàn giao cho đội chăm sóc…"></textarea>
       <select name="visibility"><option value="team">Cả đội</option><option value="manager">Quản lý</option></select><button class="btn btn--sm" type="submit">Lưu ghi chú</button></form>
     <h3 class="subhead">Hội thoại</h3><div class="timeline">${conversations || '<p class="empty">Chưa có hội thoại.</p>'}</div>`;
+
+  $("#contact-truong-form")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const gia_tri = {};
+    $$("[data-tk]", ev.currentTarget).forEach((o) => {
+      gia_tri[o.dataset.tk] = o.type === "checkbox" ? o.checked : o.value;
+    });
+    /* Gom các ô "chọn nhiều" theo mã: mỗi ô tick là một phần tử, và một
+       trường không tick ô nào phải gửi mảng RỖNG chứ không vắng mặt — vắng
+       mặt nghĩa là "không đụng tới", nên bỏ hết tick sẽ không xoá được. */
+    const daGom = new Set();
+    $$("[data-tk-nhieu]", ev.currentTarget).forEach((o) => {
+      const ma = o.dataset.tkNhieu;
+      if (!daGom.has(ma)) { gia_tri[ma] = []; daGom.add(ma); }
+      if (o.checked) gia_tri[ma].push(o.value);
+    });
+    try {
+      await api(`/contacts/${id}/truong`, {
+        method: "PUT", body: JSON.stringify({ gia_tri }),
+      });
+      toast("Đã lưu thông tin thêm.");
+      await loadContactDetail(id);
+    } catch (e) { toast(e.message, true); }
+  });
 
   $("[data-contact-giao]")?.addEventListener("click", (ev) =>
     giaoKhach(ev.currentTarget.dataset.contactGiao, ev.currentTarget.dataset.chu));
@@ -2236,6 +2297,111 @@ $("#tamnhin")?.addEventListener("change", async (e) => {
   } catch (err) { toast(err.message, true); await loadTamNhin(); }
 });
 
+/* ---------------- trường thông tin khách tuỳ biến ---------------- */
+
+const truongKhach = { ds: [], kieu: [] };
+
+async function loadTruongKhach() {
+  const d = await api("/truong-khach");
+  truongKhach.ds = d.truong;
+  truongKhach.kieu = d.kieu;
+  const nhanKieu = Object.fromEntries(d.kieu.map((k) => [k.ma, k.nhan]));
+  $("#truong-dem").textContent = `${d.truong.length}/${d.toi_da} trường`;
+  $("#truong-ds").innerHTML = d.truong.length ? d.truong.map((t) => `
+    <div class="row">
+      <span class="row__flag row__flag--${t.bat_buoc ? "assist" : "auto"}"></span>
+      <div class="row__main">
+        <b>${esc(t.nhan)}${t.bat_buoc ? ' <span class="pill pill--warn">bắt buộc</span>' : ""}</b>
+        <span class="row__sub"><code>${esc(t.ma)}</code> · ${esc(nhanKieu[t.kieu] || t.kieu)}${
+          (t.lua_chon || []).length ? " · " + t.lua_chon.map(esc).join(" / ") : ""}${
+          t.hien_danh_sach ? " · hiện ở danh sách" : ""}</span>
+      </div>
+      <div class="row__side">
+        <span class="row__nut">
+          <button type="button" class="btn btn--sm btn--ghost" data-truongsua="${esc(t.ma)}">Sửa</button>
+          <button type="button" class="btn btn--sm btn--ghost" data-truongxoa="${esc(t.ma)}">Xoá</button>
+        </span>
+      </div>
+    </div>`).join("")
+    : '<p class="empty">Chưa có trường nào. Bấm <b>Thêm trường</b> để hỏi khách thêm thông tin.</p>';
+}
+
+$("#truong-them")?.addEventListener("click", async () => {
+  const ma = prompt("Mã trường (chữ thường không dấu, ví dụ loai_da):");
+  if (!ma) return;
+  const nhan = prompt("Nhãn hiện cho người dùng:", ma);
+  if (!nhan) return;
+  const kieu = prompt(
+    "Kiểu:\n" + truongKhach.kieu.map((k) => `${k.ma} — ${k.nhan}`).join("\n"),
+    "chu");
+  if (!kieu) return;
+  let lua_chon = [];
+  if (kieu === "chon" || kieu === "nhieu_chon") {
+    const tra = prompt("Các lựa chọn, cách nhau bằng dấu phẩy:", "");
+    lua_chon = (tra || "").split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  try {
+    await api("/truong-khach", {
+      method: "POST",
+      body: JSON.stringify({ ma: ma.trim(), nhan: nhan.trim(), kieu, lua_chon }),
+    });
+    toast("Đã thêm. Ô nhập hiện ngay trong hồ sơ mọi khách.");
+    await loadTruongKhach();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#truong-ds")?.addEventListener("click", async (e) => {
+  const sua = e.target.closest("[data-truongsua]");
+  if (sua) {
+    const t = truongKhach.ds.find((x) => x.ma === sua.dataset.truongsua);
+    const nhan = prompt("Nhãn:", t.nhan);
+    if (nhan === null) return;
+    const bat_buoc = confirm("Bắt buộc phải điền?\n(OK = bắt buộc, Huỷ = không)");
+    let lua_chon = t.lua_chon || [];
+    if (t.kieu === "chon" || t.kieu === "nhieu_chon") {
+      const tra = prompt("Các lựa chọn, cách nhau bằng dấu phẩy:",
+                         lua_chon.join(", "));
+      if (tra === null) return;
+      lua_chon = tra.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    try {
+      await api(`/truong-khach/${t.ma}`, {
+        method: "PUT",
+        body: JSON.stringify({ nhan: nhan.trim(), goi_y: t.goi_y || "",
+                               bat_buoc, lua_chon,
+                               hien_danh_sach: t.hien_danh_sach,
+                               thu_tu: t.thu_tu }),
+      });
+      toast("Đã lưu trường.");
+      await loadTruongKhach();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+
+  const xoa = e.target.closest("[data-truongxoa]");
+  if (!xoa) return;
+  const ma = xoa.dataset.truongxoa;
+  try {
+    await api(`/truong-khach/${ma}`, { method: "DELETE" });
+    toast("Đã xoá trường.");
+    await loadTruongKhach();
+  } catch (err) {
+    /* Máy chủ trả 409 kèm SỐ hồ sơ sắp mất giá trị. Hỏi lại bằng đúng con
+       số ấy, không hỏi "bạn có chắc không" — câu ấy không mang thông tin
+       nào và người ta bấm OK theo phản xạ. */
+    if (err.ma === 409 && confirm(`${err.message}\n\nXoá luôn các giá trị ấy?`)) {
+      try {
+        const d = await api(`/truong-khach/${ma}?xoa_ca_gia_tri=true`,
+                            { method: "DELETE" });
+        toast(`Đã xoá trường và ${d.so_ho_so_da_xoa_gia_tri} giá trị.`);
+        await loadTruongKhach();
+      } catch (e2) { toast(e2.message, true); }
+    } else if (err.ma !== 409) {
+      toast(err.message, true);
+    }
+  }
+});
+
 /* ---------------- nhân sự: vai trò và quyền ---------------- */
 /*
  * VÌ SAO MÀN NÀY HIỆN "QUYỀN THẬT" CHỨ KHÔNG CHỈ HIỆN VAI TRÒ
@@ -2452,7 +2618,7 @@ async function refresh() {
   try {
     await loadOverview();
     if (state.view === "hoithoai") await loadConversations();
-    if (state.view === "khachhang") await loadContacts();
+    if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
@@ -2465,7 +2631,7 @@ async function refresh() {
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadTamNhin(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadTamNhin(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {

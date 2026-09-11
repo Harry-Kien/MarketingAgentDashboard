@@ -524,6 +524,34 @@ nhất 62 ngày" thì không.
 
 ---
 
+## Thêm trường thông tin khách
+
+Dashboard → **Cấu hình** → *Trường thông tin khách* → **Thêm trường**.
+
+Mỗi trường cần một **mã** (chữ thường không dấu, ví dụ `loai_da`) và một
+**kiểu**: Chữ · Số · Ngày · Chọn một · Chọn nhiều · Đúng/sai. Thêm xong là ô
+nhập hiện ngay trong hồ sơ của **mọi** khách.
+
+Ba điều dễ vấp:
+
+**Mã không đổi được sau khi tạo.** Nó là khoá lưu giá trị trong hồ sơ khách;
+đổi mã là mọi giá trị đã lưu thành mồ côi. Nhãn thì sửa thoải mái.
+
+**Kiểu cũng không đổi được.** Đổi `Chữ` sang `Số` không biến các giá trị đã
+lưu thành số — chúng nằm nguyên đó dưới dạng chuỗi, và từ đó kiểu nói một
+đằng dữ liệu một nẻo. Muốn đổi kiểu thì xoá trường rồi tạo lại.
+
+**Xoá trường thì xoá luôn giá trị.** Hệ thống hỏi lại kèm **số hồ sơ** sắp
+mất dữ liệu, không hỏi "bạn có chắc không". Để giá trị nằm lại sau khi xoá
+định nghĩa là giữ dữ liệu cá nhân không hiện ở đâu trên màn hình, không ai
+gỡ được, và không ai biết mình đang giữ — trái Nghị định 13/2023/NĐ-CP.
+
+Kiểu được **kiểm ở máy chủ**, không chỉ ở giao diện. Gõ chữ vào ô số, hay
+gửi một lựa chọn ngoài danh sách, đều bị từ chối kèm lý do nói rõ trường
+nào và nhận được gì — chứ không lặng lẽ lưu một ô rỗng.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |

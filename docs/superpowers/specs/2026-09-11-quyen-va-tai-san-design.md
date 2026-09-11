@@ -28,13 +28,21 @@ mươi endpoint, quên một cái là cái đó phơi ra, và không có gì bá
 
 Lớp quyền mới **phải theo đúng lý lẽ đó**, không được đi ngược. Xem mục 2.8.
 
-Đo trên mã: **164 route** dưới các router `/api`.
+Đếm thật trên `app.routes` (không phải ước lượng bằng grep): **166 route**
+dưới `/api` và `/tich-hop`.
 
 | Nhóm | Số route | Nghĩa |
 |---|---|---|
-| Miễn trừ thật — webhook (chữ ký), webchat (khách dùng), đăng nhập/đăng xuất/`toi`, xác minh tên miền, health | ~19 | Không cần quyền |
-| Đang canh `bat_buoc_quan_tri` | ~70 | Đổi máy móc sang quyền tương ứng |
-| **Chỉ canh đăng nhập** — `Depends(bat_buoc_dang_nhap)` hoặc rơi vào middleware | **~75** | Nhân viên nào cũng làm được: duyệt đơn, huỷ đơn, nhập kho, kiểm kê, duyệt bài đăng công khai, sửa kho tri thức, tra cứu dữ liệu cá nhân theo số điện thoại, xem chi phí. **Đây mới là phần việc thật của A1.** |
+| Miễn trừ thật | **8** | `/api/dang-nhap`, `/api/dang-xuat`, `/api/toi`, `/api/suc-khoe`, `/api/he-thong`, `/api/connect/meta/callback` (state token), `POST /api/posts/{id}/callback` và `POST /api/posts/{id}/metrics` (n8n gọi vào — xem cảnh báo ở 4.5) |
+| Đang canh `bat_buoc_quan_tri` | **73** | Đổi máy móc sang quyền tương ứng |
+| Canh `bat_buoc_dang_nhap` | **32** | Cần quyết định từng cái |
+| **Không kiểm gì** (vẫn kín nhờ middleware) | **53** | Cần quyết định từng cái |
+
+Hai nhóm cuối cộng lại **85 route** là phần việc thật của A1. Đó là những
+việc mọi nhân viên hiện đều làm được: duyệt đơn, huỷ đơn, nhập kho, kiểm kê,
+duyệt bài đăng công khai, sửa kho tri thức, tra cứu dữ liệu cá nhân theo số
+điện thoại, xem chi phí, và proxy thẳng vào ZaloCRM/Chatwoot qua
+`/tich-hop/{ten}/{duong}`.
 
 Nhóm thứ ba là lý do khối này đáng làm. Không có lỗ hổng nào với người
 ngoài — chốt đăng nhập kín. Nhưng bên trong thì mọi nhân viên ngang quyền
@@ -180,7 +188,7 @@ phải mẫu tiền tố. Mẫu `/webhook*` là chỗ để endpoint mới lọt
 ## 3. Giao làm hai đợt
 
 **A1 — Lớp quyền.** Vai trò tự tạo, màn quản lý vai trò, khai quyền cho
-**~145 route** (19 route còn lại khai miễn trừ), kiểm đủ lúc khởi động.
+**158 route** (8 route còn lại khai miễn trừ), kiểm đủ lúc khởi động.
 
 A1 **đổi hành vi có chủ ý ở nhóm 2**: nhân viên thôi duyệt được đơn, thôi
 nhập kho, thôi duyệt bài đăng công khai, thôi sửa kho tri thức. Đó chính là
@@ -385,7 +393,7 @@ def kiem_moi_route_co_quyen(app) -> None:
     phơi ra lặng lẽ. Cùng hàm này chạy trong test nên CI bắt trước.
     """
     thieu = []
-    for route in app.routes:
+    for route in _moi_route(app.routes):
         khoa = (sorted(getattr(route, "methods", []) or []), getattr(route, "path", ""))
         if not khoa[1].startswith(("/api", "/tich-hop")):
             continue
@@ -399,7 +407,29 @@ def kiem_moi_route_co_quyen(app) -> None:
             "Route chưa khai quyền (thêm can_quyen(...) hoặc MIEN_TRU):\n  "
             + "\n  ".join(sorted(thieu))
         )
+
+
+def _moi_route(gom):
+    """
+    Duyệt ĐỆ QUY. Bản FastAPI đang dùng gói mỗi router đã `include_router`
+    vào một `_IncludedRouter`, route thật nằm trong `.original_router`.
+
+    Duyệt phẳng `app.routes` trả về **7** APIRoute thay vì 166 — và hàm kiểm
+    sẽ báo "mọi route đã khai quyền" trong khi 159 route chưa khai. Xanh
+    giả, đúng loại nguy hiểm nhất: không ai đi kiểm lại một dấu xanh.
+    """
+    for r in gom:
+        goc = getattr(r, "original_router", None)
+        if goc is not None:
+            yield from _moi_route(goc.routes)
+        else:
+            yield r
 ```
+
+Đã đo trên mã đang chạy: duyệt phẳng cho **7** route, duyệt đệ quy cho
+**166**. Vì vậy test số 1 phải khẳng định thêm **số route quét được ≥ 160**,
+chứ không chỉ khẳng định "không route nào thiếu quyền" — nếu hàm duyệt hỏng
+mà chỉ kiểm vế sau thì test xanh vĩnh viễn.
 
 **Nhóm 1 — ~70 điểm đang canh quản trị.** Đổi máy móc:
 
@@ -543,8 +573,38 @@ vô chủ → chỉ số khách vô chủ tăng ngay trên dashboard.
 
 ## 7. Kiểm thử
 
-Không gọi API thật, không gọi model. CSDL thật cho các test lọc (đã có
-hạ tầng trong `tests/`).
+Không gọi API thật, không gọi model.
+
+### 7.0. CI phải có Postgres, nếu không A2 xanh giả
+
+Đo được: `.github/workflows/kiem-thu.yml` **không** đặt `TEST_DATABASE_URL`,
+và mọi test chạm Postgres thật đều mở đầu bằng
+
+```python
+if not os.getenv("TEST_DATABASE_URL"):
+    pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
+```
+
+Đó là 8 test `skipped` trong lần chạy nền (2718 passed, 8 skipped).
+
+Ràng buộc trung tâm của A2 — "nhân viên chỉ thấy khách của mình" — sống
+trong một mệnh đề `WHERE`. Viết test cho nó theo khuôn hiện tại nghĩa là
+test **không bao giờ chạy trong CI**, và bảng kết quả vẫn xanh. Đây đúng là
+xanh giả: không ai đi kiểm lại một dấu xanh.
+
+Nên **A1 phải thêm service Postgres vào CI** và đặt `TEST_DATABASE_URL`
+trước khi A2 bắt đầu. Kèm một test canh chính việc ấy: đếm số test bị skip
+vì thiếu `TEST_DATABASE_URL`, và **fail nếu lớn hơn 0 khi biến môi trường
+`CI` được đặt**. Không có chốt này thì một lần sửa workflow vô ý lại đưa
+mọi thứ về skip, im lặng.
+
+Hai tầng test cho lớp phạm vi, cố ý chồng nhau:
+
+- **Đơn vị (luôn chạy):** khẳng định trên chuỗi SQL và tham số mà
+  `dieu_kien_khach()` sinh ra. Bắt lỗi soạn mệnh đề.
+- **Tích hợp (cần Postgres):** chạy thật trên dữ liệu dựng sẵn. Bắt lỗi mà
+  chỉ Postgres mới biết — kiểu `FOR UPDATE` trên nhánh nullable đã từng làm
+  chết toàn bộ đường gửi (xem `tests/test_delivery_guard_postgres.py`).
 
 **Canh ràng buộc — những test này là lý do khối A tồn tại:**
 
@@ -552,6 +612,9 @@ hạ tầng trong `tests/`).
    `kiem_moi_route_co_quyen(app)` — cùng hàm máy chủ chạy lúc khởi động, nên
    test và thực tế không thể lệch nhau. Đây là test bắt endpoint không được
    canh, loại lỗi im lặng nguy hiểm nhất ở đây.
+   **Kèm một khẳng định về SỐ LƯỢNG:** `len(list(_moi_route(app.routes))) >= 160`.
+   Không có vế này thì một hàm duyệt hỏng làm test xanh vĩnh viễn — đã đo:
+   duyệt phẳng cho 7 route thay vì 166.
 2. **`MIEN_TRU` không chứa đường dẫn đã biến mất.** Miễn trừ trỏ vào route
    không còn tồn tại là rác vô hại hôm nay, nhưng ngày mai có người thêm lại
    đúng đường dẫn ấy và nó **ra đời không được canh**, im lặng.
@@ -559,10 +622,11 @@ hạ tầng trong `tests/`).
    Quét mã tìm `"quan_tri"`.
 4. **Mọi quyền trong danh mục có ít nhất một chỗ dùng.** Bắt quyền chết —
    quyền chết làm màn quản lý vai trò hiện thứ không có tác dụng, và người
-   tick vào tưởng mình đã cấp gì đó. Bốn quyền của A2 (`khach.giao`,
-   `khach.xoa`, `hoi_thoai.nhan`, `hoi_thoai.tra_loi`) nằm trong danh sách
-   hoãn tường minh trong A1, và danh sách ấy phải **rỗng** khi A2 xong —
-   có test canh chính danh sách đó.
+   tick vào tưởng mình đã cấp gì đó. Đúng **một** quyền chưa có chỗ dùng
+   sau A1 — `khach.giao` — nên nó nằm trong hằng `QUYEN_HOAN_SANG_A2` khai
+   tường minh, và hằng ấy phải **rỗng** khi A2 xong. Ba quyền còn lại của
+   A2 (`khach.xoa`, `hoi_thoai.nhan`, `hoi_thoai.tra_loi`) đã có route dùng
+   ngay trong A1.
 5. **`FROM contacts` chỉ xuất hiện trong repository.** Bắt truy vấn đi tắt
    qua lớp phạm vi.
 6. Không xoá được vai trò hệ thống.

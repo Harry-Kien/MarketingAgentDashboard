@@ -352,6 +352,37 @@ CREATE TABLE IF NOT EXISTS nguoi_dung (
     dang_nhap_cuoi TIMESTAMPTZ
 );
 
+-- --- Vai trò và quyền ----------------------------------------
+-- Cột `nguoi_dung.vai_tro` ở trên giữ lại làm NHÃN HIỂN THỊ, không còn là
+-- nguồn sự thật về quyền. Nguồn sự thật là ba bảng dưới đây.
+--
+-- `vai_tro_quyen.quyen` cố ý không có khoá ngoại: danh mục quyền sống trong
+-- `agent/core/quyen.py`. Xem đầu file migration 0019 để biết vì sao.
+CREATE TABLE IF NOT EXISTS vai_tro (
+    id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ten      TEXT UNIQUE NOT NULL CHECK (length(ten) BETWEEN 1 AND 80),
+    mo_ta    TEXT NOT NULL DEFAULT '',
+    he_thong BOOLEAN NOT NULL DEFAULT false,
+    tao_luc  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sua_luc  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS vai_tro_quyen (
+    vai_tro_id UUID NOT NULL REFERENCES vai_tro(id) ON DELETE CASCADE,
+    quyen      TEXT NOT NULL,
+    PRIMARY KEY (vai_tro_id, quyen)
+);
+
+CREATE TABLE IF NOT EXISTS nguoi_dung_vai_tro (
+    nguoi_dung_id UUID NOT NULL REFERENCES nguoi_dung(id) ON DELETE CASCADE,
+    vai_tro_id    UUID NOT NULL REFERENCES vai_tro(id)    ON DELETE CASCADE,
+    gan_boi       UUID REFERENCES nguoi_dung(id) ON DELETE SET NULL,
+    gan_luc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (nguoi_dung_id, vai_tro_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ndvt_vai_tro
+    ON nguoi_dung_vai_tro (vai_tro_id);
+
 -- Phiên nằm trong CSDL chứ không phải JWT: JWT không thu hồi được. Nhân
 -- viên nghỉ việc lúc 9 giờ sáng thì token của họ vẫn dùng được tới lúc hết
 -- hạn. Ở đây xoá một dòng là xong.

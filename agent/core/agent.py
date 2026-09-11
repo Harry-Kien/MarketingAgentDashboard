@@ -22,7 +22,7 @@ from agent import db, ngan_sach
 from agent.config import ROOT, settings
 from agent.core import llm, rag, tools
 from agent.ky_nang import kho_ky_nang
-from agent.core import ho_so_khach, phong_thu
+from agent.core import agent_ho_so, ho_so_khach, phong_thu
 
 SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
 MAX_TOOL_ROUNDS = 4
@@ -342,6 +342,7 @@ async def respond(
     *, conversation_id: uuid.UUID, history: list[dict], question: str,
     customer_ref: str = "", channel: str = "",
     anh: list[dict] | None = None,
+    ho_so: agent_ho_so.HoSo | None = None,
 ) -> Reply:
     """
     Sinh câu trả lời cho một lượt. `history` là các lượt trước đã chuẩn hoá.
@@ -363,7 +364,11 @@ async def respond(
         "SELECT cost_usd FROM conversations WHERE id = $1", conversation_id
     )
     spent = float(conv["cost_usd"]) if conv else 0.0
-    if spent >= settings.max_cost_per_conversation:
+    # Hồ sơ agent của kênh này. `siet()` đã ép mọi ngưỡng về phía NGHIÊM
+    # KHẮC HƠN so với toàn cục, nên dùng thẳng ở đây là an toàn — xem
+    # `agent/core/agent_ho_so.py`.
+    hs = ho_so or agent_ho_so.mac_dinh()
+    if spent >= hs.tran_chi_phi:
         return Reply(
             text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
             escalate=True,
@@ -472,6 +477,19 @@ async def respond(
         context = (f"{context}\n\n---\n"
                    "HƯỚNG DẪN NỘI BỘ (không phải tài liệu để trích dẫn):\n"
                    f"{phan_hd}")
+
+    # Hướng dẫn riêng của HỒ SƠ AGENT — cùng đường với hướng dẫn gói kỹ
+    # năng ở trên, và cùng hai lý do: vào khối BIẾN ĐỘNG, không vào `SYSTEM`.
+    #
+    # An toàn: `SYSTEM` chứa mọi câu cấm. Cho hồ sơ ghi vào đó là cho một ô
+    # nhập trên dashboard gỡ các câu ấy — một đường đi vòng qua sáu lớp lưới
+    # mà người điền ô không hề biết mình đang mở.
+    #
+    # Tiền: mỗi hồ sơ một `SYSTEM` khác nhau là mỗi kênh một điểm cache
+    # prefix riêng, và cache chết với mọi request.
+    khoi_hs = agent_ho_so.khoi_huong_dan(hs)
+    if khoi_hs:
+        context = f"{context}{khoi_hs}"
 
     # Rào tin khách lại: model đọc phần bên trong như DỮ LIỆU, không phải
     # mệnh lệnh. Lớp thứ hai, phòng khi bộ quét ở trên bỏ sót cách nói mới.
@@ -690,7 +708,7 @@ async def respond(
     # ĐỌC: Ba cách trượt khác nhau, ba lưới khác nhau. Không lớp nào bắt được
     # ĐỌC: cả ba — đó là lý do phải xếp chồng chứ không gộp làm một.
     confidence = _confidence(passages, co_du_lieu)
-    if confidence < settings.confidence_floor and not co_du_lieu:
+    if confidence < hs.nguong_tu_tin and not co_du_lieu:
         escalate = True
         escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
         luoi_bat = luoi_bat or "tin_cay_thap"

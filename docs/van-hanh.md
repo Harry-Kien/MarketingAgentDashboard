@@ -617,6 +617,41 @@ Mặc định của mọi kênh, kể cả kênh nối sau này, là **bật**.
 
 ---
 
+## Nhiều agent — thêm bằng cấu hình
+
+Dashboard → **Cấu hình** → *Hồ sơ agent* → **Thêm hồ sơ**. Rồi sang
+**Kết nối**, chọn hồ sơ cho từng kênh ở ô ngay cạnh nút *Tắt agent*.
+
+Một hồ sơ gồm: tên, mô tả, **hướng dẫn thêm**, và hai ngưỡng — *ngưỡng tự
+tin* và *trần chi phí mỗi hội thoại*.
+
+Ví dụ dùng thật: *"Bán hàng Zalo"* nói ngắn, chốt đơn nhanh; *"Chăm sóc sau
+bán"* kiên nhẫn hơn và đặt ngưỡng tự tin cao hơn nên chuyển người sớm hơn.
+
+### Cấu hình chỉ SIẾT được, không nới được
+
+Đây là ràng buộc quan trọng nhất của phần này, và nó nằm trong **mã**:
+
+| Ô | Đặt chặt hơn toàn cục | Đặt lỏng hơn toàn cục |
+|---|---|---|
+| Ngưỡng tự tin | Có hiệu lực — chuyển người sớm hơn | **Bị ép về ngưỡng toàn cục** |
+| Trần chi phí | Có hiệu lực — dừng sớm hơn | **Bị ép về trần toàn cục** |
+| Hướng dẫn | Thêm vào cuối ngữ cảnh | Không thay được prompt gốc |
+
+Màn hình hiện cả giá trị đã lưu lẫn giá trị **có hiệu lực**, và gắn nhãn
+*đã siết về ngưỡng toàn cục* khi hai bên khác nhau. Chỉ hiện giá trị đã lưu
+là màn hình nói dối: gõ 0.3, thấy 0.3, hệ thống chạy 0.55.
+
+Vì sao chặt như vậy: sáu lớp lưới trong `agent/core/agent.py` canh luật
+quảng cáo mỹ phẩm và ranh giới tư vấn y tế. Nếu một ô nhập trên dashboard
+hạ được ngưỡng hay thay được prompt gốc thì nó vừa trở thành đường đi vòng
+qua sáu lớp lưới ấy — và người điền ô đó không hề biết mình đang mở.
+
+Xoá một hồ sơ **không** làm kênh ngừng trả lời: chúng rơi về cấu hình mặc
+định. Hệ thống nói rõ số kênh bị ảnh hưởng trước khi xoá.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |

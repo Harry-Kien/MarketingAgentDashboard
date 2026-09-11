@@ -181,12 +181,15 @@ async def list_accounts(
     if accounts:
         try:
             for r in await db.fetch(
-                "SELECT id, agent_bat, agent_tat_ly_do FROM channel_accounts "
-                "WHERE id = ANY($1)", [a.id for a in accounts],
+                "SELECT id, agent_bat, agent_tat_ly_do, agent_ho_so_id "
+                "FROM channel_accounts WHERE id = ANY($1)",
+                [a.id for a in accounts],
             ):
                 agent_tt[str(r["id"])] = {
                     "agent_bat": r["agent_bat"],
                     "agent_tat_ly_do": r["agent_tat_ly_do"],
+                    "agent_ho_so_id": (str(r["agent_ho_so_id"])
+                                       if r["agent_ho_so_id"] else None),
                 }
         except Exception:  # noqa: BLE001
             # Chưa migrate: thẻ mất phần này, màn Kết nối vẫn hiện được.
@@ -345,6 +348,43 @@ async def bat_tat_agent(
         "kenh.agent_bat_tat", actor=user.get("ten_dang_nhap", "?"),
         ref_id=account_id, bat=body.bat, ly_do=body.ly_do.strip())
     return {"account_id": str(account_id), "agent_bat": dong["agent_bat"],
+            "display_name": dong["display_name"]}
+
+
+class GanHoSoIn(BaseModel):
+    ho_so_id: UUID | None = None
+
+
+@router.put("/{account_id}/ho-so-agent")
+async def gan_ho_so_agent(
+    account_id: UUID,
+    body: GanHoSoIn,
+    user: dict = Depends(can_quyen("agent.dieu_khien")),
+) -> dict[str, Any]:
+    """
+    Gán một hồ sơ agent cho kênh này. `null` = trả về hành vi mặc định.
+
+    Không kiểm hồ sơ có `bat` hay không: một hồ sơ đang tắt vẫn gán được, và
+    kênh ấy chạy bằng mặc định cho tới khi hồ sơ được bật lại. Chặn ở đây là
+    buộc người vận hành nhớ đúng thứ tự hai thao tác, và họ sẽ không nhớ.
+    """
+    if body.ho_so_id is not None:
+        co = await db.fetchrow(
+            "SELECT 1 FROM agent_ho_so WHERE id = $1", body.ho_so_id)
+        if not co:
+            raise HTTPException(404, "Không tìm thấy hồ sơ agent")
+
+    dong = await db.fetchrow(
+        "UPDATE channel_accounts SET agent_ho_so_id = $2 WHERE id = $1 "
+        "RETURNING display_name", account_id, body.ho_so_id)
+    if dong is None:
+        raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+
+    await db.log_event("kenh.ho_so_agent", actor=user.get("ten_dang_nhap", "?"),
+                       ref_id=account_id,
+                       ho_so=str(body.ho_so_id) if body.ho_so_id else None)
+    return {"account_id": str(account_id),
+            "ho_so_id": str(body.ho_so_id) if body.ho_so_id else None,
             "display_name": dong["display_name"]}
 
 

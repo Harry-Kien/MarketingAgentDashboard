@@ -30,6 +30,7 @@ from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
 from agent.api.contacts import router_vo_chu as khach_vo_chu_router
 from agent.api.cong_viec import router as cong_viec_router
+from agent.api.ho_so_agent import router as ho_so_agent_router
 from agent.api.erp import router as erp_router
 from agent.api.routing_admin import router as routing_admin_router
 from agent.api.retention import router as retention_router
@@ -51,8 +52,8 @@ from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent.core import anh_khach
 from agent import canh_gac
-from agent.core import (agent_bat, cong_viec, du_lieu_ca_nhan,
-                        gio_lam_viec, quyen, xac_thuc)
+from agent.core import (agent_bat, agent_ho_so, cong_viec,
+                        du_lieu_ca_nhan, gio_lam_viec, quyen, xac_thuc)
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -792,6 +793,7 @@ app.include_router(channel_accounts_router)
 app.include_router(contacts_router)
 app.include_router(khach_vo_chu_router)
 app.include_router(cong_viec_router)
+app.include_router(ho_so_agent_router)
 app.include_router(erp_router)
 app.include_router(routing_admin_router)
 app.include_router(retention_router)
@@ -1335,10 +1337,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
                 cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} tệp nhưng "
                            f"hệ thống KHÔNG tải về xem được] {msg.text}")
 
+        # Hồ sơ agent của KÊNH này. Chưa gán thì `cho_kenh` trả hồ sơ mặc
+        # định, mang đúng ngưỡng toàn cục — nên không cần rẽ nhánh ở đây.
+        ho_so = await agent_ho_so.cho_kenh(msg.account_id)
         reply = await brain.respond(
             conversation_id=cid, history=history, question=cau_hoi,
             customer_ref=msg.customer_ref, channel=msg.channel,
-            anh=khoi_anh or None,
+            anh=khoi_anh or None, ho_so=ho_so,
         )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
         await db.execute(

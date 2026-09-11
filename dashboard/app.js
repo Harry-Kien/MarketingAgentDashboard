@@ -2432,6 +2432,121 @@ $("#cv-ds")?.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message, true); }
 });
 
+/* ---------------- hồ sơ agent ---------------- */
+
+const hoSoAgent = { ds: [], toanCuc: null };
+
+async function loadHoSoAgent() {
+  const d = await api("/ho-so-agent");
+  hoSoAgent.ds = d.ho_so;
+  hoSoAgent.toanCuc = d.toan_cuc;
+  $("#hsa-toancuc").textContent =
+    `toàn cục: ngưỡng ${d.toan_cuc.nguong_tu_tin} · trần ${usd(d.toan_cuc.tran_chi_phi)}`;
+
+  $("#hsa-ds").innerHTML = d.ho_so.length ? d.ho_so.map((h) => {
+    /* Hiện cả giá trị ĐÃ LƯU lẫn giá trị CÓ HIỆU LỰC khi chúng khác nhau.
+     *
+     * Chỉ hiện giá trị đã lưu là màn hình nói dối: người dùng gõ 0.3, màn
+     * hình hiện 0.3, hệ thống chạy bằng 0.55, và không gì nói cho họ biết
+     * vì sao agent vẫn chuyển người sớm như trước. */
+    const bi_siet = (h.nguong_tu_tin !== null && h.nguong_tu_tin !== h.nguong_hieu_luc)
+      || (h.tran_chi_phi !== null && h.tran_chi_phi !== h.tran_hieu_luc);
+    return `<div class="row">
+      <span class="row__flag row__flag--${h.bat ? "auto" : "assist"}"></span>
+      <div class="row__main">
+        <b>${esc(h.ten)}${h.bat ? "" : ' <span class="pill">đang tắt</span>'}${
+          bi_siet ? ' <span class="pill pill--warn">đã siết về ngưỡng toàn cục</span>' : ""}</b>
+        <span class="row__sub">${esc(h.mo_ta || "—")}${
+          h.huong_dan ? " · có hướng dẫn riêng" : ""}</span>
+      </div>
+      <div class="row__side">
+        <span><span class="pill">ngưỡng ${h.nguong_hieu_luc}</span>
+          <span class="pill">trần ${usd(h.tran_hieu_luc)}</span>
+          <span class="pill">${h.so_kenh} kênh</span></span>
+        <span class="row__nut">
+          <button type="button" class="btn btn--sm btn--ghost" data-hsasua="${esc(h.id)}">Sửa</button>
+          <button type="button" class="btn btn--sm btn--ghost" data-hsaxoa="${esc(h.id)}">Xoá</button>
+        </span>
+      </div>
+    </div>`;
+  }).join("")
+    : '<p class="empty">Chưa có hồ sơ nào. Mọi kênh đang chạy bằng cấu hình mặc định.</p>';
+}
+
+async function hsaHoi(cu) {
+  const ten = prompt("Tên hồ sơ (ví dụ: Bán hàng Zalo):", cu ? cu.ten : "");
+  if (!ten) return null;
+  const mo_ta = prompt("Mô tả ngắn — hồ sơ này dành cho kênh nào:",
+                       cu ? cu.mo_ta : "");
+  if (mo_ta === null) return null;
+  const huong_dan = prompt(
+    "Hướng dẫn THÊM cho agent khi trả lời ở kênh này.\n"
+    + "Đây là phần thêm vào, không thay các câu cấm trong prompt gốc.",
+    cu ? cu.huong_dan : "");
+  if (huong_dan === null) return null;
+  const ng = prompt(
+    `Ngưỡng tự tin (0–1). Cao hơn = chuyển người sớm hơn.\n`
+    + `Toàn cục đang là ${hoSoAgent.toanCuc.nguong_tu_tin}; đặt thấp hơn sẽ bị siết về mức ấy.\n`
+    + `Để trống = dùng toàn cục.`,
+    cu && cu.nguong_tu_tin !== null ? String(cu.nguong_tu_tin) : "");
+  if (ng === null) return null;
+  const tr = prompt(
+    `Trần chi phí mỗi hội thoại (USD). Thấp hơn = dừng sớm hơn.\n`
+    + `Toàn cục đang là ${hoSoAgent.toanCuc.tran_chi_phi}; đặt cao hơn sẽ bị siết về mức ấy.\n`
+    + `Để trống = dùng toàn cục.`,
+    cu && cu.tran_chi_phi !== null ? String(cu.tran_chi_phi) : "");
+  if (tr === null) return null;
+  return {
+    ten: ten.trim(), mo_ta: mo_ta.trim(), huong_dan: huong_dan.trim(),
+    nguong_tu_tin: ng.trim() ? Number(ng) : null,
+    tran_chi_phi: tr.trim() ? Number(tr) : null,
+    bat: cu ? cu.bat : true,
+  };
+}
+
+$("#hsa-them")?.addEventListener("click", async () => {
+  const than = await hsaHoi(null);
+  if (!than) return;
+  try {
+    const d = await api("/ho-so-agent", {
+      method: "POST", body: JSON.stringify(than) });
+    toast(d.nguong_hieu_luc !== d.nguong_tu_tin && d.nguong_tu_tin !== null
+      ? `Đã thêm. Ngưỡng bị siết về ${d.nguong_hieu_luc} (mức toàn cục).`
+      : "Đã thêm hồ sơ.");
+    await loadHoSoAgent();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#hsa-ds")?.addEventListener("click", async (e) => {
+  const sua = e.target.closest("[data-hsasua]");
+  if (sua) {
+    const cu = hoSoAgent.ds.find((h) => h.id === sua.dataset.hsasua);
+    const than = await hsaHoi(cu);
+    if (!than) return;
+    try {
+      await api(`/ho-so-agent/${cu.id}`, {
+        method: "PUT", body: JSON.stringify(than) });
+      toast("Đã lưu hồ sơ.");
+      await loadHoSoAgent();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  const xoa = e.target.closest("[data-hsaxoa]");
+  if (!xoa) return;
+  const h = hoSoAgent.ds.find((x) => x.id === xoa.dataset.hsaxoa);
+  /* Nói SỐ KÊNH bị ảnh hưởng và điều gì xảy ra với chúng — không hỏi "bạn
+     có chắc không". Kênh không ngừng trả lời, chúng rơi về mặc định, và
+     đó chính là thứ người bấm cần biết trước khi bấm. */
+  if (!confirm(h.so_kenh
+    ? `Xoá hồ sơ “${h.ten}”? ${h.so_kenh} kênh đang dùng sẽ quay về cấu hình mặc định — chúng KHÔNG ngừng trả lời.`
+    : `Xoá hồ sơ “${h.ten}”? Chưa kênh nào dùng.`)) return;
+  try {
+    await api(`/ho-so-agent/${h.id}`, { method: "DELETE" });
+    toast("Đã xoá hồ sơ.");
+    await loadHoSoAgent();
+  } catch (err) { toast(err.message, true); }
+});
+
 /* ---------------- trường thông tin khách tuỳ biến ---------------- */
 
 const truongKhach = { ds: [], kieu: [] };
@@ -2759,14 +2874,14 @@ async function refresh() {
     if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
     if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") { await loadKetNoi(); await loadTichHop(); }
+    if (state.view === "ketnoi") { await loadHoSoAgent(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadTamNhin(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
@@ -2958,6 +3073,12 @@ async function loadKetNoi() {
             <button class="btn btn--sm btn--ghost" data-agentbat="${account.id}"
               data-bat="${account.agent_bat === false ? "1" : "0"}">${
               account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
+            ${hoSoAgent.ds.length ? `<select class="hsa-chon" data-hsagan="${account.id}"
+              title="Hồ sơ agent trả lời kênh này">
+              <option value="">Mặc định</option>
+              ${hoSoAgent.ds.map((h) => `<option value="${esc(h.id)}"${
+                h.id === account.agent_ho_so_id ? " selected" : ""}>${esc(h.ten)}</option>`).join("")}
+            </select>` : ""}
             <button class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
               data-ten-tk="${esc(account.display_name)}">Xoá</button>
           </div>
@@ -3005,6 +3126,18 @@ function lyDoKetNoi(kq) {
   $$('[data-disable]').forEach((button) => button.addEventListener("click", async () => {
     try { await api(`/channel-accounts/${button.dataset.disable}/disable`, { method: "POST" }); toast("Đã tạm ngắt tài khoản."); loadKetNoi(); }
     catch (e) { toast(e.message, true); }
+  }));
+
+  $$('[data-hsagan]').forEach((o) => o.addEventListener("change", async () => {
+    try {
+      const d = await api(`/channel-accounts/${o.dataset.hsagan}/ho-so-agent`, {
+        method: "PUT",
+        body: JSON.stringify({ ho_so_id: o.value || null }),
+      });
+      toast(d.ho_so_id
+        ? `“${d.display_name}” dùng hồ sơ ${o.options[o.selectedIndex].text}.`
+        : `“${d.display_name}” quay về cấu hình mặc định.`);
+    } catch (e) { toast(e.message, true); loadKetNoi(); }
   }));
 
   $$('[data-agentbat]').forEach((button) => button.addEventListener("click", async () => {

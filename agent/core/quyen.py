@@ -69,11 +69,11 @@ QUYEN: dict[str, str] = {
     "outbox.doc": "Xem hàng chờ gửi",
     "outbox.sua": "Gửi lại, huỷ tin trong hàng chờ",
 
-    # Không có `agent.doc`: trạng thái agent hiện ở `/api/overview` (đã canh
-    # bằng `hoi_thoai.doc`) và `/healthz` (mở cho công cụ giám sát). Thêm một
-    # quyền không endpoint nào dùng là thêm một ô tick vô nghĩa trên màn cấp
-    # quyền — người quản trị tick vào và tin là đã cấp gì đó.
-    "agent.dieu_khien": "Bật tắt agent, đổi chế độ và ngưỡng",
+    # `agent.doc` từng bị xoá khỏi danh mục vì không endpoint nào dùng —
+    # chính test "mọi quyền đều có chỗ dùng" bắt được. Nó quay lại khi có
+    # màn hồ sơ agent, và lần này có chỗ dùng thật: xem danh sách hồ sơ.
+    "agent.doc": "Xem hồ sơ agent và trạng thái",
+    "agent.dieu_khien": "Bật tắt agent, đổi chế độ, đổi ngưỡng, sửa hồ sơ",
     "phong_thu.dung": "Dùng phòng thử agent",
 
     "ky_nang.doc": "Xem kỹ năng và plugin",

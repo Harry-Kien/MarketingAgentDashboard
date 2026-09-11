@@ -2100,9 +2100,13 @@ function nsDongNguoi(n) {
       <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
       <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}</span>
     </div>
-    <div class="row__side">${vai}</div>
-    <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
-    <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
+    <div class="row__side">
+      <span>${vai}</span>
+      <span class="row__nut">
+        <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
+      </span>
+    </div>
   </div>`;
 }
 
@@ -2122,14 +2126,13 @@ function nsDongVaiTro(v) {
   return `<div class="row">
     <span class="row__flag row__flag--${v.toan_quyen ? "halt" : "auto"}"></span>
     <div class="row__main">
-      <b>${esc(v.ten)}</b>${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}
+      <b>${esc(v.ten)}${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}</b>
       <span class="row__sub">${esc(v.mo_ta || "—")}</span>
     </div>
     <div class="row__side">
-      <span class="pill">${soQuyen}</span>
-      <span class="pill">${v.so_nguoi} người</span>
+      <span><span class="pill">${soQuyen}</span> <span class="pill">${v.so_nguoi} người</span></span>
+      ${nut ? `<span class="row__nut">${nut}</span>` : ""}
     </div>
-    ${nut}
   </div>`;
 }
 

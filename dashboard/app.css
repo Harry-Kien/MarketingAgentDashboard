@@ -1868,6 +1868,12 @@ svg { flex: none; }
 /* Hàng nút của một form: Lưu và Huỷ đứng cạnh nhau, không xuống dòng. */
 .form__row { display: flex; gap: 8px; align-items: center; }
 
+/* Nút thao tác của một `.row` phải nằm TRONG `.row__side`.
+   `.row` là grid ba cột (3px · nội dung · phụ). Đặt nút thành con thứ tư,
+   thứ năm của `.row` thì chúng rơi xuống hàng ngầm và ĐÈ LÊN NHAU — đã đo
+   thấy trên màn Nhân sự trước khi sửa. */
+.row__nut { display: flex; gap: 6px; margin-top: 4px; }
+
 /* Huy hiệu cảnh báo — dùng cho "chưa có vai trò nào".
    Người chưa được cấp vai trò đăng nhập được nhưng mọi màn đều trống, và
    họ sẽ báo là "dashboard hỏng". Phải nhìn thấy ngay ở danh sách. */

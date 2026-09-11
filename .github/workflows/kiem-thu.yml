@@ -16,6 +16,36 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+
+    # VÌ SAO CI PHẢI CÓ POSTGRES THẬT
+    # --------------------------------
+    # Test chạm CSDL mở đầu bằng `pytest.skip("chưa cấp TEST_DATABASE_URL")`.
+    # Không có service này thì chúng không bao giờ chạy, và bảng kết quả vẫn
+    # xanh — đo được 11.09.2026: 2718 passed, 8 skipped.
+    #
+    # Những ràng buộc quan trọng nhất của hệ thống sống trong mệnh đề WHERE
+    # (ai thấy được khách nào). Test cho chúng mà không có CSDL là xanh giả,
+    # và xanh giả nguy hiểm hơn đỏ giả: đỏ giả thì người ta đi kiểm.
+    #
+    # Ảnh `pgvector/pgvector` chứ không `postgres`: schema.sql có
+    # `CREATE EXTENSION vector`, ảnh thường thiếu và migration ném ngay.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: kiemthu
+          POSTGRES_DB: kiemthu
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5433:5432
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:kiemthu@localhost:5433/kiemthu
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +60,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Dựng lược đồ CSDL kiểm thử
+        # Cấp URL thôi chưa đủ: test tích hợp truy vấn bảng có thật. Thiếu
+        # bước này thì chúng đổi từ `skipped` sang `UndefinedTableError` —
+        # đỏ vì hạ tầng, và người ta sẽ chữa bằng cách bỏ TEST_DATABASE_URL
+        # đi cho xanh lại, tức quay về đúng chỗ cũ.
+        run: python -m scripts.dung_csdl_kiem_thu
 
       - name: Chạy kiểm thử
         run: python -m pytest tests/ -q
@@ -126,6 +163,27 @@ jobs:
   # thật. Chỉ một lần clone sạch mới lộ ra.
   clone-sach:
     runs-on: ubuntu-latest
+
+    # Cũng cần CSDL: job này chạy CÙNG bộ test. Thiếu ở đây thì cùng một bộ
+    # test cho hai kết quả khác nhau giữa hai job, job yếu hơn vẫn xanh, và
+    # không ai để ý bên nào đang thật sự kiểm.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: kiemthu
+          POSTGRES_DB: kiemthu
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5433:5432
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:kiemthu@localhost:5433/kiemthu
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -152,6 +210,9 @@ jobs:
             fi
           done
           echo "Bản clone đúng là sạch: chỉ có dữ liệu mẫu"
+
+      - name: Dựng lược đồ CSDL kiểm thử
+        run: python -m scripts.dung_csdl_kiem_thu
 
       - name: Chạy kiểm thử trên bản clone sạch
         run: python -m pytest tests/ -q

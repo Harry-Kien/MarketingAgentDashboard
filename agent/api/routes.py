@@ -15,6 +15,7 @@ from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.core.quyen import QUYEN
 from agent.core.cham_mot_luot import tu_cam_hai_dang
 from agent.api import tich_hop_kho
 from agent.api.tich_hop_kho import LoiUngDung
@@ -82,6 +83,44 @@ async def bat_buoc_quan_tri(request: Request) -> dict:
     if nguoi["vai_tro"] != "quan_tri":
         raise HTTPException(403, "Việc này cần quyền quản trị")
     return nguoi
+
+
+def can_quyen(*quyen: str):
+    """
+    Dependency đòi ĐỦ các quyền được nêu. Nhiều quyền = PHẢI CÓ TẤT CẢ.
+
+    VÌ SAO KIỂM DANH MỤC Ở ĐÂY, NGOÀI HÀM CON
+    ------------------------------------------
+    Thân factory chạy lúc IMPORT module. Gõ sai tên quyền thì máy chủ không
+    khởi động được, ngay trước mặt người vừa gõ sai — thay vì một 403 bí ẩn
+    vào lúc có người thật sự cần dùng endpoint ấy, khi không còn ai nhớ đã
+    sửa gì.
+
+    VÌ SAO ĐỌC `request.state.nguoi` TRƯỚC
+    --------------------------------------
+    Middleware `chan_neu_chua_dang_nhap` đã đọc phiên và gắn người vào đó.
+    Đọc lại là gọi CSDL hai lần mỗi request, và truy vấn phiên giờ có thêm
+    ba LEFT JOIN nên nó không còn rẻ như trước. Vẫn có đường lui cho những
+    chỗ middleware không chạm tới.
+    """
+    for q in quyen:
+        if q not in QUYEN:
+            raise KeyError(f"Quyền không có trong danh mục: {q}")
+
+    async def kiem(request: Request) -> dict:
+        nguoi = getattr(request.state, "nguoi", None)
+        if nguoi is None:
+            nguoi = await bat_buoc_dang_nhap(request)
+        thieu = [q for q in quyen if not xac_thuc.duoc_phep(nguoi, q)]
+        if thieu:
+            raise HTTPException(403, f"Thiếu quyền: {', '.join(thieu)}")
+        return nguoi
+
+    # Nhãn để `kiem_moi_route_co_quyen()` nhận ra endpoint đã khai quyền.
+    # Không có nhãn thì chốt lúc khởi động coi như chưa khai, và máy chủ
+    # không lên — hỏng-đóng, đúng ý.
+    kiem.quyen_yeu_cau = quyen
+    return kiem
 
 
 

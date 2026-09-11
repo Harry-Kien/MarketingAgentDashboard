@@ -294,7 +294,7 @@ from fastapi.responses import HTMLResponse  # noqa: E402
 from agent import db  # noqa: E402
 from agent.config import settings  # noqa: E402
 
-from .routes import bat_buoc_quan_tri  # noqa: E402
+from .routes import can_quyen  # noqa: E402
 
 router = APIRouter(prefix="/api/connect/meta", tags=["oauth-meta"])
 
@@ -325,7 +325,7 @@ def _dia_chi_quay_ve() -> str:
 
 
 @router.get("/start")
-async def meta_start(user: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def meta_start(user: dict = Depends(can_quyen("kenh.noi"))) -> dict:
     """
     Trả về địa chỉ màn hình cấp quyền của Meta để dashboard mở ra.
 
@@ -490,7 +490,7 @@ async def meta_callback(
 @router.post("/chon", response_class=HTMLResponse)
 async def meta_chon(
     request: Request,
-    _nguoi: dict = Depends(bat_buoc_quan_tri),
+    _nguoi: dict = Depends(can_quyen("kenh.noi")),
 ) -> HTMLResponse:
     """
     Nhận lựa chọn của người dùng rồi mới tạo tài khoản.
@@ -599,11 +599,15 @@ async def _tao_tai_khoan_tu_danh_sach(
     # UUID(int=0) thì MỌI lượt tạo tài khoản chết vì ForeignKeyViolation, và
     # người dùng chỉ thấy "Đã nối 0 Trang" — đã xảy ra thật với 6 Trang.
     #
-    # `role` chứ không phải `is_admin`: `is_admin` là property suy ra từ
-    # role. Đặt nhầm thì actor luôn bị coi là không phải quản trị.
+    # `quyen` chứ không phải `is_admin`: `is_admin` là property suy ra từ
+    # tập quyền. Đặt nhầm thì actor luôn bị coi là không đủ quyền.
+    #
+    # Cấp thẳng `kenh.sua` ở đây là ĐÚNG chứ không phải đi tắt: người bấm đã
+    # qua `can_quyen("kenh.noi")` ở endpoint, và việc tạo tài khoản kênh là
+    # hệ quả tất yếu của luồng nối kênh mà họ vừa được phép chạy.
     actor = AccountActor(
         user_id=nguoi_bam if isinstance(nguoi_bam, UUID) else UUID(str(nguoi_bam)),
-        role="quan_tri",
+        quyen=frozenset({"kenh.sua"}),
     )
 
     ra: list[str] = []

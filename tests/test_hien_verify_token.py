@@ -37,7 +37,7 @@ def test_endpoint_doi_quyen_quan_tri():
     from agent.api import channel_accounts
 
     nguon = inspect.getsource(channel_accounts.doc_verify_token)
-    assert "bat_buoc_quan_tri" in nguon
+    assert 'can_quyen("kenh.doc")' in nguon
 
 
 def _bo_chu_thich(src: str) -> str:

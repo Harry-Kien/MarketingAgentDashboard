@@ -15,7 +15,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.api.erp import router
-from agent.api.routes import bat_buoc_dang_nhap
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.erp import nha_may
 from agent.erp.cong import Cong
 from agent.erp.hop_dong import Gia, SanPhamERP, TonKho
@@ -43,9 +44,8 @@ def _client(nguon: NguonGia, tmp_path) -> TestClient:
 
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[bat_buoc_dang_nhap] = lambda: {
-        "ten_dang_nhap": "thu", "vai_tro": "nhan_vien"
-    }
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: nguoi_thu(
+        "don.doc", "cau_hinh.doc", ten="thu")
     return TestClient(app)
 
 

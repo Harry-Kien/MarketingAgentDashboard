@@ -125,7 +125,7 @@ def test_duong_nhan_lua_chon_doi_quyen_quan_tri():
     """
     from agent.api import oauth_meta
 
-    assert "bat_buoc_quan_tri" in inspect.getsource(oauth_meta.meta_chon)
+    assert 'can_quyen("kenh.noi")' in inspect.getsource(oauth_meta.meta_chon)
 
 
 def test_chi_tao_dung_nhung_trang_da_chon():

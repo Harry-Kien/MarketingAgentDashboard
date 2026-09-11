@@ -167,7 +167,7 @@ def test_endpoint_doi_quyen_quan_tri():
     from agent.api import channel_accounts
 
     nguon = inspect.getsource(channel_accounts.dang_ky_webhook)
-    assert "bat_buoc_quan_tri" in nguon
+    assert 'can_quyen("kenh.sua")' in nguon
 
 
 def test_endpoint_khong_tra_token_ra_ngoai():

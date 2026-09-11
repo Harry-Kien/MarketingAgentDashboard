@@ -85,6 +85,93 @@ NHOM: dict[str, list[tuple[str, str, str, int]]] = {
          "Depends(bat_buoc_quan_tri)",
          'Depends(can_quyen("mcp.sua"))', 6),
     ],
+
+    "nhom2": [
+        # --- goi_ky_nang.py ---
+        # `/kiem` dùng `ky_nang.sua` dù không ghi gì: nó tải gói từ một địa
+        # chỉ do người gọi đưa vào, tức là một bề mặt SSRF. Ai chưa được
+        # phép cài gói thì cũng chưa nên bắt máy chủ đi tải gói.
+        ("agent/api/goi_ky_nang.py",
+         "from agent.api.routes import bat_buoc_quan_tri",
+         "from agent.api.routes import can_quyen", 1),
+        ("agent/api/goi_ky_nang.py",
+         "async def liet_ke(_: dict = Depends(bat_buoc_quan_tri))",
+         'async def liet_ke(_: dict = Depends(can_quyen("ky_nang.doc")))', 1),
+        ("agent/api/goi_ky_nang.py",
+         "async def xuat(ten: str, _: dict = Depends(bat_buoc_quan_tri))",
+         'async def xuat(ten: str, _: dict = Depends(can_quyen("ky_nang.doc")))', 1),
+        ("agent/api/goi_ky_nang.py",
+         "async def lich_su(ten: str, _: dict = Depends(bat_buoc_quan_tri))",
+         'async def lich_su(ten: str, _: dict = Depends(can_quyen("ky_nang.doc")))', 1),
+        ("agent/api/goi_ky_nang.py",
+         "async def kiem(body: dict, _: dict = Depends(bat_buoc_quan_tri))",
+         'async def kiem(body: dict, _: dict = Depends(can_quyen("ky_nang.sua")))', 1),
+        ("agent/api/goi_ky_nang.py",
+         "nguoi: dict = Depends(bat_buoc_quan_tri)",
+         'nguoi: dict = Depends(can_quyen("ky_nang.sua"))', 5),
+
+        # --- oauth_meta.py ---
+        ("agent/api/oauth_meta.py",
+         "from .routes import bat_buoc_quan_tri  # noqa: E402",
+         "from .routes import can_quyen  # noqa: E402", 1),
+        ("agent/api/oauth_meta.py",
+         "async def meta_start(user: dict = Depends(bat_buoc_quan_tri))",
+         'async def meta_start(user: dict = Depends(can_quyen("kenh.noi")))', 1),
+        ("agent/api/oauth_meta.py",
+         "    _nguoi: dict = Depends(bat_buoc_quan_tri),",
+         '    _nguoi: dict = Depends(can_quyen("kenh.noi")),', 1),
+
+        # --- erp.py ---
+        # Bốn đường ĐỌC danh mục và tồn kho -> `don.doc`; `kiem-ket-noi` gọi
+        # ra máy chủ ERP bằng khoá đã lưu, nên nó thuộc phía cấu hình.
+        ("agent/api/erp.py",
+         "from .routes import bat_buoc_dang_nhap",
+         "from .routes import can_quyen", 1),
+        ("agent/api/erp.py",
+         "_nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:",
+         '_nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:', 3),
+        ("agent/api/erp.py",
+         "    ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)",
+         '    ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))', 1),
+        ("agent/api/erp.py",
+         "    _nguoi: dict = Depends(bat_buoc_dang_nhap),",
+         '    _nguoi: dict = Depends(can_quyen("cau_hinh.doc")),', 1),
+    ],
+
+    "kenh": [
+        ("agent/api/channel_accounts.py",
+         "from .routes import bat_buoc_dang_nhap, bat_buoc_quan_tri",
+         "from .routes import can_quyen", 1),
+        # Ba đường ĐỌC: danh sách, chi tiết, sức khoẻ.
+        ("agent/api/channel_accounts.py",
+         "    user: dict = Depends(bat_buoc_dang_nhap),",
+         '    user: dict = Depends(can_quyen("kenh.doc")),', 3),
+        # Sáu đường SỬA: tạo, credentials, bật, tắt, xoá, verify.
+        ("agent/api/channel_accounts.py",
+         "    user: dict = Depends(bat_buoc_quan_tri),",
+         '    user: dict = Depends(can_quyen("kenh.sua")),', 6),
+        ("agent/api/channel_accounts.py",
+         "    _user: dict = Depends(bat_buoc_quan_tri),",
+         '    _user: dict = Depends(can_quyen("kenh.sua")),', 1),
+        # Năm đường `_:` chia hai ngả, nên vá theo TÊN HÀM chứ không theo
+        # chuỗi tham số — ba đường đọc và hai đường nối kênh trông giống hệt
+        # nhau ở dòng tham số.
+        ("agent/api/channel_accounts.py",
+         "async def kiem_xoa_duoc(\n    account_id: UUID,\n    _: dict = Depends(bat_buoc_quan_tri),",
+         'async def kiem_xoa_duoc(\n    account_id: UUID,\n    _: dict = Depends(can_quyen("kenh.doc")),', 1),
+        ("agent/api/channel_accounts.py",
+         "async def zalo_personal_status(\n    account_id: UUID,\n    _: dict = Depends(bat_buoc_quan_tri),",
+         'async def zalo_personal_status(\n    account_id: UUID,\n    _: dict = Depends(can_quyen("kenh.doc")),', 1),
+        ("agent/api/channel_accounts.py",
+         "async def doc_verify_token(\n    account_id: UUID,\n    _: dict = Depends(bat_buoc_quan_tri),",
+         'async def doc_verify_token(\n    account_id: UUID,\n    _: dict = Depends(can_quyen("kenh.doc")),', 1),
+        ("agent/api/channel_accounts.py",
+         "async def start_zalo_personal_qr(\n    account_id: UUID,\n    _: dict = Depends(bat_buoc_quan_tri),",
+         'async def start_zalo_personal_qr(\n    account_id: UUID,\n    _: dict = Depends(can_quyen("kenh.noi")),', 1),
+        ("agent/api/channel_accounts.py",
+         "async def restore_zalo_personal_session(\n    account_id: UUID,\n    _: dict = Depends(bat_buoc_quan_tri),",
+         'async def restore_zalo_personal_session(\n    account_id: UUID,\n    _: dict = Depends(can_quyen("kenh.noi")),', 1),
+    ],
 }
 
 

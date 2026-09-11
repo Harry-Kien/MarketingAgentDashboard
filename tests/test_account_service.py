@@ -103,7 +103,7 @@ def _service(repository: _AccountsInMemory) -> ChannelAccountService:
 
 
 def _admin() -> AccountActor:
-    return AccountActor(user_id=uuid4(), role="quan_tri")
+    return AccountActor(user_id=uuid4(), quyen=frozenset({"kenh.sua"}))
 
 
 def _command() -> CreateAccountCommand:
@@ -165,7 +165,7 @@ def test_nhan_vien_khong_duoc_xoay_credential():
     repository = _AccountsInMemory()
     service = _service(repository)
     account = asyncio.run(service.create_account(_command(), actor=_admin()))
-    staff = AccountActor(user_id=uuid4(), role="nhan_vien")
+    staff = AccountActor(user_id=uuid4(), quyen=frozenset({"kenh.doc"}))
 
     with pytest.raises(AccountPermissionDenied):
         asyncio.run(

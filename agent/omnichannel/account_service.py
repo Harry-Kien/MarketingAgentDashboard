@@ -38,11 +38,22 @@ class AccountDisabled(AccountServiceError):
 @dataclass(frozen=True, slots=True)
 class AccountActor:
     user_id: UUID
-    role: str
+    quyen: frozenset[str] = frozenset()
 
     @property
     def is_admin(self) -> bool:
-        return self.role == "quan_tri"
+        """
+        Toàn quyền trên tài khoản kênh = có `kenh.sua`.
+
+        Trước đây là `role == "quan_tri"`, đọc thẳng cột `nguoi_dung.vai_tro`.
+        Cột ấy thôi làm nguồn sự thật từ migration 0019: quyền giờ đến từ vai
+        trò tự tạo, nên một "Trưởng nhóm kênh" có thể có `kenh.sua` mà không
+        phải quản trị.
+
+        Ngữ nghĩa lọc GIỮ NGUYÊN so với trước: vai trò `Nhân viên` nạp sẵn chỉ
+        có `kenh.doc`, nên đúng những người từng là admin mới qua được.
+        """
+        return "kenh.sua" in self.quyen
 
 
 @dataclass(frozen=True, slots=True)

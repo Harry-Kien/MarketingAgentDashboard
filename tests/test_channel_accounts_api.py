@@ -13,7 +13,8 @@ from agent.api.channel_accounts import (
     router,
 )
 from agent.channels.base import ConnectionCheck
-from agent.api.routes import bat_buoc_dang_nhap, bat_buoc_quan_tri
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.omnichannel.account_service import ChannelAccountService
 from agent.omnichannel.accounts import AccountStatus, Channel, ChannelAccount
 from agent.security.credential_vault import CredentialVault, SealedCredential
@@ -81,19 +82,14 @@ def _app(*, logged_in: bool, admin: bool = True):
     app.dependency_overrides[get_account_repository] = lambda: repository
     app.dependency_overrides[get_account_service] = lambda: service
     if logged_in:
-        user = {
-            "id": uuid4(),
-            "ten_dang_nhap": "admin" if admin else "staff",
-            "vai_tro": "quan_tri" if admin else "nhan_vien",
-        }
-        app.dependency_overrides[bat_buoc_dang_nhap] = lambda: user
-        if admin:
-            app.dependency_overrides[bat_buoc_quan_tri] = lambda: user
-        else:
-            def deny_admin():
-                raise HTTPException(403, "Việc này cần quyền quản trị")
-
-            app.dependency_overrides[bat_buoc_quan_tri] = deny_admin
+        # Nhân viên ĐỌC được tài khoản kênh nhưng không sửa, không nối —
+        # đúng tập quyền vai trò `Nhân viên` được nạp sẵn ở migration 0019.
+        quyen = (("kenh.doc", "kenh.sua", "kenh.noi") if admin
+                 else ("kenh.doc",))
+        user = nguoi_thu(*quyen, ten="admin" if admin else "staff",
+                         id=uuid4(),
+                         vai_tro="quan_tri" if admin else "nhan_vien")
+        app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     return app, repository
 
 

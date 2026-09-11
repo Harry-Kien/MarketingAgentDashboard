@@ -37,7 +37,7 @@ from agent.security.credential_vault import (
     parse_master_keys,
 )
 
-from .routes import bat_buoc_dang_nhap, bat_buoc_quan_tri
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/channel-accounts", tags=["channel-accounts"])
@@ -107,7 +107,8 @@ def _loader(repository: PostgresAccountRepository) -> VaultCredentialLoader:
 
 
 def _actor(user: dict) -> AccountActor:
-    return AccountActor(user_id=UUID(str(user["id"])), role=user["vai_tro"])
+    return AccountActor(user_id=UUID(str(user["id"])),
+                        quyen=frozenset(user.get("quyen", ())))
 
 
 def _raise_public(exc: Exception) -> None:
@@ -122,12 +123,12 @@ def _raise_public(exc: Exception) -> None:
 
 @router.get("")
 async def list_accounts(
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> list[dict[str, Any]]:
     accounts = await repository.list_for_user(
         UUID(str(user["id"])),
-        is_admin=user["vai_tro"] == "quan_tri",
+        is_admin="kenh.sua" in user.get("quyen", ()),
     )
 
     # LÝ DO HỎNG PHẢI NẰM LẠI TRÊN THẺ, KHÔNG CHỈ CHỚP QUA TOAST.
@@ -182,7 +183,7 @@ async def list_accounts(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_account(
     body: CreateChannelAccountIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     service: ChannelAccountService = Depends(get_account_service),
 ) -> dict[str, Any]:
     if body.channel.value.startswith("legacy_") or body.channel in {
@@ -226,12 +227,12 @@ async def create_account(
 @router.get("/{account_id}")
 async def get_account(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     allowed = await repository.list_for_user(
         UUID(str(user["id"])),
-        is_admin=user["vai_tro"] == "quan_tri",
+        is_admin="kenh.sua" in user.get("quyen", ()),
     )
     account = next((item for item in allowed if item.id == account_id), None)
     if account is None:
@@ -245,7 +246,7 @@ async def get_account(
 async def rotate_credentials(
     account_id: UUID,
     body: RotateCredentialsIn,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     service: ChannelAccountService = Depends(get_account_service),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> Response:
@@ -283,7 +284,7 @@ async def rotate_credentials(
 @router.post("/{account_id}/disable")
 async def disable_account(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     service: ChannelAccountService = Depends(get_account_service),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
@@ -299,7 +300,7 @@ async def disable_account(
 @router.post("/{account_id}/enable")
 async def enable_account(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     service: ChannelAccountService = Depends(get_account_service),
 ) -> dict[str, Any]:
     try:
@@ -344,7 +345,7 @@ async def _dang_giu(account_id: UUID) -> list[str]:
 @router.get("/{account_id}/co-xoa-duoc")
 async def kiem_xoa_duoc(
     account_id: UUID,
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("kenh.doc")),
 ) -> dict[str, Any]:
     """
     Xem trước: xoá được hay không, và nếu không thì vì sao.
@@ -359,7 +360,7 @@ async def kiem_xoa_duoc(
 @router.delete("/{account_id}")
 async def xoa_tai_khoan(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     """
@@ -409,12 +410,12 @@ async def xoa_tai_khoan(
 @router.get("/{account_id}/health")
 async def account_health(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     allowed = await repository.list_for_user(
         UUID(str(user["id"])),
-        is_admin=user["vai_tro"] == "quan_tri",
+        is_admin="kenh.sua" in user.get("quyen", ()),
     )
     if not any(account.id == account_id for account in allowed):
         raise HTTPException(404, "Không tìm thấy tài khoản kênh")
@@ -424,7 +425,7 @@ async def account_health(
 @router.post("/{account_id}/verify")
 async def verify_account_connection(
     account_id: UUID,
-    user: dict = Depends(bat_buoc_quan_tri),
+    user: dict = Depends(can_quyen("kenh.sua")),
     verifier: NativeConnectionVerifier = Depends(get_connection_verifier),
 ) -> dict[str, Any]:
     try:
@@ -506,7 +507,7 @@ def _loi_sidecar(exc: Exception) -> HTTPException:
 @router.post("/{account_id}/zalo-personal/qr", status_code=202)
 async def start_zalo_personal_qr(
     account_id: UUID,
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("kenh.noi")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     adapter, _credentials = await _zalo_personal_adapter(account_id, repository)
@@ -524,7 +525,7 @@ async def start_zalo_personal_qr(
 @router.post("/{account_id}/zalo-personal/restore")
 async def restore_zalo_personal_session(
     account_id: UUID,
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("kenh.noi")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     adapter, credentials = await _zalo_personal_adapter(account_id, repository)
@@ -546,7 +547,7 @@ async def restore_zalo_personal_session(
 @router.get("/{account_id}/zalo-personal/status")
 async def zalo_personal_status(
     account_id: UUID,
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     adapter, _credentials = await _zalo_personal_adapter(account_id, repository)
@@ -564,7 +565,7 @@ async def zalo_personal_status(
 @router.get("/{account_id}/verify-token")
 async def doc_verify_token(
     account_id: UUID,
-    _: dict = Depends(bat_buoc_quan_tri),
+    _: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     """
@@ -611,7 +612,7 @@ KENH_META = {Channel.FACEBOOK, Channel.INSTAGRAM}
 @router.post("/{account_id}/dang-ky-webhook")
 async def dang_ky_webhook(
     account_id: UUID,
-    _user: dict = Depends(bat_buoc_quan_tri),
+    _user: dict = Depends(can_quyen("kenh.sua")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     """

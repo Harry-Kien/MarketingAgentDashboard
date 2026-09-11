@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agent.api.routes import bat_buoc_quan_tri
+from agent.api.routes import can_quyen
 from agent.ky_nang import goi as g
 from agent.ky_nang import nhap_skill_md
 from agent.ky_nang import kho_ky_nang
@@ -50,7 +50,7 @@ def _loi(exc: Exception) -> HTTPException:
 
 
 @router.get("")
-async def liet_ke(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def liet_ke(_: dict = Depends(can_quyen("ky_nang.doc"))) -> dict:
     # ĐẾM MỘT LẦN cho cả hai bảng. Trước đây `kho_ky_nang.liet_ke()` và
     # `g.liet_ke()` mỗi hàm tự gọi `dem_goi_7_ngay()` — hai lần quét 7 ngày
     # bảng `events` cho MỘT lần vẽ màn hình, mà màn hình này tự làm mới 6
@@ -66,7 +66,7 @@ async def liet_ke(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 
 @router.post("/kiem")
-async def kiem(body: dict, _: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def kiem(body: dict, _: dict = Depends(can_quyen("ky_nang.sua"))) -> dict:
     try:
         x = g.doc_goi(body)
     except g.LoiGoi as exc:
@@ -85,7 +85,7 @@ async def _cai(tho: dict, nguoi: dict) -> dict:
 
 
 @router.post("", status_code=201)
-async def cai(body: dict, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def cai(body: dict, nguoi: dict = Depends(can_quyen("ky_nang.sua"))) -> dict:
     return await _cai(body, nguoi)
 
 
@@ -104,7 +104,7 @@ def _co_tep(du_lieu: bytes, ten: str) -> bool:
 
 
 @router.post("/tep", status_code=201)
-async def cai_tu_tep(tep: UploadFile = File(...), nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def cai_tu_tep(tep: UploadFile = File(...), nguoi: dict = Depends(can_quyen("ky_nang.sua"))) -> dict:
     du_lieu = await tep.read()
     if len(du_lieu) > g.ZIP_TOI_DA:
         raise HTTPException(413, f"Tệp lớn hơn {g.ZIP_TOI_DA // 1024 // 1024} MB")
@@ -129,7 +129,7 @@ async def cai_tu_tep(tep: UploadFile = File(...), nguoi: dict = Depends(bat_buoc
 
 
 @router.post("/{ten}/bat-tat", status_code=204)
-async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(can_quyen("ky_nang.sua"))) -> Response:
     try:
         await g.bat_tat(ten, body.bat, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001
@@ -138,7 +138,7 @@ async def bat_tat(ten: str, body: BatTatBody, nguoi: dict = Depends(bat_buoc_qua
 
 
 @router.delete("/{ten}", status_code=204)
-async def xoa(ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)) -> Response:
+async def xoa(ten: str, nguoi: dict = Depends(can_quyen("ky_nang.sua"))) -> Response:
     try:
         await g.xoa(ten, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001
@@ -147,7 +147,7 @@ async def xoa(ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)) -> Response:
 
 
 @router.get("/{ten}/xuat")
-async def xuat(ten: str, _: dict = Depends(bat_buoc_quan_tri)) -> Any:
+async def xuat(ten: str, _: dict = Depends(can_quyen("ky_nang.doc"))) -> Any:
     d = await g.xuat(ten)
     if d is None:
         raise HTTPException(404, "Không tìm thấy gói kỹ năng")
@@ -155,12 +155,12 @@ async def xuat(ten: str, _: dict = Depends(bat_buoc_quan_tri)) -> Any:
 
 
 @router.get("/{ten}/lich-su")
-async def lich_su(ten: str, _: dict = Depends(bat_buoc_quan_tri)) -> list[dict]:
+async def lich_su(ten: str, _: dict = Depends(can_quyen("ky_nang.doc"))) -> list[dict]:
     return await g.lich_su(ten)
 
 
 @router.post("/{ten}/khoi-phuc/{id_lich_su}")
-async def khoi_phuc(ten: str, id_lich_su: int, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def khoi_phuc(ten: str, id_lich_su: int, nguoi: dict = Depends(can_quyen("ky_nang.sua"))) -> dict:
     try:
         x = await g.khoi_phuc(ten, id_lich_su, boi=nguoi["ten_dang_nhap"])
     except Exception as exc:  # noqa: BLE001

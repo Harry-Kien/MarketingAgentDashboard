@@ -149,7 +149,7 @@ def test_endpoint_bat_dau_doi_quyen_quan_tri():
     from agent.api import oauth_meta
 
     nguon = inspect.getsource(oauth_meta)
-    assert "bat_buoc_quan_tri" in nguon
+    assert 'can_quyen("kenh.noi")' in nguon
 
 
 def test_callback_KHONG_doi_dang_nhap_dashboard():
@@ -164,7 +164,7 @@ def test_callback_KHONG_doi_dang_nhap_dashboard():
     from agent.api import oauth_meta
 
     nguon = inspect.getsource(oauth_meta.meta_callback)
-    assert "bat_buoc_quan_tri" not in nguon
+    assert "can_quyen" not in nguon.split("async def meta_callback")[1][:1200]
     assert "state" in nguon
 
 
@@ -252,6 +252,7 @@ def test_goi_dung_API_that_cua_account_service():
     )
     assert {"command", "actor"} <= tham_so
 
-    # AccountActor cần `role`, không phải `is_admin` — `is_admin` là property
-    # suy ra từ role. Đặt nhầm là actor luôn bị coi là không phải quản trị.
-    assert "role" in AccountActor.__dataclass_fields__
+    # AccountActor cần `quyen`, không phải `is_admin` — `is_admin` là property
+    # suy ra từ tập quyền. Đặt nhầm là actor luôn bị coi là không đủ quyền.
+    assert "quyen" in AccountActor.__dataclass_fields__
+    assert "is_admin" not in AccountActor.__dataclass_fields__

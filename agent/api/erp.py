@@ -27,13 +27,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from agent.erp import nha_may
 from agent.erp.hop_dong import LoiERP
 
-from .routes import bat_buoc_dang_nhap
+from .routes import can_quyen
 
 router = APIRouter(prefix="/api/erp", tags=["erp"])
 
 
 @router.get("/san-pham")
-async def danh_sach_san_pham(_nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
+async def danh_sach_san_pham(_nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
     try:
         data = await nha_may.cong().danh_muc()
     except LoiERP as exc:
@@ -43,7 +43,7 @@ async def danh_sach_san_pham(_nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict
 
 @router.get("/san-pham/{ma}")
 async def mot_san_pham(
-    ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)
+    ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))
 ) -> dict:
     try:
         data = await nha_may.cong().danh_muc()
@@ -56,7 +56,7 @@ async def mot_san_pham(
 
 
 @router.get("/ton-kho/{ma}")
-async def ton_kho(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
+async def ton_kho(ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
     # `bo_qua_cache=True`: ai gọi thẳng endpoint này là đang cần con số ngay
     # lúc này — thường để quyết định có bán hay không.
     t = await nha_may.cong().ton_kho(ma, bo_qua_cache=True)
@@ -66,14 +66,14 @@ async def ton_kho(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
 
 
 @router.get("/suc-khoe")
-async def suc_khoe(_nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
+async def suc_khoe(_nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
     cong = nha_may.cong()
     return {**cong.trang_thai(), "song": await cong.suc_khoe()}
 
 
 @router.post("/kiem-ket-noi")
 async def kiem_ket_noi_endpoint(
-    _nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _nguoi: dict = Depends(can_quyen("cau_hinh.doc")),
 ) -> dict:
     """Chạy toàn bộ phép kiểm kết nối và trả báo cáo cho dashboard.
 

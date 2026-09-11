@@ -12,7 +12,8 @@ from agent.api.contacts import (
     mask_contact_pii,
     router,
 )
-from agent.api.routes import bat_buoc_dang_nhap
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.omnichannel.identity import MergeResult
 
 
@@ -76,8 +77,11 @@ def _client():
     app.include_router(router)
     repository = _Repository()
     identity = _Identity()
-    user = {"id": uuid4(), "vai_tro": "nhan_vien"}
-    app.dependency_overrides[bat_buoc_dang_nhap] = lambda: user
+    # Tập quyền của vai trò `Nhân viên` nạp sẵn: đọc, sửa, gộp, và xin xoá
+    # — nhưng KHÔNG có `khach.xem_tat_ca`, nên lọc theo kênh vẫn siết.
+    user = nguoi_thu("khach.doc", "khach.sua", "khach.gop", "khach.xoa",
+                     id=uuid4())
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_contact_repository] = lambda: repository
     app.dependency_overrides[get_identity_service] = lambda: identity
     return TestClient(app), repository, identity, user

@@ -303,8 +303,10 @@ def test_quan_ly_tai_khoan_can_quyen_quan_tri():
     for ham in (routes.danh_sach_nguoi_dung, routes.them_nguoi_dung,
                 routes.khoa_nguoi_dung):
         ky = inspect.signature(ham).parameters
-        assert any("bat_buoc_quan_tri" in str(v.default) for v in ky.values()), (
-            f"{ham.__name__} không đòi quyền quản trị"
+        khai = [getattr(v.default, "dependency", None) for v in ky.values()]
+        quyen = {q for d in khai for q in getattr(d, "quyen_yeu_cau", ()) or ()}
+        assert quyen & {"nguoi_dung.doc", "nguoi_dung.sua"}, (
+            f"{ham.__name__} không đòi quyền quản lý nhân viên"
         )
 
 

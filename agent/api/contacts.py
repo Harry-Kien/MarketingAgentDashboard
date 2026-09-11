@@ -18,7 +18,7 @@ from agent.omnichannel.identity import (
     PostgresIdentityRepository,
 )
 
-from .routes import bat_buoc_dang_nhap
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/contacts", tags=["customer-360"])
@@ -510,7 +510,18 @@ def get_identity_service() -> IdentityService:
 
 
 def _scope(user: Mapping[str, Any]) -> tuple[UUID, bool]:
-    return UUID(str(user["id"])), user["vai_tro"] == "quan_tri"
+    """
+    (id người dùng, có thấy khách của MỌI kênh không).
+
+    Cờ thứ hai đi thẳng vào mệnh đề WHERE của `list_visible` và quyết định
+    cả ba việc: thấy khách ngoài kênh mình là thành viên, thấy PII, và tìm
+    được theo số điện thoại.
+
+    `khach.xem_tat_ca` KHÔNG nằm trong tập vai trò `Nhân viên` nạp sẵn, nên
+    ngữ nghĩa lọc giữ nguyên hệt trước bản này. Gộp nó vào `khach.doc` là
+    mở toàn bộ danh bạ cho mọi nhân viên — không có gì hỏng để ai nhận ra.
+    """
+    return UUID(str(user["id"])), "khach.xem_tat_ca" in user.get("quyen", ())
 
 
 def _raise_identity(exc: IdentityError) -> None:
@@ -528,7 +539,7 @@ async def list_contacts(
     q: str = Query("", max_length=120),
     account_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=100),
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.doc")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> list[dict[str, Any]]:
     user_id, is_admin = _scope(user)
@@ -546,7 +557,7 @@ async def list_contacts(
 async def preview_contact_merge(
     source_id: UUID,
     target_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.gop")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     user_id, is_admin = _scope(user)
@@ -564,7 +575,7 @@ async def preview_contact_merge(
 @router.get("/{contact_id}")
 async def contact_detail(
     contact_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.doc")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     user_id, is_admin = _scope(user)
@@ -579,7 +590,7 @@ async def contact_detail(
 @router.post("/merge")
 async def merge_contacts(
     body: MergeContactsIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.gop")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
     identity: IdentityService = Depends(get_identity_service),
 ) -> dict[str, Any]:
@@ -617,7 +628,7 @@ async def merge_contacts(
 async def unmerge_contact(
     merge_id: UUID,
     body: UnmergeContactIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.gop")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
     identity: IdentityService = Depends(get_identity_service),
 ) -> dict[str, Any]:
@@ -657,7 +668,7 @@ async def _require_contact_manager(
 async def add_contact_tag(
     contact_id: UUID,
     body: ContactTagIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.sua")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     actor_id = await _require_contact_manager(contact_id, user, repository)
@@ -670,7 +681,7 @@ async def add_contact_tag(
 async def add_contact_note(
     contact_id: UUID,
     body: ContactNoteIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.sua")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     actor_id = await _require_contact_manager(contact_id, user, repository)
@@ -687,7 +698,7 @@ async def set_contact_consent(
     contact_id: UUID,
     purpose: str,
     body: ContactConsentIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.sua")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     actor_id = await _require_contact_manager(contact_id, user, repository)
@@ -709,7 +720,7 @@ async def set_contact_consent(
 async def request_contact_retention(
     contact_id: UUID,
     body: RetentionRequestIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("khach.xoa")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     actor_id = await _require_contact_manager(contact_id, user, repository)

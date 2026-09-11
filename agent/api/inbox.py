@@ -25,7 +25,7 @@ from agent.omnichannel.routing import (
     RoutingError,
 )
 
-from .routes import bat_buoc_dang_nhap
+from .routes import can_quyen
 
 
 router = APIRouter(prefix="/api/inbox", tags=["native-inbox"])
@@ -303,7 +303,14 @@ def get_routing_service() -> ConversationRoutingService:
 
 
 def _user_scope(user: dict) -> tuple[UUID, bool]:
-    return UUID(str(user["id"])), user["vai_tro"] == "quan_tri"
+    """
+    (id người dùng, có thấy hội thoại của MỌI kênh không).
+
+    `hoi_thoai.xem_tat_ca` không nằm trong tập vai trò `Nhân viên` nạp sẵn,
+    nên ngữ nghĩa lọc giữ nguyên hệt trước bản này — xem chú thích cùng ý ở
+    `agent/api/contacts.py::_scope`.
+    """
+    return UUID(str(user["id"])), "hoi_thoai.xem_tat_ca" in user.get("quyen", ())
 
 
 def resolve_event_cursor(after: int | None, last_event_id: str | None) -> int:
@@ -391,7 +398,7 @@ async def list_inbox_conversations(
     assignee_id: UUID | None = None,
     cursor: str | None = None,
     limit: int = Query(50, ge=1, le=100),
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.doc")),
     repository: PostgresInboxQueryRepository = Depends(get_inbox_repository),
 ) -> dict[str, Any]:
     decoded = None
@@ -420,7 +427,7 @@ async def list_inbox_conversations(
 @router.get("/conversations/{conversation_id}")
 async def inbox_conversation_detail(
     conversation_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.doc")),
     repository: PostgresInboxQueryRepository = Depends(get_inbox_repository),
 ) -> dict[str, Any]:
     user_id, is_admin = _user_scope(user)
@@ -437,7 +444,7 @@ async def inbox_conversation_detail(
 @router.post("/conversations/{conversation_id}/read")
 async def mark_inbox_read(
     conversation_id: UUID,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.doc")),
     repository: PostgresInboxQueryRepository = Depends(get_inbox_repository),
 ) -> dict[str, bool]:
     user_id, is_admin = _user_scope(user)
@@ -454,7 +461,7 @@ async def mark_inbox_read(
 async def takeover_conversation(
     conversation_id: UUID,
     body: TakeoverIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.nhan")),
     service: ConversationRoutingService = Depends(get_routing_service),
 ) -> dict[str, Any]:
     actor_id, is_admin = _user_scope(user)
@@ -477,7 +484,7 @@ async def takeover_conversation(
 async def release_conversation(
     conversation_id: UUID,
     body: ReleaseIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.nhan")),
     service: ConversationRoutingService = Depends(get_routing_service),
 ) -> dict[str, Any]:
     actor_id, is_admin = _user_scope(user)
@@ -498,7 +505,7 @@ async def release_conversation(
 async def dat_che_do_conversation(
     conversation_id: UUID,
     body: DatCheDoIn,
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.nhan")),
     service: ConversationRoutingService = Depends(get_routing_service),
 ) -> dict[str, Any]:
     """
@@ -530,7 +537,7 @@ async def dat_che_do_conversation(
 async def inbox_events(
     after: int | None = Query(None, ge=0),
     last_event_id: str | None = Header(None, alias="Last-Event-ID"),
-    user: dict = Depends(bat_buoc_dang_nhap),
+    user: dict = Depends(can_quyen("hoi_thoai.doc")),
     repository: PostgresInboxQueryRepository = Depends(get_inbox_repository),
 ) -> StreamingResponse:
     user_id, is_admin = _user_scope(user)

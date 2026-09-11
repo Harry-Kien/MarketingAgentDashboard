@@ -46,7 +46,8 @@ def test_co_duong_dat_che_do():
 def test_duong_doi_dang_nhap():
     from agent.api import inbox
 
-    assert "bat_buoc_dang_nhap" in inspect.getsource(inbox.dat_che_do_conversation)
+    assert 'can_quyen("hoi_thoai.nhan")' in inspect.getsource(
+        inbox.dat_che_do_conversation)
 
 
 @pytest.mark.parametrize("che_do", CHE_DO)

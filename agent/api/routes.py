@@ -177,7 +177,7 @@ async def suc_khoe() -> dict:
 
 
 @router.get("/overview")
-async def overview() -> dict:
+async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
     since = datetime.now(timezone.utc) - timedelta(hours=24)
 
     conv = await db.fetchrow(
@@ -309,7 +309,7 @@ async def overview() -> dict:
 # ---------------------------------------------------------------
 
 @router.get("/conversations")
-async def list_conversations(status: str | None = None, limit: int = 60) -> list[dict]:
+async def list_conversations(status: str | None = None, limit: int = 60, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> list[dict]:
     sql = """
         SELECT c.*,
                (SELECT content FROM messages m WHERE m.conversation_id = c.id
@@ -378,7 +378,7 @@ async def list_conversations(status: str | None = None, limit: int = 60) -> list
 
 
 @router.get("/conversations/{conv_id}")
-async def conversation_detail(conv_id: str) -> dict:
+async def conversation_detail(conv_id: str, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
     cid = uuid.UUID(conv_id)
     conv = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", cid)
     if not conv:
@@ -436,7 +436,7 @@ async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
 
 
 @router.post("/conversations/{conv_id}/send")
-async def staff_send(conv_id: str, body: SendBody) -> dict:
+async def staff_send(conv_id: str, body: SendBody, _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict:
     """Ghi tin nhân viên vào outbox; worker mới là nơi gọi provider."""
     cid = uuid.UUID(conv_id)
     try:
@@ -586,6 +586,7 @@ async def approve_draft(
     message_id: str,
     body: DuyetBody | None = None,
     nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi")),
 ) -> dict:
     """
     Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API.
@@ -629,6 +630,7 @@ async def approve_draft(
 async def takeover(
     conv_id: str,
     nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _quyen: dict = Depends(can_quyen("hoi_thoai.nhan")),
 ) -> dict:
     """Người giành lại quyền. Agent ngừng trả lời hội thoại này."""
     cid = uuid.UUID(conv_id)
@@ -662,6 +664,7 @@ async def takeover(
 async def release(
     conv_id: str,
     nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _quyen: dict = Depends(can_quyen("hoi_thoai.nhan")),
 ) -> dict:
     """
     Trả hội thoại lại cho agent.
@@ -719,7 +722,7 @@ async def release(
 # ---------------------------------------------------------------
 
 @router.get("/videos")
-async def list_videos(limit: int = 40) -> list[dict]:
+async def list_videos(limit: int = 40, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> list[dict]:
     rows = await db.fetch(
         f"SELECT * FROM videos ORDER BY created_at DESC LIMIT {int(limit)}"
     )
@@ -754,7 +757,7 @@ class VideoBody(BaseModel):
 
 
 @router.post("/videos")
-async def create_video(body: VideoBody) -> dict:
+async def create_video(body: VideoBody, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     from agent.video import catalog_images
 
     ma = body.ma_san_pham.strip().upper()
@@ -771,6 +774,7 @@ async def create_video_with_images(
     brief: str = Form(...),
     kind: str = Form("product"),
     images: list[UploadFile] = File(default=[]),
+    _quyen: dict = Depends(can_quyen("noi_dung.doc")),
 ) -> dict:
     """
     Đặt video KÈM ẢNH SẢN PHẨM.
@@ -798,7 +802,7 @@ async def create_video_with_images(
 
 
 @router.get("/videos/{video_id}/assets")
-async def list_video_assets(video_id: str) -> list[dict]:
+async def list_video_assets(video_id: str, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> list[dict]:
     """Ảnh của một video kèm kết quả bước nhìn ảnh — để soi khi video xấu."""
     rows = await db.fetch(
         "SELECT ord, file_path, width, height, analysis, usable "
@@ -830,6 +834,7 @@ _MIME_THEO_DUOI = {
 @router.get("/attachments/{attachment_id}/file")
 async def attachment_file(
     attachment_id: str, _nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _quyen: dict = Depends(can_quyen("hoi_thoai.doc")),
 ):
     """
     Phục vụ tệp đính kèm cho khung chat.
@@ -875,7 +880,7 @@ async def attachment_file(
 
 
 @router.get("/san-pham/{ma}/anh")
-async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap)):
+async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap), _quyen: dict = Depends(can_quyen("don.doc"))):
     """
     Ảnh sản phẩm cho màn hình Kho và cho ô chọn khi nhân viên gửi ảnh.
 
@@ -897,7 +902,7 @@ async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap))
 
 
 @router.get("/videos/{video_id}/assets/{ord}/file")
-async def video_asset_file(video_id: str, ord: int):
+async def video_asset_file(video_id: str, ord: int, _quyen: dict = Depends(can_quyen("noi_dung.doc"))):
     row = await db.fetchrow(
         "SELECT file_path FROM video_assets WHERE video_id = $1 AND ord = $2",
         uuid.UUID(video_id),
@@ -909,7 +914,7 @@ async def video_asset_file(video_id: str, ord: int):
 
 
 @router.get("/videos/{video_id}/file")
-async def video_file(video_id: str):
+async def video_file(video_id: str, _quyen: dict = Depends(can_quyen("noi_dung.doc"))):
     row = await db.fetchrow(
         "SELECT file_path, title FROM videos WHERE id = $1", uuid.UUID(video_id)
     )
@@ -919,7 +924,7 @@ async def video_file(video_id: str):
 
 
 @router.post("/videos/{video_id}/retry")
-async def retry_video(video_id: str) -> dict:
+async def retry_video(video_id: str, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     """
     Đưa một video hỏng trở lại hàng đợi.
 
@@ -939,7 +944,7 @@ async def retry_video(video_id: str) -> dict:
 
 
 @router.post("/videos/{video_id}/approve")
-async def approve_video(video_id: str) -> dict:
+async def approve_video(video_id: str, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     """
     Duyệt video. CHỈ duyệt được khi file thật sự có trên đĩa.
 
@@ -975,7 +980,7 @@ async def approve_video(video_id: str) -> dict:
 # ---------------------------------------------------------------
 
 @router.get("/knowledge")
-async def list_documents() -> list[dict]:
+async def list_documents(_quyen: dict = Depends(can_quyen("cau_hinh.doc"))) -> list[dict]:
     rows = await db.fetch(
         "SELECT id, title, source, chunk_count, created_at "
         "FROM documents ORDER BY created_at DESC"
@@ -998,7 +1003,7 @@ class DocBody(BaseModel):
 
 
 @router.post("/knowledge")
-async def add_document(body: DocBody) -> dict:
+async def add_document(body: DocBody, _quyen: dict = Depends(can_quyen("cau_hinh.sua"))) -> dict:
     """
     Nạp một tài liệu từ ô "Nạp tài liệu" trên dashboard.
 
@@ -1024,7 +1029,7 @@ async def add_document(body: DocBody) -> dict:
 
 
 @router.delete("/knowledge/{doc_id}")
-async def delete_document(doc_id: str) -> dict:
+async def delete_document(doc_id: str, _quyen: dict = Depends(can_quyen("cau_hinh.sua"))) -> dict:
     await db.execute("DELETE FROM documents WHERE id = $1", uuid.UUID(doc_id))
     return {"ok": True}
 
@@ -1034,7 +1039,7 @@ class ProbeBody(BaseModel):
 
 
 @router.post("/knowledge/probe")
-async def probe(body: ProbeBody) -> dict:
+async def probe(body: ProbeBody, _quyen: dict = Depends(can_quyen("cau_hinh.doc"))) -> dict:
     """Thử truy vấn RAG mà không tốn một lượt gọi model."""
     hits = await rag.retrieve(body.question, k=5)
     return {
@@ -1059,7 +1064,7 @@ class RuntimeBody(BaseModel):
 
 
 @router.post("/runtime")
-async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(can_quyen("agent.dieu_khien"))) -> dict:
     state = await runtime.luu(body.model_dump(exclude_none=True), boi=nguoi["ten_dang_nhap"])
     await db.log_event("runtime.update", actor="staff", **{k: str(v) for k, v in state.items()})
     return state
@@ -1077,7 +1082,7 @@ async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(bat_buoc_quan_tri
 # thử con đường ấy nữa. Không có lý do gì để người trực ca cần bản đồ đó.
 
 @router.get("/ky-nang")
-async def liet_ke_ky_nang(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def liet_ke_ky_nang(_: dict = Depends(can_quyen("ky_nang.doc"))) -> dict:
     return await kho_ky_nang.liet_ke()
 
 
@@ -1088,7 +1093,7 @@ class BatTatBody(BaseModel):
 
 @router.post("/ky-nang/bat-tat")
 async def bat_tat_ky_nang(
-    body: BatTatBody, nguoi: dict = Depends(bat_buoc_quan_tri)
+    body: BatTatBody, nguoi: dict = Depends(can_quyen("ky_nang.sua"))
 ) -> dict:
     try:
         await kho_ky_nang.dat_bat_tat(body.ten, body.bat, boi=nguoi["ten_dang_nhap"])
@@ -1099,7 +1104,7 @@ async def bat_tat_ky_nang(
 
 @router.post("/ky-nang/plugin")
 async def luu_ky_nang_plugin(
-    body: dict, nguoi: dict = Depends(bat_buoc_quan_tri)
+    body: dict, nguoi: dict = Depends(can_quyen("ky_nang.sua"))
 ) -> dict:
     """
     Tạo hoặc sửa một plugin.
@@ -1124,7 +1129,7 @@ async def luu_ky_nang_plugin(
 
 @router.delete("/ky-nang/plugin/{ten}")
 async def xoa_ky_nang_plugin(
-    ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)
+    ten: str, nguoi: dict = Depends(can_quyen("ky_nang.sua"))
 ) -> dict:
     try:
         da_xoa = await kho_ky_nang.xoa_plugin(ten, boi=nguoi["ten_dang_nhap"])
@@ -1137,7 +1142,7 @@ async def xoa_ky_nang_plugin(
 
 @router.get("/ky-nang/plugin/{ten}/lich-su")
 async def lich_su_ky_nang_plugin(
-    ten: str, _: dict = Depends(bat_buoc_quan_tri)
+    ten: str, _: dict = Depends(can_quyen("ky_nang.doc"))
 ) -> list[dict]:
     """Các bản cũ của một plugin rời, mới nhất trước. Không kèm nội dung."""
     return await kho_ky_nang.lich_su_plugin(ten)
@@ -1145,7 +1150,7 @@ async def lich_su_ky_nang_plugin(
 
 @router.post("/ky-nang/plugin/{ten}/khoi-phuc/{id_ban}")
 async def khoi_phuc_ky_nang_plugin(
-    ten: str, id_ban: int, nguoi: dict = Depends(bat_buoc_quan_tri)
+    ten: str, id_ban: int, nguoi: dict = Depends(can_quyen("ky_nang.sua"))
 ) -> dict:
     """
     Đưa một bản cũ trở lại. Đi qua đúng `luu_plugin`, nên bản cũ vẫn phải
@@ -1169,7 +1174,7 @@ class ThuPluginBody(BaseModel):
 
 @router.post("/ky-nang/plugin/thu")
 async def thu_ky_nang_plugin(
-    body: ThuPluginBody, _: dict = Depends(bat_buoc_quan_tri)
+    body: ThuPluginBody, _: dict = Depends(can_quyen("ky_nang.sua"))
 ) -> dict:
     """
     Chạy thử một plugin CHƯA lưu, và không tốn một lượt gọi model nào.
@@ -1195,7 +1200,7 @@ async def thu_ky_nang_plugin(
 # đó là bản đồ.
 
 @router.get("/tich-hop/ung-dung")
-async def liet_ke_ung_dung(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def liet_ke_ung_dung(_: dict = Depends(can_quyen("tich_hop.doc"))) -> dict:
     return await tich_hop_kho.liet_ke()
 
 
@@ -1207,7 +1212,7 @@ class UngDungBody(BaseModel):
 
 @router.post("/tich-hop/ung-dung")
 async def luu_ung_dung(
-    body: UngDungBody, nguoi: dict = Depends(bat_buoc_quan_tri)
+    body: UngDungBody, nguoi: dict = Depends(can_quyen("tich_hop.sua"))
 ) -> dict:
     try:
         return await tich_hop_kho.luu(
@@ -1219,7 +1224,7 @@ async def luu_ung_dung(
 
 @router.delete("/tich-hop/ung-dung/{ten}")
 async def xoa_ung_dung(
-    ten: str, nguoi: dict = Depends(bat_buoc_quan_tri)
+    ten: str, nguoi: dict = Depends(can_quyen("tich_hop.sua"))
 ) -> dict:
     try:
         da_xoa = await tich_hop_kho.xoa(ten, boi=nguoi["ten_dang_nhap"])
@@ -1232,7 +1237,7 @@ async def xoa_ung_dung(
 
 @router.post("/tich-hop/ung-dung/thu")
 async def thu_ung_dung(
-    body: UngDungBody, _: dict = Depends(bat_buoc_quan_tri)
+    body: UngDungBody, _: dict = Depends(can_quyen("tich_hop.sua"))
 ) -> dict:
     """
     Thử một địa chỉ TRƯỚC khi lưu.
@@ -1330,7 +1335,7 @@ _MO_TA_CAU_HINH = {
 
 
 @router.get("/cau-hinh")
-async def doc_cau_hinh(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def doc_cau_hinh(_: dict = Depends(can_quyen("cau_hinh.doc"))) -> dict:
     """Cấu hình đang chạy, kèm mặc định và mô tả cho người vận hành."""
     dang_dung = dict(runtime.STATE)
     return {
@@ -1350,7 +1355,7 @@ async def doc_cau_hinh(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 @router.get("/cau-hinh/lich-su")
 async def lich_su_cau_hinh(
-    limit: int = 20, _: dict = Depends(bat_buoc_quan_tri)
+    limit: int = 20, _: dict = Depends(can_quyen("cau_hinh.doc"))
 ) -> list[dict]:
     """
     Ai đổi gì, lúc nào.
@@ -1371,7 +1376,7 @@ async def lich_su_cau_hinh(
 
 
 @router.post("/cau-hinh/mac-dinh")
-async def dat_lai_cau_hinh(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def dat_lai_cau_hinh(nguoi: dict = Depends(can_quyen("cau_hinh.sua"))) -> dict:
     """Quay về mặc định trong `.env`. Xoá hẳn phần đã lưu."""
     return await runtime.dat_lai_mac_dinh(boi=nguoi["ten_dang_nhap"])
 
@@ -1381,7 +1386,7 @@ async def dat_lai_cau_hinh(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
 # ---------------------------------------------------------------
 
 @router.get("/erp/xac-nhan-bang-gia")
-async def doc_xac_nhan_bang_gia(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def doc_xac_nhan_bang_gia(_: dict = Depends(can_quyen("catalog.duyet"))) -> dict:
     from agent.erp import xac_nhan
 
     return {"xac_nhan": await xac_nhan.doc(),
@@ -1389,7 +1394,7 @@ async def doc_xac_nhan_bang_gia(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 
 @router.post("/erp/xac-nhan-bang-gia")
-async def ghi_xac_nhan_bang_gia(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def ghi_xac_nhan_bang_gia(nguoi: dict = Depends(can_quyen("catalog.duyet"))) -> dict:
     """
     Xác nhận bảng giá ĐANG DÙNG là giá bán lẻ.
 
@@ -1407,14 +1412,14 @@ async def ghi_xac_nhan_bang_gia(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dic
 
 
 @router.delete("/erp/xac-nhan-bang-gia")
-async def go_xac_nhan_bang_gia(nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def go_xac_nhan_bang_gia(nguoi: dict = Depends(can_quyen("catalog.duyet"))) -> dict:
     from agent.erp import xac_nhan
 
     return {"da_go": await xac_nhan.go(boi=nguoi["ten_dang_nhap"])}
 
 
 @router.get("/events")
-async def recent_events(limit: int = 50) -> list[dict]:
+async def recent_events(limit: int = 50, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> list[dict]:
     rows = await db.fetch(
         f"SELECT kind, actor, ref_id, detail, created_at FROM events "
         f"ORDER BY created_at DESC LIMIT {int(limit)}"
@@ -1436,7 +1441,7 @@ async def recent_events(limit: int = 50) -> list[dict]:
 # ---------------------------------------------------------------
 
 @router.get("/orders")
-async def list_orders(status: str | None = None, limit: int = 60) -> list[dict]:
+async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict = Depends(can_quyen("don.doc"))) -> list[dict]:
     sql = "SELECT * FROM orders"
     args: list = []
     if status and status != "all":
@@ -1464,7 +1469,7 @@ async def list_orders(status: str | None = None, limit: int = 60) -> list[dict]:
 
 
 @router.post("/orders/{order_id}/approve")
-async def approve_order(order_id: str) -> dict:
+async def approve_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
     oid = uuid.UUID(order_id)
     await db.execute(
         "UPDATE orders SET trang_thai='da_chot', updated_at=now() WHERE id=$1", oid
@@ -1474,7 +1479,7 @@ async def approve_order(order_id: str) -> dict:
 
 
 @router.post("/orders/{order_id}/cancel")
-async def cancel_order(order_id: str) -> dict:
+async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
     """
     Huỷ đơn và TRẢ HÀNG VỀ KHO.
 
@@ -1510,7 +1515,7 @@ class KiemKeIn(BaseModel):
 
 
 @router.get("/kho")
-async def kho_tong_quan() -> dict:
+async def kho_tong_quan(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
     """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
     from agent.core.tools import _anh_san_pham, _catalog
 
@@ -1547,12 +1552,12 @@ async def kho_tong_quan() -> dict:
 
 
 @router.get("/kho/bien-dong")
-async def kho_bien_dong(ma: str = "", limit: int = 50) -> dict:
+async def kho_bien_dong(ma: str = "", limit: int = 50, _quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
     return {"bien_dong": await kho.so_bien_dong(ma, limit)}
 
 
 @router.post("/kho/{ma}/nhap")
-async def kho_nhap(ma: str, body: NhapKhoIn) -> dict:
+async def kho_nhap(ma: str, body: NhapKhoIn, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
     try:
         r = await kho.nhap_hang(ma, body.so_luong, body.ghi_chu)
     except LookupError as exc:
@@ -1564,7 +1569,7 @@ async def kho_nhap(ma: str, body: NhapKhoIn) -> dict:
 
 
 @router.post("/kho/{ma}/kiem-ke")
-async def kho_kiem_ke(ma: str, body: KiemKeIn) -> dict:
+async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
     """
     Đặt lại số tồn về đúng thực tế đếm được.
 
@@ -1623,13 +1628,13 @@ class CallbackIn(BaseModel):
 
 
 @router.get("/publish/channels")
-async def publish_channels() -> dict:
+async def publish_channels(_quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     """Kênh nào đang đi đường nào, và nếu chưa dùng được thì vì sao."""
     return {"kenh": await registry.trang_thai_kenh()}
 
 
 @router.post("/posts/draft")
-async def draft_post(body: SoanBaiIn) -> dict:
+async def draft_post(body: SoanBaiIn, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     try:
         return await copywriter.soan(
             kenh=body.kenh, san_pham=body.san_pham,
@@ -1642,7 +1647,7 @@ async def draft_post(body: SoanBaiIn) -> dict:
 
 
 @router.get("/posts")
-async def list_posts(trang_thai: str | None = None, limit: int = 50) -> dict:
+async def list_posts(trang_thai: str | None = None, limit: int = 50, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     sql = (
         "SELECT p.*, v.file_path AS video_path FROM posts p "
         "LEFT JOIN videos v ON v.id = p.video_id "
@@ -1660,7 +1665,7 @@ async def list_posts(trang_thai: str | None = None, limit: int = 50) -> dict:
 
 
 @router.post("/posts")
-async def create_post(body: TaoBaiIn) -> dict:
+async def create_post(body: TaoBaiIn, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     try:
         return await post_service.tao_bai(
             tieu_de=body.tieu_de, noi_dung=body.noi_dung, kenh=body.kenh,
@@ -1672,7 +1677,7 @@ async def create_post(body: TaoBaiIn) -> dict:
 
 
 @router.post("/posts/{post_id}/approve")
-async def approve_post(post_id: uuid.UUID) -> dict:
+async def approve_post(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     try:
         return await post_service.duyet(str(post_id))
     except LookupError as exc:
@@ -1682,7 +1687,7 @@ async def approve_post(post_id: uuid.UUID) -> dict:
 
 
 @router.post("/posts/{post_id}/cancel")
-async def cancel_post(post_id: uuid.UUID) -> dict:
+async def cancel_post(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     row = await db.fetchrow(
         "UPDATE posts SET trang_thai='da_huy', updated_at=now() "
         "WHERE id=$1 RETURNING *", post_id,
@@ -1694,7 +1699,7 @@ async def cancel_post(post_id: uuid.UUID) -> dict:
 
 
 @router.post("/posts/{post_id}/callback")
-async def post_callback(post_id: uuid.UUID, body: CallbackIn) -> dict:
+async def post_callback(post_id: uuid.UUID, body: CallbackIn, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     """n8n gọi về đây sau khi workflow chạy xong."""
     row = await post_service.ghi_nhan_callback(
         str(post_id), body.kenh, body.ok, body.url, body.detail
@@ -1705,7 +1710,7 @@ async def post_callback(post_id: uuid.UUID, body: CallbackIn) -> dict:
 
 
 @router.post("/posts/{post_id}/metrics")
-async def add_metrics(post_id: uuid.UUID, body: SoLieuIn) -> dict:
+async def add_metrics(post_id: uuid.UUID, body: SoLieuIn, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     return await analytics.ghi_so_lieu(
         str(post_id), body.kenh, luot_xem=body.luot_xem,
         luot_thich=body.luot_thich, binh_luan=body.binh_luan,
@@ -1714,12 +1719,12 @@ async def add_metrics(post_id: uuid.UUID, body: SoLieuIn) -> dict:
 
 
 @router.get("/posts/{post_id}/metrics")
-async def get_metrics(post_id: uuid.UUID) -> dict:
+async def get_metrics(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     return {"so_lieu": await analytics.moi_nhat_theo_bai(str(post_id))}
 
 
 @router.get("/analytics/khach")
-async def analytics_khach(ngay: int = 30) -> dict:
+async def analytics_khach(ngay: int = 30, _quyen: dict = Depends(can_quyen("bao_cao.doc"))) -> dict:
     """
     Khách đến từ đâu, và mỗi kênh chạy tốt tới mức nào.
 
@@ -1814,14 +1819,14 @@ async def analytics_khach(ngay: int = 30) -> dict:
 
 
 @router.get("/analytics")
-async def get_analytics(ngay: int = 30) -> dict:
+async def get_analytics(ngay: int = 30, _quyen: dict = Depends(can_quyen("bao_cao.doc"))) -> dict:
     tq = await analytics.tong_quan(ngay)
     tq["bai_tot_nhat"] = await analytics.bai_tot_nhat()
     return tq
 
 
 @router.get("/catalog/products")
-async def catalog_products() -> dict:
+async def catalog_products(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
     """
     Danh sách gọn cho ô gợi ý sản phẩm khi soạn bài hoặc đặt video.
 
@@ -1858,7 +1863,7 @@ class ChonNickIn(BaseModel):
 
 
 @router.get("/zalo/accounts")
-async def zalo_accounts() -> dict:
+async def zalo_accounts(_quyen: dict = Depends(can_quyen("kenh.doc"))) -> dict:
     ds = await zalo_acc.danh_sach()
     return {
         "accounts": ds,
@@ -1871,7 +1876,7 @@ async def zalo_accounts() -> dict:
 
 
 @router.post("/zalo/account")
-async def set_default_account(body: ChonNickIn) -> dict:
+async def set_default_account(body: ChonNickIn, _quyen: dict = Depends(can_quyen("kenh.sua"))) -> dict:
     """Đặt nick mặc định cho mọi hội thoại chưa ghim riêng."""
     if body.zalo_account_id and not await zalo_acc.hop_le(body.zalo_account_id):
         raise HTTPException(422, "Nick không tồn tại hoặc đang không kết nối")
@@ -1882,7 +1887,7 @@ async def set_default_account(body: ChonNickIn) -> dict:
 
 
 @router.post("/conversations/{conv_id}/account")
-async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn) -> dict:
+async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn, _quyen: dict = Depends(can_quyen("hoi_thoai.nhan"))) -> dict:
     """Ghim một nick cho riêng hội thoại này. Chuỗi rỗng = bỏ ghim."""
     acc = body.zalo_account_id or None
     if acc and not await zalo_acc.hop_le(acc):
@@ -1899,7 +1904,7 @@ async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn) -> dict
 
 
 @router.get("/channels")
-async def list_channels() -> dict:
+async def list_channels(_quyen: dict = Depends(can_quyen("kenh.doc"))) -> dict:
     """
     Kênh nào đang nối vào hệ thống, và đi bằng cơ chế gì.
 
@@ -1933,7 +1938,7 @@ class ChienDichIn(BaseModel):
 
 
 @router.post("/campaigns")
-async def create_campaign(body: ChienDichIn) -> dict:
+async def create_campaign(body: ChienDichIn, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     """
     Một ý tưởng -> mỗi nền tảng một bài viết riêng, tất cả vào hàng chờ duyệt.
 
@@ -1953,7 +1958,7 @@ async def create_campaign(body: ChienDichIn) -> dict:
 
 
 @router.post("/posts/approve-all")
-async def approve_all(trang_thai: str = "cho_duyet") -> dict:
+async def approve_all(trang_thai: str = "cho_duyet", _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     """
     Duyệt hàng loạt — nhưng vẫn là NGƯỜI bấm, không phải hệ thống tự quyết.
 
@@ -1974,7 +1979,7 @@ async def approve_all(trang_thai: str = "cho_duyet") -> dict:
 
 
 @router.get("/posts/{post_id}/kit")
-async def post_kit(post_id: uuid.UUID) -> dict:
+async def post_kit(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_dung.doc"))) -> dict:
     """
     Gói mọi thứ cần để một người đăng bài THỦ CÔNG trong một phút.
 
@@ -2017,7 +2022,7 @@ async def post_kit(post_id: uuid.UUID) -> dict:
 
 
 @router.get("/posts/{post_id}/video")
-async def post_video(post_id: uuid.UUID):
+async def post_video(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_dung.doc"))):
     """Tải video của bài về máy để đăng thủ công."""
     p = await db.fetchrow(
         "SELECT v.file_path FROM posts p JOIN videos v ON v.id = p.video_id "
@@ -2032,7 +2037,7 @@ async def post_video(post_id: uuid.UUID):
 
 
 @router.post("/posts/{post_id}/mark-posted")
-async def mark_posted(post_id: uuid.UUID, body: CallbackIn) -> dict:
+async def mark_posted(post_id: uuid.UUID, body: CallbackIn, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
     """
     Người đã đăng tay xong thì đánh dấu ở đây, kèm link bài thật.
 
@@ -2057,7 +2062,7 @@ async def mark_posted(post_id: uuid.UUID, body: CallbackIn) -> dict:
 # ---------------------------------------------------------------
 
 @router.get("/cost")
-async def cost_report(ngay: int = 7) -> dict:
+async def cost_report(ngay: int = 7, _quyen: dict = Depends(can_quyen("bao_cao.doc"))) -> dict:
     """Chi phí theo ngày, theo model, và các hội thoại tốn nhất."""
     theo_ngay = await db.fetch(
         """
@@ -2154,7 +2159,7 @@ class XoaDuLieuIn(BaseModel):
 
 
 @router.get("/pdpd/{sdt}")
-async def pdpd_tra_cuu(sdt: str) -> dict:
+async def pdpd_tra_cuu(sdt: str, _quyen: dict = Depends(can_quyen("khach.pii"))) -> dict:
     """Hệ thống đang giữ những gì về số điện thoại này."""
     try:
         return await du_lieu_ca_nhan.tra_cuu(sdt)
@@ -2164,7 +2169,7 @@ async def pdpd_tra_cuu(sdt: str) -> dict:
 
 @router.post("/pdpd/{sdt}/xoa")
 async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
-                   nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+                   nguoi: dict = Depends(can_quyen("khach.xoa"))) -> dict:
     """
     Thực hiện yêu cầu xoá. KHÔNG HOÀN TÁC ĐƯỢC.
 
@@ -2186,7 +2191,7 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
 
 
 @router.get("/pdpd")
-async def pdpd_tong_quan() -> dict:
+async def pdpd_tong_quan(_quyen: dict = Depends(can_quyen("khach.pii"))) -> dict:
     """Chính sách lưu trữ đang áp dụng và số bản ghi sắp quá hạn."""
     return {
         **await du_lieu_ca_nhan.don_theo_thoi_han(chi_dem=True),
@@ -2199,7 +2204,7 @@ async def pdpd_tong_quan() -> dict:
 
 
 @router.post("/pdpd/don-theo-han")
-async def pdpd_don() -> dict:
+async def pdpd_don(_quyen: dict = Depends(can_quyen("khach.pii"))) -> dict:
     """Dọn ngay hội thoại quá thời hạn, không chờ vòng lặp hằng ngày."""
     return await du_lieu_ca_nhan.don_theo_thoi_han()
 
@@ -2272,7 +2277,7 @@ async def doi_mat_khau(body: DoiMatKhauIn,
 
 
 @router.get("/nguoi-dung")
-async def danh_sach_nguoi_dung(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
+async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -> dict:
     rows = await db.fetch(
         "SELECT id, ten_dang_nhap, ho_ten, vai_tro, khoa, tao_luc, dang_nhap_cuoi "
         "FROM nguoi_dung ORDER BY tao_luc"
@@ -2287,7 +2292,7 @@ async def danh_sach_nguoi_dung(_: dict = Depends(bat_buoc_quan_tri)) -> dict:
 
 @router.post("/nguoi-dung")
 async def them_nguoi_dung(body: TaoNguoiDungIn,
-                          nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+                          nguoi: dict = Depends(can_quyen("nguoi_dung.sua"))) -> dict:
     try:
         r = await xac_thuc.tao_nguoi_dung(
             body.ten_dang_nhap, body.mat_khau, body.ho_ten, body.vai_tro
@@ -2301,7 +2306,7 @@ async def them_nguoi_dung(body: TaoNguoiDungIn,
 
 @router.post("/nguoi-dung/{ten}/khoa")
 async def khoa_nguoi_dung(ten: str, khoa: bool = True,
-                          nguoi: dict = Depends(bat_buoc_quan_tri)) -> dict:
+                          nguoi: dict = Depends(can_quyen("nguoi_dung.sua"))) -> dict:
     """
     Khoá tài khoản và ĐÁ MỌI PHIÊN ĐANG MỞ.
 
@@ -2383,6 +2388,7 @@ async def staff_send_file(
     chu_thich: str = Form(""),
     tep: UploadFile | None = File(None),
     _nguoi: dict = Depends(bat_buoc_dang_nhap),
+    _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi")),
 ) -> dict:
     """
     Gửi ảnh sản phẩm theo mã, hoặc tải một tệp lên rồi gửi.

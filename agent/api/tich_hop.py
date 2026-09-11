@@ -49,13 +49,14 @@ proxy.
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 from starlette.websockets import WebSocketDisconnect
 
 from ..config import settings
 
 from agent.api import tich_hop_kho
+from agent.api.routes import can_quyen
 
 router = APIRouter(prefix="/tich-hop", tags=["tich-hop"])
 
@@ -174,12 +175,14 @@ async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
     "/{ten}/{duong:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
 )
-async def proxy(request: Request, ten: str, duong: str = "") -> Response:
+async def proxy(request: Request, ten: str, duong: str = "",
+                _: dict = Depends(can_quyen("tich_hop.doc"))) -> Response:
     return await chuyen_tiep(request, ten, duong)
 
 
 @router.api_route("/{ten}", methods=["GET", "HEAD"])
-async def proxy_goc(request: Request, ten: str) -> Response:
+async def proxy_goc(request: Request, ten: str,
+                    _: dict = Depends(can_quyen("tich_hop.doc"))) -> Response:
     return await chuyen_tiep(request, ten, "")
 
 

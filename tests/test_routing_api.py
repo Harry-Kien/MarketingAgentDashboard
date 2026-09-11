@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.api.inbox import get_routing_service, router
-from agent.api.routes import bat_buoc_dang_nhap
+from agent.api.routes import nguoi_da_dang_nhap
+from conftest import nguoi_thu
 from agent.omnichannel.routing import ConversationRoutingState
 
 
@@ -33,8 +34,8 @@ def _client():
     app = FastAPI()
     app.include_router(router)
     service = _Service()
-    user = {"id": uuid4(), "vai_tro": "nhan_vien"}
-    app.dependency_overrides[bat_buoc_dang_nhap] = lambda: user
+    user = nguoi_thu("hoi_thoai.doc", "hoi_thoai.nhan", id=uuid4())
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_routing_service] = lambda: service
     return TestClient(app), service, user
 

@@ -303,9 +303,19 @@ class PostgresContactRepository:
                         WHERE conversation.contact_id = contact.id) AS conversation_count
                 FROM contacts contact
                 LEFT JOIN contact_points point ON point.contact_id = contact.id
+                -- `$2` là user_id, `$3` là cờ is_admin.
+                --
+                -- Dòng này từng viết `$3`, tức so một cột uuid với một cờ
+                -- boolean. Postgres suy ra $3 là uuid từ phép so ấy, rồi
+                -- `WHERE $3 OR ...` ở trên nổ: "argument of OR must be type
+                -- boolean, not type uuid".
+                --
+                -- Nghĩa là `merge/preview` CHƯA BAO GIỜ chạy được. Không ai
+                -- biết vì không màn hình nào gọi tới, và test duy nhất của
+                -- nó dùng kho GIẢ nên truy vấn thật không hề được chạy.
                 LEFT JOIN account_memberships membership
                   ON membership.account_id = point.channel_account_id
-                 AND membership.user_id = $3
+                 AND membership.user_id = $2
                 WHERE contact.id = ANY($1::uuid[])
                 GROUP BY contact.id
                 """,

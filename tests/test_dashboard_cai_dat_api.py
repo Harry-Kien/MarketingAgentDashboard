@@ -43,8 +43,42 @@ def test_kiem_tra_gui_gia_tri_dang_go_chua_luu():
     assert re.search(r"/cai-dat-api/kiem-tra[\s\S]{0,300}giaTriApiDangGo\(", JS)
 
 
+def _nhanh_view(ten: str) -> str:
+    """
+    Thân của nhánh `if (state.view === "<ten>") { ... }` trong vòng làm mới.
+
+    Trước đây test dưới đo KHOẢNG CÁCH 120 ký tự giữa `state.view` và lời
+    gọi. Nó đỏ ngay khi có người thêm một loader khác vào cùng nhánh — một
+    thay đổi hoàn toàn đúng — và người sửa sẽ nới con số ấy chứ không đọc
+    lại ý định. Đọc đúng thân nhánh thì không có con số nào để nới.
+    """
+    i = JS.index(f'state.view === "{ten}"')
+    j = JS.index("{", i)
+    sau, k = 0, j
+    while k < len(JS):
+        if JS[k] == "{":
+            sau += 1
+        elif JS[k] == "}":
+            sau -= 1
+            if sau == 0:
+                break
+        k += 1
+    return JS[j:k + 1]
+
+
 def test_loader_goi_khi_mo_man_cau_hinh():
-    assert re.search(r'state\.view === "cauhinh"[\s\S]{0,120}loadCaiDatApi\(\)', JS)
+    assert "loadCaiDatApi()" in _nhanh_view("cauhinh")
+
+
+def test_bo_doc_nhanh_view_khong_om_ca_file():
+    """
+    Canh chính bộ đọc trên: ôm quá tay thì mọi `assert ... in` đều đúng, và
+    test kia xanh vĩnh viễn dù nhánh đã mất lời gọi.
+    """
+    than = _nhanh_view("cauhinh")
+    assert than.startswith("{") and than.endswith("}")
+    assert len(than) < 600, "đọc lố sang phần khác của vòng làm mới"
+    assert "loadCongViec()" not in than, "ôm nhầm cả nhánh của màn khác"
 
 
 def test_khong_tu_kiem_khi_mo_trang():

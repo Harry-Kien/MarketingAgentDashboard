@@ -13,7 +13,9 @@ luồng tự động đầy đủ, nhưng mặc định TẮT và không nên b�
 """
 from __future__ import annotations
 
+import hmac
 import re
+import secrets
 from pathlib import Path
 
 from .. import db
@@ -106,12 +108,16 @@ async def dang_bai(post_id: str, *, boi: str = "nguoi") -> dict:
     video = await _duong_dan_video(post["video_id"])
 
     ket_qua: dict[str, dict] = dict(post.get("ket_qua") or {})
+    # MỘT vé cho cả lượt đẩy, dùng chung cho mọi kênh của bài này: n8n gọi
+    # về một lần cho mỗi kênh, và vé chỉ mở đúng bài này.
+    ve = await cap_ve_callback(str(post_id))
     for kenh in post["kenh"]:
         adapter = await registry.chon(kenh)
         res = await adapter.publish(PublishTarget(
             post_id=str(post_id), kenh=kenh,
             tieu_de=post["tieu_de"], noi_dung=post["noi_dung"],
             hashtags=list(post["hashtags"] or []), video_path=video,
+            callback_token=ve,
         ))
         ket_qua[kenh] = {
             "ok": res.ok, "url": res.url, "detail": res.detail,
@@ -159,6 +165,44 @@ async def duyet(post_id: str, *, boi: str = "nguoi") -> dict:
     return await dang_bai(post_id, boi=boi)
 
 
+async def cap_ve_callback(post_id: str) -> str:
+    """
+    Cấp một vé MỚI cho bài này và trả về.
+
+    Cấp lại mỗi lần đẩy sang n8n, không tái dùng vé cũ: đẩy lại một bài
+    nghĩa là lần trước có gì đó không xong, và vé của lần ấy có thể đã nằm
+    trong log của một hệ thống khác.
+    """
+    ve = secrets.token_urlsafe(32)
+    await db.execute(
+        "UPDATE posts SET callback_token=$2 WHERE id=$1", post_id, ve)
+    return ve
+
+
+async def kiem_ve_callback(post_id: str, ve: str) -> bool:
+    """
+    Vé có đúng không. So bằng `compare_digest`, không bằng `==`.
+
+    So chuỗi thường thoát ra ở byte đầu khác nhau, và thời gian thoát ra rò
+    rỉ từng byte của vé đúng — đủ để dò ra cả vé nếu kiên nhẫn.
+
+    KHÔNG tiêu huỷ vé ở đây. Một bài đăng lên NHIỀU kênh và n8n gọi về MỘT
+    LẦN CHO MỖI KÊNH; xoá vé sau lần gọi đầu là kết quả của các kênh còn
+    lại rơi hết vào 401. Vé sống tới khi bài không còn kênh nào chờ — xem
+    `ghi_nhan_callback`.
+    """
+    # Vé rỗng thì trả lời được ngay, không cần hỏi CSDL. Không chỉ là
+    # nhanh hơn: đường này mở cho cả internet, nên mỗi lần gọi không vé mà
+    # vẫn truy vấn là biến nó thành một cần gạt đơn giản để làm mệt CSDL.
+    if not ve:
+        return False
+    r = await db.fetchrow("SELECT callback_token FROM posts WHERE id=$1", post_id)
+    that = (r or {}).get("callback_token") or ""
+    if not that:
+        return False
+    return hmac.compare_digest(str(that), str(ve))
+
+
 async def ghi_nhan_callback(post_id: str, kenh: str, ok: bool,
                             url: str = "", detail: str = "") -> dict | None:
     """n8n / nền tảng gọi về báo kết quả thật sau khi xử lý nền."""
@@ -171,9 +215,13 @@ async def ghi_nhan_callback(post_id: str, kenh: str, ok: bool,
     con_cho = any(v.get("cho_xu_ly") for v in ket_qua.values())
     co_ok = any(v.get("ok") for v in ket_qua.values())
     trang_thai = "dang_dang" if con_cho else ("da_dang" if co_ok else "loi")
+    # Hết kênh chờ thì vé hết việc. Giữ lại một vé không còn dùng là giữ
+    # một chìa khoá cho một cánh cửa không còn gì sau nó — nhưng chìa vẫn
+    # mở được, và nó nằm trong log của n8n.
     row = await db.fetchrow(
-        "UPDATE posts SET trang_thai=$2, ket_qua=$3, updated_at=now() "
-        "WHERE id=$1 RETURNING *", post_id, trang_thai, ket_qua,
+        "UPDATE posts SET trang_thai=$2, ket_qua=$3, updated_at=now(), "
+        "       callback_token = CASE WHEN $4 THEN callback_token ELSE NULL END "
+        "WHERE id=$1 RETURNING *", post_id, trang_thai, ket_qua, con_cho,
     )
     if ok and url:
         await db.execute(

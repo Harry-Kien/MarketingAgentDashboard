@@ -45,8 +45,23 @@ class N8nPublisher(PublishAdapter):
             # chọn cách nào tiện.
             "video_path": str(target.video_path) if target.video_path else None,
             "video_url": target.video_url() or None,
-            "callback_url": f"{settings.public_base_url}/api/posts/{target.post_id}/callback",
         }
+
+        # CALLBACK CHỈ GỬI KHI CÓ VÉ.
+        #
+        # Trước bản này luôn gửi một URL trần. Đường ấy nằm sau chốt đăng
+        # nhập `/api/*`, n8n không có cookie phiên, nên MỌI lần gọi về đều
+        # 401 — bài vẫn được đăng thật lên nền tảng, chỉ có kết quả là không
+        # bao giờ ghi lại. Dashboard hiện "đang đăng" vĩnh viễn.
+        #
+        # Không có vé thì thà KHÔNG gửi còn hơn gửi một đường chắc chắn
+        # hỏng: n8n bỏ qua bước báo về, thay vì ghi một lỗi 401 vào log của
+        # nó mà không ai ở phía ta đọc.
+        if target.callback_token:
+            body["callback_url"] = (
+                f"{settings.public_base_url}/api/posts/{target.post_id}"
+                f"/callback?token={target.callback_token}"
+            )
         headers = {}
         if settings.n8n_auth_header:
             headers["Authorization"] = settings.n8n_auth_header

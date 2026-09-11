@@ -43,6 +43,10 @@ class PublishTarget:
     hashtags: list[str] = field(default_factory=list)
     video_path: Path | None = None
     anh_paths: list[Path] = field(default_factory=list)
+    # Vé một lần để n8n gọi báo kết quả về. Rỗng nghĩa là chưa cấp — và khi
+    # ấy KHÔNG được gửi `callback_url` trần cho n8n: đường ấy sẽ trả 401,
+    # n8n coi như hỏng, còn ta thì không biết gì.
+    callback_token: str = ""
 
     def video_url(self) -> str:
         """

@@ -237,7 +237,7 @@ erDiagram
         JSONB kenh
         TEXT trang_thai
         TIMESTAMPTZ lich_dang
-        _ con_2_cot_nua
+        _ con_3_cot_nua
     }
     post_metrics {
         BIGSERIAL id

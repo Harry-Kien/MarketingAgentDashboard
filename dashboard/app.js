@@ -213,6 +213,277 @@ function cell(label, value, unit, ratio, tone) {
   </div>`;
 }
 
+/* ================= Tin không gửi được, và khách chưa có chủ =================
+ *
+ * Hai ô trên dải chỉ số Ca trực đếm hai thứ này từ lâu. Không có gì phía
+ * sau con số — và một con số không bấm được là một con số người ta học
+ * cách bỏ qua.
+ *
+ * CLAUDE.md xếp "outbox bỏ cuộc sau 8 lần thử mà không báo ai" vào bảng
+ * lỗi nghiêm trọng nhất: tin nhân viên chết, khách chờ mãi không có trả
+ * lời. Đếm được là nửa đường; nửa còn lại là gửi lại được.
+ */
+
+function dongChet(j) {
+  const loi = j.last_error ? String(j.last_error).slice(0, 160) : "không rõ lý do";
+  return `<div class="row">
+    <span class="row__flag row__flag--halt"></span>
+    <div class="row__main">
+      <b>${esc(j.account_name || j.channel || "kênh đã xoá")}</b>
+      <span class="row__sub">${esc(loi)}</span>
+      <span class="row__sub">${j.attempts}/${j.max_attempts} lần thử · ${clock(j.updated_at)}</span>
+    </div>
+    <div class="row__side">
+      <span class="row__nut">
+        <button type="button" class="btn btn--sm" data-guilai="${esc(j.id)}">Gửi lại</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-bochet="${esc(j.id)}">Bỏ qua</button>
+      </span>
+    </div>
+  </div>`;
+}
+
+async function loadTinChet() {
+  /* Quyền thiếu KHÔNG được làm đỏ cả trang: nhân viên thường không có
+     `outbox.doc`, và với họ panel này đơn giản là không tồn tại. */
+  if (!state.toiQuyen.has("outbox.doc")) return;
+  let ds = [];
+  try {
+    ds = (await api("/outbox/jobs?status=dead&limit=50")).items || [];
+  } catch { return; }
+  $("#pnChet").classList.toggle("is-hidden", ds.length === 0);
+  if (!ds.length) return;
+  $("#dsChet").innerHTML = ds.map(dongChet).join("");
+  $("#chetNote").textContent =
+    `${ds.length} tin khách không nhận được · gửi lại hoặc bỏ qua`;
+}
+
+async function loadVoChu() {
+  if (!state.toiQuyen.has("khach.doc")) return;
+  let d = { khach: [] };
+  try { d = await api("/khach-vo-chu?limit=50"); } catch { return; }
+  const ds = d.khach || [];
+  $("#pnVoChu").classList.toggle("is-hidden", ds.length === 0);
+  if (!ds.length) return;
+  $("#dsVoChu").innerHTML = ds.map((k) => `<div class="row">
+    <span class="row__flag row__flag--assist"></span>
+    <div class="row__main">
+      <b>${esc(k.display_name || "khách chưa có tên")}</b>
+      <span class="row__sub">vào hệ thống ${ngayTu(k.first_seen)} ngày trước · nhắn lần cuối ${clock(k.last_seen)}</span>
+    </div>
+    <div class="row__side">
+      <span class="row__nut">
+        <button type="button" class="btn btn--sm" data-giaovc="${esc(k.id)}">Giao cho…</button>
+      </span>
+    </div>
+  </div>`).join("");
+  /* Nói SỐ TỔNG khi danh sách bị cắt: "50 khách" trong khi thật ra 214 là
+     một con số làm người ta yên tâm sai chỗ. */
+  $("#voChuNote").textContent = d.so > ds.length
+    ? `${d.so} khách chưa ai chịu trách nhiệm · đang hiện ${ds.length} cũ nhất`
+    : `${d.so} khách chưa ai chịu trách nhiệm`;
+}
+
+$("#dsChet")?.addEventListener("click", async (e) => {
+  const lai = e.target.closest("[data-guilai]");
+  const bo = e.target.closest("[data-bochet]");
+  const nut = lai || bo;
+  if (!nut) return;
+  nut.disabled = true;
+  try {
+    if (lai) {
+      await api(`/outbox/jobs/${lai.dataset.guilai}/retry`, { method: "POST" });
+      toast("Đã xếp lại hàng đợi. Theo dõi vài giây xem nó đi được chưa.");
+    } else {
+      /* Bỏ qua là NÓI RA rằng khách sẽ không bao giờ nhận tin này. Không
+         hỏi "có chắc không" — câu ấy không mang thông tin nào. */
+      if (!confirm("Bỏ qua tin này? Khách sẽ KHÔNG BAO GIỜ nhận được nó."
+                   + " Việc này không hoàn tác được.")) { nut.disabled = false; return; }
+      await api(`/outbox/jobs/${bo.dataset.bochet}/cancel`, { method: "POST" });
+      toast("Đã bỏ qua.");
+    }
+    await loadTinChet();
+    await loadOverview();
+  } catch (err) {
+    toast(err.message, true);
+    nut.disabled = false;
+  }
+});
+
+$("#dsVoChu")?.addEventListener("click", async (e) => {
+  const g = e.target.closest("[data-giaovc]");
+  if (!g) return;
+  await giaoKhach(g.dataset.giaovc, "");
+  await loadVoChu();
+  await loadOverview();
+});
+
+/* ==================== Định tuyến tự động ====================
+ *
+ * `AutoRoutingWorker` chạy nền từ lâu (agent/main.py), nhưng không màn hình
+ * nào tạo được đội hay luật — nên mỗi vòng nó không tìm thấy luật nào và
+ * không làm gì. Một hệ thống con hoàn chỉnh nằm ngủ, và không có gì trên
+ * dashboard nói rằng nó tồn tại.
+ *
+ * KHÔNG thay cho "giao khách cho nhân viên". Giao khách gán MỘT KHÁCH lâu
+ * dài cho một người; định tuyến chia TỪNG HỘI THOẠI mới cho người đang rảnh.
+ * Hai việc khác nhau, chạy song song được.
+ */
+
+const dinhTuyen = { doi: [], luat: [], sla: [], nguoi: [], kenh: [] };
+
+function dtTenDoi(id) {
+  const d = dinhTuyen.doi.find((x) => x.id === id);
+  return d ? d.name : "đội đã xoá";
+}
+
+function dtTenKenh(id) {
+  if (!id) return "mọi kênh";
+  const k = dinhTuyen.kenh.find((x) => x.id === id);
+  return k ? (k.display_name || k.channel) : "kênh đã xoá";
+}
+
+const DT_MUC = { low: "thấp", normal: "thường", high: "cao", urgent: "gấp" };
+
+async function loadDinhTuyen() {
+  if (!state.toiQuyen.has("dinh_tuyen.doc")) return;
+  let c;
+  try { c = await api("/routing"); } catch (e) { toast(e.message, true); return; }
+  dinhTuyen.doi = c.teams || [];
+  dinhTuyen.luat = c.rules || [];
+  dinhTuyen.sla = c.sla_policies || [];
+
+  /* Hai danh sách phụ chỉ để đổ vào ô chọn. Lỗi ở đây KHÔNG được làm hỏng
+     cả panel: người không có `nguoi_dung.doc` vẫn phải xem được luật đang
+     chạy.
+
+     Nhưng lỗi cũng KHÔNG được nuốt im: ô chọn rỗng trông hệt như "chưa có
+     nhân viên nào", và người vận hành sẽ đi tạo nhân viên thay vì đi xem
+     mình thiếu quyền gì. `dtThieu` nói ra điều đó ngay trong ô chọn.
+
+     `/channel-accounts` trả về MẢNG chứ không phải `{items}` — đọc nhầm là
+     ô chọn kênh rỗng vĩnh viễn, không lỗi, không ai biết. */
+  dinhTuyen.loi = [];
+  try { dinhTuyen.nguoi = (await api("/nguoi-dung")).nguoi_dung || []; }
+  catch { dinhTuyen.nguoi = []; dinhTuyen.loi.push("nhân viên"); }
+  try { dinhTuyen.kenh = await api("/channel-accounts") || []; }
+  catch { dinhTuyen.kenh = []; dinhTuyen.loi.push("kênh"); }
+
+  const soLuat = dinhTuyen.luat.filter((r) => r.active).length;
+  /* Nói thẳng trạng thái NGỦ. "0 luật" là một con số; "không làm gì cả" là
+     một câu người vận hành hiểu được ngay. */
+  $("#dtTrangThai").textContent = soLuat
+    ? `${dinhTuyen.doi.length} đội · ${soLuat} luật đang chạy`
+    : "chưa có luật nào — bộ định tuyến KHÔNG làm gì";
+
+  $("#dtDoi").innerHTML = dinhTuyen.doi.length
+    ? dinhTuyen.doi.map((d) => `<div class="row">
+        <span class="row__flag row__flag--${d.status === "active" ? "auto" : "halt"}"></span>
+        <div class="row__main">
+          <b>${esc(d.name)}</b>
+          <span class="row__sub">${esc(d.description || "—")}</span>
+        </div>
+      </div>`).join("")
+    : '<p class="empty">Chưa có đội nào.</p>';
+
+  $("#dtLuat").innerHTML = dinhTuyen.luat.length
+    ? dinhTuyen.luat.map((r) => `<div class="row">
+        <span class="row__flag row__flag--${r.active ? "auto" : "halt"}"></span>
+        <div class="row__main">
+          <b>${esc(dtTenKenh(r.account_id))} → ${esc(dtTenDoi(r.team_id))}</b>
+          <span class="row__sub">mức ${esc(DT_MUC[r.priority] || "bất kỳ")} · trọng số ${r.weight}${r.active ? "" : " · đang tắt"}</span>
+        </div>
+      </div>`).join("")
+    : '<p class="empty">Chưa có luật nào — hội thoại nằm chờ người tự nhận.</p>';
+
+  $("#dtSla").innerHTML = dinhTuyen.sla.length
+    ? dinhTuyen.sla.map((s2) => `<div class="row">
+        <span class="row__flag row__flag--${s2.active ? "auto" : "halt"}"></span>
+        <div class="row__main">
+          <b>${esc(dtTenKenh(s2.account_id))} · mức ${esc(DT_MUC[s2.priority] || s2.priority)}</b>
+          <span class="row__sub">trả lời đầu ${s2.first_response_minutes} phút · xong ${s2.resolution_minutes} phút</span>
+        </div>
+      </div>`).join("")
+    : '<p class="empty">Chưa đặt hạn nào.</p>';
+
+  const oDoi = dinhTuyen.doi
+    .map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
+  $("#dtChonDoi").innerHTML = oDoi;
+  $("#dtLuatDoi").innerHTML = oDoi;
+  const dtThieu = (ten) => dinhTuyen.loi.includes(ten)
+    ? `<option value="">— không đọc được danh sách ${ten}, thiếu quyền? —</option>`
+    : "";
+  $("#dtChonNguoi").innerHTML = dtThieu("nhân viên") + dinhTuyen.nguoi
+    .filter((n) => !n.khoa)
+    .map((n) => `<option value="${esc(n.id)}">${esc(n.ho_ten || n.ten_dang_nhap)}</option>`)
+    .join("");
+  const oKenh = '<option value="">mọi kênh</option>' + dtThieu("kênh")
+    + dinhTuyen.kenh
+      .map((k) => `<option value="${esc(k.id)}">${esc(k.display_name || k.channel)}</option>`)
+      .join("");
+  $("#dtChonKenh").innerHTML = oKenh;
+  $("#dtSlaKenh").innerHTML = oKenh;
+}
+
+/* Gửi form rồi tải lại. Gom vào một hàm vì bốn form khác nhau đúng ở thân
+   yêu cầu, còn phần xử lý lỗi và khoá nút thì giống hệt — và chép bốn lần
+   là bốn chỗ để quên `finally`. */
+async function dtGui(form, duong, phuong_thuc, dung_than) {
+  const nut = form.querySelector("button[type=submit]");
+  nut.disabled = true;
+  try {
+    const d = Object.fromEntries(new FormData(form).entries());
+    await api(duong(d), { method: phuong_thuc, body: JSON.stringify(dung_than(d)) });
+    form.reset();
+    await loadDinhTuyen();
+    toast("Đã lưu.");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    nut.disabled = false;
+  }
+}
+
+$("#dtFormDoi")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  dtGui(e.currentTarget, () => "/routing/teams", "POST",
+        (d) => ({ name: d.name, description: d.description || "" }));
+});
+
+$("#dtFormNguoi")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  dtGui(e.currentTarget,
+        (d) => `/routing/teams/${d.team_id}/members/${d.user_id}`, "PUT",
+        (d) => ({ role: "agent", skills: [],
+                  max_active: Number(d.max_active) || 20, is_available: true }));
+});
+
+$("#dtFormLuat")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  /* `account_id` và `priority` rỗng phải thành null, KHÔNG phải chuỗi rỗng:
+     máy chủ hiểu null là "mọi kênh / mọi mức", còn chuỗi rỗng thì trượt
+     kiểm kiểu và trả 422 với một câu người vận hành không đọc được. */
+  dtGui(e.currentTarget, () => "/routing/rules", "POST", (d) => ({
+    account_id: d.account_id || null,
+    team_id: d.team_id,
+    priority: d.priority || null,
+    required_skills: [],
+    weight: Number(d.weight) || 100,
+    active: true,
+  }));
+});
+
+$("#dtFormSla")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  dtGui(e.currentTarget, () => "/routing/sla-policies", "PUT", (d) => ({
+    account_id: d.account_id || null,
+    priority: d.priority,
+    first_response_minutes: Number(d.first_response_minutes),
+    resolution_minutes: Number(d.resolution_minutes),
+    business_hours: {},
+    active: true,
+  }));
+});
+
 async function loadOverview() {
   const o = await api("/overview");
   applyRuntime(o.runtime);
@@ -865,6 +1136,109 @@ function chuKhach(contact) {
   return '<span class="pill pill--warn">chưa có chủ</span>';
 }
 
+/* ==================== Gộp khách trùng ====================
+ *
+ * Một người nhắn Zalo rồi nhắn Facebook là HAI contact trong CSDL, và không
+ * có gì tự nối lại. API gộp có đủ ba việc — xem trước, gộp, hoàn tác —
+ * nhưng không màn hình nào gọi tới, nên lịch sử của một khách nằm rải ở hai
+ * chỗ và người trực trả lời mà không thấy nửa còn lại.
+ *
+ * XEM TRƯỚC LÀ BẮT BUỘC, KHÔNG PHẢI TÙY CHỌN.
+ * Gộp dồn hội thoại và danh tính sang một bên rồi đánh dấu bên kia là đã
+ * gộp. Hoàn tác được, nhưng chỉ khi biết mình vừa gộp nhầm — mà gộp nhầm
+ * hai khách trùng tên thì không ai nhận ra. Nên nút Gộp chỉ hiện SAU khi đã
+ * xem trước, và xem trước nói rõ mỗi bên có bao nhiêu hội thoại, bao nhiêu
+ * danh tính.
+ */
+
+function gopDoO(ds) {
+  const o = $("#gopNguon");
+  if (!o) return;
+  const html = (ds || []).map((c) =>
+    `<option value="${esc(c.id)}">${esc(c.display_name || "Khách")}`
+    + ` · ${c.contact_point_count || 0} danh tính</option>`).join("");
+  o.innerHTML = html;
+  $("#gopDich").innerHTML = html;
+}
+
+$("#gopMo")?.addEventListener("click", () => {
+  const pn = $("#pnGop");
+  pn.classList.toggle("is-hidden");
+  if (!pn.classList.contains("is-hidden")) gopDoO(state.danhSachKhach);
+});
+
+$("#gopDong")?.addEventListener("click", () => {
+  $("#pnGop").classList.add("is-hidden");
+  $("#gopKetQua").innerHTML = "";
+});
+
+$("#gopXem")?.addEventListener("click", async () => {
+  const nguon = $("#gopNguon").value;
+  const dich = $("#gopDich").value;
+  if (!nguon || !dich) return;
+  if (nguon === dich) {
+    toast("Hai ô đang chọn cùng một khách.", true);
+    return;
+  }
+  try {
+    const d = await api(`/contacts/merge/preview?source_id=${encodeURIComponent(nguon)}`
+                        + `&target_id=${encodeURIComponent(dich)}`);
+    const ben = (t, x) => `<div class="row">
+      <span class="row__flag row__flag--${t === "nguon" ? "halt" : "auto"}"></span>
+      <div class="row__main">
+        <b>${esc(x.display_name || "Khách")}</b>
+        <span class="row__sub">${t === "nguon" ? "SẼ BIẾN MẤT khỏi danh sách" : "GIỮ LẠI, nhận hết về đây"}</span>
+        <span class="row__sub">${x.conversation_count} hội thoại · ${x.point_count} danh tính</span>
+      </div>
+    </div>`;
+    /* `can_manage` false nghĩa là người này không quản được mọi kênh của cả
+       hai khách. Máy chủ sẽ từ chối — nói trước ở đây thay vì để họ điền
+       xong lý do rồi mới ăn 403. */
+    $("#gopKetQua").innerHTML = ben("nguon", d.source) + ben("dich", d.target)
+      /* Câu cảnh báo là `panel__note`, KHÔNG phải một `.row` nữa: `.row__main`
+         không có `<b>` thì co lại gần bằng không và chữ biến mất — nhìn trên
+         trình duyệt mới thấy, đọc mã thì không. */
+      + (d.can_manage
+        ? `<p class="panel__note">Hoàn tác được sau khi gộp, nhưng chỉ khi bạn
+             nhận ra mình gộp nhầm — nên xem kỹ hai dòng trên.</p>
+           <div class="row__nut">
+             <button type="button" class="btn btn--sm btn--halt" id="gopLam">Gộp</button>
+           </div>`
+        : `<p class="empty">Bạn không quản lý mọi kênh của hai khách này, nên
+             không gộp được. Nhờ quản trị làm.</p>`);
+
+    $("#gopLam")?.addEventListener("click", async () => {
+      const ly_do = prompt("Vì sao gộp? (ghi vào lịch sử, để hoàn tác còn hiểu được)",
+                           "Cùng một người, hai kênh");
+      if (!ly_do) return;
+      const nut = $("#gopLam");
+      nut.disabled = true;
+      try {
+        /* Gửi kèm `version` đọc được lúc xem trước. Ai đó sửa một trong hai
+           khách giữa lúc xem và lúc bấm thì máy chủ trả 409 và KHÔNG gộp —
+           đúng hơn là gộp theo một bản xem trước đã cũ. */
+        const r = await api("/contacts/merge", {
+          method: "POST",
+          body: JSON.stringify({
+            source_id: d.source.id, target_id: d.target.id, reason: ly_do,
+            expected_source_version: d.source.version,
+            expected_target_version: d.target.version,
+          }),
+        });
+        toast(`Đã gộp. Hoàn tác được bằng mã ${r.merge_id.slice(0, 8)}…`);
+        $("#gopKetQua").innerHTML = "";
+        $("#pnGop").classList.add("is-hidden");
+        await loadContacts();
+      } catch (e) {
+        toast(e.ma === 409
+          ? "Một trong hai khách vừa bị người khác sửa. Xem trước lại."
+          : e.message, true);
+        nut.disabled = false;
+      }
+    });
+  } catch (e) { toast(e.message, true); }
+});
+
 async function loadContacts() {
   const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}`);
   /* Lọc Ở PHÍA GIAO DIỆN là có chủ ý và chỉ hợp lệ vì nó KHÔNG phải lớp bảo
@@ -875,7 +1249,9 @@ async function loadContacts() {
     loc === "cua_toi" ? c.owner_user_id && c.owner_user_id === state.toiId
     : loc === "vo_chu" ? !c.owner_user_id
     : true);
+  state.danhSachKhach = contacts;
   $("#c-khachhang").textContent = contacts.length || "";
+  gopDoO(contacts);
   $("#contactlist").innerHTML = hien.length ? hien.map((contact) => `
     <button type="button" class="row row--avatar ${state.openContact === contact.id ? "is-on" : ""}" data-contact="${contact.id}">
       <span class="avatar">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
@@ -935,7 +1311,9 @@ async function giaoKhach(id, chuHienTai) {
       });
       toast(`Đã giao cho ${nv.ho_ten || nv.ten_dang_nhap}.`);
     }
-    await loadContacts();
+    // Hàm này gọi được từ hai màn. Tải lại danh bạ khi đang đứng ở Ca trực
+    // là một request vô ích ghi vào một khung không ai nhìn.
+    if (state.view === "khachhang") await loadContacts();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -3011,6 +3389,7 @@ $("#nsFormNguoi")?.addEventListener("submit", async (e) => {
 async function refresh() {
   try {
     await loadOverview();
+    if (state.view === "ca") { await loadTinChet(); await loadVoChu(); }
     if (state.view === "hoithoai") await loadConversations();
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
@@ -3025,7 +3404,7 @@ async function refresh() {
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }

@@ -5,8 +5,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
-                     Response, UploadFile)
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     Request, Response, UploadFile)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -1739,8 +1739,26 @@ async def cancel_post(post_id: uuid.UUID, _quyen: dict = Depends(can_quyen("noi_
 
 
 @router.post("/posts/{post_id}/callback")
-async def post_callback(post_id: uuid.UUID, body: CallbackIn, _quyen: dict = Depends(can_quyen("noi_dung.duyet"))) -> dict:
-    """n8n gọi về đây sau khi workflow chạy xong."""
+async def post_callback(post_id: uuid.UUID, body: CallbackIn,
+                        token: str = Query("")) -> dict:
+    """
+    n8n gọi về đây sau khi workflow chạy xong.
+
+    KHÔNG đòi đăng nhập, và KHÔNG đòi quyền. Bên gọi là n8n — một tiến
+    trình, không phải người — và nó không có cookie phiên. Trước bản này
+    đường này nằm sau cả hai chốt, nên mọi lần n8n gọi về đều nhận 401:
+    bài vẫn được đăng thật lên nền tảng, chỉ có kết quả là không bao giờ
+    ghi lại. Không nổ, không nhật ký, dashboard hiện "đang đăng" mãi.
+
+    Chốt thay thế là VÉ MỘT LẦN cấp lúc đẩy bài sang n8n, so bằng
+    `compare_digest`. Vé chỉ mở đúng bài của nó, và biến mất khi bài không
+    còn kênh nào chờ. Vé sai hay thiếu -> 401, không phải 404: 404 nói cho
+    người dò biết bài nào có thật.
+    """
+    if not await post_service.kiem_ve_callback(str(post_id), token):
+        await db.log_event("post.callback_ve_sai", actor="n8n",
+                           ref_id=str(post_id))
+        raise HTTPException(401, "Vé callback không hợp lệ")
     row = await post_service.ghi_nhan_callback(
         str(post_id), body.kenh, body.ok, body.url, body.detail
     )

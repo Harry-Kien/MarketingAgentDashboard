@@ -104,6 +104,15 @@ _DUONG_MO_DUOC_PHEP = {
     # Meta gọi vào và không mang cookie của ta. Chốt thay thế là `state`
     # dùng một lần, sinh ở /start — nơi VẪN đòi quyền quản trị.
     "/api/connect/meta/callback": "state dùng một lần thay cho cookie",
+    # Zalo OA, y hệt Meta nhưng chốt mạnh hơn một bậc: state CỘNG
+    # `code_verifier` của PKCE, cả hai sinh ở /start nơi vẫn đòi `kenh.noi`.
+    "/api/connect/zalo-oa/callback": "state + PKCE thay cho cookie",
+}
+
+# Đường mở khai bằng MẪU, vì có tham số trong path nên không so bằng `==`.
+_MAU_MO_DUOC_PHEP = {
+    r"^/api/posts/[0-9a-fA-F-]{36}/callback$":
+        "vé một lần cấp lúc đẩy bài sang n8n, so bằng compare_digest",
 }
 
 
@@ -121,6 +130,33 @@ def test_danh_sach_duong_mo_ngan_va_co_chu_dich():
     assert len(app_main._MO) <= 4, "danh sách đường mở đang phình ra"
     la = set(app_main._MO) - set(_DUONG_MO_DUOC_PHEP)
     assert not la, f"đường mở chưa được biện minh: {sorted(la)}"
+
+
+def test_moi_mau_mo_cung_phai_co_chu_dich():
+    """
+    Cùng quy tắc, cho các đường khai bằng regex.
+
+    Mẫu nguy hiểm hơn tên thẳng: một regex lỏng tay mở nhiều đường cùng lúc
+    mà đọc lướt không thấy. Nên nó cũng phải có tên trong một bảng, kèm lý
+    do và kèm chốt thay thế.
+    """
+    assert len(app_main._MO_MAU) <= 2, "danh sách mẫu mở đang phình ra"
+    la = {m.pattern for m in app_main._MO_MAU} - set(_MAU_MO_DUOC_PHEP)
+    assert not la, f"mẫu mở chưa được biện minh: {sorted(la)}"
+
+
+def test_mau_mo_khong_nhan_duong_ngoai_y_muon():
+    """
+    Regex mở phải neo hai đầu và không nhận đoạn thừa. `.*` lạc vào đây là
+    mở toang `/api`, và không có gì trên màn hình nói ra điều đó.
+    """
+    import re
+
+    for m in app_main._MO_MAU:
+        assert m.pattern.startswith("^") and m.pattern.endswith("$")
+        assert not re.search(r"\.\*", m.pattern), "mẫu mở chứa `.*`"
+        assert not m.match("/api/nguoi-dung")
+        assert not m.match("/api/posts/abc/callback")
 
 
 def test_moi_duong_mo_deu_thuc_su_ton_tai():

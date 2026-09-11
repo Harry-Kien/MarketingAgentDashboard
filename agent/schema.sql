@@ -247,10 +247,21 @@ CREATE TABLE IF NOT EXISTS posts (
     lich_dang   TIMESTAMPTZ,
     ket_qua     JSONB NOT NULL DEFAULT '{}',   -- {facebook:{ok,url,error}}
     tao_boi     TEXT NOT NULL DEFAULT 'agent',
+    -- Vé MỘT LẦN cho n8n gọi báo kết quả về. Xem 0025 để biết vì sao là vé
+    -- lưu trong bảng chứ không phải chữ ký HMAC.
+    callback_token TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_post_created ON posts (created_at DESC);
+-- Chỉ mục cho `callback_token` nằm TRONG migration 0025, cố ý không nằm ở đây.
+--
+-- File này chạy MỖI LẦN KHỞI ĐỘNG và chạy TRƯỚC migration (agent/db.py).
+-- Trên một CSDL đã có bảng `posts`, `CREATE TABLE IF NOT EXISTS` không thêm
+-- cột nào — nên một `CREATE INDEX` trên cột mới sẽ nổ ngay tại đây, trước
+-- khi migration kịp thêm cột. Ứng dụng không khởi động được.
+--
+-- Đã xảy ra thật trong lúc dựng chính tính năng này.
 CREATE INDEX IF NOT EXISTS idx_post_status  ON posts (trang_thai);
 CREATE INDEX IF NOT EXISTS idx_post_lich    ON posts (lich_dang)
     WHERE trang_thai = 'da_len_lich';

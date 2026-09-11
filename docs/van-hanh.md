@@ -505,6 +505,91 @@ vào `data/catalog.json` — nửa đó **không** nằm trong ERP, và cố ý 
 
 ---
 
+## Hai ô báo động trên Ca trực, và cửa đi kèm
+
+Dải chỉ số trang **Ca trực** chỉ hiện hai ô này **khi có việc** — bảng lúc
+nào cũng hiện "không có gì" là bảng người ta thôi đọc.
+
+### Tin KHÔNG gửi được
+
+Outbox thử tám lần rồi bỏ cuộc. Đây là một trong những kiểu hỏng tệ nhất
+của hệ thống: **tin nhân viên soạn đã chết, và khách vẫn đang chờ**.
+
+Panel ngay dưới ô đếm hiện từng tin: kênh nào, lỗi gì, thử mấy lần, lúc
+nào. Hai nút:
+
+- **Gửi lại** — xếp lại hàng đợi. Dùng khi đã chữa nguyên nhân (cấp lại
+  khoá kênh, bật lại sidecar, nối lại mạng).
+- **Bỏ qua** — nói rõ rằng khách sẽ *không bao giờ* nhận tin này. Không
+  hoàn tác được.
+
+Gửi lại một tin của hội thoại đã chuyển sang người thì máy chủ từ chối —
+nhân viên có thể đã tự nhắn tay rồi, và gửi lại là khách nhận hai lần.
+
+### Khách chưa có chủ
+
+Chủ dự án chọn *"mọi người thấy, không tự gán chủ"*, nên khách chưa giao sẽ
+**tích lại theo thời gian** — đó là hệ quả đã biết trước, không phải lỗi.
+Panel liệt kê họ, cũ nhất trước, kèm nút **Giao cho…**.
+
+Danh sách cắt ở 50 người nhưng con số trong tiêu đề là **tổng thật**: hiện
+"50 khách" trong khi thực tế 214 là làm người ta yên tâm sai chỗ.
+
+---
+
+## Gộp hai khách làm một
+
+**Khách hàng → Gộp trùng.**
+
+Một người nhắn Zalo rồi nhắn Facebook là **hai contact** trong hệ thống, và
+không có gì tự nối lại. Người trực mở hồ sơ Zalo của họ sẽ không thấy nửa
+lịch sử bên Facebook — rồi hỏi lại khách những thứ khách đã nói rồi.
+
+Ba bước: chọn khách **sẽ biến mất**, chọn khách **giữ lại**, bấm **Xem
+trước**. Màn hình nói mỗi bên có bao nhiêu hội thoại và bao nhiêu danh
+tính. Nút **Gộp** chỉ hiện sau khi xem trước.
+
+Hội thoại và danh tính dồn hết về bên giữ lại. Hoàn tác được — nhưng chỉ
+khi bạn nhận ra mình gộp nhầm, mà gộp nhầm hai khách trùng tên thì không ai
+nhận ra. Đó là lý do bước xem trước không bỏ qua được.
+
+Cần quyền `khach.gop`, **và** phải quản lý mọi kênh của cả hai khách. Không
+đủ thì màn hình nói ngay thay vì để bạn gõ xong lý do rồi mới bị từ chối.
+
+> Trước tháng 09.2026 đường này chưa bao giờ chạy được: câu truy vấn dùng
+> nhầm một tham số, và không màn hình nào gọi tới nên không ai biết. Bộ test
+> vẫn xanh vì nó dùng kho giả — truy vấn thật không hề được chạy.
+
+---
+
+## Định tuyến tự động
+
+Ở **Cấu hình → Định tuyến tự động**. Chia **từng hội thoại mới** cho người
+đang rảnh trong một đội.
+
+Đừng nhầm với *giao khách cho nhân viên*: giao khách gán **một khách** lâu
+dài cho một người (mục ở trên); định tuyến chia **từng cuộc trò chuyện**.
+Hai cơ chế chạy song song được.
+
+Ba bước, theo đúng thứ tự:
+
+1. **Tạo đội** — ví dụ "Ca sáng".
+2. **Thêm thành viên** vào đội, đặt số hội thoại tối đa cùng lúc mỗi người.
+3. **Tạo luật**: hội thoại của kênh nào → giao cho đội nào. Để trống kênh
+   là áp cho mọi kênh.
+
+**Chưa có luật nào thì bộ định tuyến không làm gì cả** — hội thoại nằm chờ
+người tự nhận, đúng như trước khi bật. Dòng chữ cạnh tiêu đề panel nói ra
+trạng thái đó thay vì chỉ hiện số 0.
+
+Luật **hẹp thắng luật rộng**: luật chỉ định đúng một kênh thắng luật cho
+mọi kênh; cùng độ hẹp thì trọng số cao thắng.
+
+**Hạn trả lời (SLA)** chỉ để **đo và cảnh báo**. Nó không tự đóng hội thoại
+và không tự chuyển việc cho ai.
+
+---
+
 ## Nhân viên đăng nhập thế nào
 
 Cùng một màn hình với bạn: `http://127.0.0.1:8000`, tên đăng nhập và mật

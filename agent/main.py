@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import time
 import uuid
@@ -655,6 +656,24 @@ _MO = (
     #
     # Chỉ mở ĐÚNG callback — `/start` không nằm trong danh sách này.
     "/api/connect/meta/callback",
+    # Zalo OA, cùng lý lẽ y hệt. Chốt thay thế mạnh hơn một bậc: `state`
+    # dùng một lần CỘNG `code_verifier` của PKCE.
+    #
+    # Thiếu dòng này là luồng nối Zalo OA chết ở 401 — và nó ĐÃ chết như
+    # vậy một lần, vì khai miễn trừ ở `quyen.MIEN_TRU` mà quên chốt đăng
+    # nhập ở đây. Hai danh sách, hai chốt khác nhau, cùng một đường.
+    # `tests/test_chot_ngoai_goi_vao.py` giờ canh cả hai cùng lúc.
+    "/api/connect/zalo-oa/callback",
+)
+
+# n8n gọi về báo kết quả đăng bài. Đường có THAM SỐ trong path nên không so
+# bằng `in _MO` được — phải khớp mẫu.
+#
+# Bên gọi là một tiến trình, không phải người, nên nó không có cookie phiên.
+# Chốt thay thế là vé một lần kiểm NGAY TRONG endpoint — xem
+# `agent/publish/service.py::kiem_ve_callback`.
+_MO_MAU = (
+    re.compile(r"^/api/posts/[0-9a-fA-F-]{36}/callback$"),
 )
 
 
@@ -732,7 +751,9 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
             return JSONResponse({"error": "Cần token MCP"}, status_code=401)
         return await call_next(request)
 
-    if (duong.startswith("/api/") or duong.startswith("/tich-hop"))             and duong not in _MO:
+    if ((duong.startswith("/api/") or duong.startswith("/tich-hop"))
+            and duong not in _MO
+            and not any(m.match(duong) for m in _MO_MAU)):
         nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
         if nguoi is None:
             return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)

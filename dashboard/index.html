@@ -189,6 +189,27 @@
     <!-- ============ CA TRỰC ============ -->
     <section class="view is-active" data-view="ca">
       <div class="readout" id="readout"></div>
+
+      <!-- HAI Ô BÁO ĐỘNG Ở TRÊN TRƯỚC ĐÂY LÀ NGÕ CỤT.
+           Người trực thấy "Tin KHÔNG gửi được: 3" rồi không đi đâu được —
+           API đã có đủ từ lâu (liệt kê, thử lại, bỏ qua) nhưng không màn
+           hình nào gọi tới. Chuông kêu mà không có cửa thì chỉ tạo ra thói
+           quen bỏ qua chuông.
+
+           Cả hai panel ẩn khi không có gì: một bảng lúc nào cũng hiện
+           "không có" là một bảng người ta thôi đọc. -->
+      <section class="panel is-hidden" id="pnChet">
+        <h2 class="panel__head">Tin KHÔNG gửi được
+          <span class="panel__note" id="chetNote">khách không nhận được · thử lại hoặc bỏ qua</span></h2>
+        <div id="dsChet" class="rows"></div>
+      </section>
+
+      <section class="panel is-hidden" id="pnVoChu">
+        <h2 class="panel__head">Khách chưa có chủ
+          <span class="panel__note" id="voChuNote">chưa ai chịu trách nhiệm · giao cho một người</span></h2>
+        <div id="dsVoChu" class="rows"></div>
+      </section>
+
       <div class="split">
         <section class="panel">
           <h2 class="panel__head">Chờ người xử lý</h2>
@@ -517,6 +538,102 @@
 
     <!-- ============ CẤU HÌNH AGENT ============ -->
     <section class="view" data-view="cauhinh">
+      <!-- ĐỊNH TUYẾN TỰ ĐỘNG.
+           `AutoRoutingWorker` chạy nền từ lâu, nhưng không màn hình nào tạo
+           được đội hay luật — nên nó chạy mỗi vòng, không tìm thấy luật nào,
+           và không làm gì. Cả một hệ thống con nằm ngủ mà không ai biết là
+           nó có tồn tại.
+
+           Đây KHÔNG thay cho "giao khách cho nhân viên": giao khách là gán
+           MỘT KHÁCH lâu dài cho một người; định tuyến là chia TỪNG HỘI
+           THOẠI mới cho người đang rảnh trong đội. -->
+      <section class="panel">
+        <h2 class="panel__head">Định tuyến tự động
+          <span class="panel__note" id="dtTrangThai">đang tải…</span></h2>
+        <p class="panel__note">
+          Chia hội thoại mới cho người đang rảnh trong một <b>đội</b>. Chưa có
+          luật nào thì bộ định tuyến <b>không làm gì cả</b> — hội thoại nằm
+          chờ người tự nhận, đúng như trước.
+        </p>
+        <div id="dtDoi" class="rows"></div>
+
+        <form id="dtFormDoi" class="form">
+          <div class="form__row">
+            <label class="field"><span>Tên đội mới</span>
+              <input name="name" placeholder="Ca sáng" required></label>
+            <label class="field"><span>Mô tả</span>
+              <input name="description" placeholder="Trực 8h–14h"></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Tạo đội</button>
+          </div>
+        </form>
+
+        <h2 class="panel__head">Thành viên đội</h2>
+        <form id="dtFormNguoi" class="form">
+          <div class="form__row">
+            <label class="field"><span>Đội</span>
+              <select name="team_id" id="dtChonDoi" required></select></label>
+            <label class="field"><span>Nhân viên</span>
+              <select name="user_id" id="dtChonNguoi" required></select></label>
+            <label class="field"><span>Tối đa cùng lúc</span>
+              <input name="max_active" type="number" min="1" max="500" value="20"></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm">Thêm vào đội</button>
+          </div>
+        </form>
+
+        <h2 class="panel__head">Luật chia việc
+          <span class="panel__note">luật hẹp thắng luật rộng; cùng độ hẹp thì trọng số cao thắng</span></h2>
+        <div id="dtLuat" class="rows"></div>
+        <form id="dtFormLuat" class="form">
+          <div class="form__row">
+            <label class="field"><span>Hội thoại của kênh</span>
+              <select name="account_id" id="dtChonKenh"></select></label>
+            <label class="field"><span>Giao cho đội</span>
+              <select name="team_id" id="dtLuatDoi" required></select></label>
+            <label class="field"><span>Chỉ mức ưu tiên</span>
+              <select name="priority">
+                <option value="">mọi mức</option>
+                <option value="low">thấp</option>
+                <option value="normal">thường</option>
+                <option value="high">cao</option>
+                <option value="urgent">gấp</option>
+              </select></label>
+            <label class="field"><span>Trọng số</span>
+              <input name="weight" type="number" min="1" max="10000" value="100"></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Tạo luật</button>
+          </div>
+        </form>
+
+        <h2 class="panel__head">Hạn trả lời (SLA)
+          <span class="panel__note">chỉ để ĐO và cảnh báo — không tự đóng hội thoại</span></h2>
+        <div id="dtSla" class="rows"></div>
+        <form id="dtFormSla" class="form">
+          <div class="form__row">
+            <label class="field"><span>Kênh</span>
+              <select name="account_id" id="dtSlaKenh"></select></label>
+            <label class="field"><span>Mức ưu tiên</span>
+              <select name="priority">
+                <option value="normal">thường</option>
+                <option value="low">thấp</option>
+                <option value="high">cao</option>
+                <option value="urgent">gấp</option>
+              </select></label>
+            <label class="field"><span>Trả lời đầu trong (phút)</span>
+              <input name="first_response_minutes" type="number" min="1" max="43200" value="15" required></label>
+            <label class="field"><span>Xử lý xong trong (phút)</span>
+              <input name="resolution_minutes" type="number" min="1" max="525600" value="1440" required></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm">Lưu SLA</button>
+          </div>
+        </form>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Nhân viên thấy khách của nhau tới đâu
           <span class="panel__note">áp dụng ngay, không cần khởi động lại</span></h2>
@@ -835,9 +952,34 @@
     </section>
 
     <section class="view" data-view="khachhang">
+      <!-- GỘP KHÁCH TRÙNG.
+           Một người nhắn Zalo rồi nhắn Facebook là HAI contact, và không có
+           gì tự nối chúng lại. API gộp (xem trước / gộp / hoàn tác) đã có
+           đủ từ lâu nhưng không màn hình nào gọi tới — nên trên thực tế
+           lịch sử của một khách nằm rải ở hai chỗ, vĩnh viễn.
+
+           Panel ẩn mặc định: nó là việc thỉnh thoảng mới làm, và để mở sẵn
+           thì hai ô chọn chiếm chỗ của thứ người ta nhìn hằng ngày. -->
+      <section class="panel is-hidden" id="pnGop">
+        <h2 class="panel__head">Gộp hai khách làm một
+          <span class="panel__note">hội thoại và danh tính dồn về bên GIỮ LẠI</span></h2>
+        <div class="form__row">
+          <label class="field"><span>Gộp khách này…</span>
+            <select id="gopNguon"></select></label>
+          <label class="field"><span>…vào khách này (giữ lại)</span>
+            <select id="gopDich"></select></label>
+        </div>
+        <div class="row__nut">
+          <button type="button" class="btn btn--sm" id="gopXem">Xem trước</button>
+          <button type="button" class="btn btn--sm btn--ghost" id="gopDong">Đóng</button>
+        </div>
+        <div id="gopKetQua" class="rows"></div>
+      </section>
       <div class="customer360">
         <aside class="panel customer360__list">
-          <h2 class="panel__head">Customer 360 <span class="panel__note">hợp nhất có kiểm soát</span></h2>
+          <h2 class="panel__head">Customer 360
+            <span class="panel__note">hợp nhất có kiểm soát</span>
+            <button type="button" class="btn btn--sm btn--ghost" id="gopMo">Gộp trùng</button></h2>
           <form id="contactsearch" class="searchline">
             <input name="q" maxlength="120" placeholder="Tìm theo tên…" aria-label="Tìm khách hàng">
             <button class="btn btn--sm" type="submit">Tìm</button>

@@ -3687,6 +3687,31 @@ $("#btn-oauth-meta")?.addEventListener("click", async () => {
   }
 });
 
+/*
+ * Kết nối Zalo OA bằng CẤP QUYỀN. Cùng khuôn với Meta ở trên.
+ *
+ * Khác một chỗ đáng nói: cửa sổ con KHÔNG tự đóng khi xong, vì nó còn hiện
+ * địa chỉ webhook người dùng phải dán sang Zalo Developers — Zalo không có
+ * API đăng ký webhook. Đóng hộ họ là lấy mất thứ duy nhất làm chiều nhận
+ * tin chạy được.
+ */
+$("#btn-oauth-zalo-oa")?.addEventListener("click", async () => {
+  const nut = $("#btn-oauth-zalo-oa");
+  nut.disabled = true;
+  try {
+    const r = await api("/connect/zalo-oa/start");
+    if (!r.url) throw new Error("Máy chủ không trả về địa chỉ cấp quyền");
+    const cua_so = window.open(r.url, "ketnoi_zalo_oa", "width=620,height=760");
+    if (!cua_so) {
+      toast("Trình duyệt đã chặn cửa sổ. Cho phép pop-up rồi thử lại.", true);
+    }
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    nut.disabled = false;
+  }
+});
+
 /* ---------------- kỹ năng (skill) và plugin ---------------- */
 
 const RUI_RO_NHAN = { doc: "đọc", ghi_nhan: "ghi nhận", hanh_dong: "HÀNH ĐỘNG" };

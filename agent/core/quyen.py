@@ -117,6 +117,7 @@ MIEN_TRU: frozenset[tuple[str, str]] = frozenset({
     ("GET", "/api/suc-khoe"),
     ("GET", "/api/he-thong"),
     ("GET", "/api/connect/meta/callback"),   # xác thực bằng state token
+    ("GET", "/api/connect/zalo-oa/callback"),  # xác thực bằng state + PKCE
 })
 
 def moi_route(gom) -> Iterator:

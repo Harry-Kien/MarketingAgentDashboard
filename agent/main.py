@@ -43,6 +43,7 @@ from agent.api.zalo_oa_webhook import router as zalo_oa_webhook_router
 from agent.api.xac_thuc_domain import router as xac_thuc_domain_router
 from agent.api.webchat import router as webchat_router
 from agent.api.oauth_meta import router as oauth_meta_router
+from agent.api.oauth_zalo_oa import router as oauth_zalo_oa_router
 from agent.api import tich_hop
 from agent.channels.base import InboundMessage
 from agent.channels import chatwoot, messenger
@@ -809,6 +810,7 @@ app.include_router(quyen_router)
 app.include_router(zalo_oa_webhook_router)
 app.include_router(webchat_router)
 app.include_router(oauth_meta_router)
+app.include_router(oauth_zalo_oa_router)
 app.include_router(tich_hop.router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một

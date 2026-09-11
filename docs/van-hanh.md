@@ -189,6 +189,35 @@ Nút báo đỏ thường là thiếu quyền `pages_manage_metadata` — nối 
 Facebook và cấp đủ quyền. Lý do đầy đủ nằm ở mục Nhật ký, sự kiện
 `channel.dang_ky_webhook_loi`.
 
+### Zalo OA đã nối nhưng không nhận tin nào
+
+Cùng một hình dạng với lỗi Facebook ở trên, và cùng một lý do: **có khoá là
+gửi được, nhận thì cần một bước khác**. Khác ở chỗ Zalo *không có API* để
+đăng ký webhook, nên bước ấy không tự làm hộ được — người phải dán tay.
+
+Nối OA bằng **Kết nối → Thêm tài khoản → "Kết nối Zalo OA bằng cấp quyền"**.
+Xong, cửa sổ hiện một địa chỉ dạng:
+
+```
+https://<tên-miền-công-khai>/webhook/native/zalo-oa/<mã-tài-khoản>
+```
+
+Dán nó vào Zalo Developers → OA của bạn → *Webhook*. Cửa sổ cố ý **không tự
+đóng** ở bước này — đóng hộ là lấy mất thứ duy nhất làm chiều nhận chạy được.
+
+Mỗi OA một địa chỉ riêng, vì mã tài khoản nằm trong đường dẫn. Không dùng
+chung một đường cho nhiều OA: mỗi OA có secret key riêng, nên phải biết OA
+nào *trước* khi kiểm được chữ ký — đoán OA từ thân tin rồi mới kiểm là để
+người gửi tự chọn khoá dùng để kiểm chính họ.
+
+**Tên miền đổi thì địa chỉ đã dán chết theo.** `trycloudflare` sinh tên mới
+mỗi lần chạy, nên sau mỗi lần khởi động tunnel phải dán lại. Đây là một
+trong những lý do nên dùng tên miền cố định khi chạy thật.
+
+Nối lại một OA đã có là **thay khoá**, không tạo tài khoản mới — mã tài
+khoản giữ nguyên, nên địa chỉ webhook đã dán vẫn dùng được. Cửa sổ nói rõ
+"Đã cấp lại khoá" thay vì "Đã nối" để phân biệt hai trường hợp.
+
 ### Bấm "Duyệt và gửi" mà khách không nhận
 
 Xem trạng thái job:

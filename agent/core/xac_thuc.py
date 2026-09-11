@@ -39,6 +39,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from .. import db
+from .quyen import QUYEN
 
 # scrypt: chậm và tốn bộ nhớ có chủ đích. Tham số theo khuyến nghị OWASP
 # cho ứng dụng tương tác — đủ chậm để dò mật khẩu không kinh tế, đủ nhanh
@@ -47,15 +48,18 @@ _N, _R, _P = 2 ** 14, 8, 1
 _DAI_KHOA = 32
 
 PHIEN_NGAY = 7          # phiên sống bao lâu
-VAI_TRO = ("quan_tri", "nhan_vien")
 
-# Việc chỉ quản trị được làm. Nhân viên đọc và xử lý hội thoại bình thường,
-# nhưng không được xoá dữ liệu khách hay đổi cách agent vận hành.
-CHI_QUAN_TRI = (
-    "pdpd.xoa",           # xoá vĩnh viễn dữ liệu cá nhân
-    "runtime",            # bật/tắt agent, đổi chế độ, đổi ngưỡng
-    "nguoi_dung",         # tạo/xoá tài khoản
-)
+# Nhãn hiển thị và giá trị hợp lệ cho cột `nguoi_dung.vai_tro`.
+#
+# Cột ấy THÔI LÀM NGUỒN SỰ THẬT VỀ QUYỀN kể từ migration 0019. Nguồn sự thật
+# là ba bảng `vai_tro` / `vai_tro_quyen` / `nguoi_dung_vai_tro`, và
+# `doc_phien()` nạp chúng thành `nguoi["quyen"]`.
+#
+# Giữ cột lại vì tầng dashboard và `omnichannel/account_service.py` còn đọc
+# để hiển thị, và vì xoá một cột trong cùng đợt với thay 73 điểm kiểm quyền
+# là làm quá nhiều thứ động một lúc. Có test quét mã canh không chỗ nào
+# dùng nó để QUYẾT ĐỊNH cho phép hay không.
+VAI_TRO = ("quan_tri", "nhan_vien")
 
 
 def bam_mat_khau(mat_khau: str) -> str:
@@ -314,19 +318,51 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
 
 
 async def doc_phien(token: str) -> dict | None:
-    """Người đứng sau token này, hoặc None nếu phiên hỏng/hết hạn."""
+    """
+    Người đứng sau token này, hoặc None nếu phiên hỏng/hết hạn.
+
+    Quyền nạp trong CÙNG truy vấn này — không thêm vòng gọi CSDL, và tuyệt
+    đối không cache vào phiên.
+
+    Cache vào phiên nghĩa là thu quyền của một người lúc 9 giờ sáng mà họ
+    vẫn dùng được tới lúc hết hạn. Đó đúng là thứ bảng `phien` sinh ra để
+    tránh — xem `agent/schema.sql`, mục "Phiên nằm trong CSDL chứ không phải
+    JWT". Cache là đưa lỗi ấy quay lại qua cửa sau.
+    """
     if not token:
         return None
     r = await db.fetchrow(
-        "SELECT n.id, n.ten_dang_nhap, n.ho_ten, n.vai_tro, n.khoa "
-        "FROM phien p JOIN nguoi_dung n ON n.id = p.nguoi_dung_id "
-        "WHERE p.token = $1 AND p.het_han > now()",
+        "SELECT n.id, n.ten_dang_nhap, n.ho_ten, n.vai_tro, n.khoa, "
+        "       COALESCE(array_agg(DISTINCT vq.quyen) "
+        "                FILTER (WHERE vq.quyen IS NOT NULL), "
+        "                ARRAY[]::text[]) AS quyen, "
+        "       COALESCE(bool_or(vt.he_thong AND vt.ten = 'Quản trị'), false) "
+        "           AS toan_quyen "
+        "FROM phien p "
+        "JOIN nguoi_dung n ON n.id = p.nguoi_dung_id "
+        "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = n.id "
+        "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+        "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = ndvt.vai_tro_id "
+        "WHERE p.token = $1 AND p.het_han > now() "
+        "GROUP BY n.id",
         token,
     )
     if r is None or r["khoa"]:
         return None
-    r["id"] = str(r["id"])
-    return r
+    nguoi = dict(r)
+    nguoi["id"] = str(nguoi["id"])
+    # Vai trò `Quản trị` nhận TOÀN BỘ danh mục, tính từ mã chứ không từ CSDL.
+    #
+    # Gõ lại danh mục trong migration là tạo bản sao thứ hai, và bản sao sẽ
+    # lệch ở phiên bản sau: thêm một quyền mới vào mã thì quản trị không có
+    # nó, im lặng, và người ta sẽ đi sửa từng vai trò bằng tay.
+    #
+    # Lọc theo `QUYEN` ở nhánh còn lại cũng có lý do: quyền bị xoá khỏi danh
+    # mục ở bản sau vẫn còn dòng trong `vai_tro_quyen`. Không lọc thì
+    # `duoc_phep()` nhận một chuỗi không còn ý nghĩa gì.
+    nguoi["quyen"] = (frozenset(QUYEN) if nguoi.pop("toan_quyen", False)
+                      else frozenset(nguoi["quyen"]) & frozenset(QUYEN))
+    return nguoi
 
 
 async def dang_xuat(token: str) -> None:
@@ -340,10 +376,18 @@ async def don_phien_het_han() -> int:
     return int(phan[-1]) if phan and phan[-1].isdigit() else 0
 
 
-def duoc_phep(nguoi: dict | None, viec: str) -> bool:
-    """Người này có được làm việc này không."""
+def duoc_phep(nguoi: dict | None, quyen: str) -> bool:
+    """
+    Người này có quyền này không. Quyền lạ thì NÉM, không đoán.
+
+    Ném chứ không trả False: trả False nghĩa là gõ sai tên quyền thì endpoint
+    khoá với TẤT CẢ mọi người, một lỗi chính tả thành sự cố vận hành mà
+    không có gì chỉ về phía nguyên nhân. Ném thì nó nổ ngay trước mặt người
+    vừa gõ sai — và vì `can_quyen()` gọi kiểm ở thân factory, nó nổ lúc
+    import, tức máy chủ không khởi động được.
+    """
+    if quyen not in QUYEN:
+        raise KeyError(f"Quyền không có trong danh mục: {quyen}")
     if not nguoi:
         return False
-    if viec in CHI_QUAN_TRI:
-        return nguoi.get("vai_tro") == "quan_tri"
-    return True
+    return quyen in nguoi.get("quyen", frozenset())

@@ -241,20 +241,62 @@ def test_phien_co_han():
 #  Phân quyền
 # =====================================================================
 
-def test_viec_nguy_hiem_chi_danh_cho_quan_tri():
-    assert "pdpd.xoa" in xac_thuc.CHI_QUAN_TRI
-    assert "runtime" in xac_thuc.CHI_QUAN_TRI
-    assert "nguoi_dung" in xac_thuc.CHI_QUAN_TRI
+def test_khong_con_hang_chi_quan_tri():
+    """
+    `CHI_QUAN_TRI` là danh sách ba việc, cạnh 73 endpoint cũng chỉ dành cho
+    quản trị nhưng không nằm trong danh sách ấy. Hai nguồn sự thật cho cùng
+    một câu hỏi, và nguồn ít người đọc hơn mục đi.
+    """
+    assert not hasattr(xac_thuc, "CHI_QUAN_TRI")
 
 
-def test_nhan_vien_van_lam_duoc_viec_thuong():
-    nv = {"vai_tro": "nhan_vien"}
-    assert xac_thuc.duoc_phep(nv, "xem_hoi_thoai")
-    assert not xac_thuc.duoc_phep(nv, "pdpd.xoa")
+def test_duoc_phep_nem_khi_quyen_khong_co_trong_danh_muc():
+    """
+    NÉM chứ không trả False.
+
+    Trả False nghĩa là gõ sai tên quyền thì endpoint khoá với TẤT CẢ mọi
+    người — một lỗi chính tả thành sự cố vận hành, và không có gì chỉ về
+    phía nguyên nhân. Ném thì nó nổ ngay trước mặt người vừa gõ sai.
+    """
+    nguoi = {"id": "x", "quyen": frozenset({"khach.doc"})}
+    with pytest.raises(KeyError):
+        xac_thuc.duoc_phep(nguoi, "khach.khong_co_that")
+
+
+def test_duoc_phep_doc_tap_quyen():
+    nv = {"vai_tro": "nhan_vien", "quyen": frozenset({"hoi_thoai.doc"})}
+    assert xac_thuc.duoc_phep(nv, "hoi_thoai.doc")
+    assert not xac_thuc.duoc_phep(nv, "khach.xoa")
+
+
+def test_vai_tro_quan_tri_khong_con_tu_dong_cho_qua():
+    """
+    Cột `vai_tro` thôi làm nguồn sự thật.
+
+    Người mang nhãn `quan_tri` mà chưa được gán vai trò nào thì không có
+    quyền nào. Nếu cột cũ vẫn âm thầm cấp quyền thì cả lớp mới là trang
+    trí, và không ai biết vì mọi thứ vẫn chạy.
+    """
+    nguoi = {"vai_tro": "quan_tri", "quyen": frozenset()}
+    assert not xac_thuc.duoc_phep(nguoi, "khach.xoa")
 
 
 def test_chua_dang_nhap_thi_khong_duoc_gi():
-    assert not xac_thuc.duoc_phep(None, "xem_hoi_thoai")
+    assert not xac_thuc.duoc_phep(None, "hoi_thoai.doc")
+
+
+def test_doc_phien_nap_quyen_trong_cung_mot_truy_van():
+    """
+    Quyền phải đến từ CÙNG truy vấn phiên, không phải một vòng gọi thứ hai
+    và tuyệt đối không phải cache trong phiên.
+
+    Cache vào phiên nghĩa là thu quyền lúc 9 giờ sáng mà người đó vẫn dùng
+    được tới lúc hết hạn — đúng thứ bảng `phien` sinh ra để tránh. Xem
+    schema.sql, mục "Phiên nằm trong CSDL chứ không phải JWT".
+    """
+    src = inspect.getsource(xac_thuc.doc_phien)
+    assert "vai_tro_quyen" in src
+    assert src.count("db.fetchrow") == 1, "chỉ được một vòng gọi CSDL"
 
 
 def test_quan_ly_tai_khoan_can_quyen_quan_tri():

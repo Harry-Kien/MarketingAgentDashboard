@@ -101,7 +101,6 @@ CROSS JOIN (VALUES
     ('noi_dung.doc'),
     ('outbox.doc'),
     ('dinh_tuyen.doc'),
-    ('agent.doc'),
     ('ky_nang.doc'),
     ('cau_hinh.doc'),
     ('tich_hop.doc'),

@@ -48,7 +48,7 @@ from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent.core import anh_khach
 from agent import canh_gac
-from agent.core import du_lieu_ca_nhan, gio_lam_viec, xac_thuc
+from agent.core import du_lieu_ca_nhan, gio_lam_viec, quyen, xac_thuc
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -805,6 +805,18 @@ app.include_router(tich_hop.router)
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một
 # đoạn. Đặt sớm hơn là nó nuốt cả /healthz, /mcp và trang dashboard.
 app.include_router(xac_thuc_domain_router)
+
+# Chốt hỏng-đóng: route chưa khai quyền thì MÁY CHỦ KHÔNG LÊN.
+#
+# Đặt ở đây chứ không trong middleware vì mỗi endpoint cần một quyền khác
+# nhau — không chặn theo tiền tố đường dẫn được như chốt đăng nhập ở dưới.
+# Dời chốt sang lúc khởi động giữ nguyên tính hỏng-đóng: quên khai thì nó
+# nổ ngay trước mặt người vừa thêm endpoint, không phải một endpoint phơi
+# ra lặng lẽ cho tới ngày có người dùng sai quyền.
+#
+# Phải đặt SAU dòng include_router cuối cùng. Đặt trước là nó quét một app
+# chưa có route nào và báo xanh — xanh giả, đúng thứ nó sinh ra để chặn.
+quyen.kiem_moi_route_co_quyen(app)
 
 
 @app.get("/healthz")

@@ -44,9 +44,9 @@ router = APIRouter(prefix="/api")
 
 # --- Xác thực: đặt NGAY ĐÂY, trước mọi endpoint ---------------
 # Python đánh giá tham số mặc định lúc ĐỊNH NGHĨA hàm, nên
-# `Depends(bat_buoc_quan_tri)` ở endpoint dòng 500 cần hàm này đã tồn
-# tại từ trước. Để cuối file thì NameError lúc import — và lỗi đó chỉ
-# nổ khi khởi động, không phải khi chạy test.
+# `Depends(can_quyen(...))` ở endpoint dòng 500 cần hàm này đã tồn tại
+# từ trước. Để cuối file thì NameError lúc import — và lỗi đó chỉ nổ
+# khi khởi động, không phải khi chạy test.
 TEN_COOKIE = "phien_marketing_agent"
 
 
@@ -75,13 +75,6 @@ async def bat_buoc_dang_nhap(request: Request) -> dict:
     nguoi = await nguoi_hien_tai(request)
     if nguoi is None:
         raise HTTPException(401, "Chưa đăng nhập")
-    return nguoi
-
-
-async def bat_buoc_quan_tri(request: Request) -> dict:
-    nguoi = await bat_buoc_dang_nhap(request)
-    if nguoi["vai_tro"] != "quan_tri":
-        raise HTTPException(403, "Việc này cần quyền quản trị")
     return nguoi
 
 
@@ -649,7 +642,7 @@ async def takeover(
             assignee_id=actor_id,
             expected_version=int(current["version"]),
             reason="Nhân viên nhận từ dashboard legacy",
-            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+            actor_is_admin="hoi_thoai.xem_tat_ca" in nguoi.get("quyen", ()),
         )
     except RoutingConversationNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -693,7 +686,7 @@ async def release(
             actor_id=actor_id,
             expected_version=int(conv["version"]),
             reason="Nhân viên release từ dashboard legacy",
-            actor_is_admin=nguoi["vai_tro"] == "quan_tri",
+            actor_is_admin="hoi_thoai.xem_tat_ca" in nguoi.get("quyen", ()),
         )
     except RoutingConversationNotFound as exc:
         raise HTTPException(404, str(exc)) from exc

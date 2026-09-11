@@ -64,7 +64,10 @@ QUYEN: dict[str, str] = {
     "outbox.doc": "Xem hàng chờ gửi",
     "outbox.sua": "Gửi lại, huỷ tin trong hàng chờ",
 
-    "agent.doc": "Xem trạng thái agent",
+    # Không có `agent.doc`: trạng thái agent hiện ở `/api/overview` (đã canh
+    # bằng `hoi_thoai.doc`) và `/healthz` (mở cho công cụ giám sát). Thêm một
+    # quyền không endpoint nào dùng là thêm một ô tick vô nghĩa trên màn cấp
+    # quyền — người quản trị tick vào và tin là đã cấp gì đó.
     "agent.dieu_khien": "Bật tắt agent, đổi chế độ và ngưỡng",
     "phong_thu.dung": "Dùng phòng thử agent",
 
@@ -111,14 +114,6 @@ MIEN_TRU: frozenset[tuple[str, str]] = frozenset({
     ("GET", "/api/connect/meta/callback"),   # xác thực bằng state token
 })
 
-# Route CHƯA khai quyền, hoãn tạm trong lúc A1 đang chạy.
-#
-# Danh sách này chỉ được PHÉP NHỎ ĐI. Việc cuối của A1 xoá hẳn nó cùng tham
-# số `hoan` — để lại một danh sách hoãn sau khi xong là để lại đúng cái lỗ
-# mà cả khối này sinh ra để bịt.
-DANH_SACH_HOAN: frozenset[tuple[str, str]] = frozenset()
-
-
 def moi_route(gom) -> Iterator:
     """
     Duyệt ĐỆ QUY mọi route của app.
@@ -136,14 +131,18 @@ def moi_route(gom) -> Iterator:
             yield r
 
 
-def kiem_moi_route_co_quyen(app, *, hoan: frozenset | None = None) -> None:
+def kiem_moi_route_co_quyen(app) -> None:
     """
     Ném nếu còn route chưa khai quyền. Gọi lúc KHỞI ĐỘNG, không lúc chạy.
 
-    Cùng hàm này chạy trong test, nên CI bắt trước khi kịp triển khai —
-    và test với thực tế không thể lệch nhau.
+    Cùng hàm này chạy trong test, nên CI bắt trước khi kịp triển khai — và
+    test với thực tế không thể lệch nhau.
+
+    Không có tham số "bỏ qua tạm". Trong lúc dựng lớp quyền đã từng có một
+    `DANH_SACH_HOAN` để thu nhỏ dần; giữ lại nó sau khi xong là giữ đúng cái
+    lỗ mà cả lớp này sinh ra để bịt — một chỗ để nhét route mới vào cho khỏi
+    phải nghĩ.
     """
-    cho_qua = DANH_SACH_HOAN if hoan is None else hoan
     thieu = []
     for route in moi_route(app.routes):
         duong = getattr(route, "path", "")
@@ -154,7 +153,7 @@ def kiem_moi_route_co_quyen(app, *, hoan: frozenset | None = None) -> None:
         for pt in sorted(getattr(route, "methods", None) or set()):
             if pt in {"HEAD", "OPTIONS"}:
                 continue
-            if da_khai or (pt, duong) in MIEN_TRU or (pt, duong) in cho_qua:
+            if da_khai or (pt, duong) in MIEN_TRU:
                 continue
             thieu.append(f"{pt} {duong}")
     if thieu:

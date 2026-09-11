@@ -158,12 +158,12 @@ def test_backfill_chay_that_gan_dung_vai_tro(csdl_kiem_thu):
     assert truoc == sau, "chạy lại migration làm nhân đôi phép gán vai trò"
 
 
-def test_nhan_vien_nhan_dung_18_quyen(csdl_kiem_thu):
+def test_nhan_vien_nhan_dung_17_quyen(csdl_kiem_thu):
     """
     Số cụ thể, không phải "có vài quyền".
 
     Khẳng định mơ hồ kiểu `> 0` vẫn xanh khi câu CROSS JOIN chỉ chèn được
-    một dòng — và nhân viên mất 17 quyền mà test không nói gì.
+    một dòng — và nhân viên mất 16 quyền mà test không nói gì.
     """
     import asyncio
     import json
@@ -187,4 +187,4 @@ def test_nhan_vien_nhan_dung_18_quyen(csdl_kiem_thu):
         finally:
             await conn.close()
 
-    assert asyncio.run(chay()) == 18
+    assert asyncio.run(chay()) == 17

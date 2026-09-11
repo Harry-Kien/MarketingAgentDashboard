@@ -54,6 +54,11 @@ QUYEN: dict[str, str] = {
     "khach.gop": "Gộp hai hồ sơ khách",
     "khach.xoa": "Xoá vĩnh viễn dữ liệu cá nhân",
 
+    "cong_viec.doc": "Xem công việc được giao cho mình",
+    "cong_viec.xem_tat_ca": "Xem công việc của mọi người",
+    "cong_viec.sua": "Tạo, sửa, đổi trạng thái công việc",
+    "cong_viec.giao": "Giao việc cho người khác",
+
     "kenh.doc": "Xem tài khoản kênh",
     "kenh.sua": "Sửa, bật tắt tài khoản kênh",
     "kenh.noi": "Nối kênh mới (OAuth, quét QR)",

@@ -254,6 +254,21 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
         "WHERE owner_user_id IS NULL AND status = 'active'"
     ) or {}
 
+    # VIỆC QUÁ HẠN — cùng họ với hai ô trên, cũng không cắt theo 24 giờ.
+    #
+    # Việc đã `xong` hoặc `huy` KHÔNG tính, dù hạn đã qua. Đếm chúng vào là
+    # con số chỉ tăng và không bao giờ giảm — và một con số chỉ tăng là con
+    # số người ta thôi nhìn sau tuần đầu.
+    #
+    # Đếm riêng việc CHƯA GIAO cho ai: đó là thứ dễ rơi nhất, vì không ai
+    # thấy nó trong danh sách "việc của tôi".
+    viec = await db.fetchrow(
+        "SELECT count(*) FILTER (WHERE han < now()) AS qua_han, "
+        "       count(*) FILTER (WHERE nguoi_nhan IS NULL) AS chua_giao, "
+        "       min(han) FILTER (WHERE han < now()) AS han_cu_nhat "
+        "FROM cong_viec WHERE trang_thai IN ('moi', 'dang_lam')"
+    ) or {}
+
     total = int(conv.get("total") or 0)
     handled = int(conv.get("handled") or 0)
     replies = int(msg.get("replies") or 0)
@@ -297,6 +312,14 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
             "so": int(vo_chu.get("n") or 0),
             "lau_nhat": (
                 vo_chu["lau_nhat"].isoformat() if vo_chu.get("lau_nhat") else None
+            ),
+        },
+        "cong_viec": {
+            "qua_han": int(viec.get("qua_han") or 0),
+            "chua_giao": int(viec.get("chua_giao") or 0),
+            "han_cu_nhat": (
+                viec["han_cu_nhat"].isoformat()
+                if viec.get("han_cu_nhat") else None
             ),
         },
         "runtime": dict(runtime.STATE),

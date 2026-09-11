@@ -50,6 +50,21 @@ async function api(path, options = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+function hanDoc(iso) {
+  /* HẠN nằm ở TƯƠNG LAI, còn `clock()` chỉ biết diễn đạt quá khứ: một hạn
+     sáu giờ nữa rơi vào nhánh `diff < 60` và hiện ra "vừa xong".
+
+     "Hạn vừa xong" là câu vô nghĩa, và tệ hơn là nó nghe như việc đã kết
+     thúc — đúng ngược với ý. */
+  const d = new Date(iso);
+  const con = (d - Date.now()) / 1000;
+  if (con < 0) return clock(iso);              // đã qua: "3 ngày", "08-09"
+  if (con < 3600) return "trong " + Math.max(1, Math.floor(con / 60)) + " phút";
+  if (con < 86400) return "trong " + Math.floor(con / 3600) + " giờ";
+  if (con < 7 * 86400) return "trong " + Math.floor(con / 86400) + " ngày";
+  return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+}
+
 function ngayTu(iso) {
   /* Số NGÀY tính tới nay. Trả số nguyên, không "khoảng 2 tháng": ô chỉ số
      cần một con số so sánh được giữa các lần nhìn, không cần một câu văn. */
@@ -240,6 +255,15 @@ async function loadOverview() {
      * Kèm TUỔI của khách vô chủ lâu nhất, không chỉ số lượng: "412 khách"
      * là một con số người ta quen mắt sau một tuần; "lâu nhất 62 ngày" thì
      * không. */
+    /* VIỆC QUÁ HẠN — cùng họ với hai ô trên, cũng chỉ hiện khi CÓ.
+     * Đếm riêng việc CHƯA GIAO cho ai: đó là thứ dễ rơi nhất, vì không ai
+     * thấy nó trong danh sách "việc của tôi". */
+    (o.cong_viec && o.cong_viec.qua_han
+      ? cell("Việc quá hạn", o.cong_viec.qua_han,
+             o.cong_viec.chua_giao
+               ? `${o.cong_viec.chua_giao} việc chưa giao cho ai`
+               : "đều đã có người nhận", 1, "halt")
+      : ""),
     (o.khach_vo_chu && o.khach_vo_chu.so
       ? cell("Khách chưa có chủ", o.khach_vo_chu.so,
              o.khach_vo_chu.lau_nhat
@@ -2297,6 +2321,117 @@ $("#tamnhin")?.addEventListener("change", async (e) => {
   } catch (err) { toast(err.message, true); await loadTamNhin(); }
 });
 
+/* ---------------- công việc ---------------- */
+
+const congViec = { trangThai: [], uuTien: [] };
+
+function cvCoTrangThai(v) {
+  /* Cờ màu theo TÌNH TRẠNG THẬT, không theo trạng thái danh nghĩa.
+     Một việc "đang làm" nhưng đã quá hạn ba ngày thì không phải màu xanh. */
+  if (v.qua_han) return "halt";
+  if (v.trang_thai === "xong") return "auto";
+  if (v.trang_thai === "huy") return "assist";
+  return v.uu_tien === "gap" || v.uu_tien === "cao" ? "assist" : "auto";
+}
+
+function cvDong(v, nhanTT, nhanUT) {
+  const chu = v.nguoi_nhan_ten
+    ? `<span class="pill">${esc(v.nguoi_nhan_ten)}</span>`
+    : '<span class="pill pill--warn">chưa giao</span>';
+  const han = v.han
+    ? `<span class="pill${v.qua_han ? " pill--warn" : ""}">${
+        v.qua_han ? "quá hạn " : "hạn "}${hanDoc(v.han)}</span>`
+    : "";
+  return `<div class="row" data-cv="${esc(v.id)}">
+    <span class="row__flag row__flag--${cvCoTrangThai(v)}"></span>
+    <div class="row__main">
+      <b>${esc(v.tieu_de)}${v.nguon === "agent"
+        ? ' <span class="pill">agent chuyển</span>' : ""}</b>
+      <span class="row__sub">${esc(nhanTT[v.trang_thai] || v.trang_thai)} · ${
+        esc(nhanUT[v.uu_tien] || v.uu_tien)}${
+        v.khach_ten ? " · " + esc(v.khach_ten) : ""}${
+        v.mo_ta ? " · " + esc(v.mo_ta.slice(0, 90)) : ""}</span>
+    </div>
+    <div class="row__side">
+      <span>${chu} ${han}</span>
+      <span class="row__nut">
+        ${v.trang_thai !== "xong"
+          ? `<button type="button" class="btn btn--sm btn--ghost" data-cvxong="${esc(v.id)}">Xong</button>`
+          : `<button type="button" class="btn btn--sm btn--ghost" data-cvmolai="${esc(v.id)}">Mở lại</button>`}
+        <button type="button" class="btn btn--sm btn--ghost" data-cvnhan="${esc(v.id)}">Nhận</button>
+      </span>
+    </div>
+  </div>`;
+}
+
+async function loadCongViec() {
+  const q = new URLSearchParams();
+  if (state.cvTrangThai) q.set("trang_thai", state.cvTrangThai);
+  if (state.cvCuaToi) q.set("cua_toi", "true");
+  const d = await api(`/cong-viec?${q}`);
+  congViec.trangThai = d.trang_thai;
+  congViec.uuTien = d.uu_tien;
+  const nhanTT = Object.fromEntries(d.trang_thai.map((t) => [t.ma, t.nhan]));
+  const nhanUT = Object.fromEntries(d.uu_tien.map((t) => [t.ma, t.nhan]));
+
+  /* Chỉ số trên thanh điều hướng đếm việc CHƯA XONG, không đếm tổng.
+     Tổng thì chỉ tăng, và một con số chỉ tăng là con số không ai nhìn. */
+  const chuaXong = d.cong_viec.filter(
+    (v) => v.trang_thai === "moi" || v.trang_thai === "dang_lam").length;
+  $("#c-congviec").textContent = chuaXong || "";
+  $("#cv-ds").innerHTML = d.cong_viec.length
+    ? d.cong_viec.map((v) => cvDong(v, nhanTT, nhanUT)).join("")
+    : '<p class="empty">Không có việc nào trong bộ lọc này.</p>';
+}
+
+$("#cv-loc")?.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-cvloc], [data-cvtoi]");
+  if (!chip) return;
+  if (chip.dataset.cvtoi) {
+    state.cvCuaToi = !state.cvCuaToi;
+    chip.classList.toggle("is-on", state.cvCuaToi);
+  } else {
+    state.cvTrangThai = chip.dataset.cvloc;
+    $$("#cv-loc [data-cvloc]").forEach((c) => c.classList.toggle("is-on", c === chip));
+  }
+  loadCongViec();
+});
+
+$("#cv-them")?.addEventListener("click", async () => {
+  const tieu_de = prompt("Việc cần làm:");
+  if (!tieu_de) return;
+  const han = prompt("Hạn (YYYY-MM-DD, để trống nếu không có):", "");
+  try {
+    await api("/cong-viec", {
+      method: "POST",
+      body: JSON.stringify({
+        tieu_de: tieu_de.trim(),
+        han: han && han.trim() ? new Date(han.trim()).toISOString() : null,
+      }),
+    });
+    toast("Đã thêm việc.");
+    await loadCongViec();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#cv-ds")?.addEventListener("click", async (e) => {
+  const xong = e.target.closest("[data-cvxong]");
+  const molai = e.target.closest("[data-cvmolai]");
+  const nhan = e.target.closest("[data-cvnhan]");
+  const than = xong ? { trang_thai: "xong" }
+    : molai ? { trang_thai: "dang_lam" }
+    : nhan ? { nguoi_nhan: state.toiId, trang_thai: "dang_lam" } : null;
+  if (!than) return;
+  const id = (xong || molai || nhan).dataset.cvxong
+    || (xong || molai || nhan).dataset.cvmolai
+    || (xong || molai || nhan).dataset.cvnhan;
+  try {
+    await api(`/cong-viec/${id}`, { method: "PUT", body: JSON.stringify(than) });
+    toast(xong ? "Đã đánh dấu xong." : molai ? "Đã mở lại." : "Bạn đã nhận việc này.");
+    await loadCongViec();
+  } catch (err) { toast(err.message, true); }
+});
+
 /* ---------------- trường thông tin khách tuỳ biến ---------------- */
 
 const truongKhach = { ds: [], kieu: [] };
@@ -2632,6 +2767,7 @@ async function refresh() {
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
     if (state.view === "cauhinh") { await loadTamNhin(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
   } catch (e) {

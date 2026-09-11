@@ -104,7 +104,9 @@ CROSS JOIN (VALUES
     ('ky_nang.doc'),
     ('cau_hinh.doc'),
     ('tich_hop.doc'),
-    ('nguoi_dung.doc')
+    ('nguoi_dung.doc'),
+    ('cong_viec.doc'),
+    ('cong_viec.sua')
 ) AS q(ma)
 WHERE vt.ten = 'Nhân viên'
 ON CONFLICT DO NOTHING;

@@ -552,6 +552,38 @@ nào và nhận được gì — chứ không lặng lẽ lưu một ô rỗng.
 
 ---
 
+## Công việc
+
+Dashboard → **Công việc**. Mỗi việc có tiêu đề, hạn, mức ưu tiên, người
+nhận, và bốn trạng thái: Mới · Đang làm · Xong · Đã huỷ.
+
+**Agent chuyển người thì tự sinh một việc.** Trước đây, agent chuyển người
+xong chỉ để lại một dòng nhật ký và một hội thoại đổi màu — không ai được
+giao gì cả. Nếu người trực đang bận lúc ấy thì việc không nằm ở đâu, và nó
+chỉ được nhớ tới nếu tình cờ có người mở đúng hội thoại.
+
+Việc tự sinh mang nhãn **agent chuyển**, ưu tiên *Cao*, và **chưa giao cho
+ai** — ai cũng thấy, ai cũng bấm **Nhận** được. Một hội thoại chỉ sinh đúng
+một việc đang mở; khách nhắn thêm không đẻ việc thứ hai. Việc cũ xong rồi
+mà khách quay lại thì sinh việc mới.
+
+**Ai thấy việc nào.** Nhân viên thấy việc mình nhận, việc mình giao, và
+việc chưa giao cho ai. Ai có `cong_viec.xem_tat_ca` thì thấy hết.
+
+**Giao việc cho người khác cần quyền `cong_viec.giao`.** Tự nhận một việc
+chưa ai nhận thì không cần — đó là nhận việc, không phải đẩy việc.
+
+### Ô "Việc quá hạn" trên trang Ca trực
+
+Chỉ hiện khi có, kèm số việc **chưa giao cho ai** — đó là thứ dễ rơi nhất,
+vì không ai thấy nó trong danh sách "việc của tôi".
+
+Việc đã Xong hoặc Đã huỷ **không** tính là quá hạn dù hạn đã qua. Đếm chúng
+vào là con số chỉ tăng và không bao giờ giảm, và một con số chỉ tăng là con
+số người ta thôi nhìn.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |

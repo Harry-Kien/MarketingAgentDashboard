@@ -191,7 +191,8 @@ def test_moi_quyen_deu_co_it_nhat_mot_route_dung():
     # `_scope()` / `_user_scope()` để dựng mệnh đề WHERE, chứ không phải để
     # mở cửa một đường nào. Khai tường minh ở đây thay vì nới lỏng phép
     # kiểm — nới lỏng là bỏ luôn khả năng bắt quyền chết.
-    doc_trong_truy_van = {"hoi_thoai.xem_tat_ca", "khach.xem_tat_ca"}
+    doc_trong_truy_van = {"hoi_thoai.xem_tat_ca", "khach.xem_tat_ca",
+                          "cong_viec.xem_tat_ca"}
     chet = set(quyen.QUYEN) - da_dung - doc_trong_truy_van - QUYEN_CHUA_DUNG
     assert not chet, f"Quyền không có chỗ dùng: {sorted(chet)}"
 
@@ -204,8 +205,10 @@ def test_quyen_doc_trong_truy_van_that_su_duoc_doc():
     """
     contacts = (ROOT / "agent" / "api" / "contacts.py").read_text(encoding="utf-8")
     inbox = (ROOT / "agent" / "api" / "inbox.py").read_text(encoding="utf-8")
+    viec = (ROOT / "agent" / "core" / "cong_viec.py").read_text(encoding="utf-8")
     assert "khach.xem_tat_ca" in contacts
     assert "hoi_thoai.xem_tat_ca" in inbox
+    assert "cong_viec.xem_tat_ca" in viec
 
 
 def test_migration_khong_nhac_quyen_da_bien_mat():

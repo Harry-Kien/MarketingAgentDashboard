@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-54 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+55 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -136,6 +136,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
+| **Công việc** | `cong_viec` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
@@ -608,11 +609,25 @@ erDiagram
         INT thu_tu
         _ con_2_cot_nua
     }
+    cong_viec {
+        UUID id
+        TEXT tieu_de
+        TEXT mo_ta
+        UUID nguoi_nhan
+        UUID nguoi_giao
+        TEXT trang_thai
+        TEXT uu_tien
+        TIMESTAMPTZ han
+        _ con_6_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
     messages ||--o{ attachments : ""
     documents ||--o{ chunks : ""
+    contacts ||--o{ cong_viec : ""
+    conversations ||--o{ cong_viec : ""
+    nguoi_dung ||--o{ cong_viec : ""
     channel_accounts ||--o{ contact_consents : ""
     contacts ||--o{ contact_consents : ""
     nguoi_dung ||--o{ contact_consents : ""

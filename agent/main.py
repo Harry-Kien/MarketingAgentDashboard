@@ -29,6 +29,7 @@ from agent.api.quyen import router as quyen_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
 from agent.api.contacts import router_vo_chu as khach_vo_chu_router
+from agent.api.cong_viec import router as cong_viec_router
 from agent.api.erp import router as erp_router
 from agent.api.routing_admin import router as routing_admin_router
 from agent.api.retention import router as retention_router
@@ -50,7 +51,8 @@ from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent.core import anh_khach
 from agent import canh_gac
-from agent.core import du_lieu_ca_nhan, gio_lam_viec, quyen, xac_thuc
+from agent.core import (cong_viec, du_lieu_ca_nhan, gio_lam_viec, quyen,
+                        xac_thuc)
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -789,6 +791,7 @@ app.include_router(api_router)
 app.include_router(channel_accounts_router)
 app.include_router(contacts_router)
 app.include_router(khach_vo_chu_router)
+app.include_router(cong_viec_router)
 app.include_router(erp_router)
 app.include_router(routing_admin_router)
 app.include_router(retention_router)
@@ -1275,6 +1278,12 @@ async def handle_inbound(msg: InboundMessage) -> None:
         )
         await db.log_event("conversation.escalated", ref_id=cid,
                            reason="khách gửi ảnh không kèm chữ")
+        # Một dòng nhật ký không phải một người chịu trách nhiệm. Không
+        # tạo việc thì chuyện này chỉ được nhớ tới nếu tình cờ có ai mở
+        # đúng hội thoại — và "tình cờ" không phải một cơ chế.
+        await cong_viec.tao_tu_chuyen_nguoi(
+            cid, ly_do="Khách gửi ảnh không kèm chữ — agent không đoán.",
+            ten_khach=conv.get("customer_name") or "")
         with suppress(Exception):
             await adapter_bao_nguoi(msg, cid)
         return
@@ -1447,6 +1456,9 @@ async def handle_inbound(msg: InboundMessage) -> None:
         await db.log_event(
             "conversation.escalated", ref_id=cid, reason=reply.escalate_reason
         )
+        await cong_viec.tao_tu_chuyen_nguoi(
+            cid, ly_do=reply.escalate_reason or "agent không xử lý được",
+            ten_khach=(conv or {}).get("customer_name") or "")
         await bao_nhan_vien_tiep_quan(
             adapter, msg.conversation_ref, cid,
             reply.escalate_reason or "agent không xử lý được",

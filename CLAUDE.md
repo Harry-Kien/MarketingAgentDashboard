@@ -65,7 +65,7 @@ không ai kiểm.
 
 ```bash
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
-python -m pytest -q               # ~2760 test, khoảng 3 phút, không gọi API model
+python -m pytest -q               # ~2930 test, khoảng 3 phút, không gọi API model
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
 
@@ -213,7 +213,7 @@ python -m scripts.sinh_token MCP_TOKEN
 Không dùng `python -c "...print(token)"` — nó để lại bí mật trong lịch sử
 terminal và trong ảnh chụp màn hình.
 
-**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 36 quyền,
+**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 41 quyền,
 và `kiem_moi_route_co_quyen(app)` chạy lúc khởi động: route nào dưới `/api`
 hay `/tich-hop` chưa có `Depends(can_quyen("..."))` và cũng không nằm trong
 `MIEN_TRU` thì **máy chủ không lên**.

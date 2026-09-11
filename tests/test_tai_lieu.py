@@ -78,3 +78,19 @@ def test_noi_ro_phai_tu_kiem_tra_trich_dan():
     thứ mình chưa mở ra đọc là lỗi học thuật, không phải lỗi kỹ thuật.
     """
     assert "tự kiểm tra lại" in NOI_DUNG
+
+
+def test_claude_md_khai_dung_so_quyen():
+    """
+    CLAUDE.md nói danh mục có bao nhiêu quyền. Con số ấy ĐÃ trôi một lần:
+    tài liệu ghi 36 trong khi mã có 41, và không gì báo.
+
+    Một con số sai trong tài liệu hướng dẫn tệ hơn không có con số nào —
+    người đọc tin nó, đếm thử, thấy lệch, rồi thôi tin cả trang.
+    """
+    from agent.core.quyen import QUYEN
+
+    noi_dung = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert f"danh mục {len(QUYEN)} quyền" in noi_dung, (
+        f"CLAUDE.md phải ghi 'danh mục {len(QUYEN)} quyền' — "
+        "thêm quyền mới thì sửa luôn câu ấy")

@@ -51,8 +51,8 @@ from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent.core import anh_khach
 from agent import canh_gac
-from agent.core import (cong_viec, du_lieu_ca_nhan, gio_lam_viec, quyen,
-                        xac_thuc)
+from agent.core import (agent_bat, cong_viec, du_lieu_ca_nhan,
+                        gio_lam_viec, quyen, xac_thuc)
 from agent.core import tu_nhien
 from agent.publish import registry as pub_registry
 from agent.publish import service as post_service
@@ -1245,18 +1245,30 @@ async def handle_inbound(msg: InboundMessage) -> None:
         )
         return
 
-    # Công tắc ngắt, hoặc hội thoại đã do người tiếp quản -> agent đứng ngoài.
-    if (
-        not runtime.enabled()
-        or conv["status"] == "escalated"
-        or conv["mode"] == "human"
-    ):
+    # Agent có được trả lời hội thoại này không — ba nấc: công tắc toàn cục,
+    # bật/tắt theo TÀI KHOẢN KÊNH, và người đã tiếp quản hội thoại.
+    #
+    # TẮT KHÔNG PHẢI LÀ IM. Hội thoại chuyển sang người VÀ sinh một công
+    # việc. Bỏ vế thứ hai thì "agent là tuỳ chọn" biến thành "kênh chết im
+    # lặng": tin vào, không ai trả lời, và dashboard vẫn xanh vì không có gì
+    # hỏng cả.
+    cho_phep = await agent_bat.agent_duoc_tra_loi(msg.account_id, conv)
+    if not cho_phep.duoc:
         await db.execute(
             "UPDATE conversations SET status = 'escalated', mode = 'human', "
             "version = version + 1, updated_at = now() "
             "WHERE id = $1",
             cid,
         )
+        # Hội thoại người đã cầm rồi thì KHÔNG sinh việc mới: họ đang làm,
+        # và một việc nữa chỉ làm loãng danh sách. Chỉ sinh khi agent bị
+        # chặn vì cấu hình — đó mới là lúc chưa ai biết mình phải vào.
+        if "đã do người tiếp quản" not in cho_phep.ly_do:
+            await db.log_event("conversation.escalated", ref_id=cid,
+                               reason=cho_phep.ly_do)
+            await cong_viec.tao_tu_chuyen_nguoi(
+                cid, ly_do=cho_phep.ly_do,
+                ten_khach=conv.get("customer_name") or "")
         return
 
     # KHÁCH GỬI ẢNH KHÔNG KÈM CHỮ -> CHUYỂN NGƯỜI, KHÔNG ĐOÁN

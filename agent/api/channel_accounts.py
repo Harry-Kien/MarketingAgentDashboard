@@ -169,6 +169,29 @@ async def list_accounts(
             # Kết nối vẫn hiện được. Mất một dòng phụ tốt hơn mất cả màn.
             ly_do = {}
 
+    # TRẠNG THÁI AGENT THEO KÊNH — cùng lý lẽ với lý do hỏng ở trên.
+    #
+    # Một kênh đang tắt agent mà thẻ không hiện gì thì "vì sao kênh này
+    # agent không trả lời" là câu hỏi không có chỗ nào trả lời: người ta sẽ
+    # đi kiểm token, kiểm sidecar, kiểm mạng, và không ai nghĩ tới một ô
+    # tick đã bấm từ tuần trước.
+    #
+    # Cũng MỘT truy vấn cho tất cả.
+    agent_tt: dict[str, dict] = {}
+    if accounts:
+        try:
+            for r in await db.fetch(
+                "SELECT id, agent_bat, agent_tat_ly_do FROM channel_accounts "
+                "WHERE id = ANY($1)", [a.id for a in accounts],
+            ):
+                agent_tt[str(r["id"])] = {
+                    "agent_bat": r["agent_bat"],
+                    "agent_tat_ly_do": r["agent_tat_ly_do"],
+                }
+        except Exception:  # noqa: BLE001
+            # Chưa migrate: thẻ mất phần này, màn Kết nối vẫn hiện được.
+            agent_tt = {}
+
     ra = []
     for account in accounts:
         cong_khai = account.to_public(
@@ -176,6 +199,7 @@ async def list_accounts(
         )
         if ly_do.get(str(account.id)):
             cong_khai["ly_do_hong"] = ly_do[str(account.id)]
+        cong_khai.update(agent_tt.get(str(account.id), {}))
         ra.append(cong_khai)
     return ra
 
@@ -279,6 +303,49 @@ async def rotate_credentials(
     except (AccountNotFound, AccountDisabled) as exc:
         _raise_public(exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class AgentBatIn(BaseModel):
+    bat: bool
+    ly_do: str = Field("", max_length=300)
+
+
+@router.post("/{account_id}/agent")
+async def bat_tat_agent(
+    account_id: UUID,
+    body: AgentBatIn,
+    user: dict = Depends(can_quyen("agent.dieu_khien")),
+) -> dict[str, Any]:
+    """
+    Bật/tắt agent cho MỘT kênh.
+
+    Khác `disable_account`: đó là tắt cả kênh (không nhận tin nữa). Đây chỉ
+    tắt phần agent tự trả lời — tin khách vẫn vào, vẫn hiện trên dashboard,
+    chỉ là chuyển thẳng cho người.
+
+    Quyền `agent.dieu_khien` chứ không `kenh.sua`: đây là quyết định về việc
+    agent có nói với khách hay không, cùng họ với công tắc ngắt toàn cục.
+
+    Tắt mà không ghi lý do thì được, nhưng câu hỏi "vì sao kênh này agent
+    không trả lời" sẽ chỉ có một cách trả lời: đoán. Nên lý do vào cả cột
+    lẫn nhật ký.
+    """
+    dong = await db.fetchrow(
+        "UPDATE channel_accounts SET agent_bat = $2, "
+        "  agent_tat_boi = CASE WHEN $2 THEN NULL ELSE $3 END, "
+        "  agent_tat_luc = CASE WHEN $2 THEN NULL ELSE now() END, "
+        "  agent_tat_ly_do = CASE WHEN $2 THEN NULL ELSE $4 END "
+        "WHERE id = $1 RETURNING display_name, agent_bat",
+        account_id, body.bat, user.get("ten_dang_nhap", "?"),
+        body.ly_do.strip() or None)
+    if dong is None:
+        raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+
+    await db.log_event(
+        "kenh.agent_bat_tat", actor=user.get("ten_dang_nhap", "?"),
+        ref_id=account_id, bat=body.bat, ly_do=body.ly_do.strip())
+    return {"account_id": str(account_id), "agent_bat": dong["agent_bat"],
+            "display_name": dong["display_name"]}
 
 
 @router.post("/{account_id}/disable")

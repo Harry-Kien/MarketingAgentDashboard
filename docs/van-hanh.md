@@ -584,6 +584,39 @@ số người ta thôi nhìn.
 
 ---
 
+## Agent là tuỳ chọn — bật tắt theo từng kênh
+
+Dashboard → **Kết nối** → nút **Tắt agent** / **Bật agent** trên từng tài
+khoản kênh. Hệ thống hỏi lý do khi tắt; lý do hiện ngay trên thẻ kênh dưới
+dạng huy hiệu **agent TẮT**, và vào nhật ký kiểm toán.
+
+Ba nấc, kiểm theo đúng thứ tự này:
+
+| Nấc | Ở đâu | Ý nghĩa |
+|---|---|---|
+| Toàn cục | Nút **Đang chạy** trên đầu dashboard | Cắt tất cả, mọi kênh |
+| **Theo kênh** | Màn Kết nối | Nấc thật sự hay dùng |
+| Theo hội thoại | Nút tiếp quản trong hội thoại | Người đã cầm cuộc này |
+
+Cách dùng điển hình: mở agent cho Zalo vì tin ở đó đơn giản và nhiều, để
+Facebook cho người trực vì khách ở đó hỏi khó hơn.
+
+### Tắt agent KHÔNG phải là kênh chết
+
+Đây là điều quan trọng nhất, và nó được hiện thực trong **mã**:
+
+- Tin khách vẫn vào, vẫn lưu, vẫn hiện trên dashboard.
+- Hội thoại chuyển thẳng sang trạng thái **đã chuyển người**.
+- Hệ thống **tự tạo một công việc** cho mỗi hội thoại, mang nhãn
+  *agent chuyển*, chưa giao cho ai — ai cũng thấy trên màn Công việc.
+
+Không có vế cuối thì "agent là tuỳ chọn" biến thành "kênh chết im lặng":
+tin vào, không ai trả lời, và dashboard vẫn xanh vì không có gì hỏng cả.
+
+Mặc định của mọi kênh, kể cả kênh nối sau này, là **bật**.
+
+---
+
 ## Việc định kỳ
 
 | Khi nào | Việc |

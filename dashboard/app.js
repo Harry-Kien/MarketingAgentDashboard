@@ -2941,11 +2941,23 @@ async function loadKetNoi() {
               : ""}
             ${callback ? `<code class="callback" title="Callback URL">${esc(callback)}</code>` : ""}</div>
           <span class="status-pill status-pill--${esc(account.status)}">${esc(ACCOUNT_STATUS_LABEL[account.status] || account.status)}</span>
+          ${account.agent_bat === false
+            /* Kênh đang TẮT agent phải nhìn thấy được ngay trên thẻ.
+             *
+               Không hiện thì "vì sao kênh này agent không trả lời" là câu
+               hỏi không có chỗ nào trả lời — người ta sẽ đi kiểm token,
+               kiểm sidecar, kiểm mạng, và không ai nghĩ tới một ô tick đã
+               bấm từ tuần trước. */
+            ? `<span class="status-pill status-pill--degraded" title="${esc(account.agent_tat_ly_do || "không ghi lý do")}">agent TẮT</span>`
+            : ""}
           <div class="token-slot" data-tokenslot="${account.id}"></div>
           <div class="account-actions">
             ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
             ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
             ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
+            <button class="btn btn--sm btn--ghost" data-agentbat="${account.id}"
+              data-bat="${account.agent_bat === false ? "1" : "0"}">${
+              account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
             <button class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
               data-ten-tk="${esc(account.display_name)}">Xoá</button>
           </div>
@@ -2993,6 +3005,32 @@ function lyDoKetNoi(kq) {
   $$('[data-disable]').forEach((button) => button.addEventListener("click", async () => {
     try { await api(`/channel-accounts/${button.dataset.disable}/disable`, { method: "POST" }); toast("Đã tạm ngắt tài khoản."); loadKetNoi(); }
     catch (e) { toast(e.message, true); }
+  }));
+
+  $$('[data-agentbat]').forEach((button) => button.addEventListener("click", async () => {
+    const bat = button.dataset.bat === "1";       // đang tắt -> bấm là bật
+    /* Hỏi LÝ DO khi tắt, không hỏi khi bật.
+     *
+     * Tắt agent cho một kênh là quyết định người khác sẽ phải giải thích
+     * lại sau vài tuần — thường là lúc có người hỏi "vì sao kênh này agent
+     * không trả lời". Lý do đi vào cả cột lẫn nhật ký, và hiện ngay trên
+     * thẻ kênh. */
+    let ly_do = "";
+    if (!bat) {
+      ly_do = prompt(
+        "Tắt agent cho kênh này. Tin khách VẪN vào và vẫn chuyển cho người —\n"
+        + "hệ thống sẽ tự tạo một công việc cho mỗi hội thoại.\n\nLý do:", "");
+      if (ly_do === null) return;
+    }
+    try {
+      const d = await api(`/channel-accounts/${button.dataset.agentbat}/agent`, {
+        method: "POST", body: JSON.stringify({ bat, ly_do }),
+      });
+      toast(d.agent_bat
+        ? `Agent đã bật lại cho “${d.display_name}”.`
+        : `Agent đã tắt cho “${d.display_name}”. Tin khách vẫn vào và chuyển cho người.`);
+      loadKetNoi();
+    } catch (e) { toast(e.message, true); }
   }));
 
   /* XOÁ TÀI KHOẢN KÊNH.

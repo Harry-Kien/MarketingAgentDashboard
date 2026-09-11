@@ -322,7 +322,7 @@ erDiagram
         JSONB capabilities
         JSONB metadata
         BOOLEAN is_legacy
-        _ con_1_cot_nua
+        _ con_5_cot_nua
     }
     credential_secrets {
         UUID account_id

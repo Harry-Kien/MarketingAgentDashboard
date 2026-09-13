@@ -155,6 +155,14 @@ python -m scripts.sinh_thuc_nghiem --ghi
 python -m scripts.sinh_ky_nang --ghi
 ```
 
+Nghiệm thu **từng chức năng, từng bước** trên app đầy đủ và Postgres thật —
+không gọi model, không tốn tiền — rồi sinh `docs/nghiem-thu.md` từ kết quả
+chạy (bảng viết tay là bảng người ta điền "đạt" rồi tin là đã đạt):
+
+```bash
+TEST_DATABASE_URL=postgresql://... python -m scripts.sinh_nghiem_thu --ghi
+```
+
 Đo chất lượng — **gọi API thật, tốn tiền**, hỏi chủ dự án trước khi chạy:
 
 ```bash

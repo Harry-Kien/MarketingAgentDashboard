@@ -264,9 +264,21 @@ async def get_account(
     account = next((item for item in allowed if item.id == account_id), None)
     if account is None:
         raise HTTPException(404, "Không tìm thấy tài khoản kênh")
-    return account.to_public(
+    cong_khai = account.to_public(
         has_credentials=await repository.has_credentials(account.id)
     )
+    # Cùng ba trường agent mà DANH SÁCH đã trả. Danh sách có, chi tiết
+    # không, là hai câu trả lời khác nhau cho cùng một câu hỏi — và người
+    # gọi chi tiết sẽ tưởng kênh chưa gán hồ sơ nào. Bộ nghiệm thu bắt được.
+    r = await db.fetchrow(
+        "SELECT agent_bat, agent_tat_ly_do, agent_ho_so_id "
+        "FROM channel_accounts WHERE id = $1", account.id)
+    if r is not None:
+        cong_khai["agent_bat"] = r["agent_bat"]
+        cong_khai["agent_tat_ly_do"] = r["agent_tat_ly_do"]
+        cong_khai["agent_ho_so_id"] = (str(r["agent_ho_so_id"])
+                                       if r["agent_ho_so_id"] else None)
+    return cong_khai
 
 
 @router.put("/{account_id}/credentials", status_code=status.HTTP_204_NO_CONTENT)

@@ -826,6 +826,7 @@ Xoá một hồ sơ **không** làm kênh ngừng trả lời: chúng rơi về 
 | Sau khi đổi danh mục bên ERP | `python -m scripts.thu_erp` — mã mới có khớp không |
 | Hằng tháng | **Diễn tập phục hồi** sao lưu, đếm bảng |
 | Khi đổi schema | `python -m scripts.sinh_so_do --ghi` |
+| Trước khi nâng cấp / sau khi sửa luồng | `python -m scripts.sinh_nghiem_thu --ghi` — 10 kịch bản đi hết đường trên app thật |
 | Trước khi báo xong việc gì | `pytest -q` và `ruff check .` |
 
 ---

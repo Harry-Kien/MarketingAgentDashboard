@@ -133,3 +133,72 @@ def duong_dan_con_song(duong: str) -> bool:
         if (ROOT / Path(*thu)).exists():
             return True
     return False
+
+
+# =====================================================================
+#  App ĐẦY ĐỦ trên Postgres thật — cho test đầu-cuối và nghiệm thu
+# =====================================================================
+#
+# Khác `csdl_kiem_thu` (chỉ cấp một CSDL trắng): fixture này dựng
+# `agent.main.app` với lifespan thật — cùng thứ uvicorn dựng — để middleware,
+# chốt đăng nhập, vault và mọi router đều có mặt. Hai lỗi từng lọt qua test
+# router trần (callback Zalo OA chết ở middleware) và test kho giả
+# (`merge_preview` nổ ở SQL) là lý do fixture này tồn tại.
+
+import base64  # noqa: E402
+import secrets  # noqa: E402
+from uuid import UUID  # noqa: E402
+
+GOC_WEB = "https://shop.test"
+
+
+@pytest.fixture
+def app_that(csdl_kiem_thu, monkeypatch):
+    """
+    `agent.main.app` trỏ vào CSDL kiểm thử, KHÔNG dựng vòng nền.
+
+    Vòng nền (canh gác Meta, sao lưu, outbox worker…) gọi ra mạng và chạm
+    những thứ ngoài phạm vi test này. `nen_chay_vong_nen` là chính cái khoá
+    mà production dùng để chia vai tiến trình — dùng lại nó, không vá sâu.
+    """
+    from fastapi.testclient import TestClient
+
+    from agent import db, runtime
+    from agent.config import settings
+    import agent.main as main
+
+    khoa = base64.b64encode(secrets.token_bytes(32)).decode()
+    monkeypatch.setattr(settings, "database_url", csdl_kiem_thu)
+    monkeypatch.setattr(settings, "credential_master_keys", f"1:{khoa}")
+    monkeypatch.setattr(settings, "credential_active_key_version", 1)
+    monkeypatch.setattr(main, "nen_chay_vong_nen", lambda *a, **k: False)
+
+    # Test khác có thể để lại pool trỏ CSDL khác. Lifespan chỉ tạo pool khi
+    # `_pool is None`, nên phải xoá trước — nếu không test này chạy trên
+    # CSDL của test trước và xanh nhờ dữ liệu không phải của mình.
+    db._pool = None
+    # Công tắc TOÀN CỤC bật, để thứ chặn agent là công tắc THEO KÊNH.
+    runtime.STATE["enabled"] = True
+
+    with TestClient(main.app) as khach:
+        yield khach
+    db._pool = None
+
+
+async def _quan_tri(ten: str) -> tuple[UUID, str]:
+    """Người thật + vai trò Quản trị + phiên. Trả (id, token)."""
+    from agent import db
+
+    nd = await db.fetchrow(
+        "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam, ho_ten, vai_tro) "
+        "VALUES ($1, 'x', $1, 'quan_tri') RETURNING id", ten)
+    await db.execute(
+        "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id) "
+        "SELECT $1, id FROM vai_tro WHERE ten = 'Quản trị'", nd["id"])
+    token = secrets.token_urlsafe(32)
+    await db.execute(
+        "INSERT INTO phien (token, nguoi_dung_id, het_han) "
+        "VALUES ($1, $2, now() + interval '1 hour')", token, nd["id"])
+    return nd["id"], token
+
+

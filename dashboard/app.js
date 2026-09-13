@@ -1402,42 +1402,55 @@ $("#contactloc")?.addEventListener("click", (e) => {
 });
 
 async function giaoKhach(id, chuHienTai) {
-  /* Gán bằng TÊN ĐĂNG NHẬP chứ không bằng UUID: người quản lý biết "thao",
-     không biết `a3f1…`. Đổi tên sang id ngay tại đây, và tên lạ thì báo
-     ngay chứ không gửi một UUID rỗng lên máy chủ. */
+  /* CHỌN từ danh sách, không gõ tên. Bản cũ là hộp thoại của trình duyệt
+     liệt kê tên đăng nhập rồi bắt gõ lại: gõ sai một chữ là "Không có nhân
+     viên tên…", và không gì trên màn hình cho biết tên đúng viết thế nào.
+
+     Trả về Promise để nơi gọi (Ca trực, Khách hàng) chờ xong rồi tải lại. */
   let ds;
-  try { ds = (await api("/nguoi-dung")).nguoi_dung; }
+  try { ds = (await api("/nguoi-dung")).nguoi_dung.filter((n) => !n.khoa); }
   catch (e) { toast(e.message, true); return; }
 
-  const ten = prompt(
-    "Giao khách này cho ai? Gõ tên đăng nhập.\n"
-    + "Để TRỐNG là thu hồi — khách quay về của chung.\n\n"
-    + ds.map((n) => `${n.ten_dang_nhap} — ${n.ho_ten || ""}`).join("\n"),
-    chuHienTai || "");
-  if (ten === null) return;
+  const o = $("#giaoAi");
+  o.innerHTML = '<option value="">— Thu hồi: khách quay về của chung —</option>'
+    + ds.map((n) => `<option value="${esc(n.id)}"${
+        n.ten_dang_nhap === chuHienTai ? " selected" : ""}>${
+        esc(n.ho_ten || n.ten_dang_nhap)} (${esc(n.ten_dang_nhap)})</option>`).join("");
+  $("#giaoKhachTen").textContent = chuHienTai
+    ? `Đang do ${chuHienTai} phụ trách.` : "Khách chưa ai phụ trách.";
+  $("#giaoLyDo").value = "Phân công ca trực";
+  $("#congGiao").classList.remove("is-off");
+  o.focus();
 
-  const ly_do = prompt("Lý do (ghi vào lịch sử giao khách):", "Phân công ca trực");
-  if (!ly_do) return;
-
-  try {
-    if (!ten.trim()) {
-      await api(`/contacts/${id}/chu-so-huu?ly_do=${encodeURIComponent(ly_do)}`,
-                { method: "DELETE" });
-      toast("Đã thu hồi. Khách quay về của chung.");
-    } else {
-      const nv = ds.find((n) => n.ten_dang_nhap === ten.trim());
-      if (!nv) { toast(`Không có nhân viên tên “${ten.trim()}”.`, true); return; }
-      await api(`/contacts/${id}/chu-so-huu`, {
-        method: "PUT",
-        body: JSON.stringify({ owner_user_id: nv.id, ly_do }),
-      });
-      toast(`Đã giao cho ${nv.ho_ten || nv.ten_dang_nhap}.`);
-    }
-    // Hàm này gọi được từ hai màn. Tải lại danh bạ khi đang đứng ở Ca trực
-    // là một request vô ích ghi vào một khung không ai nhìn.
-    if (state.view === "khachhang") await loadContacts();
-  } catch (e) { toast(e.message, true); }
+  return new Promise((xong) => {
+    const form = $("#giaoform");
+    const dong = () => { $("#congGiao").classList.add("is-off"); form.onsubmit = null; $("#giaoHuy").onclick = null; };
+    $("#giaoHuy").onclick = (e) => { e.preventDefault(); dong(); xong(false); };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const ai = o.value, ly_do = $("#giaoLyDo").value.trim();
+      const nut = form.querySelector("button[type=submit]");
+      nut.disabled = true;
+      try {
+        if (!ai) {
+          await api(`/contacts/${id}/chu-so-huu?ly_do=${encodeURIComponent(ly_do)}`,
+                    { method: "DELETE" });
+          toast("Đã thu hồi. Khách quay về của chung.");
+        } else {
+          await api(`/contacts/${id}/chu-so-huu`, {
+            method: "PUT", body: JSON.stringify({ owner_user_id: ai, ly_do }),
+          });
+          toast(`Đã giao cho ${o.options[o.selectedIndex].text}.`);
+        }
+        dong();
+        if (state.view === "khachhang") await loadContacts();
+        xong(true);
+      } catch (err) { toast(err.message, true); }
+      finally { nut.disabled = false; }
+    };
+  });
 }
+
 
 function oTruongKhach(contact) {
   /* Vẽ ô nhập theo KIỂU. Vẽ tất cả thành ô chữ cũng "chạy" — máy chủ vẫn
@@ -3425,28 +3438,48 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
     return;
   }
 
+  const luu = e.target.closest("[data-vtluu]");
+  if (luu) {
+    const id = luu.dataset.vtluu;
+    const ids = $$(`[data-vtbang="${id}"] input:checked`).map((c) => c.value);
+    luu.disabled = true;
+    try {
+      await api(`/nguoi-dung/${id}/vai-tro`, {
+        method: "PUT", body: JSON.stringify({ vai_tro: ids }),
+      });
+      toast(ids.length ? "Đã gán vai trò." : "Đã gỡ hết vai trò — người này vào được nhưng mọi màn đều trống.");
+      await loadNhanSu();
+    } catch (err) { toast(err.message, true); luu.disabled = false; }
+    return;
+  }
+  const huy = e.target.closest("[data-vthuy]");
+  if (huy) { $(`[data-vtbang="${huy.dataset.vthuy}"]`)?.remove(); return; }
+
   const gan = e.target.closest("[data-ganvai]");
   if (!gan) return;
   const id = gan.dataset.ganvai;
+  /* Bảng TICK ngay dưới dòng, không phải hộp thoại bắt gõ tên vai trò cách
+     nhau bằng dấu phẩy. Một người có thể mang nhiều vai trò, nên là ô tick
+     chứ không phải ô chọn một. Mở bảng thứ hai thì đóng bảng thứ nhất. */
+  $$("[data-vtbang]").forEach((b) => b.remove());
   try {
     const hien = await api(`/nguoi-dung/${id}/quyen`);
     const dangCo = new Set(hien.vai_tro);
-    const chon = nhanSu.vaiTro.map((v) =>
-      `${dangCo.has(v.ten) ? "[x]" : "[ ]"} ${v.ten}`).join("\n");
-    const tra = prompt(
-      `Gán vai trò cho ${hien.nguoi_dung.ho_ten || hien.nguoi_dung.ten_dang_nhap}.\n`
-      + `Gõ tên các vai trò, cách nhau bằng dấu phẩy. Để trống là gỡ hết.\n\n${chon}`,
-      hien.vai_tro.join(", "));
-    if (tra === null) return;
-    const ten = tra.split(",").map((s) => s.trim()).filter(Boolean);
-    const la = ten.filter((t) => !nhanSu.vaiTro.some((v) => v.ten === t));
-    if (la.length) { toast("Không có vai trò: " + la.join(", "), true); return; }
-    const ids = nhanSu.vaiTro.filter((v) => ten.includes(v.ten)).map((v) => v.id);
-    await api(`/nguoi-dung/${id}/vai-tro`, {
-      method: "PUT", body: JSON.stringify({ vai_tro: ids }),
-    });
-    toast("Đã gán vai trò.");
-    await loadNhanSu();
+    const bang = document.createElement("div");
+    bang.className = "ns-vaitro";
+    bang.dataset.vtbang = id;
+    bang.innerHTML = `<fieldset class="quyen__nhom"><legend>Vai trò của ${
+        esc(hien.nguoi_dung.ho_ten || hien.nguoi_dung.ten_dang_nhap)}</legend>${
+      nhanSu.vaiTro.map((v) => `<label class="quyen__o">
+        <input type="checkbox" value="${esc(v.id)}"${dangCo.has(v.ten) ? " checked" : ""}>
+        <span>${esc(v.ten)}</span>
+        <small>${esc(v.mo_ta || "")}</small></label>`).join("")}
+      </fieldset>
+      <div class="row__nut">
+        <button type="button" class="btn btn--sm btn--primary" data-vtluu="${esc(id)}">Lưu</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-vthuy="${esc(id)}">Huỷ</button>
+      </div>`;
+    gan.closest(".row").insertAdjacentElement("afterend", bang);
   } catch (err) { toast(err.message, true); }
 });
 

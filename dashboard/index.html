@@ -158,6 +158,28 @@
     </form>
   </div>
 
+  <!-- Giao khách cho nhân viên: CHỌN từ danh sách, không gõ tên.
+       Trước đây là prompt() liệt kê tên đăng nhập rồi bắt gõ lại — gõ sai
+       một chữ là "Không có nhân viên tên…", và không có gì trên màn hình
+       cho biết tên đúng viết thế nào. Dùng lại lớp phủ của màn đăng nhập. -->
+  <div class="cong is-off" id="congGiao">
+    <form class="cong__form" id="giaoform">
+      <h1 class="cong__ten">Giao khách</h1>
+      <p class="cong__phu" id="giaoKhachTen"></p>
+      <label class="field">
+        <span>Người chịu trách nhiệm</span>
+        <select name="ai" id="giaoAi" required></select>
+      </label>
+      <label class="field">
+        <span>Lý do <em class="hint">ghi vào lịch sử giao khách</em></span>
+        <input name="ly_do" id="giaoLyDo" required minlength="3" maxlength="500"
+               value="Phân công ca trực" autocomplete="off">
+      </label>
+      <button type="submit" class="btn btn--primary">Giao</button>
+      <p class="cong__note"><a href="#" id="giaoHuy">Thôi, quay lại</a></p>
+    </form>
+  </div>
+
   <!-- Đổi mật khẩu. Dùng lại đúng lớp phủ của màn đăng nhập thay vì dựng
        một kiểu hộp thoại thứ hai cho riêng nó.
 

@@ -1901,3 +1901,21 @@ svg { flex: none; }
   background: hsl(var(--warning) / .14);
   color: hsl(var(--warning));
 }
+
+
+/* Ô chọn trong lớp phủ (giao khách) — cùng dáng với ô nhập ở màn đăng nhập,
+   nếu không nó là ô select mặc định của trình duyệt giữa một form đã thiết kế. */
+.cong__form select {
+  font-size: 14px; padding: 9px 11px;
+  border: 1px solid hsl(var(--border)); border-radius: 7px;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+
+/* Bảng tick vai trò mở ngay dưới dòng nhân viên. */
+.ns-vaitro {
+  margin: 0 0 8px 18px; padding: 10px 14px 12px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--muted, var(--background)) / .35);
+}
+.ns-vaitro .quyen__o small { display: block; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.ns-vaitro .row__nut { margin-top: 8px; }

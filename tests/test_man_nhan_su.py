@@ -153,3 +153,29 @@ def test_man_dang_nhap_noi_ro_nhan_vien_lay_tai_khoan_o_dau():
     assert "Nhân viên:" in khoi
     assert "quản trị cấp" in khoi
     assert "tao_tai_khoan" in khoi      # đường lần đầu vẫn phải còn
+
+
+# ---------------- chọn từ danh sách, không gõ tên ----------------
+
+def test_gan_vai_tro_la_bang_tick_khong_phai_prompt():
+    """
+    Bản cũ là prompt() bắt gõ tên vai trò cách nhau bằng dấu phẩy. Gõ sai
+    một chữ là báo "không có vai trò", và không gì trên màn hình cho biết
+    tên đúng viết thế nào. Chủ dự án yêu cầu ô chọn thật.
+    """
+    doan = JS[JS.index('const gan = e.target.closest("[data-ganvai]")'):]
+    doan = doan[:doan.index('$("#nsThemNguoi")')]
+    assert "prompt(" not in doan
+    assert 'type="checkbox"' in doan          # nhiều vai trò một người
+    assert "data-vtluu" in doan and "data-vthuy" in doan
+
+
+def test_giao_khach_chon_nguoi_tu_danh_sach():
+    doan = JS[JS.index("async function giaoKhach"):JS.index("function oTruongKhach")]
+    assert "prompt(" not in doan
+    assert '#giaoAi' in doan
+    assert 'id="giaoAi"' in HTML and 'id="congGiao"' in HTML
+    # Người đã khoá không được xuất hiện trong danh sách giao.
+    assert "filter((n) => !n.khoa)" in doan
+    # Vẫn thu hồi được (giá trị rỗng = thu hồi) — không mất tính năng cũ.
+    assert 'method: "DELETE"' in doan

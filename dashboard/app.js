@@ -484,6 +484,128 @@ $("#dtFormSla")?.addEventListener("submit", (e) => {
   }));
 });
 
+/* ==================== Đếm trước khi xoá (có duyệt) ====================
+ *
+ * `/api/data-retention/jobs` có từ lâu, không màn hình nào gọi. Điều quan
+ * trọng nhất về nó: máy chủ KHÔNG có bộ thực thi xoá cho luồng này — việc
+ * duy nhất nó làm được là ĐẾM số bản ghi sẽ bị ảnh hưởng (`execute-dry-run`),
+ * sau khi một người KHÁC người tạo đã duyệt. Màn hình phải nói đúng như
+ * vậy; gọi nó là "xoá có duyệt" là hứa một việc máy chủ không làm.
+ */
+
+const RT_TRANG_THAI = {
+  pending_approval: ["chờ người khác duyệt", "assist"],
+  approved: ["đã duyệt · chưa chạy đếm", "auto"],
+  completed: ["đã đếm", "auto"],
+  cancelled: ["đã huỷ", "halt"],
+};
+
+function rtKetQua(r) {
+  if (!r || !Object.keys(r).length) return "";
+  const ten = { conversations: "hội thoại", messages: "tin nhắn", attachments: "tệp",
+                contact_points: "danh tính", tags: "nhãn", notes: "ghi chú", consents: "đồng ý" };
+  return Object.entries(r).filter(([, v]) => v > 0)
+    .map(([k, v]) => `${v} ${ten[k] || k}`).join(" · ") || "không có gì để xoá";
+}
+
+async function loadRetention() {
+  const o = $("#dsRetention");
+  if (!o) return;
+  if (!state.toiQuyen.has("khach.xoa")) {
+    o.innerHTML = '<p class="empty">Cần quyền khach.xoa để xem mục này.</p>';
+    return;
+  }
+  let ds;
+  // Khoá là `jobs`, không phải `items` như outbox. Bản đầu đọc `.items` và
+  // panel báo "chưa có yêu cầu" mãi mãi — kịch bản nghiệm thu 11 bắt được.
+  try { ds = (await api("/data-retention/jobs")).jobs || []; }
+  catch (e) { o.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+  $("#rtNote").textContent = ds.length
+    ? `${ds.filter((j) => j.status === "pending_approval").length} đang chờ duyệt`
+    : "chưa có yêu cầu nào";
+  o.innerHTML = ds.length ? ds.map((j) => {
+    const [nhan, co] = RT_TRANG_THAI[j.status] || [j.status, "assist"];
+    const cua_toi = String(j.requested_by) === String(state.toiId);
+    const nut = [];
+    if (j.status === "pending_approval") {
+      /* Người tạo không tự duyệt được — máy chủ chặn (409). Ẩn nút với họ
+         để không tạo ra một cú bấm chắc chắn thất bại. */
+      if (!cua_toi) nut.push(`<button type="button" class="btn btn--sm" data-rtduyet="${esc(j.id)}">Duyệt</button>`);
+      nut.push(`<button type="button" class="btn btn--sm btn--ghost" data-rthuy="${esc(j.id)}">Huỷ</button>`);
+    } else if (j.status === "approved") {
+      if (j.dry_run) nut.push(`<button type="button" class="btn btn--sm" data-rtdem="${esc(j.id)}">Chạy đếm</button>`);
+      nut.push(`<button type="button" class="btn btn--sm btn--ghost" data-rthuy="${esc(j.id)}">Huỷ</button>`);
+    }
+    return `<div class="row">
+      <span class="row__flag row__flag--${co}"></span>
+      <div class="row__main">
+        <b>${esc(j.kind === "delete" ? "Xoá" : j.kind === "export" ? "Xuất" : "Lưu trữ")} · khách ${esc(String(j.contact_id).slice(0, 8))}…${cua_toi ? " · bạn tạo" : ""}</b>
+        <span class="row__sub">${esc(j.reason || "")}</span>
+        <span class="row__sub">${esc(nhan)} · ${clock(j.requested_at)}${j.result && Object.keys(j.result).length ? " · " + esc(rtKetQua(j.result)) : ""}</span>
+      </div>
+      <div class="row__side">${nut.length ? `<span class="row__nut">${nut.join("")}</span>` : ""}</div>
+    </div>`;
+  }).join("") : '<p class="empty">Chưa có yêu cầu nào. Tạo từ hồ sơ khách ở màn Khách hàng.</p>';
+}
+
+$("#dsRetention")?.addEventListener("click", async (e) => {
+  const duyet = e.target.closest("[data-rtduyet]");
+  const dem = e.target.closest("[data-rtdem]");
+  const huy = e.target.closest("[data-rthuy]");
+  const nut = duyet || dem || huy;
+  if (!nut) return;
+  const id = duyet?.dataset.rtduyet || dem?.dataset.rtdem || huy?.dataset.rthuy;
+  const duong = duyet ? "approve" : dem ? "execute-dry-run" : "cancel";
+  nut.disabled = true;
+  try {
+    const r = await api(`/data-retention/jobs/${id}/${duong}`, { method: "POST" });
+    toast(duyet ? "Đã duyệt. Giờ bấm Chạy đếm."
+      : dem ? `Đã đếm: ${rtKetQua(r.result)}.` : "Đã huỷ yêu cầu.");
+    await loadRetention();
+  } catch (err) { toast(err.message, true); nut.disabled = false; }
+});
+
+/* Tạo yêu cầu đếm từ hồ sơ khách. Luôn dry_run: máy chủ không thực thi gì
+   khác, và gửi dry_run=false là tạo một yêu cầu mãi mãi "đã duyệt" mà không
+   bao giờ chạy. */
+async function rtYeuCauDem(contactId) {
+  const ly_do = prompt("Vì sao cần đếm dữ liệu sẽ xoá của khách này? (ghi vào nhật ký)",
+                       "Khách yêu cầu xoá dữ liệu");
+  if (!ly_do) return;
+  try {
+    await api(`/contacts/${contactId}/retention-jobs`, {
+      method: "POST",
+      body: JSON.stringify({ kind: "delete", reason: ly_do, dry_run: true }),
+    });
+    toast("Đã tạo yêu cầu. Một người khác cần duyệt ở màn Nhật ký.");
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ==================== Sức khoẻ từng kênh ==================== */
+
+/* Uỷ quyền lên #contactdetail: khung chi tiết dựng lại innerHTML mỗi lần
+   chọn khách, gắn listener lên nút thì mỗi lần dựng lại phải gắn lại. */
+$("#contactdetail")?.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-contact-rt]");
+  if (b) rtYeuCauDem(b.dataset.contactRt);
+});
+
+async function kenhSucKhoe(nut) {
+  const id = nut.dataset.health;
+  const o = document.querySelector(`[data-tokenslot="${id}"]`);
+  nut.disabled = true;
+  try {
+    const d = (await api(`/channel-accounts/${id}/health`)).latest;
+    const html = d
+      ? `<span class="row__sub">Lần kiểm gần nhất ${clock(d.observed_at)}: <b>${esc(ACCOUNT_STATUS_LABEL[d.status] || d.status)}</b> · <code>${esc(d.code || "")}</code></span>`
+      : '<span class="row__sub">Chưa có lần kiểm nào — bấm Xác minh provider.</span>';
+    state.sucKhoeKenh = state.sucKhoeKenh || {};
+    state.sucKhoeKenh[id] = html;      // để lần dựng lại thẻ vẫn còn
+    if (o) o.innerHTML = html;
+  } catch (e) { toast(e.message, true); }
+  finally { nut.disabled = false; }
+}
+
 async function loadOverview() {
   const o = await api("/overview");
   applyRuntime(o.runtime);
@@ -1386,6 +1508,13 @@ async function loadContactDetail(id) {
                 data-chu="${esc(contact.owner_ten_dang_nhap || "")}">Giao / thu hồi</button>
         <button type="button" class="btn btn--sm btn--ghost"
                 data-contact-lichsu="${esc(contact.id)}">Lịch sử giao</button>
+        ${state.toiQuyen.has("khach.xoa")
+          /* Đếm trước khi xoá — luồng bốn mắt. Chỉ hiện cho người có
+             khach.xoa: người khác bấm là ăn 403, và một nút chắc chắn
+             thất bại thì không phải là nút. */
+          ? `<button type="button" class="btn btn--sm btn--ghost"
+                data-contact-rt="${esc(contact.id)}">Đếm dữ liệu sẽ xoá</button>`
+          : ""}
       </div>
     </div>
     <div id="contact-lichsu-giao"></div>
@@ -3407,7 +3536,7 @@ async function refresh() {
     if (state.view === "cauhinh") { await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") await loadNhanSu();
-    if (state.view === "nhatky") { await loadPdpdPolicy(); await loadEvents(); }
+    if (state.view === "nhatky") { await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }
@@ -3588,11 +3717,16 @@ async function loadKetNoi() {
                bấm từ tuần trước. */
             ? `<span class="status-pill status-pill--degraded" title="${esc(account.agent_tat_ly_do || "không ghi lý do")}">agent TẮT</span>`
             : ""}
-          <div class="token-slot" data-tokenslot="${account.id}"></div>
+          <div class="token-slot" data-tokenslot="${account.id}">${
+            /* Kết quả Sức khoẻ phải SỐNG QUA vòng làm mới 6 giây: thẻ được
+               dựng lại innerHTML mỗi vòng, ghi thẳng vào ô là mất sau vài
+               giây và người bấm tưởng nút không làm gì. */
+            (state.sucKhoeKenh || {})[account.id] || ""}</div>
           <div class="account-actions">
             ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
             ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
             ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
+            <button class="btn btn--sm btn--ghost" data-health="${account.id}">Sức khoẻ</button>
             <button class="btn btn--sm btn--ghost" data-agentbat="${account.id}"
               data-bat="${account.agent_bat === false ? "1" : "0"}">${
               account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
@@ -3646,6 +3780,8 @@ function lyDoKetNoi(kq) {
       loadKetNoi();
     } catch (e) { toast(e.message, true); }
   }));
+  $$('[data-health]').forEach((b) => b.addEventListener("click", () => kenhSucKhoe(b)));
+
   $$('[data-disable]').forEach((button) => button.addEventListener("click", async () => {
     try { await api(`/channel-accounts/${button.dataset.disable}/disable`, { method: "POST" }); toast("Đã tạm ngắt tài khoản."); loadKetNoi(); }
     catch (e) { toast(e.message, true); }

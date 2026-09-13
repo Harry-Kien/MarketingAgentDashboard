@@ -1200,6 +1200,20 @@
         <div id="pdpdOut"></div>
       </section>
 
+      <!-- YÊU CẦU XỬ LÝ DỮ LIỆU CÓ DUYỆT (bốn mắt).
+           API này có từ lâu, không màn hình nào gọi. Nó KHÔNG xoá gì: việc
+           duy nhất máy chủ thực thi là ĐẾM số bản ghi sẽ bị ảnh hưởng, sau
+           khi một người KHÁC người tạo yêu cầu đã duyệt. Xoá thật vẫn đi qua
+           khung PDPD ở trên. Nói rõ ở đây để không ai tưởng đã xoá xong. -->
+      <section class="panel">
+        <h2 class="panel__head">Đếm trước khi xoá — có người thứ hai duyệt
+          <span class="panel__note" id="rtNote">tạo từ hồ sơ khách ở màn Khách hàng</span></h2>
+        <p class="panel__note">Người tạo yêu cầu <b>không tự duyệt được</b>. Duyệt xong thì
+          bấm <i>Chạy đếm</i> để biết yêu cầu xoá sẽ chạm bao nhiêu hội thoại, tin nhắn,
+          tệp đính kèm — trước khi ai đó bấm nút xoá thật ở khung trên.</p>
+        <div id="dsRetention" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Nhật ký kiểm toán</h2>
         <div id="events" class="rows"></div>

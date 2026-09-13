@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-09-13 02:10 UTC trên commit `020619f`. **10/10 kịch bản đạt.**
+Chạy lúc 2026-09-13 02:27 UTC trên commit `a48756b`. **11/11 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -18,6 +18,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 8 | Tin KHÔNG gửi được | đạt |
 | 9 | Nhiều agent theo cấu hình; định tuyến theo cấu hình | đạt |
 | 10 | Gộp khách trùng | đạt |
+| 11 | Đếm dữ liệu sẽ xoá, có người thứ hai duyệt | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -118,3 +119,13 @@ Kết quả: **đạt** · `test_10_gop_hai_khach_lam_mot`
 3. Gộp với version đúng -> 200, danh sách còn 1 khách.
 4. Khách giữ lại có 2 danh tính.
 5. Hoàn tác -> lại 2 khách.
+
+## 11. Đếm dữ liệu sẽ xoá, có người thứ hai duyệt
+
+Kết quả: **đạt** · `test_11_dem_truoc_khi_xoa_can_nguoi_thu_hai_duyet`
+
+1. Khách nhắn -> có hồ sơ. Quản trị A tạo yêu cầu đếm (dry-run) kèm lý do.
+2. Danh sách ở màn Nhật ký hiện yêu cầu, trạng thái chờ duyệt.
+3. Chính A bấm Duyệt -> 409: người tạo không tự duyệt được.
+4. Quản trị B duyệt -> đã duyệt. Chạy đếm -> kết quả có số hội thoại, tin nhắn.
+5. Sức khoẻ kênh đọc được qua API (chưa có lần kiểm nào -> null, không lỗi).

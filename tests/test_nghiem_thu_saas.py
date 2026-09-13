@@ -506,3 +506,41 @@ def test_10_gop_hai_khach_lam_mot(app_that):
     assert qt.post(f"/api/contacts/merges/{mid}/undo",
                    json={"reason": "gộp nhầm"}).status_code == 200
     assert len(qt.get("/api/contacts").json()) == 2
+
+
+# ------------------------------------------------------------------ 11. đếm trước khi xoá (bốn mắt)
+
+def test_11_dem_truoc_khi_xoa_can_nguoi_thu_hai_duyet(app_that):
+    """
+    Đếm dữ liệu sẽ xoá, có người thứ hai duyệt.
+
+    BƯỚC 1  Khách nhắn -> có hồ sơ. Quản trị A tạo yêu cầu đếm (dry-run) kèm lý do.
+    BƯỚC 2  Danh sách ở màn Nhật ký hiện yêu cầu, trạng thái chờ duyệt.
+    BƯỚC 3  Chính A bấm Duyệt -> 409: người tạo không tự duyệt được.
+    BƯỚC 4  Quản trị B duyệt -> đã duyệt. Chạy đếm -> kết quả có số hội thoại, tin nhắn.
+    BƯỚC 5  Sức khoẻ kênh đọc được qua API (chưa có lần kiểm nào -> null, không lỗi).
+    """
+    a = _quan_tri_vao(app_that, "sep_a")
+    b = _quan_tri_vao(app_that, "sep_b")
+    tk = _kenh_webchat(a)
+    _khach_nhan(app_that, tk, "Chị Hoa", "xoá dữ liệu giúp em")
+    cid = a.get("/api/contacts").json()[0]["id"]
+
+    r = a.post(f"/api/contacts/{cid}/retention-jobs",
+               json={"kind": "delete", "reason": "Khách yêu cầu qua Zalo", "dry_run": True})
+    assert r.status_code == 202, r.text
+    jid = r.json()["id"]
+
+    ds = a.get("/api/data-retention/jobs").json()["jobs"]
+    assert any(j["id"] == jid and j["status"] == "pending_approval" for j in ds)
+
+    assert a.post(f"/api/data-retention/jobs/{jid}/approve").status_code == 409
+
+    assert b.post(f"/api/data-retention/jobs/{jid}/approve").status_code == 200
+    r = b.post(f"/api/data-retention/jobs/{jid}/execute-dry-run")
+    assert r.status_code == 200, r.text
+    kq = r.json()["result"]
+    assert kq["conversations"] == 1 and kq["messages"] >= 1
+
+    r = a.get(f"/api/channel-accounts/{tk}/health")
+    assert r.status_code == 200 and "latest" in r.json()

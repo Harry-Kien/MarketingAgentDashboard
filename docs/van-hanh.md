@@ -562,6 +562,26 @@ Cần quyền `khach.gop`, **và** phải quản lý mọi kênh của cả hai 
 
 ---
 
+## Đếm trước khi xoá — luồng bốn mắt
+
+Ở hồ sơ khách (**Khách hàng**) có nút **Đếm dữ liệu sẽ xoá** (cần quyền
+`khach.xoa`). Nó tạo một yêu cầu; **một người khác** phải vào **Nhật ký** →
+*Đếm trước khi xoá* để **Duyệt**, rồi bấm **Chạy đếm** — kết quả là số hội
+thoại, tin nhắn, tệp, danh tính sẽ bị chạm.
+
+**Luồng này không xoá gì.** Máy chủ không có bộ thực thi xoá cho nó — chỉ
+đếm. Xoá thật vẫn đi qua khung *Dữ liệu cá nhân khách hàng* (tìm theo số
+điện thoại, gõ lại số để xác nhận). Dùng đếm-có-duyệt khi muốn hai người
+cùng nhìn con số trước khi một người bấm xoá.
+
+Người tạo yêu cầu không tự duyệt được — máy chủ chặn, màn hình ẩn nút.
+
+**Sức khoẻ từng kênh**: trên thẻ kênh ở **Kết nối**, nút *Sức khoẻ* hiện
+lần kiểm gần nhất (trạng thái, mã, lúc nào). Chưa có lần kiểm nào thì bấm
+*Xác minh provider* trước.
+
+---
+
 ## Định tuyến tự động
 
 Ở **Cấu hình → Định tuyến tự động**. Chia **từng hội thoại mới** cho người

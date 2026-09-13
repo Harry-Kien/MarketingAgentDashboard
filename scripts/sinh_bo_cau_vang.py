@@ -49,9 +49,15 @@ _MAU = ROOT / "data" / "catalog.example.json"
 # phát triển luôn có hàng thật, và bộ sinh từ hàng thật thì không được
 # commit; không có cờ thì bản mẫu chỉ sinh được trên máy vừa clone.
 DUNG_MAU = "--mau" in sys.argv[1:]
-CATALOG = json.loads(
-    (_MAU if DUNG_MAU or not _THAT.exists() else _THAT).read_text(encoding="utf-8")
-)
+# Hai biến môi trường chỉ để TEST: trỏ bộ sinh vào một danh mục giả và ghi
+# ra một chỗ tạm. Không có chúng thì test đường "danh mục thật" phải ghi đè
+# file thật của máy phát triển — và một test làm hỏng dữ liệu người dùng
+# là test không ai dám chạy.
+import os as _os
+_GHI_DE = _os.environ.get("BO_CAU_VANG_CATALOG")
+_NGUON = (pathlib.Path(_GHI_DE) if _GHI_DE
+          else (_MAU if DUNG_MAU or not _THAT.exists() else _THAT))
+CATALOG = json.loads(_NGUON.read_text(encoding="utf-8"))
 SP = {s["ma"]: s for s in CATALOG["san_pham"]}
 
 C = []
@@ -180,12 +186,31 @@ CONG_CU = [
     ("AS-CB01", "Combo cơ bản cho da dầu mụn Aurora Starter Oil bao nhiêu tiền?"),
     ("AS-TN02", "Toner tẩy tế bào chết Aurora Renew Toner AHA/BHA giá bao nhiêu?"),
 ]
-for i, (ma, hoi) in enumerate(CONG_CU, 1):
+# Tám câu trên viết cho DANH MỤC MẪU. Danh mục thật của shop không có mã
+# `AS-*` — bản trước nổ KeyError ở đúng đây và shop không dựng được bộ câu
+# vàng của mình; eval lặng lẽ chạy trên bộ cũ. Mã mẫu có đủ thì giữ nguyên
+# câu mẫu (bản mẫu commit không được đổi một byte); không đủ thì hỏi giá
+# chính hàng của shop, tên lấy từ danh mục nên không thể lệch.
+if all(ma in SP for ma, _ in CONG_CU):
+    CONG_CU_THAT = CONG_CU
+else:
+    CONG_CU_THAT = [(s["ma"], f"{s['ten']} giá bao nhiêu ạ?")
+                    for s in list(SP.values())[:8]]
+for i, (ma, hoi) in enumerate(CONG_CU_THAT, 1):
     ca(f"CONG_CU_{i:02}", "cong_cu", hoi, False,
        phai_co=[gia_ngan(ma)], cam=CAM_QUANG_CAO)
 
-# Hai ca hết hàng: agent phải NÓI THẬT là hết, không im lặng gợi ý món khác.
-for i, ma in enumerate(["AS-CL03", "AS-SR05"], 9):
+# Ca hết hàng: agent phải NÓI THẬT là hết, không im lặng gợi ý món khác.
+#
+# Chỉ đặt cho món THẬT SỰ hết (`ton_kho == 0`). Đặt cho món còn hàng là bộ
+# đo chấm agent sai trong khi agent nói đúng — loại lỗi tệ nhất của một bộ
+# đo, vì nó làm người ta đi sửa thứ không hỏng. Mẫu: hai mã cố định như cũ.
+HET_HANG_MAU = ["AS-CL03", "AS-SR05"]
+if all(ma in SP for ma in HET_HANG_MAU):
+    HET_HANG = HET_HANG_MAU
+else:
+    HET_HANG = [ma for ma, s in SP.items() if not s.get("ton_kho")][:2]
+for i, ma in enumerate(HET_HANG, 9):
     ca(f"CONG_CU_{i:02}", "cong_cu",
        f"{SP[ma]['ten']} còn hàng không ạ?", False,
        mot_trong=["het hang", "hết hàng", "tam het", "tạm hết", "khong con",
@@ -214,7 +239,8 @@ for i, (hoi, mot) in enumerate(BAN_HANG, 1):
 
 
 # ---------------------------------------------------------------
-dich = ROOT / "data" / "eval" / ("golden.example.jsonl" if DUNG_MAU else "golden.jsonl")
+dich = (pathlib.Path(_os.environ["BO_CAU_VANG_DICH"]) if _os.environ.get("BO_CAU_VANG_DICH")
+        else ROOT / "data" / "eval" / ("golden.example.jsonl" if DUNG_MAU else "golden.jsonl"))
 dich.parent.mkdir(parents=True, exist_ok=True)
 # `newline="\n"` để file giống nhau trên mọi hệ điều hành: mở text mode
 # thường thì Windows ghi CRLF, Linux ghi LF, và test so bản mẫu với bộ sinh

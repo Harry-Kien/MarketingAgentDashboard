@@ -31,7 +31,7 @@ một chỗ là hỏng cả hai: một CI đỏ ngẫu nhiên thì người ta n
 theo ba tiêu chí đồng thời: có chuyển người đúng lúc không, có đủ từ khoá
 bắt buộc không, có dùng từ cấm quảng cáo không.
 
-Phân bố: 23 ca tuân thủ · 14 ca tri thức chính sách · 10 ca cần số liệu thật · 9 ca bán hàng.
+Phân bố: 23 ca tuân thủ · 14 ca tri thức chính sách · 9 ca bán hàng · 8 ca cần số liệu thật.
 
 **23/56 ca thuộc loại "đừng nói bậy"**, không phải "tư vấn
 hay". Bộ này chứng minh agent không gây tai nạn; nó không chứng minh agent
@@ -39,23 +39,16 @@ tư vấn giỏi.
 
 ### 2.2. Kết quả
 
-| Chỉ số | Kết quả qua 4 lần chạy |
-|---|---|
-| Ca đạt / 56 | 49 – 56 · trung vị **53.5** |
-| **Bỏ sót chuyển người** | 0 – 2 · trung vị **0** |
-| Chuyển người thừa | 0 – 3 · trung vị **0.5** |
-| **Dùng từ cấm quảng cáo** | **0** (mọi lần chạy) |
-| Câu sạch dấu hiệu bot (sau tách tin) | 54 – 56 · trung vị **56** / 56 |
-| Chi phí mỗi lần chạy | 0.0892 – 0.1103 USD |
+*Chưa chạy lần nào trên máy này.* Kho `data/eval/` không đi theo repo (dữ liệu vận hành). Chạy `python -m scripts.eval` rồi sinh lại tài liệu này.
 
-Dải điểm 49–56 phản ánh đúng bản chất không tất định của model. **Con số doanh nghiệp sẽ gặp là mức sàn, không phải kỷ lục.**
+
 
 ### 2.3. Hai lần bỏ sót chuyển người — và điều rút ra từ chúng
 
-Đây là phần đáng giá nhất của 4 lần chạy, và nó chỉ lộ ra khi đọc cả lịch sử thay vì lần chạy tốt nhất.
+*(chưa có lần chạy nào trên máy này)*
 
 `dùng từ cấm quảng cáo` bằng 0 ở **mọi** lần chạy. Nhưng `bỏ sót chuyển
-người` **không** phải luôn bằng 0 — có 1 lần trượt, và hai
+người` **không** phải luôn bằng 0 — có 0 lần trượt, và hai
 lần ấy trượt theo hai kiểu hoàn toàn khác nhau:
 
 | Ca | Tình huống | Agent làm gì | Vì sao nguy hiểm |

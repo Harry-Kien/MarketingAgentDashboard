@@ -675,6 +675,21 @@ nó chỉ im, và triệu chứng duy nhất là một khách hàng thôi nhắn
 Mọi lần giao và thu hồi đều ghi vào `contact_owner_history` kèm lý do và
 người thao tác. Bấm **Lịch sử giao** để xem.
 
+### Giao nhiều khách một lượt
+
+Ở **Khách hàng**, mỗi dòng có ô tick (chỉ hiện với người có quyền
+`khach.giao`). Tick những khách cần chia, bấm **Giao cho…**, chọn người từ
+danh sách, ghi lý do — cả lượt đi trong **một giao dịch**: hoặc tất cả đổi
+chủ, hoặc không ai. Chọn dòng đầu tiên ("Thu hồi") để trả cả lượt về của
+chung.
+
+Giao lẻ từng khách bằng cách mở từng hồ sơ là việc người ta bỏ dở ở khách
+thứ mười — và mười khách còn lại "vô chủ" mãi. Ô tick sống qua vòng làm mới
+6 giây, nên tick xong không mất.
+
+Cùng chốt với giao lẻ: không giao được cho người đã khoá hay người không có
+quyền trả lời hội thoại — máy chủ từ chối cả lượt, không giao một nửa.
+
 ### Nhân viên thấy khách của nhau tới đâu
 
 Dashboard → **Cấu hình** → panel đầu tiên. Bốn mức:

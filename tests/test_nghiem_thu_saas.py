@@ -544,3 +544,46 @@ def test_11_dem_truoc_khi_xoa_can_nguoi_thu_hai_duyet(app_that):
 
     r = a.get(f"/api/channel-accounts/{tk}/health")
     assert r.status_code == 200 and "latest" in r.json()
+
+
+# ------------------------------------------------------------------ 12. giao hàng loạt
+
+def test_12_giao_nhieu_khach_mot_luot_va_thu_hoi(app_that):
+    """
+    Giao khách hàng loạt từ danh sách.
+
+    BƯỚC 1  Ba khách web nhắn -> 3 hồ sơ, ô "Khách chưa có chủ" đếm 3.
+    BƯỚC 2  Quản trị tick cả ba, giao cho "lan" một lượt -> 3 khách có chủ, vô chủ = 0.
+    BƯỚC 3  Mỗi khách có đúng 1 dòng lịch sử giao, cùng lý do.
+    BƯỚC 4  Giao cho người đã KHOÁ -> 422, không khách nào đổi chủ (một giao dịch).
+    BƯỚC 5  Thu hồi hàng loạt (không chọn ai) -> cả ba về của chung.
+    """
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    lan_id, _ = _nhan_vien_moi(qt, "lan")
+    minh_id, _ = _nhan_vien_moi(qt, "minh")
+    for ten in ("Chị Hoa", "Anh Nam", "Cô Ba"):
+        _khach_nhan(app_that, tk, ten, "xin chào")
+    ids = [c["id"] for c in qt.get("/api/contacts").json()]
+    assert len(ids) == 3
+    assert qt.get("/api/khach-vo-chu").json()["so"] == 3
+
+    r = qt.put("/api/contacts/chu-so-huu/hang-loat", json={
+        "contact_ids": ids, "owner_user_id": lan_id, "ly_do": "Chia ca sáng"})
+    assert r.status_code == 200, r.text
+    assert r.json()["so_khach"] == 3
+    assert qt.get("/api/khach-vo-chu").json()["so"] == 0
+    for cid in ids:
+        ls = qt.get(f"/api/contacts/{cid}/chu-so-huu/lich-su").json()["lich_su"]
+        assert len(ls) == 1 and ls[0]["ly_do"] == "Chia ca sáng"
+
+    assert qt.post("/api/nguoi-dung/minh/khoa?khoa=true").status_code == 200
+    r = qt.put("/api/contacts/chu-so-huu/hang-loat", json={
+        "contact_ids": ids, "owner_user_id": minh_id, "ly_do": "Thử giao cho người khoá"})
+    assert r.status_code == 422
+    assert all(c["owner_user_id"] == lan_id for c in qt.get("/api/contacts").json())
+
+    r = qt.put("/api/contacts/chu-so-huu/hang-loat", json={
+        "contact_ids": ids, "owner_user_id": None, "ly_do": "Hết ca"})
+    assert r.status_code == 200 and r.json()["owner_ho_ten"] is None
+    assert qt.get("/api/khach-vo-chu").json()["so"] == 3

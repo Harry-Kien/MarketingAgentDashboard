@@ -1919,3 +1919,16 @@ svg { flex: none; }
 }
 .ns-vaitro .quyen__o small { display: block; color: hsl(var(--muted-foreground)); font-size: 12px; }
 .ns-vaitro .row__nut { margin-top: 8px; }
+
+
+/* Tick chọn khách trong danh sách + thanh giao hàng loạt. */
+.row-wrap { display: flex; align-items: stretch; gap: 4px; }
+.row-wrap > .row { flex: 1; min-width: 0; }
+.chonkhach { display: flex; align-items: center; padding: 0 4px 0 6px; cursor: pointer; }
+.chonkhach input { width: 16px; height: 16px; cursor: pointer; }
+.chonbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; margin: 0 0 8px;
+  border: 1px solid hsl(var(--primary) / .35); border-radius: var(--radius);
+  background: hsl(var(--primary) / .08); font-size: 13px; font-weight: 500;
+}

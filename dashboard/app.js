@@ -1374,13 +1374,23 @@ async function loadContacts() {
   state.danhSachKhach = contacts;
   $("#c-khachhang").textContent = contacts.length || "";
   gopDoO(contacts);
+  /* Ô tick nằm NGOÀI nút hàng (nút không được chứa điều khiển khác), và
+     trạng thái tick sống trong state.khachDaChon để qua vòng làm mới 6 giây
+     không mất — tick mười khách rồi thấy mất sạch là thứ người ta bỏ luôn. */
+  const giaoDuoc = state.toiQuyen.has("khach.giao");
+  state.khachDaChon = state.khachDaChon || new Set();
+  for (const id of [...state.khachDaChon]) {
+    if (!contacts.some((c) => c.id === id)) state.khachDaChon.delete(id);
+  }
   $("#contactlist").innerHTML = hien.length ? hien.map((contact) => `
+    <div class="row-wrap">${giaoDuoc ? `<label class="chonkhach" title="Chọn để giao hàng loạt">
+      <input type="checkbox" data-chon="${contact.id}"${state.khachDaChon.has(contact.id) ? " checked" : ""}></label>` : ""}
     <button type="button" class="row row--avatar ${state.openContact === contact.id ? "is-on" : ""}" data-contact="${contact.id}">
       <span class="avatar">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
       <span class="row__body"><span class="row__title">${esc(contact.display_name || "Khách")}</span>
         <span class="row__sub">${esc(contact.phone || contact.email || "Chưa có PII xác minh")} · ${contact.contact_point_count || 0} danh tính</span></span>
       <span class="row__side">${chuKhach(contact)}<span class="row__time">${clock(contact.last_seen)}</span></span>
-    </button>`).join("")
+    </button></div>`).join("")
     : `<p class="empty">${loc === "cua_toi"
         ? "Chưa có khách nào được giao cho bạn."
         : loc === "vo_chu"
@@ -1390,8 +1400,71 @@ async function loadContacts() {
     state.openContact = row.dataset.contact;
     loadContacts();
   }));
+  $$("#contactlist [data-chon]").forEach((o) => o.addEventListener("change", () => {
+    if (o.checked) state.khachDaChon.add(o.dataset.chon);
+    else state.khachDaChon.delete(o.dataset.chon);
+    veChonBar();
+  }));
+  veChonBar();
   if (state.openContact) await loadContactDetail(state.openContact);
 }
+
+function veChonBar() {
+  const n = (state.khachDaChon || new Set()).size;
+  $("#chonbar")?.classList.toggle("is-hidden", n === 0);
+  const d = $("#chonDem");
+  if (d) d.textContent = `Đã chọn ${n} khách`;
+}
+
+$("#chonHuy")?.addEventListener("click", () => {
+  state.khachDaChon = new Set();
+  loadContacts();
+});
+
+/*
+ * Giao hàng loạt: cùng lớp phủ chọn người với giao lẻ, nhưng gọi endpoint
+ * một-giao-dịch. Không lặp endpoint đơn N lần: rớt mạng giữa chừng là nửa
+ * số khách có chủ, nửa không, và người bấm không biết dừng ở đâu.
+ */
+$("#chonGiao")?.addEventListener("click", async () => {
+  const ids = [...(state.khachDaChon || [])];
+  if (!ids.length) return;
+  let ds;
+  try { ds = (await api("/nguoi-dung")).nguoi_dung.filter((n) => !n.khoa); }
+  catch (e) { toast(e.message, true); return; }
+
+  const o = $("#giaoAi");
+  o.innerHTML = '<option value="">— Thu hồi: các khách này quay về của chung —</option>'
+    + ds.map((n) => `<option value="${esc(n.id)}">${esc(n.ho_ten || n.ten_dang_nhap)} (${esc(n.ten_dang_nhap)})</option>`).join("");
+  $("#giaoKhachTen").textContent = `${ids.length} khách đã chọn.`;
+  $("#giaoLyDo").value = "Phân công ca trực";
+  $("#congGiao").classList.remove("is-off");
+  o.focus();
+
+  const form = $("#giaoform");
+  const dong = () => { $("#congGiao").classList.add("is-off"); form.onsubmit = null; $("#giaoHuy").onclick = null; };
+  $("#giaoHuy").onclick = (e) => { e.preventDefault(); dong(); };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const nut = form.querySelector("button[type=submit]");
+    nut.disabled = true;
+    try {
+      const r = await api("/contacts/chu-so-huu/hang-loat", {
+        method: "PUT",
+        body: JSON.stringify({ contact_ids: ids, owner_user_id: o.value || null,
+                               ly_do: $("#giaoLyDo").value.trim() }),
+      });
+      toast(r.owner_ho_ten
+        ? `Đã giao ${r.so_khach} khách cho ${r.owner_ho_ten}.`
+        : `Đã thu hồi ${r.so_khach} khách về của chung.`);
+      dong();
+      state.khachDaChon = new Set();
+      await loadContacts();
+      if (state.view === "ca") { await loadVoChu(); await loadOverview(); }
+    } catch (err) { toast(err.message, true); }
+    finally { nut.disabled = false; }
+  };
+});
 
 $("#contactloc")?.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-chuloc]");

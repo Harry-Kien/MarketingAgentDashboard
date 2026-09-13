@@ -907,6 +907,73 @@ async def thu_hoi_khach(
     return {"contact_id": str(contact_id), "owner_user_id": None}
 
 
+class GiaoHangLoatIn(BaseModel):
+    contact_ids: list[UUID] = Field(min_length=1, max_length=200)
+    # None = thu hồi hàng loạt: khách quay về của chung.
+    owner_user_id: UUID | None = None
+    ly_do: str = Field(min_length=3, max_length=500)
+
+
+@router.put("/chu-so-huu/hang-loat")
+async def giao_khach_hang_loat(
+    body: GiaoHangLoatIn,
+    user: dict = Depends(can_quyen("khach.giao")),
+) -> dict[str, Any]:
+    """
+    Giao (hoặc thu hồi) NHIỀU khách cho một người trong MỘT giao dịch.
+
+    Vì sao không để dashboard gọi endpoint đơn 40 lần: giữa lần thứ 17 và
+    18 mạng rớt là 17 khách có chủ, 23 khách không, và người bấm không biết
+    dừng ở đâu. Một giao dịch thì hoặc cả 40, hoặc không ai — và lịch sử
+    từng khách vẫn ghi đủ như giao lẻ, cùng một lý do.
+
+    Cùng chốt với giao lẻ: người nhận phải trả lời được (`hoi_thoai.tra_loi`)
+    và không bị khoá — kiểm MỘT lần cho cả lượt, không phải mỗi khách một lần.
+    """
+    ids = list(dict.fromkeys(body.contact_ids))     # bỏ trùng, giữ thứ tự
+    ly_do = body.ly_do.strip()
+    ten_nhan = None
+    async with db.pool().acquire() as connection:
+        async with connection.transaction():
+            if body.owner_user_id is not None:
+                nhan = await connection.fetchrow(
+                    "SELECT nd.ho_ten, nd.ten_dang_nhap, nd.khoa, "
+                    "       COALESCE(bool_or(vq.quyen = 'hoi_thoai.tra_loi' "
+                    "               OR (vt.he_thong AND vt.ten = 'Quản trị')), "
+                    "                false) AS tra_loi_duoc "
+                    "FROM nguoi_dung nd "
+                    "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
+                    "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+                    "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
+                    "WHERE nd.id = $1 GROUP BY nd.id",
+                    body.owner_user_id)
+                if nhan is None:
+                    raise HTTPException(404, "Không tìm thấy nhân viên")
+                if nhan["khoa"]:
+                    raise HTTPException(422, "Tài khoản này đang bị khoá — giao "
+                                             "khách cho họ là khách không có ai trả lời.")
+                if not nhan["tra_loi_duoc"]:
+                    raise HTTPException(422, (
+                        f"“{nhan['ho_ten'] or nhan['ten_dang_nhap']}” không có "
+                        "quyền hoi_thoai.tra_loi — giao khách cho họ là khách có "
+                        "chủ nhưng không ai trả lời được."))
+                ten_nhan = nhan["ho_ten"] or nhan["ten_dang_nhap"]
+
+            for cid in ids:
+                await _khach_ton_tai(connection, cid)
+                await _ghi_chu_so_huu(connection, contact_id=cid,
+                                      chu=body.owner_user_id, actor=user,
+                                      ly_do=ly_do)
+
+    await db.log_event(
+        "khach.giao_hang_loat" if body.owner_user_id else "khach.thu_hoi_hang_loat",
+        actor=user.get("ten_dang_nhap", "?"), so_khach=len(ids),
+        owner=str(body.owner_user_id) if body.owner_user_id else None, ly_do=ly_do)
+    return {"so_khach": len(ids),
+            "owner_user_id": str(body.owner_user_id) if body.owner_user_id else None,
+            "owner_ho_ten": ten_nhan}
+
+
 @router.get("/{contact_id}/chu-so-huu/lich-su")
 async def lich_su_chu_so_huu(
     contact_id: UUID,

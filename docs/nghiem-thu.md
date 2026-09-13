@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-09-13 02:27 UTC trên commit `a48756b`. **11/11 kịch bản đạt.**
+Chạy lúc 2026-09-13 07:14 UTC trên commit `5915fb7`. **12/12 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -19,6 +19,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 9 | Nhiều agent theo cấu hình; định tuyến theo cấu hình | đạt |
 | 10 | Gộp khách trùng | đạt |
 | 11 | Đếm dữ liệu sẽ xoá, có người thứ hai duyệt | đạt |
+| 12 | Giao khách hàng loạt từ danh sách | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -129,3 +130,13 @@ Kết quả: **đạt** · `test_11_dem_truoc_khi_xoa_can_nguoi_thu_hai_duyet`
 3. Chính A bấm Duyệt -> 409: người tạo không tự duyệt được.
 4. Quản trị B duyệt -> đã duyệt. Chạy đếm -> kết quả có số hội thoại, tin nhắn.
 5. Sức khoẻ kênh đọc được qua API (chưa có lần kiểm nào -> null, không lỗi).
+
+## 12. Giao khách hàng loạt từ danh sách
+
+Kết quả: **đạt** · `test_12_giao_nhieu_khach_mot_luot_va_thu_hoi`
+
+1. Ba khách web nhắn -> 3 hồ sơ, ô "Khách chưa có chủ" đếm 3.
+2. Quản trị tick cả ba, giao cho "lan" một lượt -> 3 khách có chủ, vô chủ = 0.
+3. Mỗi khách có đúng 1 dòng lịch sử giao, cùng lý do.
+4. Giao cho người đã KHOÁ -> 422, không khách nào đổi chủ (một giao dịch).
+5. Thu hồi hàng loạt (không chọn ai) -> cả ba về của chung.

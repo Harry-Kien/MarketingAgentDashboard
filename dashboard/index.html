@@ -1011,7 +1011,17 @@
             <button type="button" class="chip" data-chuloc="cua_toi">Khách của tôi</button>
             <button type="button" class="chip" data-chuloc="vo_chu">Chưa có chủ</button>
           </div>
-          <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
+          <!-- Thanh giao hàng loạt: chỉ hiện khi đã tick ít nhất một khách.
+           Giao từng khách bằng cách mở từng hồ sơ là việc người ta bỏ dở
+           ở khách thứ mười — và mười khách còn lại thành "vô chủ" mãi. -->
+      <div class="chonbar is-hidden" id="chonbar">
+        <span id="chonDem">Đã chọn 0</span>
+        <span class="row__nut">
+          <button type="button" class="btn btn--sm btn--primary" id="chonGiao">Giao cho…</button>
+          <button type="button" class="btn btn--sm btn--ghost" id="chonHuy">Bỏ chọn</button>
+        </span>
+      </div>
+      <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
         </aside>
         <section class="panel customer360__detail" id="contactdetail">
           <p class="empty">Chọn một khách hàng để xem danh tính đa kênh, hội thoại và consent.</p>

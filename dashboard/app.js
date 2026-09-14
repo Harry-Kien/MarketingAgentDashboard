@@ -30,6 +30,11 @@ async function api(path, options = {}) {
     // Dừng vòng làm mới: không dừng thì cứ 6 giây một toast lỗi, và mỗi
     // lần là một request vô ích tới máy chủ.
     if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    // Và đóng luồng SSE: EventSource tự nối lại mãi sau 401, mỗi lần nối
+    // lại kéo theo một lượt loadOverview -> đo được 25 lần 401 liên tiếp
+    // vào /api/overview từ một tab đã hết phiên. Không nguy hiểm, nhưng là
+    // một tab chết cứ gõ cửa máy chủ vài giây một lần, mãi mãi.
+    if (state.stream) { state.stream.close(); state.stream = null; }
     throw new Error("Phiên đăng nhập đã hết hạn — đăng nhập lại để tiếp tục");
   }
 
@@ -605,6 +610,20 @@ async function kenhSucKhoe(nut) {
   } catch (e) { toast(e.message, true); }
   finally { nut.disabled = false; }
 }
+
+/* Bấm ảnh trên dòng kho -> xem lớn. Uỷ quyền lên #khoRows vì danh sách dựng
+   lại mỗi vòng làm mới; gắn lên từng ảnh là gắn lại mãi. */
+$("#khoRows")?.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-xemanh]");
+  if (!a) return;
+  $("#anhLonImg").src = a.src;
+  $("#anhLonTen").textContent = a.closest(".row")?.querySelector("b, .row__title")?.textContent || a.dataset.xemanh;
+  $("#anhLon").classList.remove("is-off");
+});
+const anhLonDong = () => $("#anhLon").classList.add("is-off");
+$("#anhLonDong")?.addEventListener("click", anhLonDong);
+$("#anhLon")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) anhLonDong(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#anhLon")?.classList.add("is-off"); });
 
 async function loadOverview() {
   const o = await api("/overview");
@@ -3651,6 +3670,7 @@ async function refresh() {
 function startInboxStream() {
   if (!("EventSource" in window)) return;
   const stream = new EventSource("/api/inbox/events");
+  state.stream = stream;      // để api() đóng được khi phiên hết
   const schedule = () => {
     clearTimeout(inboxRefreshTimer);
     inboxRefreshTimer = setTimeout(async () => {

@@ -158,6 +158,17 @@
     </form>
   </div>
 
+  <!-- Xem ảnh sản phẩm cỡ lớn. Ảnh 46px trên dòng kho không đủ để đối chiếu
+       "cái chai xanh xanh" khách tả — thuộc tính data-xemanh có từ lâu mà
+       không có gì bắt: bấm vào ảnh không làm gì cả. -->
+  <div class="cong is-off" id="anhLon" role="dialog" aria-label="Ảnh sản phẩm">
+    <figure class="anhlon">
+      <img id="anhLonImg" alt="">
+      <figcaption id="anhLonTen"></figcaption>
+      <button type="button" class="btn btn--sm" id="anhLonDong">Đóng</button>
+    </figure>
+  </div>
+
   <!-- Giao khách cho nhân viên: CHỌN từ danh sách, không gõ tên.
        Trước đây là prompt() liệt kê tên đăng nhập rồi bắt gõ lại — gõ sai
        một chữ là "Không có nhân viên tên…", và không có gì trên màn hình

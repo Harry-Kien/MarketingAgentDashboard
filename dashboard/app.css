@@ -1932,3 +1932,10 @@ svg { flex: none; }
   border: 1px solid hsl(var(--primary) / .35); border-radius: var(--radius);
   background: hsl(var(--primary) / .08); font-size: 13px; font-weight: 500;
 }
+
+
+/* Xem ảnh sản phẩm cỡ lớn. */
+.anhlon { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: min(90vw, 720px); }
+.anhlon img { max-width: 100%; max-height: 70vh; border-radius: var(--radius); background: hsl(var(--background)); }
+.anhlon figcaption { font-size: 14px; color: hsl(var(--muted-foreground)); }
+.kho__anh { cursor: zoom-in; }

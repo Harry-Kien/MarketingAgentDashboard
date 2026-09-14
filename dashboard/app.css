@@ -1358,6 +1358,15 @@ svg { flex: none; }
   .rail__item { flex: 0 0 auto; scroll-snap-align: start; padding: 8px 10px; gap: 7px; }
   .stage { width: 100%; max-width: 100vw; padding: 14px 12px 36px; overflow-x: hidden; }
   .rail, .tape__legend { scrollbar-width: none; }.rail::-webkit-scrollbar, .tape__legend::-webkit-scrollbar { display: none; }
+  /* Đo trên khổ 375px: nhãn trạng thái (`.tag`, `.src`) là nowrap nên tràn
+     40px ra ngoài mép phải ở Kho và Đơn hàng; 74 nút `.btn--sm` cao 26px —
+     dưới ngưỡng 32px mà ngón tay bấm trúng được. Cột phải được giới hạn và
+     xuống dòng; nút cao lên chỉ ở khổ này, màn lớn giữ nguyên. */
+  .row { gap: 9px; padding-right: 10px; }
+  .row__side { max-width: 46%; flex-wrap: wrap; }
+  .tag, .src, .pill { white-space: normal; max-width: 100%; text-align: right; }
+  .btn--sm { padding: 7px 12px; min-height: 34px; }
+  .row__nut { flex-wrap: wrap; justify-content: flex-end; }
 }
 
 /* ---------- Native omnichannel surfaces ---------- */
@@ -1911,11 +1920,16 @@ svg { flex: none; }
 
 /* Ô chọn trong lớp phủ (giao khách) — cùng dáng với ô nhập ở màn đăng nhập,
    nếu không nó là ô select mặc định của trình duyệt giữa một form đã thiết kế. */
-.cong__form select {
+.cong__form select, .cong__form textarea {
   font-size: 14px; padding: 9px 11px;
   border: 1px solid hsl(var(--border)); border-radius: 7px;
   background: hsl(var(--background)); color: hsl(var(--foreground));
+  font-family: inherit;
 }
+.cong__form textarea { resize: vertical; min-height: 72px; }
+/* Hộp thoại chung: nhiều ô xếp dọc, cách nhau như các ô của màn đăng nhập. */
+.cong__truong { display: flex; flex-direction: column; gap: 14px; }
+.cong__truong:empty { display: none; }
 
 /* Bảng tick vai trò mở ngay dưới dòng nhân viên. */
 .ns-vaitro {

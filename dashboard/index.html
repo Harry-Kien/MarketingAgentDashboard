@@ -217,6 +217,21 @@
     </form>
   </div>
 
+  <!-- Hộp thoại nhập CHUNG — thay cho mọi prompt() của trình duyệt.
+       prompt() chỉ có một ô chữ: không nhãn, không ô số, không ô ngày, và
+       hỏi hai thứ là hai hộp nối nhau — bấm Huỷ ở hộp sau là mất hộp
+       trước. Một hộp cho cả app, dựng ô theo mô tả từ JS (hoiHop). -->
+  <div class="cong is-off" id="congHoi" role="dialog" aria-labelledby="hoiTen">
+    <form class="cong__form" id="hoiform">
+      <h1 class="cong__ten" id="hoiTen"></h1>
+      <p class="cong__phu" id="hoiPhu"></p>
+      <div class="cong__truong" id="hoiTruong"></div>
+      <button type="submit" class="btn btn--primary" id="hoiNut">Lưu</button>
+      <p class="cong__loi" id="hoiLoi"></p>
+      <p class="cong__note"><a href="#" id="hoiHuy">Thôi, quay lại</a></p>
+    </form>
+  </div>
+
   <main class="stage" id="stage">
 
     <!-- ============ CA TRỰC ============ -->

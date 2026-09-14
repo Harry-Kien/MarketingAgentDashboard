@@ -598,6 +598,13 @@ Ba bước, theo đúng thứ tự:
 3. **Tạo luật**: hội thoại của kênh nào → giao cho đội nào. Để trống kênh
    là áp cho mọi kênh.
 
+Và một điều kiện nằm ở màn khác: thành viên đội **phải là thành viên của
+kênh** có hội thoại (Nhân sự → nút *Kênh*). Bộ định tuyến chỉ chọn người
+vừa trong đội vừa trong kênh; người thiếu một vế thì **không bao giờ được
+giao**, và luật vẫn hiện "đang chạy". Panel đội liệt kê thành viên và tô
+đỏ người đang ở tình trạng ấy, kèm câu nói rõ vì sao — máy chủ tính, màn
+hình chỉ hiện.
+
 **Chưa có luật nào thì bộ định tuyến không làm gì cả** — hội thoại nằm chờ
 người tự nhận, đúng như trước khi bật. Dòng chữ cạnh tiêu đề panel nói ra
 trạng thái đó thay vì chỉ hiện số 0.
@@ -616,12 +623,14 @@ Cùng một màn hình với bạn: `http://127.0.0.1:8000`, tên đăng nhập 
 khẩu. **Không có cổng riêng cho nhân viên**, và không ai tự đăng ký được —
 hệ thống này nắm dữ liệu khách hàng, nên tài khoản chỉ do quản trị cấp.
 
-Cấp một tài khoản mới, ba việc trong một màn:
+Cấp một tài khoản mới, bốn việc trong một màn:
 
 1. **Nhân sự** → **Thêm nhân viên**. Điền tên đăng nhập, họ tên, mật khẩu
    ban đầu (từ 8 ký tự).
 2. Chọn **vai trò** ngay trong form ấy.
-3. Báo họ vào **đổi mật khẩu** (góc dưới trái, cạnh nút *thoát*).
+3. Để nguyên ô **Cho vào mọi kênh đang hoạt động** (tick sẵn) — xem mục
+   *Nhân viên thấy kênh nào* ngay dưới.
+4. Báo họ vào **đổi mật khẩu** (góc dưới trái, cạnh nút *thoát*).
 
 Bước 2 đừng bỏ. Người chưa có vai trò nào **vẫn đăng nhập được** nhưng mọi
 màn đều trống — và không có dòng nào trên màn hình nói cho họ biết vì sao.
@@ -629,9 +638,33 @@ Phân quyền ở đây hỏng-đóng: không được cấp thì không thấy,
 thấy rồi mới bị chặn. Thanh bên hiện một huy hiệu đỏ đếm số người đang ở
 tình trạng này.
 
-Bước 3 cũng đừng bỏ. Bỏ nó thì quản trị biết mật khẩu của mọi nhân viên,
+Bước 4 cũng đừng bỏ. Bỏ nó thì quản trị biết mật khẩu của mọi nhân viên,
 vĩnh viễn — và ngày có tranh cãi về việc ai đã xem hồ sơ khách nào, không
 ai chứng minh được gì.
+
+### Nhân viên thấy kênh nào
+
+Vai trò trả lời "người này **làm được gì**". Còn "người này **thấy kênh
+nào**" là một trục riêng: mọi phép lọc hội thoại, khách, và bộ định tuyến
+tự động đều chỉ tính người là **thành viên của tài khoản kênh** ấy. Quản
+trị (và ai có `hoi_thoai.xem_tat_ca` / `khach.xem_tat_ca`) thấy mọi kênh;
+người khác thì chỉ thấy kênh mình được cho vào.
+
+Trước bản này, thành viên kênh chỉ có một cách sinh ra: người bấm *nối
+kênh*. Nhân viên tạo ở màn Nhân sự là thành viên của **0 kênh** — đăng
+nhập được, vai trò đủ, mà **không thấy hội thoại nào, khách nào, kể cả
+khách đã giao cho chính họ**. Không lỗi, không nhật ký. Đo được trên hệ
+thống thật ngày 14.09.2026.
+
+Giờ có hai chỗ:
+
+- Form **Thêm nhân viên** tick sẵn *Cho vào mọi kênh đang hoạt động*.
+- Nút **Kênh** trên dòng mỗi người mở bảng tick từng kênh. Người đã nối
+  kênh hiện khoá ở kênh ấy (`owner`) — ô tick không gỡ được họ, vì đó là
+  dấu vết ai đã nối và là quyền xem số điện thoại/email của khách kênh ấy.
+
+Dòng nhân viên hiện huy hiệu **chưa vào kênh nào** khi con số là 0 — với
+người không phải Quản trị, đó là cảnh báo, không phải thống kê.
 
 ### Ai đang có mặt trong hệ thống
 

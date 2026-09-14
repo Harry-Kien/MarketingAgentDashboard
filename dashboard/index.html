@@ -589,6 +589,10 @@
           chờ người tự nhận, đúng như trước.
         </p>
         <div id="dtDoi" class="rows"></div>
+        <!-- Người trong đội mà không ở trong kênh thì KHÔNG BAO GIỜ được
+             giao — bộ định tuyến lọc qua account_memberships. Máy chủ tính
+             sẵn danh sách này; ở đây chỉ hiện, không đoán. -->
+        <div id="dtCanhBao" class="rows"></div>
 
         <form id="dtFormDoi" class="form">
           <div class="form__row">
@@ -602,7 +606,8 @@
           </div>
         </form>
 
-        <h2 class="panel__head">Thành viên đội</h2>
+        <h2 class="panel__head">Thành viên đội
+          <span class="panel__note">người này còn phải là thành viên KÊNH (Nhân sự → Kênh) mới được giao</span></h2>
         <form id="dtFormNguoi" class="form">
           <div class="form__row">
             <label class="field"><span>Đội</span>
@@ -691,6 +696,36 @@
           Hướng dẫn ở đây là phần <b>thêm vào</b> — nó không thay được các
           câu cấm trong prompt gốc.
         </p>
+        <!-- Form thay cho năm hộp prompt() nối nhau. Hướng dẫn tới 4000 ký
+             tự không viết được trong một ô prompt một dòng, và bấm Huỷ ở hộp
+             thứ tư là mất sạch ba hộp trước. -->
+        <form id="hsaForm" class="form is-hidden">
+          <!-- Không đặt name="id": `form.id` là thuộc tính id của chính form,
+               ô nhập tên "id" bị nó che mất và đọc ra chuỗi "hsaForm". -->
+          <input type="hidden" name="ho_so_id">
+          <div class="form__row">
+            <label class="field"><span>Tên hồ sơ</span>
+              <input name="ten" required maxlength="80" placeholder="Bán hàng Zalo"></label>
+            <label class="field"><span>Dành cho kênh nào</span>
+              <input name="mo_ta" maxlength="500" placeholder="Khách Zalo OA, chủ yếu hỏi giá"></label>
+          </div>
+          <label class="field field--wide"><span>Hướng dẫn thêm cho agent ở kênh này</span>
+            <textarea name="huong_dan" rows="4" maxlength="4000"
+              placeholder="Xưng 'shop', gọi khách là 'chị'. Luôn hỏi loại da trước khi gợi ý sản phẩm."></textarea></label>
+          <div class="form__row">
+            <label class="field"><span>Ngưỡng tự tin (0–1)</span>
+              <input name="nguong_tu_tin" type="number" min="0" max="1" step="0.05" placeholder="để trống = toàn cục"></label>
+            <label class="field"><span>Trần chi phí mỗi hội thoại (USD)</span>
+              <input name="tran_chi_phi" type="number" min="0.01" max="5" step="0.01" placeholder="để trống = toàn cục"></label>
+            <label class="quyen__o"><input type="checkbox" name="bat" value="1" checked>
+              <span>Đang bật</span></label>
+          </div>
+          <p class="panel__note" id="hsaGhiChu">Ngưỡng chỉ siết thêm được: đặt lỏng hơn toàn cục thì hệ thống vẫn chạy bằng toàn cục.</p>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Lưu hồ sơ</button>
+            <button type="button" class="btn btn--sm btn--ghost" id="hsaHuy">Huỷ</button>
+          </div>
+        </form>
         <div id="hsa-ds" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
 
@@ -703,6 +738,38 @@
           kiểm ở máy chủ, không chỉ ở giao diện — gõ chữ vào ô số thì bị từ
           chối kèm lý do, chứ không lặng lẽ lưu một ô rỗng.
         </p>
+        <!-- Kiểu là ô CHỌN, không phải prompt bắt gõ "chon" hay "nhieu_chon":
+             gõ sai một chữ là máy chủ từ chối với một câu người vận hành
+             không hiểu vì sao. Khi sửa, mã và kiểu bị khoá — máy chủ cũng
+             không cho đổi (xem TruongSuaIn). -->
+        <form id="truongForm" class="form is-hidden">
+          <div class="form__row">
+            <label class="field"><span>Mã trường <em class="hint">chữ thường không dấu</em></span>
+              <input name="ma" required maxlength="40" pattern="[a-z][a-z0-9_]*" placeholder="loai_da" autocomplete="off"></label>
+            <label class="field"><span>Nhãn hiện cho người dùng</span>
+              <input name="nhan" required maxlength="80" placeholder="Loại da"></label>
+            <label class="field"><span>Kiểu</span>
+              <select name="kieu" id="truongKieu"></select></label>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Các lựa chọn <em class="hint">cách nhau bằng dấu phẩy, chỉ cho kiểu chọn</em></span>
+              <input name="lua_chon" placeholder="dầu, khô, hỗn hợp, nhạy cảm"></label>
+            <label class="field"><span>Gợi ý trong ô nhập</span>
+              <input name="goi_y" maxlength="300" placeholder="Hỏi khách khi tư vấn lần đầu"></label>
+            <label class="field"><span>Thứ tự</span>
+              <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
+          </div>
+          <div class="form__row">
+            <label class="quyen__o"><input type="checkbox" name="bat_buoc" value="1">
+              <span>Bắt buộc phải điền</span></label>
+            <label class="quyen__o"><input type="checkbox" name="hien_danh_sach" value="1">
+              <span>Hiện ở danh sách khách</span></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Lưu trường</button>
+            <button type="button" class="btn btn--sm btn--ghost" id="truongHuy">Huỷ</button>
+          </div>
+        </form>
         <div id="truong-ds" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
 
@@ -1177,6 +1244,16 @@
             <label class="field"><span>Vai trò</span>
               <select name="vai_tro_id" id="nsVaiTroMoi"></select></label>
           </div>
+          <!-- Kênh là trục lọc thứ hai, và là trục hay bị quên: vai trò cho
+               phép "đọc hội thoại", nhưng người không phải thành viên kênh
+               nào thì không có hội thoại nào để đọc — kể cả của khách đã
+               giao cho họ. Đo được trên hệ thống thật trước khi thêm ô này. -->
+          <label class="quyen__o field--wide">
+            <input type="checkbox" name="moi_kenh" value="1" checked>
+            <span>Cho vào mọi kênh đang hoạt động</span>
+            <small>Bỏ tick là họ đăng nhập được mà không thấy hội thoại, không
+              thấy khách nào — sửa sau ở nút <b>Kênh</b> trên dòng của họ.</small>
+          </label>
           <p class="panel__note">Gán vai trò ngay tại đây: tạo xong mà chưa có
             vai trò thì họ đăng nhập được nhưng mọi màn đều trống, và không có
             gì trên màn hình nói cho họ biết vì sao.</p>

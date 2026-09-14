@@ -1865,8 +1865,14 @@ svg { flex: none; }
   font-size: .78rem;
 }
 
-/* Hàng nút của một form: Lưu và Huỷ đứng cạnh nhau, không xuống dòng. */
-.form__row { display: flex; gap: 8px; align-items: center; }
+/* Một hàng trong `.form`: `.form` là lưới HAI cột, nên hàng phải trải hết
+   hai cột — không thì bốn ô chọn bị nhét vào nửa panel và chữ trong ô bị
+   cắt còn "Ca", "mọ", "tl" (đo được ở Cấu hình → Luật chia việc, SLA).
+   Mỗi ô giãn đều và xuống dòng khi hẹp, thay vì co về cỡ chữ ngắn nhất. */
+.form__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.form > .form__row, .form > .row__nut, .form > .panel__note, .form > .quyen__o { grid-column: 1 / -1; }
+.form__row > .field { flex: 1 1 150px; }
+.form__row > .quyen__o { flex: 0 0 auto; align-self: end; padding-bottom: 9px; }
 
 /* Nút thao tác của một `.row` phải nằm TRONG `.row__side`.
    `.row` là grid ba cột (3px · nội dung · phụ). Đặt nút thành con thứ tư,

@@ -356,6 +356,8 @@ async function loadDinhTuyen() {
   dinhTuyen.doi = c.teams || [];
   dinhTuyen.luat = c.rules || [];
   dinhTuyen.sla = c.sla_policies || [];
+  dinhTuyen.thanhVien = c.members || [];
+  dinhTuyen.canhBao = c.canh_bao || [];
 
   /* Hai danh sách phụ chỉ để đổ vào ô chọn. Lỗi ở đây KHÔNG được làm hỏng
      cả panel: người không có `nguoi_dung.doc` vẫn phải xem được luật đang
@@ -380,15 +382,31 @@ async function loadDinhTuyen() {
     ? `${dinhTuyen.doi.length} đội · ${soLuat} luật đang chạy`
     : "chưa có luật nào — bộ định tuyến KHÔNG làm gì";
 
+  /* Đội hiện kèm THÀNH VIÊN. Trước đây chỉ có form "Thêm vào đội" mà không
+     có danh sách, nên "đội này có ai" là câu không có chỗ trả lời. Đội rỗng
+     là đội không giao được cho ai — nói thẳng. */
   $("#dtDoi").innerHTML = dinhTuyen.doi.length
-    ? dinhTuyen.doi.map((d) => `<div class="row">
-        <span class="row__flag row__flag--${d.status === "active" ? "auto" : "halt"}"></span>
+    ? dinhTuyen.doi.map((d) => {
+        const tv = dinhTuyen.thanhVien.filter((m) => m.team_id === d.id);
+        const canh = new Set(dinhTuyen.canhBao.filter((c) => c.team_id === d.id).map((c) => c.user_id));
+        return `<div class="row">
+        <span class="row__flag row__flag--${d.status !== "active" ? "halt" : tv.length ? "auto" : "assist"}"></span>
         <div class="row__main">
           <b>${esc(d.name)}</b>
           <span class="row__sub">${esc(d.description || "—")}</span>
+          <span class="row__sub">${tv.length
+            ? tv.map((m) => `<span class="pill${canh.has(String(m.user_id)) ? " pill--warn" : ""}">${
+                esc(m.ho_ten || m.ten_dang_nhap)} · tối đa ${m.max_active}${m.is_available ? "" : " · nghỉ"}</span>`).join(" ")
+            : '<span class="pill pill--warn">chưa có ai — không giao được cho ai</span>'}</span>
         </div>
-      </div>`).join("")
+      </div>`;
+      }).join("")
     : '<p class="empty">Chưa có đội nào.</p>';
+
+  $("#dtCanhBao").innerHTML = dinhTuyen.canhBao.map((c) => `<div class="row">
+      <span class="row__flag row__flag--halt"></span>
+      <div class="row__main"><span class="row__sub">${esc(c.ly_do)}</span></div>
+    </div>`).join("");
 
   $("#dtLuat").innerHTML = dinhTuyen.luat.length
     ? dinhTuyen.luat.map((r) => `<div class="row">
@@ -3133,62 +3151,58 @@ async function loadHoSoAgent() {
     : '<p class="empty">Chưa có hồ sơ nào. Mọi kênh đang chạy bằng cấu hình mặc định.</p>';
 }
 
-async function hsaHoi(cu) {
-  const ten = prompt("Tên hồ sơ (ví dụ: Bán hàng Zalo):", cu ? cu.ten : "");
-  if (!ten) return null;
-  const mo_ta = prompt("Mô tả ngắn — hồ sơ này dành cho kênh nào:",
-                       cu ? cu.mo_ta : "");
-  if (mo_ta === null) return null;
-  const huong_dan = prompt(
-    "Hướng dẫn THÊM cho agent khi trả lời ở kênh này.\n"
-    + "Đây là phần thêm vào, không thay các câu cấm trong prompt gốc.",
-    cu ? cu.huong_dan : "");
-  if (huong_dan === null) return null;
-  const ng = prompt(
-    `Ngưỡng tự tin (0–1). Cao hơn = chuyển người sớm hơn.\n`
-    + `Toàn cục đang là ${hoSoAgent.toanCuc.nguong_tu_tin}; đặt thấp hơn sẽ bị siết về mức ấy.\n`
-    + `Để trống = dùng toàn cục.`,
-    cu && cu.nguong_tu_tin !== null ? String(cu.nguong_tu_tin) : "");
-  if (ng === null) return null;
-  const tr = prompt(
-    `Trần chi phí mỗi hội thoại (USD). Thấp hơn = dừng sớm hơn.\n`
-    + `Toàn cục đang là ${hoSoAgent.toanCuc.tran_chi_phi}; đặt cao hơn sẽ bị siết về mức ấy.\n`
-    + `Để trống = dùng toàn cục.`,
-    cu && cu.tran_chi_phi !== null ? String(cu.tran_chi_phi) : "");
-  if (tr === null) return null;
-  return {
-    ten: ten.trim(), mo_ta: mo_ta.trim(), huong_dan: huong_dan.trim(),
-    nguong_tu_tin: ng.trim() ? Number(ng) : null,
-    tran_chi_phi: tr.trim() ? Number(tr) : null,
-    bat: cu ? cu.bat : true,
-  };
+/* Form thay cho năm hộp prompt() nối nhau — hướng dẫn 4000 ký tự không
+ * viết được trong một ô một dòng, và bấm Huỷ ở hộp thứ tư là mất sạch ba
+ * hộp trước. Form là phần tử tĩnh trong index.html, nên vòng làm mới 6 giây
+ * dựng lại `#hsa-ds` không đụng tới thứ người ta đang gõ. */
+function hsaMoForm(cu) {
+  const f = $("#hsaForm");
+  f.reset();
+  f.ho_so_id.value = cu ? cu.id : "";
+  f.ten.value = cu ? cu.ten : "";
+  f.mo_ta.value = cu ? cu.mo_ta || "" : "";
+  f.huong_dan.value = cu ? cu.huong_dan || "" : "";
+  f.nguong_tu_tin.value = cu && cu.nguong_tu_tin !== null ? String(cu.nguong_tu_tin) : "";
+  f.tran_chi_phi.value = cu && cu.tran_chi_phi !== null ? String(cu.tran_chi_phi) : "";
+  f.bat.checked = cu ? !!cu.bat : true;
+  $("#hsaGhiChu").textContent = `Toàn cục đang là ngưỡng ${hoSoAgent.toanCuc.nguong_tu_tin} · trần ${
+    usd(hoSoAgent.toanCuc.tran_chi_phi)}. Ở đây chỉ siết thêm được: đặt lỏng hơn thì hệ thống vẫn chạy bằng toàn cục.`;
+  f.classList.remove("is-hidden");
+  f.ten.focus();
 }
 
-$("#hsa-them")?.addEventListener("click", async () => {
-  const than = await hsaHoi(null);
-  if (!than) return;
+$("#hsa-them")?.addEventListener("click", () => hsaMoForm(null));
+$("#hsaHuy")?.addEventListener("click", () => $("#hsaForm").classList.add("is-hidden"));
+
+$("#hsaForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.currentTarget;
+  const than = {
+    ten: f.ten.value.trim(), mo_ta: f.mo_ta.value.trim(),
+    huong_dan: f.huong_dan.value.trim(),
+    nguong_tu_tin: f.nguong_tu_tin.value.trim() ? Number(f.nguong_tu_tin.value) : null,
+    tran_chi_phi: f.tran_chi_phi.value.trim() ? Number(f.tran_chi_phi.value) : null,
+    bat: f.bat.checked,
+  };
+  const nut = f.querySelector("button[type=submit]");
+  nut.disabled = true;
   try {
-    const d = await api("/ho-so-agent", {
-      method: "POST", body: JSON.stringify(than) });
+    const d = f.ho_so_id.value
+      ? await api(`/ho-so-agent/${f.ho_so_id.value}`, { method: "PUT", body: JSON.stringify(than) })
+      : await api("/ho-so-agent", { method: "POST", body: JSON.stringify(than) });
     toast(d.nguong_hieu_luc !== d.nguong_tu_tin && d.nguong_tu_tin !== null
-      ? `Đã thêm. Ngưỡng bị siết về ${d.nguong_hieu_luc} (mức toàn cục).`
-      : "Đã thêm hồ sơ.");
+      ? `Đã lưu. Ngưỡng bị siết về ${d.nguong_hieu_luc} (mức toàn cục).`
+      : "Đã lưu hồ sơ.");
+    f.classList.add("is-hidden");
     await loadHoSoAgent();
-  } catch (e) { toast(e.message, true); }
+  } catch (err) { toast(err.message, true); } finally { nut.disabled = false; }
 });
 
 $("#hsa-ds")?.addEventListener("click", async (e) => {
   const sua = e.target.closest("[data-hsasua]");
   if (sua) {
-    const cu = hoSoAgent.ds.find((h) => h.id === sua.dataset.hsasua);
-    const than = await hsaHoi(cu);
-    if (!than) return;
-    try {
-      await api(`/ho-so-agent/${cu.id}`, {
-        method: "PUT", body: JSON.stringify(than) });
-      toast("Đã lưu hồ sơ.");
-      await loadHoSoAgent();
-    } catch (err) { toast(err.message, true); }
+    hsaMoForm(hoSoAgent.ds.find((h) => h.id === sua.dataset.hsasua));
+    $("#hsaForm").scrollIntoView({ behavior: "smooth", block: "nearest" });
     return;
   }
   const xoa = e.target.closest("[data-hsaxoa]");
@@ -3236,55 +3250,66 @@ async function loadTruongKhach() {
     : '<p class="empty">Chưa có trường nào. Bấm <b>Thêm trường</b> để hỏi khách thêm thông tin.</p>';
 }
 
-$("#truong-them")?.addEventListener("click", async () => {
-  const ma = prompt("Mã trường (chữ thường không dấu, ví dụ loai_da):");
-  if (!ma) return;
-  const nhan = prompt("Nhãn hiện cho người dùng:", ma);
-  if (!nhan) return;
-  const kieu = prompt(
-    "Kiểu:\n" + truongKhach.kieu.map((k) => `${k.ma} — ${k.nhan}`).join("\n"),
-    "chu");
-  if (!kieu) return;
-  let lua_chon = [];
-  if (kieu === "chon" || kieu === "nhieu_chon") {
-    const tra = prompt("Các lựa chọn, cách nhau bằng dấu phẩy:", "");
-    lua_chon = (tra || "").split(",").map((s) => s.trim()).filter(Boolean);
-  }
+/* Form thay cho chuỗi prompt()/confirm(). Kiểu là ô CHỌN dựng từ danh mục
+ * máy chủ trả về, nên không gõ sai được; khi sửa, mã và kiểu bị khoá đúng
+ * như máy chủ từ chối (xem TruongSuaIn). */
+function truongMoForm(t) {
+  const f = $("#truongForm");
+  f.reset();
+  $("#truongKieu").innerHTML = truongKhach.kieu
+    .map((k) => `<option value="${esc(k.ma)}">${esc(k.nhan)}</option>`).join("");
+  f.ma.value = t ? t.ma : "";
+  f.ma.disabled = !!t;
+  f.nhan.value = t ? t.nhan : "";
+  f.kieu.value = t ? t.kieu : (truongKhach.kieu[0] || {}).ma || "";
+  f.kieu.disabled = !!t;
+  f.lua_chon.value = t ? (t.lua_chon || []).join(", ") : "";
+  f.goi_y.value = t ? t.goi_y || "" : "";
+  f.thu_tu.value = t ? t.thu_tu : 100;
+  f.bat_buoc.checked = t ? !!t.bat_buoc : false;
+  f.hien_danh_sach.checked = t ? !!t.hien_danh_sach : false;
+  f.dataset.sua = t ? t.ma : "";
+  f.classList.remove("is-hidden");
+  (t ? f.nhan : f.ma).focus();
+}
+
+$("#truong-them")?.addEventListener("click", () => truongMoForm(null));
+$("#truongHuy")?.addEventListener("click", () => $("#truongForm").classList.add("is-hidden"));
+
+$("#truongForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.currentTarget;
+  const kieu = f.kieu.value;
+  const lua_chon = (kieu === "chon" || kieu === "nhieu_chon")
+    ? f.lua_chon.value.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const chung = {
+    nhan: f.nhan.value.trim(), goi_y: f.goi_y.value.trim(),
+    bat_buoc: f.bat_buoc.checked, lua_chon,
+    hien_danh_sach: f.hien_danh_sach.checked,
+    thu_tu: Number(f.thu_tu.value) || 100,
+  };
+  const nut = f.querySelector("button[type=submit]");
+  nut.disabled = true;
   try {
-    await api("/truong-khach", {
-      method: "POST",
-      body: JSON.stringify({ ma: ma.trim(), nhan: nhan.trim(), kieu, lua_chon }),
-    });
-    toast("Đã thêm. Ô nhập hiện ngay trong hồ sơ mọi khách.");
+    if (f.dataset.sua) {
+      await api(`/truong-khach/${f.dataset.sua}`, { method: "PUT", body: JSON.stringify(chung) });
+      toast("Đã lưu trường.");
+    } else {
+      await api("/truong-khach", {
+        method: "POST", body: JSON.stringify({ ma: f.ma.value.trim(), kieu, ...chung }),
+      });
+      toast("Đã thêm. Ô nhập hiện ngay trong hồ sơ mọi khách.");
+    }
+    f.classList.add("is-hidden");
     await loadTruongKhach();
-  } catch (e) { toast(e.message, true); }
+  } catch (err) { toast(err.message, true); } finally { nut.disabled = false; }
 });
 
 $("#truong-ds")?.addEventListener("click", async (e) => {
   const sua = e.target.closest("[data-truongsua]");
   if (sua) {
-    const t = truongKhach.ds.find((x) => x.ma === sua.dataset.truongsua);
-    const nhan = prompt("Nhãn:", t.nhan);
-    if (nhan === null) return;
-    const bat_buoc = confirm("Bắt buộc phải điền?\n(OK = bắt buộc, Huỷ = không)");
-    let lua_chon = t.lua_chon || [];
-    if (t.kieu === "chon" || t.kieu === "nhieu_chon") {
-      const tra = prompt("Các lựa chọn, cách nhau bằng dấu phẩy:",
-                         lua_chon.join(", "));
-      if (tra === null) return;
-      lua_chon = tra.split(",").map((s) => s.trim()).filter(Boolean);
-    }
-    try {
-      await api(`/truong-khach/${t.ma}`, {
-        method: "PUT",
-        body: JSON.stringify({ nhan: nhan.trim(), goi_y: t.goi_y || "",
-                               bat_buoc, lua_chon,
-                               hien_danh_sach: t.hien_danh_sach,
-                               thu_tu: t.thu_tu }),
-      });
-      toast("Đã lưu trường.");
-      await loadTruongKhach();
-    } catch (err) { toast(err.message, true); }
+    truongMoForm(truongKhach.ds.find((x) => x.ma === sua.dataset.truongsua));
+    $("#truongForm").scrollIntoView({ behavior: "smooth", block: "nearest" });
     return;
   }
 
@@ -3331,18 +3356,28 @@ function nsDongNguoi(n) {
   const vai = (n.vai_tro_ten || []).map((t) => `<span class="pill">${esc(t)}</span>`).join(" ")
     || '<span class="pill pill--warn">chưa có vai trò nào</span>';
   const coVai = (n.vai_tro_ten || []).length > 0;
+  /* Số KÊNH người này được vào — trục lọc thứ hai, và là trục hay bị quên.
+     Quản trị thấy mọi kênh nhờ quyền `*.xem_tat_ca`, nên với họ con số này
+     không phải cảnh báo. Với người khác, 0 kênh = đăng nhập được mà không
+     thấy hội thoại nào, khách nào — kể cả khách đã giao cho chính họ. */
+  const laQuanTri = (n.vai_tro_ten || []).includes("Quản trị");
+  const soKenh = Number(n.so_kenh || 0);
+  const kenh = laQuanTri
+    ? '<span class="pill">mọi kênh</span>'
+    : `<span class="pill${soKenh ? "" : " pill--warn"}">${soKenh ? `${soKenh} kênh` : "chưa vào kênh nào"}</span>`;
   return `<div class="row" data-nguoi="${esc(n.id)}">
-    <span class="row__flag row__flag--${n.khoa ? "halt" : coVai ? "auto" : "assist"}"></span>
+    <span class="row__flag row__flag--${n.khoa ? "halt" : coVai && (soKenh || laQuanTri) ? "auto" : "assist"}"></span>
     <div class="row__main">
       <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
       <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}${
         n.dang_nhap_cuoi ? " · vào lần cuối " + clock(n.dang_nhap_cuoi) : " · chưa đăng nhập lần nào"}</span>
     </div>
     <div class="row__side">
-      <span>${vai}</span>
+      <span>${vai} ${kenh}</span>
       <span class="row__nut">
         <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
         <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-gankenh="${esc(n.id)}">Kênh</button>
         <button type="button" class="btn btn--sm btn--ghost" data-khoa="${esc(n.ten_dang_nhap)}"
           data-dangkhoa="${n.khoa ? "1" : ""}">${n.khoa ? "Mở khoá" : "Khoá"}</button>
       </span>
@@ -3628,6 +3663,25 @@ $("#nsFormNguoi")?.addEventListener("submit", async (e) => {
     } else {
       toast(`Đã tạo ${ten}. Chưa có vai trò nên họ vào được mà mọi màn đều trống.`);
     }
+    /* Vào kênh là bước thứ ba của cùng một thao tác. Hỏng thì nói ra bằng
+       đúng hậu quả, không nuốt: tài khoản và vai trò đã có rồi, thứ còn
+       thiếu là họ sẽ không thấy hội thoại nào. */
+    if (d.moi_kenh) {
+      try {
+        const ds = await api("/channel-accounts");
+        const ids = (Array.isArray(ds) ? ds : []).filter((k) => k.status === "active").map((k) => k.id);
+        if (ids.length) {
+          await api(`/nguoi-dung/${moi.id}/kenh`, {
+            method: "PUT", body: JSON.stringify({ kenh: ids, role: "agent" }),
+          });
+        } else {
+          toast(`Chưa có kênh nào đang hoạt động để cho ${ten} vào — nối kênh xong nhớ bấm Kênh trên dòng của họ.`, true);
+        }
+      } catch (err) {
+        toast(`Đã tạo ${ten} nhưng CHƯA cho vào kênh nào: ${err.message}`
+          + " — họ sẽ không thấy hội thoại nào. Bấm Kênh trên dòng của họ.", true);
+      }
+    }
     f.reset();
     f.classList.add("is-hidden");
     await loadNhanSu();
@@ -3636,6 +3690,63 @@ $("#nsFormNguoi")?.addEventListener("submit", async (e) => {
   } finally {
     nut.disabled = false;
   }
+});
+
+/* ---------------- nhân sự: kênh được vào ----------------
+ *
+ * `account_memberships` là trục lọc mà mọi truy vấn hội thoại, khách và bộ
+ * định tuyến đều siết qua — và trước đây chỉ được ghi khi ai đó bấm nối
+ * kênh. Người được tạo ở màn này là thành viên của 0 kênh: vào được, thấy
+ * trống, và không có gì nói vì sao. Bảng tick ngay dưới dòng, hệt bảng vai
+ * trò; `owner` (người đã nối kênh) hiện khoá vì đường này không gỡ họ. */
+$("#nsNguoi")?.addEventListener("click", async (e) => {
+  const luu = e.target.closest("[data-kenhluu]");
+  if (luu) {
+    const id = luu.dataset.kenhluu;
+    const ids = $$(`[data-kenhbang="${id}"] input:checked:not(:disabled)`).map((c) => c.value);
+    luu.disabled = true;
+    try {
+      const r = await api(`/nguoi-dung/${id}/kenh`, {
+        method: "PUT", body: JSON.stringify({ kenh: ids, role: "agent" }),
+      });
+      toast(r.so_thanh_vien
+        ? `Đã lưu: vào ${r.so_thanh_vien} kênh.`
+        : "Đã gỡ khỏi mọi kênh — người này sẽ không thấy hội thoại nào.");
+      await loadNhanSu();
+    } catch (err) { toast(err.message, true); luu.disabled = false; }
+    return;
+  }
+  const huy = e.target.closest("[data-kenhhuy]");
+  if (huy) { $(`[data-kenhbang="${huy.dataset.kenhhuy}"]`)?.remove(); return; }
+
+  const gan = e.target.closest("[data-gankenh]");
+  if (!gan) return;
+  const id = gan.dataset.gankenh;
+  $$("[data-kenhbang]").forEach((b) => b.remove());
+  $$("[data-vtbang]").forEach((b) => b.remove());
+  try {
+    const d = await api(`/nguoi-dung/${id}/kenh`);
+    const TT = { active: "đang hoạt động", pending: "chờ xác minh", degraded: "gián đoạn",
+                 reauth_required: "cần nối lại", disabled: "đã tắt" };
+    const bang = document.createElement("div");
+    bang.className = "ns-vaitro";
+    bang.dataset.kenhbang = id;
+    bang.innerHTML = `<fieldset class="quyen__nhom"><legend>Kênh ${
+        esc(d.nguoi_dung.ho_ten || d.nguoi_dung.ten_dang_nhap)} được vào</legend>${
+      d.kenh.length ? d.kenh.map((k) => `<label class="quyen__o">
+        <input type="checkbox" value="${esc(k.id)}"${k.thanh_vien ? " checked" : ""}${
+          k.role === "owner" ? " disabled" : ""}>
+        <span>${esc(k.display_name)}</span>
+        <small>${esc(k.channel)} · ${esc(TT[k.status] || k.status)}${
+          k.role === "owner" ? " · đã nối kênh này, không gỡ ở đây" : ""}</small></label>`).join("")
+      : '<p class="empty">Chưa nối kênh nào. Nối ở màn Kết nối rồi quay lại.</p>'}
+      </fieldset>
+      <div class="row__nut">
+        <button type="button" class="btn btn--sm btn--primary" data-kenhluu="${esc(id)}">Lưu</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-kenhhuy="${esc(id)}">Huỷ</button>
+      </div>`;
+    gan.closest(".row").insertAdjacentElement("afterend", bang);
+  } catch (err) { toast(err.message, true); }
 });
 
 /* ---------------- vòng làm mới ---------------- */

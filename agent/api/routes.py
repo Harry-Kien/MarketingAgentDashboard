@@ -2346,7 +2346,12 @@ async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -
         "       nd.tao_luc, nd.dang_nhap_cuoi, "
         "       COALESCE(array_agg(vt.ten ORDER BY vt.ten) "
         "                FILTER (WHERE vt.ten IS NOT NULL), "
-        "                ARRAY[]::text[]) AS vai_tro_ten "
+        "                ARRAY[]::text[]) AS vai_tro_ten, "
+        # Số kênh người này là thành viên. 0 kênh + không phải Quản trị =
+        # đăng nhập được mà không thấy hội thoại nào, khách nào — kể cả khách
+        # đã giao cho chính họ. Phải hiện ngay trên dòng, không đợi ai hỏi.
+        "       (SELECT count(*) FROM account_memberships am "
+        "         WHERE am.user_id = nd.id)::int AS so_kenh "
         "FROM nguoi_dung nd "
         "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
         "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "

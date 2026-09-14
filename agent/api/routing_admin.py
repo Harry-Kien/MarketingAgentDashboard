@@ -45,6 +45,62 @@ class SlaPolicyIn(BaseModel):
     active: bool = True
 
 
+def canh_bao_thanh_vien(
+    rules: list[dict[str, Any]],
+    members: list[dict[str, Any]],
+    thanh_vien_kenh: set[tuple[Any, Any]],
+    ten_kenh: dict[Any, str],
+) -> list[dict[str, Any]]:
+    """
+    Thành viên đội nào KHÔNG BAO GIỜ được giao việc, và vì sao.
+
+    `AutoRoutingTransaction.candidates()` chỉ chọn người vừa ở trong đội vừa
+    là thành viên của tài khoản kênh có hội thoại (`account_memberships`).
+    Thêm người vào đội mà quên bước kia thì luật vẫn "đang chạy", đội vẫn
+    "có người", và hội thoại vẫn nằm chờ mãi — không lỗi nào để mà đi tìm.
+    Đo được trên hệ thống thật: một đội, một thành viên, 0 kênh.
+
+    Hàm thuần để test không cần CSDL. Trả về từng cặp (người, đội) một dòng,
+    kèm câu người vận hành đọc được.
+    """
+    ra: list[dict[str, Any]] = []
+    luat_theo_doi: dict[Any, list[dict[str, Any]]] = {}
+    for r in rules:
+        if r.get("active"):
+            luat_theo_doi.setdefault(r["team_id"], []).append(r)
+
+    for m in members:
+        if m.get("khoa") or not m.get("is_available", True):
+            continue
+        kenh_cua_nguoi = {tk for (nd, tk) in thanh_vien_kenh if nd == m["user_id"]}
+        ten = m.get("ho_ten") or m.get("ten_dang_nhap") or str(m["user_id"])
+        if not kenh_cua_nguoi:
+            ra.append({
+                "user_id": str(m["user_id"]), "team_id": str(m["team_id"]),
+                "ho_ten": ten,
+                "ly_do": f"{ten} chưa là thành viên kênh nào — bộ định tuyến "
+                         "sẽ không bao giờ giao hội thoại cho người này. "
+                         "Vào Nhân sự → Kênh được vào.",
+            })
+            continue
+        # Luật trỏ tới một kênh cụ thể mà người này không ở trong kênh ấy.
+        thieu = sorted({
+            ten_kenh.get(r["account_id"], "kênh đã xoá")
+            for r in luat_theo_doi.get(m["team_id"], [])
+            if r.get("account_id") is not None
+            and r["account_id"] not in kenh_cua_nguoi
+        })
+        if thieu:
+            ra.append({
+                "user_id": str(m["user_id"]), "team_id": str(m["team_id"]),
+                "ho_ten": ten,
+                "ly_do": f"{ten} không ở trong kênh {', '.join(thieu)} — luật "
+                         "chia hội thoại của kênh ấy cho đội này sẽ bỏ qua "
+                         "người này.",
+            })
+    return ra
+
+
 class PostgresRoutingAdminRepository:
     def __init__(self, pool_provider=db.pool) -> None:
         self._pool_provider = pool_provider
@@ -60,10 +116,35 @@ class PostgresRoutingAdminRepository:
             sla = await connection.fetch(
                 "SELECT * FROM sla_policies ORDER BY active DESC, account_id, priority"
             )
+            members = await connection.fetch(
+                """
+                SELECT tm.team_id, tm.user_id, tm.role, tm.max_active,
+                       tm.is_available, nd.ho_ten, nd.ten_dang_nhap, nd.khoa
+                FROM team_members tm
+                JOIN nguoi_dung nd ON nd.id = tm.user_id
+                ORDER BY nd.ho_ten, nd.ten_dang_nhap
+                """
+            )
+            thanh_vien_kenh = await connection.fetch(
+                "SELECT user_id, account_id FROM account_memberships "
+                "WHERE user_id = ANY($1::uuid[])",
+                [m["user_id"] for m in members],
+            )
+            ten_kenh = {
+                r["id"]: r["display_name"]
+                for r in await connection.fetch(
+                    "SELECT id, display_name FROM channel_accounts")
+            }
         return {
             "teams": [dict(row) for row in teams],
             "rules": [dict(row) for row in rules],
             "sla_policies": [dict(row) for row in sla],
+            "members": [dict(row) for row in members],
+            "canh_bao": canh_bao_thanh_vien(
+                [dict(r) for r in rules], [dict(m) for m in members],
+                {(r["user_id"], r["account_id"]) for r in thanh_vien_kenh},
+                ten_kenh,
+            ),
         }
 
     async def create_team(self, *, name: str, description: str, actor_id: UUID):

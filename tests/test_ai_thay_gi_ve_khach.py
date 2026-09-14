@@ -1,4 +1,4 @@
-﻿"""
+"""
 MA TRẬN "AI THẤY GÌ VỀ KHÁCH" — đo trên app thật, Postgres thật.
 
 Đây là câu hỏi sống còn của một CRM doanh nghiệp: ai được thấy TÊN khách,

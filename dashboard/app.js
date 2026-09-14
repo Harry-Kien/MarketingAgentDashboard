@@ -1293,7 +1293,19 @@ function chuKhach(contact) {
   /* Hiện TÊN người phụ trách, không hiện UUID và không để trống.
    *
    * Để trống thì "chưa giao cho ai" trông hệt như "chưa tải xong", và người
-   * trực không biết mình có được vào hay không. */
+   * trực không biết mình có được vào hay không.
+   *
+   * KHÁCH CỦA CHÍNH MÌNH PHẢI KHÁC MÀU, KHÔNG CHỈ KHÁC TÊN.
+   * Hiện đúng tên người là chưa đủ: nhân viên phải đọc từng dòng rồi tự đối
+   * chiếu với tên mình — ở danh sách 100 khách thì không ai làm. Ba trạng
+   * thái, ba màu, đọc được bằng cách liếc:
+   *     của mình      → xanh, chữ "Bạn phụ trách"
+   *     của người khác → xám, tên người ấy
+   *     chưa giao      → vàng, "chưa có chủ" (của chung, ai cũng trả lời được)
+   */
+  if (contact.owner_user_id && contact.owner_user_id === state.toiId) {
+    return '<span class="pill pill--toi">Bạn phụ trách</span>';
+  }
   if (contact.owner_ho_ten || contact.owner_ten_dang_nhap) {
     return `<span class="pill">${esc(contact.owner_ho_ten || contact.owner_ten_dang_nhap)}</span>`;
   }
@@ -1421,6 +1433,17 @@ async function loadContacts() {
     : true);
   state.danhSachKhach = contacts;
   $("#c-khachhang").textContent = contacts.length || "";
+  /* Số ngay trên chip lọc. Không có nó thì phải bấm từng chip mới biết mình
+     có bao nhiêu khách — và "Khách của tôi" rỗng trông hệt như bộ lọc hỏng. */
+  const demToi = contacts.filter((c) => c.owner_user_id && c.owner_user_id === state.toiId).length;
+  const demVoChu = contacts.filter((c) => !c.owner_user_id).length;
+  const datDem = (sel, n) => {
+    const chip = $(sel);
+    if (chip) chip.querySelector(".chip__dem").textContent = n ? ` ${n}` : "";
+  };
+  datDem('[data-chuloc="tat_ca"]', contacts.length);
+  datDem('[data-chuloc="cua_toi"]', demToi);
+  datDem('[data-chuloc="vo_chu"]', demVoChu);
   gopDoO(contacts);
   /* Ô tick nằm NGOÀI nút hàng (nút không được chứa điều khiển khác), và
      trạng thái tick sống trong state.khachDaChon để qua vòng làm mới 6 giây

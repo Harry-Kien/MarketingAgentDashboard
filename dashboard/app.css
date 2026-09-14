@@ -1922,6 +1922,19 @@ svg { flex: none; }
   color: hsl(var(--warning));
 }
 
+/* Khách của CHÍNH người đang đăng nhập. Màu khác hẳn hai trạng thái kia để
+   nhận ra bằng cách liếc, không phải đọc tên rồi đối chiếu với tên mình. */
+.pill--toi {
+  background: hsl(var(--success) / .14);
+  border-color: hsl(var(--success) / .35);
+  color: hsl(var(--success));
+  font-weight: 600;
+}
+
+/* Số trên chip lọc — rỗng thì không chiếm chỗ. */
+.chip__dem { font-variant-numeric: tabular-nums; opacity: .75; }
+.chip__dem:empty { display: none; }
+
 
 /* Ô chọn trong lớp phủ (giao khách) — cùng dáng với ô nhập ở màn đăng nhập,
    nếu không nó là ô select mặc định của trình duyệt giữa một form đã thiết kế. */

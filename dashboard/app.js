@@ -6164,15 +6164,52 @@ function veBenTrongPhongThu(d) {
     ${boVang}`;
 }
 
+/* Phiên thử sống trong RAM TIẾN TRÌNH (agent/core/phong_thu_phien.py), nên
+ * nó biến mất mỗi lần máy chủ khởi động lại, và tự hết sau 2 giờ không dùng.
+ * Tab đang mở thì vẫn giữ id cũ trong biến JS — gửi lên là 404.
+ *
+ * Trước bản này, 404 chỉ thành một toast "Phiên thử không tồn tại hoặc đã
+ * hết hạn" rồi thôi: bấm Gửi lại cũng 404, mãi mãi, cho tới khi người dùng
+ * đoán ra là phải bấm "Phiên mới" hoặc tải lại trang. Đo được trên máy chủ
+ * thật 14.09.2026 — hai lần 404 liên tiếp cùng một tab, ngay sau khi tôi
+ * bật lại máy chủ.
+ *
+ * Giờ tự mở phiên mới rồi gửi lại ĐÚNG MỘT LẦN. Phiên thử không mang dữ
+ * liệu quý nên mở lại là vô hại — nhưng phải NÓI RA, vì lịch sử hội thoại
+ * thử mất theo: agent không còn nhớ các lượt trước, và một màn hình vẫn
+ * hiện lượt cũ trong khi agent đã quên là một màn hình nói dối.
+ */
 async function hoiPhongThu(cauHoi) {
   const q = (cauHoi || "").trim();
   if (!q) return;
   if (!state.phongThu.phien) await loadPhongThu();
+  if (!state.phongThu.phien) {
+    // Không có phiên mà vẫn gửi thì URL thành `/phien/null/hoi` — 404 với
+    // một lý do khác hẳn lý do thật, và người đọc log sẽ đi tìm nhầm chỗ.
+    toast("Chưa mở được phiên thử. Bấm “Phiên mới” hoặc tải lại trang.", true);
+    return;
+  }
   const body = { cau_hoi: q, ky_vong: phongThuKyVong };
   phongThuKyVong = null;
+  const gui = () => api(
+    `/phong-thu/phien/${encodeURIComponent(state.phongThu.phien)}/hoi`,
+    { method: "POST", body: JSON.stringify(body) });
   try {
-    const d = await api(`/phong-thu/phien/${encodeURIComponent(state.phongThu.phien)}/hoi`,
-      { method: "POST", body: JSON.stringify(body) });
+    let d;
+    try {
+      d = await gui();
+    } catch (e) {
+      if (e.ma !== 404) throw e;
+      state.phongThu = { phien: null, luot: [] };
+      state.phongThuDaTai = false;
+      $("#phongthu-bentrong").innerHTML = '<p class="empty">Chưa có lượt nào.</p>';
+      veChatPhongThu();
+      await loadPhongThu();
+      if (!state.phongThu.phien) throw e;     // mở phiên mới cũng hỏng: báo lỗi gốc
+      toast("Phiên thử cũ đã hết (máy chủ khởi động lại hoặc để quá 2 giờ) — "
+            + "đã mở phiên mới. Agent KHÔNG nhớ các lượt trước.");
+      d = await gui();
+    }
     state.phongThu.luot.push({ khach: q, agent: d.tra_loi, cost_usd: d.cost_usd, latency_ms: d.latency_ms,
       escalate: d.escalate, tone: d.luoi_bat ? (NHAN_LUOI_MAU[d.luoi_bat] || "assist") : "auto" });
     veChatPhongThu();
@@ -6181,12 +6218,31 @@ async function hoiPhongThu(cauHoi) {
   } catch (e) { toast(e.message, true); }
 }
 
+/* Khoá nút trong lúc chờ model.
+ *
+ * Một lượt mất 3–7 giây, có ca đo được 100 giây. Không khoá thì người dùng
+ * tưởng bấm hụt và bấm tiếp — mỗi lần là một lượt gọi model THẬT: tốn tiền
+ * thật, và các câu trả lời về không đúng thứ tự làm khung chat nhảy loạn. */
 $("#phongthu-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const o = e.target.querySelector("[name=cau_hoi]");
+  const f = e.currentTarget;
+  const o = f.querySelector("[name=cau_hoi]");
   const q = o.value;
+  if (!q.trim()) return;
+  const nut = f.querySelector("button[type=submit]");
+  const chuCu = nut.textContent;
+  nut.disabled = true;
+  o.disabled = true;
+  nut.textContent = "Đang hỏi…";
   o.value = "";
-  await hoiPhongThu(q);
+  try {
+    await hoiPhongThu(q);
+  } finally {
+    nut.disabled = false;
+    o.disabled = false;
+    nut.textContent = chuCu;
+    o.focus();
+  }
 });
 // Xoá phiên trên máy chủ trước khi tạo hay bỏ hẳn — phiên bỏ đi thì trả
 // RAM tiến trình ngay, không đợi dọn theo TTL 2 giờ (agent/core/phong_thu_phien.py).
@@ -6194,7 +6250,11 @@ async function xoaPhienPhongThuTrenMayChu() {
   if (!state.phongThu.phien) return;
   try {
     await api(`/phong-thu/phien/${encodeURIComponent(state.phongThu.phien)}`, { method: "DELETE" });
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    // 404 ở đây KHÔNG phải lỗi: phiên đã không còn trên máy chủ, mà đó đúng
+    // là thứ đang muốn. Báo đỏ làm người dùng tưởng nút Phiên mới bị hỏng.
+    if (e.ma !== 404) toast(e.message, true);
+  }
 }
 
 $("#phongthu-moi")?.addEventListener("click", async () => {

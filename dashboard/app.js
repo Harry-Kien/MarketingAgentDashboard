@@ -3526,6 +3526,12 @@ function nsDongNguoi(n) {
   const kenh = laQuanTri
     ? '<span class="pill">mọi kênh</span>'
     : `<span class="pill${soKenh ? "" : " pill--warn"}">${soKenh ? `${soKenh} kênh` : "chưa vào kênh nào"}</span>`;
+  /* AI ĐỌC ĐƯỢC SỐ ĐIỆN THOẠI KHÁCH — con số quan trọng nhất của màn này về
+     mặt bảo mật. Trước đây muốn biết phải tự đọc bảng trong CSDL, nên trên
+     thực tế không ai biết. Quản trị thì hiển nhiên đọc được, không cần nhắc. */
+  const soPii = Number(n.so_kenh_pii || 0);
+  const pii = laQuanTri || !soPii ? ""
+    : ` <span class="pill pill--warn" title="Trưởng nhóm của ${soPii} kênh: đọc được số điện thoại và email của khách trong những kênh ấy">đọc được SĐT · ${soPii} kênh</span>`;
   return `<div class="row" data-nguoi="${esc(n.id)}">
     <span class="row__flag row__flag--${n.khoa ? "halt" : coVai && (soKenh || laQuanTri) ? "auto" : "assist"}"></span>
     <div class="row__main">
@@ -3534,7 +3540,7 @@ function nsDongNguoi(n) {
         n.dang_nhap_cuoi ? " · vào lần cuối " + clock(n.dang_nhap_cuoi) : " · chưa đăng nhập lần nào"}</span>
     </div>
     <div class="row__side">
-      <span>${vai} ${kenh}</span>
+      <span>${vai} ${kenh}${pii}</span>
       <span class="row__nut">
         <button type="button" class="btn btn--sm btn--ghost" data-xemquyen="${esc(n.id)}">Xem quyền</button>
         <button type="button" class="btn btn--sm btn--ghost" data-ganvai="${esc(n.id)}">Gán vai trò</button>
@@ -3872,10 +3878,16 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
   if (luu) {
     const id = luu.dataset.kenhluu;
     const ids = $$(`[data-kenhbang="${id}"] input:checked:not(:disabled)`).map((c) => c.value);
+    /* MỨC TRONG KÊNH quyết định người này có đọc được SỐ ĐIỆN THOẠI và
+       EMAIL của khách hay không — `manager` thì có, `agent` thì thấy
+       `*******456`. Không có ô chọn này thì quản trị KHÔNG có đường nào
+       cấp quyền ấy cho một trưởng nhóm, ngoài việc cấp `khach.xem_tat_ca`
+       — thứ mở toang danh bạ của MỌI kênh. Đo được 14.09.2026. */
+    const role = $(`[data-kenhbang="${id}"] [name=kenhrole]`)?.value || "agent";
     luu.disabled = true;
     try {
       const r = await api(`/nguoi-dung/${id}/kenh`, {
-        method: "PUT", body: JSON.stringify({ kenh: ids, role: "agent" }),
+        method: "PUT", body: JSON.stringify({ kenh: ids, role }),
       });
       toast(r.so_thanh_vien
         ? `Đã lưu: vào ${r.so_thanh_vien} kênh.`
@@ -3896,11 +3908,22 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
     const d = await api(`/nguoi-dung/${id}/kenh`);
     const TT = { active: "đang hoạt động", pending: "chờ xác minh", degraded: "gián đoạn",
                  reauth_required: "cần nối lại", disabled: "đã tắt" };
+    // Mức hiện tại: `owner` (người đã nối kênh) coi như `manager` — cả hai
+    // đều đọc được PII, và ô chọn không hạ được owner xuống (máy chủ chặn).
+    const mucHienTai = d.kenh.some((k) => k.role === "manager" || k.role === "owner")
+      ? "manager" : "agent";
     const bang = document.createElement("div");
     bang.className = "ns-vaitro";
     bang.dataset.kenhbang = id;
     bang.innerHTML = `<fieldset class="quyen__nhom"><legend>Kênh ${
-        esc(d.nguoi_dung.ho_ten || d.nguoi_dung.ten_dang_nhap)} được vào</legend>${
+        esc(d.nguoi_dung.ho_ten || d.nguoi_dung.ten_dang_nhap)} được vào</legend>
+      <label class="field" style="margin-bottom:10px">
+        <span>Mức trong kênh <em class="hint">quyết định có đọc được số điện thoại và email của khách không</em></span>
+        <select name="kenhrole">
+          <option value="agent"${mucHienTai === "agent" ? " selected" : ""}>Nhân viên — thấy tên khách, số điện thoại bị che (*******456)</option>
+          <option value="manager"${mucHienTai === "manager" ? " selected" : ""}>Trưởng nhóm — đọc được đầy đủ số điện thoại và email</option>
+        </select>
+      </label>${
       d.kenh.length ? d.kenh.map((k) => `<label class="quyen__o">
         <input type="checkbox" value="${esc(k.id)}"${k.thanh_vien ? " checked" : ""}${
           k.role === "owner" ? " disabled" : ""}>

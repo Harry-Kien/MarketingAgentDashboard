@@ -2351,7 +2351,14 @@ async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -
         # đăng nhập được mà không thấy hội thoại nào, khách nào — kể cả khách
         # đã giao cho chính họ. Phải hiện ngay trên dòng, không đợi ai hỏi.
         "       (SELECT count(*) FROM account_memberships am "
-        "         WHERE am.user_id = nd.id)::int AS so_kenh "
+        "         WHERE am.user_id = nd.id)::int AS so_kenh, "
+        # Số kênh người này đọc được SỐ ĐIỆN THOẠI và EMAIL của khách.
+        # Đây là con số quan trọng nhất của màn Nhân sự về mặt bảo mật, và
+        # trước đây không ở đâu nhìn thấy được: quản trị muốn biết "ai đang
+        # đọc được PII" thì phải tự đọc bảng account_memberships.
+        "       (SELECT count(*) FROM account_memberships am "
+        "         WHERE am.user_id = nd.id "
+        "           AND am.role IN ('owner', 'manager'))::int AS so_kenh_pii "
         "FROM nguoi_dung nd "
         "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
         "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "

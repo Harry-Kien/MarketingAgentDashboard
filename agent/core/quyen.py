@@ -49,7 +49,16 @@ QUYEN: dict[str, str] = {
     "khach.doc": "Xem danh sách khách",
     "khach.xem_tat_ca": "Xem khách của mọi kênh, kể cả kênh không được giao",
     "khach.sua": "Sửa thông tin khách",
-    "khach.pii": "Xem số điện thoại, email, địa chỉ",
+    # NHÃN PHẢI NÓI ĐÚNG VIỆC QUYỀN NÀY LÀM.
+    #
+    # Nhãn cũ là "Xem số điện thoại, email, địa chỉ" — và nó sai ở chỗ quan
+    # trọng nhất: quyền này KHÔNG mở số điện thoại trong màn Khách hàng.
+    # Việc che PII ở đó do VAI TRÒ TRONG KÊNH quyết định (`owner`/`manager`
+    # của `account_memberships`), còn `khach.pii` mở ba route tra cứu PDPD
+    # theo số điện thoại. Quản trị đọc nhãn cũ rồi tick, tin là đã cấp quyền
+    # xem SĐT — mà nhân viên vẫn thấy `*******456`, và không ai hiểu vì sao.
+    # Đo và ghim bằng `tests/test_ai_thay_gi_ve_khach.py`.
+    "khach.pii": "Tra cứu hồ sơ cá nhân theo số điện thoại (trang PDPD)",
     "khach.giao": "Giao khách cho nhân viên",
     "khach.gop": "Gộp hai hồ sơ khách",
     "khach.xoa": "Xoá vĩnh viễn dữ liệu cá nhân",

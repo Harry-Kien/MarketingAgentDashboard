@@ -121,9 +121,11 @@ def test_o_cau_hinh_co_nhan_cho_bo_doc_man_hinh():
 def test_kho_dien_thoai_nut_du_cao_va_nhan_khong_tran():
     mobile = CSS[CSS.index("@media (max-width: 560px)"):]
     mobile = mobile[:mobile.index("\n}\n")]
-    assert "min-height: 34px" in mobile
+    assert ".btn--sm, .chip { padding: 7px 12px; min-height: 34px; }" in mobile
     assert ".row__side { max-width: 46%; flex-wrap: wrap; }" in mobile
     assert ".tag, .src, .pill { white-space: normal;" in mobile
+    # Nhãn nằm trong tiêu đề một dòng: tiêu đề phải xuống dòng ở khổ hẹp.
+    assert ".row__title { white-space: normal;" in mobile
 
 
 def test_khong_con_chu_PII_trong_danh_sach_khach():

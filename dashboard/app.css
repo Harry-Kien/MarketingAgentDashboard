@@ -1365,7 +1365,12 @@ svg { flex: none; }
   .row { gap: 9px; padding-right: 10px; }
   .row__side { max-width: 46%; flex-wrap: wrap; }
   .tag, .src, .pill { white-space: normal; max-width: 100%; text-align: right; }
-  .btn--sm { padding: 7px 12px; min-height: 34px; }
+  /* Nhãn kênh/trạng thái nằm TRONG `.row__title` — một dòng, cắt bằng ba
+     chấm. Ở 375px tiêu đề chỉ còn ~124px nên nhãn bị xén mất nửa (đo:
+     `.tag--huy` kết thúc ở 407px). Cho tiêu đề xuống dòng để nhãn rơi
+     xuống hàng dưới thay vì biến mất. */
+  .row__title { white-space: normal; overflow: visible; text-overflow: clip; }
+  .btn--sm, .chip { padding: 7px 12px; min-height: 34px; }
   .row__nut { flex-wrap: wrap; justify-content: flex-end; }
 }
 

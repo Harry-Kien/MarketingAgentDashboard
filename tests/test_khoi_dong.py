@@ -286,3 +286,52 @@ def test_giao_sidecar_va_tunnel_cho_script_rieng():
     """
     assert "scripts.chay_sidecar_zalo" in _than("buoc_sidecar")
     assert "scripts.chay_tunnel" in _than("buoc_tunnel")
+
+
+# ---------------------------------------------------------------
+#  Không đỏ giả: lần bật thứ hai thành công thì hệ thống là SỐNG
+# ---------------------------------------------------------------
+
+def _gia_lap(monkeypatch, app_lan_1: bool, app_lan_2: bool) -> list[bool]:
+    """Bốn tầng đều lên; chỉ app đổi kết quả theo lần gọi. Trả về danh sách
+    các lần gọi `buoc_app` (giá trị `bat_lai`)."""
+    from scripts import khoi_dong as k
+
+    goi: list[bool] = []
+
+    def app(bat_lai: bool = False):
+        goi.append(bat_lai)
+        ok = app_lan_2 if bat_lai else app_lan_1
+        return ok, "bật lại" if ok else "không lên sau 60 giây"
+
+    monkeypatch.setattr(k, "buoc_docker", lambda: (True, "đã chạy sẵn"))
+    monkeypatch.setattr(k, "buoc_csdl", lambda: (True, "5433 + 5678"))
+    monkeypatch.setattr(k, "buoc_app", app)
+    monkeypatch.setattr(k, "buoc_sidecar", lambda: (True, "vừa bật"))
+    monkeypatch.setattr(k, "buoc_tunnel", lambda: (True, "https://x.trycloudflare.com", True))
+    monkeypatch.setattr(sys, "argv", ["khoi_dong"])
+    return goi
+
+
+def test_lan_1_truot_moc_60s_nhung_lan_2_len_thi_KHONG_bao_hong(monkeypatch, capsys):
+    """
+    Đo được 14.09.2026 khi máy đang bận: lần 1 không lên trong 60 giây, tunnel
+    ghi .env, lần 2 tắt đi bật lại thành công — mà bảng vẫn in "CHƯA XONG —
+    còn hỏng: Ứng dụng" và thoát 1. Một lệnh nói hệ thống hỏng trong khi nó
+    đang phục vụ là thứ khiến người ta thôi tin lệnh ấy.
+    """
+    from scripts import khoi_dong as k
+
+    goi = _gia_lap(monkeypatch, app_lan_1=False, app_lan_2=True)
+    assert k.main() == 0
+    assert goi == [False, True]
+    assert "CHƯA XONG" not in capsys.readouterr().out
+
+
+def test_lan_2_cung_hong_thi_van_bao_hong(monkeypatch, capsys):
+    """Nới đúng một trường hợp, không nới cả chốt."""
+    from scripts import khoi_dong as k
+
+    _gia_lap(monkeypatch, app_lan_1=False, app_lan_2=False)
+    assert k.main() == 1
+    assert "Ứng dụng" in capsys.readouterr().out.split("CHƯA XONG")[-1]

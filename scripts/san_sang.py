@@ -288,6 +288,45 @@ def kiem_du_lieu_that() -> dict:
     return _muc("Dữ liệu doanh nghiệp", DU, "danh mục, tài liệu và ảnh đều là thật")
 
 
+def doc_nguoi_canh(tuoi_phut: float | None) -> dict:
+    """
+    Phần thuần: `tuoi_phut` là tuổi của file trạng thái người canh bên ngoài
+    (`data/.canh_gac_ngoai`), None nếu chưa từng có.
+
+    Người canh chạy mỗi 5 phút và ghi file ấy MỖI lần chạy, kể cả khi mọi
+    thứ tốt. File cũ hơn 15 phút nghĩa là chính người canh đã ngừng — task
+    bị gỡ, máy vừa đăng nhập lại mà task chưa chạy, hay .bat hỏng. Đó là
+    lúc "app chết thì ai dựng lại" không còn ai trả lời, và không gì trên
+    dashboard nói ra: dashboard chỉ biết về chính nó.
+
+    Đo được 14.09.2026: máy tắt lúc 09:50, người canh không chạy được khi
+    máy tắt (đương nhiên), nhưng sau khi đăng nhập lại cũng không có gì cho
+    biết nó đã chạy lại chưa và đã làm gì.
+    """
+    ten = "Người canh bên ngoài"
+    sua = ("Đăng ký task 5 phút một lần: xem đầu scripts/canh_gac_ngoai.py "
+           "(schtasks trên Windows, cron trên Linux). Không có nó, app chết "
+           "lúc 2 giờ sáng là chết tới sáng")
+    if tuoi_phut is None:
+        return _muc(ten, CANH_BAO, "chưa từng chạy — không ai dựng lại app khi nó chết", sua)
+    if tuoi_phut > 15:
+        return _muc(ten, CANH_BAO,
+                    f"lần chạy cuối cách đây {int(tuoi_phut)} phút — task đã ngừng?",
+                    sua)
+    return _muc(ten, DU, f"chạy cách đây {int(tuoi_phut)} phút")
+
+
+def kiem_nguoi_canh() -> dict:
+    """Người canh bên ngoài (`scripts/canh_gac_ngoai.py`) còn chạy không."""
+    from datetime import datetime, timezone
+
+    f = ROOT / "data" / ".canh_gac_ngoai"
+    if not f.exists():
+        return doc_nguoi_canh(None)
+    moi = datetime.fromtimestamp(f.stat().st_mtime, timezone.utc)
+    return doc_nguoi_canh((datetime.now(timezone.utc) - moi).total_seconds() / 60)
+
+
 def kiem_bao_dong() -> dict:
     """Không nằm trong bảy việc, nhưng phát hiện được khi chạy thật."""
     if settings.canh_gac_webhook:
@@ -697,7 +736,7 @@ async def chay() -> int:
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),
-        kiem_sao_luu(), kiem_bao_dong(),
+        kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]
 

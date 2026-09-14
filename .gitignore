@@ -84,8 +84,9 @@ data/uvicorn.log.err
 # Ban sao luu: chua du lieu that, KHONG len repo cong khai
 data/backup/
 
-# Trạng thái người canh bên ngoài — dữ liệu chạy, không phải mã.
+# Trạng thái và nhật ký người canh bên ngoài — dữ liệu chạy, không phải mã.
 data/.canh_gac_ngoai
+data/canh_gac_ngoai.log*
 
 # --- Thư mục sinh ra khi chạy, KHÔNG bao giờ vào repo ---
 # node_modules của sidecar có hàng nghìn file. Lỡ commit một lần là lịch sử

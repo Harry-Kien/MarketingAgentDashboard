@@ -99,6 +99,13 @@ không: không lỗi, không nhật ký, và dashboard cũng không chạy để
 đỏ. `restart: unless-stopped` trong `docker-compose.yml` lo nửa Docker; ba
 tiến trình ngoài Docker cần lệnh trên.
 
+Máy tắt là cả hệ thống tắt — không lệnh nào cứu được lúc đó (đo lại
+14.09.2026: tắt máy 09:50, gần ba tiếng không nhận tin). Sau khi đăng nhập
+lại, task Windows `CanhGacMarketingAgent` (`scripts/canh_gac_ngoai.py`, 5
+phút một lần) tự dựng lại app và sidecar trong ≤10 phút, **trừ tunnel** —
+vẫn phải chạy `khoi_dong` rồi dán lại URL webhook. Nó ghi nhật ký mỗi lần
+chạy vào data/canh_gac_ngoai.log; `san_sang` báo khi nó ngừng chạy.
+
 Bật riêng từng tầng khi cần gỡ lỗi:
 
 ```bash

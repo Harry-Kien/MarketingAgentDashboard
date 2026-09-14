@@ -36,6 +36,27 @@ python -m scripts.san_sang
 
 Dòng cuối nói thẳng: `SẴN SÀNG` hoặc `CHƯA CHẠY ĐƯỢC: còn N việc CHẶN`.
 
+### Máy tắt là cả hệ thống tắt
+
+Hệ thống chạy trên chính máy này. Tắt máy, cho máy ngủ, đăng xuất — là
+không còn gì nhận tin, và **không lệnh nào cứu được** trong lúc máy tắt.
+Đo được 14.09.2026: tắt máy 09:50, đăng nhập lại 12:34 — gần ba tiếng khách
+nhắn Zalo vào hư không.
+
+Sau khi đăng nhập lại, hai thứ xảy ra:
+
+- Docker tự lên (Postgres, n8n).
+- Người canh `CanhGacMarketingAgent` chạy 5 phút một lần, thấy app chết hai
+  lần liên tiếp thì tự dựng lại app và sidecar — tức **trong vòng 10 phút**
+  hệ thống tự sống lại, **trừ tunnel**. Người canh cố ý không đụng tunnel vì
+  tên miền công khai đổi là phải dán lại URL webhook, việc đó cần người.
+
+Nên sau khi bật máy vẫn chạy `python -m scripts.khoi_dong` để có cổng công
+khai, rồi dán lại URL webhook cho Zalo OA và Meta. Muốn khỏi phải dán lại
+mỗi lần thì cần một tên miền cố định (Cloudflare tunnel có tên) — xem
+`docs/dua-vao-doanh-nghiep.md`. Và nếu máy này là máy chủ thật: cắm điện,
+tắt chế độ ngủ.
+
 ---
 
 ## Khởi động lại từ đầu
@@ -121,6 +142,12 @@ Người canh bên ngoài là task Windows tên `CanhGacMarketingAgent`, chạy 
 ```powershell
 Get-ScheduledTaskInfo -TaskName 'CanhGacMarketingAgent'
 ```
+
+Mỗi lần chạy nó ghi một dòng mốc giờ và kết quả vào `data/canh_gac_ngoai.log`
+(quá 1 MB thì đổi tên thành `.log.1`). Muốn biết đêm qua nó có dựng lại app
+hay không thì đọc file ấy — trước đây Task Scheduler nuốt mất, không ai trả
+lời được câu đó. `san_sang` cũng có mục *Người canh bên ngoài*: file trạng
+thái cũ hơn 15 phút là chính người canh đã ngừng.
 
 ---
 

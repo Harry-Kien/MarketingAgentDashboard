@@ -16,6 +16,14 @@ REM     /tr "D:\Marketing Dasbhboard CSKH\scripts\canh_gac_ngoai.bat" /st 00:00 
 REM
 REM Go:  schtasks /delete /tn "CanhGacMarketingAgent" /f
 
+REM NHAT KY: Task Scheduler nuot stdout, nen truoc day khong co cach nao biet
+REM nguoi canh da lam gi - 14.09.2026 khong tra duoc no co dung lai app sau
+REM khi may bat lai hay khong. Ghi ra data\canh_gac_ngoai.log, moi lan mot
+REM dong moc gio; qua 1 MB thi doi ten thanh .1 de khong phinh vo han.
+
 cd /d "%~dp0.."
-".venv\Scripts\python.exe" -m scripts.canh_gac_ngoai
+if not exist "data" mkdir "data"
+for %%A in ("data\canh_gac_ngoai.log") do if exist "%%~A" if %%~zA GTR 1048576 move /y "data\canh_gac_ngoai.log" "data\canh_gac_ngoai.log.1" >nul
+echo [%DATE% %TIME%] >> "data\canh_gac_ngoai.log"
+".venv\Scripts\python.exe" -m scripts.canh_gac_ngoai >> "data\canh_gac_ngoai.log" 2>&1
 exit /b %ERRORLEVEL%

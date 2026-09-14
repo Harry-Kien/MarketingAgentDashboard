@@ -331,7 +331,13 @@ def main() -> int:
 
     if ok_tn and doi:
         ok, mo_ta = buoc_app(bat_lai=True)
-        ket.append(("Ứng dụng (lần 2)", ok, mo_ta))
+        # Lần 2 THAY lần 1, không cộng thêm. Lần 1 có thể trượt mốc 60 giây
+        # khi máy đang bận (đo được 14.09.2026: bộ test chạy nền) rồi app
+        # vẫn lên; lần 2 tắt nó đi và bật lại thành công. Giữ cả hai dòng
+        # là in "CHƯA XONG — còn hỏng: Ứng dụng" cho một hệ thống đang
+        # sống: đỏ giả, và đỏ giả là thứ làm người ta thôi tin bảng.
+        ket = [x for x in ket if x[0] != "Ứng dụng"]
+        ket.append(("Ứng dụng", ok, mo_ta))
         print(f"  {'[đủ]' if ok else '[HỎNG]':<9}{'Ứng dụng':<18}{mo_ta}")
 
     print("─" * 62)

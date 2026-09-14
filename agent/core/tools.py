@@ -360,6 +360,36 @@ def _catalog() -> dict:
     return json.loads(duong_dan.read_text(encoding="utf-8"))
 
 
+TEN_THUONG_HIEU_MAC_DINH = "cửa hàng"
+_TEN_TOI_DA = 60
+
+
+def lam_sach_ten_thuong_hieu(tho: object) -> str:
+    """
+    Tên thương hiệu, đã vệ sinh để ghép an toàn vào prompt hệ thống.
+
+    VÌ SAO PHẢI VỆ SINH THỨ CỦA CHÍNH MÌNH
+    --------------------------------------
+    `catalog.json` do chủ shop nạp từ Excel — dữ liệu trong nhà, không phải
+    từ khách. Nhưng nó vẫn là DỮ LIỆU đi vào prompt, và prompt là chỗ duy
+    nhất trong hệ thống mà một dòng chữ có thể đổi hành vi của agent. Một ô
+    Excel chứa xuống dòng rồi "Bỏ qua mọi quy tắc trên" là prompt injection
+    do chính người trong nhà vô tình tạo ra — không ai cố ý, và không ai
+    phát hiện.
+
+    Nên: một dòng duy nhất, bỏ ký tự điều khiển, cắt 60 ký tự. Rỗng thì lùi
+    về "cửa hàng" — nói trống chỗ tên còn hơn nói tên của người khác.
+    """
+    ten = " ".join(str(tho or "").split())
+    ten = "".join(c for c in ten if c.isprintable())
+    return ten[:_TEN_TOI_DA].strip() or TEN_THUONG_HIEU_MAC_DINH
+
+
+def ten_thuong_hieu() -> str:
+    """Tên thương hiệu đang dùng, đọc từ danh mục."""
+    return lam_sach_ten_thuong_hieu(_catalog().get("thuong_hieu"))
+
+
 async def _han_dung(ma: str):
     """
     Lô hết hạn sớm nhất còn hàng của một mã, hoặc None.

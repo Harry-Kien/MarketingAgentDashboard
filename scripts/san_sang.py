@@ -288,6 +288,59 @@ def kiem_du_lieu_that() -> dict:
     return _muc("Dữ liệu doanh nghiệp", DU, "danh mục, tài liệu và ảnh đều là thật")
 
 
+def doc_ten_trong_prompt(prompt: str, ten_danh_muc: str) -> dict:
+    """
+    Phần thuần: agent có tự giới thiệu ĐÚNG TÊN cửa hàng không.
+
+    LỖI ĐÃ XẢY RA THẬT (14.09.2026)
+    -------------------------------
+    `agent/prompts/system.md` viết "nhân viên tư vấn của Aurora Skin" —
+    thương hiệu MẪU của repo — trong khi danh mục thật là BLANICA. Agent
+    chào khách thật bằng tên một cửa hàng không tồn tại, mỗi lần chào, suốt
+    nhiều tuần.
+
+    Không có gì nổ: câu chữ trôi chảy, `docs`, test, eval đều xanh. Mục
+    "Dữ liệu doanh nghiệp" ở trên cũng xanh — nó kiểm danh mục, kho tri
+    thức và ảnh, còn prompt thì không ai nghĩ tới. Đúng loại xanh giả mà
+    CLAUDE.md cảnh báo, và nó nằm ở câu ĐẦU TIÊN khách đọc.
+
+    Giờ prompt mang placeholder `{THUONG_HIEU}`, thay bằng tên từ danh mục
+    lúc nạp. Phép kiểm này canh hai chiều: placeholder còn đó, và danh mục
+    có tên để điền vào.
+    """
+    ten = "Tên cửa hàng agent nói"
+    if "{THUONG_HIEU}" not in prompt:
+        return _muc(
+            ten, CHAN,
+            "prompt hệ thống GÕ CỨNG tên thương hiệu — agent sẽ nói tên ấy "
+            "với mọi khách, kể cả khi danh mục là thương hiệu khác",
+            "Đặt lại {THUONG_HIEU} trong agent/prompts/system.md; tên thật "
+            "lấy từ trường thuong_hieu của data/catalog.json",
+        )
+    if not ten_danh_muc or ten_danh_muc == tools_mac_dinh():
+        return _muc(
+            ten, CANH_BAO,
+            f"danh mục chưa khai `thuong_hieu` — agent tự xưng là "
+            f"“{tools_mac_dinh()}”",
+            "Thêm trường thuong_hieu vào data/catalog.json để agent giới "
+            "thiệu đúng tên cửa hàng",
+        )
+    return _muc(ten, DU, f"agent tự xưng là “{ten_danh_muc}”")
+
+
+def tools_mac_dinh() -> str:
+    from agent.core import tools
+
+    return tools.TEN_THUONG_HIEU_MAC_DINH
+
+
+def kiem_ten_trong_prompt() -> dict:
+    from agent.core import tools
+
+    prompt = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
+    return doc_ten_trong_prompt(prompt, tools.ten_thuong_hieu())
+
+
 def doc_nguoi_canh(tuoi_phut: float | None) -> dict:
     """
     Phần thuần: `tuoi_phut` là tuổi của file trạng thái người canh bên ngoài
@@ -732,7 +785,8 @@ async def kiem_ton_kho() -> dict:
 async def chay() -> int:
     muc = [
         kiem_bi_mat(), await kiem_khoa_api(), await kiem_embedding(),
-        kiem_du_lieu_that(), await kiem_kenh(), kiem_callback_cong_khai(),
+        kiem_du_lieu_that(), kiem_ten_trong_prompt(),
+        await kiem_kenh(), kiem_callback_cong_khai(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),

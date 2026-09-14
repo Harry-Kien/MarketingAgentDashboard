@@ -24,7 +24,18 @@ from agent.core import llm, rag, tools
 from agent.ky_nang import kho_ky_nang
 from agent.core import agent_ho_so, ho_so_khach, phong_thu
 
-SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(encoding="utf-8")
+"""
+TÊN THƯƠNG HIỆU LẤY TỪ DANH MỤC, KHÔNG GÕ CỨNG TRONG PROMPT.
+
+Lỗi đã xảy ra thật (14.09.2026): prompt viết "nhân viên tư vấn của Aurora
+Skin" — tên thương hiệu MẪU của repo — trong khi danh mục thật là BLANICA.
+Agent tự giới thiệu sai tên cửa hàng với khách thật, mỗi lần chào. Không
+có gì nổ: câu chữ hoàn toàn trôi chảy, chỉ là tên của một cửa hàng không
+tồn tại. `san_sang` lúc ấy vẫn báo "dữ liệu doanh nghiệp đều là thật" vì nó
+kiểm danh mục, kho tri thức và ảnh — không ai nghĩ tới prompt.
+"""
+SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(
+    encoding="utf-8").replace("{THUONG_HIEU}", tools.ten_thuong_hieu())
 MAX_TOOL_ROUNDS = 4
 
 # ĐỌC: BẢN ĐỒ TỆP NÀY — năm chặng của respond(), theo đúng thứ tự mã chạy.

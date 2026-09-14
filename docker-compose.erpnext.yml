@@ -1,8 +1,30 @@
+# GHIM ẢNH BẰNG DIGEST, KHÔNG DÙNG THẺ
+# ------------------------------------
+# Cùng lý do đã ghi trong `docker-compose.yml`: thẻ là con trỏ và nó DI
+# CHUYỂN, nên hai máy chạy cùng file này có thể chạy hai bản khác nhau.
+#
+# File này từng là ngoại lệ duy nhất — bốn dịch vụ đều để thẻ trôi, trong
+# khi hai compose kia đã ghim digest. Nó lọt lưới vì `tests/test_ghim_anh.py`
+# giữ danh sách file GÕ TAY và danh sách ấy thiếu tên file này: lưới vẫn
+# xanh, lỗ vẫn mở. Danh sách đó giờ tự tìm file, nên ngoại lệ kiểu này
+# không tái diễn được.
+#
+# Với ERPNext thì hậu quả nặng hơn Chatwoot một bậc: `frappe/erpnext:v15`
+# là thẻ NHÁNH, không phải phiên bản. Nó nhận bản vá mới liên tục, và mỗi
+# lần khởi động ERPNext tự chạy di trú CSDL — di trú không lùi được, trên
+# cơ sở dữ liệu đang giữ danh mục, giá vốn và đơn hàng.
+#
+# Thẻ gốc giữ lại trong chú thích vì digest không đọc được bằng mắt, mà
+# người vận hành cần biết mình đang chạy phiên bản nào.
+#
+# Cập nhật digest:
+#     docker buildx imagetools inspect <ảnh>:<thẻ> --format '{{.Manifest.Digest}}'
+
 name: nexterp
 
 services:
   erpnext-db:
-    image: mariadb:10.6
+    image: mariadb@sha256:553351e202c5f01c9e703d7d1d2b037a0aedb43c4fed79b3615d9183655f02c5   # mariadb:10.6
     container_name: erpnext-db
     restart: unless-stopped
     command:
@@ -21,21 +43,21 @@ services:
       - erpnext-net
 
   erpnext-redis-cache:
-    image: redis:6.2-alpine
+    image: redis@sha256:d0c875bdacfb5c4d2c2d9124de3f53cee1dc9ceff8936bd459fabc135cb33015   # redis:6.2-alpine
     container_name: erpnext-redis-cache
     restart: unless-stopped
     networks:
       - erpnext-net
 
   erpnext-redis-queue:
-    image: redis:6.2-alpine
+    image: redis@sha256:d0c875bdacfb5c4d2c2d9124de3f53cee1dc9ceff8936bd459fabc135cb33015   # redis:6.2-alpine
     container_name: erpnext-redis-queue
     restart: unless-stopped
     networks:
       - erpnext-net
 
   erpnext-web:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext@sha256:d2605a65e15be0c5adc943b16fa7cdc445cb4f3f3a9acbeaf3af6915397bc116   # frappe/erpnext:v15
     container_name: erpnext-web
     restart: unless-stopped
     environment:
@@ -78,7 +100,7 @@ services:
       - erpnext-net
 
   erpnext-proxy:
-    image: nginx:alpine
+    image: nginx@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3   # nginx:alpine
     container_name: erpnext-proxy
     restart: unless-stopped
     ports:

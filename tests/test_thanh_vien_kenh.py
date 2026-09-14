@@ -162,6 +162,17 @@ def test_man_nhan_su_co_nut_kenh_va_bang_tick():
     assert '"/nguoi-dung/" + ' in JS or "`/nguoi-dung/${id}/kenh`" in JS
 
 
+def test_vong_lam_moi_khong_xoa_bang_tick_dang_mo():
+    """
+    `loadNhanSu` chạy lại mỗi 6 giây và dựng lại `#nsNguoi`. Không có chốt
+    này thì bảng tick vai trò/kênh biến mất trước khi kịp bấm Lưu — đo được
+    trên hệ thống thật ngay lần thử đầu.
+    """
+    doan = JS[JS.index("async function loadNhanSu"):JS.index("function nsVeBangQuyen")]
+    assert '#nsNguoi [data-vtbang], #nsNguoi [data-kenhbang]' in doan
+    assert "if (!dangTick)" in doan
+
+
 def test_dong_nhan_vien_bao_ngay_khi_chua_vao_kenh_nao():
     doan = JS[JS.index("function nsDongNguoi"):JS.index("function nsDongVaiTro")]
     assert "so_kenh" in doan and "chưa vào kênh nào" in doan

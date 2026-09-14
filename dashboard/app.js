@@ -3419,9 +3419,16 @@ async function loadNhanSu() {
   nhanSu.danhMuc = dm.nhom;
 
   const ds = nguoi.nguoi_dung || nguoi.items || nguoi;
-  $("#nsNguoi").innerHTML = ds.length
-    ? ds.map(nsDongNguoi).join("")
-    : '<p class="empty">Chưa có nhân viên nào.</p>';
+  /* Vòng làm mới 6 giây gọi lại hàm này. Dựng lại danh sách khi một bảng
+     tick (vai trò, kênh) đang mở là XOÁ bảng ấy giữa lúc người ta đang tick
+     — đo được trên hệ thống thật: bảng biến mất trước khi kịp bấm Lưu.
+     Đang mở thì giữ nguyên danh sách; số đếm bên trên vẫn cập nhật. */
+  const dangTick = $("#nsNguoi [data-vtbang], #nsNguoi [data-kenhbang]");
+  if (!dangTick) {
+    $("#nsNguoi").innerHTML = ds.length
+      ? ds.map(nsDongNguoi).join("")
+      : '<p class="empty">Chưa có nhân viên nào.</p>';
+  }
   $("#nsVaiTro").innerHTML = nhanSu.vaiTro.map(nsDongVaiTro).join("");
   const chuaVai = ds.filter((n) => !(n.vai_tro_ten || []).length).length;
   $("#c-nhansu").textContent = chuaVai ? String(chuaVai) : "";

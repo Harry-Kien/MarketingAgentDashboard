@@ -222,6 +222,39 @@ class PostgresKhoDon:
         )
 
 
+async def hoi_ton_biet_ngung_ban(cong):
+    """
+    Dựng hàm `hoi_erp(ma)` cho `doi_soat_ton_kho`, biết phân biệt ba trạng
+    thái: còn bán, chưa tra được, và ĐÃ RỜI danh mục bán.
+
+    VÌ SAO KHÔNG SỬA `cong().ton_kho()`. Cổng hỏi bảng `Bin` của ERPNext,
+    và một mã đã vô hiệu VẪN CÓ `Bin` với số lượng thật — đo được
+    14.09.2026: `AS-CB01` trả `ban_duoc=25` trong khi nó không còn trong
+    danh mục bán. Cổng không có cách nào biết, và bắt nó biết nghĩa là mỗi
+    lần hỏi tồn kho lại kèm một lời gọi hỏi danh mục, ở đúng chỗ nóng nhất
+    là lúc chốt đơn.
+
+    Nên hỏi danh mục ĐÚNG MỘT LẦN mỗi vòng đối soát rồi dùng chung: đọc lại
+    cho từng mã là nhân số lời gọi ERP với số dòng tồn kho.
+
+    Danh mục đọc không được thì KHÔNG vu oan mã nào — trả về hành vi cũ.
+    Một lần ERP trượt mà kêu lên toàn bộ bảng tồn kho là lần sau không ai
+    đọc cảnh báo ấy nữa.
+    """
+    try:
+        dm = await cong.danh_muc()
+        con_ban = {sp.get("ma") for sp in (dm.get("san_pham") or [])}
+    except Exception:  # noqa: BLE001
+        con_ban = None
+
+    async def hoi(ma):
+        if con_ban is not None and ma not in con_ban:
+            return False
+        return await cong.ton_kho(ma, bo_qua_cache=True)
+
+    return hoi
+
+
 async def doi_soat_ton_kho(
     ton_noi_bo: dict[str, int],
     hoi_erp,
@@ -242,11 +275,22 @@ async def doi_soat_ton_kho(
     Chỉ báo, không ghi đè. Máy tự "chữa" một con số nó không hiểu vì sao
     lệch là xoá mất bằng chứng của lỗi thật, và lần sau lệch lại.
 
-    `hoi_erp(ma)` trả `TonKho | None`. `None` nghĩa là chưa tra được — bỏ
-    qua mã đó, KHÔNG tính là lệch. Coi "không biết" thành "lệch 0" là báo
-    động giả hàng loạt mỗi khi ERP chậm.
+    `hoi_erp(ma)` trả `TonKho | None | False`, và BA giá trị ấy là ba
+    chuyện khác nhau:
+
+      `TonKho`  tra được, so số.
+      `None`    CHƯA tra được — ERP chậm, mạng trượt. Tạm thời, lần sau tự
+                hết. Bỏ qua, không kêu: kêu ở đây là báo động giả hàng loạt.
+      `False`   ERP nói KHÔNG CÓ mã này. Vĩnh viễn — mã đã bị vô hiệu hoặc
+                xoá bên sổ cái, còn bảng nội bộ vẫn giữ một dòng.
+
+    VÌ SAO TÁCH `False` RA KHỎI `None`. Gộp chúng là bảo đảm chuyện thứ hai
+    không bao giờ được phát hiện: `khong_tra_duoc` lúc nào cũng khác 0 vì
+    ERP thỉnh thoảng chậm, nên nhìn mãi thành quen. Đo được 14.09.2026: 22
+    dòng tồn kho thuộc diện ấy nằm im nhiều tuần, không ai biết.
     """
     lech: list[dict] = []
+    ngung_ban: list[dict] = []
     khong_tra_duoc = 0
 
     for ma, so_noi_bo in ton_noi_bo.items():
@@ -254,6 +298,11 @@ async def doi_soat_ton_kho(
             t = await hoi_erp(ma)
         except Exception:  # noqa: BLE001
             khong_tra_duoc += 1
+            continue
+        if t is False:
+            # Nói CÒN BAO NHIÊU, không chỉ nói "có một mã lạ": số ấy là hàng
+            # thật đang nằm trong kho, và nó quyết định việc cần làm tiếp.
+            ngung_ban.append({"ma": ma, "noi_bo": int(so_noi_bo)})
             continue
         if t is None:
             khong_tra_duoc += 1
@@ -265,10 +314,14 @@ async def doi_soat_ton_kho(
     if lech:
         await _kêu(ghi_nhat_ky, "erp.lech_ton_kho",
                    so_ma=len(lech), chi_tiet=lech[:20])
+    if ngung_ban:
+        await _kêu(ghi_nhat_ky, "erp.ma_ngung_ban",
+                   so_ma=len(ngung_ban), chi_tiet=ngung_ban[:20])
 
     return {
         "da_soat": len(ton_noi_bo),
         "lech": lech,
+        "ngung_ban": ngung_ban,
         "khong_tra_duoc": khong_tra_duoc,
     }
 
@@ -379,7 +432,7 @@ async def vong_dong_bo_loop() -> None:
 
                 await doi_soat_ton_kho(
                     await _kho.lay_tat_ca(),
-                    lambda ma: nha_may.cong().ton_kho(ma, bo_qua_cache=True),
+                    await hoi_ton_biet_ngung_ban(nha_may.cong()),
                     db.log_event,
                 )
             except Exception as exc:  # noqa: BLE001

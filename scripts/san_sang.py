@@ -369,6 +369,74 @@ def doc_nguoi_canh(tuoi_phut: float | None) -> dict:
     return _muc(ten, DU, f"chạy cách đây {int(tuoi_phut)} phút")
 
 
+def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
+                   url: str) -> dict:
+    """
+    Phần thuần: vận chuyển đang nối thật, hay đang chạy bằng hàng giả.
+
+    LỖI THẬT, ĐO ĐƯỢC 15.09.2026. `SHIPPING_PROVIDER=mock` với token và
+    shop id đều rỗng, và không mục nào ở đâu nói ra — bảng xanh hết.
+
+    `MockShippingProvider.tao_van_don()` trả về một mã vận đơn trông như
+    thật. Nhân viên bấm tạo vận đơn, nhận mã, nhắn cho khách, và hãng vận
+    chuyển chưa bao giờ nghe nói tới đơn này. Khách tra mã thì không thấy
+    gì. Đúng khuôn `ERP_LOAI=tep`: rất hữu ích lúc dựng, rất nguy hiểm khi
+    không ai nhớ nó đang bật.
+
+    CẢNH BÁO CHỨ KHÔNG CHẶN. Cửa hàng tự đi gửi hàng, không dùng hãng nào,
+    là cách vận hành hợp lệ; chặn ở đó là bắt họ cấu hình thứ họ không
+    dùng.
+
+    THIẾU KHOÁ THÌ HỎNG, không phải cảnh báo: bật một hãng thật mà thiếu
+    khoá là cấu hình mâu thuẫn, và MỌI lần tạo vận đơn đều hỏng.
+    """
+    ten = "Vận chuyển"
+    p = (provider or "").strip().lower()
+
+    if p in ("", "khong", "khong_dung", "none"):
+        return _muc(ten, DU, "không nối hãng nào — cửa hàng tự gửi")
+
+    if p == "mock":
+        return _muc(
+            ten, CANH_BAO,
+            "đang dùng hãng GIẢ (mock) — mã vận đơn phát ra KHÔNG tra được "
+            "ở đâu cả",
+            "Đặt SHIPPING_PROVIDER=ghn kèm GHN_TOKEN và GHN_SHOP_ID. Để "
+            "nguyên thì nhân viên sẽ nhắn cho khách một mã vận đơn không "
+            "tồn tại, và chỉ vỡ ra khi khách hỏi lại",
+        )
+
+    thieu = [t for t, co in (("GHN_TOKEN", co_token),
+                             ("GHN_SHOP_ID", co_shop_id)) if not co]
+    if thieu:
+        return _muc(
+            ten, CHAN,
+            f"bật {p!r} nhưng thiếu {', '.join(thieu)} — mọi lần tạo vận đơn sẽ hỏng",
+            f"Điền {', '.join(thieu)} trong .env, hoặc quay về "
+            "SHIPPING_PROVIDER=mock nếu chưa tới lúc nối thật",
+        )
+
+    if "dev-" in (url or "") or "sandbox" in (url or "").lower():
+        return _muc(
+            ten, CANH_BAO,
+            f"{p} đang trỏ vào môi trường THỬ ({url[:48]}…)",
+            "Sandbox trả mã vận đơn thật-như-thật nhưng KHÔNG có kiện hàng "
+            "nào được lấy — xanh hoàn toàn và sai hoàn toàn. Đổi sang địa "
+            "chỉ production khi chạy thật",
+        )
+
+    return _muc(ten, DU, f"{p} đã đủ khoá, trỏ vào địa chỉ thật")
+
+
+def kiem_van_chuyen() -> dict:
+    return doc_van_chuyen(
+        provider=getattr(settings, "shipping_provider", "") or "",
+        co_token=bool((getattr(settings, "ghn_token", "") or "").strip()),
+        co_shop_id=bool(str(getattr(settings, "ghn_shop_id", "") or "").strip()),
+        url=getattr(settings, "ghn_api_url", "") or "",
+    )
+
+
 def kiem_nguoi_canh() -> dict:
     """Người canh bên ngoài (`scripts/canh_gac_ngoai.py`) còn chạy không."""
     from datetime import datetime, timezone
@@ -720,15 +788,76 @@ async def kiem_kenh() -> dict:
     return _muc("Kênh nhận tin", DU, "provider đã xác minh: " + ", ".join(enabled))
 
 
-def kiem_callback_cong_khai() -> dict:
-    url = settings.webhook_public_url or ""
+def doc_callback_cong_khai(url: str, ma_http: int | None, loi: str | None, la_app_nay: bool) -> dict:
+    """
+    Phán quyết tách khỏi phần gọi mạng, để test lái được mọi nhánh.
+
+    VÌ SAO KHÔNG CÒN CHỈ KIỂM CHUỖI
+    -------------------------------
+    Bản trước của hàm này chỉ hỏi `url.startswith("https://")` rồi báo ĐỦ.
+    Nghĩa là tên miền tunnel chết ba tiếng trước, tin Zalo OA và Facebook
+    rơi vào hư không suốt ba tiếng, mà mục này vẫn xanh — vì chuỗi trong
+    `.env` vẫn còn nguyên chữ `https`.
+
+    Tên miền `trycloudflare` ĐỔI MỖI LẦN CHẠY. Đó không phải rủi ro hiếm,
+    đó là mặc định: mỗi lần khởi động lại máy là một tên miền mới, và nếu
+    quên dán lại URL webhook ở Meta/Zalo thì kênh chết im lặng. CLAUDE.md
+    đã ghi đúng câu ấy; phép kiểm thì lại không canh nó.
+
+    Zalo cá nhân KHÔNG đi qua tunnel (sidecar gọi thẳng 127.0.0.1), nên
+    tunnel chết vẫn còn một kênh sống — và đó chính là điều khiến nó khó
+    thấy: dashboard vẫn có tin mới, chỉ thiếu hẳn hai kênh kia.
+    """
+    ten = "Callback provider"
     if not url.startswith("https://"):
         return _muc(
-            "Callback provider", CANH_BAO,
+            ten, CANH_BAO,
             "chưa có HTTPS công khai cho webhook",
             "Tạo hostname/tunnel HTTPS trỏ về cổng 8000 rồi cấu hình callback riêng của từng account",
         )
-    return _muc("Callback provider", DU, "đã có HTTPS công khai")
+    if loi is not None:
+        return _muc(
+            ten, CHAN,
+            f"URL công khai không gọi tới được ({loi})",
+            "Tunnel đã chết hoặc đổi tên miền. Chạy python -m scripts.khoi_dong rồi DÁN LẠI "
+            "URL webhook ở Meta và Zalo OA. Bỏ bước dán lại là hai kênh ấy chết im lặng",
+        )
+    if not la_app_nay:
+        return _muc(
+            ten, CANH_BAO,
+            f"URL công khai trả {ma_http} nhưng không nhận ra ứng dụng này",
+            "Tên miền có thể đã được cấp cho tunnel của người khác, hoặc proxy biên chặn "
+            "/healthz. Mở thẳng URL trong trình duyệt để xem đang trỏ về đâu",
+        )
+    return _muc(ten, DU, "URL công khai gọi tới được và trả đúng ứng dụng này")
+
+
+async def kiem_callback_cong_khai() -> dict:
+    """Gọi THẬT vào URL công khai, không chỉ đọc chuỗi trong `.env`."""
+    from urllib.parse import urlsplit
+
+    import httpx
+
+    url = settings.webhook_public_url or ""
+    if not url.startswith("https://"):
+        return doc_callback_cong_khai(url, None, None, False)
+
+    p = urlsplit(url)
+    ma_http: int | None = None
+    la_app_nay = False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as khach:
+            r = await khach.get(f"{p.scheme}://{p.netloc}/healthz")
+        ma_http = r.status_code
+        # `/healthz` của app trả {"ok": true, "runtime": {...}}. Một tunnel
+        # lạ chiếm tên miền cũ sẽ trả 404 hoặc JSON hình dạng khác, nên đây
+        # phân biệt được "tới được" với "tới đúng app của mình".
+        than = r.json() if r.status_code == 200 else {}
+        la_app_nay = bool(than.get("ok")) and "runtime" in than
+        loi = None
+    except Exception as exc:  # noqa: BLE001 — mọi kiểu hỏng mạng đều là "không tới được"
+        loi = type(exc).__name__
+    return doc_callback_cong_khai(url, ma_http, loi, la_app_nay)
 
 
 async def kiem_ton_kho() -> dict:
@@ -786,10 +915,10 @@ async def chay() -> int:
     muc = [
         kiem_bi_mat(), await kiem_khoa_api(), await kiem_embedding(),
         kiem_du_lieu_that(), kiem_ten_trong_prompt(),
-        await kiem_kenh(), kiem_callback_cong_khai(),
+        await kiem_kenh(), await kiem_callback_cong_khai(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
-        await kiem_outbox(), await kiem_ton_kho(),
+        await kiem_outbox(), await kiem_ton_kho(), kiem_van_chuyen(),
         kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]

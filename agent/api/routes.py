@@ -1561,14 +1561,49 @@ async def kho_tong_quan(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
 
     danh_muc = {p["ma"]: p for p in _catalog().get("san_pham", [])}
     ton = await db.fetch("SELECT ma, so_luong, cap_nhat_luc FROM ton_kho ORDER BY ma")
+
+    # Giá của mã KHÔNG nằm trong danh mục thì hỏi ERP.
+    #
+    # `catalog.json` cố ý chỉ chứa hàng ĐANG BÁN — đó là thứ agent được phép
+    # tư vấn, và nhồi hàng ngừng bán vào đó là agent bắt đầu chào bán chúng.
+    # Nhưng màn Kho trả lời một câu hỏi KHÁC: "trong kho còn gì, đáng bao
+    # nhiêu". Đo được 14.09.2026: 22 trong 35 dòng tồn kho là hàng thật đã
+    # ngừng bán, còn 1.088 đơn vị, có giá đầy đủ ở ERPNext — và ô "Giá trị
+    # tồn" bỏ sót toàn bộ, riêng một mã đã 28 triệu.
+    #
+    # Hỏi SONG SONG và chỉ hỏi mã còn thiếu: mỗi lời gọi là một vòng mạng,
+    # và cổng đã có cache giá TTL dài nên lần sau gần như miễn phí.
+    thieu_gia = [x["ma"] for x in ton if x["ma"] not in danh_muc]
+    gia_erp: dict[str, int | None] = {}
+    if thieu_gia:
+        import asyncio as _asyncio
+
+        from agent.erp import nha_may as _nha_may
+
+        _cong = _nha_may.cong()
+
+        async def _hoi_gia(ma: str):
+            try:
+                g = await _cong.gia(ma)
+            except Exception:  # noqa: BLE001 — ERP sập không được làm mất bảng
+                return ma, None
+            return ma, (int(g.gia_ban) if g and g.gia_ban else None)
+
+        for ma, g in await _asyncio.gather(*(_hoi_gia(m) for m in thieu_gia)):
+            gia_erp[ma] = g
+
     ra = []
     for t in ton:
         sp = danh_muc.get(t["ma"], {})
+        # None = CHƯA TRA ĐƯỢC, khác hẳn 0. Gộp hai thứ là nói dối một cách
+        # tự tin: cộng thêm 0 vào "giá trị tồn" trông y hệt như món ấy không
+        # đáng gì, trong khi sự thật là chưa biết.
+        gia = sp.get("gia") if t["ma"] in danh_muc else gia_erp.get(t["ma"])
         ra.append({
             "ma": t["ma"],
             "ten": sp.get("ten", "(không có trong danh mục)"),
             "loai": sp.get("loai", ""),
-            "gia": sp.get("gia", 0),
+            "gia": gia,
             "so_luong": int(t["so_luong"]),
             "sap_het": int(t["so_luong"]) <= kho.NGUONG_SAP_HET,
             "cap_nhat_luc": t["cap_nhat_luc"].isoformat(),
@@ -1588,6 +1623,9 @@ async def kho_tong_quan(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
         "sap_het": len(sap),
         "nguong_sap_het": kho.NGUONG_SAP_HET,
         "gia_tri_ton": sum(x["so_luong"] * (x["gia"] or 0) for x in ra),
+        # Đếm ra chứ không giấu: không có con số này thì người đọc tưởng
+        # tổng đã đủ, trong khi vài mã còn chưa tra được giá.
+        "so_ma_chua_biet_gia": sum(1 for x in ra if x["gia"] is None),
     }
 
 
@@ -2216,11 +2254,38 @@ class XoaDuLieuIn(BaseModel):
     xac_nhan_sdt: str = Field(min_length=9, max_length=20)
 
 
+class XinDuyetXoaIn(BaseModel):
+    ly_do: str = Field(min_length=3, max_length=300)
+
+
 @router.get("/pdpd/{sdt}")
 async def pdpd_tra_cuu(sdt: str, _quyen: dict = Depends(can_quyen("khach.pii"))) -> dict:
     """Hệ thống đang giữ những gì về số điện thoại này."""
     try:
-        return await du_lieu_ca_nhan.tra_cuu(sdt)
+        # Kèm luôn trạng thái phiếu duyệt: không kèm thì giao diện phải đoán,
+        # và cách đoán duy nhất là cho bấm Xoá rồi đọc lỗi trả về — tức là
+        # dạy người vận hành rằng nút Xoá đôi khi không xoá.
+        return {**await du_lieu_ca_nhan.tra_cuu(sdt),
+                "phieu_duyet": await du_lieu_ca_nhan.trang_thai_phieu(sdt)}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/pdpd/{sdt}/xin-duyet")
+async def pdpd_xin_duyet(sdt: str, body: XinDuyetXoaIn,
+                         nguoi: dict = Depends(can_quyen("khach.xoa"))) -> dict:
+    """
+    Xin một phiếu duyệt để xoá số này. NGƯỜI KHÁC phải duyệt ở màn Nhật ký.
+
+    Phiếu khoá theo số điện thoại — đúng khoá mà `pdpd_xoa` dùng. Phiếu tạo
+    từ hồ sơ khách (`/api/contacts/{id}/retention-jobs`) khoá theo khách, và
+    phần lớn hồ sơ khách chưa có số, nên đường ấy không mở được nút xoá.
+    """
+    try:
+        return await du_lieu_ca_nhan.xin_duyet_xoa(
+            sdt, ly_do=body.ly_do,
+            nguoi_id=nguoi["id"], nguoi_ten=nguoi["ten_dang_nhap"],
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -2244,6 +2309,11 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
         return await du_lieu_ca_nhan.xoa(
             sdt, ly_do=f"{body.ly_do} (bởi {nguoi['ten_dang_nhap']})"
         )
+    except du_lieu_ca_nhan.ChuaDuyet as exc:
+        # 409 chứ không 422: người vận hành không gõ sai gì cả, chỉ là chưa
+        # có người thứ hai duyệt. 422 đẩy họ đi soi lại ô nhập trong khi thứ
+        # cần làm nằm ở màn khác.
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

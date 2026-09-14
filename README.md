@@ -166,6 +166,8 @@ thế cho sandbox provider hoặc nghiệm thu production.
 - `docs/dua-vao-doanh-nghiep.md`: checklist triển khai.
 - `docs/kien-truc.md`: schema và luồng dữ liệu.
 - `docs/superpowers/plans/2026-08-25-omnichannel-native-roadmap.md`: roadmap/gate.
+- `LICENSE`: phần mềm độc quyền, bảo lưu mọi quyền — kèm lý do vì sao không
+  mở mã, và ranh giới với giấy phép của thành phần bên thứ ba.
 - `THIRD_PARTY_NOTICES.md`: thông tin giấy phép thành phần bên thứ ba.
 
 Không commit, merge hoặc deploy production chỉ dựa trên README; dùng bằng chứng

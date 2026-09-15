@@ -125,7 +125,7 @@ def test_do_theo_CUA_SO_THOI_GIAN_chu_khong_theo_so_lan():
 
     Đo được: lượt 1 trượt, lượt 2–4 đều 200.
     """
-    node = _ham("_thong")
+    node = _ham("kiem_thong")
     mac_dinh = {
         a.arg: d for a, d in zip(
             node.args.args[-len(node.args.defaults):], node.args.defaults,
@@ -133,7 +133,7 @@ def test_do_theo_CUA_SO_THOI_GIAN_chu_khong_theo_so_lan():
         )
     } if node.args.defaults else {}
     assert "han_giay" in mac_dinh, (
-        "_thong phải nhận hạn THỜI GIAN, không phải số lần thử"
+        "kiem_thong phải nhận hạn THỜI GIAN, không phải số lần thử"
     )
     han = mac_dinh["han_giay"].value
     assert han >= 45, (
@@ -154,7 +154,7 @@ def test_XOA_DEM_DNS_trong_moi_luot_do():
     trong khi `nslookup` cùng lúc trả về đủ bốn địa chỉ. Xoá đệm xong thì
     4/4 lượt đều 200.
     """
-    than = _than("_thong")
+    than = _than("kiem_thong")
     assert "_xoa_dem_dns()" in than, (
         "không xoá đệm DNS — mọi lượt đo sau lượt đầu chỉ đọc lại câu trả "
         "lời phủ định đã lưu, và kiên nhẫn thành vô nghĩa"

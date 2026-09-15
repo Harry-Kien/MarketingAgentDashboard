@@ -10,6 +10,7 @@ from agent.channels.base import ChannelAdapter, ConnectionCheck
 
 from .account_service import AccountNotFound
 from .accounts import AccountStatus, Channel, ChannelAccount
+from .bi_mat_may_chu import bo_sung_bi_mat_may_chu
 
 
 class NativeVerificationAdapterFactory:
@@ -22,6 +23,25 @@ class NativeVerificationAdapterFactory:
             raise RuntimeError("tài khoản chưa có credential")
         values = dict(credentials)
         values.setdefault("external_account_id", account.external_account_id)
+        # Bí mật của MÁY CHỦ lấy từ `.env`, không tin bản trong vault.
+        #
+        # ĐO ĐƯỢC 15.09.2026. Đường này là chỗ DUY NHẤT dựng adapter mà quên
+        # gọi hàm ấy, trong khi `_zalo_personal_adapter` (QR, khôi phục,
+        # trạng thái) thì có. Hậu quả là một cặp kết quả mâu thuẫn trên cùng
+        # một tài khoản Zalo cá nhân đang chạy tốt:
+        #
+        #   GET  .../zalo-personal/status  -> connected, own_id đúng
+        #   POST .../verify                -> provider.unreachable,
+        #                                     "Chữ ký sidecar không hợp lệ"
+        #
+        # Và `verify` ghi luôn `degraded` vào sức khoẻ kênh, nên dashboard
+        # hiện Gián đoạn cho một kênh vẫn nhận tin bình thường. Đỏ giả thì
+        # tệ hơn đỏ thật: người ta đi chữa thứ không hỏng, rồi thôi đọc bảng.
+        #
+        # Gọi cho MỌI kênh chứ không riêng Zalo cá nhân: hàm trả nguyên bản
+        # với các kênh khác, nên đặt ở đây thì kênh sau có bí mật máy chủ
+        # không phải nhớ thêm một dòng nào nữa.
+        values = bo_sung_bi_mat_may_chu(account.channel, values)
         if account.channel == Channel.FACEBOOK:
             from agent.channels.messenger import FacebookAdapter
             return FacebookAdapter(account_id=account.id, credentials=values)

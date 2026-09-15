@@ -46,6 +46,13 @@ def _erpnext(ghi_lai: list, **kw):
             return httpx.Response(200, json={"data": (
                 [{"name": "KH-0001"}] if khach_co else []
             )})
+        # ERPNext thật đòi nhóm LÁ khi tạo khách; ERP giả phải trả đúng
+        # hình dạng ấy, nếu không nó nhận cả những giá trị mà ERPNext sẽ từ
+        # chối — đúng lý do lỗi "All Customer Groups" nằm im nhiều tháng.
+        if req.method == "GET" and duong.endswith("/Customer Group"):
+            return httpx.Response(200, json={"data": [{"name": "Individual"}]})
+        if req.method == "GET" and duong.endswith("/Territory"):
+            return httpx.Response(200, json={"data": [{"name": "Vietnam"}]})
         if req.method == "GET" and duong.endswith("/Sales Order"):
             return httpx.Response(200, json={"data": (
                 [{"name": don_co}] if don_co else []

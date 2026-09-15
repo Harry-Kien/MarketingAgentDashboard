@@ -369,6 +369,48 @@ def doc_nguoi_canh(tuoi_phut: float | None) -> dict:
     return _muc(ten, DU, f"chạy cách đây {int(tuoi_phut)} phút")
 
 
+def doc_ghi_don(ghi_don: bool, submit_don: bool) -> dict:
+    """
+    Phần thuần: đơn chốt xong có sang ERP không, và có giữ chỗ hàng không.
+
+    HAI CÔNG TẮC, BA TRẠNG THÁI, và trạng thái giữa là chỗ dễ tưởng đã
+    xong nhất.
+
+    Tắt ghi đơn: ERP không biết gì về đơn nào. Kho nội bộ trừ, kho ERP
+    không, và hai bên lệch dần theo từng đơn cho tới lần kiểm kê.
+
+    Bật ghi đơn nhưng chưa submit: đơn sang ERP ở dạng NHÁP. Nhìn thấy
+    được trong danh sách, nên mọi dấu hiệu nói đã xong — nhưng ERPNext chỉ
+    giữ chỗ hàng khi đơn được submit, nên hai khách vẫn mua được cùng một
+    món cuối. Đo được 15.09.2026: đơn SAL-ORD-2026-00001 sang tới nơi mà
+    `reserved_qty` vẫn bằng 0.
+    """
+    ten = "Ghi đơn sang ERP"
+    if not ghi_don:
+        return _muc(
+            ten, CANH_BAO,
+            "ERP_GHI_DON đang TẮT — đơn chốt xong không sang ERP",
+            "Kho nội bộ trừ, kho ERP không, hai bên lệch dần theo từng đơn. "
+            "Đặt ERP_GHI_DON=true rồi mở ERP xem tận mắt đơn ĐẦU TIÊN",
+        )
+    if not submit_don:
+        return _muc(
+            ten, CANH_BAO,
+            "đơn sang ERP ở dạng NHÁP — ERPNext CHƯA giữ chỗ tồn kho",
+            "Đơn nhìn thấy được trong ERP nên trông như đã xong, nhưng hai "
+            "khách vẫn mua được cùng một món cuối. Đặt ERP_SUBMIT_DON=true "
+            "để đơn thành chứng từ chính thức và kho được giữ chỗ ngay",
+        )
+    return _muc(ten, DU, "đơn sang ERP dạng chính thức, kho được giữ chỗ ngay")
+
+
+def kiem_ghi_don() -> dict:
+    return doc_ghi_don(
+        ghi_don=bool(settings.erp_ghi_don),
+        submit_don=bool(settings.erp_submit_don),
+    )
+
+
 def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
                    url: str) -> dict:
     """
@@ -986,7 +1028,8 @@ async def chay() -> int:
         await kiem_webhook_zalo_oa(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
-        await kiem_outbox(), await kiem_ton_kho(), kiem_van_chuyen(),
+        await kiem_outbox(), await kiem_ton_kho(),
+        kiem_ghi_don(), kiem_van_chuyen(),
         kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]

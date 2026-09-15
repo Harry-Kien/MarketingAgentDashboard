@@ -24,14 +24,36 @@ BA CÁI BẪY ĐÃ DÍNH THẬT, SCRIPT NÀY TRÁNH CẢ BA
    dựng URL webhook sai — và Zalo vẫn nhận URL ấy, chỉ là không bao giờ
    gọi tới được. Hỏng im lặng.
 
-TÊN MIỀN VẪN ĐỔI MỖI LẦN CHẠY
------------------------------
-`trycloudflare` là tunnel dùng một lần, không đặt tên được. Script cập nhật
-`.env` hộ, nhưng URL webhook trong Zalo/Meta Console thì PHẢI DÁN LẠI —
-không có cách nào tự động, và không nền tảng nào báo cho bạn biết nó đã
-ngừng gọi được.
+HAI CHẾ ĐỘ, VÀ CHỈ MỘT CÁI DÙNG ĐƯỢC VỚI KHÁCH THẬT
+---------------------------------------------------
+    TẠM (mặc định)  `cloudflared tunnel --url` cấp tên miền NGẪU NHIÊN mới
+                    mỗi lần chạy. Dùng để thử, không dùng để chạy thật.
+    CỐ ĐỊNH         `cloudflared tunnel run --token …` chạy một tunnel ĐÃ
+                    ĐẶT TÊN trên Cloudflare, gắn với tên miền của shop.
+                    Tên miền KHÔNG đổi, kể cả khi máy tắt rồi bật lại.
 
-Chạy thật thì cần tên miền riêng. Script in nhắc nhở đó mỗi lần.
+Vì sao chế độ tạm không dùng thật được — đo trên chính hệ thống này
+(14–15.09.2026): tên miền đổi BỐN lần trong 24 giờ, và một lần trong số đó
+cổng công khai chết lúc 0h20 dù máy vẫn chạy bình thường. Mỗi lần đổi là
+Zalo OA và Facebook ngừng gọi được, không nền tảng nào báo, và tin khách
+rơi vào hư không. Dán URL tạm vào Zalo Console là công sức bỏ đi.
+
+BẬT CHẾ ĐỘ CỐ ĐỊNH — bốn bước, làm một lần
+------------------------------------------
+ 1. Có một tên miền (mua ở đâu cũng được), thêm nó vào tài khoản Cloudflare
+    miễn phí và trỏ nameserver theo hướng dẫn của Cloudflare.
+ 2. Vào Cloudflare **Zero Trust → Networks → Tunnels → Create a tunnel**,
+    chọn *Cloudflared*, đặt tên (ví dụ `blanica`). Cloudflare hiện một lệnh
+    có chuỗi token dài — chỉ cần lấy phần token ấy.
+ 3. Cũng trong màn đó, thêm **Public hostname**: tên miền con bạn muốn
+    (ví dụ `api.tenmien.vn`) → Service `HTTP` → `localhost:8000`.
+ 4. Điền hai dòng vào `.env` rồi chạy lại `python -m scripts.khoi_dong`:
+
+        CLOUDFLARE_TUNNEL_TOKEN=<token ở bước 2>
+        PUBLIC_BASE_URL=https://api.tenmien.vn
+
+Từ đó tên miền cố định vĩnh viễn, và script này KHÔNG bao giờ ghi đè
+`PUBLIC_BASE_URL` nữa — dán URL webhook một lần là xong.
 """
 from __future__ import annotations
 
@@ -187,6 +209,57 @@ def _thong(domain: str, han_giay: float = 60.0) -> int:
     return ok
 
 
+def _doc_env(khoa: str) -> str:
+    """Một khoá trong `.env`, chuỗi rỗng nếu không có. Không bao giờ in ra."""
+    f = GOC / ".env"
+    if not f.exists():
+        return ""
+    for dong in f.read_text(encoding="utf-8", errors="replace").splitlines():
+        d = dong.strip()
+        if d.startswith(f"{khoa}=") and not d.startswith("#"):
+            return d.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def chay_co_dinh(exe: str, token: str, dia_chi: str) -> int:
+    """
+    Tunnel ĐÃ ĐẶT TÊN: tên miền của shop, không đổi giữa các lần chạy.
+
+    KHÔNG ghi `.env` ở đây — và đó là điểm khác quan trọng nhất so với chế
+    độ tạm. `PUBLIC_BASE_URL` lúc này do NGƯỜI đặt, khớp với public hostname
+    đã khai trên Cloudflare; script tự ghi đè là tự phá cấu hình của họ.
+
+    Token không bao giờ in ra: nó là chìa khoá mở đường vào máy chủ này từ
+    Internet, và màn hình này hay bị chụp lại.
+    """
+    print("Tunnel CỐ ĐỊNH (tên miền riêng) — đang mở …")
+    NHAT_KY.unlink(missing_ok=True)
+    with open(NHAT_KY, "w", encoding="utf-8") as f:
+        subprocess.Popen(
+            [exe, "tunnel", "--edge-ip-version", "4", "--protocol", "http2",
+             "run", "--token", token],
+            stdout=f, stderr=f,
+        )
+
+    if not dia_chi:
+        print("  Thiếu PUBLIC_BASE_URL trong .env — điền tên miền bạn đã khai")
+        print("  ở mục Public hostname trên Cloudflare, ví dụ:")
+        print("      PUBLIC_BASE_URL=https://api.tenmien.vn")
+        return 1
+
+    ok = _thong(dia_chi.rstrip("/"))
+    if ok == 0:
+        print(f"  Tunnel chạy nhưng {dia_chi} KHÔNG thông từ ngoài.")
+        print(f"  Xem {NHAT_KY.name}; kiểm lại Public hostname trên Cloudflare")
+        print("  có trỏ về http://localhost:8000 không.")
+        return 1
+
+    print(f"\n  {dia_chi}")
+    print(f"  Thông từ Internet ({ok} lượt gọi thành công).")
+    print("  Tên miền CỐ ĐỊNH — không phải dán lại URL webhook lần nào nữa.\n")
+    return 0
+
+
 def main() -> int:
     exe = _cloudflared()
     if not exe:
@@ -203,6 +276,14 @@ def main() -> int:
     n = _giet_tunnel_cu()
     if n:
         print("Đã tắt tunnel cũ đang chạy.")
+
+    # Có token thì đi đường CỐ ĐỊNH. Đặt trước nhánh tạm để không bao giờ
+    # có chuyện đã cấu hình tên miền riêng mà script vẫn lặng lẽ dựng một
+    # tunnel tạm rồi ghi đè PUBLIC_BASE_URL bằng tên ngẫu nhiên.
+    token = _doc_env("CLOUDFLARE_TUNNEL_TOKEN")
+    if token:
+        return chay_co_dinh(exe, token, _doc_env("PUBLIC_BASE_URL"))
+
     NHAT_KY.unlink(missing_ok=True)
 
     # `--edge-ip-version 4`: xem cái bẫy số 2 ở đầu tệp.
@@ -232,7 +313,9 @@ def main() -> int:
     print("  1. Khởi động lại dashboard để nó đọc .env mới.")
     print("  2. Dán lại URL webhook vào Zalo/Meta Console — tên miền vừa đổi,")
     print("     và không nền tảng nào báo cho bạn biết nó đã ngừng gọi được.")
-    print("\nChạy thật thì nên dùng tên miền riêng: dán một lần, không đổi nữa.")
+    print("\nĐÂY LÀ TUNNEL TẠM — đo trên chính máy này: tên miền đổi BỐN lần")
+    print("trong 24 giờ. Chạy thật thì bật chế độ CỐ ĐỊNH: xem bốn bước ở đầu")
+    print("scripts/chay_tunnel.py, hoặc mục Cổng công khai trong docs/van-hanh.md.")
     return 0
 
 

@@ -36,6 +36,37 @@ python -m scripts.san_sang
 
 Dòng cuối nói thẳng: `SẴN SÀNG` hoặc `CHƯA CHẠY ĐƯỢC: còn N việc CHẶN`.
 
+### Cổng công khai: tunnel TẠM và tunnel CỐ ĐỊNH
+
+Mặc định `scripts.chay_tunnel` dựng một tunnel **tạm** — `cloudflared tunnel
+--url` cấp tên miền `*.trycloudflare.com` **ngẫu nhiên mới mỗi lần chạy**.
+
+Đo trên hệ thống thật 14–15.09.2026: tên miền đổi **bốn lần trong 24 giờ**,
+và một lần cổng công khai chết lúc 0h20 **dù máy vẫn chạy bình thường** (app
+sống suốt đêm, người canh ghi `[tot] HTTP 200` mỗi 5 phút). Mỗi lần đổi là
+Zalo OA và Facebook ngừng gọi được — không nền tảng nào báo, dashboard vẫn
+xanh, tin khách rơi vào hư không.
+
+**Nên: tunnel tạm để thử, tunnel cố định để chạy với khách thật.** Bật cố
+định một lần, bốn bước:
+
+1. Có một tên miền, thêm vào tài khoản Cloudflare miễn phí, trỏ nameserver
+   theo hướng dẫn của họ.
+2. Cloudflare **Zero Trust → Networks → Tunnels → Create a tunnel** → chọn
+   *Cloudflared* → đặt tên. Lấy chuỗi **token** Cloudflare hiện ra.
+3. Cùng màn đó thêm **Public hostname**: `api.tenmien.vn` → Service `HTTP` →
+   `localhost:8000`.
+4. Điền vào `.env` rồi chạy lại `python -m scripts.khoi_dong`:
+
+```
+CLOUDFLARE_TUNNEL_TOKEN=<token ở bước 2>
+PUBLIC_BASE_URL=https://api.tenmien.vn
+```
+
+Từ đó tên miền không đổi nữa, kể cả khi máy tắt rồi bật lại — dán URL
+webhook vào Zalo/Meta **một lần** là xong. `scripts.san_sang` cảnh báo chừng
+nào còn dùng tunnel tạm.
+
 ### Máy tắt là cả hệ thống tắt
 
 Hệ thống chạy trên chính máy này. Tắt máy, cho máy ngủ, đăng xuất — là

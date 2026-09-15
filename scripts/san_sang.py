@@ -720,15 +720,44 @@ async def kiem_kenh() -> dict:
     return _muc("Kênh nhận tin", DU, "provider đã xác minh: " + ", ".join(enabled))
 
 
-def kiem_callback_cong_khai() -> dict:
-    url = settings.webhook_public_url or ""
+def doc_callback_cong_khai(url: str) -> dict:
+    """
+    Phần thuần: `url` là `WEBHOOK_PUBLIC_URL` đang đặt.
+
+    TUNNEL TẠM KHÔNG PHẢI "ĐỦ", DÙ NÓ LÀ HTTPS THẬT.
+    -------------------------------------------------
+    `*.trycloudflare.com` cấp tên miền NGẪU NHIÊN mới mỗi lần cloudflared
+    chạy. Đo trên hệ thống thật 14–15.09.2026: tên miền đổi BỐN lần trong 24
+    giờ, một lần chết lúc 0h20 dù máy vẫn chạy bình thường.
+
+    Mỗi lần đổi là Zalo OA và Facebook ngừng gọi được: không nền tảng nào
+    báo, dashboard vẫn xanh, tin khách rơi vào hư không. Đây là hỏng im lặng
+    ở tầng ngoài cùng — tầng mà không lớp lưới nào trong `agent/core` với
+    tới, và mục này là chỗ duy nhất nói ra được.
+
+    Trước bản này mục ấy báo "đủ" cho đúng tình huống đó, nên người vận hành
+    dán URL rồi yên tâm. Xanh giả ở ngay cửa vào của hệ thống.
+    """
+    ten = "Callback provider"
     if not url.startswith("https://"):
         return _muc(
-            "Callback provider", CANH_BAO,
+            ten, CANH_BAO,
             "chưa có HTTPS công khai cho webhook",
             "Tạo hostname/tunnel HTTPS trỏ về cổng 8000 rồi cấu hình callback riêng của từng account",
         )
-    return _muc("Callback provider", DU, "đã có HTTPS công khai")
+    if "trycloudflare.com" in url:
+        return _muc(
+            ten, CANH_BAO,
+            "đang dùng tunnel TẠM — tên miền đổi mỗi lần cloudflared chạy lại",
+            "Webhook đã dán vào Zalo/Meta sẽ chết ở lần đổi tiếp theo mà không "
+            "có gì báo. Bật tunnel CỐ ĐỊNH: bốn bước ở đầu scripts/chay_tunnel.py "
+            "(cần một tên miền và tài khoản Cloudflare miễn phí)",
+        )
+    return _muc(ten, DU, "HTTPS công khai, tên miền cố định")
+
+
+def kiem_callback_cong_khai() -> dict:
+    return doc_callback_cong_khai(settings.webhook_public_url or "")
 
 
 async def kiem_ton_kho() -> dict:

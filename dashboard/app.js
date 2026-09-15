@@ -2975,6 +2975,17 @@ async function loadPdpdPolicy() {
  * đúng thói quen khiến người ta bấm qua cả những cảnh báo thật. */
 function pdpdKhoiXoa(d) {
   const pd = d.phieu_duyet || {};
+  /* Cả hệ thống chỉ có một người mang quyền `khach.xoa` thì phiếu nào cũng
+     treo vĩnh viễn, vì người tạo không tự duyệt được. Không nói ra thì nó
+     treo im lặng — dashboard chỉ hiện "chờ người khác duyệt" mãi mãi, trong
+     khi thời hạn đáp ứng yêu cầu xoá là do luật đặt. */
+  const ket = pd.so_nguoi_duyet_duoc < 2
+    ? `<div class="kit__note kit__note--halt">⚠ Cả hệ thống chỉ có
+        <b>${esc(String(pd.so_nguoi_duyet_duoc ?? 0))}</b> người dùng được quyền
+        <code>khach.xoa</code>. Người tạo phiếu không tự duyệt được, nên phiếu sẽ
+        <b>treo mãi</b> và yêu cầu xoá của khách không bao giờ được đáp ứng.
+        Cấp quyền ấy cho ít nhất một người nữa ở màn <b>Nhân sự</b>.</div>`
+    : "";
   if (pd.xoa_duoc) {
     return `<div class="kit__note">Đã có phiếu duyệt của người khác — phiếu này
         <b>dùng một lần</b>, xoá xong là hết hiệu lực.</div>
@@ -2985,11 +2996,11 @@ function pdpdKhoiXoa(d) {
       </div>`;
   }
   if (pd.co_phieu) {
-    return `<div class="kit__note">Đã có phiếu xin xoá, <b>đang chờ người khác duyệt</b>
+    return ket + `<div class="kit__note">Đã có phiếu xin xoá, <b>đang chờ người khác duyệt</b>
       ở khối “Phiếu duyệt xoá” bên dưới. Người tạo phiếu không tự duyệt được —
       đó là chỗ con mắt thứ hai nằm.</div>`;
   }
-  return `<div class="kit__note">Xoá dữ liệu cá nhân cần <b>hai người</b>: xin phiếu ở đây,
+  return ket + `<div class="kit__note">Xoá dữ liệu cá nhân cần <b>hai người</b>: xin phiếu ở đây,
       một người khác duyệt ở khối “Phiếu duyệt xoá” bên dưới.</div>
     <div class="danger__row">
       <button type="button" class="btn btn--sm" id="pdpdXinDuyet">Xin duyệt xoá</button>
@@ -3031,11 +3042,27 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       <span class="row__side"><span class="row__time">${clock(h.updated_at)}</span></span>
     </div>`).join("");
 
+  /* Hồ sơ CRM: nơi lưu bị bỏ quên lâu nhất. Không hiện ở đây thì người
+     vận hành duyệt một lần xoá mà không biết ghi chú và nhãn cũng đi theo. */
+  const hs = (d.ho_so_khach || []).map((h) => `
+    <div class="row">
+      <span class="row__flag row__flag--assist"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(h.display_name || "Khách")}</span>
+        <span class="row__sub">${h.danh_tinh} danh tính kênh · ${h.ghi_chu} ghi chú ·
+          ${h.nhan} nhãn · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
+            h.co_email ? " · có email" : ""}</span>
+      </span>
+    </div>`).join("");
+
   $("#pdpdOut").innerHTML = `
     <h3 class="subhead">Đơn hàng (${d.so_don_hang}) — sẽ được ẩn danh, không xoá</h3>
     <div class="rows">${don || '<p class="empty">Không có.</p>'}</div>
     <h3 class="subhead">Hội thoại (${d.so_hoi_thoai}) — sẽ bị xoá hẳn cùng mọi tin nhắn</h3>
     <div class="rows">${hoi || '<p class="empty">Không có.</p>'}</div>
+    <h3 class="subhead">Hồ sơ khách (${d.so_ho_so || 0}) — ẩn danh; ghi chú, nhãn xoá hẳn;
+      danh tính từng kênh thay bằng khoá ẩn danh</h3>
+    <div class="rows">${hs || '<p class="empty">Không có.</p>'}</div>
     <div class="danger">
       <div class="danger__head">Thực hiện yêu cầu xoá — không hoàn tác được</div>
       <div class="kit__note">Đơn hàng giữ lại mã đơn, sản phẩm và số tiền cho sổ sách;

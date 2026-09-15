@@ -240,3 +240,86 @@ def test_so_che_van_du_de_nguoi_duyet_biet_duyet_cho_ai():
     che = pdpd.che_sdt("0967627336")
     assert "0967627336" != che and "***" in che
     assert che.startswith("0967") and che.endswith("36")
+
+
+# =====================================================================
+#  6. Hồ sơ CRM — nơi lưu bị bỏ quên lâu nhất
+# =====================================================================
+#
+# `xoa()` từng chạm đơn hàng, hội thoại, hồ sơ ghi nhớ và ERP — KHÔNG chạm
+# `contacts`. Sau khi hệ thống báo "đã xoá" và ghi nhật ký tuân thủ, tên
+# khách, số, email, ghi chú nhân viên viết về họ, nhãn và danh tính từng
+# kênh vẫn còn nguyên. Và "Chạy đếm" của phiếu duyệt lại đếm ĐÚNG những
+# bảng ấy — đếm thứ sẽ không bị xoá.
+
+def test_xoa_cham_toi_ho_so_crm(db_gia):
+    d = db_gia(phieu=PHIEU)
+    chay(pdpd.xoa("0967627336"))
+
+    assert d.sql_co("DELETE FROM contact_notes"), "ghi chú nhân viên viết về khách vẫn còn"
+    assert d.sql_co("DELETE FROM contact_tags"), "nhãn gắn cho khách vẫn còn"
+    assert d.sql_co("UPDATE contact_points SET"), "danh tính trên từng kênh vẫn còn"
+    assert d.sql_co("UPDATE contacts SET"), "hồ sơ khách vẫn giữ tên và số"
+
+
+def test_don_dong_y_giu_dong_bo_noi_dung():
+    """
+    Dòng đồng ý là bằng chứng đã từng được phép nhắn — xoá đi là tự bỏ căn
+    cứ pháp lý của mình. Nhưng `evidence` có thể chứa chính số vừa hứa xoá.
+    """
+    src = inspect.getsource(pdpd._xoa_ho_so_crm)
+    assert "DELETE FROM contact_consents" not in src
+    assert "UPDATE contact_consents SET evidence" in src
+
+
+def test_khong_giu_lai_khoa_nhan_ra_nguoi_cu():
+    """
+    Giữ `external_user_id` là giữ đúng thứ dùng để nhận ra người ấy ở lần
+    nhắn sau — xoá mà vẫn nhận ra nhau thì không phải đã quên.
+    """
+    src = inspect.getsource(pdpd._xoa_ho_so_crm)
+    assert "external_user_id = 'an-danh:'" in src
+
+
+def test_ho_so_da_gop_khong_lam_gay_ca_lan_xoa():
+    """
+    `contacts_check` bắt trạng thái khác 'merged' phải có `merged_into` rỗng.
+    Quên ô ấy thì câu UPDATE ném, và ném ở đây là hỏng giữa chừng một việc
+    không hoàn tác được.
+    """
+    assert "merged_into = NULL" in inspect.getsource(pdpd._xoa_ho_so_crm)
+
+
+def test_tra_cuu_noi_ca_ho_so_crm(db_gia):
+    """
+    Điều 9.1.c hỏi "hệ thống giữ gì". Trả lời thiếu hồ sơ CRM là trả lời sai,
+    và người vận hành duyệt một lần xoá mà không biết những gì sẽ đi theo.
+    """
+    d = db_gia(phieu=None)
+    kq = chay(pdpd.tra_cuu("0967627336"))
+    assert "ho_so_khach" in kq and "so_ho_so" in kq
+    assert d.sql_co("FROM contacts c")
+
+
+# =====================================================================
+#  7. Một người có quyền = phiếu treo vĩnh viễn, và phải nói ra
+# =====================================================================
+
+def test_dem_nguoi_duyet_tinh_ca_vai_tro_quan_tri():
+    """
+    Vai trò `Quản trị` nhận toàn bộ danh mục quyền tính từ MÃ chứ không từ
+    `vai_tro_quyen`. Đếm theo bảng ấy thôi thì ra 0 ở đúng hệ thống đang có
+    quản trị viên — một cảnh báo sai, và cảnh báo sai thì người ta tắt đi.
+    """
+    src = inspect.getsource(pdpd.so_nguoi_duyet_duoc)
+    assert "Quản trị" in src and "he_thong" in src
+    assert "NOT n.khoa" in src, "tài khoản đã khoá thì duyệt gì được"
+
+
+def test_trang_thai_phieu_luon_kem_so_nguoi_duyet(db_gia):
+    d = db_gia(phieu=None)
+    kq = chay(pdpd.trang_thai_phieu("0967627336"))
+    assert "so_nguoi_duyet_duoc" in kq, (
+        "không kèm thì giao diện không cảnh báo được, và phiếu treo im lặng"
+    )
+    assert d.sql_co("khach.xoa")

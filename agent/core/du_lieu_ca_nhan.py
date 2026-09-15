@@ -107,7 +107,8 @@ async def tra_cuu(sdt: str) -> dict:
     # Khách để lại số trong nội dung chat mà chưa lên đơn -> vẫn là dữ liệu
     # cá nhân đang lưu, phải tìm ra.
     hoi_thoai = await db.fetch(
-        "SELECT DISTINCT c.id, c.channel, c.customer_name, c.msg_count, c.updated_at "
+        "SELECT DISTINCT c.id, c.channel, c.customer_name, c.msg_count, c.updated_at, "
+        "       c.contact_id "
         "FROM conversations c JOIN messages m ON m.conversation_id = c.id "
         "WHERE regexp_replace(m.content, '\\D', '', 'g') LIKE $1 "
         "   OR c.id = ANY($2::uuid[]) "
@@ -116,6 +117,43 @@ async def tra_cuu(sdt: str) -> dict:
         [d["conversation_id"] for d in don if d["conversation_id"]],
     )
 
+    # Hồ sơ CRM — NƠI LƯU THỨ TƯ, và nơi bị bỏ quên lâu nhất.
+    #
+    # `contacts` giữ tên, số, email, hồ sơ; `contact_points` giữ danh tính
+    # trên từng kênh (id Zalo, id Facebook); `contact_notes` giữ chữ nhân
+    # viên viết về khách. Không đọc chúng ở đây thì màn "hệ thống đang giữ
+    # gì" trả lời THIẾU cho đúng câu hỏi Điều 9.1.c đặt ra, và `xoa()` cũng
+    # không có đường lần tới — hồ sơ ở lại nguyên vẹn sau khi báo "đã xoá".
+    ho_so = await db.fetch(
+        "SELECT c.id, c.display_name, c.status, "
+        "       c.phone IS NOT NULL AS co_sdt, c.email IS NOT NULL AS co_email, "
+        "       (SELECT count(*) FROM contact_points p WHERE p.contact_id = c.id) AS danh_tinh, "
+        "       (SELECT count(*) FROM contact_notes n WHERE n.contact_id = c.id) AS ghi_chu, "
+        "       (SELECT count(*) FROM contact_tags t WHERE t.contact_id = c.id) AS nhan, "
+        "       (SELECT count(*) FROM contact_consents s WHERE s.contact_id = c.id) AS dong_y "
+        "FROM contacts c "
+        "WHERE c.status <> 'deleted' "
+        "  AND (right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 9) = $1 "
+        "       OR c.id = ANY($2::uuid[]))",
+        so[-9:],
+        [h["contact_id"] for h in hoi_thoai if h.get("contact_id")],
+    )
+
+    # Vòng hai: hội thoại của chính những hồ sơ ấy. Khách không phải lúc nào
+    # cũng gõ số của mình vào chat — vòng một tìm theo nội dung tin nhắn nên
+    # bỏ sót đúng những hội thoại ấy, mà chúng vẫn là dữ liệu của cùng một
+    # người. Bỏ sót ở đây là xoá nửa vời mà vẫn báo "đã xoá".
+    if ho_so:
+        da_co = {h["id"] for h in hoi_thoai}
+        them = await db.fetch(
+            "SELECT DISTINCT c.id, c.channel, c.customer_name, c.msg_count, "
+            "       c.updated_at, c.contact_id "
+            "FROM conversations c WHERE c.contact_id = ANY($1::uuid[])",
+            [h["id"] for h in ho_so],
+        )
+        hoi_thoai.extend(h for h in them if h["id"] not in da_co)
+        hoi_thoai.sort(key=lambda h: h["updated_at"], reverse=True)
+
     for d in don:
         d["created_at"] = d["created_at"].isoformat()
         d["tong_tien"] = float(d["tong_tien"] or 0)
@@ -123,6 +161,9 @@ async def tra_cuu(sdt: str) -> dict:
     for h in hoi_thoai:
         h["id"] = str(h["id"])
         h["updated_at"] = h["updated_at"].isoformat()
+        h.pop("contact_id", None)
+    for h in ho_so:
+        h["id"] = str(h["id"])
 
     return {
         "so_dien_thoai": so,
@@ -130,7 +171,9 @@ async def tra_cuu(sdt: str) -> dict:
         "don_hang": don,
         "so_hoi_thoai": len(hoi_thoai),
         "hoi_thoai": hoi_thoai,
-        "co_du_lieu": bool(don or hoi_thoai),
+        "so_ho_so": len(ho_so),
+        "ho_so_khach": ho_so,
+        "co_du_lieu": bool(don or hoi_thoai or ho_so),
         "can_cu": "Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục c",
     }
 
@@ -275,14 +318,45 @@ async def xin_duyet_xoa(sdt: str, *, ly_do: str, nguoi_id, nguoi_ten: str = "?")
     return {"phieu_id": str(row["id"]), "trang_thai": row["status"], "da_co_san": False}
 
 
+async def so_nguoi_duyet_duoc() -> int:
+    """
+    Có bao nhiêu người đang dùng được quyền `khach.xoa`.
+
+    VÌ SAO PHẢI ĐẾM
+
+    Chốt bốn mắt chặn người tạo tự duyệt. Nếu cả hệ thống chỉ có MỘT tài
+    khoản mang quyền ấy thì mọi phiếu đều treo vĩnh viễn — và nó treo đúng
+    kiểu hỏng im lặng tệ nhất: không lỗi, không nhật ký, dashboard chỉ hiện
+    "chờ người khác duyệt" mãi mãi, trong khi thời hạn đáp ứng yêu cầu xoá
+    là do luật đặt chứ không do hệ thống đặt.
+
+    Đếm cả vai trò `Quản trị`: nó nhận toàn bộ danh mục quyền tính từ mã chứ
+    không từ `vai_tro_quyen`, nên đếm theo bảng ấy thôi sẽ ra 0 ở đúng hệ
+    thống đang có quản trị viên.
+    """
+    r = await db.fetchrow(
+        "SELECT count(DISTINCT n.id) AS n FROM nguoi_dung n "
+        "JOIN nguoi_dung_vai_tro x ON x.nguoi_dung_id = n.id "
+        "JOIN vai_tro vt ON vt.id = x.vai_tro_id "
+        "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
+        "     AND vq.quyen = 'khach.xoa' "
+        "WHERE NOT n.khoa "
+        "  AND (vq.quyen IS NOT NULL OR (vt.he_thong AND vt.ten = 'Quản trị'))"
+    )
+    return int((r or {}).get("n") or 0)
+
+
 async def trang_thai_phieu(sdt: str) -> dict:
     """
     Số này đang có phiếu ở trạng thái nào — để giao diện nói trước, thay vì
     để người vận hành bấm Xoá rồi mới biết là chưa được phép.
     """
     so = chuan_hoa_sdt(sdt)
+    nguoi_duyet = await so_nguoi_duyet_duoc()
+    chua_co = {"co_phieu": False, "xoa_duoc": False, "trang_thai": None,
+               "so_nguoi_duyet_duoc": nguoi_duyet}
     if len(so) < 9:
-        return {"co_phieu": False, "xoa_duoc": False, "trang_thai": None}
+        return chua_co
     row = await db.fetchrow(
         "SELECT id, status, approved_by FROM data_retention_jobs "
         "WHERE kind = 'delete' AND sdt_van_tay = $1 AND xoa_thuc_hien_luc IS NULL "
@@ -291,12 +365,13 @@ async def trang_thai_phieu(sdt: str) -> dict:
         _van_tay_phieu(so),
     )
     if not row:
-        return {"co_phieu": False, "xoa_duoc": False, "trang_thai": None}
+        return chua_co
     return {
         "co_phieu": True,
         "phieu_id": str(row["id"]),
         "trang_thai": row["status"],
         "xoa_duoc": row["approved_by"] is not None and row["status"] in ("approved", "completed"),
+        "so_nguoi_duyet_duoc": nguoi_duyet,
     }
 
 
@@ -346,6 +421,72 @@ async def _nha_phieu_duyet(phieu_id) -> None:
         "UPDATE data_retention_jobs SET xoa_thuc_hien_luc = NULL WHERE id = $1",
         phieu_id,
     )
+
+
+def _dem(ket_qua: str) -> int:
+    """Số dòng từ chuỗi asyncpg trả về ("DELETE 3" -> 3)."""
+    duoi = str(ket_qua or "").split()
+    return int(duoi[-1]) if duoi and duoi[-1].isdigit() else 0
+
+
+async def _xoa_ho_so_crm(ho_so: list[dict]) -> dict:
+    """
+    Dọn hồ sơ CRM của khách: nơi lưu THỨ TƯ, ngoài đơn hàng, hội thoại và ERP.
+
+    VÌ SAO BƯỚC NÀY TỪNG KHÔNG TỒN TẠI VÀ VÌ SAO NÓ QUAN TRỌNG
+
+    `xoa()` trước đây chạm đơn hàng, hội thoại, hồ sơ ghi nhớ và ERP — không
+    chạm `contacts`. Nghĩa là sau khi hệ thống báo "đã xoá" và ghi nhật ký
+    tuân thủ, tên khách, số điện thoại, email, ghi chú nhân viên viết về họ,
+    nhãn và danh tính trên từng kênh vẫn còn nguyên trong CRM. Trớ trêu nhất:
+    "Chạy đếm" của phiếu duyệt đếm ĐÚNG những bảng ấy — đếm thứ sẽ không bị
+    xoá.
+
+    XOÁ HAY ẨN DANH, VẪN LÀ HAI CÁCH CHO HAI LOẠI
+
+      ghi chú, nhãn        -> XOÁ HẲN. Chữ nhân viên viết về một người, không
+                              có nghĩa vụ lưu giữ nào.
+      danh tính từng kênh  -> ẨN DANH. Xoá hẳn thì hội thoại còn lại (của
+                              khách khác cùng kênh) vướng khoá ngoại RESTRICT;
+                              mà giữ `external_user_id` là giữ đúng thứ dùng
+                              để nhận ra người ấy ở lần nhắn sau. Thay bằng
+                              khoá ngẫu nhiên: tin nhắn sau tạo hồ sơ mới,
+                              đúng nghĩa đã quên người cũ.
+      đồng ý marketing     -> GIỮ DÒNG, BỎ NỘI DUNG. Dòng đồng ý là bằng
+                              chứng pháp lý cho việc đã từng được phép nhắn;
+                              `evidence` thì có thể chứa chính số vừa hứa xoá.
+      hồ sơ khách          -> ẨN DANH + đánh dấu `deleted`, giữ id để đơn
+                              hàng và hội thoại còn lại không mồ côi khoá
+                              ngoại.
+    """
+    ids = [h["id"] for h in ho_so]
+    if not ids:
+        return {"ho_so": 0, "ghi_chu": 0, "nhan": 0, "danh_tinh": 0, "dong_y": 0}
+
+    ghi_chu = _dem(await db.execute(
+        "DELETE FROM contact_notes WHERE contact_id = ANY($1::uuid[])", ids))
+    nhan = _dem(await db.execute(
+        "DELETE FROM contact_tags WHERE contact_id = ANY($1::uuid[])", ids))
+    danh_tinh = _dem(await db.execute(
+        "UPDATE contact_points SET handle = $2, "
+        "       external_user_id = 'an-danh:' || id::text, "
+        "       metadata = '{}'::jsonb, verified_fields = '{}'::jsonb, "
+        "       updated_at = now() "
+        "WHERE contact_id = ANY($1::uuid[])", ids, AN_DANH))
+    dong_y = _dem(await db.execute(
+        "UPDATE contact_consents SET evidence = '{}'::jsonb, updated_at = now() "
+        "WHERE contact_id = ANY($1::uuid[])", ids))
+    # `merged_into = NULL` không phải dọn dẹp cho đẹp: ràng buộc
+    # `contacts_check` bắt trạng thái khác 'merged' phải có `merged_into`
+    # rỗng, nên một hồ sơ đã gộp mà không xoá ô ấy thì câu UPDATE này NÉM,
+    # và ném ở đây là cả lần xoá hỏng giữa chừng.
+    n_ho_so = _dem(await db.execute(
+        "UPDATE contacts SET display_name = $2, phone = NULL, email = NULL, "
+        "       profile = '{}'::jsonb, status = 'deleted', merged_into = NULL, "
+        "       version = version + 1, updated_at = now() "
+        "WHERE id = ANY($1::uuid[])", ids, AN_DANH))
+    return {"ho_so": n_ho_so, "ghi_chu": ghi_chu, "nhan": nhan,
+            "danh_tinh": danh_tinh, "dong_y": dong_y}
 
 
 async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
@@ -398,8 +539,12 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         #    dữ liệu cá nhân ngoài tầm kiểm soát.
         ho_so = await ho_so_khach.xoa(sdt=so)
 
-        # 4. Ẩn danh khách bên kho/ERP — nơi lưu THỨ BA, ngoài Postgres và hồ sơ
-        #    ghi nhớ. Bỏ qua bước này là báo "đã xoá" trong khi ERP còn nguyên.
+        # 4. Dọn hồ sơ CRM — nơi lưu THỨ TƯ. Xem `_xoa_ho_so_crm` để biết vì
+        #    sao mỗi bảng được xử lý một kiểu.
+        crm = await _xoa_ho_so_crm(truoc["ho_so_khach"])
+
+        # 5. Ẩn danh khách bên kho/ERP — nơi lưu THỨ NĂM, ngoài Postgres và hồ
+        #    sơ ghi nhớ. Bỏ qua bước này là báo "đã xoá" trong khi ERP còn nguyên.
         erp = await an_danh_ben_erp(so)
     except Exception:
         # Hỏng giữa chừng thì trả phiếu về trạng thái chưa dùng: bắt đi xin
@@ -408,7 +553,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         await _nha_phieu_duyet(phieu["id"])
         raise
 
-    # 5. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
+    # 6. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
     #    Ghi CẢ phần chưa làm được: một bằng chứng tuân thủ che giấu phần
     #    còn thiếu thì tệ hơn không có bằng chứng nào.
     await db.log_event(
@@ -417,6 +562,12 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         so_don_an_danh=truoc["so_don_hang"],
         so_hoi_thoai_xoa=hoi_thoai,
         so_ho_so_xoa=ho_so,
+        # Hồ sơ CRM: đếm riêng từng bảng. Gộp thành một con số thì lần sau
+        # một bảng lặng lẽ rơi khỏi luồng xoá mà tổng vẫn trông hợp lý.
+        crm_ho_so=crm["ho_so"],
+        crm_ghi_chu=crm["ghi_chu"],
+        crm_nhan=crm["nhan"],
+        crm_danh_tinh=crm["danh_tinh"],
         erp_ap_dung=erp["ap_dung"],
         erp_da_lam=erp["da_lam"],
         erp_so_ban_ghi=erp["so_ban_ghi"],
@@ -441,12 +592,16 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         "don_hang_an_danh": truoc["so_don_hang"],
         "hoi_thoai_da_xoa": hoi_thoai,
         "ho_so_ghi_nho_da_xoa": ho_so,
+        "crm": crm,
         "erp": erp,
         "phieu_duyet": str(phieu["id"]),
         "ghi_chu": (
             f"Đã ẩn danh {truoc['so_don_hang']} đơn hàng (giữ mã đơn và số "
             f"tiền cho sổ sách kế toán) và xoá hẳn {hoi_thoai} hội thoại "
-            f"cùng toàn bộ tin nhắn. Không hoàn tác được. "
+            f"cùng toàn bộ tin nhắn. "
+            f"Hồ sơ CRM: {crm['ho_so']} hồ sơ ẩn danh, {crm['ghi_chu']} ghi "
+            f"chú và {crm['nhan']} nhãn xoá hẳn, {crm['danh_tinh']} danh "
+            f"tính kênh ẩn danh. Không hoàn tác được. "
             + ("CHƯA XONG: " + erp["ghi_chu"] + " Phải vào ERP ẩn danh tay "
                "rồi ghi nhận lại." if con_thieu else erp["ghi_chu"])
         ),

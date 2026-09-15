@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import httpx  # noqa: E402
+import pytest  # noqa: E402
 
 from agent.channels import registry  # noqa: E402
 from agent.channels.base import ChannelAdapter  # noqa: E402
@@ -276,15 +277,64 @@ def test_co_bang_luu_refresh_token_trong_schema():
     assert "refresh_token" in sql
 
 
+# Hai ca dưới đây trước kia đọc MÃ NGUỒN của `_lay_token` và tìm chuỗi
+# `_luu_refresh` / `raise RuntimeError`. Ràng buộc thì đúng, cách canh thì
+# giòn: tách `_lay_token` làm hai hàm là chúng đỏ, dù hành vi không đổi một
+# ly. Tệ hơn, chúng vẫn xanh nếu ai đó giữ nguyên chữ mà đổi nghĩa.
+#
+# Nay canh bằng HÀNH VI — chặt hơn, và không cản người dọn mã.
+
+def _khach_gia(dap_an: dict) -> httpx.AsyncClient:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=dap_an)
+
+    return httpx.AsyncClient(base_url="https://openapi.example/v3.0/oa",
+                             transport=httpx.MockTransport(handler))
+
+
 def test_ghi_de_refresh_token_moi_khi_zalo_tra_ve():
-    import inspect
-    src = inspect.getsource(ZaloOAAdapter._lay_token)
-    assert "_luu_refresh" in src, "không ghi lại refresh token mới = kênh chết sau 1 giờ"
+    """
+    Refresh token của Zalo xoay vòng: bản cũ chết ngay sau một lần dùng.
+    Không ghi lại bản mới là kênh chết sau khoảng một giờ, trong im lặng.
+    """
+    da_ghi: list[dict] = []
+
+    async def ghi(payload):
+        da_ghi.append(dict(payload))
+
+    adapter = ZaloOAAdapter(
+        account_id=__import__("uuid").uuid4(),
+        credentials={"app_id": "a", "secret_key": "s", "refresh_token": "cu"},
+        client=_khach_gia({"access_token": "at", "refresh_token": "moi",
+                           "expires_in": 3600}),
+        on_credentials_rotated=ghi,
+    )
+
+    assert asyncio.run(adapter._lay_token()) == "at"
+    assert da_ghi and da_ghi[-1]["refresh_token"] == "moi"
+    asyncio.run(adapter.aclose())
 
 
 def test_token_rong_thi_no_chu_khong_ghi_de():
-    """Zalo trả HTTP 200 kèm thân lỗi. Coi 200 là thành công ở đây nghĩa là
-    ghi một token rỗng đè lên token đang chạy."""
-    import inspect
-    src = inspect.getsource(ZaloOAAdapter._lay_token)
-    assert "raise RuntimeError" in src
+    """
+    Zalo trả HTTP 200 kèm thân lỗi. Coi 200 là thành công ở đây nghĩa là ghi
+    một token rỗng đè lên token đang chạy — và không ai biết.
+    """
+    da_ghi: list[dict] = []
+
+    async def ghi(payload):
+        da_ghi.append(dict(payload))
+
+    adapter = ZaloOAAdapter(
+        account_id=__import__("uuid").uuid4(),
+        credentials={"app_id": "a", "secret_key": "s", "refresh_token": "cu"},
+        client=_khach_gia({"error": -14014,
+                           "error_name": "Invalid refresh token."}),
+        on_credentials_rotated=ghi,
+    )
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(adapter._lay_token())
+    assert da_ghi == [], "đã ghi đè khoá dù Zalo không trả token"
+    assert adapter._token == ""
+    asyncio.run(adapter.aclose())

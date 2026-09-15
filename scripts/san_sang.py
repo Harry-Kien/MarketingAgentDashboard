@@ -788,6 +788,73 @@ async def kiem_kenh() -> dict:
     return _muc("Kênh nhận tin", DU, "provider đã xác minh: " + ", ".join(enabled))
 
 
+def doc_webhook_zalo_oa(tai_khoan: list[dict], public_base_url: str) -> dict:
+    """
+    Địa chỉ webhook đã khai ở Zalo Console còn trỏ đúng chỗ không.
+
+    VÌ SAO MỤC “Callback provider” KHÔNG THAY ĐƯỢC MỤC NÀY
+    ------------------------------------------------------
+    Mục kia hỏi "PUBLIC_BASE_URL có phải https không" — câu đó gần như luôn
+    đúng, kể cả khi Zalo đang gọi vào một tên miền `trycloudflare` đã chết
+    từ lần khởi động trước. Một mục luôn xanh không nói gì về việc tin khách
+    có vào được hay không.
+
+    Mục này đọc tên miền Zalo THẬT SỰ đã gọi vào — ghi lại mỗi lần một
+    webhook qua được chữ ký — rồi so với tên miền hiện tại.
+
+    Kết luận lấy theo mục TỆ NHẤT: một OA chết vẫn là một OA chết, dù ba OA
+    khác đang chạy tốt.
+    """
+    from agent.omnichannel.webhook_da_toi import (TRANG_CHUA_RO, TRANG_LECH,
+                                                  so_dia_chi)
+
+    if not tai_khoan:
+        return _muc("Webhook Zalo OA", DU, "chưa nối OA nào")
+
+    lech, chua_ro = [], []
+    for tk in tai_khoan:
+        trang, ly_do = so_dia_chi(tk.get("metadata"), public_base_url)
+        ten = str(tk.get("display_name") or "OA")
+        if trang == TRANG_LECH:
+            lech.append(f"{ten}: {ly_do}")
+        elif trang == TRANG_CHUA_RO:
+            chua_ro.append(ten)
+
+    goc = (public_base_url or "").rstrip("/")
+    if lech:
+        return _muc(
+            "Webhook Zalo OA", CHAN, "; ".join(lech),
+            "Vào Zalo Developers → OA → Webhook, dán lại "
+            f"{goc}/webhook/native/zalo-oa/<account_id>. "
+            "Lấy đúng địa chỉ ở dashboard → Kết nối",
+        )
+    if chua_ro:
+        return _muc(
+            "Webhook Zalo OA", CANH_BAO,
+            f"chưa có webhook nào của Zalo tới được ({', '.join(chua_ro)})",
+            "Chưa chứng minh được địa chỉ trong Zalo Console là đúng — "
+            "nhắn thử một tin vào OA rồi chạy lại lệnh này. "
+            f"Địa chỉ cần khai: {goc}/webhook/native/zalo-oa/<account_id>",
+        )
+    return _muc("Webhook Zalo OA", DU,
+                f"Zalo gọi đúng vào {_host_goc(public_base_url)}")
+
+
+def _host_goc(url: str) -> str:
+    from agent.omnichannel.webhook_da_toi import doc_host
+    return doc_host(url) or url
+
+
+async def kiem_webhook_zalo_oa() -> dict:
+    from agent import db
+
+    dong = await db.fetch(
+        "SELECT display_name, metadata FROM channel_accounts "
+        "WHERE channel = 'zalo_oa' AND status IN ('active', 'degraded')")
+    return doc_webhook_zalo_oa([dict(d) for d in dong],
+                               settings.public_base_url or "")
+
+
 def doc_callback_cong_khai(url: str, ma_http: int | None, loi: str | None, la_app_nay: bool) -> dict:
     """
     Phán quyết tách khỏi phần gọi mạng, để test lái được mọi nhánh.
@@ -916,6 +983,7 @@ async def chay() -> int:
         kiem_bi_mat(), await kiem_khoa_api(), await kiem_embedding(),
         kiem_du_lieu_that(), kiem_ten_trong_prompt(),
         await kiem_kenh(), await kiem_callback_cong_khai(),
+        await kiem_webhook_zalo_oa(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(), kiem_van_chuyen(),

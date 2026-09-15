@@ -41,6 +41,7 @@ không có gì chạy nhầm. Muốn bật: điền khoá vào `.env` rồi ch�
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -118,6 +119,9 @@ class ZaloOAAdapter(ChannelAdapter):
         on_credentials_rotated: (
             Callable[[Mapping[str, Any]], Awaitable[None]] | None
         ) = None,
+        on_credentials_reload: (
+            Callable[[], Awaitable[Mapping[str, Any] | None]] | None
+        ) = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         super().__init__(account_id=account_id)
@@ -142,6 +146,7 @@ class ZaloOAAdapter(ChannelAdapter):
             or 0
         )
         self._on_credentials_rotated = on_credentials_rotated
+        self._on_credentials_reload = on_credentials_reload
         api_base = str(
             self._credentials.get("api_base") or settings.zalo_oa_api_base
         )
@@ -209,6 +214,29 @@ class ZaloOAAdapter(ChannelAdapter):
         if not refresh:
             return ""
 
+        try:
+            return await self._doi_refresh(refresh)
+        except RuntimeError:
+            # KHOÁ TRONG TAY BỊ TỪ CHỐI — ĐỌC LẠI KHO ĐÚNG MỘT LẦN.
+            #
+            # Zalo giết refresh token cũ ngay khi nó được dùng (đo được
+            # 14.09.2026: lượt thứ hai trả `error=-14014 Invalid refresh
+            # token`). Mà hai đường cùng cầm khoá của một OA: adapter dài
+            # hạn mà `get_for_account()` cache cho outbox worker, và adapter
+            # riêng mà nút “Xác minh provider” dựng ra. Bên nào làm mới
+            # trước là bên kia cầm khoá đã chết.
+            #
+            # Không có nhánh này thì adapter đang cache chết tới lúc khởi
+            # động lại tiến trình: `_doc_refresh_da_luu()` trả lại chính bản
+            # trong bộ nhớ khi credential đến từ vault, nên nó không bao giờ
+            # thấy khoá mới. Dashboard vẫn xanh, tin chết trong outbox.
+            moi = await self._doc_lai_khoa()
+            if not moi or moi == refresh:
+                raise
+            return await self._doi_refresh(moi)
+
+    async def _doi_refresh(self, refresh: str) -> str:
+        """Một lượt đổi refresh token lấy access token. Hỏng thì NỔ."""
         r = await self._client.post(
             self._oauth_url,
             data={
@@ -230,6 +258,27 @@ class ZaloOAAdapter(ChannelAdapter):
         self._het_han = time.time() + float(d.get("expires_in") or 3600)
         if (moi := str(d.get("refresh_token") or "")):
             await self._luu_refresh(moi)
+        return token
+
+    async def _doc_lai_khoa(self) -> str:
+        """
+        Refresh token mới nhất trong kho, nếu có đường đọc lại.
+
+        Trả chuỗi rỗng khi không có đường — và người gọi phải NỔ tiếp chứ
+        không được nuốt. Thiếu lưới không được biến thành im lặng.
+        """
+        if self._on_credentials_reload is None:
+            return ""
+        try:
+            lam_moi = await self._on_credentials_reload()
+        except Exception:      # noqa: BLE001 - kho hỏng không được che lỗi gốc
+            return ""
+        if not lam_moi:
+            return ""
+        token = str(lam_moi.get("refresh_token") or "")
+        if token:
+            self._refresh_token = token
+            self._credentials["refresh_token"] = token
         return token
 
     async def _doc_refresh_da_luu(self) -> str:
@@ -372,6 +421,59 @@ class ZaloOAAdapter(ChannelAdapter):
         except (httpx.HTTPError, RuntimeError, OSError) as exc:
             return Delivery(False, str(exc)[:200])
         return _doc_ket_qua(r)
+
+    async def lay_ten_khach(self, user_id: str) -> str:
+        """
+        Tên thật của khách, hỏi Zalo bằng `v3.0/oa/user/detail`.
+
+        Webhook Zalo OA chỉ mang `sender.id`, không mang tên — nên không hỏi
+        thì người trực nhìn danh sách hội thoại thấy toàn “Khách” và phải mở
+        từng cái ra mới biết ai là ai. Đây đúng khuôn Facebook đang dùng
+        (`agent/channels/ten_khach.py`); OA là kênh chạy thật nên không được
+        kém hơn.
+
+        THAM SỐ ĐI TRONG MỘT CHUỖI JSON TÊN `data`
+        ------------------------------------------
+        Zalo không nhận query rời `?user_id=...`; phải bọc trong `data`. Gửi
+        rời thì Zalo trả `error != 0` kèm HTTP 200 — im lặng và khó đọc.
+
+        HỎNG THÌ TRẢ RỖNG, KHÔNG NÉM
+        ----------------------------
+        Tên chỉ để hiển thị; tin nhắn của khách mới là việc chính. Để việc
+        lấy tên làm hỏng việc nhận tin là đánh đổi sai hoàn toàn.
+
+        CHƯA ĐỐI CHIẾU ĐƯỢC VỚI KHÁCH THẬT: OA của cửa hàng chưa có hội
+        thoại nào (đo 14.09.2026), nên tên trường trả về mới theo tài liệu.
+        Vì thế đọc `display_name` trước rồi lui về `name`/`user_alias` —
+        đoán sai một trường không được làm mất cả tên.
+        """
+        if not user_id:
+            return ""
+        try:
+            token = await self._lay_token()
+            if not token:
+                return ""
+            r = await self._client.get(
+                "/user/detail",
+                headers={"access_token": token},
+                params={"data": json.dumps({"user_id": user_id})},
+            )
+            if r.status_code >= 400:
+                return ""
+            d = r.json() or {}
+            # Zalo báo lỗi nghiệp vụ trong THÂN kèm HTTP 200. Bỏ qua `error`
+            # là đọc một thân lỗi thành tên khách.
+            if d.get("error") not in (0, None):
+                return ""
+            ho_so = d.get("data") or {}
+            if not isinstance(ho_so, dict):
+                return ""
+            for khoa in ("display_name", "name", "user_alias"):
+                if (ten := str(ho_so.get(khoa) or "").strip()):
+                    return ten
+            return ""
+        except Exception:      # noqa: BLE001 — xem docstring
+            return ""
 
     # ---------------- luật riêng của kênh ----------------
 

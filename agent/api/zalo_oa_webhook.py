@@ -39,10 +39,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from agent.channels.factory import AccountAdapterFactory
+from agent.channels.ten_khach import lam_giau_ten
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
 from agent.omnichannel.accounts import Channel
 from agent.omnichannel.credential_loader import VaultCredentialLoader
+from agent.omnichannel.webhook_da_toi import ghi_nhan as ghi_nhan_webhook_da_toi
 from agent.security.credential_vault import CredentialVault, parse_master_keys
 
 router = APIRouter(prefix="/webhook/native/zalo-oa", tags=["zalo-oa-webhook"])
@@ -79,6 +81,38 @@ def chu_ky_hop_le(
     return hmac.compare_digest(nhan_duoc, mong_doi)
 
 
+def moc_thoi_gian_co_the(raw_body: bytes, header_ts: str) -> list[str]:
+    """
+    Các giá trị `timestamp` có thể đã được Zalo dùng để ký, THEO THỨ TỰ.
+
+    THÂN TIN TRƯỚC, HEADER SAU — và thứ tự này là cả vấn đề.
+
+    Tài liệu Zalo và mọi bản hiện thực công khai đều ký bằng trường
+    `timestamp` NẰM TRONG THÂN. Zalo không khai header mốc thời gian nào.
+    Bản trước đọc header trước, nên chỉ cần một proxy hay tunnel ở giữa
+    thêm một header trùng tên là mọi webhook thật bị từ chối 401 — và từ
+    phía ta nhìn vào thì "bị từ chối hết" không khác gì "chưa ai nhắn":
+    hộp thư trống, không lỗi, không nhật ký.
+
+    Vẫn giữ header làm đường lui, vì kẻ gửi phải có secret key mới ký được
+    dù mốc thời gian lấy từ đâu — thêm ứng viên không nới lỏng chốt chặn.
+
+    Thân không phải JSON thì trả danh sách RỖNG, và người gọi phải hiểu đó
+    là TỪ CHỐI. Ném lỗi ở đây làm route trả 500, mà Zalo thấy 5xx thì gửi
+    lại mãi.
+    """
+    ra: list[str] = []
+    try:
+        than = json.loads(raw_body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return []
+    if isinstance(than, dict) and than.get("timestamp") is not None:
+        ra.append(str(than["timestamp"]))
+    if header_ts and header_ts not in ra:
+        ra.append(header_ts)
+    return ra
+
+
 def _kho():
     try:
         vault = CredentialVault(
@@ -113,15 +147,23 @@ async def zalo_oa_webhook(
     app_id = str(cred.get("app_id") or settings.zalo_oa_app_id or "")
     secret = str(cred.get("secret_key") or settings.zalo_oa_secret_key or "")
 
-    if not chu_ky_hop_le(
-        request.headers.get("x-zevent-signature", ""),
-        app_id,
-        raw,
-        request.headers.get("x-zevent-timestamp", "")
-        or str((json.loads(raw or b"{}") or {}).get("timestamp") or ""),
-        secret,
-    ):
+    chu_ky = request.headers.get("x-zevent-signature", "")
+    ung_vien = moc_thoi_gian_co_the(
+        raw, request.headers.get("x-zevent-timestamp", ""))
+    if not any(chu_ky_hop_le(chu_ky, app_id, raw, ts, secret)
+               for ts in ung_vien):
         raise HTTPException(401, "Chữ ký webhook Zalo OA không hợp lệ")
+
+    # GHI LẠI TÊN MIỀN ZALO VỪA GỌI VÀO — sau chữ ký, không trước.
+    #
+    # Zalo không có API đọc địa chỉ webhook đã khai, mà `PUBLIC_BASE_URL` ở
+    # đây là tên miền tunnel đổi mỗi lần khởi động. Lượt gọi qua được chữ ký
+    # là bằng chứng duy nhất "địa chỉ này Zalo tới được"; `scripts.san_sang`
+    # so nó với địa chỉ hiện tại để phát hiện URL trong Console đã cũ.
+    #
+    # Sau chữ ký vì trước chữ ký là để người lạ tự khai tên miền vào hồ sơ
+    # tài khoản. Xem agent/omnichannel/webhook_da_toi.py.
+    await ghi_nhan_webhook_da_toi(account_id, request.headers.get("host", ""))
 
     try:
         payload = json.loads(raw)
@@ -131,13 +173,33 @@ async def zalo_oa_webhook(
     factory = AccountAdapterFactory(repo, loader)
     adapter = await factory.create(account_id)
 
-    # `parse_nhieu` chứ không `parse`: một payload có thể mang nhiều tin, và
-    # lấy đúng một tin nghĩa là những tin sau biến mất trong im lặng.
-    tin = (
-        adapter.parse_nhieu(payload)
-        if hasattr(adapter, "parse_nhieu")
-        else [t for t in [adapter.parse(payload)] if t]
-    )
+    # ĐÓNG ADAPTER NGAY SAU KHI PARSE, trong `finally`.
+    #
+    # `__init__` của adapter tạo kèm một `httpx.AsyncClient` có pool kết
+    # nối. Adapter này dùng một lần cho một webhook, nên không đóng là rò
+    # một client mỗi tin khách — hỏng chậm và im lặng: chạy ngon cả tuần rồi
+    # hết file descriptor vào đúng đợt đông khách, dấu vết để lại chẳng liên
+    # quan gì tới Zalo.
+    #
+    # Đóng ở đây an toàn vì chỉ `parse` mới cần adapter này; chiều GỬI đi
+    # qua adapter dài hạn của `channels.get_for_account()`.
+    try:
+        # `parse_nhieu` chứ không `parse`: một payload có thể mang nhiều tin,
+        # và lấy đúng một tin nghĩa là những tin sau biến mất trong im lặng.
+        tin = (
+            adapter.parse_nhieu(payload)
+            if hasattr(adapter, "parse_nhieu")
+            else [t for t in [adapter.parse(payload)] if t]
+        )
+        # Webhook Zalo chỉ mang `sender.id`, không mang tên. Không hỏi thì
+        # người trực nhìn danh sách hội thoại thấy toàn “Khách”. Làm ở đây,
+        # TRƯỚC khi tin vào InboxService — sửa tên sau khi hội thoại đã tạo
+        # là thêm một đường ghi nữa mà kết quả kém hơn.
+        await lam_giau_ten(adapter, tin)
+    finally:
+        dong = getattr(adapter, "aclose", None)
+        if dong is not None:
+            await dong()
     if not tin:
         return JSONResponse({"ok": True, "skipped": "không phải tin văn bản đến"})
 

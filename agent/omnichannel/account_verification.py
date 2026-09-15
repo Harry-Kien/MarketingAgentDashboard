@@ -43,10 +43,17 @@ class NativeVerificationAdapterFactory:
             async def persist(rotated) -> None:
                 await self._credential_loader.store_rotated(account.id, rotated)
 
+            # Nút “Xác minh provider” chính là đường hay xoay khoá nhất —
+            # nên nó cũng phải biết đọc lại kho, không thì bấm hai lần sát
+            # nhau là lần sau hỏng.
+            async def reload_credentials():
+                return await self._credential_loader.load(account.id)
+
             return ZaloOAAdapter(
                 account_id=account.id,
                 credentials=values,
                 on_credentials_rotated=persist,
+                on_credentials_reload=reload_credentials,
             )
         raise RuntimeError("connector này không hỗ trợ xác minh native")
 

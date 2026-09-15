@@ -144,6 +144,24 @@ def test_graph_hong_thi_tra_rong_chu_khong_nem_loi():
     assert asyncio.run(ad.lay_ten_khach("PSID-1")) == ""
 
 
+class _TinGia:
+    """Chỉ cần hai trường mà lớp làm giàu tên đụng tới."""
+
+    def __init__(self, ref, ten):
+        self.customer_ref = ref
+        self.customer_name = ten
+
+
+class _AdapterDemLuot:
+    def __init__(self, ten="Trần Trung Kiên"):
+        self.ten = ten
+        self.hoi: list[str] = []
+
+    async def lay_ten_khach(self, ref):
+        self.hoi.append(ref)
+        return self.ten
+
+
 def test_dispatch_lam_giau_ten_truoc_khi_tra_ve():
     """
     Bộ điều phối phải hỏi tên NGAY sau khi phân tích, trước khi tin đi tiếp.
@@ -151,15 +169,53 @@ def test_dispatch_lam_giau_ten_truoc_khi_tra_ve():
     Làm sau đó thì hội thoại đã được tạo với tên "Khách" rồi, và sửa lại là
     một đường ghi nữa — phức tạp hơn mà kết quả kém hơn.
 
-    Chỉ gọi khi tên còn mặc định: `can_lay_ten` canh việc đó.
+    Trước kia ca này đọc MÃ NGUỒN của `native_webhooks` và tìm chuỗi
+    `can_lay_ten` / `lay_ten_khach`. Giòn: dời thân hàm sang một module dùng
+    chung là nó đỏ dù hành vi y nguyên, và nó vẫn xanh nếu ai giữ chữ mà đổi
+    nghĩa. Nay canh bằng hành vi của chính bộ điều phối.
     """
-    import inspect
+    import asyncio
 
-    from agent.api import native_webhooks
+    from agent.api.native_webhooks import MetaWebhookDispatcher
 
-    nguon = inspect.getsource(native_webhooks)
-    assert "can_lay_ten" in nguon, "chưa lọc theo tên mặc định"
-    assert "lay_ten_khach" in nguon, "chưa gọi Graph lấy tên"
+    adapter = _AdapterDemLuot()
+    tin = [_TinGia("PSID-1", "Khách")]
+    asyncio.run(MetaWebhookDispatcher._lam_giau_ten(adapter, tin))
+
+    assert tin[0].customer_name == "Trần Trung Kiên"
+    assert adapter.hoi == ["PSID-1"]
+
+
+def test_ten_da_biet_thi_KHONG_hoi_lai():
+    """
+    Mỗi lượt hỏi là một chặng mạng nằm trên đường trả lời khách, và một lượt
+    trong hạn mức API. Tên người gần như không đổi.
+    """
+    import asyncio
+
+    from agent.api.native_webhooks import MetaWebhookDispatcher
+
+    adapter = _AdapterDemLuot()
+    tin = [_TinGia("PSID-1", "Ngọc Hân")]
+    asyncio.run(MetaWebhookDispatcher._lam_giau_ten(adapter, tin))
+
+    assert adapter.hoi == [], "hỏi lại tên một khách đã biết tên"
+    assert tin[0].customer_name == "Ngọc Hân"
+
+
+def test_mot_khach_gui_nhieu_tin_chi_hoi_MOT_lan():
+    """Khách gõ ba dòng liền là chuyện thường; ba lượt gọi API thì không."""
+    import asyncio
+
+    from agent.api.native_webhooks import MetaWebhookDispatcher
+
+    adapter = _AdapterDemLuot()
+    tin = [_TinGia("PSID-1", "Khách"), _TinGia("PSID-1", "Khách"),
+           _TinGia("PSID-2", "Khách")]
+    asyncio.run(MetaWebhookDispatcher._lam_giau_ten(adapter, tin))
+
+    assert adapter.hoi == ["PSID-1", "PSID-2"]
+    assert all(t.customer_name == "Trần Trung Kiên" for t in tin)
 
 
 def test_uu_tien_truong_name_cua_facebook():

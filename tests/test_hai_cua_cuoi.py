@@ -28,13 +28,39 @@ def test_man_nhat_ky_co_danh_sach_yeu_cau_va_ba_hanh_dong():
 
 def test_man_hinh_khong_hua_xoa_that():
     """
-    Máy chủ KHÔNG có bộ thực thi xoá cho luồng này — chỉ đếm. Màn hình mà
-    ghi "xoá có duyệt" là hứa một việc không xảy ra, và người vận hành sẽ
-    tin dữ liệu đã bị xoá trong khi nó vẫn còn nguyên.
+    Khối này CẤP PHIẾU, không xoá. Máy chủ vẫn không có bộ thực thi xoá cho
+    luồng `data-retention/jobs` — việc xoá thật nằm ở khung PDPD phía trên,
+    và từ migration 0026 nó đòi một phiếu đã duyệt.
+
+    Màn hình mà ghi "xoá có duyệt" ngay tại khối này là hứa một việc không
+    xảy ra ở đây, và người vận hành sẽ tin dữ liệu đã bị xoá trong khi nó
+    vẫn còn nguyên.
     """
     khoi = HTML[HTML.index('id="dsRetention"') - 1500:HTML.index('id="dsRetention"')]
-    assert "Đếm trước khi xoá" in khoi
-    assert "Xoá thật vẫn đi qua khung PDPD" in khoi or "khung trên" in khoi
+    assert "Phiếu duyệt xoá" in khoi
+    assert "khung trên" in khoi, "phải chỉ ra chỗ việc xoá thật xảy ra"
+
+
+def test_nut_xoa_that_bi_khoa_boi_phieu_duyet():
+    """
+    Chốt bốn mắt phải nằm ở CẢ hai phía, và phía máy chủ mới là phía tính.
+
+    Giao diện ẩn nút để không có cú bấm chắc chắn thất bại; nếu chỉ có giao
+    diện thì một lời gọi API thẳng vẫn xoá được, và đó đúng là tình trạng
+    trước migration 0026.
+    """
+    from agent.core import du_lieu_ca_nhan
+
+    assert "_gianh_phieu_duyet" in (ROOT / "agent" / "core" / "du_lieu_ca_nhan.py").read_text(
+        encoding="utf-8")
+    assert hasattr(du_lieu_ca_nhan, "ChuaDuyet")
+
+    routes = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    assert "du_lieu_ca_nhan.ChuaDuyet" in routes, "route phải đổi lỗi chưa-duyệt thành 409"
+
+    # Và giao diện vẽ khối xoá theo trạng thái phiếu, không vẽ sẵn nút đỏ.
+    assert "function pdpdKhoiXoa" in JS
+    assert "pd.xoa_duoc" in JS
 
 
 def test_yeu_cau_tu_ho_so_khach_luon_la_dry_run():

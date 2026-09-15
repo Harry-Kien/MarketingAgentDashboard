@@ -463,7 +463,7 @@ erDiagram
         UUID approved_by
         TEXT reason
         BOOLEAN dry_run
-        _ con_4_cot_nua
+        _ con_7_cot_nua
     }
     teams {
         UUID id

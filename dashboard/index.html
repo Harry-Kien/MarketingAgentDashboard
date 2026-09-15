@@ -1335,17 +1335,19 @@
         <div id="pdpdOut"></div>
       </section>
 
-      <!-- YÊU CẦU XỬ LÝ DỮ LIỆU CÓ DUYỆT (bốn mắt).
-           API này có từ lâu, không màn hình nào gọi. Nó KHÔNG xoá gì: việc
-           duy nhất máy chủ thực thi là ĐẾM số bản ghi sẽ bị ảnh hưởng, sau
-           khi một người KHÁC người tạo yêu cầu đã duyệt. Xoá thật vẫn đi qua
-           khung PDPD ở trên. Nói rõ ở đây để không ai tưởng đã xoá xong. -->
+      <!-- PHIẾU DUYỆT BỐN MẮT.
+           Khối này KHÔNG xoá gì: nó cấp phiếu. Nút xoá thật ở khung PDPD
+           phía trên đòi một phiếu đã duyệt còn hiệu lực, và tiêu phiếu ấy
+           khi xoá xong — chốt nằm trong `du_lieu_ca_nhan.xoa()`, không nằm
+           ở giao diện. Phiếu tạo từ hồ sơ khách còn chạy đếm được; phiếu
+           xin từ khung PDPD khoá theo số điện thoại nên không có đếm. -->
       <section class="panel">
-        <h2 class="panel__head">Đếm trước khi xoá — có người thứ hai duyệt
-          <span class="panel__note" id="rtNote">tạo từ hồ sơ khách ở màn Khách hàng</span></h2>
-        <p class="panel__note">Người tạo yêu cầu <b>không tự duyệt được</b>. Duyệt xong thì
-          bấm <i>Chạy đếm</i> để biết yêu cầu xoá sẽ chạm bao nhiêu hội thoại, tin nhắn,
-          tệp đính kèm — trước khi ai đó bấm nút xoá thật ở khung trên.</p>
+        <h2 class="panel__head">Phiếu duyệt xoá — người thứ hai ký ở đây
+          <span class="panel__note" id="rtNote">tạo từ khung trên hoặc hồ sơ khách</span></h2>
+        <p class="panel__note">Người tạo phiếu <b>không tự duyệt được</b>. Chưa có phiếu duyệt
+          thì nút xoá ở khung trên không bấm được — máy chủ từ chối, không phải giao diện.
+          Mỗi phiếu <b>dùng một lần</b>. Với phiếu tạo từ hồ sơ khách, bấm <i>Chạy đếm</i>
+          để biết sẽ chạm bao nhiêu hội thoại, tin nhắn, tệp đính kèm.</p>
         <div id="dsRetention" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
 

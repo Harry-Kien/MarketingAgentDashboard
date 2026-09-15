@@ -43,12 +43,24 @@ from __future__ import annotations
 
 import hashlib
 import re
+from uuid import UUID
 
 from .. import db
 from . import ho_so_khach
 from ..config import settings
 
 AN_DANH = "[đã ẩn danh theo yêu cầu]"
+
+
+class ChuaDuyet(PermissionError):
+    """
+    Chưa có phiếu duyệt còn hiệu lực cho số này, nên không được xoá.
+
+    Lớp riêng chứ không phải `ValueError`: route đã đổi `ValueError` thành
+    422 "dữ liệu nhập sai", mà đây không phải chuyện nhập sai — người vận
+    hành gõ đúng hết, chỉ là chưa có người thứ hai duyệt. Gộp hai thứ vào
+    một mã lỗi là đẩy họ đi sửa ô nhập trong khi thứ cần làm nằm ở màn khác.
+    """
 
 
 def chuan_hoa_sdt(sdt: str) -> str:
@@ -181,6 +193,161 @@ async def an_danh_ben_erp(sdt: str) -> dict:
             "ghi_chu": f"Đã ẩn danh {n} bản ghi khách bên ERP."}
 
 
+# ---------------------------------------------------------------
+#  Phiếu duyệt bốn mắt cho việc xoá
+#
+#  Bảng `data_retention_jobs` có sẵn `requested_by` / `approved_by` và chốt
+#  "người tạo không tự duyệt được" từ lâu. Thiếu đúng một việc: nút xoá
+#  thật chưa bao giờ hỏi tới nó — nên quy trình duyệt chỉ canh việc ĐẾM,
+#  còn việc không hoàn tác được thì một người bấm là xong.
+#
+#  Phiếu khoá theo SỐ ĐIỆN THOẠI vì đó là khoá mà `xoa()` dùng, và lưu dưới
+#  dạng dấu vân tay vì phiếu ở lại bảng vĩnh viễn để làm bằng chứng — lưu số
+#  thật là sau khi "đã xoá", chính số vừa hứa xoá vẫn nằm trong CSDL.
+# ---------------------------------------------------------------
+
+def che_sdt(so: str) -> str:
+    """
+    Số ở dạng che, đủ để người duyệt biết mình đang duyệt cho ai.
+
+    Duyệt mà không biết duyệt cho số nào thì bốn mắt chỉ còn là hai cú bấm.
+    """
+    so = chuan_hoa_sdt(so)
+    return f"{so[:4]}***{so[-2:]}" if len(so) >= 6 else "***"
+
+
+def _van_tay_phieu(so: str) -> str:
+    """Dấu vân tay dùng để khớp phiếu: băm 9 CHỮ SỐ CUỐI.
+
+    Băm cả số thì "84967627336" và "0967627336" ra hai dấu khác nhau, và
+    phiếu duyệt cho số này không khớp lúc xoá số kia — dù là một người.
+    """
+    return _dau_van_tay(chuan_hoa_sdt(so)[-9:])
+
+
+async def xin_duyet_xoa(sdt: str, *, ly_do: str, nguoi_id, nguoi_ten: str = "?") -> dict:
+    """
+    Tạo phiếu xin xoá cho một số điện thoại. Người KHÁC phải duyệt.
+
+    Trả lại phiếu đang có thay vì tạo phiếu thứ hai: bấm hai lần là chuyện
+    thường, mà hai phiếu cho cùng một số nghĩa là duyệt một phiếu rồi vẫn
+    còn một phiếu treo — không ai hiểu cái nào mới là cái đang có hiệu lực.
+    """
+    so = chuan_hoa_sdt(sdt)
+    if len(so) < 9:
+        raise ValueError("Số điện thoại không hợp lệ")
+    van_tay = _van_tay_phieu(so)
+
+    cu = await db.fetchrow(
+        "SELECT id, status FROM data_retention_jobs "
+        "WHERE kind = 'delete' AND sdt_van_tay = $1 AND xoa_thuc_hien_luc IS NULL "
+        "  AND status IN ('pending_approval', 'approved') "
+        "ORDER BY requested_at DESC LIMIT 1",
+        van_tay,
+    )
+    if cu:
+        return {"phieu_id": str(cu["id"]), "trang_thai": cu["status"], "da_co_san": True}
+
+    row = await db.fetchrow(
+        "INSERT INTO data_retention_jobs "
+        "  (contact_id, kind, requested_by, reason, dry_run, sdt_van_tay, sdt_che) "
+        "VALUES ("
+        # Gắn contact nếu tra được, để màn Khách hàng có đường lần ra. Không
+        # tra được cũng KHÔNG chặn: đo trên CSDL thật, phần lớn dòng
+        # `contacts` không có `phone`, nên bắt buộc có contact là bắt buộc
+        # phiếu không bao giờ tạo được.
+        "  (SELECT id FROM contacts WHERE phone IS NOT NULL "
+        "     AND right(regexp_replace(phone, '\\D', '', 'g'), 9) = $1 "
+        "   ORDER BY last_seen DESC LIMIT 1), "
+        "  'delete', $2, $3, true, $4, $5) "
+        "RETURNING id, status",
+        so[-9:], UUID(str(nguoi_id)), ly_do, van_tay, che_sdt(so),
+    )
+    await db.log_event(
+        "pdpd.xin_duyet_xoa", actor=nguoi_ten, ref_id=row["id"],
+        # `_dau_van_tay(so)` chứ không phải `van_tay` (băm 9 số cuối, dùng để
+        # KHỚP phiếu): nhật ký `pdpd.xoa_du_lieu` băm cả số, và hai dấu khác
+        # nhau cho cùng một người thì người đi soát không nối được "ai xin
+        # xoá" với "đã xoá" — đúng câu hỏi mà nhật ký này sinh ra để trả lời.
+        dau_van_tay=_dau_van_tay(so), ly_do=ly_do,
+        can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
+    )
+    return {"phieu_id": str(row["id"]), "trang_thai": row["status"], "da_co_san": False}
+
+
+async def trang_thai_phieu(sdt: str) -> dict:
+    """
+    Số này đang có phiếu ở trạng thái nào — để giao diện nói trước, thay vì
+    để người vận hành bấm Xoá rồi mới biết là chưa được phép.
+    """
+    so = chuan_hoa_sdt(sdt)
+    if len(so) < 9:
+        return {"co_phieu": False, "xoa_duoc": False, "trang_thai": None}
+    row = await db.fetchrow(
+        "SELECT id, status, approved_by FROM data_retention_jobs "
+        "WHERE kind = 'delete' AND sdt_van_tay = $1 AND xoa_thuc_hien_luc IS NULL "
+        "  AND status IN ('pending_approval', 'approved', 'completed') "
+        "ORDER BY requested_at DESC LIMIT 1",
+        _van_tay_phieu(so),
+    )
+    if not row:
+        return {"co_phieu": False, "xoa_duoc": False, "trang_thai": None}
+    return {
+        "co_phieu": True,
+        "phieu_id": str(row["id"]),
+        "trang_thai": row["status"],
+        "xoa_duoc": row["approved_by"] is not None and row["status"] in ("approved", "completed"),
+    }
+
+
+async def _gianh_phieu_duyet(so: str) -> dict:
+    """
+    Giành lấy một phiếu đã duyệt, chưa dùng, cho số này. Không có thì NÉM.
+
+    Một câu lệnh duy nhất vừa tìm vừa đánh dấu đã dùng: tìm rồi mới cập nhật
+    ở câu thứ hai thì hai người bấm Xoá cùng lúc sẽ cùng tìm thấy MỘT phiếu
+    và cùng được đi tiếp — bốn mắt cho lần đầu, không mắt nào cho lần sau.
+    `SKIP LOCKED` để hai lời gọi song song lấy hai phiếu khác nhau thay vì
+    chờ nhau.
+
+    Xoá luôn `sdt_che`: phiếu đã dùng ở lại làm bằng chứng, và thứ ở lại thì
+    không được mang theo thông tin nhận dạng của số vừa hứa xoá.
+    """
+    row = await db.fetchrow(
+        "UPDATE data_retention_jobs "
+        "   SET xoa_thuc_hien_luc = now(), sdt_che = NULL "
+        " WHERE id = (SELECT id FROM data_retention_jobs "
+        "              WHERE kind = 'delete' AND sdt_van_tay = $1 "
+        "                AND approved_by IS NOT NULL "
+        "                AND status IN ('approved', 'completed') "
+        "                AND xoa_thuc_hien_luc IS NULL "
+        "              ORDER BY approved_at LIMIT 1 FOR UPDATE SKIP LOCKED) "
+        "RETURNING id, requested_by, approved_by",
+        _van_tay_phieu(so),
+    )
+    if row is None:
+        raise ChuaDuyet(
+            "Chưa có phiếu duyệt cho số này. Bấm 'Xin duyệt xoá', rồi một "
+            "người KHÁC vào màn Nhật ký duyệt phiếu ấy — xoá dữ liệu cá nhân "
+            "không hoàn tác được nên cần hai người."
+        )
+    return dict(row)
+
+
+async def _nha_phieu_duyet(phieu_id) -> None:
+    """
+    Trả phiếu về trạng thái chưa dùng khi việc xoá hỏng giữa chừng.
+
+    Không trả thì một lỗi mạng tới ERP là mất luôn phiếu, và người vận hành
+    phải đi xin duyệt lại cho đúng việc vừa được duyệt xong — thủ tục lặp
+    lại vì máy hỏng là thứ khiến người ta tìm đường vòng qua chốt.
+    """
+    await db.execute(
+        "UPDATE data_retention_jobs SET xoa_thuc_hien_luc = NULL WHERE id = $1",
+        phieu_id,
+    )
+
+
 async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
     """
     Thực hiện yêu cầu xoá dữ liệu của một khách.
@@ -200,31 +367,46 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         return {"so_dien_thoai": so, "da_xoa": False,
                 "ghi_chu": "Không tìm thấy dữ liệu nào của số này."}
 
-    conv_ids = [h["id"] for h in truoc["hoi_thoai"]]
+    # CHỐT BỐN MẮT. Ở TRONG LÕI, không ở route: route chỉ là một trong
+    # những đường có thể gọi tới hàm này, và một chốt đặt trên đường đi thì
+    # mỗi đường mới lại là một lần phải nhớ — quên một lần là phơi ra, không
+    # ai báo. Ở đây thì mọi đường đều đi qua nó.
+    #
+    # Đặt SAU `co_du_lieu`: số không có dữ liệu gì thì không tiêu phiếu của
+    # người ta cho một việc không làm gì cả.
+    phieu = await _gianh_phieu_duyet(so)
+    try:
+        conv_ids = [h["id"] for h in truoc["hoi_thoai"]]
 
-    # 1. Ẩn danh đơn hàng — giữ mã đơn, tiền, ngày cho sổ sách.
-    don = await db.execute(
-        "UPDATE orders SET khach_ten = $2, khach_sdt = $2, khach_dia_chi = $2, "
-        "       updated_at = now() "
-        "WHERE regexp_replace(khach_sdt, '\\D', '', 'g') LIKE $1",
-        f"%{so[-9:]}", AN_DANH,
-    )
-
-    # 2. Xoá hội thoại. Tin nhắn đi theo nhờ ON DELETE CASCADE.
-    hoi_thoai = 0
-    if conv_ids:
-        r = await db.execute(
-            "DELETE FROM conversations WHERE id = ANY($1::uuid[])", conv_ids
+        # 1. Ẩn danh đơn hàng — giữ mã đơn, tiền, ngày cho sổ sách.
+        don = await db.execute(
+            "UPDATE orders SET khach_ten = $2, khach_sdt = $2, khach_dia_chi = $2, "
+            "       updated_at = now() "
+            "WHERE regexp_replace(khach_sdt, '\\D', '', 'g') LIKE $1",
+            f"%{so[-9:]}", AN_DANH,
         )
-        hoi_thoai = int(r.split()[-1]) if r.split()[-1].isdigit() else len(conv_ids)
 
-    # 3. Xoá hồ sơ ghi nhớ. Xây trí nhớ mà quên đường xoá là tạo ra một kho
-    #    dữ liệu cá nhân ngoài tầm kiểm soát.
-    ho_so = await ho_so_khach.xoa(sdt=so)
+        # 2. Xoá hội thoại. Tin nhắn đi theo nhờ ON DELETE CASCADE.
+        hoi_thoai = 0
+        if conv_ids:
+            r = await db.execute(
+                "DELETE FROM conversations WHERE id = ANY($1::uuid[])", conv_ids
+            )
+            hoi_thoai = int(r.split()[-1]) if r.split()[-1].isdigit() else len(conv_ids)
 
-    # 4. Ẩn danh khách bên kho/ERP — nơi lưu THỨ BA, ngoài Postgres và hồ sơ
-    #    ghi nhớ. Bỏ qua bước này là báo "đã xoá" trong khi ERP còn nguyên.
-    erp = await an_danh_ben_erp(so)
+        # 3. Xoá hồ sơ ghi nhớ. Xây trí nhớ mà quên đường xoá là tạo ra một kho
+        #    dữ liệu cá nhân ngoài tầm kiểm soát.
+        ho_so = await ho_so_khach.xoa(sdt=so)
+
+        # 4. Ẩn danh khách bên kho/ERP — nơi lưu THỨ BA, ngoài Postgres và hồ sơ
+        #    ghi nhớ. Bỏ qua bước này là báo "đã xoá" trong khi ERP còn nguyên.
+        erp = await an_danh_ben_erp(so)
+    except Exception:
+        # Hỏng giữa chừng thì trả phiếu về trạng thái chưa dùng: bắt đi xin
+        # duyệt lại cho đúng việc vừa được duyệt xong là thủ tục lặp lại vì
+        # máy hỏng, và đó là thứ khiến người ta tìm đường vòng qua chốt.
+        await _nha_phieu_duyet(phieu["id"])
+        raise
 
     # 5. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
     #    Ghi CẢ phần chưa làm được: một bằng chứng tuân thủ che giấu phần
@@ -240,6 +422,13 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         erp_so_ban_ghi=erp["so_ban_ghi"],
         erp_ly_do=erp.get("ly_do", ""),
         ly_do=ly_do,
+        # Bằng chứng bốn mắt: phiếu nào, ai xin, ai duyệt. Thiếu ba ô này
+        # thì nhật ký chứng minh được "đã xoá" nhưng không chứng minh được
+        # "có người thứ hai đồng ý", mà đó mới là thứ đang được hỏi khi có
+        # tranh chấp.
+        phieu_duyet=str(phieu["id"]),
+        nguoi_xin=str(phieu["requested_by"]),
+        nguoi_duyet=str(phieu["approved_by"]),
         can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
     )
     con_thieu = erp["ap_dung"] and not erp["da_lam"]
@@ -253,6 +442,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         "hoi_thoai_da_xoa": hoi_thoai,
         "ho_so_ghi_nho_da_xoa": ho_so,
         "erp": erp,
+        "phieu_duyet": str(phieu["id"]),
         "ghi_chu": (
             f"Đã ẩn danh {truoc['so_don_hang']} đơn hàng (giữ mã đơn và số "
             f"tiền cho sổ sách kế toán) và xoá hẳn {hoi_thoai} hội thoại "

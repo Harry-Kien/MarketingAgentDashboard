@@ -14,7 +14,7 @@ from agent import db, runtime
 from agent.channels import registry as channels
 from agent.config import settings
 from agent.channels import zalocrm_accounts as zalo_acc
-from agent.core import du_lieu_ca_nhan, kho, rag, xac_thuc
+from agent.core import du_lieu_ca_nhan, kho, pham_vi, rag, xac_thuc
 from agent.core.quyen import QUYEN
 from agent.core.cham_mot_luot import tu_cam_hai_dang
 from agent.api import tich_hop_kho
@@ -475,10 +475,46 @@ async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
     )
 
 
+async def chan_neu_khong_duoc_tra_loi(cid: uuid.UUID, nguoi: dict) -> None:
+    """
+    Mức tầm nhìn phải chặn Ở MÁY CHỦ, không chỉ khoá nút trên màn hình.
+
+    LỖ HỔNG ĐÃ ĐO (15.09.2026)
+    --------------------------
+    `pham_vi.duoc_tra_loi()` có từ lâu, nhưng chỉ được gọi ở MỘT chỗ duy
+    nhất: `contacts.py` — để vẽ một cái cờ cho giao diện biết nên khoá nút
+    Gửi hay không. Không đường gửi tin nào hỏi tới nó.
+
+    Nghĩa là mức `chi_doc` ("đọc được, không trả lời được") và
+    `an_noi_dung` chỉ là một lớp sơn: ai gọi thẳng `POST /api/conversations/
+    {id}/send` vẫn nhắn được cho khách của người khác. Tài liệu vận hành thì
+    hứa "nút gửi bị khoá", nên chủ shop tin rằng khách đã giao được bảo vệ.
+
+    Đó là đúng loại xanh giả tệ nhất: không ai thấy gì hỏng, và điều sai chỉ
+    lộ ra khi đã có tranh chấp về việc ai nhắn cho khách của ai.
+
+    Chốt đặt ở đây — nơi CẢ BA đường gửi tin của người đi qua — thay vì nhắc
+    từng route nhớ gọi. Quản trị và ai có `khach.xem_tat_ca` không bị chặn;
+    khách chưa giao cho ai vẫn là của chung.
+    """
+    khach = await db.fetchrow(
+        "SELECT ct.owner_user_id FROM conversations cv "
+        "LEFT JOIN contacts ct ON ct.id = cv.contact_id WHERE cv.id = $1", cid)
+    if khach is None:
+        return                      # hội thoại không có: để route sau trả 404
+    muc = await pham_vi.doc_muc()
+    if not pham_vi.duoc_tra_loi(nguoi, dict(khach), muc=muc):
+        raise HTTPException(403, (
+            "Khách này đã giao cho người khác — bạn đọc được nhưng không trả "
+            "lời được. Đổi ở Cấu hình → Nhân viên thấy khách của nhau tới đâu."))
+
+
 @router.post("/conversations/{conv_id}/send")
-async def staff_send(conv_id: str, body: SendBody, _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict:
+async def staff_send(conv_id: str, body: SendBody,
+                     nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict:
     """Ghi tin nhân viên vào outbox; worker mới là nơi gọi provider."""
     cid = uuid.UUID(conv_id)
+    await chan_neu_khong_duoc_tra_loi(cid, nguoi)
     try:
         queued = await _queue_staff_reply(cid, body)
     except ConversationNotFound as exc:
@@ -633,8 +669,15 @@ async def approve_draft(
 
     Có `body.noi_dung` là quản lý đã sửa. Không có body — đúng cách dashboard
     gọi trước đây — thì hành vi y như cũ.
+
+    Duyệt bản nháp cũng là GỬI TIN cho khách, nên nó chịu cùng chốt tầm nhìn
+    với hai đường kia — chỉ khác là phải tra hội thoại qua tin nhắn.
     """
     mid = uuid.UUID(message_id)
+    dong = await db.fetchrow(
+        "SELECT conversation_id FROM messages WHERE id = $1", mid)
+    if dong is not None:
+        await chan_neu_khong_duoc_tra_loi(dong["conversation_id"], nguoi)
     try:
         queued = await _queue_approved_draft(
             mid,
@@ -2469,8 +2512,7 @@ async def staff_send_file(
     ma_san_pham: str = Form(""),
     chu_thich: str = Form(""),
     tep: UploadFile | None = File(None),
-    _nguoi: dict = Depends(bat_buoc_dang_nhap),
-    _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi")),
+    nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi")),
 ) -> dict:
     """
     Gửi ảnh sản phẩm theo mã, hoặc tải một tệp lên rồi gửi.
@@ -2490,6 +2532,9 @@ async def staff_send_file(
     from agent.core.tools import _anh_san_pham
 
     cid = uuid.UUID(conv_id)
+    # Cùng chốt với gửi chữ: gửi ẢNH cho khách của người khác cũng là trả
+    # lời khách ấy. Chặn một đường mà để hở đường kia là không chặn gì cả.
+    await chan_neu_khong_duoc_tra_loi(cid, nguoi)
 
     if ma_san_pham.strip():
         duong = _anh_san_pham(ma_san_pham.strip())

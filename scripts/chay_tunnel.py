@@ -98,21 +98,72 @@ def _app_song() -> bool:
         return False
 
 
-def _giet_tunnel_cu() -> int:
+def _giet_tunnel_cu(*, chay=subprocess.run, nghi=time.sleep) -> int:
     """
     Tắt mọi cloudflared đang chạy TRƯỚC khi bật cái mới.
 
     Không tắt thì có hai tên miền cùng sống, `.env` giữ một, và cái kia mới
     là cái Zalo đang gọi tới. Đo được đúng chuyện này.
+
+    CHỜ SAU KHI TẮT, VÀ CHỈ KHI CÓ TẮT ĐƯỢC GÌ
+    ------------------------------------------
+    `taskkill` trả về trước khi tiến trình nhả xong handle ghi `tunnel.log`.
+    Mở lại file ngay là canh một cuộc đua với hệ điều hành — đã thua thật
+    một lần, xem tests/test_chay_tunnel_nhat_ky.py. Không tắt được gì thì
+    không có handle nào để chờ, nên không bắt người dùng đợi vô ích.
     """
     if sys.platform == "win32":
-        r = subprocess.run(
+        r = chay(
             ["taskkill", "/F", "/IM", "cloudflared.exe"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
-        return 0 if r.returncode else 1
-    r = subprocess.run(["pkill", "-f", "cloudflared"], capture_output=True)
-    return 0 if r.returncode else 1
+    else:
+        r = chay(["pkill", "-f", "cloudflared"], capture_output=True)
+    if r.returncode:
+        return 0
+    nghi(1.5)
+    return 1
+
+
+def mo_nhat_ky(duong: Path, *, mo=open, cho_giay: float = 1.5):
+    """
+    Mở file nhật ký cho tunnel. KHÔNG BAO GIỜ ném — trả `(file, đường thực)`.
+
+    THỨ TỰ ƯU TIÊN: TUNNEL LÀ VIỆC CHÍNH, NHẬT KÝ LÀ THỨ PHỤ
+    --------------------------------------------------------
+    Bản trước `unlink()` file này rồi mở lại, và trên Windows cái `unlink`
+    ném `PermissionError [WinError 32]` khi tiến trình vừa bị kill chưa nhả
+    handle. Ngoại lệ không ai bắt, script chết — SAU KHI đã tắt tunnel đang
+    chạy. Kết quả tệ hơn lúc chưa chạy gì: trước còn một tunnel sống với tên
+    miền cũ, sau thì không còn tunnel nào, và hai kênh mất chiều nhận tin.
+
+    Nên ở đây: thử đường chính, chờ một nhịp rồi thử lại, xong lui sang tên
+    có dấu thời gian, cuối cùng lui ra thư mục tạm. Mất nhật ký chịu được;
+    mất tunnel thì không.
+
+    Không `unlink` nữa: `open(..., "w")` đã tự cắt file về rỗng, nên cái
+    `unlink` chỉ thêm đúng một cách để hỏng.
+    """
+    import tempfile
+    from datetime import datetime
+
+    ung_vien = [duong]
+    if cho_giay > 0:
+        ung_vien.append(duong)          # thử lại đường chính sau một nhịp chờ
+    dau = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ung_vien.append(duong.with_name(f"{duong.stem}-{dau}{duong.suffix}"))
+    ung_vien.append(Path(tempfile.gettempdir()) /
+                    f"{duong.stem}-{dau}{duong.suffix}")
+
+    for i, p in enumerate(ung_vien):
+        try:
+            return mo(p, "w", encoding="utf-8"), Path(p)
+        except OSError:
+            if i == 0 and cho_giay > 0:
+                time.sleep(cho_giay)
+            continue
+    # Cạn mọi đường ghi ra đĩa thì vẫn KHÔNG được chặn tunnel.
+    return subprocess.DEVNULL, duong
 
 
 def _doi_env(domain: str) -> None:
@@ -128,12 +179,21 @@ def _doi_env(domain: str) -> None:
     tep.write_text(s, encoding="utf-8")
 
 
-def _cho_domain(giay: float = 40.0) -> str | None:
+def _cho_domain(nhat_ky: Path = None, giay: float = 40.0) -> str | None:
+    """
+    Đợi cloudflared in ra tên miền, ĐỌC ĐÚNG file đang được ghi.
+
+    Tham số `nhat_ky` không phải đồ trang trí: `mo_nhat_ky()` có thể đã lui
+    sang một tên khác vì file chính bị giữ. Đọc cứng `NHAT_KY` khi ấy là
+    chờ 40 giây trên một file không ai ghi, rồi báo "không lấy được tên
+    miền" — trong lúc tunnel đã lên bình thường.
+    """
+    tep = nhat_ky or NHAT_KY
     han = time.time() + giay
     while time.time() < han:
-        if NHAT_KY.exists():
+        if tep.exists():
             m = _MAU_DOMAIN.search(
-                NHAT_KY.read_text(encoding="utf-8", errors="replace")
+                tep.read_text(encoding="utf-8", errors="replace")
             )
             if m:
                 return m.group(0)
@@ -172,9 +232,102 @@ def _xoa_dem_dns() -> None:
         pass
 
 
-def _thong(domain: str, han_giay: float = 60.0) -> int:
+KET_QUA_THONG = "thong"
+KET_QUA_DNS_NOI_BO_MU = "dns_noi_bo_mu"
+KET_QUA_HONG = "hong"
+
+# DNS-over-HTTPS của Cloudflare, gọi bằng ĐỊA CHỈ IP có chủ ý: phải phân giải
+# một tên miền để hỏi về DNS thì đúng cái đang hỏng sẽ chặn luôn câu hỏi.
+_DOH = "https://1.1.1.1/dns-query?type=A&name="
+
+
+def doc_ket_qua_thong(*, so_lan_ok: int, dns_noi_bo_mu: bool,
+                      ok_qua_ip: int) -> tuple[str, str]:
     """
-    Số lượt gọi thành công từ Internet, trong hạn `han_giay`.
+    Phán quyết tách khỏi phần gọi mạng, để test lái được cả ba nhánh.
+
+    BA CA, VÀ HAI CA GIỮA TỪNG BỊ GỘP THÀNH MỘT
+    -------------------------------------------
+    Bản trước chỉ đếm số lượt gọi thành công qua resolver của máy. Đo được
+    15.09.2026 trên mạng VNPT: resolver trả "Non-existent domain" cho tên
+    miền `trycloudflare` vừa cấp, trong khi 1.1.1.1 và 8.8.8.8 phân giải ra
+    IP và gọi qua IP thì HTTP 200 — tunnel sống, chỉ máy này mù. Zalo và
+    Meta dùng resolver của họ nên vẫn gọi vào bình thường.
+
+    Gộp ca ấy vào "hỏng" gây hai thiệt hại: một dòng chữ sai, và — nặng hơn
+    — `.env` giữ nguyên tên miền CŨ ĐÃ CHẾT vì `main()` thoát sớm.
+    """
+    if so_lan_ok:
+        return KET_QUA_THONG, f"thông từ Internet ({so_lan_ok} lượt gọi thành công)"
+    if dns_noi_bo_mu and ok_qua_ip:
+        return KET_QUA_DNS_NOI_BO_MU, (
+            "tunnel phục vụ được từ Internet, nhưng MÁY NÀY không phân giải "
+            "được tên miền (DNS nội bộ). Zalo/Meta vẫn gọi vào bình thường; "
+            "chỉ các phép kiểm chạy trên máy này là trượt")
+    return KET_QUA_HONG, "không gọi tới được từ Internet"
+
+
+def _la_loi_dns(exc: BaseException) -> bool:
+    """Lỗi này là 'không dịch nổi tên miền', hay là 'nối được mà bị từ chối'?
+
+    Chỗ khác nhau ấy chính là phán quyết, nên nó phải được đọc cho đúng.
+    """
+    import socket
+
+    goc = getattr(exc, "reason", exc)
+    return isinstance(goc, socket.gaierror) or "getaddrinfo" in str(goc).lower()
+
+
+def _ip_qua_doh(host: str, timeout: float = 8.0) -> list[str]:
+    """IP của `host` theo DNS công cộng. Rỗng khi không hỏi được."""
+    import json as _json
+
+    req = urllib.request.Request(
+        _DOH + host, headers={"Accept": "application/dns-json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = _json.loads(r.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    return [str(a.get("data")) for a in (d.get("Answer") or [])
+            if a.get("type") == 1 and a.get("data")]
+
+
+def _goi_qua_ip(host: str, ip: str, duong: str = "/healthz",
+                timeout: float = 15.0) -> bool:
+    """
+    Gọi HTTPS tới `ip` nhưng SNI và Host vẫn là `host`.
+
+    Đây là cách duy nhất hỏi được "Internet có tới được tunnel này không" mà
+    không đi qua resolver của máy — thứ đang là nghi phạm.
+    """
+    import http.client
+    import socket
+    import ssl
+
+    ctx = ssl.create_default_context()
+    try:
+        sock = socket.create_connection((ip, 443), timeout=timeout)
+    except OSError:
+        return False
+    try:
+        with ctx.wrap_socket(sock, server_hostname=host) as tls:
+            conn = http.client.HTTPSConnection(host, timeout=timeout)
+            conn.sock = tls
+            conn.request("GET", duong, headers={"Host": host})
+            return conn.getresponse().status == 200
+    except (OSError, ssl.SSLError, http.client.HTTPException):
+        return False
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def kiem_thong(domain: str, han_giay: float = 60.0) -> tuple[str, str, int]:
+    """
+    Tunnel có phục vụ được từ Internet không — và nếu không, vì đâu.
 
     ĐỢI ĐỦ LÂU, và đây là chỗ bản đầu sai.
 
@@ -188,9 +341,12 @@ def _thong(domain: str, han_giay: float = 60.0) -> int:
     Nên đếm trong một CỬA SỔ THỜI GIAN chứ không đếm theo số lần, và dừng
     sớm ngay khi có hai lượt liền nhau thành công.
 
-    Chờ lâu thôi VẪN CHƯA ĐỦ — xem `_xoa_dem_dns`.
+    Chờ lâu thôi VẪN CHƯA ĐỦ — xem `_xoa_dem_dns`, và xem
+    `doc_ket_qua_thong` cho ca resolver nội bộ mù hẳn.
     """
+    host = domain.split("://", 1)[-1].rstrip("/")
     ok = lien_tiep = 0
+    loi_dns = False
     han = time.time() + han_giay
     while time.time() < han:
         _xoa_dem_dns()
@@ -200,13 +356,28 @@ def _thong(domain: str, han_giay: float = 60.0) -> int:
                     ok += 1
                     lien_tiep += 1
                     if lien_tiep >= 2:
-                        return ok
+                        trang, ly_do = doc_ket_qua_thong(
+                            so_lan_ok=ok, dns_noi_bo_mu=False, ok_qua_ip=0)
+                        return trang, ly_do, ok
                 else:
                     lien_tiep = 0
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError) as exc:
             lien_tiep = 0
+            if _la_loi_dns(exc):
+                loi_dns = True
         time.sleep(3)
-    return ok
+
+    # Resolver của máy mù hẳn thì hỏi DNS công cộng rồi gọi thẳng vào IP —
+    # đó mới là câu hỏi ta thực sự cần trả lời.
+    ok_ip = 0
+    if not ok and loi_dns:
+        for ip in _ip_qua_doh(host)[:2]:
+            if _goi_qua_ip(host, ip):
+                ok_ip = 1
+                break
+    trang, ly_do = doc_ket_qua_thong(
+        so_lan_ok=ok, dns_noi_bo_mu=loi_dns, ok_qua_ip=ok_ip)
+    return trang, ly_do, ok
 
 
 def _doc_env(khoa: str) -> str:
@@ -233,13 +404,17 @@ def chay_co_dinh(exe: str, token: str, dia_chi: str) -> int:
     Internet, và màn hình này hay bị chụp lại.
     """
     print("Tunnel CỐ ĐỊNH (tên miền riêng) — đang mở …")
-    NHAT_KY.unlink(missing_ok=True)
-    with open(NHAT_KY, "w", encoding="utf-8") as f:
-        subprocess.Popen(
-            [exe, "tunnel", "--edge-ip-version", "4", "--protocol", "http2",
-             "run", "--token", token],
-            stdout=f, stderr=f,
-        )
+    # Dùng `mo_nhat_ky` như nhánh tạm: nó không bao giờ ném, kể cả khi
+    # Windows chưa nhả handle của tiến trình vừa bị kill. Mất nhật ký chịu
+    # được; chết giữa chừng SAU KHI đã tắt tunnel cũ thì không.
+    f, nhat_ky = mo_nhat_ky(NHAT_KY)
+    if nhat_ky != NHAT_KY:
+        print(f"  Không ghi được {NHAT_KY.name}, dùng {nhat_ky} thay thế.")
+    subprocess.Popen(
+        [exe, "tunnel", "--edge-ip-version", "4", "--protocol", "http2",
+         "run", "--token", token],
+        stdout=f, stderr=f,
+    )
 
     if not dia_chi:
         print("  Thiếu PUBLIC_BASE_URL trong .env — điền tên miền bạn đã khai")
@@ -247,15 +422,19 @@ def chay_co_dinh(exe: str, token: str, dia_chi: str) -> int:
         print("      PUBLIC_BASE_URL=https://api.tenmien.vn")
         return 1
 
-    ok = _thong(dia_chi.rstrip("/"))
-    if ok == 0:
-        print(f"  Tunnel chạy nhưng {dia_chi} KHÔNG thông từ ngoài.")
-        print(f"  Xem {NHAT_KY.name}; kiểm lại Public hostname trên Cloudflare")
+    # Dùng chung `kiem_thong` với nhánh tạm — nó phân biệt được ba ca, trong
+    # đó có ca resolver của máy này mù trong khi tunnel vẫn sống (đo trên
+    # mạng VNPT 15.09.2026). Gọi bộ đo riêng ở đây là chép lại ba ca ấy, và
+    # bản chép sẽ lệch đúng vào lần sửa tiếp theo.
+    trang, ly_do, ok = kiem_thong(dia_chi.rstrip("/"))
+    if trang == KET_QUA_HONG:
+        print(f"  Tunnel chạy nhưng {dia_chi} KHÔNG thông: {ly_do}")
+        print(f"  Xem {nhat_ky.name}; kiểm lại Public hostname trên Cloudflare")
         print("  có trỏ về http://localhost:8000 không.")
         return 1
 
     print(f"\n  {dia_chi}")
-    print(f"  Thông từ Internet ({ok} lượt gọi thành công).")
+    print(f"  {ly_do}")
     print("  Tên miền CỐ ĐỊNH — không phải dán lại URL webhook lần nào nữa.\n")
     return 0
 
@@ -284,30 +463,42 @@ def main() -> int:
     if token:
         return chay_co_dinh(exe, token, _doc_env("PUBLIC_BASE_URL"))
 
-    NHAT_KY.unlink(missing_ok=True)
+    f, nhat_ky = mo_nhat_ky(NHAT_KY)
+    if nhat_ky != NHAT_KY:
+        print(f"Không ghi được {NHAT_KY.name}, dùng {nhat_ky} thay thế.")
 
     # `--edge-ip-version 4`: xem cái bẫy số 2 ở đầu tệp.
-    with open(NHAT_KY, "w", encoding="utf-8") as f:
+    try:
         subprocess.Popen(
             [exe, "tunnel", "--url", f"http://localhost:{CONG_APP}",
              "--edge-ip-version", "4", "--protocol", "http2"],
             stdout=f, stderr=f,
         )
+    finally:
+        if f is not subprocess.DEVNULL:
+            f.close()
 
     print("Đang mở tunnel …")
-    domain = _cho_domain()
+    domain = _cho_domain(nhat_ky)
     if not domain:
         print(f"Không lấy được tên miền sau 40 giây. Xem {NHAT_KY.name}.")
         return 1
 
-    ok = _thong(domain)
-    if ok == 0:
-        print(f"Tunnel lên nhưng KHÔNG thông từ ngoài. Xem {NHAT_KY.name}.")
+    trang, ly_do, ok = kiem_thong(domain)
+    if trang == KET_QUA_HONG:
+        print(f"Tunnel lên nhưng {ly_do}. Xem {nhat_ky.name}.")
         return 1
 
+    # GHI `.env` KỂ CẢ KHI RESOLVER NỘI BỘ MÙ.
+    #
+    # Không ghi thì `.env` giữ tên miền CŨ ĐÃ CHẾT — tệ hơn hẳn lúc chưa
+    # chạy gì, vì dashboard vẫn dựng URL webhook trỏ vào hư không, mà người
+    # vận hành thì vừa được báo "tunnel không thông" nên đi tìm bệnh ở chỗ
+    # khác. Tên miền ở đây lấy từ log của chính cloudflared SAU khi nó đăng
+    # ký được kết nối, nên nó có thật.
     _doi_env(domain)
     print(f"\n  {domain}")
-    print(f"  Thông từ Internet ({ok} lượt gọi thành công).")
+    print(f"  {ly_do[0].upper()}{ly_do[1:]}.")
     print("  Đã cập nhật PUBLIC_BASE_URL và WEBHOOK_PUBLIC_URL trong .env.\n")
     print("CÒN HAI VIỆC PHẢI LÀM TAY:")
     print("  1. Khởi động lại dashboard để nó đọc .env mới.")

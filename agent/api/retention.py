@@ -36,7 +36,12 @@ class PostgresRetentionRepository:
                 """
                 SELECT id, contact_id, kind, status, requested_by, approved_by,
                        reason, dry_run, result, requested_at, approved_at,
-                       completed_at
+                       completed_at,
+                       -- Phiếu khoá theo số điện thoại thì `contact_id` rỗng.
+                       -- Không trả `sdt_che` về thì người duyệt nhìn thấy một
+                       -- phiếu không nói nó xoá cho ai — duyệt kiểu ấy là hai
+                       -- cú bấm, không phải bốn mắt.
+                       sdt_che, xoa_thuc_hien_luc
                 FROM data_retention_jobs
                 ORDER BY requested_at DESC
                 LIMIT 200

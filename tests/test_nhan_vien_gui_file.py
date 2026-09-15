@@ -38,10 +38,20 @@ def test_co_duong_gui_file_cho_nhan_vien():
 
 
 def test_doi_dang_nhap():
-    """Gửi tin nhân danh doanh nghiệp — không thể để ngỏ."""
+    """
+    Gửi tin nhân danh doanh nghiệp — không thể để ngỏ.
+
+    `can_quyen(...)` phụ thuộc `nguoi_da_dang_nhap` nên nó ĐÃ bao hàm đăng
+    nhập, rồi siết thêm quyền. Endpoint này từng khai cả hai; giữ một mình
+    `can_quyen` là chặt hơn, không lỏng hơn — và người đọc không phải tự
+    hỏi hai dependency ấy khác nhau chỗ nào.
+    """
     from agent.api import routes
 
-    assert "bat_buoc_dang_nhap" in inspect.getsource(routes.staff_send_file)
+    nguon = inspect.getsource(routes.staff_send_file)
+    assert 'can_quyen("hoi_thoai.tra_loi")' in nguon
+    # Và chốt tầm nhìn: gửi ẢNH cho khách của người khác cũng là trả lời họ.
+    assert "chan_neu_khong_duoc_tra_loi" in nguon
 
 
 # ---------------------------------------------------------------

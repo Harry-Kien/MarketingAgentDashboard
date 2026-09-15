@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from agent.channels.factory import AccountAdapterFactory
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
-from agent.channels.ten_khach import can_lay_ten
+from agent.channels.ten_khach import lam_giau_ten
 from agent.omnichannel.accounts import Channel, ChannelAccount
 from agent.omnichannel.credential_loader import VaultCredentialLoader
 from agent.security.credential_vault import CredentialVault, parse_master_keys
@@ -101,39 +101,11 @@ class MetaWebhookDispatcher:
 
     @staticmethod
     async def _lam_giau_ten(adapter, messages: list) -> None:
+        """Uỷ quyền sang bản dùng chung — xem agent/channels/ten_khach.py.
+
+        Giữ lại tên cũ để các ca kiểm và mã gọi sẵn không phải đổi.
         """
-        Hỏi Graph API tên thật của khách, thay cho chữ "Khách" chung chung.
-
-        VÌ SAO Ở ĐÂY, KHÔNG PHẢI SAU
-        ----------------------------
-        Làm sau khi tin đã vào InboxService thì hội thoại đã được tạo với tên
-        mặc định, và sửa lại là thêm một đường ghi nữa — phức tạp hơn mà kết
-        quả kém hơn.
-
-        VÌ SAO CHỈ GỌI KHI TÊN CÒN MẶC ĐỊNH
-        -----------------------------------
-        Mỗi lượt gọi Graph là một chặng mạng nằm trên đường trả lời khách.
-        Tên người gần như không đổi — lấy một lần là đủ.
-
-        Hỏng thì im lặng bỏ qua: tên chỉ để hiển thị, tin nhắn mới là việc
-        chính. `lay_ten_khach` đã tự nuốt lỗi và trả rỗng.
-        """
-        lay = getattr(adapter, "lay_ten_khach", None)
-        if lay is None:
-            return
-        # Một khách gửi nhiều tin liền là chuyện thường; hỏi một lần cho mỗi
-        # người thay vì mỗi tin.
-        da_hoi: dict[str, str] = {}
-        for msg in messages:
-            if not can_lay_ten(getattr(msg, "customer_name", "")):
-                continue
-            ref = str(getattr(msg, "customer_ref", "") or "")
-            if not ref:
-                continue
-            if ref not in da_hoi:
-                da_hoi[ref] = await lay(ref)
-            if da_hoi[ref]:
-                msg.customer_name = da_hoi[ref]
+        await lam_giau_ten(adapter, messages)
 
     async def verify_tokens_dang_dung(self) -> set[str]:
         """

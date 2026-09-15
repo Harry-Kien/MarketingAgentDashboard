@@ -1198,6 +1198,14 @@ svg { flex: none; }
 }
 .kit__row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 
+/* Ghi chú mang tin xấu: cùng cỡ chữ, khác màu và có viền trái, để nó không
+   trôi lẫn vào những dòng chú thích bình thường ngay cạnh. */
+.kit__note--halt {
+  color: hsl(var(--destructive));
+  border-left: 2px solid hsl(var(--destructive) / .55);
+  padding: 6px 0 6px 8px; margin-top: 8px;
+}
+
 .subhead {
   font-size: 12px; font-weight: 600; letter-spacing: .02em;
   color: hsl(var(--muted-foreground));

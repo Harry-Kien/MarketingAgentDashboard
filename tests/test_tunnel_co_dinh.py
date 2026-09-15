@@ -100,18 +100,32 @@ def test_env_mau_khai_bao_khoa_moi():
 
 def test_san_sang_canh_bao_khi_con_dung_tunnel_tam():
     """
-    Trước bản này mục "Callback provider" báo ĐỦ cho một tunnel tạm, vì nó
-    chỉ hỏi "có phải https không". Người vận hành dán URL rồi yên tâm — và
-    URL ấy chết trong vòng vài giờ. Xanh giả ở ngay cửa vào hệ thống.
+    "Gọi tới được" vẫn chưa phải "đủ".
+
+    Mục này từng chỉ hỏi "có phải https không" — báo ĐỦ cho một tên miền đã
+    chết ba tiếng. Bản sau gọi THẬT vào URL, nên bắt được tunnel chết. Nhưng
+    một tunnel tạm đang SỐNG vẫn là tunnel sẽ chết ở lần chạy lại tiếp theo
+    (đo được bốn lần đổi trong 24 giờ), nên nó phải là CẢNH BÁO: "hôm nay
+    chạy" khác với "dán một lần là xong".
     """
     from scripts.san_sang import CANH_BAO, DU, doc_callback_cong_khai
 
-    tam = doc_callback_cong_khai("https://camping-cables-isle.trycloudflare.com/webhook")
+    # (url, mã HTTP, lỗi, đúng app này) — tunnel tạm đang sống.
+    tam = doc_callback_cong_khai(
+        "https://camping-cables-isle.trycloudflare.com/webhook", 200, None, True)
     assert tam["muc"] == CANH_BAO
     assert "TẠM" in tam["ghi"] and "chay_tunnel" in tam["sua"]
 
-    assert doc_callback_cong_khai("https://api.tenmien.vn/webhook")["muc"] == DU
-    assert doc_callback_cong_khai("http://host.docker.internal:8000")["muc"] == CANH_BAO
+    co_dinh = doc_callback_cong_khai("https://api.tenmien.vn/webhook", 200, None, True)
+    assert co_dinh["muc"] == DU
+
+    # Hai nhánh của phiên kia phải còn nguyên: chết hẳn, và không phải app này.
+    from scripts.san_sang import CHAN
+
+    assert doc_callback_cong_khai(
+        "https://api.tenmien.vn/webhook", None, "ConnectError", False)["muc"] == CHAN
+    assert doc_callback_cong_khai(
+        "https://api.tenmien.vn/webhook", 404, None, False)["muc"] == CANH_BAO
 
 
 def test_tai_lieu_noi_ro_bon_buoc():

@@ -152,3 +152,55 @@ def test_dashboard_khong_con_gan_cung_dia_chi_sidecar():
 def test_env_example_khai_bao_dia_chi_sidecar():
     env = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert "ZALO_SIDECAR_URL" in env
+
+
+def test_duong_xac_minh_provider_cung_goi():
+    """
+    Nút "Xác minh provider" dựng adapter bằng một đường RIÊNG, và đó là
+    đường duy nhất từng quên bổ sung bí mật máy chủ.
+
+    Đo được 15.09.2026 trên hệ thống đang chạy: cùng một tài khoản Zalo cá
+    nhân, `GET .../zalo-personal/status` trả `connected` với `own_id` đúng,
+    còn `POST .../verify` trả `provider.unreachable` kèm "Chữ ký sidecar
+    không hợp lệ" — vì nó ký bằng bản secret cũ nằm trong vault. Rồi nó ghi
+    `degraded` vào sức khoẻ kênh, nên dashboard hiện Gián đoạn cho một kênh
+    vẫn đang nhận tin.
+    """
+    from agent.omnichannel import account_verification
+
+    nguon = inspect.getsource(account_verification.NativeVerificationAdapterFactory.__call__)
+    assert "bo_sung_bi_mat_may_chu" in nguon
+
+
+def test_xac_minh_ky_bang_secret_cua_env_chu_khong_phai_cua_vault(monkeypatch):
+    """Chốt hành vi, không chỉ chốt có gọi hàm: bản trong vault phải THUA."""
+    import asyncio
+    from uuid import uuid4
+
+    from agent.omnichannel.account_verification import NativeVerificationAdapterFactory
+    from agent.config import settings
+    from agent.omnichannel.accounts import AccountStatus, Channel, ChannelAccount
+
+    # Tiêm giá trị thay vì đọc `.env` thật: trên bản clone sạch (job
+    # `clone-sach` của CI) biến ấy rỗng, và một test đỏ vì thiếu cấu
+    # hình máy thì không nói gì về ràng buộc nó đang canh.
+    monkeypatch.setattr(settings, "zalo_sidecar_secret", "BI-MAT-DUNG-TRONG-ENV")
+    monkeypatch.setattr(settings, "zalo_sidecar_url", "http://127.0.0.1:3210")
+
+    class _Kho:
+        async def load(self, account_id):
+            # Đúng thứ vault giữ sau khi ai đó chạy `sinh_token` mà quên
+            # lưu lại tài khoản: một bí mật CŨ, vẫn trông hợp lệ.
+            return {"sidecar_secret": "BI-MAT-CU-TRONG-VAULT",
+                    "sidecar_url": "http://127.0.0.1:3210"}
+
+    tai_khoan = ChannelAccount(
+        id=uuid4(), channel=Channel.ZALO_PERSONAL, display_name="Mr Kiên",
+        external_account_id="697397310220238126", status=AccountStatus.ACTIVE,
+        capabilities={}, metadata={}, is_legacy=False,
+    )
+    adapter = asyncio.run(NativeVerificationAdapterFactory(_Kho())(tai_khoan))
+    assert adapter._secret == "BI-MAT-DUNG-TRONG-ENV", (
+        "xác minh đang ký bằng bí mật trong vault — sidecar sẽ trả 401 và "
+        "dashboard báo đỏ cho một kênh vẫn chạy tốt"
+    )

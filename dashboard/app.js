@@ -547,22 +547,41 @@ async function loadRetention() {
     ? `${ds.filter((j) => j.status === "pending_approval").length} đang chờ duyệt`
     : "chưa có yêu cầu nào";
   o.innerHTML = ds.length ? ds.map((j) => {
-    const [nhan, co] = RT_TRANG_THAI[j.status] || [j.status, "assist"];
+    let [nhan, co] = RT_TRANG_THAI[j.status] || [j.status, "assist"];
     const cua_toi = String(j.requested_by) === String(state.toiId);
     const nut = [];
-    if (j.status === "pending_approval") {
+    /* Phiếu đã tiêu cho một lần xoá thật. Trạng thái trong CSDL vẫn là
+       "approved", nên không có nhánh này thì nó hiện y như phiếu còn dùng
+       được — kèm nút Chạy đếm và Huỷ, cả hai đều vô nghĩa với một phiếu đã
+       hết hiệu lực. */
+    const da_dung = !!j.xoa_thuc_hien_luc;
+    if (da_dung) {
+      nhan = "đã dùng để xoá · không dùng lại được";
+      co = "halt";
+    } else if (j.status === "pending_approval") {
       /* Người tạo không tự duyệt được — máy chủ chặn (409). Ẩn nút với họ
          để không tạo ra một cú bấm chắc chắn thất bại. */
       if (!cua_toi) nut.push(`<button type="button" class="btn btn--sm" data-rtduyet="${esc(j.id)}">Duyệt</button>`);
       nut.push(`<button type="button" class="btn btn--sm btn--ghost" data-rthuy="${esc(j.id)}">Huỷ</button>`);
     } else if (j.status === "approved") {
-      if (j.dry_run) nut.push(`<button type="button" class="btn btn--sm" data-rtdem="${esc(j.id)}">Chạy đếm</button>`);
+      /* Chạy đếm đếm theo `contact_id`. Phiếu xin từ màn Nhật ký khoá theo
+         số điện thoại và thường không gắn khách nào — máy chủ từ chối
+         (409 "không còn gắn với khách hàng"). Ẩn nút thay vì để nó trả lỗi:
+         màn PDPD ở trên đã hiện sẵn đơn và hội thoại sẽ mất. */
+      if (j.dry_run && j.contact_id) nut.push(`<button type="button" class="btn btn--sm" data-rtdem="${esc(j.id)}">Chạy đếm</button>`);
       nut.push(`<button type="button" class="btn btn--sm btn--ghost" data-rthuy="${esc(j.id)}">Huỷ</button>`);
     }
     return `<div class="row">
       <span class="row__flag row__flag--${co}"></span>
       <div class="row__main">
-        <b>${esc(j.kind === "delete" ? "Xoá" : j.kind === "export" ? "Xuất" : "Lưu trữ")} · khách ${esc(String(j.contact_id).slice(0, 8))}…${cua_toi ? " · bạn tạo" : ""}</b>
+        <b>${esc(j.kind === "delete" ? "Xoá" : j.kind === "export" ? "Xuất" : "Lưu trữ")} · ${
+          /* Phiếu xin từ màn Nhật ký khoá theo SỐ, không theo khách — và số
+             ấy bị xoá khỏi phiếu ngay khi phiếu được dùng, nên có lúc không
+             còn gì để hiện. Nói "không còn hiển thị" chứ đừng in "null…". */
+          esc(j.contact_id ? "khách " + String(j.contact_id).slice(0, 8) + "…"
+              : j.sdt_che ? "số " + j.sdt_che
+              : "số đã ẩn sau khi xoá")
+        }${cua_toi ? " · bạn tạo" : ""}</b>
         <span class="row__sub">${esc(j.reason || "")}</span>
         <span class="row__sub">${esc(nhan)} · ${clock(j.requested_at)}${j.result && Object.keys(j.result).length ? " · " + esc(rtKetQua(j.result)) : ""}</span>
       </div>
@@ -2948,6 +2967,46 @@ async function loadPdpdPolicy() {
     + ` tối thiểu 10 năm (Luật Kế toán 2015, Điều 41).`;
 }
 
+/* Khối xoá vẽ theo TRẠNG THÁI PHIẾU, không vẽ sẵn rồi để máy chủ từ chối.
+ *
+ * Máy chủ chặn xoá khi chưa có phiếu duyệt (409). Nếu giao diện vẫn hiện ô
+ * nhập và nút Xoá đỏ chót thì cú bấm ấy chắc chắn thất bại — và một nút
+ * "đôi khi không làm gì" dạy người vận hành rằng lỗi là chuyện bình thường,
+ * đúng thói quen khiến người ta bấm qua cả những cảnh báo thật. */
+function pdpdKhoiXoa(d) {
+  const pd = d.phieu_duyet || {};
+  /* Cả hệ thống chỉ có một người mang quyền `khach.xoa` thì phiếu nào cũng
+     treo vĩnh viễn, vì người tạo không tự duyệt được. Không nói ra thì nó
+     treo im lặng — dashboard chỉ hiện "chờ người khác duyệt" mãi mãi, trong
+     khi thời hạn đáp ứng yêu cầu xoá là do luật đặt. */
+  const ket = pd.so_nguoi_duyet_duoc < 2
+    ? `<div class="kit__note kit__note--halt">⚠ Cả hệ thống chỉ có
+        <b>${esc(String(pd.so_nguoi_duyet_duoc ?? 0))}</b> người dùng được quyền
+        <code>khach.xoa</code>. Người tạo phiếu không tự duyệt được, nên phiếu sẽ
+        <b>treo mãi</b> và yêu cầu xoá của khách không bao giờ được đáp ứng.
+        Cấp quyền ấy cho ít nhất một người nữa ở màn <b>Nhân sự</b>.</div>`
+    : "";
+  if (pd.xoa_duoc) {
+    return `<div class="kit__note">Đã có phiếu duyệt của người khác — phiếu này
+        <b>dùng một lần</b>, xoá xong là hết hiệu lực.</div>
+      <div class="danger__row">
+        <input id="pdpdConfirm" placeholder="Gõ lại ${esc(d.so_dien_thoai)}" autocomplete="off">
+        <input id="pdpdReason" placeholder="Lý do (khách yêu cầu qua Zalo…)" autocomplete="off">
+        <button type="button" class="btn btn--sm btn--halt" id="pdpdDelete">Xoá dữ liệu</button>
+      </div>`;
+  }
+  if (pd.co_phieu) {
+    return ket + `<div class="kit__note">Đã có phiếu xin xoá, <b>đang chờ người khác duyệt</b>
+      ở khối “Phiếu duyệt xoá” bên dưới. Người tạo phiếu không tự duyệt được —
+      đó là chỗ con mắt thứ hai nằm.</div>`;
+  }
+  return ket + `<div class="kit__note">Xoá dữ liệu cá nhân cần <b>hai người</b>: xin phiếu ở đây,
+      một người khác duyệt ở khối “Phiếu duyệt xoá” bên dưới.</div>
+    <div class="danger__row">
+      <button type="button" class="btn btn--sm" id="pdpdXinDuyet">Xin duyệt xoá</button>
+    </div>`;
+}
+
 $("#pdpdform").addEventListener("submit", async (e) => {
   e.preventDefault();
   const sdt = new FormData(e.target).get("sdt");
@@ -2983,24 +3042,60 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       <span class="row__side"><span class="row__time">${clock(h.updated_at)}</span></span>
     </div>`).join("");
 
+  /* Hồ sơ CRM: nơi lưu bị bỏ quên lâu nhất. Không hiện ở đây thì người
+     vận hành duyệt một lần xoá mà không biết ghi chú và nhãn cũng đi theo. */
+  const hs = (d.ho_so_khach || []).map((h) => `
+    <div class="row">
+      <span class="row__flag row__flag--assist"></span>
+      <span class="row__body">
+        <span class="row__title">${esc(h.display_name || "Khách")}</span>
+        <span class="row__sub">${h.danh_tinh} danh tính kênh · ${h.ghi_chu} ghi chú ·
+          ${h.nhan} nhãn · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
+            h.co_email ? " · có email" : ""}</span>
+      </span>
+    </div>`).join("");
+
   $("#pdpdOut").innerHTML = `
     <h3 class="subhead">Đơn hàng (${d.so_don_hang}) — sẽ được ẩn danh, không xoá</h3>
     <div class="rows">${don || '<p class="empty">Không có.</p>'}</div>
     <h3 class="subhead">Hội thoại (${d.so_hoi_thoai}) — sẽ bị xoá hẳn cùng mọi tin nhắn</h3>
     <div class="rows">${hoi || '<p class="empty">Không có.</p>'}</div>
+    <h3 class="subhead">Hồ sơ khách (${d.so_ho_so || 0}) — ẩn danh; ghi chú, nhãn xoá hẳn;
+      danh tính từng kênh thay bằng khoá ẩn danh</h3>
+    <div class="rows">${hs || '<p class="empty">Không có.</p>'}</div>
     <div class="danger">
       <div class="danger__head">Thực hiện yêu cầu xoá — không hoàn tác được</div>
       <div class="kit__note">Đơn hàng giữ lại mã đơn, sản phẩm và số tiền cho sổ sách;
         tên, số điện thoại và địa chỉ bị thay bằng dấu ẩn danh. Hội thoại và tin nhắn
         xoá hẳn. Mọi lần xoá đều được ghi vào nhật ký kèm căn cứ pháp lý.</div>
-      <div class="danger__row">
-        <input id="pdpdConfirm" placeholder="Gõ lại ${esc(d.so_dien_thoai)}" autocomplete="off">
-        <input id="pdpdReason" placeholder="Lý do (khách yêu cầu qua Zalo…)" autocomplete="off">
-        <button type="button" class="btn btn--sm btn--halt" id="pdpdDelete">Xoá dữ liệu</button>
-      </div>
+      ${pdpdKhoiXoa(d)}
     </div>`;
 
-  $("#pdpdDelete").addEventListener("click", async () => {
+  /* Xin phiếu duyệt. Nút này CHỈ hiện khi chưa có phiếu — có phiếu rồi mà
+     vẫn cho bấm là mỗi cú bấm lỡ tay thành một phiếu treo, và người duyệt
+     không biết phiếu nào mới là phiếu đang có hiệu lực. */
+  $("#pdpdXinDuyet")?.addEventListener("click", async () => {
+    const t = await hoiHop({
+      tieu_de: "Xin duyệt xoá dữ liệu",
+      phu: `Số ${d.so_dien_thoai}. Chưa xoá gì cả — một người KHÁC phải duyệt phiếu này `
+         + "ở khối “Phiếu duyệt xoá” bên dưới. Lý do đi vào nhật ký kiểm toán.",
+      truong: [{ name: "ly_do", label: "Lý do", value: "Khách yêu cầu xoá dữ liệu",
+                 required: true, maxlength: 300 }],
+      nut: "Xin duyệt",
+    });
+    if (!t || !t.ly_do) return;
+    try {
+      const r = await api(`/pdpd/${encodeURIComponent(d.so_dien_thoai)}/xin-duyet`, {
+        method: "POST", body: JSON.stringify({ ly_do: t.ly_do }),
+      });
+      toast(r.da_co_san ? "Số này đã có phiếu đang chờ duyệt."
+        : "Đã tạo phiếu. Một người khác cần duyệt ở khối bên dưới.");
+      loadRetention();
+      $("#pdpdform").requestSubmit();     // vẽ lại khối xoá theo trạng thái mới
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#pdpdDelete")?.addEventListener("click", async () => {
     const btn = $("#pdpdDelete");
     btn.disabled = true;
     try {

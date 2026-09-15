@@ -65,11 +65,19 @@ def test_staff_reply_enqueue_chu_khong_goi_provider_truc_tiep(monkeypatch):
         )
 
     monkeypatch.setattr(routes, "_queue_staff_reply", queue, raising=False)
+    # Test này gọi thẳng hàm nên KHÔNG đi qua dependency của FastAPI, và
+    # chốt tầm nhìn cần CSDL. Vô hiệu nó ở đây vì đang đo một việc khác:
+    # "enqueue chứ không gọi provider". Bản thân chốt ấy có bộ test riêng
+    # chạy trên app thật — tests/test_chan_tra_loi_khach_nguoi_khac.py.
+    async def bo_qua_chot(cid, nguoi):
+        return None
+    monkeypatch.setattr(routes, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
 
     result = asyncio.run(
         routes.staff_send(
             str(conversation_id),
             routes.SendBody(text="Đã nhận ạ", idempotency_key="request-1"),
+            {"id": str(uuid4()), "quyen": frozenset()},
         )
     )
 
@@ -98,6 +106,16 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
         )
 
     monkeypatch.setattr(routes, "_queue_approved_draft", queue, raising=False)
+
+    # Cùng lý do với test trên: gọi thẳng hàm thì không có CSDL cho chốt
+    # tầm nhìn; nó có bộ test riêng trên app thật.
+    async def bo_qua_chot(cid, nguoi):
+        return None
+    monkeypatch.setattr(routes, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
+
+    async def khong_co_tin(*a, **k):
+        return None
+    monkeypatch.setattr(routes.db, "fetchrow", khong_co_tin)
 
     result = asyncio.run(routes.approve_draft(str(message_id), None, {"ten_dang_nhap": "kien"}))
 

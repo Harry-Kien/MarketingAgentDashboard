@@ -108,6 +108,31 @@ def dung_markdown(kq: list[tuple[str, str, str]]) -> str:
     return "\n".join(dong)
 
 
+def so_kich_ban_khai() -> int:
+    """
+    Đếm kịch bản KHAI trong file test, để so với số kết quả THU được.
+
+    VÌ SAO PHẢI ĐẾM HAI ĐẦU
+    -----------------------
+    Plugin gom kết quả chỉ nhận được test đã CHẠY. Test hỏng lúc dựng
+    (fixture ném — pytest gọi là ERROR chứ không phải FAILED) không sinh ra
+    bản ghi nào, nên nó biến mất khỏi danh sách thay vì hiện ra là hỏng.
+
+    Đã xảy ra thật 15.09.2026: `MCP_TOKEN` được điền, `_mcp_app` dựng một
+    lần lúc import, còn `StreamableHTTPSessionManager.run()` của thư viện
+    MCP chỉ cho gọi MỘT LẦN mỗi instance. Kịch bản 1 chạy xong là vòng đời
+    đóng lại; kịch bản 2 dựng lại app và nổ. Mười một trong mười hai kịch
+    bản không chạy được — mà bảng sinh ra ghi "1/1 kịch bản đạt", đọc ra là
+    100%, và nếu chạy kèm `--ghi` thì nó đè mất bảng 12 mục có thật.
+
+    Đếm hai đầu là cách duy nhất để "thiếu" khác với "đạt hết".
+    """
+    return sum(
+        1 for d in TEP_TEST.read_text(encoding="utf-8").splitlines()
+        if d.startswith("def test_")
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ghi", action="store_true", help="ghi vào docs/nghiem-thu.md")
@@ -119,6 +144,20 @@ def main() -> int:
         return 2
 
     kq = chay()
+    khai = so_kich_ban_khai()
+    if len(kq) != khai:
+        print(
+            f"CHỈ thu được {len(kq)}/{khai} kịch bản — {khai - len(kq)} cái KHÔNG CHẠY ĐƯỢC.\n"
+            "Test hỏng ngay lúc dựng (ERROR, không phải FAILED) thì không sinh ra kết quả nào,\n"
+            "nên nó lặng lẽ rơi khỏi danh sách: bảng còn lại toàn `đạt`, `all()` trả True, và\n"
+            "mã thoát là 0. Tự động hoá nhìn thấy thành công.\n"
+            "KHÔNG ghi tài liệu — bảng thiếu kịch bản sẽ ĐÈ LÊN bảng đầy đủ đã có, và nó đọc ra\n"
+            "là đã nghiệm thu xong trong khi phần lớn chức năng chưa được kiểm lần nào.\n"
+            "Chạy lại với -q để xem kịch bản nào hỏng và vì sao.",
+            file=sys.stderr,
+        )
+        return 2
+
     md = dung_markdown(kq)
     if args.ghi:
         TEP_DOC.write_text(md, encoding="utf-8")

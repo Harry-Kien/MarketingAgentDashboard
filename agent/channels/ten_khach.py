@@ -65,3 +65,46 @@ def ghep_ten(ho_so: Mapping[str, object]) -> str:
     ten = str(ho_so.get("first_name") or "").strip()
     ho = str(ho_so.get("last_name") or "").strip()
     return " ".join(phan for phan in (ho, ten) if phan)
+
+
+async def lam_giau_ten(adapter, messages: list) -> None:
+    """
+    Thay chữ "Khách" mặc định bằng tên thật, hỏi từ chính kênh đó.
+
+    VÌ SAO Ở ĐƯỜNG WEBHOOK, KHÔNG PHẢI SAU
+    --------------------------------------
+    Làm sau khi tin đã vào InboxService thì hội thoại đã được tạo với tên
+    mặc định, và sửa lại là thêm một đường ghi nữa — phức tạp hơn mà kết quả
+    kém hơn.
+
+    VÌ SAO CHỈ GỌI KHI TÊN CÒN MẶC ĐỊNH
+    -----------------------------------
+    Mỗi lượt hỏi là một chặng mạng nằm trên đường trả lời khách. Tên người
+    gần như không đổi — lấy một lần là đủ.
+
+    MỘT BẢN DÙNG CHUNG CHO MỌI KÊNH
+    -------------------------------
+    Trước đây hàm này nằm riêng trong đường webhook của Meta, nên Zalo OA
+    không có — và khách Zalo OA hiện toàn "Khách" trên dashboard. Kênh nào
+    có `lay_ten_khach()` thì được làm giàu; kênh nào không có thì bỏ qua,
+    không cần sửa hàm này nữa.
+
+    Hỏng thì im lặng bỏ qua: tên chỉ để hiển thị, tin nhắn mới là việc
+    chính. `lay_ten_khach` của mỗi adapter đã tự nuốt lỗi và trả rỗng.
+    """
+    lay = getattr(adapter, "lay_ten_khach", None)
+    if lay is None:
+        return
+    # Một khách gửi nhiều tin liền là chuyện thường; hỏi một lần cho mỗi
+    # người thay vì mỗi tin.
+    da_hoi: dict[str, str] = {}
+    for msg in messages:
+        if not can_lay_ten(getattr(msg, "customer_name", "")):
+            continue
+        ref = str(getattr(msg, "customer_ref", "") or "")
+        if not ref:
+            continue
+        if ref not in da_hoi:
+            da_hoi[ref] = await lay(ref)
+        if da_hoi[ref]:
+            msg.customer_name = da_hoi[ref]

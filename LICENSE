@@ -1,0 +1,67 @@
+Bản quyền (c) 2026 Harry-Kien. Bảo lưu mọi quyền.
+Copyright (c) 2026 Harry-Kien. All rights reserved.
+
+PHẦN MỀM ĐỘC QUYỀN — KHÔNG PHẢI MÃ NGUỒN MỞ
+===========================================
+
+Toàn bộ mã nguồn, tài liệu, cấu hình và dữ liệu trong kho này là tài sản
+riêng của chủ sở hữu nêu trên.
+
+Không ai được phép sao chép, sửa đổi, phân phối, công bố, cấp phép lại,
+bán, hay tạo tác phẩm phái sinh từ phần mềm này — toàn bộ hay một phần —
+nếu không có văn bản cho phép trước của chủ sở hữu.
+
+Việc kho này từng được đặt ở chế độ công khai, hay mã có thể đọc được bằng
+cách nào đó, KHÔNG cấu thành giấy phép sử dụng.
+
+
+VÌ SAO CHỌN ĐỘC QUYỀN
+---------------------
+
+Ghi lại lý do, vì một ngày nào đó sẽ có người hỏi tại sao không mở mã.
+
+Hệ thống này vận hành một cửa hàng đang kinh doanh thật: nó giữ danh mục
+hàng kèm GIÁ VỐN, lịch sử hội thoại của khách, thông tin liên hệ, và các
+quy tắc tư vấn được viết riêng cho ngành mỹ phẩm. Mở mã là mở luôn cách
+định giá và cách chăm sóc khách của cửa hàng cho đối thủ.
+
+Chiều ngược lại thì không đối xứng: đóng hôm nay, mai muốn mở vẫn mở được;
+đã mở rồi thì không thu lại được — bản sao đã phát ra vẫn giữ giấy phép cũ
+vĩnh viễn. Khi còn phân vân, chọn phía còn đường lui.
+
+
+THÀNH PHẦN BÊN THỨ BA — GIẤY PHÉP NÀY KHÔNG PHỦ LÊN
+---------------------------------------------------
+
+Giấy phép này áp dụng cho mã DO DỰ ÁN NÀY VIẾT. Nó không áp dụng, và không
+thể áp dụng, cho mã của người khác mà hệ thống dùng tới:
+
+  * Submodule `ZaloCRM/` — GNU Affero General Public License v3.0,
+    bản quyền thuộc tác giả gốc. Xem `ZaloCRM/LICENSE` và `ZaloCRM/NOTICE`.
+    Đây là chương trình RIÊNG, chạy như dịch vụ riêng và chỉ giao tiếp qua
+    HTTP API — nên AGPL của nó không lan sang mã trong kho này. Nhưng nếu
+    bạn SỬA ZaloCRM và cho người ngoài dùng qua mạng, AGPL điều 13 buộc bạn
+    phải cho họ tải phần mã ZaloCRM đã sửa đó.
+
+  * Submodule `chatwoot-personal/` — bản quyền Chatwoot Inc., theo giấy
+    phép tại `chatwoot-personal/LICENSE`.
+
+  * Thư viện Python, gói npm và Docker image — theo giấy phép của upstream
+    tương ứng.
+
+Danh sách đầy đủ: `THIRD_PARTY_NOTICES.md`.
+
+Việc tuỳ biến giao diện hay đổi tên sản phẩm KHÔNG chuyển quyền sở hữu mã
+bên thứ ba sang dự án này.
+
+
+KHÔNG BẢO HÀNH
+--------------
+
+PHẦN MỀM ĐƯỢC CUNG CẤP "NGUYÊN TRẠNG", KHÔNG KÈM BẢO ĐẢM DƯỚI BẤT KỲ HÌNH
+THỨC NÀO, DÙ RÕ RÀNG HAY NGỤ Ý, BAO GỒM NHƯNG KHÔNG GIỚI HẠN Ở CÁC BẢO ĐẢM
+VỀ KHẢ NĂNG BÁN ĐƯỢC, SỰ PHÙ HỢP CHO MỘT MỤC ĐÍCH CỤ THỂ, VÀ KHÔNG VI PHẠM
+QUYỀN CỦA BÊN THỨ BA.
+
+
+Liên hệ xin cấp phép: luatngocson.kinhdoanh@gmail.com

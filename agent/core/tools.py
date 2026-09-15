@@ -719,6 +719,36 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     return out
 
 
+class _DanhMucChuaNap(list):
+    """
+    Chỗ giữ của danh mục KHÔNG được nạp — chạm vào là nổ.
+
+    Dùng `[]` thì một công cụ bị kê nhầm vào `_KHONG_CAN_DANH_MUC` sẽ lặng
+    lẽ thấy "không có sản phẩm nào" và nói đúng câu đó với khách. Nổ to rẻ
+    hơn nhiều: nó lộ ra ở lần chạy đầu tiên, trong test hoặc trên máy dev.
+    """
+
+    def _no(self, *_a, **_k):
+        raise RuntimeError(
+            "Công cụ này được kê là KHÔNG cần danh mục nhưng đang đọc danh "
+            "mục. Bỏ tên nó khỏi _KHONG_CAN_DANH_MUC trong agent/core/tools.py")
+
+    __iter__ = __getitem__ = __len__ = __contains__ = __bool__ = _no
+
+
+_DANH_MUC_CHUA_NAP = _DanhMucChuaNap()
+
+# Công cụ chạy xong mà không đọc danh mục sản phẩm lần nào. Xem lý do kê
+# theo chiều phủ định ở chỗ dùng, trong `_run_tool_that`.
+_KHONG_CAN_DANH_MUC = frozenset({
+    "tra_cuu_don_hang",
+    "tra_cuu_van_chuyen",
+    "xin_huy_don",
+    "xin_doi_tra",
+    "chuyen_nhan_vien",
+})
+
+
 async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     # ĐỌC: ══ CÂY QUYẾT ĐỊNH — đọc từ trên xuống, THỨ TỰ CÓ Ý NGHĨA ═══════
     # ĐỌC:
@@ -846,8 +876,28 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
             "ghi_chu": "Chỉ trả lời dựa trên các đoạn trên. Nêu tên tài liệu khi trích.",
         }
 
-    catalog = await _catalog_song()
-    products = catalog.get("san_pham", [])
+    # CHỈ NẠP DANH MỤC CHO CÔNG CỤ THẬT SỰ CẦN.
+    #
+    # Dòng này trước đây nạp vô điều kiện, nằm trên mọi nhánh phân phối —
+    # nên `xin_doi_tra`, thứ chỉ chạy một câu UPDATE, cũng phải chờ. Đo được
+    # 15.09.2026 trên máy có ERPNext sống (`ERP_LOAI=erpnext`): ~1,0 giây
+    # mỗi lượt gọi, nằm NGAY TRÊN đường trả lời khách, cộng một lượt trong
+    # hạn mức và bộ ngắt mạch của cổng ERP — để lấy một danh sách mà nhánh
+    # được gọi không bao giờ đọc tới.
+    #
+    # KÊ THEO CHIỀU PHỦ ĐỊNH: danh sách là công cụ KHÔNG cần. Quên khai một
+    # công cụ mới thì nó chậm một nhịp — chịu được. Kê theo chiều khẳng định
+    # mà quên thì công cụ thấy danh mục RỖNG và bảo khách shop không bán gì:
+    # sai, và không nổ.
+    #
+    # Và chỗ của danh mục chưa nạp KHÔNG phải `[]` mà là một vật nổ khi bị
+    # chạm, để kê nhầm thì lộ ra ngay lần chạy đầu chứ không phải ở một
+    # khách thật ba tuần sau.
+    if name in _KHONG_CAN_DANH_MUC:
+        products = _DANH_MUC_CHUA_NAP
+    else:
+        catalog = await _catalog_song()
+        products = catalog.get("san_pham", [])
 
     # ---------- tra cứu một sản phẩm ----------
     if name == "tra_cuu_san_pham":

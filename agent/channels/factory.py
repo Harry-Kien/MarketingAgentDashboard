@@ -100,4 +100,17 @@ class AccountAdapterFactory:
                 await rotate(account.id, payload)
 
             kwargs["on_credentials_rotated"] = persist
+        if account.channel == Channel.ZALO_OA:
+            # ĐỌC LẠI KHO, KHÔNG CHỈ GHI VÀO KHO.
+            #
+            # Refresh token của Zalo chết ngay sau một lần dùng, và adapter
+            # này bị CACHE trong `channels.get_for_account()`. Đường khác
+            # xoay khoá (nút “Xác minh provider”, nối lại OAuth) là bản
+            # trong bộ nhớ ở đây thành rác. Thiếu đường đọc lại thì nó chết
+            # tới lúc khởi động lại tiến trình — xem
+            # tests/test_zalo_oa_token_chet.py.
+            async def reload_credentials() -> Mapping[str, Any] | None:
+                return await self._credentials.load(account.id)
+
+            kwargs["on_credentials_reload"] = reload_credentials
         return adapter_class(**kwargs)

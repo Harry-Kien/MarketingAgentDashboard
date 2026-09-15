@@ -29,6 +29,8 @@ mạch không bao giờ mở.
 from __future__ import annotations
 
 import json
+from datetime import date as _date
+from datetime import timedelta as _timedelta
 
 import httpx
 
@@ -109,6 +111,10 @@ class NguonErpNext:
         api_secret: str | None = None,
         ma_kho: str | None = None,
         pricelist: str | None = None,
+        nhom_khach: str | None = None,
+        khu_vuc_khach: str | None = None,
+        ngay_giao_sau: int | None = None,
+        submit_don: bool | None = None,
         client: httpx.AsyncClient | None = None,
         # Hạn NGOÀI CÙNG của thư viện HTTP, không phải hạn của đường chat.
         #
@@ -133,6 +139,26 @@ class NguonErpNext:
         self._ma_kho = ma_kho if ma_kho is not None else settings.erp_ma_kho
         self._pricelist = (
             pricelist if pricelist is not None else settings.erp_pricelist
+        )
+        # Để trống là TỰ DÒ từ ERP. Điền vào .env khi muốn đơn rơi đúng nhóm
+        # của cửa hàng thay vì nhóm đầu tiên ERP trả về.
+        self._nhom_khach = (
+            nhom_khach if nhom_khach is not None
+            else settings.erp_nhom_khach
+        )
+        self._khu_vuc_khach = (
+            khu_vuc_khach if khu_vuc_khach is not None
+            else settings.erp_khu_vuc_khach
+        )
+        self._dem_nhom: dict[str, str] = {}
+        # Số ngày cộng vào hôm nay để ra ngày giao hẹn trên Sales Order.
+        self._ngay_giao_sau = int(
+            ngay_giao_sau if ngay_giao_sau is not None
+            else settings.erp_ngay_giao_sau
+        )
+        self._submit_don = bool(
+            submit_don if submit_don is not None
+            else settings.erp_submit_don
         )
 
         # Nổ lúc DỰNG, không đợi tới lời gọi đầu tiên.
@@ -330,6 +356,47 @@ class NguonErpNext:
         # 4xx là ERP hiểu và TỪ CHỐI. Đây là câu trả lời, không phải sự cố.
         raise TuChoiERP(_thong_diep_loi(res))
 
+    async def _nhom_la(self, doctype: str, da_dat: str, bien_env: str) -> str:
+        """
+        Tên một nhóm LÁ của `doctype` — nhóm cha thì ERPNext từ chối.
+
+        LỖI THẬT, ĐO ĐƯỢC 15.09.2026. Bản trước gõ cứng "All Customer
+        Groups" và "All Territories". Cả hai là nhóm CHA trong mọi bản cài
+        mặc định, nên ERPNext trả thẳng:
+
+            Cannot select a Group type Customer Group.
+
+        Nghĩa là bật `ERP_GHI_DON=true` thì MỌI đơn bị từ chối ngay ở bước
+        tạo khách. Lỗi nằm im từ ngày viết vì cờ ghi đơn mặc định tắt, và
+        adapter giả trong test nhận mọi giá trị — kể cả giá trị ERPNext sẽ
+        từ chối.
+
+        KHÔNG gõ cứng một tên khác ("Individual") để chữa: tên ấy đúng trên
+        bản cài này, và cửa hàng sau có thể đã xoá hoặc đổi tên nó. Hỏi ERP
+        thì chạy được trên mọi bản cài.
+
+        Lọc `is_group = 0` NGAY TRONG truy vấn: bản cài có 40 nhóm thì kéo
+        cả 40 về rồi bỏ 39 là phí một vòng mạng mỗi lần.
+
+        Nhớ lại sau lần hỏi đầu: mỗi đơn thường là một khách mới, và hỏi
+        lại là hai vòng mạng thừa cho từng đơn.
+        """
+        if da_dat:
+            return da_dat
+        dem = self._dem_nhom.get(doctype)
+        if dem:
+            return dem
+        ds = await self._lay(doctype, [["is_group", "=", 0]], ["name"])
+        if not ds:
+            raise LoiERP(
+                f"ERPNext không có {doctype} nào dùng được (mọi mục đều là "
+                f"nhóm cha). Tạo một {doctype} không phải nhóm trong ERPNext, "
+                f"hoặc đặt {bien_env} trong .env trỏ vào đúng nhóm muốn dùng."
+            )
+        ten = str(ds[0]["name"])
+        self._dem_nhom[doctype] = ten
+        return ten
+
     async def bao_dam_khach(self, ten: str, sdt: str, dia_chi: str) -> str:
         # Tra theo số điện thoại TRƯỚC. Tạo mới mỗi đơn thì một người thành
         # mười bản ghi, và báo cáo bán hàng bên ERP thành vô nghĩa.
@@ -342,8 +409,10 @@ class NguonErpNext:
             "customer_name": ten,
             "mobile_no": sdt,
             "customer_type": "Individual",
-            "customer_group": "All Customer Groups",
-            "territory": "All Territories",
+            "customer_group": await self._nhom_la(
+                "Customer Group", self._nhom_khach, "ERP_NHOM_KHACH"),
+            "territory": await self._nhom_la(
+                "Territory", self._khu_vuc_khach, "ERP_KHU_VUC_KHACH"),
             "primary_address": dia_chi,
         })
         return str(moi.get("name") or "")
@@ -365,6 +434,16 @@ class NguonErpNext:
                 "po_no": khoa,
                 "set_warehouse": self._ma_kho,
                 "selling_price_list": self._pricelist,
+                # BẮT BUỘC với Sales Order — thiếu nó ERPNext từ chối MỌI
+                # đơn ("Please enter Delivery Date"). Đo được 15.09.2026.
+                #
+                # Cộng thêm ngày chứ không đặt đúng hôm nay: đặt hôm nay là
+                # hứa giao trong ngày với cả đơn nhận lúc 23h, và ERPNext
+                # dùng ngày này để tính đơn trễ — mọi đơn sẽ đỏ trong báo
+                # cáo của cửa hàng ngay từ hôm sau.
+                "delivery_date": (
+                    _date.today() + _timedelta(days=self._ngay_giao_sau)
+                ).isoformat(),
                 "items": [
                     {"item_code": d.ma, "qty": d.so_luong, "rate": d.don_gia}
                     for d in dong
@@ -373,7 +452,35 @@ class NguonErpNext:
             })
         except TuChoiERP as exc:
             return KetQuaDon(thanh_cong=False, ly_do=str(exc))
-        return KetQuaDon(thanh_cong=True, erp_ma_don=str(kq.get("name") or ""))
+
+        ten_don = str(kq.get("name") or "")
+        # ERPNext CHỈ giữ chỗ hàng khi Sales Order được submit. Đơn tạo qua
+        # API luôn là Draft, và Frappe BỎ QUA `docstatus` gửi kèm lúc tạo —
+        # bản đầu đặt nó trong payload, đơn vẫn Draft, `reserved_qty` vẫn 0,
+        # mà kết cục trả về là "xong". Submit phải là lời gọi RIÊNG.
+        #
+        # Mặc định tắt vì submit là chứng từ chính thức: vào sổ, không sửa
+        # được nữa, chỉ huỷ được. Cùng khuôn ERP_GHI_DON.
+        if self._submit_don and ten_don:
+            try:
+                await self._submit("Sales Order", ten_don)
+            except TuChoiERP as exc:
+                # Đơn ĐÃ nằm trong ERP ở dạng nháp — nói rõ chứ đừng báo
+                # hỏng hẳn, nếu không người vận hành sẽ tạo lại và thành hai.
+                return KetQuaDon(
+                    thanh_cong=True, erp_ma_don=ten_don,
+                    ly_do=f"đơn đã tạo nhưng CHƯA submit ({exc}) — kho chưa giữ chỗ",
+                )
+        return KetQuaDon(thanh_cong=True, erp_ma_don=ten_don)
+
+    async def _submit(self, doctype: str, ten: str) -> None:
+        """Chuyển một chứng từ từ Draft sang chính thức."""
+        res = await self._client.put(
+            f"{self._goc}/api/resource/{doctype}/{ten}",
+            json={"docstatus": 1}, headers=self._headers,
+        )
+        if res.status_code >= 400:
+            raise TuChoiERP(_thong_diep_loi(res))
 
     async def trang_thai_giao(self, erp_ma_don: str) -> str | None:
         """Đơn này đã xuất kho chưa, tới đâu rồi.

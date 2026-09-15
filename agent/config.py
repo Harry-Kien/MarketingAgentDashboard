@@ -390,6 +390,15 @@ class Settings(BaseSettings):
     # vận hành, không phải hệ quả của việc cập nhật mã.
     # Tắt thì đơn vẫn lưu Postgres như trước — ERP chỉ là không biết.
     erp_ghi_don: bool = False
+    # Submit đơn sau khi tạo. ERPNext CHỈ giữ chỗ tồn kho khi Sales Order
+    # ở trạng thái chính thức; để nháp thì đơn nằm trong ERP mà kho không
+    # biết gì — xem agent/erp/erpnext.py::tao_don.
+    erp_submit_don: bool = False
+    # Ngày giao hẹn = hôm nay + số này. Bắt buộc với Sales Order.
+    erp_ngay_giao_sau: int = 3
+    # Để trống là TỰ DÒ một nhóm lá từ ERP. ERPNext từ chối nhóm cha.
+    erp_nhom_khach: str = ""
+    erp_khu_vuc_khach: str = ""
 
     # --- ERPNext (khi erp_loai = "erpnext") ---
     erpnext_url: str = ""

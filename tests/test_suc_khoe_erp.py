@@ -15,6 +15,8 @@ sách `muc` một cách tổng quát, nên thêm phép kiểm vào đó là nó 
 """
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from agent import suc_khoe
@@ -30,6 +32,23 @@ def _sach():
     nha_may.dat_lai()
     yield
     nha_may.dat_lai()
+
+
+@contextlib.contextmanager
+def _tat_ghi_don():
+    """
+    Tắt `erp_ghi_don` trong phạm vi một ca kiểm.
+
+    Không đọc giá trị của `.env`: máy đã bật ghi đơn thì ca kiểm nào khẳng
+    định "mặc định TẮT" cũng đỏ, dù mặc định trong mã vẫn đúng. Đặt điều
+    kiện mình cần rồi đo, thay vì hỏi môi trường xem nó đang thế nào.
+    """
+    cu = settings.erp_ghi_don
+    settings.erp_ghi_don = False
+    try:
+        yield
+    finally:
+        settings.erp_ghi_don = cu
 
 
 def _dat_cong(monkeypatch, hong: bool = False, mach_mo: bool = False):
@@ -103,6 +122,12 @@ def test_muc_erp_nam_trong_tong_kiem():
 def test_ghi_don_tat_thi_khong_canh_bao_don_ket():
     # Tính năng tắt thì không có đơn nào chờ đồng bộ. Cảnh báo lúc đó là
     # báo động giả, và báo động giả nhiều thì người ta tắt báo động.
-    m = chay(suc_khoe._kiem_don_ket_erp())
-    assert settings.erp_ghi_don is False
+    # TẮT CÔNG TẮC TRONG CA KIỂM, không đọc giá trị của `.env`.
+    #
+    # Bản trước khẳng định `settings.erp_ghi_don is False` rồi mới đo. Trên
+    # máy đã BẬT ghi đơn — đúng việc `san_sang` khuyến khích — ca này đỏ dù
+    # nó chẳng đo được gì về hành vi cần canh. Và khi đỏ, pytest in repr của
+    # cả `Settings` kèm `erpnext_api_secret` vào báo cáo.
+    with _tat_ghi_don():
+        m = chay(suc_khoe._kiem_don_ket_erp())
     assert m["trang_thai"] == suc_khoe.TOT

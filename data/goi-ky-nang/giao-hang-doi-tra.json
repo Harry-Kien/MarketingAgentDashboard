@@ -1,0 +1,113 @@
+{
+  "ten": "giao-hang-doi-tra",
+  "phien_ban": "1.0.0",
+  "mo_ta": "Phí ship, thời gian giao, đổi trả và hoàn tiền. SỐ TRONG BẢNG VÀ TÀI LIỆU LÀ SỐ MẪU — sửa theo biểu giá và chính sách thật của shop rồi hãy bật.",
+  "tu_khoa": [
+    "phí ship",
+    "phí giao hàng",
+    "ship về",
+    "bao lâu tới",
+    "mấy ngày nhận được",
+    "đổi trả",
+    "đổi hàng",
+    "trả hàng",
+    "hoàn tiền",
+    "giao hàng"
+  ],
+  "huong_dan": "Khi khách hỏi về phí giao hàng, thời gian nhận hàng, đổi hàng, trả hàng hay hoàn tiền, làm theo sáu bước sau. KHÔNG tự hứa miễn phí ship, KHÔNG tự duyệt hoàn tiền, KHÔNG tự hẹn ngày giao chắc chắn — cả ba đều là cam kết bằng tiền của cửa hàng, và khách nhớ rất lâu khi nó sai.\n\n1. Phí ship và thời gian giao: tra `tra_phi_giao_hang` theo đúng tỉnh hoặc thành phố khách nói, rồi nhắc lại nguyên con số của bảng. Khu vực không có trong bảng thì nói thẳng là cần báo lại rồi gọi `chuyen_nhan_vien` — không suy ra phí từ tỉnh bên cạnh. Mốc miễn phí ship nằm trong tài liệu chính sách, tra trước khi nói, đừng nhớ theo cảm tính.\n2. Điều kiện đổi trả, thời hạn, món nào không đổi được, hoàn tiền bao lâu: tra `chinh_sach_giao_hang_doi_tra` TRƯỚC khi trả lời và nêu tên tài liệu khi trích. Không có đoạn nào khớp thì nói chưa có thông tin và chuyển người, không đoán.\n3. Khách hỏi đơn của mình đang ở đâu: dùng `tra_cuu_don_hang` và `tra_cuu_van_chuyen`, không dùng bảng phí. Bảng phí là biểu giá chung cho mọi khách, không phải tình trạng một đơn cụ thể.\n4. Hàng nhận về bị vỡ, thiếu món, sai món, hoặc quá hẹn giao: xin mã đơn và ảnh chụp kiện hàng cùng sản phẩm, rồi gọi `chuyen_khieu_nai_giao_hang`. Quyết định đền bù, gửi bù hay thu hồi là việc của người trực, không phải việc của agent.\n5. Khách đòi hoàn tiền: ghi nhận yêu cầu, nói rõ các bước tiếp theo theo tài liệu, rồi chuyển người. Không xác nhận số tiền hoàn, không hẹn ngày tiền về tài khoản.\n6. Sản phẩm đã mở nắp hoặc đã dùng: trả lời đúng theo tài liệu chính sách, giọng nhẹ nhàng, không đổ lỗi cho khách. Nếu khách nói da có phản ứng sau khi dùng (ửng đỏ, rát, nổi mẩn, sưng) thì dừng phần đổi trả lại và chuyển người ngay — đó là chuyện sức khoẻ, không phải chuyện kho hàng.",
+  "cong_cu": [
+    {
+      "ten": "tra_phi_giao_hang",
+      "loai": "tra_bang",
+      "mo_ta": "Tra phí giao hàng và thời gian giao dự kiến theo tỉnh hoặc thành phố khách nói. Dùng khi khách hỏi ship bao nhiêu tiền, mấy ngày thì tới. KHÔNG dùng để tra tình trạng một đơn đã đặt — việc đó dùng tra_cuu_don_hang.",
+      "tham_so": [
+        {
+          "ten": "tinh_thanh",
+          "mo_ta": "Tỉnh hoặc thành phố khách muốn giao tới, ví dụ 'Đà Nẵng' hoặc 'Sài Gòn'.",
+          "bat_buoc": true
+        }
+      ],
+      "cau_hinh": {
+        "bang": {
+          "Hà Nội": "Phí 25.000đ nội thành, 30.000đ ngoại thành. Giao 1-2 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "TP Hồ Chí Minh | Sài Gòn": "Phí 25.000đ nội thành, 30.000đ huyện ngoại thành. Giao 1-2 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Đà Nẵng": "Phí 30.000đ. Giao 2-3 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Hải Phòng": "Phí 30.000đ. Giao 2-3 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Cần Thơ": "Phí 32.000đ. Giao 2-3 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Bình Dương": "Phí 30.000đ. Giao 2-3 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Đồng Nai": "Phí 30.000đ. Giao 2-3 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Nghệ An": "Phí 35.000đ. Giao 3-4 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Khánh Hòa | Nha Trang": "Phí 35.000đ. Giao 3-4 ngày làm việc kể từ khi shop xác nhận đơn.",
+          "Lâm Đồng | Đà Lạt": "Phí 35.000đ. Giao 3-4 ngày làm việc kể từ khi shop xác nhận đơn."
+        }
+      },
+      "cau_thu": [
+        {
+          "hoi": "ship về Đà Nẵng bao nhiêu tiền",
+          "mong_doi": "30.000"
+        },
+        {
+          "hoi": "em ở Sài Gòn thì mấy ngày nhận được ạ",
+          "mong_doi": "1-2 ngày"
+        },
+        {
+          "hoi": "giao ve nha trang het bao nhieu",
+          "mong_doi": "35.000"
+        },
+        {
+          "hoi": "shop ship về Hà Giang bao nhiêu ạ",
+          "mong_doi": ""
+        }
+      ]
+    },
+    {
+      "ten": "chinh_sach_giao_hang_doi_tra",
+      "loai": "tra_tai_lieu",
+      "mo_ta": "Tra chính sách giao hàng, đổi trả, hoàn tiền của cửa hàng để trả lời có căn cứ. Dùng khi khách hỏi điều kiện đổi trả, thời hạn, món nào không đổi được, mốc miễn phí ship, hoàn tiền bao lâu. Không đoán khi không có đoạn nào khớp.",
+      "tham_so": [
+        {
+          "ten": "cau_hoi",
+          "mo_ta": "Câu hỏi của khách về giao hàng, đổi trả hoặc hoàn tiền, giữ nguyên ý khách nói.",
+          "bat_buoc": true
+        }
+      ],
+      "cau_hinh": {
+        "nhom_tai_lieu": "giao-hang-doi-tra",
+        "k": 4
+      }
+    },
+    {
+      "ten": "chuyen_khieu_nai_giao_hang",
+      "loai": "chuyen_chuyen_biet",
+      "mo_ta": "Chuyển hội thoại cho người trực khi khách báo hàng vỡ, thiếu món, sai món, giao quá hẹn, hoặc đòi hoàn tiền. Gọi sau khi đã xin mã đơn và ảnh chụp kiện hàng nếu khách gửi được.",
+      "tham_so": [
+        {
+          "ten": "tom_tat",
+          "mo_ta": "Một câu tóm tắt sự việc kèm mã đơn nếu khách đã cho, ví dụ 'đơn DH1234 giao thiếu 1 hộp kem'.",
+          "bat_buoc": true
+        }
+      ],
+      "cau_hinh": {
+        "ly_do": "Khiếu nại giao hàng hoặc đòi hoàn tiền: cần người kiểm đơn, xem ảnh và quyết định đền bù."
+      }
+    }
+  ],
+  "tai_lieu": [
+    {
+      "tieu_de": "Chính sách giao hàng và phí ship",
+      "noi_dung": "Phạm vi giao hàng: toàn quốc, qua đơn vị vận chuyển đối tác.\n\nPhí giao hàng tính theo tỉnh hoặc thành phố nhận hàng, từ 25.000đ đến 35.000đ cho một kiện tiêu chuẩn dưới 1kg. Kiện nặng trên 1kg hoặc cồng kềnh có thể phát sinh thêm, nhân viên sẽ báo lại trước khi gửi.\n\nMiễn phí giao hàng cho đơn từ 500.000đ trở lên sau khi đã trừ khuyến mãi, áp dụng cho một địa chỉ nhận. Đơn tách làm nhiều địa chỉ thì mỗi địa chỉ tính phí riêng.\n\nThời gian giao dự kiến tính theo ngày làm việc, bắt đầu từ lúc shop xác nhận đơn chứ không phải lúc khách bấm đặt. Đơn đặt sau 16h, ngày chủ nhật hoặc ngày lễ được xác nhận vào ngày làm việc kế tiếp.\n\nThời gian giao là dự kiến của đơn vị vận chuyển, không phải cam kết. Mưa bão, cao điểm lễ Tết và sự cố kho bãi có thể làm chậm thêm vài ngày; khi đó cửa hàng chủ động báo cho khách.\n\nHình thức thanh toán: chuyển khoản trước hoặc thanh toán khi nhận hàng. Đơn thanh toán khi nhận hàng được kiểm tra bên ngoài kiện trước khi trả tiền; khách có quyền quay video lúc mở kiện và nên làm vậy với đơn có nhiều món.\n\nĐịa chỉ nhận hàng sai hoặc không liên lạc được sau ba lần gọi thì kiện hàng được chuyển hoàn về kho. Khách muốn gửi lại sẽ chịu phí giao hàng cho lần gửi thứ hai."
+    },
+    {
+      "tieu_de": "Chính sách đổi trả",
+      "noi_dung": "Thời hạn: 7 ngày kể từ ngày khách nhận hàng, tính theo mốc giao thành công trên hệ thống của đơn vị vận chuyển.\n\nĐiều kiện đổi trả: sản phẩm còn nguyên tem, nguyên seal, chưa bóc màng, chưa qua sử dụng; còn đủ hộp, phụ kiện và quà tặng kèm theo nếu có; có mã đơn hoặc hoá đơn.\n\nCác trường hợp cửa hàng đổi hoặc trả và chịu toàn bộ phí vận chuyển hai chiều: giao sai sản phẩm, giao thiếu món, sản phẩm vỡ hoặc móp hỏng khi tới tay khách, sản phẩm hết hạn hoặc quá cận hạn so với mô tả lúc bán.\n\nCác trường hợp khách đổi vì lý do cá nhân, ví dụ đổi ý về mùi hương hoặc chọn nhầm tông màu: cửa hàng hỗ trợ đổi sang sản phẩm khác cùng giá hoặc giá cao hơn và khách bù phần chênh, khách chịu phí vận chuyển chiều gửi trả.\n\nCác trường hợp không đổi trả: sản phẩm đã bóc seal hoặc đã sử dụng, trừ khi sản phẩm bị lỗi từ nhà sản xuất; hàng khuyến mãi hoặc quà tặng kèm; sản phẩm mua quá 7 ngày; sản phẩm hư hỏng do bảo quản sai như để trực tiếp dưới nắng, để trong xe nóng, đổ vỡ sau khi đã nhận.\n\nCách gửi trả: liên hệ cửa hàng trước để lấy hướng dẫn và địa chỉ nhận, đóng gói lại đúng như khi nhận, chèn giấy hoặc xốp quanh chai lọ thuỷ tinh, kèm mảnh giấy ghi mã đơn và số điện thoại. Hàng gửi trả mà không báo trước có thể bị từ chối tại kho.\n\nSản phẩm gây kích ứng da không nằm trong chính sách đổi trả thông thường: cửa hàng ghi nhận từng trường hợp riêng và chuyển cho nhân viên phụ trách xử lý, vì đây là vấn đề sức khoẻ chứ không phải vấn đề hàng hoá."
+    },
+    {
+      "tieu_de": "Hàng vỡ, thiếu món hoặc sai món khi nhận",
+      "noi_dung": "Khách cần làm gì: giữ nguyên kiện hàng và sản phẩm, chụp ảnh kiện hàng còn nguyên nhãn vận chuyển, ảnh sản phẩm bị lỗi và ảnh toàn bộ món có trong kiện. Video lúc mở kiện là bằng chứng mạnh nhất cho trường hợp thiếu món.\n\nThời hạn báo: trong 48 giờ kể từ khi nhận hàng. Báo muộn hơn vẫn được tiếp nhận nhưng khó đối chiếu với đơn vị vận chuyển, nên có thể mất thêm thời gian xác minh.\n\nCửa hàng xử lý thế nào: nhân viên đối chiếu ảnh với phiếu đóng gói và cân nặng kiện ghi nhận lúc gửi, rồi chọn một trong ba hướng — gửi bù món thiếu, đổi sản phẩm mới, hoặc hoàn tiền phần thiếu. Toàn bộ phí vận chuyển của lần xử lý này do cửa hàng chịu.\n\nThời gian phản hồi: trong 1-2 ngày làm việc kể từ khi nhận đủ ảnh. Trường hợp cần đơn vị vận chuyển xác minh thì lâu hơn, và nhân viên báo tiến độ cho khách.\n\nNhân viên là người quyết định phương án xử lý và mức đền bù, không phải hệ thống trả lời tự động."
+    },
+    {
+      "tieu_de": "Hoàn tiền: cách thức và thời gian",
+      "noi_dung": "Điều kiện hoàn tiền: đơn bị huỷ trước khi gửi đi, đơn giao sai hoặc thiếu mà khách không muốn đổi, sản phẩm lỗi nhà sản xuất mà cửa hàng hết hàng thay thế, hoặc đơn chuyển hoàn do lỗi của cửa hàng.\n\nHình thức: hoàn về đúng nguồn tiền đã thanh toán. Đơn chuyển khoản hoàn về tài khoản ngân hàng đứng tên khách; đơn thanh toán khi nhận hàng thì khách cung cấp số tài khoản để nhận lại.\n\nSố tiền hoàn: tiền hàng thực trả sau khuyến mãi. Phí giao hàng được hoàn khi lỗi thuộc về cửa hàng; không hoàn khi khách đổi ý hoặc từ chối nhận hàng mà kiện đã gửi đi.\n\nThời gian: 3-5 ngày làm việc kể từ khi cửa hàng duyệt yêu cầu và nhận đủ thông tin tài khoản. Ngân hàng có thể chậm thêm 1-2 ngày ngoài tầm kiểm soát của cửa hàng.\n\nMọi yêu cầu hoàn tiền đều do nhân viên duyệt. Số tiền và ngày tiền về chỉ được xác nhận sau khi nhân viên kiểm tra đơn."
+    }
+  ]
+}

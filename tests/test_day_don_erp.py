@@ -75,7 +75,18 @@ def _day(monkeypatch, nguon, bat: bool = True, **kw):
 def test_mac_dinh_TAT():
     # Bật lên là hành động có hậu quả không rút lại được — phải là quyết
     # định rõ ràng của người vận hành, không phải hệ quả của cập nhật mã.
-    assert settings.erp_ghi_don is False
+    #
+    # ĐỌC MẶC ĐỊNH ĐÃ KHAI, KHÔNG ĐỌC GIÁ TRỊ ĐANG CHẠY.
+    #
+    # `settings.erp_ghi_don` là giá trị sau khi `.env` đã đè lên. Máy nào bật
+    # tính năng này — đúng việc mà mục "Ghi đơn sang ERP" trong `san_sang`
+    # khuyến khích — là ca kiểm đỏ ngay, dù mặc định trong mã vẫn TẮT đúng
+    # như nó phải. Đỏ theo môi trường là đỏ người ta học cách bỏ qua.
+    #
+    # Thêm một lý do cụ thể: `assert settings.x is False` mà đỏ thì pytest in
+    # repr của CẢ `Settings` vào báo cáo — kèm `erpnext_api_key` và
+    # `erpnext_api_secret`. Bí mật không bao giờ được in ra màn hình.
+    assert type(settings).model_fields["erp_ghi_don"].default is False
 
 
 def test_tat_thi_khong_cham_vao_erp(monkeypatch):

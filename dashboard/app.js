@@ -3188,9 +3188,81 @@ function cvDong(v, nhanTT, nhanUT) {
           ? `<button type="button" class="btn btn--sm btn--ghost" data-cvxong="${esc(v.id)}">Xong</button>`
           : `<button type="button" class="btn btn--sm btn--ghost" data-cvmolai="${esc(v.id)}">Mở lại</button>`}
         <button type="button" class="btn btn--sm btn--ghost" data-cvnhan="${esc(v.id)}">Nhận</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-cvsua="${esc(v.id)}">Sửa</button>
       </span>
     </div>
   </div>`;
+}
+
+/* GIAO VIỆC, ĐỔI ƯU TIÊN, ĐỔI HẠN, HUỶ — bốn việc API đã làm được từ lâu
+ * mà màn hình không có đường nào gọi tới.
+ *
+ * Hệ quả đo được 15.09.2026: quyền `cong_viec.giao` nằm trong danh mục,
+ * cấp được cho vai trò, nhưng KHÔNG cách nào dùng — người trực chỉ tự nhận
+ * việc về mình được, không đẩy sang đồng nghiệp được. Trưởng ca muốn phân
+ * việc thì phải gọi điện bảo nhau, và màn Công việc thành một danh sách
+ * chỉ để đọc. Cùng lớp lỗi với `manager` kênh ở màn Nhân sự: quyền có,
+ * cửa không.
+ *
+ * Một nút "Sửa" mở một hộp cho cả bốn, thay vì bốn nút trên mỗi dòng —
+ * dòng việc đã có ba nút rồi, thêm bốn nữa là không ai tìm thấy gì.
+ */
+async function cvMoSua(id) {
+  const v = (congViec.ds || []).find((x) => x.id === id);
+  if (!v) return;
+  const giaoDuoc = state.toiQuyen.has("cong_viec.giao");
+
+  /* Danh sách người chỉ tải khi CÓ quyền giao và CÓ quyền đọc người dùng.
+     Thiếu quyền đọc mà vẫn gọi là một toast lỗi đỏ mỗi lần bấm Sửa. */
+  let nguoiChon = null;
+  if (giaoDuoc && state.toiQuyen.has("nguoi_dung.doc")) {
+    try {
+      const ds = (await api("/nguoi-dung")).nguoi_dung || [];
+      nguoiChon = [{ value: "", label: "— chưa giao cho ai —" }].concat(
+        ds.filter((n) => !n.khoa).map((n) => ({
+          value: n.id, label: n.ho_ten || n.ten_dang_nhap })));
+    } catch { nguoiChon = null; }
+  }
+
+  const truong = [
+    { name: "uu_tien", label: "Mức ưu tiên", type: "select",
+      value: v.uu_tien,
+      options: congViec.uuTien.map((u) => ({ value: u.ma, label: u.nhan })) },
+    { name: "han", label: "Hạn", type: "date",
+      hint: "để trống là bỏ hạn",
+      value: v.han ? String(v.han).slice(0, 10) : "" },
+    { name: "trang_thai", label: "Trạng thái", type: "select",
+      value: v.trang_thai,
+      options: congViec.trangThai.map((t) => ({ value: t.ma, label: t.nhan })) },
+  ];
+  if (nguoiChon) {
+    truong.splice(2, 0, { name: "nguoi_nhan", label: "Người phụ trách",
+                          type: "select", value: v.nguoi_nhan || "",
+                          options: nguoiChon });
+  }
+
+  const d = await hoiHop({
+    tieu_de: v.tieu_de,
+    phu: giaoDuoc ? "" : "Bạn không có quyền giao việc cho người khác — "
+                         + "đổi được ưu tiên, hạn và trạng thái.",
+    truong, nut: "Lưu",
+  });
+  if (!d) return;
+
+  const than = { uu_tien: d.uu_tien, trang_thai: d.trang_thai };
+  // Phân biệt "không gửi" với "gửi rỗng": máy chủ cần cờ riêng mới xoá được
+  // hạn và thu hồi được người nhận (xem SuaIn trong agent/api/cong_viec.py).
+  if (d.han) than.han = new Date(d.han + "T23:59:59").toISOString();
+  else than.xoa_han = true;
+  if (nguoiChon) {
+    if (d.nguoi_nhan) than.nguoi_nhan = d.nguoi_nhan;
+    else than.xoa_nguoi_nhan = true;
+  }
+  try {
+    await api(`/cong-viec/${id}`, { method: "PUT", body: JSON.stringify(than) });
+    toast("Đã lưu việc.");
+    await loadCongViec();
+  } catch (e) { toast(e.message, true); }
 }
 
 async function loadCongViec() {
@@ -3200,6 +3272,7 @@ async function loadCongViec() {
   const d = await api(`/cong-viec?${q}`);
   congViec.trangThai = d.trang_thai;
   congViec.uuTien = d.uu_tien;
+  congViec.ds = d.cong_viec;
   const nhanTT = Object.fromEntries(d.trang_thai.map((t) => [t.ma, t.nhan]));
   const nhanUT = Object.fromEntries(d.uu_tien.map((t) => [t.ma, t.nhan]));
 
@@ -3254,6 +3327,8 @@ $("#cv-them")?.addEventListener("click", async () => {
 });
 
 $("#cv-ds")?.addEventListener("click", async (e) => {
+  const sua = e.target.closest("[data-cvsua]");
+  if (sua) { await cvMoSua(sua.dataset.cvsua); return; }
   const xong = e.target.closest("[data-cvxong]");
   const molai = e.target.closest("[data-cvmolai]");
   const nhan = e.target.closest("[data-cvnhan]");

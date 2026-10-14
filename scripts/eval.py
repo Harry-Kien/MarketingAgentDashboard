@@ -256,6 +256,9 @@ async def main(loc: str | None = None, tat: frozenset[str] = frozenset(),
     try:
         for k in range(1, lap + 1):
             meta = dung_meta(tat, k, lap)
+            # None = đủ bộ. Bộ sinh tài liệu chỉ thống kê lần chạy đủ bộ —
+            # gộp lần chạy một nhóm 11 ca với lần chạy đủ bộ là khác đơn vị.
+            meta["nhom"] = loc
             nhan = f" — lần {k}/{lap}" if lap > 1 else ""
             nhan += f" — TẮT LƯỚI: {', '.join(sorted(tat))}" if tat else ""
             print(f"\n=== commit {meta['commit']}{nhan} ===")

@@ -37,14 +37,17 @@ CAN_DU_LIEU = pytest.mark.skipif(
 )
 
 
-def test_chi_lay_lan_chay_day_du_56_ca():
+def test_chi_lay_lan_chay_day_du():
     """
     `data/eval/` có cả lần chạy lọc một nhóm nhỏ. Gộp một lần chạy 11 ca
-    với một lần 56 ca là so quả táo với quả cam, và điểm trung bình tụt
-    xuống vì một lý do không liên quan gì tới chất lượng agent.
+    với một lần chạy đủ bộ là so quả táo với quả cam, và điểm trung bình
+    tụt xuống vì một lý do không liên quan gì tới chất lượng agent.
     """
     for _, d in stn._lan_chay_day_du():
-        assert len(d["ket_qua"]) == stn.TONG_CA_VANG
+        if d.get("meta"):
+            assert d["meta"].get("nhom") is None
+        else:
+            assert len(d["ket_qua"]) == stn.TONG_CA_CU
 
 
 def test_thieu_truong_thi_bo_qua_chu_khong_dien_khong():
@@ -56,7 +59,7 @@ def test_thieu_truong_thi_bo_qua_chu_khong_dien_khong():
     day = stn._lan_chay_day_du()
     if not day:
         return
-    gia = [*day, ("gia-lap", {"ket_qua": [None] * stn.TONG_CA_VANG, "dat": 55,
+    gia = [*day, ("gia-lap", {"ket_qua": [None] * stn.TONG_CA_CU, "dat": 55,
                               "bo_sot_chuyen_nguoi": 0, "chuyen_nguoi_thua": 0,
                               "dung_tu_cam": 0, "chi_phi_usd": 0.07})]
     bang = stn._bang_mot_luot(gia)
@@ -65,14 +68,65 @@ def test_thieu_truong_thi_bo_qua_chu_khong_dien_khong():
 
 
 @CAN_DU_LIEU
-def test_bao_ca_dai_khong_bao_moi_lan_tot_nhat():
+def test_tach_lich_su_khoi_so_do_lap_lai():
     """
-    Doanh nghiệp dùng thật gặp mức SÀN, không gặp kỷ lục. Một tài liệu chỉ
-    ghi kỷ lục sẽ làm người đọc thất vọng đúng vào ngày họ đo lại.
+    Lần chạy không có `meta` là các PHIÊN BẢN khác nhau, không phải các lần
+    lặp. Báo chúng như số đo là đúng lỗi phản biện bắt được ở đợt rà
+    14.10.2026: trung vị của bốn hệ thống khác nhau gọi là một con số.
     """
     md = stn.dung()
-    assert "mức sàn" in md
-    assert "trung vị" in md
+    assert "Wilson" in md
+    assert "không dùng để kết luận" in md
+    assert "mức sàn" not in md
+
+
+def test_wilson_dung_so_sach():
+    lo, hi = stn.wilson(0, 56)
+    assert lo == 0.0 and 0.06 < hi < 0.07          # 0/56 → cận trên ≈ 6,4%
+    lo, hi = stn.wilson(28, 56)
+    assert 0.37 < lo < 0.38 and 0.62 < hi < 0.63
+    assert stn.wilson(0, 0) == (0.0, 0.0)
+
+
+def test_nhom_lan_chay_theo_cau_hinh():
+    a = {"meta": {"commit": "x", "luoi_tat": []}}
+    b = {"meta": {"commit": "x", "luoi_tat": ["injection"]}}
+    c = {}                                          # lần chạy cũ, chưa có meta
+    g = stn.nhom_theo_cau_hinh([("a", a), ("b", b), ("c", c)])
+    assert set(g) == {("x", ()), ("x", ("injection",)), ("?", ())}
+
+
+def test_ma_sua_do_khong_thanh_so_do_chinh_thuc():
+    """Commit không mô tả đúng mã đã chạy khi agent/ có sửa chưa commit."""
+    def lan(commit, sua):
+        return {"meta": {"commit": commit, "luoi_tat": [], "ban_sua_do": sua},
+                "ket_qua": []}
+    g = stn.nhom_theo_cau_hinh([("1", lan("a", True)), ("2", lan("a", True)),
+                                ("3", lan("b", False))])
+    assert stn._commit_chinh(g) == "b"
+
+
+def test_bang_bo_sot_doc_tu_file_khong_go_tay():
+    src = (ROOT / "scripts" / "sinh_thuc_nghiem.py").read_text(encoding="utf-8")
+    assert "TUAN_THU_14" not in src and "G38" not in src
+    gia = [("lan-1", {"ket_qua": [
+        {"id": "CA_A", "hoi": "hỏi | có gạch", "tra_loi": "đáp\nxuống dòng",
+         "chuyen_nguoi": True, "chuyen_nguoi_thuc": False},
+        {"id": "CA_B", "hoi": "x", "tra_loi": "y",
+         "chuyen_nguoi": True, "chuyen_nguoi_thuc": True},
+    ]})]
+    bang = stn._bang_bo_sot(gia)
+    assert "`CA_A`" in bang and "CA_B" not in bang
+    assert "\n" not in bang.split("`CA_A`")[1].split("|")[2], "xuống dòng phá bảng"
+
+
+def test_so_ca_va_kich_ban_dem_tu_file():
+    """Bộ vàng hiện có 54 ca; tài liệu từng ghi "56" ở chín chỗ."""
+    src = (ROOT / "scripts" / "sinh_thuc_nghiem.py").read_text(encoding="utf-8")
+    assert "Bộ 56" not in src and "12 kịch bản" not in src and "dưới 2 giây" not in src
+    assert stn._so_ca_bo_vang() > 0
+    so_kb, so_luot = stn._dem_kich_ban()
+    assert so_kb > 0 and so_luot >= so_kb
 
 
 def test_noi_ro_gioi_han_cua_phep_do():

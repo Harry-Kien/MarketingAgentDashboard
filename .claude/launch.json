@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dashboard",
+      "name": "xem-truoc",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "agent.main:app", "--port", "8000"],
-      "port": 8000
+      "runtimeArgs": ["-m", "scripts.xem_truoc"],
+      "port": 8010
     }
   ]
 }

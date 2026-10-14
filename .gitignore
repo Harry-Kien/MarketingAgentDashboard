@@ -128,3 +128,6 @@ app.err.log
 # Worktree của các phiên làm việc song song — bản sao TOÀN BỘ mã.
 # Một lần `git add .` là cả cây lên GitHub.
 .claude/worktrees/
+
+# Đường dẫn mã cho bản xem trước (scripts/xem_truoc.py) — riêng từng máy.
+.claude/xem_truoc_thu_muc

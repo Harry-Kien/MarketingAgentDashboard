@@ -334,6 +334,7 @@ def app_that(csdl_kiem_thu, monkeypatch):
 async def _quan_tri(ten: str) -> tuple[UUID, str]:
     """Người thật + vai trò Quản trị + phiên. Trả (id, token)."""
     from agent import db
+    from agent.core import xac_thuc
 
     nd = await db.fetchrow(
         "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam, ho_ten, vai_tro) "
@@ -344,7 +345,8 @@ async def _quan_tri(ten: str) -> tuple[UUID, str]:
     token = secrets.token_urlsafe(32)
     await db.execute(
         "INSERT INTO phien (token, nguoi_dung_id, het_han) "
-        "VALUES ($1, $2, now() + interval '1 hour')", token, nd["id"])
+        "VALUES ($1, $2, now() + interval '1 hour')",
+        xac_thuc.bam_token(token), nd["id"])
     return nd["id"], token
 
 

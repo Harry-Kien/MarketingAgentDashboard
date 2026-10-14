@@ -308,13 +308,29 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
     token = secrets.token_urlsafe(32)
     await db.execute(
         "INSERT INTO phien (token, nguoi_dung_id, het_han) VALUES ($1,$2,$3)",
-        token, nd["id"], datetime.now(timezone.utc) + timedelta(days=PHIEN_NGAY),
+        bam_token(token), nd["id"],
+        datetime.now(timezone.utc) + timedelta(days=PHIEN_NGAY),
     )
     await db.execute(
         "UPDATE nguoi_dung SET dang_nhap_cuoi = now() WHERE id = $1", nd["id"]
     )
     await db.log_event("auth.dang_nhap", actor=ten_dang_nhap)
     return token
+
+
+def bam_token(token: str) -> str:
+    """
+    Bản băm của token phiên — thứ DUY NHẤT bảng `phien` được giữ.
+
+    Lưu nguyên văn thì ai cầm bản sao lưu CSDL là dán token vào cookie và
+    vào thẳng dashboard. SHA-256 là đủ, không cần scrypt như mật khẩu:
+    token là 32 byte ngẫu nhiên, không có gì để dò bằng từ điển.
+
+    Đổi từ lưu nguyên văn sang băm KHÔNG cần migration: dòng cũ không còn
+    khớp bản băm của chính nó, người đang đăng nhập phải vào lại một lần,
+    và `don_phien_het_han` dọn dần. Xem tests/test_phien_luu_bam.py.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 async def doc_phien(token: str) -> dict | None:
@@ -345,7 +361,7 @@ async def doc_phien(token: str) -> dict | None:
         "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = ndvt.vai_tro_id "
         "WHERE p.token = $1 AND p.het_han > now() "
         "GROUP BY n.id",
-        token,
+        bam_token(token),
     )
     if r is None or r["khoa"]:
         return None
@@ -367,7 +383,7 @@ async def doc_phien(token: str) -> dict | None:
 
 async def dang_xuat(token: str) -> None:
     if token:
-        await db.execute("DELETE FROM phien WHERE token = $1", token)
+        await db.execute("DELETE FROM phien WHERE token = $1", bam_token(token))
 
 
 async def don_phien_het_han() -> int:

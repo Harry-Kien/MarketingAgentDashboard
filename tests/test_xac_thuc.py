@@ -241,9 +241,18 @@ def test_cookie_httponly_va_samesite():
 
 
 def test_cookie_secure_theo_cau_hinh():
-    """Bật cứng thì đăng nhập trên http://localhost hỏng; phải cấu hình được."""
-    src = inspect.getsource(routes.dang_nhap)
-    assert "settings.cookie_bao_mat" in src
+    """
+    Bật cứng thì đăng nhập trên http://localhost hỏng; phải cấu hình được —
+    nhưng https thì luôn Secure. Kiểm HÀNH VI của cấu hình, không soi chữ:
+    bản cũ soi tên biến trong mã nên đổi tên là đỏ, sai logic vẫn xanh.
+    """
+    from agent.config import Settings
+
+    assert Settings(public_base_url="http://localhost:8000").cookie_can_secure is False
+    assert Settings(public_base_url="http://localhost:8000",
+                    cookie_bao_mat=True).cookie_can_secure is True
+    assert Settings(public_base_url="https://shop.vn").cookie_can_secure is True
+    assert "settings.cookie_can_secure" in inspect.getsource(routes.dang_nhap)
 
 
 def test_doi_mat_khau_da_moi_phien_dang_mo():

@@ -53,6 +53,8 @@ async def _dung_va_chay(url: str, kich_ban):
 
 async def _tao_nguoi_va_phien(pool, ten: str, vai_tro: str) -> str:
     """Trả token phiên của người vừa tạo."""
+    from agent.core import xac_thuc
+
     async with pool.acquire() as conn:
         nd = await conn.fetchval(
             "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam, ho_ten, vai_tro) "
@@ -70,7 +72,7 @@ async def _tao_nguoi_va_phien(pool, ten: str, vai_tro: str) -> str:
         await conn.execute(
             "INSERT INTO phien (token, nguoi_dung_id, het_han) "
             "VALUES ($1, $2, now() + interval '1 day')",
-            token, nd,
+            xac_thuc.bam_token(token), nd,
         )
         return token
 
@@ -126,7 +128,8 @@ def test_nguoi_khong_vai_tro_nao_van_doc_duoc_phien(csdl_kiem_thu):
                 "VALUES ('kt_treo', 'x', 'Treo') RETURNING id")
             await conn.execute(
                 "INSERT INTO phien (token, nguoi_dung_id, het_han) "
-                "VALUES ('token-treo', $1, now() + interval '1 day')", nd)
+                "VALUES ($1, $2, now() + interval '1 day')",
+                xac_thuc.bam_token("token-treo"), nd)
         return await xac_thuc.doc_phien("token-treo")
 
     nguoi = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))

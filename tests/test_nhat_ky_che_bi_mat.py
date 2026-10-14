@@ -54,13 +54,13 @@ def test_che_dung_ca_URL_that_da_ro_ri():
     """URL nguyên văn lấy từ log đã rò. Cả HAI bí mật phải biến mất."""
     goc = (
         "HTTP Request: GET https://graph.facebook.com/v23.0/debug_token"
-        "?input_token=EAAR0uVcY6DCb9LIDHaZCgvTA9sSP4ZCkZCwCM6uz9F8j"
-        "&access_token=1254239285864497%7Ce4e86a2904de0af40d8b57ca51445a4d"
+        "?input_token=EAAGiaLapTokenTrangKhachDeKiemCheMat0001"
+        "&access_token=1111111111111111%7C0000aaaa1111bbbb2222cccc3333dddd"
         ' "HTTP/1.1 200 OK"'
     )
     ra = che(goc)
-    assert "EAAR0uVcY6DCb9LIDHaZCgvTA9sSP4ZCkZCwCM6uz9F8j" not in ra
-    assert "e4e86a2904de0af40d8b57ca51445a4d" not in ra
+    assert "EAAGiaLapTokenTrangKhachDeKiemCheMat0001" not in ra
+    assert "0000aaaa1111bbbb2222cccc3333dddd" not in ra
     # Vẫn phải đọc được là gọi đi đâu — che mà mất luôn khả năng gỡ lỗi thì
     # người ta sẽ tắt bộ lọc.
     assert "graph.facebook.com" in ra

@@ -124,3 +124,7 @@ app.log
 # request. Đó đúng là đường mà token Meta từng rò ra (xem bảng "hỏng im
 # lặng" trong CLAUDE.md). Tệp này đã có trên máy dev và suýt vào commit.
 app.err.log
+
+# Worktree của các phiên làm việc song song — bản sao TOÀN BỘ mã.
+# Một lần `git add .` là cả cây lên GitHub.
+.claude/worktrees/

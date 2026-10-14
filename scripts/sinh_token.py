@@ -63,7 +63,17 @@ CHO_PHEP = {
     # Đoán được nó là đánh dấu được đơn "hoàn về" — và hoàn về thì hệ thống
     # tự cộng hàng lại vào kho.
     "SHIPPING_WEBHOOK_SECRET": "bí mật trong URL webhook hãng vận chuyển",
+    # Bốn bí mật của Langfuse (profile "trace") — từng gõ cứng trong
+    # docker-compose.yml, tức công khai trên GitHub.
+    "LANGFUSE_DB_MAT_KHAU": "mật khẩu CSDL riêng của Langfuse",
+    "LANGFUSE_NEXTAUTH_SECRET": "khoá ký phiên đăng nhập Langfuse",
+    "LANGFUSE_SALT": "muối băm API key của Langfuse",
+    "LANGFUSE_ENCRYPTION_KEY": "khoá mã hoá dữ liệu Langfuse (256 bit, hex)",
 }
+
+# Langfuse đòi ENCRYPTION_KEY đúng 64 ký tự hex; urlsafe thì nó từ chối
+# khởi động với một thông báo khó hiểu.
+DANG_HEX = {"LANGFUSE_ENCRYPTION_KEY"}
 
 
 def dat(khoa: str, dai: int = 32) -> str:
@@ -74,7 +84,7 @@ def dat(khoa: str, dai: int = 32) -> str:
     if not ENV.exists():
         return "Chưa có file .env. Chạy: cp .env.example .env"
 
-    gia_tri = secrets.token_urlsafe(dai)
+    gia_tri = secrets.token_hex(dai) if khoa in DANG_HEX else secrets.token_urlsafe(dai)
 
     # Sao lưu trước khi sửa: .env chứa mọi khoá kết nối của hệ thống, và
     # một lần ghi hỏng là mất hết.

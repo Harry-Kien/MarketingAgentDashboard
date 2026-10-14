@@ -2415,8 +2415,9 @@ async def dang_nhap(body: DangNhapIn, response: Response) -> dict:
         samesite="lax",      # chặn gửi cookie kèm request từ trang khác
         max_age=xac_thuc.PHIEN_NGAY * 86400,
         # secure=True khi chạy sau HTTPS. Bật cứng ở đây thì đăng nhập trên
-        # http://localhost hỏng, nên để theo cấu hình.
-        secure=settings.cookie_bao_mat,
+        # http://localhost hỏng, nên suy từ địa chỉ công khai — xem
+        # `Settings.cookie_can_secure`.
+        secure=settings.cookie_can_secure,
     )
     nguoi = await xac_thuc.doc_phien(token)
     return {"ok": True, "nguoi": nguoi}
@@ -2425,7 +2426,10 @@ async def dang_nhap(body: DangNhapIn, response: Response) -> dict:
 @router.post("/dang-xuat")
 async def dang_xuat(request: Request, response: Response) -> dict:
     await xac_thuc.dang_xuat(request.cookies.get(TEN_COOKIE, ""))
-    response.delete_cookie(TEN_COOKIE)
+    # Cùng thuộc tính với lúc đặt: trình duyệt chỉ xoá cookie khớp đủ bộ
+    # path/secure/samesite, lệch một cờ là "đăng xuất" mà cookie vẫn còn.
+    response.delete_cookie(TEN_COOKIE, httponly=True, samesite="lax",
+                           secure=settings.cookie_can_secure)
     return {"ok": True}
 
 

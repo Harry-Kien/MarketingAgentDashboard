@@ -90,12 +90,12 @@ def test_che_token_trong_thong_diep_loi():
     """
     exc = RuntimeError(
         "HTTPError: GET https://graph.facebook.com/v23.0/debug_token"
-        "?input_token=EAAR0uVcY6DCb9LIDHaZCgvTA9sSP4ZCkZCw"
-        "&access_token=1254239285864497%7Ce4e86a2904de0af40d8b57ca51445a4d"
+        "?input_token=EAAGiaLapTokenTrangKhachDeKiem"
+        "&access_token=1111111111111111%7C0000aaaa1111bbbb2222cccc3333dddd"
     )
     ly_do = chi_tiet_loi(exc)["ly_do"]
-    assert "EAAR0uVcY6DCb9LIDHaZ" not in ly_do
-    assert "e4e86a2904de0af40d8b" not in ly_do
+    assert "EAAGiaLapTokenTrang" not in ly_do
+    assert "0000aaaa1111bbbb" not in ly_do
     assert CHE in ly_do
     # Vẫn phải đọc được là gọi đi đâu, nếu không thì che mất luôn giá trị
     # chẩn đoán và người ta sẽ gỡ bộ che.

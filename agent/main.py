@@ -97,7 +97,10 @@ def _chatwoot_signature_hop_le(
     """
     secret = settings.chatwoot_webhook_secret
     if not secret:
-        return True
+        # Hỏng-ĐÓNG tự thân. Chỗ gọi hiện tại đã kiểm secret trước, nhưng
+        # một hàm tên "hợp lệ" mà trả True cho webhook chưa xác minh là bẫy
+        # cho người gọi kế tiếp — họ sẽ tin cái tên.
+        return False
 
     timestamp = headers.get("x-chatwoot-timestamp", "")
     supplied = headers.get("x-chatwoot-signature", "")
@@ -751,7 +754,13 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
         khoa = settings.mcp_token
         if not khoa:
             return JSONResponse({"error": "MCP chưa bật"}, status_code=404)
-        cho_phep = request.headers.get("authorization", "") == f"Bearer {khoa}"
+        # compare_digest chứ không `==`: `==` dừng ở ký tự sai đầu tiên, nên
+        # đo thời gian phản hồi là đoán dần được token. Mọi webhook khác
+        # trong repo đã so kiểu này; đây là chỗ duy nhất còn sót.
+        cho_phep = secrets.compare_digest(
+            request.headers.get("authorization", "").encode(),
+            f"Bearer {khoa}".encode(),
+        )
         if not cho_phep:
             cho_phep = await xac_thuc.doc_phien(
                 request.cookies.get(TEN_COOKIE, "")) is not None

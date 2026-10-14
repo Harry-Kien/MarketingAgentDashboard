@@ -298,6 +298,21 @@ class Settings(BaseSettings):
     canh_gac_goi_tin: str = ""
 
     cookie_bao_mat: bool = False
+
+    @property
+    def cookie_can_secure(self) -> bool:
+        """
+        Cookie phiên có cần cờ Secure không.
+
+        Địa chỉ công khai là https thì CÓ, bất kể `cookie_bao_mat`. Đo được
+        14.10.2026: `.env` đang chạy để PUBLIC_BASE_URL=https://… (tunnel)
+        cùng COOKIE_BAO_MAT=false — bật tunnel xong không ai biết còn một cờ
+        thứ hai phải đổi theo, và cookie phiên đi được qua HTTP trần.
+
+        Cờ vẫn giữ để BẬT tay khi đứng sau reverse proxy mà URL nội bộ là
+        http. Không bao giờ dùng để TẮT khi đã https.
+        """
+        return self.cookie_bao_mat or self.public_base_url.lower().startswith("https://")
     # Nhịp hỏi CSDL của luồng realtime (SSE) trên dashboard.
     #
     # Đây là TOÀN BỘ độ trễ người trực cảm nhận: tin khách đã nằm trong CSDL

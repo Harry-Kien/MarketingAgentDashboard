@@ -138,7 +138,7 @@ services:
     image: postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685   # postgres:16-alpine
     environment:
       POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_MAT_KHAU:-}
       POSTGRES_DB: langfuse
     volumes:
       - langfuse_data:/var/lib/postgresql/data
@@ -160,11 +160,16 @@ services:
       # nội dung hội thoại đã gửi cho model — đó là dữ liệu khách hàng.
       - "127.0.0.1:3001:3000"
     environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@langfuse_db:5432/langfuse
+      # Bí mật lấy từ .env, KHÔNG gõ ở đây: file này công khai trên GitHub.
+      # Bản trước gõ cứng cả ba — ai đọc repo cũng giải mã được dữ liệu
+      # Langfuse, mà Langfuse giữ toàn bộ hội thoại đã gửi cho model.
+      # Thiếu biến thì Langfuse KHÔNG khởi động (nổ to), không chạy với
+      # bí mật rỗng. Sinh bằng: python -m scripts.sinh_token LANGFUSE_SALT
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_MAT_KHAU:-}@langfuse_db:5432/langfuse
       NEXTAUTH_URL: http://localhost:3001
-      NEXTAUTH_SECRET: YXWsMcSlaniTuwCEnqoUlyNyQUlh3XayCx-VhxvqTT0
-      SALT: 4dd3919d16f40dd8d32bf6c3cbcf245c
-      ENCRYPTION_KEY: c73e91a32127089b4fcd92652fd7d3a1e8563c995515c45862cd8219a473efa3
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-}
+      SALT: ${LANGFUSE_SALT:-}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-}
       TELEMETRY_ENABLED: "false"
 
 volumes:

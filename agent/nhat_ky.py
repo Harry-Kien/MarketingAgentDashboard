@@ -7,8 +7,8 @@ LỖI THẬT ĐÃ GẶP (03.09.2026)
 Bộ kiểm sức khoẻ token Meta gọi:
 
     GET https://graph.facebook.com/v23.0/debug_token
-        ?input_token=EAAR0uVcY6D…        ← token trang của khách
-        &access_token=1254239285864497|… ← token ứng dụng
+        ?input_token=EAAxxxxxxxx…        ← token trang của khách
+        &access_token=<app_id>|…         ← token ứng dụng
 
 Cả hai đi thẳng vào log. Mỗi lần canh gác chạy là một lần nữa. Không lỗi,
 không cảnh báo — đúng kiểu hỏng im lặng repo này ghét nhất, và lần này thứ

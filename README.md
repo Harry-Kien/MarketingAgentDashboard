@@ -148,9 +148,10 @@ npm test
 npm audit --audit-level=high
 ```
 
-Snapshot local gần nhất: 732 test pass, 3 test PostgreSQL integration bị skip do
-Docker daemon không khả dụng trong phiên kiểm tra. Con số test xanh không thay
-thế cho sandbox provider hoặc nghiệm thu production.
+Bật Postgres (`docker compose up -d db`) trước khi chạy `pytest`; thiếu nó
+thì hơn một trăm test canh quyền và phiên bị bỏ qua, và cuối lượt có khối
+cảnh báo đỏ. Không ghi số test ở đây — con số gõ tay là con số sẽ cũ. Test
+xanh không thay thế cho sandbox provider hoặc nghiệm thu production.
 
 ## Gate trước production
 

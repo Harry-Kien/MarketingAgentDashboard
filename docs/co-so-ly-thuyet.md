@@ -91,7 +91,7 @@ duyệt đổi trả. Không phải vì huỷ khó làm
 lòng, và đó là lúc còn cứu được đơn. Việc agent làm trọn ở đây là *bắt lấy
 yêu cầu và đặt nó vào chỗ người sẽ nhìn thấy*, không phải tự quyết.
 
-`tim_kien_thuc` khác tám công cụ kia ở chỗ nó trả về **tài liệu**, không
+`tim_kien_thuc` khác mọi công cụ khác ở chỗ nó trả về **tài liệu**, không
 phải dữ liệu hệ thống — xem mục 1 về vì sao điều đó buộc phải tách khỏi
 phép tính độ tin cậy.
 
@@ -179,10 +179,16 @@ gộp được: ② soi đầu vào, ④ soi câu hỏi, ⑤ và ⑥ soi đầu 
 > Người tin bảng cũ sẽ đi bảo trì `_stalls` như một lưới an toàn, và không
 > biết lưới ⑥ tồn tại.
 
-**Bằng chứng thực nghiệm.** 13 lần chạy bộ 56 câu vàng ghi nhận **2 lần bỏ
-sót chuyển người**. Kiểm lại trên mã hiện tại: cả hai nay đều bị chặn tất
-định, và bằng **hai cơ chế khác nhau** — không lớp nào bắt được cả hai. Chi
-tiết ở [thuc-nghiem.md](thuc-nghiem.md) mục 2.3.
+**Bằng chứng thực nghiệm.** Các lần bỏ sót chuyển người quan sát được
+trong giai đoạn phát triển rơi vào hai **kiểu** khác nhau, mỗi kiểu nay bị
+chặn tất định bởi một cơ chế riêng — không cơ chế nào bắt được kiểu của cơ
+chế kia ([thuc-nghiem.md](thuc-nghiem.md) mục 2.3 và 2.5; số lần chạy và
+tỉ lệ đều sinh từ dữ liệu, không gõ ở đây).
+
+Đó mới là lập luận. Phép **đo** trực tiếp là thí nghiệm tắt từng lớp
+(ablation) ở mục 2.4 của cùng tài liệu: chạy lại bộ câu vàng với từng lớp
+bị tắt, trên cùng commit, rồi so tỉ lệ bỏ sót kèm khoảng tin cậy Wilson
+[10].
 
 Đây là lý do có sáu lớp chứ không phải một.
 
@@ -276,22 +282,45 @@ không phải một dòng chú thích ở cuối tệp.
 
 ## Tài liệu tham khảo
 
-1. Lewis, P. và cộng sự (2020). *Retrieval-Augmented Generation for
-   Knowledge-Intensive NLP Tasks.* NeurIPS 33.
-2. Reimers, N., Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings
-   using Siamese BERT-Networks.* EMNLP.
-3. Schick, T. và cộng sự (2023). *Toolformer: Language Models Can Teach
-   Themselves to Use Tools.* NeurIPS 36.
-4. Mikolov, T. và cộng sự (2013). *Efficient Estimation of Word
-   Representations in Vector Space.* ICLR Workshop.
-5. OWASP (2025). *Top 10 for Large Language Model Applications.*
-6. Free Software Foundation (2007). *GNU Affero General Public License v3.*
-7. Chính phủ Việt Nam (2023). *Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu
-   cá nhân.*
-8. Quốc hội Việt Nam (2015). *Luật Kế toán số 88/2015/QH13*, Điều 41.
-9. Quốc hội Việt Nam (2012). *Luật Quảng cáo số 16/2012/QH13.*
+Định dạng IEEE. Mỗi mục có DOI, mã arXiv hoặc URL để tra lại.
 
-> **Lưu ý khi nộp:** danh mục trên ghi đúng công trình mà các kỹ thuật
-> trong hệ thống dựa vào, nhưng **bạn phải tự kiểm tra lại thông tin xuất
-> bản** (năm, hội nghị, số trang) theo đúng chuẩn trích dẫn trường yêu cầu
-> trước khi nộp. Đừng trích dẫn thứ mình chưa mở ra đọc.
+[1] P. Lewis *et al.*, "Retrieval-Augmented Generation for
+    Knowledge-Intensive NLP Tasks," in *Advances in Neural Information
+    Processing Systems 33 (NeurIPS 2020)*, 2020, pp. 9459–9474.
+    arXiv:2005.11401.
+
+[2] N. Reimers and I. Gurevych, "Sentence-BERT: Sentence Embeddings using
+    Siamese BERT-Networks," in *Proc. EMNLP-IJCNLP 2019*, 2019,
+    pp. 3982–3992. doi:10.18653/v1/D19-1410.
+
+[3] T. Schick *et al.*, "Toolformer: Language Models Can Teach Themselves
+    to Use Tools," in *Advances in Neural Information Processing Systems 36
+    (NeurIPS 2023)*, 2023. arXiv:2302.04761.
+
+[4] T. Mikolov, K. Chen, G. Corrado and J. Dean, "Efficient Estimation of
+    Word Representations in Vector Space," in *ICLR 2013 Workshop Track*,
+    2013. arXiv:1301.3781.
+
+[5] OWASP Foundation, "OWASP Top 10 for LLM Applications 2025," 2024.
+    https://genai.owasp.org/llm-top-10/
+
+[6] Free Software Foundation, "GNU Affero General Public License, Version
+    3," 19-Nov-2007. https://www.gnu.org/licenses/agpl-3.0.html
+
+[7] Chính phủ Việt Nam, *Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá
+    nhân*, 17-4-2023. Tra theo số hiệu tại https://vbpl.vn
+    — được thay thế từ 01-01-2026 bởi [8].
+
+[8] Quốc hội Việt Nam, *Luật Bảo vệ dữ liệu cá nhân số 91/2025/QH15*, 2025,
+    hiệu lực 01-01-2026. Tra theo số hiệu tại https://vbpl.vn
+
+[9] Quốc hội Việt Nam, *Luật Kế toán số 88/2015/QH13*, 20-11-2015, Điều 41.
+    Tra theo số hiệu tại https://vbpl.vn
+
+[10] E. B. Wilson, "Probable Inference, the Law of Succession, and
+    Statistical Inference," *Journal of the American Statistical
+    Association*, vol. 22, no. 158, pp. 209–212, 1927.
+    doi:10.1080/01621459.1927.10502953.
+
+[11] Quốc hội Việt Nam, *Luật Quảng cáo số 16/2012/QH13*, 21-6-2012.
+    Tra theo số hiệu tại https://vbpl.vn

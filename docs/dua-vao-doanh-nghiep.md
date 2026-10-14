@@ -19,14 +19,14 @@ mới là thứ gây tai nạn.
 
 | | Bằng chứng |
 |---|---|
-| Chất lượng tư vấn | xem [`thuc-nghiem.md` mục 2](thuc-nghiem.md) — 13 lần chạy, 0 từ cấm ở mọi lần |
+| Chất lượng tư vấn | xem [`thuc-nghiem.md` mục 2](thuc-nghiem.md) — số lần chạy, tỉ lệ bỏ sót chuyển người và từ cấm kèm khoảng tin cậy, sinh từ dữ liệu |
 | Giọng văn | 0,05 dấu hiệu lộ bot mỗi câu · 95% câu sạch |
 | Độ phủ tri thức | 29/31 khớp tốt · 0 câu không có căn cứ |
 | Kiểm thử | `pytest -q` — chạy tự động mỗi push, có cả job trên bản clone sạch |
 | Bảo vệ truy cập | 17/17 endpoint chặn khi chưa đăng nhập |
 | Dữ liệu cá nhân | Nghị định 13/2023 — quyền biết, quyền xoá, thời hạn lưu |
 | Kho hàng | tồn kho sống, khoá hàng khi trừ, sổ biến động |
-| Đa kênh | Zalo (kéo) + Chatwoot (đẩy), cùng một agent |
+| Đa kênh | Zalo cá nhân, Zalo OA, Messenger, Instagram, WhatsApp, web chat — kết nối gốc, cùng một agent |
 | Sao lưu | `scripts/sao_luu.py` |
 | Giám sát | canh gác trong tiến trình + `scripts/canh_gac_ngoai.py`, báo qua webhook |
 | Chống dò mật khẩu | khoá tạm sau 8 lần sai trong 15 phút |

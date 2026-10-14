@@ -161,6 +161,9 @@ class Settings(BaseSettings):
     # bình luận của mình, người khác thì không). Mặc định TẮT: ẩn là hành
     # động công khai trên Trang của cửa hàng, phải do họ chọn.
     an_binh_luan_co_sdt: str = "tat"
+    # "bat" = hỏi khách chấm 1–5 sau khi hội thoại được giải quyết. Mặc định
+    # TẮT: thêm một tin vào hội thoại của khách là quyết định của cửa hàng.
+    csat_bat: str = "tat"
     vietqr_so_tk: str = ""
     vietqr_ten_tk: str = ""
     ghn_shop_id: str = ""

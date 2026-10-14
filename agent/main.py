@@ -54,6 +54,7 @@ from agent.api import tich_hop
 from agent.channels.base import InboundMessage
 from agent.channels import chatwoot, messenger
 from agent.channels import registry as channels
+from agent.omnichannel import giai_quyet
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent.core import agent as brain
@@ -1325,6 +1326,17 @@ async def handle_inbound(msg: InboundMessage) -> None:
     if (msg.meta or {}).get("loai") == "binh_luan":
         await _xu_ly_binh_luan(msg, cid)
         return
+
+    # Hội thoại ĐÃ GIẢI QUYẾT nhận tin mới: hoặc là điểm CSAT đang chờ (ghi
+    # điểm, đóng lại, agent đứng ngoài), hoặc là một lượt phục vụ mới (mở
+    # lại, trả cho agent). Xem agent/omnichannel/giai_quyet.py.
+    # Chỉ hội thoại đang ĐÓNG mới cần xét: không thêm truy vấn nào vào
+    # đường đi của tin thường.
+    if conv["status"] == "closed":
+        if await giai_quyet.ghi_diem_neu_la_csat(cid, msg.text or ""):
+            return
+        if await giai_quyet.mo_lai_neu_da_giai_quyet(cid):
+            conv["status"], conv["mode"] = "auto", "auto"
 
     # Agent có được trả lời hội thoại này không — ba nấc: công tắc toàn cục,
     # bật/tắt theo TÀI KHOẢN KÊNH, và người đã tiếp quản hội thoại.

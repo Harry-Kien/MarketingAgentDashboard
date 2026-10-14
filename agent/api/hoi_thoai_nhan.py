@@ -90,3 +90,23 @@ async def them_ghi_chu(conversation_id: UUID, body: GhiChuIn,
         "VALUES ($1,$2,$3) RETURNING id, tao_luc",
         conversation_id, body.noi_dung.strip(), UUID(str(nguoi["id"])))
     return {"id": str(r["id"]), "tao_luc": r["tao_luc"].isoformat()}
+
+
+@router.post("/conversations/{conversation_id}/giai-quyet")
+async def giai_quyet_hoi_thoai(
+    conversation_id: UUID,
+    nguoi: dict = Depends(can_quyen("hoi_thoai.nhan")),
+) -> dict[str, Any]:
+    """
+    Đánh dấu ĐÃ GIẢI QUYẾT: ghi `resolved_at` (SLA giải quyết đo được), kết
+    thúc lượt giao, và hỏi CSAT nếu bật. Khách nhắn tiếp thì tự mở lại.
+    Xem agent/omnichannel/giai_quyet.py.
+    """
+    from fastapi import HTTPException
+
+    from agent.omnichannel import giai_quyet
+
+    await chan_neu_ngoai_kenh(conversation_id, nguoi)
+    if await db.fetchrow("SELECT 1 FROM conversations WHERE id = $1", conversation_id) is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    return await giai_quyet.giai_quyet(conversation_id, UUID(str(nguoi["id"])))

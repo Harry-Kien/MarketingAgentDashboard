@@ -20,6 +20,9 @@ MỖI CON SỐ ĐO GÌ — VÀ VÌ SAO ĐO ĐÚNG THẾ
   hội thoại được giao. Là chỉ báo "chốt đơn", không phải quy công tuyệt đối:
   agent có thể đã tư vấn trước đó.
 - **Trễ SLA**: sự kiện `*_breached` trên hội thoại được giao.
+- **CSAT**: điểm 1–5 khách chấm sau khi giải quyết, quy cho người phụ trách
+  LÚC giải quyết (ghi cứng ở `csat.nguoi_xu_ly`). Kèm số phản hồi: trung
+  bình của 2 phiếu không nói được gì.
 
 Ngày tính theo giờ Việt Nam: "hôm nay" của chủ shop là 0h–24h giờ VN, không
 phải giờ UTC (lệch 7 tiếng, cắt đôi ca tối).
@@ -76,6 +79,13 @@ don AS (
      AND o.created_at >= g.started_at AND o.trang_thai <> 'da_huy'
     GROUP BY 1
 ),
+diem AS (
+    SELECT c.nguoi_xu_ly AS uid, avg(c.diem) AS tb, count(*) AS so
+    FROM csat c, khoang
+    WHERE c.diem IS NOT NULL
+      AND c.tra_loi_luc >= khoang.tu AND c.tra_loi_luc < khoang.den
+    GROUP BY 1
+),
 tre AS (
     SELECT g.uid, count(*) AS so
     FROM giao g JOIN sla_events s
@@ -92,11 +102,13 @@ tong AS (
               FROM phan_hoi WHERE uid = n.id AND giay IS NOT NULL) AS phan_hoi_p90,
            (SELECT count(*) FROM phan_hoi WHERE uid = n.id AND giay IS NULL) AS chua_phan_hoi,
            coalesce(don.so, 0) AS don,
-           coalesce(tre.so, 0) AS tre_sla
+           coalesce(tre.so, 0) AS tre_sla,
+           diem.tb AS csat_tb, coalesce(diem.so, 0) AS csat_so
     FROM nguoi_dung n
     LEFT JOIN tin ON tin.uid = n.id
     LEFT JOIN don ON don.uid = n.id
     LEFT JOIN tre ON tre.uid = n.id
+    LEFT JOIN diem ON diem.uid = n.id
 )
 SELECT * FROM tong
 -- Người bị khoá vẫn hiện nếu CÓ số liệu trong khoảng: nghỉ việc giữa tháng
@@ -129,6 +141,8 @@ async def _lay(tu: date, den: date) -> list[dict[str, Any]]:
         "tin_gui": r["tin_gui"], "phan_hoi_trung_vi_giay": _so(r["phan_hoi_trung_vi"]),
         "phan_hoi_p90_giay": _so(r["phan_hoi_p90"]), "chua_phan_hoi": r["chua_phan_hoi"],
         "don": r["don"], "tre_sla": r["tre_sla"],
+        "csat_tb": None if r["csat_tb"] is None else round(float(r["csat_tb"]), 2),
+        "csat_so": r["csat_so"],
     } for r in rows]
 
 
@@ -146,7 +160,8 @@ COT = [("Nhân viên", "ho_ten"), ("Tên đăng nhập", "ten_dang_nhap"),
        ("Phản hồi đầu — trung vị (giây)", "phan_hoi_trung_vi_giay"),
        ("Phản hồi đầu — p90 (giây)", "phan_hoi_p90_giay"),
        ("Chưa phản hồi", "chua_phan_hoi"), ("Đơn từ hội thoại được giao", "don"),
-       ("Trễ SLA", "tre_sla")]
+       ("Trễ SLA", "tre_sla"), ("CSAT trung bình (1–5)", "csat_tb"),
+       ("Số phản hồi CSAT", "csat_so")]
 
 
 @router.get("/nhan-vien.xlsx")

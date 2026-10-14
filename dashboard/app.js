@@ -1043,6 +1043,9 @@ async function loadThread(id) {
         data-chedo="${c.mode === "auto" ? "assist" : "auto"}">
         ${c.mode === "auto" ? "Duyệt trước khi gửi" : "Để agent tự trả lời"}
       </button>` : ""}
+      ${c.state !== "resolved" ? `<button type="button" class="btn btn--sm btn--go" id="btn-giai-quyet"
+        title="Đóng vụ việc: SLA giải quyết được tính, khách nhắn tiếp thì tự mở lại">Đã giải quyết</button>`
+        : '<span class="tag tag--auto">Đã giải quyết</span>'}
       <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
         ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
       </button>
@@ -6606,7 +6609,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------------- cài đặt API ---------------- */
 
-const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook" };
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook", csat: "Khảo sát hài lòng (CSAT)" };
 
 /* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
  * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */
@@ -7046,12 +7049,13 @@ async function loadBaoCaoNhanVien() {
     $("#bcnvBang").innerHTML = `<thead><tr>
       <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
       <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
-      <th>Đơn</th><th>Trễ SLA</th></tr></thead><tbody>${ds.length ? ds.map((d) => `<tr>
+      <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${ds.length ? ds.map((d) => `<tr>
       <td>${esc(d.ho_ten)}</td><td>${d.hoi_thoai}</td><td>${d.tin_gui}</td>
       <td>${_giay(d.phan_hoi_trung_vi_giay)}</td><td>${_giay(d.phan_hoi_p90_giay)}</td>
       <td class="${d.chua_phan_hoi ? "so--xau" : ""}">${d.chua_phan_hoi}</td>
-      <td>${d.don}</td><td class="${d.tre_sla ? "so--xau" : ""}">${d.tre_sla}</td></tr>`).join("")
-      : '<tr><td colspan="8" class="empty">Chưa có nhân viên nào.</td></tr>'}</tbody>`;
+      <td>${d.don}</td><td class="${d.tre_sla ? "so--xau" : ""}">${d.tre_sla}</td>
+      <td>${d.csat_so ? `${d.csat_tb} <span class="msg__meta">(${d.csat_so})</span>` : "—"}</td></tr>`).join("")
+      : '<tr><td colspan="9" class="empty">Chưa có nhân viên nào.</td></tr>'}</tbody>`;
   } catch (e) { toast(e.message, true); }
 }
 
@@ -7078,4 +7082,15 @@ document.addEventListener("click", async (ev) => {
     toast(r.duplicate ? "Mã QR này đã gửi trước đó." : "Đã xếp hàng gửi mã QR cho khách.");
   } catch (e) { toast(e.message, true); }
   finally { b.disabled = false; }
+});
+
+/* ---------------- Đã giải quyết ---------------- */
+document.addEventListener("click", async (ev) => {
+  if (!ev.target.closest("#btn-giai-quyet") || !state.openConv) return;
+  try {
+    const r = await api(`/inbox/conversations/${state.openConv}/giai-quyet`, { method: "POST" });
+    toast(r.da_truoc ? "Hội thoại đã được giải quyết từ trước."
+      : `Đã giải quyết${r.csat === "đã hỏi" ? " — đã hỏi khách chấm điểm" : ""}.`);
+    loadConversations();
+  } catch (e) { toast(e.message, true); }
 });

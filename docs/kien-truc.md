@@ -126,12 +126,12 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-59 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+60 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
-| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` |
+| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` · `csat` |
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
@@ -654,6 +654,14 @@ erDiagram
         UUID tao_boi
         TIMESTAMPTZ tao_luc
     }
+    csat {
+        UUID id
+        UUID conversation_id
+        UUID nguoi_xu_ly
+        TIMESTAMPTZ gui_luc
+        SMALLINT diem
+        TIMESTAMPTZ tra_loi_luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -689,6 +697,8 @@ erDiagram
     nguoi_dung ||--o{ conversations : ""
     teams ||--o{ conversations : ""
     channel_accounts ||--o{ credential_secrets : ""
+    conversations ||--o{ csat : ""
+    nguoi_dung ||--o{ csat : ""
     contacts ||--o{ data_retention_jobs : ""
     nguoi_dung ||--o{ data_retention_jobs : ""
     conversations ||--o{ hoi_thoai_ghi_chu : ""

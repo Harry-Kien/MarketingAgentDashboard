@@ -350,6 +350,8 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
 
 @router.get("/conversations")
 async def list_conversations(status: str | None = None, limit: int = 60, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> list[dict]:
+    # $1 = xem mọi kênh, $2 = người hỏi. Cùng mệnh đề với `inbox.py` — xem
+    # `chan_neu_ngoai_kenh` về vì sao route cũ cũng phải lọc.
     sql = """
         SELECT c.*,
                (SELECT content FROM messages m WHERE m.conversation_id = c.id
@@ -357,8 +359,10 @@ async def list_conversations(status: str | None = None, limit: int = 60, _quyen:
         FROM conversations c
         -- hội thoại phòng thử không phải khách
         WHERE c.channel <> 'phong_thu'
+          AND ($1 OR EXISTS (SELECT 1 FROM account_memberships am
+                             WHERE am.account_id = c.account_id AND am.user_id = $2))
     """
-    args: list = []
+    args: list = [_xem_tat_ca_kenh(_quyen), uuid.UUID(str(_quyen["id"]))]
     if status == "can_nguoi":
         # Mọi hội thoại ĐANG CHỜ NGƯỜI, gộp một chỗ.
         #
@@ -371,8 +375,8 @@ async def list_conversations(status: str | None = None, limit: int = 60, _quyen:
         # 2 cái hiện, 7 cái không — bảy khách ngồi đợi mà không ai thấy.
         sql += " AND c.status IN ('assist', 'escalated')"
     elif status and status != "all":
-        sql += " AND c.status = $1"
         args.append(status)
+        sql += f" AND c.status = ${len(args)}"
 
     # THỨ TỰ: hàng đợi trực xếp NGƯỢC với mọi màn hình khác.
     #
@@ -420,6 +424,7 @@ async def list_conversations(status: str | None = None, limit: int = 60, _quyen:
 @router.get("/conversations/{conv_id}")
 async def conversation_detail(conv_id: str, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
     cid = uuid.UUID(conv_id)
+    await chan_neu_ngoai_kenh(cid, _quyen)
     conv = await db.fetchrow("SELECT * FROM conversations WHERE id = $1", cid)
     if not conv:
         raise HTTPException(404, "Không thấy hội thoại")
@@ -475,6 +480,33 @@ async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
     )
 
 
+def _xem_tat_ca_kenh(nguoi: dict) -> bool:
+    return "hoi_thoai.xem_tat_ca" in (nguoi.get("quyen") or ())
+
+
+async def chan_neu_ngoai_kenh(cid: uuid.UUID, nguoi: dict) -> None:
+    """
+    Hội thoại phải thuộc tài khoản kênh mà người này là thành viên.
+
+    LỖ ĐO ĐƯỢC 14.10.2026: màn inbox mới lọc theo `account_memberships`,
+    nhưng các route cũ trong file này thì không — `GET /conversations/{id}`
+    trả toàn bộ tin nhắn của MỌI kênh cho ai có `hoi_thoai.doc`. Bộ lọc ở
+    màn mới chỉ còn là lớp sơn.
+
+    404 chứ không 403: 403 xác nhận hội thoại tồn tại, và mã hội thoại nằm
+    trong URL, trong log, trong ảnh chụp màn hình người ta gửi nhau.
+    """
+    if _xem_tat_ca_kenh(nguoi):
+        return
+    thuoc = await db.fetchrow(
+        "SELECT EXISTS (SELECT 1 FROM conversations cv "
+        "JOIN account_memberships am ON am.account_id = cv.account_id "
+        "WHERE cv.id = $1 AND am.user_id = $2) AS co",
+        cid, uuid.UUID(str(nguoi["id"])))
+    if not (thuoc and thuoc["co"]):
+        raise HTTPException(404, "Không thấy hội thoại")
+
+
 async def chan_neu_khong_duoc_tra_loi(cid: uuid.UUID, nguoi: dict) -> None:
     """
     Mức tầm nhìn phải chặn Ở MÁY CHỦ, không chỉ khoá nút trên màn hình.
@@ -497,6 +529,9 @@ async def chan_neu_khong_duoc_tra_loi(cid: uuid.UUID, nguoi: dict) -> None:
     từng route nhớ gọi. Quản trị và ai có `khach.xem_tat_ca` không bị chặn;
     khách chưa giao cho ai vẫn là của chung.
     """
+    # Phạm vi kênh TRƯỚC mức tầm nhìn: ngoài kênh thì 404, không được để
+    # thông điệp 403 bên dưới xác nhận hội thoại tồn tại.
+    await chan_neu_ngoai_kenh(cid, nguoi)
     khach = await db.fetchrow(
         "SELECT ct.owner_user_id FROM conversations cv "
         "LEFT JOIN contacts ct ON ct.id = cv.contact_id WHERE cv.id = $1", cid)
@@ -2028,6 +2063,7 @@ async def set_default_account(body: ChonNickIn, _quyen: dict = Depends(can_quyen
 @router.post("/conversations/{conv_id}/account")
 async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn, _quyen: dict = Depends(can_quyen("hoi_thoai.nhan"))) -> dict:
     """Ghim một nick cho riêng hội thoại này. Chuỗi rỗng = bỏ ghim."""
+    await chan_neu_ngoai_kenh(conv_id, _quyen)
     acc = body.zalo_account_id or None
     if acc and not await zalo_acc.hop_le(acc):
         raise HTTPException(422, "Nick không tồn tại hoặc đang không kết nối")

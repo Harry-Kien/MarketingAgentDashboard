@@ -167,7 +167,7 @@ class _Outbound:
     def __init__(self, *a, **k):
         pass
 
-    async def queue_existing_text(self, *, conversation_id, message_id, text, idempotency_key):
+    async def queue_existing_text(self, *, conversation_id, message_id, text, idempotency_key, the=None):
         _Outbound.da_gui.append(text)
         return _Queued()
 

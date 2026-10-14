@@ -121,6 +121,11 @@ class Settings(BaseSettings):
     # phải dùng Message Tag hoặc quảng cáo — cơ chế khác, không phải việc
     # của adapter. 0 = tắt phép kiểm, CHỈ dùng khi thử.
     messenger_cua_so_gio: float = 24.0
+    # Ứng dụng Meta ĐÃ được duyệt tính năng Human Agent chưa. Bật thì nhân
+    # viên trả lời được tới 7 ngày sau tin cuối của khách (thẻ HUMAN_AGENT);
+    # tắt thì ngoài 24 giờ API trả 409 thay vì xếp hàng một tin chắc chắn
+    # bị từ chối. Xem agent/omnichannel/cua_so_gui.py.
+    meta_the_human_agent: bool = False
 
     # --- Meta OAuth: nối Trang bằng ĐĂNG NHẬP thay vì dán token ---
     # Đây là thông tin của ỨNG DỤNG Meta, KHÁC token của từng Trang. App

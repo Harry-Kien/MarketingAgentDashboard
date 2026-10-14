@@ -199,6 +199,7 @@ class OutboundService:
         idempotency_key: str,
         metadata: Mapping[str, Any] | None = None,
         purpose: str = MUC_DICH_MAC_DINH,
+        the: str | None = None,
     ) -> QueuedOutbound:
         key = idempotency_key.strip()
         if not key:
@@ -224,6 +225,10 @@ class OutboundService:
                 "conversation_ref": conversation["external_id"],
                 "text": text,
             }
+            if the:
+                # Thẻ HUMAN_AGENT — quyết định ở cua_so_gui.py, worker chỉ
+                # chuyển xuống adapter.
+                payload["the"] = the
             message_id = await tx.insert_message(
                 conversation_id,
                 role,
@@ -259,6 +264,7 @@ class OutboundService:
         message_id: UUID,
         text: str,
         idempotency_key: str,
+        the: str | None = None,
     ) -> QueuedOutbound:
         key = idempotency_key.strip()
         if not key:
@@ -280,6 +286,10 @@ class OutboundService:
                 "conversation_ref": conversation["external_id"],
                 "text": text,
             }
+            if the:
+                # Thẻ HUMAN_AGENT — quyết định ở cua_so_gui.py, worker chỉ
+                # chuyển xuống adapter.
+                payload["the"] = the
             await tx.mark_message_queued(message_id, key)
             job = await tx.insert_job(
                 account_id,
@@ -312,6 +322,7 @@ class OutboundService:
         idempotency_key: str,
         kind: str = "image",
         purpose: str = MUC_DICH_MAC_DINH,
+        the: str | None = None,
     ) -> QueuedOutbound:
         key = idempotency_key.strip()
         if not key:
@@ -339,6 +350,10 @@ class OutboundService:
                 "path": path,
                 "caption": caption,
             }
+            if the:
+                # Thẻ HUMAN_AGENT — quyết định ở cua_so_gui.py, worker chỉ
+                # chuyển xuống adapter.
+                payload["the"] = the
             message_id = await tx.insert_message(
                 conversation_id,
                 role,

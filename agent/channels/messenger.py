@@ -136,6 +136,20 @@ def tra_loi_xac_minh(params, verify_token: str | None = None) -> str | None:
     return params.get("hub.challenge")
 
 
+def _loai_tin(the: str | None) -> dict:
+    """
+    RESPONSE = đang trả lời tin khách vừa gửi, trong cửa sổ 24 giờ. Gắn sai
+    loại là lý do phổ biến nhất khiến Meta từ chối tin.
+
+    Có thẻ (HUMAN_AGENT) = nhân viên trả lời NGOÀI 24 giờ, tới 7 ngày — chỉ
+    hợp lệ khi app được duyệt Human Agent. Ai được gắn thẻ là quyết định của
+    `agent/omnichannel/cua_so_gui.py`, không phải của adapter.
+    """
+    if the:
+        return {"messaging_type": "MESSAGE_TAG", "tag": the}
+    return {"messaging_type": "RESPONSE"}
+
+
 class MessengerAdapter(ChannelAdapter):
     name = "messenger"
 
@@ -360,19 +374,19 @@ class MessengerAdapter(ChannelAdapter):
         except Exception:  # noqa: BLE001 — xem docstring
             return ""
 
-    async def send_text(self, conversation_ref: str, text: str) -> Delivery:
+    async def send_text(self, conversation_ref: str, text: str,
+                        the: str | None = None) -> Delivery:
         if not self.cau_hinh_du():
             return Delivery(False, "Messenger chưa cấu hình")
         return await self._gui({
             "recipient": {"id": conversation_ref},
             "message": {"text": text},
-            # RESPONSE = đang trả lời tin khách vừa gửi. Gắn sai loại là lý
-            # do phổ biến nhất khiến Meta từ chối tin trong cửa sổ 24h.
-            "messaging_type": "RESPONSE",
+            **_loai_tin(the),
         })
 
     async def send_file(
-        self, conversation_ref: str, path: str, caption: str = ""
+        self, conversation_ref: str, path: str, caption: str = "",
+        the: str | None = None,
     ) -> Delivery:
         """
         Gửi ảnh: tải lên lấy `attachment_id`, rồi gắn vào tin.
@@ -409,12 +423,12 @@ class MessengerAdapter(ChannelAdapter):
             return Delivery(False, "Meta không trả attachment_id")
 
         if caption:
-            await self.send_text(conversation_ref, caption)
+            await self.send_text(conversation_ref, caption, the=the)
         return await self._gui({
             "recipient": {"id": conversation_ref},
             "message": {"attachment": {"type": "image",
                                        "payload": {"attachment_id": anh_id}}},
-            "messaging_type": "RESPONSE",
+            **_loai_tin(the),
         })
 
     # ---------------- luật riêng của kênh ----------------

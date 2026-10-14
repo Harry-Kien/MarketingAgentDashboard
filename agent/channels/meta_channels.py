@@ -213,21 +213,25 @@ class InstagramAdapter(_MetaAdapter):
                 )
         return result
 
-    async def send_text(self, conversation_ref: str, text: str) -> Delivery:
-        delivery, data = await self._post(
-            f"/{self._instagram_id}/messages",
-            {"recipient": {"id": conversation_ref}, "message": {"text": text}},
-        )
+    async def send_text(self, conversation_ref: str, text: str,
+                        the: str | None = None) -> Delivery:
+        body: dict = {"recipient": {"id": conversation_ref}, "message": {"text": text}}
+        if the:
+            # Instagram nhận cùng thẻ HUMAN_AGENT như Messenger — xem
+            # agent/omnichannel/cua_so_gui.py.
+            body.update(messaging_type="MESSAGE_TAG", tag=the)
+        delivery, data = await self._post(f"/{self._instagram_id}/messages", body)
         if delivery.ok:
             return Delivery(True, provider_message_id=str(data.get("message_id") or ""))
         return delivery
 
-    async def send_file(self, conversation_ref: str, path: str, caption: str = "") -> Delivery:
+    async def send_file(self, conversation_ref: str, path: str, caption: str = "",
+                        the: str | None = None) -> Delivery:
         if not self._public_media_base:
             return Delivery(False, "Instagram cần public_media_base để gửi tệp")
         url = self._public_media_base.rstrip("/") + "/" + path.replace("\\", "/").lstrip("/")
         if caption:
-            caption_result = await self.send_text(conversation_ref, caption)
+            caption_result = await self.send_text(conversation_ref, caption, the=the)
             if not caption_result.ok:
                 return caption_result
         delivery, data = await self._post(

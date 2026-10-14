@@ -95,16 +95,22 @@ class OutboxProcessor:
 
     @staticmethod
     async def _deliver(adapter, job: OutboxJob):
+        # Thẻ (HUMAN_AGENT) chỉ truyền khi job CÓ thẻ: adapter của kênh
+        # không có cửa sổ không nhận tham số này, và job cũ không mang nó.
+        the = job.payload.get("the")
+        them = {"the": str(the)} if the else {}
         if job.kind == "send_text":
             return await adapter.send_text(
                 str(job.payload["conversation_ref"]),
                 str(job.payload["text"]),
+                **them,
             )
         if job.kind == "send_file":
             return await adapter.send_file(
                 str(job.payload["conversation_ref"]),
                 str(job.payload["path"]),
                 caption=str(job.payload.get("caption", "")),
+                **them,
             )
         raise ValueError(f"outbox kind chưa hỗ trợ: {job.kind}")
 

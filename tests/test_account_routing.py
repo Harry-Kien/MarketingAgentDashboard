@@ -55,7 +55,7 @@ def test_staff_reply_enqueue_chu_khong_goi_provider_truc_tiep(monkeypatch):
     message_id = uuid4()
     calls = []
 
-    async def queue(cid, body):
+    async def queue(cid, body, the=None):
         calls.append((cid, body.text, body.idempotency_key))
         return QueuedOutbound(
             job_id=job_id,
@@ -72,6 +72,12 @@ def test_staff_reply_enqueue_chu_khong_goi_provider_truc_tiep(monkeypatch):
     async def bo_qua_chot(cid, nguoi):
         return None
     monkeypatch.setattr(routes, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
+
+    # Cửa sổ nhắn tin cũng cần CSDL + adapter; có bộ test riêng —
+    # tests/test_cua_so_tin_nhan_vien.py.
+    async def trong_cua_so(cid):
+        return None
+    monkeypatch.setattr(routes, "_xet_cua_so_hoac_409", trong_cua_so)
 
     result = asyncio.run(
         routes.staff_send(
@@ -96,7 +102,7 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
     # Chữ ký nhận thêm nội dung đã sửa và tên người duyệt (xem
     # tests/test_sua_ban_nhap.py). Duyệt KHÔNG sửa vẫn phải là `noi_dung=None`
     # — đó là đường cũ, và test này canh đúng đường ấy không đổi hành vi.
-    async def queue(mid, noi_dung=None, *, boi="", xac_nhan=False):
+    async def queue(mid, noi_dung=None, *, boi="", xac_nhan=False, the=None):
         calls.append((mid, noi_dung))
         return QueuedOutbound(
             job_id=job_id,

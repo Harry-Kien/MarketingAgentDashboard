@@ -23,6 +23,7 @@ from agent.ky_nang import kho_ky_nang
 from agent.ky_nang.ban_mo_ta import LoiBanMoTa, doc_ban_mo_ta
 from agent.ky_nang.cau_thu import chay_cau_thu
 from agent.ky_nang.chay import chay_plugin
+from agent.omnichannel.cua_so_gui import xet_tin_nhan_vien
 from agent.omnichannel.outbound_service import (
     ConversationNotFound,
     OutboundMessageNotFound,
@@ -470,14 +471,27 @@ class SendBody(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-async def _queue_staff_reply(cid: uuid.UUID, body: SendBody):
+async def _queue_staff_reply(cid: uuid.UUID, body: SendBody,
+                             the: str | None = None):
     key = body.idempotency_key or f"staff:{uuid.uuid4()}"
     return await OutboundService(PostgresOutboundRepository()).queue_text(
         conversation_id=cid,
         role="staff",
         text=body.text,
         idempotency_key=key,
+        the=the,
     )
+
+
+async def _xet_cua_so_hoac_409(cid: uuid.UUID) -> str | None:
+    """
+    Tin của người ngoài cửa sổ nhắn tin: 409 có lý do, KHÔNG xếp hàng.
+    Trả thẻ (HUMAN_AGENT) nếu được gửi kèm thẻ. Xem cua_so_gui.py.
+    """
+    qd = await xet_tin_nhan_vien(cid)
+    if not qd.duoc:
+        raise HTTPException(409, qd.ly_do)
+    return qd.the
 
 
 def _xem_tat_ca_kenh(nguoi: dict) -> bool:
@@ -550,8 +564,9 @@ async def staff_send(conv_id: str, body: SendBody,
     """Ghi tin nhân viên vào outbox; worker mới là nơi gọi provider."""
     cid = uuid.UUID(conv_id)
     await chan_neu_khong_duoc_tra_loi(cid, nguoi)
+    the = await _xet_cua_so_hoac_409(cid)   # xet_tin_nhan_vien
     try:
-        queued = await _queue_staff_reply(cid, body)
+        queued = await _queue_staff_reply(cid, body, the)
     except ConversationNotFound as exc:
         raise HTTPException(404, "Không thấy hội thoại") from exc
     return {
@@ -621,7 +636,7 @@ def kiem_sua_nhap(hang, noi_dung: str) -> str:
 
 async def _queue_approved_draft(
     mid: uuid.UUID, noi_dung: str | None = None, *,
-    boi: str = "", xac_nhan: bool = False,
+    boi: str = "", xac_nhan: bool = False, the: str | None = None,
 ):
     """
     Duyệt một bản nháp, có thể kèm nội dung đã sửa.
@@ -684,6 +699,7 @@ async def _queue_approved_draft(
         message_id=message["id"],
         text=van_ban,
         idempotency_key=f"approve:{message['id']}",
+        the=the,
     )
 
 
@@ -713,12 +729,16 @@ async def approve_draft(
         "SELECT conversation_id FROM messages WHERE id = $1", mid)
     if dong is not None:
         await chan_neu_khong_duoc_tra_loi(dong["conversation_id"], nguoi)
+    # Duyệt bản nháp cũng là người gửi tin — cùng phép xét cửa sổ.
+    the = (await _xet_cua_so_hoac_409(dong["conversation_id"])  # xet_tin_nhan_vien
+           if dong else None)
     try:
         queued = await _queue_approved_draft(
             mid,
             body.noi_dung if body else None,
             boi=nguoi.get("ten_dang_nhap", ""),
             xac_nhan=bool(body and body.xac_nhan),
+            the=the,
         )
     except OutboundMessageNotFound as exc:
         raise HTTPException(404, "Không thấy tin nhắn") from exc
@@ -2645,6 +2665,8 @@ async def staff_send_file(
     # Cùng chốt với gửi chữ: gửi ẢNH cho khách của người khác cũng là trả
     # lời khách ấy. Chặn một đường mà để hở đường kia là không chặn gì cả.
     await chan_neu_khong_duoc_tra_loi(cid, nguoi)
+    # Xét cửa sổ TRƯỚC khi ghi tệp lên đĩa: 409 thì không để lại tệp mồ côi.
+    the = await _xet_cua_so_hoac_409(cid)   # xet_tin_nhan_vien
 
     if ma_san_pham.strip():
         duong = _anh_san_pham(ma_san_pham.strip())
@@ -2685,6 +2707,7 @@ async def staff_send_file(
             path=str(duong),
             caption=ten_hien,
             idempotency_key=khoa,
+            the=the,
         )
     except ConversationNotFound as exc:
         raise HTTPException(404, "Không thấy hội thoại") from exc

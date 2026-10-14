@@ -3,6 +3,16 @@ Chạy bộ câu hỏi vàng và chấm điểm agent.
 
     python -m scripts.eval                 chạy tất cả
     python -m scripts.eval tuan_thu        chỉ chạy một nhóm
+    python -m scripts.eval --lap 5         lặp 5 lần trên CÙNG commit
+    python -m scripts.eval --tat-luoi injection,hua_khong_goi
+                                           thí nghiệm tắt từng lớp (ablation)
+    python -m scripts.eval --chi-prompt    tắt CẢ các lớp lưới — đối chứng
+                                           "chỉ dựa vào prompt"
+
+Mỗi lần lặp ghi MỘT file kết quả, kèm khối `meta` (commit, mô hình, lưới
+tắt, dấu vân tay bộ vàng). `scripts.sinh_thuc_nghiem` nhóm theo `meta`: chỉ
+các lần CÙNG commit + CÙNG cấu hình mới được gộp thành trung bình ± độ lệch.
+Gộp lần chạy khác commit là đo nhiều hệ thống rồi gọi là một.
 
 Chỉ số quan trọng nhất KHÔNG phải độ chính xác, mà là BỎ SÓT CHUYỂN NGƯỜI:
 ca lẽ ra phải chuyển cho người mà agent lại tự trả lời. Với mỹ phẩm, mỗi ca
@@ -12,8 +22,11 @@ Kết quả ghi ra data/eval/ket-qua-<timestamp>.json để so sánh giữa các
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -25,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agent import db  # noqa: E402
+from agent.config import settings  # noqa: E402
 from agent.core import agent as brain  # noqa: E402
 from agent.core import tu_nhien  # noqa: E402
 # Giữ tên `_pham` vì tests/test_guardrails.py import `_pham` từ
@@ -186,7 +200,40 @@ async def hoi_thoai_eval(
     return conv["id"]
 
 
-async def main(loc: str | None = None) -> int:
+def _git(*lenh: str) -> str:
+    try:
+        return subprocess.run(["git", *lenh], cwd=ROOT, capture_output=True,
+                              text=True, timeout=10).stdout.strip()
+    except Exception:  # noqa: BLE001 — thiếu git không được chặn việc đo
+        return ""
+
+
+def dung_meta(tat: frozenset[str], lan: int, tong_lan: int) -> dict:
+    """
+    Dấu vân tay của MỘT lần chạy — đủ để biết hai lần chạy có cùng hệ thống.
+
+    Bốn lần chạy ngày 27.08.2026 nằm trong 56 phút, xen giữa là những lần
+    sửa prompt. Không có khối này thì không ai phân biệt được "lặp lại" với
+    "bốn phiên bản khác nhau", và trung vị của chúng là con số vô nghĩa.
+    """
+    return {
+        "commit": _git("rev-parse", "--short", "HEAD") or "?",
+        # Sửa dở trong agent/ mà chưa commit thì commit KHÔNG mô tả đúng mã
+        # đã chạy. Ghi lại để bộ sinh tài liệu loại khỏi phần kết luận.
+        "ban_sua_do": bool(_git("status", "--porcelain", "agent")),
+        "nha_cung_cap": settings.llm_provider,
+        "mo_hinh": settings.model_chat,
+        "luoi_tat": sorted(tat),
+        "bo_vang": GOLDEN.name,
+        "bo_vang_sha": hashlib.sha256(GOLDEN.read_bytes()).hexdigest()[:12],
+        "lan": lan,
+        "tong_lan": tong_lan,
+        "bat_dau": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+
+async def main(loc: str | None = None, tat: frozenset[str] = frozenset(),
+               lap: int = 1) -> int:
     if GOLDEN.name == "golden.example.jsonl":
         # Nói to, vì đây là điểm dễ hiểu nhầm nhất: số đo ra trông y hệt số
         # đo thật, chỉ khác là agent đang trả lời về hàng KHÔNG CÓ THẬT.
@@ -205,6 +252,21 @@ async def main(loc: str | None = None) -> int:
         return 1
 
     await db.init_db()
+    ma_thoat = 0
+    try:
+        for k in range(1, lap + 1):
+            meta = dung_meta(tat, k, lap)
+            nhan = f" — lần {k}/{lap}" if lap > 1 else ""
+            nhan += f" — TẮT LƯỚI: {', '.join(sorted(tat))}" if tat else ""
+            print(f"\n=== commit {meta['commit']}{nhan} ===")
+            with brain.tat_luoi_de_do(tat):
+                ma_thoat |= await _mot_lan(cases, meta)
+    finally:
+        await db.close_db()
+    return ma_thoat
+
+
+async def _mot_lan(cases: list[dict], meta: dict) -> int:
     cid = await hoi_thoai_eval()
 
     print(f"Chạy {len(cases)} ca...\n")
@@ -327,6 +389,7 @@ async def main(loc: str | None = None) -> int:
                 "chuyen_nguoi_thua": len(chuyen_thua),
                 "dung_tu_cam": len(tu_cam),
                 "chi_phi_usd": round(tong_chi_phi, 6),
+                "meta": meta,
                 "ket_qua": results,
             },
             ensure_ascii=False, indent=1,
@@ -335,9 +398,32 @@ async def main(loc: str | None = None) -> int:
     )
     print(f"\n  Đã lưu: {out.name}")
 
-    await db.close_db()
     return 0 if not bo_sot and not tu_cam else 1
 
 
+def doc_tham_so(argv: list[str]) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(prog="python -m scripts.eval")
+    ap.add_argument("nhom", nargs="?", help="chỉ chạy một nhóm, ví dụ tuan_thu")
+    ap.add_argument("--lap", type=int, default=1, help="số lần lặp trên cùng commit")
+    ap.add_argument("--tat-luoi", default="",
+                    help="tắt các lớp lưới, cách nhau bằng dấu phẩy: "
+                         + ", ".join(brain.LOP_LUOI))
+    ap.add_argument("--chi-prompt", action="store_true",
+                    help="tắt CẢ các lớp lưới — đối chứng chỉ-prompt")
+    ts = ap.parse_args(argv)
+    if ts.lap < 1:
+        ap.error("--lap phải từ 1")
+    tat = {x.strip() for x in ts.tat_luoi.split(",") if x.strip()}
+    if ts.chi_prompt:
+        tat = set(brain.LOP_LUOI)
+    la = tat - set(brain.LOP_LUOI)
+    if la:
+        # Nổ ở đây, TRƯỚC khi tốn tiền gọi model — không đợi tới ca đầu tiên.
+        ap.error(f"không có lớp lưới {sorted(la)}; có: {', '.join(brain.LOP_LUOI)}")
+    ts.tat = frozenset(tat)
+    return ts
+
+
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else None)))
+    _ts = doc_tham_so(sys.argv[1:])
+    raise SystemExit(asyncio.run(main(_ts.nhom, _ts.tat, _ts.lap)))

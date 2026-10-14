@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import re
 import time
-from contextlib import suppress
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 
 import uuid
 from dataclasses import dataclass, field
@@ -136,6 +137,42 @@ MA_CHUYEN_KHAC: dict[str, str] = {
 def so_lop_luoi() -> int:
     """Đếm lớp lưới. Tài liệu gọi hàm này thay vì gõ số."""
     return len(LOP_LUOI)
+
+
+# ══ CÔNG TẮC TẮT LƯỚI — CHỈ DÀNH CHO BỘ ĐO ═══════════════════════════════
+#
+# Để chạy thí nghiệm tắt từng lớp (ablation) trên CÙNG bộ câu vàng và CÙNG
+# commit — bằng chứng trực tiếp cho câu "cần đủ các lớp", thay cho hai giai
+# thoại trước đây.
+#
+# ContextVar chứ KHÔNG env/config/API: không đường nào từ webhook, dashboard
+# hay `.env` chạm tới được. Chỉ `scripts/eval*.py` gọi `tat_luoi_de_do`, và
+# tests/test_cong_tac_tat_luoi.py đỏ nếu file thứ năm gọi tới.
+_LUOI_TAT: ContextVar[frozenset[str]] = ContextVar("_LUOI_TAT", default=frozenset())
+
+
+def luoi_dang_tat() -> frozenset[str]:
+    return _LUOI_TAT.get()
+
+
+@contextmanager
+def tat_luoi_de_do(ma: set[str] | frozenset[str]):
+    """Tắt các lớp lưới trong khối `with`. CHỈ cho bộ đo."""
+    la = set(ma) - set(LOP_LUOI)
+    if la:
+        # Gõ sai tên không được thành "không tắt gì" — số đo khi ấy là số
+        # đo của cấu hình đầy đủ dán nhãn ablation, sai mà trông đúng.
+        raise KeyError(f"không có lớp lưới {sorted(la)}; có: {sorted(LOP_LUOI)}")
+    moc = _LUOI_TAT.set(frozenset(ma))
+    try:
+        yield
+    finally:
+        _LUOI_TAT.reset(moc)
+
+
+def _bat(ma: str) -> bool:
+    """Lớp lưới `ma` có đang chạy không. Mọi lớp trong LOP_LUOI đi qua đây."""
+    return ma not in _LUOI_TAT.get()
 
 
 _CAT_CHUOI = 400
@@ -423,7 +460,7 @@ async def respond(
     # KHẮC HƠN so với toàn cục, nên dùng thẳng ở đây là an toàn — xem
     # `agent/core/agent_ho_so.py`.
     hs = ho_so or agent_ho_so.mac_dinh()
-    if spent >= hs.tran_chi_phi:
+    if spent >= hs.tran_chi_phi and _bat("tran_hoi_thoai"):
         return Reply(
             text="Để em chuyển anh/chị sang nhân viên hỗ trợ trực tiếp nhé.",
             escalate=True,
@@ -461,7 +498,7 @@ async def respond(
     dang_thu = thu_nghiem.dang_thu.get()
 
     co_tan_cong, dau_hieu = phong_thu.quet(question)
-    if co_tan_cong:
+    if co_tan_cong and _bat("injection"):
         # Phòng thử KHÔNG để lại tác dụng phụ, và một dòng nhật ký cũng là
         # tác dụng phụ: sự kiện an ninh GIẢ trộn lẫn với thật làm hỏng nhật
         # ký — người soát `bao_mat.injection` sẽ đi truy một cuộc tấn công
@@ -763,14 +800,14 @@ async def respond(
     # ĐỌC: Ba cách trượt khác nhau, ba lưới khác nhau. Không lớp nào bắt được
     # ĐỌC: cả ba — đó là lý do phải xếp chồng chứ không gộp làm một.
     confidence = _confidence(passages, co_du_lieu)
-    if confidence < hs.nguong_tu_tin and not co_du_lieu:
+    if confidence < hs.nguong_tu_tin and not co_du_lieu and _bat("tin_cay_thap"):
         escalate = True
         escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
         luoi_bat = luoi_bat or "tin_cay_thap"
 
     # Chốt chặn cứng: luật tuân thủ không được phụ thuộc vào việc model
     # có nhớ gọi tool hay không.
-    if not escalate:
+    if not escalate and _bat("bat_buoc_chuyen"):
         buoc = _bat_buoc_chuyen(question)
         if buoc:
             escalate = True
@@ -780,7 +817,7 @@ async def respond(
     # LƯỚI AN TOÀN: model đôi khi VIẾT rằng sẽ chuyển người nhưng KHÔNG gọi
     # tool. Khách đọc thấy lời hứa, còn hội thoại thì không bao giờ tới tay
     # nhân viên. Không được để lời hứa với khách rơi vào khoảng không.
-    if not escalate and _promises_handoff(final_text):
+    if not escalate and _bat("hua_khong_goi") and _promises_handoff(final_text):
         escalate = True
         escalate_reason = "Agent nói sẽ chuyển người nhưng không gọi công cụ"
         luoi_bat = luoi_bat or "hua_khong_goi"
@@ -790,7 +827,7 @@ async def respond(
     # Đặt sau cùng và soi ĐẦU RA, vì đây là chỗ duy nhất bắt được ca nguy
     # hiểm nhất: khách gửi ảnh da không kèm chữ, mọi lưới đọc-chữ đều im, và
     # model nhìn thấy vùng đỏ rồi tự gọi tên bệnh.
-    if not escalate:
+    if not escalate and _bat("chan_doan_y_te"):
         chan_doan = _chan_doan_y_te(final_text)
         if chan_doan:
             escalate = True

@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     # trên mã QR khách quét — nhưng sai một số là tiền khách chuyển đi đâu
     # không ai biết, nên có kiểm định dạng ở cau_hinh_dong.kiem_gia_tri.
     vietqr_bin: str = ""
+    # "bat" = tự ẩn bình luận có số điện thoại dưới bài đăng (khách vẫn thấy
+    # bình luận của mình, người khác thì không). Mặc định TẮT: ẩn là hành
+    # động công khai trên Trang của cửa hàng, phải do họ chọn.
+    an_binh_luan_co_sdt: str = "tat"
     vietqr_so_tk: str = ""
     vietqr_ten_tk: str = ""
     ghn_shop_id: str = ""

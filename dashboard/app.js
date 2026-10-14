@@ -788,7 +788,7 @@ const CHANNEL_LABEL = {
    Tên lớp connector có dạng "Channel::FacebookPage"; bộ đọc đã cắt phần
    "Channel::" nên ở đây chỉ còn phần đuôi. */
 const NEN_TANG_LABEL = {
-  facebookpage: "Facebook", facebook: "Facebook",
+  facebookpage: "Facebook", facebook: "Facebook", facebook_comment: "Bình luận FB",
   instagram: "Instagram", whatsapp: "WhatsApp",
   webwidget: "Web chat", email: "Email", telegram: "Telegram",
   twiliosms: "SMS", line: "LINE", api: "API",
@@ -796,7 +796,7 @@ const NEN_TANG_LABEL = {
 
 /* Nền tảng nào chưa có màu riêng thì dùng màu connector tương thích. */
 const NEN_TANG_MAU = {
-  facebook: "facebook", instagram: "instagram", whatsapp: "whatsapp",
+  facebook: "facebook", "bình luận fb": "facebook", instagram: "instagram", whatsapp: "whatsapp",
   "web chat": "web", email: "chatwoot", telegram: "chatwoot",
   sms: "chatwoot", line: "chatwoot", api: "chatwoot",
 };
@@ -6606,7 +6606,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------------- cài đặt API ---------------- */
 
-const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)", thanh_toan: "Thanh toán (VietQR)" };
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook" };
 
 /* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
  * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */

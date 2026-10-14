@@ -38,6 +38,11 @@ QUYEN = (
     "pages_show_list",        # liệt kê Trang người dùng quản lý
     "pages_messaging",        # nhận và gửi tin nhắn
     "pages_manage_metadata",  # đăng ký webhook cho Trang
+    # Bình luận dưới bài đăng vào inbox (webhook `feed`), và ẩn bình luận
+    # có số điện thoại. Trang nối TRƯỚC khi thêm hai quyền này phải nối lại
+    # để Meta hỏi cấp thêm — Meta không tự mở rộng quyền đã cấp.
+    "pages_read_engagement",
+    "pages_manage_engagement",
     "instagram_basic",        # đọc tài khoản Instagram liên kết Trang
     "instagram_manage_messages",
 )

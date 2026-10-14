@@ -42,7 +42,7 @@ GRAPH_VERSION = settings.graph_version
 GRAPH_BASE = settings.graph_base
 
 # Xem docstring: chỉ những trường bộ đọc thật sự xử lý được.
-TRUONG_THEO_DOI = ("messages",)
+TRUONG_THEO_DOI = ("messages", "feed")
 
 
 def _ly_do_tu_phan_hoi(phan_hoi: Any) -> str:

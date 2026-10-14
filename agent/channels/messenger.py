@@ -241,6 +241,9 @@ class MessengerAdapter(ChannelAdapter):
                 if (m := self._mot_tin(su_kien)) is not None:
                     m.meta["standby"] = True
                     ra.append(m)
+        # Bình luận dưới bài đăng (webhook `feed`) — xem binh_luan_meta.py.
+        from agent.channels.binh_luan_meta import doc_binh_luan
+        ra.extend(doc_binh_luan(payload, self))
         return ra
 
     def doc_ban_giao(self, payload: dict) -> list[dict]:
@@ -378,6 +381,13 @@ class MessengerAdapter(ChannelAdapter):
                         the: str | None = None) -> Delivery:
         if not self.cau_hinh_du():
             return Delivery(False, "Messenger chưa cấu hình")
+        if conversation_ref.startswith("cmt:"):
+            # Trả lời RIÊNG một bình luận: gửi tới comment_id, không tới PSID.
+            # Meta chỉ cho một lần mỗi bình luận — chốt ở cua_so_gui.py.
+            return await self._gui({
+                "recipient": {"comment_id": conversation_ref[4:]},
+                "message": {"text": text},
+            })
         return await self._gui({
             "recipient": {"id": conversation_ref},
             "message": {"text": text},
@@ -397,6 +407,8 @@ class MessengerAdapter(ChannelAdapter):
         """
         if not self.cau_hinh_du():
             return Delivery(False, "Messenger chưa cấu hình")
+        if conversation_ref.startswith("cmt:"):
+            return Delivery(False, "Trả lời riêng bình luận chỉ gửi được chữ")
         if not os.path.exists(path):
             return Delivery(False, f"không thấy file: {path}")
 
@@ -517,12 +529,32 @@ class MessengerAdapter(ChannelAdapter):
         số. Viết hai bản là tự tạo lại lỗi hai-nhánh-song-sinh đã phải đi
         sửa ở `agent/main.py`.
         """
+        # Bình luận: Meta cho trả lời riêng trong 7 ngày, không phải 24 giờ.
+        gio = 24 * 7 if conversation_ref.startswith("cmt:") else self._window_hours
         return await con_trong_cua_so(
             self.name,
             conversation_ref,
-            self._window_hours,
+            gio,
             account_id=self.account_id,
         )
+
+    async def an_binh_luan(self, comment_id: str) -> Delivery:
+        """
+        Ẩn một bình luận trên Trang (`is_hidden=true`). Người viết vẫn thấy
+        bình luận của mình; người khác thì không — đối thủ không chép được số.
+        Cần quyền `pages_manage_engagement`.
+        """
+        try:
+            r = await self._client.post(
+                f"/{comment_id}",
+                params={"access_token": self._page_token},
+                data={"is_hidden": "true"},
+            )
+        except httpx.HTTPError as exc:
+            return Delivery(False, str(exc)[:200])
+        if getattr(r, "status_code", 500) >= 400:
+            return Delivery(False, f"Graph trả {r.status_code}")
+        return Delivery(True)
 
     async def verify_connection(self) -> ConnectionCheck:
         if not self._page_token:

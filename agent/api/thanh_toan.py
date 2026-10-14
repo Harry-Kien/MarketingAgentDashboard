@@ -107,7 +107,7 @@ async def gui_vietqr(order_id: UUID,
         raise HTTPException(409, "Đơn này không gắn với hội thoại nào — không có chỗ gửi.")
     cid = don["conversation_id"]
     await chan_neu_khong_duoc_tra_loi(cid, nguoi)
-    the = await _xet_cua_so_hoac_409(cid)
+    the = await _xet_cua_so_hoac_409(cid, "tep")
     nh = _ngan_hang()
     payload, so_tien = _payload(don, nh)
 

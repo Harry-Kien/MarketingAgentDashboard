@@ -45,12 +45,29 @@ class QuyetDinhGui:
     ly_do: str = ""
 
 
-async def xet_tin_nhan_vien(conversation_id: UUID) -> QuyetDinhGui:
+async def xet_tin_nhan_vien(conversation_id: UUID, loai: str = "chu") -> QuyetDinhGui:
+    """`loai`: "chu" (tin chữ) hoặc "tep" (ảnh, tệp)."""
     conv = await db.fetchrow(
         "SELECT account_id, channel, external_id FROM conversations WHERE id = $1",
         conversation_id)
     if conv is None:
         return QuyetDinhGui(True)          # để route trả 404 như cũ
+
+    if str(conv["external_id"]).startswith("cmt:"):
+        # Trả lời riêng một BÌNH LUẬN: Meta cho đúng một tin chữ. Tin thứ
+        # hai, hay một tấm ảnh, vào outbox là chắc chắn chết — chặn ở đây
+        # để người trực biết ngay. Xem agent/channels/binh_luan_meta.py.
+        if loai != "chu":
+            return QuyetDinhGui(False, ly_do=(
+                "Trả lời riêng một bình luận chỉ gửi được chữ. Nhắn chữ trước; "
+                "khách trả lời lại thì thành tin nhắn thường, gửi ảnh được."))
+        da = await db.fetchrow(
+            "SELECT count(*) AS da_gui FROM messages WHERE conversation_id = $1 "
+            "AND direction = 'outbound'", conversation_id)
+        if da and da["da_gui"]:
+            return QuyetDinhGui(False, ly_do=(
+                "Bình luận này đã được trả lời riêng — Facebook chỉ cho một lần. "
+                "Khách trả lời lại sẽ thành tin nhắn thường trong inbox."))
 
     try:
         adapter = await get_for_account(conv["account_id"])

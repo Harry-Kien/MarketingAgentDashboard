@@ -485,12 +485,12 @@ async def _queue_staff_reply(cid: uuid.UUID, body: SendBody,
     )
 
 
-async def _xet_cua_so_hoac_409(cid: uuid.UUID) -> str | None:
+async def _xet_cua_so_hoac_409(cid: uuid.UUID, loai: str = "chu") -> str | None:
     """
     Tin của người ngoài cửa sổ nhắn tin: 409 có lý do, KHÔNG xếp hàng.
     Trả thẻ (HUMAN_AGENT) nếu được gửi kèm thẻ. Xem cua_so_gui.py.
     """
-    qd = await xet_tin_nhan_vien(cid)
+    qd = await xet_tin_nhan_vien(cid, loai)
     if not qd.duoc:
         raise HTTPException(409, qd.ly_do)
     return qd.the
@@ -2676,7 +2676,7 @@ async def staff_send_file(
     # lời khách ấy. Chặn một đường mà để hở đường kia là không chặn gì cả.
     await chan_neu_khong_duoc_tra_loi(cid, nguoi)
     # Xét cửa sổ TRƯỚC khi ghi tệp lên đĩa: 409 thì không để lại tệp mồ côi.
-    the = await _xet_cua_so_hoac_409(cid)   # xet_tin_nhan_vien
+    the = await _xet_cua_so_hoac_409(cid, "tep")   # xet_tin_nhan_vien
 
     if ma_san_pham.strip():
         duong = _anh_san_pham(ma_san_pham.strip())

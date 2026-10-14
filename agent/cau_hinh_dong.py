@@ -70,6 +70,11 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
     MoTa("ERPNEXT_API_SECRET", "erp", "ERPNext API secret", True),
     MoTa("GHN_TOKEN", "van_chuyen", "GHN token", True),
     MoTa("GHN_SHOP_ID", "van_chuyen", "GHN shop id", False),
+    MoTa("AN_BINH_LUAN_CO_SDT", "binh_luan", "Tự ẩn bình luận có số điện thoại", False,
+         ("bat", "tat"),
+         "Khách để lại SĐT dưới bài đăng thì ẩn bình luận ấy — người viết vẫn "
+         "thấy, đối thủ không chép được số. Cần nối lại Trang để cấp quyền "
+         "pages_manage_engagement."),
     MoTa("VIETQR_BIN", "thanh_toan", "Mã BIN ngân hàng nhận tiền", False,
          y_nghia="6 chữ số theo NAPAS, ví dụ Vietcombank 970436, Techcombank "
                  "970407, MB 970422, ACB 970416, VPBank 970432."),
@@ -144,6 +149,7 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "ERPNEXT_API_SECRET": lambda: settings.erpnext_api_secret,
     "GHN_TOKEN": lambda: settings.ghn_token,
     "GHN_SHOP_ID": lambda: settings.ghn_shop_id,
+    "AN_BINH_LUAN_CO_SDT": lambda: settings.an_binh_luan_co_sdt,
     "VIETQR_BIN": lambda: settings.vietqr_bin,
     "VIETQR_SO_TK": lambda: settings.vietqr_so_tk,
     "VIETQR_TEN_TK": lambda: settings.vietqr_ten_tk,

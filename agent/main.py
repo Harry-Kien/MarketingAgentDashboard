@@ -1248,6 +1248,27 @@ async def _ingest_inbound(msg: InboundMessage):
     return await InboxService(PostgresInboxRepository()).ingest(msg)
 
 
+async def _xu_ly_binh_luan(msg, cid: uuid.UUID) -> None:
+    await db.execute(
+        "UPDATE conversations SET status = 'escalated', mode = 'human', "
+        "version = version + 1, updated_at = now() WHERE id = $1", cid)
+    meta = msg.meta or {}
+    if not meta.get("co_sdt") or cau_hinh_dong.lay("AN_BINH_LUAN_CO_SDT") != "bat":
+        return
+    # Ẩn là hành động CÔNG KHAI trên Trang của khách hàng — chỉ khi cửa hàng
+    # bật. Hỏng thì ghi nhật ký cảnh báo, không nuốt: số điện thoại của
+    # khách đang nằm công khai, người trực cần biết để ẩn tay.
+    try:
+        ad = await channels.get_for_account(msg.account_id)
+        kq = await ad.an_binh_luan(str(meta.get("comment_id")))
+        ok, chi_tiet = kq.ok, kq.detail
+    except Exception as exc:  # noqa: BLE001 — ghi lại, không làm rơi tin
+        ok, chi_tiet = False, f"{type(exc).__name__}: {exc}"[:200]
+    await db.log_event(
+        "binh_luan.da_an" if ok else "binh_luan.an_that_bai", ref_id=cid,
+        comment_id=meta.get("comment_id"), chi_tiet=chi_tiet or None)
+
+
 async def handle_inbound(msg: InboundMessage) -> None:
     """Toàn bộ luồng xử lý một tin nhắn đến."""
     # ĐỌC: ══ ĐIỂM VÀO CỦA MỌI TIN NHẮN, MỌI KÊNH ═══════════════════════════
@@ -1294,6 +1315,15 @@ async def handle_inbound(msg: InboundMessage) -> None:
             "version = version + 1, updated_at = now() "
             "WHERE id = $1", cid,
         )
+        return
+
+    # BÌNH LUẬN dưới bài đăng: lưu, chuyển người, ẩn nếu có SĐT.
+    #
+    # Agent KHÔNG tự trả lời: Meta chỉ cho trả lời riêng MỘT tin mỗi bình
+    # luận, còn agent tách câu trả lời thành 2–3 tin — tin thứ hai trở đi
+    # chết trong outbox. Xem agent/channels/binh_luan_meta.py.
+    if (msg.meta or {}).get("loai") == "binh_luan":
+        await _xu_ly_binh_luan(msg, cid)
         return
 
     # Agent có được trả lời hội thoại này không — ba nấc: công tắc toàn cục,

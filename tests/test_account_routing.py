@@ -55,7 +55,7 @@ def test_staff_reply_enqueue_chu_khong_goi_provider_truc_tiep(monkeypatch):
     message_id = uuid4()
     calls = []
 
-    async def queue(cid, body, the=None):
+    async def queue(cid, body, the=None, gui_boi=None):
         calls.append((cid, body.text, body.idempotency_key))
         return QueuedOutbound(
             job_id=job_id,

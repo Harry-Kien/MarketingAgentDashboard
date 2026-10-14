@@ -200,12 +200,15 @@ class OutboundService:
         metadata: Mapping[str, Any] | None = None,
         purpose: str = MUC_DICH_MAC_DINH,
         the: str | None = None,
+        gui_boi: UUID | None = None,
     ) -> QueuedOutbound:
         key = idempotency_key.strip()
         if not key:
             raise ValueError("outbound idempotency key không được để trống")
         if role not in {"agent", "staff", "system"}:
             raise ValueError("outbound role không hợp lệ")
+        if gui_boi is not None:
+            metadata = {**(metadata or {}), "gui_boi": gui_boi}
         if not text.strip():
             raise ValueError("nội dung outbound không được để trống")
 
@@ -323,6 +326,7 @@ class OutboundService:
         kind: str = "image",
         purpose: str = MUC_DICH_MAC_DINH,
         the: str | None = None,
+        gui_boi: UUID | None = None,
     ) -> QueuedOutbound:
         key = idempotency_key.strip()
         if not key:
@@ -359,7 +363,7 @@ class OutboundService:
                 role,
                 visible_text,
                 key,
-                None,
+                {"gui_boi": gui_boi} if gui_boi is not None else None,
             )
             await tx.insert_attachment(
                 message_id,
@@ -496,9 +500,9 @@ class PostgresOutboundTransaction:
                 conversation_id, role, content, delivered, direction,
                 delivery_status, client_idempotency_key, grounded, confidence,
                 sources, model, tokens_in, tokens_out, cache_read, cost_usd,
-                latency_ms
+                latency_ms, gui_boi
             ) VALUES (
-                $1,$2,$3,false,'outbound','queued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+                $1,$2,$3,false,'outbound','queued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
             )
             RETURNING id
             """,
@@ -515,6 +519,9 @@ class PostgresOutboundTransaction:
             int(meta.get("cache_read", 0)),
             float(meta.get("cost_usd", 0.0)),
             int(meta.get("latency_ms", 0)),
+            # Người gửi (tin nhân viên). Đi qua metadata để không đổi chữ ký
+            # repository — xem 0030_nguoi_gui_tin.sql.
+            meta.get("gui_boi"),
         )
         return row["id"]
 

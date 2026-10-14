@@ -172,7 +172,7 @@ erDiagram
         NUMERIC cost_usd
         JSONB attachments
         TEXT direction
-        _ con_6_cot_nua
+        _ con_7_cot_nua
     }
     documents {
         UUID id
@@ -697,6 +697,7 @@ erDiagram
     nguoi_dung ||--o{ hoi_thoai_nhan : ""
     channel_accounts ||--o{ inbox_events : ""
     conversations ||--o{ messages : ""
+    nguoi_dung ||--o{ messages : ""
     nguoi_dung ||--o{ nguoi_dung_vai_tro : ""
     vai_tro ||--o{ nguoi_dung_vai_tro : ""
     conversations ||--o{ orders : ""

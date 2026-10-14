@@ -477,6 +477,26 @@
 
     <!-- ============ SỐ HIỆU ============ -->
     <section class="view" data-view="sohieu">
+      <!-- HIỆU SUẤT NHÂN VIÊN. Định nghĩa từng con số ở
+           agent/api/bao_cao_nhan_vien.py — đọc trước khi dùng nó để đánh
+           giá một người. Không nạp theo vòng 6 giây: báo cáo theo ngày,
+           đổi ngày thì mới tính lại. -->
+      <section class="panel">
+        <h2 class="panel__head">Hiệu suất nhân viên
+          <span class="panel__note">giờ Việt Nam · phản hồi tính từ lúc được giao</span></h2>
+        <form id="bcnvForm" class="form">
+          <div class="form__row">
+            <label class="field"><span>Từ ngày</span><input type="date" name="tu" required></label>
+            <label class="field"><span>Đến ngày</span><input type="date" name="den" required></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Xem</button>
+            <a class="btn btn--sm" id="bcnvExcel" href="#" download>Xuất Excel</a>
+          </div>
+        </form>
+        <div class="bang-cuon"><table class="bang" id="bcnvBang"></table></div>
+      </section>
+
       <section class="panel">
         <h2 class="panel__head">Sức khoẻ hệ thống
           <span class="panel__note">gọi thật từng thứ · mất vài giây</span>

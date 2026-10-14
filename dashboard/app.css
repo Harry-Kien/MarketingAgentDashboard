@@ -2061,3 +2061,12 @@ svg { flex: none; }
 .ghichu summary { cursor: pointer; font-weight: 600; color: hsl(var(--warning)); }
 .ghichu__dong { padding-top: 6px; }
 .ghichu__dong p { margin: 2px 0 0; white-space: pre-wrap; }
+
+/* ---------------- Bảng báo cáo ---------------- */
+/* Bảng rộng cuộn NGANG trong khung của nó, không đẩy cả trang tràn ở 375px. */
+.bang-cuon { overflow-x: auto; margin-top: 8px; }
+.bang { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bang th, .bang td { padding: 6px 10px; border-bottom: 1px solid hsl(var(--border)); text-align: right; white-space: nowrap; }
+.bang th:first-child, .bang td:first-child { text-align: left; }
+.bang th { font-weight: 600; color: hsl(var(--muted-foreground)); }
+.so--xau { color: hsl(var(--destructive)); font-weight: 600; }

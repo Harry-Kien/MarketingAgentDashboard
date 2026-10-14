@@ -4248,6 +4248,7 @@ async function refresh() {
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
+      if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
       await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
@@ -7007,3 +7008,54 @@ document.addEventListener("click", async (ev) => {
 document.addEventListener("toggle", (ev) => {
   if (ev.target.classList && ev.target.classList.contains("ghichu")) state.moGhiChu = ev.target.open;
 }, true);
+
+/* ---------------- Hiệu suất nhân viên ---------------- */
+function _ngayVN(d) {
+  // YYYY-MM-DD theo giờ máy người xem — dashboard dùng ở VN.
+  const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return z.toISOString().slice(0, 10);
+}
+
+function _giay(g) {
+  if (g == null) return "—";
+  if (g < 60) return `${Math.round(g)} giây`;
+  if (g < 3600) return `${Math.round(g / 60)} phút`;
+  return `${(g / 3600).toFixed(1)} giờ`;
+}
+
+async function loadBaoCaoNhanVien() {
+  const f = $("#bcnvForm");
+  if (!f) return;
+  if (!f.tu.value) {
+    const nay = new Date();
+    f.den.value = _ngayVN(nay);
+    f.tu.value = _ngayVN(new Date(nay.getTime() - 6 * 86400000));
+  }
+  const qs = `tu=${f.tu.value}&den=${f.den.value}`;
+  $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?${qs}`;
+  state.bcnvDaTai = true;
+  try {
+    const r = await api(`/bao-cao/nhan-vien?${qs}`);
+    const ds = r.nhan_vien || [];
+    $("#bcnvBang").innerHTML = `<thead><tr>
+      <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
+      <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
+      <th>Đơn</th><th>Trễ SLA</th></tr></thead><tbody>${ds.length ? ds.map((d) => `<tr>
+      <td>${esc(d.ho_ten)}</td><td>${d.hoi_thoai}</td><td>${d.tin_gui}</td>
+      <td>${_giay(d.phan_hoi_trung_vi_giay)}</td><td>${_giay(d.phan_hoi_p90_giay)}</td>
+      <td class="${d.chua_phan_hoi ? "so--xau" : ""}">${d.chua_phan_hoi}</td>
+      <td>${d.don}</td><td class="${d.tre_sla ? "so--xau" : ""}">${d.tre_sla}</td></tr>`).join("")
+      : '<tr><td colspan="8" class="empty">Chưa có nhân viên nào.</td></tr>'}</tbody>`;
+  } catch (e) { toast(e.message, true); }
+}
+
+$("#bcnvForm")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  loadBaoCaoNhanVien();
+});
+$("#bcnvForm")?.addEventListener("change", () => {
+  const f = $("#bcnvForm");
+  if (f.tu.value && f.den.value) {
+    $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?tu=${f.tu.value}&den=${f.den.value}`;
+  }
+});

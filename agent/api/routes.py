@@ -472,7 +472,8 @@ class SendBody(BaseModel):
 
 
 async def _queue_staff_reply(cid: uuid.UUID, body: SendBody,
-                             the: str | None = None):
+                             the: str | None = None,
+                             gui_boi: uuid.UUID | None = None):
     key = body.idempotency_key or f"staff:{uuid.uuid4()}"
     return await OutboundService(PostgresOutboundRepository()).queue_text(
         conversation_id=cid,
@@ -480,6 +481,7 @@ async def _queue_staff_reply(cid: uuid.UUID, body: SendBody,
         text=body.text,
         idempotency_key=key,
         the=the,
+        gui_boi=gui_boi,
     )
 
 
@@ -492,6 +494,14 @@ async def _xet_cua_so_hoac_409(cid: uuid.UUID) -> str | None:
     if not qd.duoc:
         raise HTTPException(409, qd.ly_do)
     return qd.the
+
+
+def _nguoi_id(nguoi: dict) -> uuid.UUID | None:
+    """Id người đăng nhập, hoặc None nếu không đọc được (test gọi thẳng hàm)."""
+    try:
+        return uuid.UUID(str(nguoi["id"]))
+    except (KeyError, ValueError):
+        return None
 
 
 def _xem_tat_ca_kenh(nguoi: dict) -> bool:
@@ -566,7 +576,7 @@ async def staff_send(conv_id: str, body: SendBody,
     await chan_neu_khong_duoc_tra_loi(cid, nguoi)
     the = await _xet_cua_so_hoac_409(cid)   # xet_tin_nhan_vien
     try:
-        queued = await _queue_staff_reply(cid, body, the)
+        queued = await _queue_staff_reply(cid, body, the, _nguoi_id(nguoi))
     except ConversationNotFound as exc:
         raise HTTPException(404, "Không thấy hội thoại") from exc
     return {
@@ -2708,6 +2718,7 @@ async def staff_send_file(
             caption=ten_hien,
             idempotency_key=khoa,
             the=the,
+            gui_boi=_nguoi_id(nguoi),
         )
     except ConversationNotFound as exc:
         raise HTTPException(404, "Không thấy hội thoại") from exc

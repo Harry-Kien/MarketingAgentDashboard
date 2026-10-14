@@ -45,6 +45,9 @@ QUYEN: dict[str, str] = {
     # thoại của mọi kênh — một lần nới quyền toàn hệ thống mà không có gì
     # hỏng để ai đó nhận ra.
     "hoi_thoai.xem_tat_ca": "Xem hội thoại của mọi kênh, kể cả kênh không được giao",
+    # Mẫu trả lời nhanh là câu MỌI người sẽ gửi cho khách — sửa nó là sửa
+    # lời của cả cửa hàng, nên tách khỏi `hoi_thoai.tra_loi` (ai cũng có).
+    "tra_loi_nhanh.sua": "Thêm, sửa, xoá mẫu trả lời nhanh",
 
     "khach.doc": "Xem danh sách khách",
     "khach.xem_tat_ca": "Xem khách của mọi kênh, kể cả kênh không được giao",

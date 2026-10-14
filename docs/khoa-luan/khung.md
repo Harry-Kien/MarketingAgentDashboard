@@ -80,4 +80,4 @@
 
 - Bảng nghiệm thu chức năng (`docs/nghiem-thu.md`)
 - Kết quả eval đã ẩn danh (từ `data/eval/ket-qua-*.json`, bỏ giá thật nếu có)
-- Danh mục quyền (41 quyền, `agent/core/quyen.py`)
+- Danh mục quyền (`agent/core/quyen.py`)

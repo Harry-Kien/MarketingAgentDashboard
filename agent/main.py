@@ -27,6 +27,7 @@ from agent.api.phong_thu_agent import router as phong_thu_router
 from agent.api.goi_ky_nang import router as goi_ky_nang_router
 from agent.api.mcp_may_chu import router as mcp_may_chu_router
 from agent.api.quyen import router as quyen_router
+from agent.api.tra_loi_nhanh import router as tra_loi_nhanh_router
 from agent.api.thanh_vien_kenh import router as thanh_vien_kenh_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
@@ -851,6 +852,7 @@ app.include_router(webchat_router)
 app.include_router(oauth_meta_router)
 app.include_router(oauth_zalo_oa_router)
 app.include_router(tich_hop.router)
+app.include_router(tra_loi_nhanh_router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một
 # đoạn. Đặt sớm hơn là nó nuốt cả /healthz, /mcp và trang dashboard.

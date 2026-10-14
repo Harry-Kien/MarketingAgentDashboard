@@ -2019,3 +2019,17 @@ svg { flex: none; }
   .chonkhach { padding-inline: 10px 8px; }
   .chonkhach input { width: 24px; height: 24px; }
 }
+
+/* ---------------- Trả lời nhanh ---------------- */
+.mau-nhanh {
+  position: fixed; z-index: 50; max-height: 280px; overflow-y: auto;
+  background: hsl(var(--card)); border: 1px solid hsl(var(--border));
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.mau-nhanh__dong {
+  padding: 8px 12px; cursor: pointer; font-size: 14px; line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mau-nhanh__dong b { color: hsl(var(--primary)); margin-right: 6px; }
+.mau-nhanh__dong span { color: hsl(var(--muted-foreground)); }
+.mau-nhanh__dong.is-chon, .mau-nhanh__dong:hover { background: hsl(var(--accent)); }

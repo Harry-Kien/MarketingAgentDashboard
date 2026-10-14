@@ -586,6 +586,31 @@
 
     <!-- ============ CẤU HÌNH AGENT ============ -->
     <section class="view" data-view="cauhinh">
+      <!-- MẪU TRẢ LỜI NHANH. Người trực gõ "/" + mã tắt trong ô nhắn tin.
+           Máy chủ CHẶN mẫu có cụm cấm quảng cáo mỹ phẩm — một mẫu sai là
+           vi phạm nhân lên theo số lần cả cửa hàng dùng nó. -->
+      <section class="panel">
+        <h2 class="panel__head">Mẫu trả lời nhanh
+          <span class="panel__note">gõ <b>/</b> + mã tắt trong ô nhắn tin</span></h2>
+        <div id="mauNhanhDs" class="rows"></div>
+        <form id="mauNhanhForm" class="form" hidden>
+          <input type="hidden" name="mau_id">
+          <div class="form__row">
+            <label class="field"><span>Mã tắt</span>
+              <input name="ma_tat" placeholder="ship" maxlength="32"
+                     pattern="[a-z0-9_\-]{1,32}" required
+                     title="chữ thường không dấu, số, gạch ngang hoặc gạch dưới"></label>
+          </div>
+          <label class="field"><span>Nội dung</span>
+            <textarea name="noi_dung" rows="3" maxlength="2000" required
+                      placeholder="Dạ shop giao toàn quốc, phí ship 30.000đ ạ."></textarea></label>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Lưu mẫu</button>
+            <button type="button" class="btn btn--sm" id="mauNhanhHuy">Bỏ sửa</button>
+          </div>
+        </form>
+      </section>
+
       <!-- ĐỊNH TUYẾN TỰ ĐỘNG.
            `AutoRoutingWorker` chạy nền từ lâu, nhưng không màn hình nào tạo
            được đội hay luật — nên nó chạy mỗi vòng, không tìm thấy luật nào,

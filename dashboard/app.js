@@ -44,7 +44,10 @@ async function api(path, options = {}) {
     // 429 của Phòng thử trả detail là object ({ly_do, ...}), không phải chuỗi.
     // Error() ép mọi message thành chuỗi bằng String() — không xử lý riêng thì
     // toast hiện "[object Object]", người dùng không biết vì sao bị chặn.
-    const err = new Error(typeof detail === "string" ? detail : (detail && detail.ly_do) || JSON.stringify(detail));
+    // Object có `detail` lồng (409 bản nháp, 422 mẫu trả lời nhanh: {cum,
+    // detail}) — lấy câu chữ, không hiện chuỗi JSON cho người trực.
+    const err = new Error(typeof detail === "string" ? detail
+      : (detail && (detail.ly_do || detail.detail)) || JSON.stringify(detail));
     /* Giữ nguyên `detail` dạng object cho nơi gọi cần rẽ nhánh theo nội
      * dung lỗi, không phải theo chuỗi chữ. Đọc lỗi bằng cách so chuỗi tiếng
      * Việt là thứ hỏng ngay lần đầu ai đó sửa lại câu thông báo. */
@@ -1060,6 +1063,9 @@ async function loadThread(id) {
     }
   }
   if (o_moi) {
+    // Gắn TRƯỚC phím Enter-gửi bên dưới: khi khung mẫu đang mở, Enter là
+    // "chọn mẫu", và trình nghe này chặn không cho nó tới trình gửi tin.
+    ganMauNhanh(o_moi);
     o_moi.addEventListener("input", () => {
       state.nhapTheoHoiThoai = state.nhapTheoHoiThoai || {};
       state.nhapTheoHoiThoai[id] = o_moi.value;
@@ -4214,7 +4220,7 @@ async function refresh() {
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadMauNhanh(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") await loadNhanSu();
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
@@ -6733,4 +6739,166 @@ document.addEventListener("click", async (e) => {
     toast(ghi ? "Đã ghi nhận xác nhận" : "Đã gỡ — cảnh báo quay lại");
     $("#erpthu")?.click();
   } catch (err) { toast(err.message, true); }
+});
+
+/* ---------------- Trả lời nhanh ---------------- */
+/* Gõ "/" ở ĐẦU ô nhắn tin → khung gợi ý mẫu; ↑↓ chọn, Enter/Tab chèn, Esc đóng.
+ *
+ * Khung nằm NGOÀI #convdetail (gắn vào <body>): vòng làm mới 6 giây dựng lại
+ * cả panel hội thoại, khung nằm trong đó thì cứ 6 giây biến mất một lần giữa
+ * lúc người trực đang chọn. `ganMauNhanh` được gọi lại sau mỗi lần dựng nên
+ * luôn bám đúng ô nhắn tin hiện tại. */
+const mauNhanh = { ds: [], chon: 0, o: null, hen: null, lan: 0 };
+
+function _khungMau() {
+  let k = $("#mau-nhanh");
+  if (!k) {
+    k = document.createElement("div");
+    k.id = "mau-nhanh";
+    k.className = "mau-nhanh";
+    k.setAttribute("role", "listbox");
+    k.setAttribute("aria-label", "Mẫu trả lời nhanh");
+    k.hidden = true;
+    document.body.appendChild(k);
+    // mousedown chứ không click: click tới SAU khi ô nhắn tin mất focus.
+    k.addEventListener("mousedown", (ev) => {
+      const d = ev.target.closest("[data-mau]");
+      if (!d) return;
+      ev.preventDefault();
+      _chenMau(Number(d.dataset.mau));
+    });
+  }
+  return k;
+}
+
+function _dongMau() {
+  const k = $("#mau-nhanh");
+  if (k) k.hidden = true;
+  mauNhanh.ds = [];
+}
+
+function _veMau() {
+  const k = _khungMau();
+  const o = mauNhanh.o;
+  if (!o || !document.body.contains(o) || !mauNhanh.ds.length) { _dongMau(); return; }
+  k.innerHTML = mauNhanh.ds.map((m, i) => `
+    <div class="mau-nhanh__dong${i === mauNhanh.chon ? " is-chon" : ""}" role="option"
+         aria-selected="${i === mauNhanh.chon}" data-mau="${i}">
+      <b>/${esc(m.ma_tat)}</b> <span>${esc(m.noi_dung)}</span>
+    </div>`).join("");
+  const r = o.getBoundingClientRect();
+  k.style.left = `${Math.max(8, r.left)}px`;
+  k.style.width = `${Math.min(r.width, window.innerWidth - 16)}px`;
+  k.style.bottom = `${window.innerHeight - r.top + 6}px`;
+  k.hidden = false;
+}
+
+function _chenMau(i) {
+  const m = mauNhanh.ds[i];
+  const o = mauNhanh.o;
+  if (!m || !o) return;
+  o.value = m.noi_dung;
+  _dongMau();
+  o.focus();
+  o.setSelectionRange(o.value.length, o.value.length);
+  // Báo cho trình giữ bản nháp biết chữ đã đổi.
+  o.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function _timMau(q) {
+  const lan = ++mauNhanh.lan;
+  try {
+    const r = await api(`/tra-loi-nhanh?q=${encodeURIComponent(q)}`);
+    if (lan !== mauNhanh.lan) return;     // đã có lần gõ mới hơn
+    mauNhanh.ds = r.mau.slice(0, 8);
+    mauNhanh.chon = 0;
+    _veMau();
+  } catch { _dongMau(); }                  // thiếu quyền / lỗi mạng: im, không chặn gõ
+}
+
+function ganMauNhanh(o) {
+  mauNhanh.o = o;
+  if (mauNhanh.ds.length) _veMau();        // panel vừa dựng lại: bám ô mới
+  o.addEventListener("input", () => {
+    const v = o.value;
+    const m = /^\/(\S{0,32})$/.exec(v);
+    if (!m) { _dongMau(); return; }
+    clearTimeout(mauNhanh.hen);
+    mauNhanh.hen = setTimeout(() => _timMau(m[1]), 150);
+  });
+  o.addEventListener("keydown", (ev) => {
+    const k = $("#mau-nhanh");
+    if (!k || k.hidden || !mauNhanh.ds.length) return;
+    if (ev.isComposing || ev.keyCode === 229) return;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const n = mauNhanh.ds.length;
+      mauNhanh.chon = (mauNhanh.chon + (ev.key === "ArrowDown" ? 1 : n - 1)) % n;
+      _veMau();
+    } else if (ev.key === "Enter" || ev.key === "Tab") {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();       // không để Enter thành "Gửi"
+      _chenMau(mauNhanh.chon);
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      _dongMau();
+    }
+  });
+  // Chỉ đóng khi người dùng THẬT SỰ rời ô nhắn tin. Vòng làm mới 6 giây vứt
+  // ô cũ (nó nhận `blur`) rồi trả focus cho ô mới — đóng vô điều kiện là
+  // khung tự biến mất mỗi 6 giây giữa lúc đang chọn (đo được trên bản xem
+  // trước 14.10.2026).
+  o.addEventListener("blur", () => setTimeout(() => {
+    if (document.activeElement !== mauNhanh.o) _dongMau();
+  }, 120));
+}
+
+async function loadMauNhanh() {
+  const ds = $("#mauNhanhDs");
+  if (!ds) return;
+  const sua = state.toiQuyen && state.toiQuyen.has("tra_loi_nhanh.sua");
+  $("#mauNhanhForm").hidden = !sua;
+  const r = await api("/tra-loi-nhanh");
+  ds.innerHTML = r.mau.length ? r.mau.map((m) => `
+    <div class="row">
+      <div class="row__main"><b>/${esc(m.ma_tat)}</b>
+        <span class="row__sub">${esc(m.noi_dung)}</span></div>
+      ${sua ? `<div class="row__nut">
+        <button type="button" class="btn btn--sm" data-mau-sua="${esc(m.id)}">Sửa</button>
+        <button type="button" class="btn btn--sm btn--halt" data-mau-xoa="${esc(m.id)}">Xoá</button>
+      </div>` : ""}
+    </div>`).join("")
+    : '<p class="empty">Chưa có mẫu nào.</p>';
+  ds.querySelectorAll("[data-mau-sua]").forEach((b) => b.addEventListener("click", () => {
+    const m = r.mau.find((x) => x.id === b.dataset.mauSua);
+    const f = $("#mauNhanhForm");
+    f.mau_id.value = m.id; f.ma_tat.value = m.ma_tat; f.noi_dung.value = m.noi_dung;
+    f.ma_tat.focus();
+  }));
+  ds.querySelectorAll("[data-mau-xoa]").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      await api(`/tra-loi-nhanh/${b.dataset.mauXoa}`, { method: "DELETE" });
+      toast("Đã xoá mẫu.");
+      loadMauNhanh();
+    } catch (e) { toast(e.message, true); }
+  }));
+}
+
+$("#mauNhanhForm")?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const id = f.mau_id.value;
+  const body = JSON.stringify({ ma_tat: f.ma_tat.value.trim().toLowerCase(),
+                                noi_dung: f.noi_dung.value });
+  try {
+    await api(id ? `/tra-loi-nhanh/${id}` : "/tra-loi-nhanh",
+              { method: id ? "PUT" : "POST", body });
+    toast("Đã lưu mẫu.");
+    f.reset(); f.mau_id.value = "";
+    loadMauNhanh();
+  } catch (e) { toast(e.message, true); }   // 422 cụm cấm: giữ chữ để sửa
+});
+$("#mauNhanhHuy")?.addEventListener("click", () => {
+  const f = $("#mauNhanhForm");
+  f.reset(); f.mau_id.value = "";
 });

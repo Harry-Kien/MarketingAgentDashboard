@@ -2070,3 +2070,5 @@ svg { flex: none; }
 .bang th:first-child, .bang td:first-child { text-align: left; }
 .bang th { font-weight: 600; color: hsl(var(--muted-foreground)); }
 .so--xau { color: hsl(var(--destructive)); font-weight: 600; }
+
+.order__qr { display: flex; gap: 6px; margin-top: 4px; justify-content: flex-end; }

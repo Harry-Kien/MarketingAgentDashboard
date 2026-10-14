@@ -88,3 +88,9 @@ pyyaml==6.0.3
 # langfuse: từng có trong danh sách nhưng KHÔNG được import ở bất kỳ đâu.
 # Quan sát chi phí giờ dựng từ bảng `messages` — xem GET /api/cost. Container
 # Langfuse cũng đã chuyển vào profile "trace" nên không tự chạy nữa.
+
+# Vẽ mã VietQR (SVG/PNG) cho đơn hàng. Thuần Python, BSD-3 — không kéo
+# theo Pillow. Tự vẽ thay vì gọi dịch vụ ảnh QR ngoài: xem
+# agent/thanh_toan/vietqr.py về vì sao không gửi số tài khoản + số tiền
+# của mọi đơn cho bên thứ ba.
+segno==1.6.6

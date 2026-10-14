@@ -2003,6 +2003,12 @@ async function loadOrders() {
       <span class="row__side">
         <span class="order__total">${vnd(o.tong_tien)}</span>
         <span class="row__time">${clock(o.created_at)}</span>
+        ${o.trang_thai !== "da_huy" ? `<span class="order__qr">
+            <a class="btn btn--sm btn--ghost" href="/api/orders/${o.id}/vietqr.svg" target="_blank"
+               rel="noopener" title="Mở mã VietQR (tổng hàng + phí ship)">QR</a>
+            ${o.conversation_id ? `<button type="button" class="btn btn--sm" data-oqr-gui="${o.id}"
+               title="Gửi mã QR thanh toán vào hội thoại của đơn">Gửi QR</button>` : ""}
+          </span>` : ""}
         ${cho_duyet ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--go" data-oapprove="${o.id}">Duyệt</button>
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
@@ -6600,7 +6606,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------------- cài đặt API ---------------- */
 
-const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)" };
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN)", thanh_toan: "Thanh toán (VietQR)" };
 
 /* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
  * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */
@@ -7058,4 +7064,18 @@ $("#bcnvForm")?.addEventListener("change", () => {
   if (f.tu.value && f.den.value) {
     $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?tu=${f.tu.value}&den=${f.den.value}`;
   }
+});
+
+/* ---------------- VietQR ---------------- */
+/* Ủy quyền một trình nghe ở document: danh sách đơn dựng lại mỗi lần làm
+ * mới, gắn vào từng nút là gắn lại mãi. */
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-oqr-gui]");
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const r = await api(`/orders/${b.dataset.oqrGui}/vietqr/gui`, { method: "POST" });
+    toast(r.duplicate ? "Mã QR này đã gửi trước đó." : "Đã xếp hàng gửi mã QR cho khách.");
+  } catch (e) { toast(e.message, true); }
+  finally { b.disabled = false; }
 });

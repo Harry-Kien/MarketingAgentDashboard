@@ -152,6 +152,13 @@ class Settings(BaseSettings):
     # https://online-gateway.ghn.vn/shiip/public-api/v2
     ghn_api_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api/v2"
     ghn_token: str = ""
+    # VietQR: tài khoản NHẬN tiền của cửa hàng. Sửa được ở dashboard (cấu
+    # hình động); đây chỉ là đường lui. Không bí mật — số tài khoản in ngay
+    # trên mã QR khách quét — nhưng sai một số là tiền khách chuyển đi đâu
+    # không ai biết, nên có kiểm định dạng ở cau_hinh_dong.kiem_gia_tri.
+    vietqr_bin: str = ""
+    vietqr_so_tk: str = ""
+    vietqr_ten_tk: str = ""
     ghn_shop_id: str = ""
     # Bí mật nằm trong URL webhook. TRỐNG = TỪ CHỐI mọi webhook vận chuyển,
     # không phải chấp nhận tất cả — xem agent/shipping/service.py

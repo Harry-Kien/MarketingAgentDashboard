@@ -70,6 +70,13 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
     MoTa("ERPNEXT_API_SECRET", "erp", "ERPNext API secret", True),
     MoTa("GHN_TOKEN", "van_chuyen", "GHN token", True),
     MoTa("GHN_SHOP_ID", "van_chuyen", "GHN shop id", False),
+    MoTa("VIETQR_BIN", "thanh_toan", "Mã BIN ngân hàng nhận tiền", False,
+         y_nghia="6 chữ số theo NAPAS, ví dụ Vietcombank 970436, Techcombank "
+                 "970407, MB 970422, ACB 970416, VPBank 970432."),
+    MoTa("VIETQR_SO_TK", "thanh_toan", "Số tài khoản nhận tiền", False,
+         y_nghia="Kiểm kỹ từng số: tiền khách quét QR chuyển thẳng vào tài khoản này."),
+    MoTa("VIETQR_TEN_TK", "thanh_toan", "Tên chủ tài khoản", False,
+         y_nghia="Chỉ để hiện cho khách đối chiếu — không nằm trong mã QR."),
 )}
 
 
@@ -137,6 +144,9 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "ERPNEXT_API_SECRET": lambda: settings.erpnext_api_secret,
     "GHN_TOKEN": lambda: settings.ghn_token,
     "GHN_SHOP_ID": lambda: settings.ghn_shop_id,
+    "VIETQR_BIN": lambda: settings.vietqr_bin,
+    "VIETQR_SO_TK": lambda: settings.vietqr_so_tk,
+    "VIETQR_TEN_TK": lambda: settings.vietqr_ten_tk,
 }
 
 
@@ -241,6 +251,11 @@ def kiem_gia_tri(khoa: str, gia_tri: str) -> str:
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: giá trị trống")
     if mo_ta.chon and gia_tri not in mo_ta.chon:
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: chỉ nhận {' | '.join(mo_ta.chon)}")
+    if khoa == "VIETQR_BIN" and not (gia_tri.isdigit() and len(gia_tri) == 6):
+        raise KhoaKhongHopLe(f"{mo_ta.nhan}: phải gồm đúng 6 chữ số")
+    if khoa == "VIETQR_SO_TK" and not (gia_tri.isalnum() and gia_tri.isascii()
+                                       and 6 <= len(gia_tri) <= 19):
+        raise KhoaKhongHopLe(f"{mo_ta.nhan}: chỉ chữ và số, 6–19 ký tự, không khoảng trắng")
     if khoa.startswith("MODEL_"):
         from agent.core.llm import PRICING
 

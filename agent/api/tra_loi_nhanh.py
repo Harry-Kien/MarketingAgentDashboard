@@ -71,7 +71,7 @@ async def liet_ke(
         thoat = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         rows = await db.fetch(
             "SELECT * FROM tra_loi_nhanh WHERE ma_tat LIKE $1 || '%' "
-            "OR public.bo_dau(noi_dung) LIKE '%' || public.bo_dau($1) || '%' "
+            "OR lower(public.bo_dau(noi_dung)) LIKE '%' || lower(public.bo_dau($1)) || '%' "
             "ORDER BY (ma_tat LIKE $1 || '%') DESC, ma_tat LIMIT 20", thoat)
     else:
         rows = await db.fetch("SELECT * FROM tra_loi_nhanh ORDER BY ma_tat LIMIT 500")

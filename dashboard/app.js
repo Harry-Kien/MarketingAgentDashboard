@@ -828,6 +828,12 @@ function choBadge(phut) {
 }
 
 function convRow(c, hangDoi) {
+  // Nhãn của hội thoại đang mở lấy từ DÒNG danh sách (đã có sẵn trong phản
+  // hồi), khỏi thêm một request nữa mỗi 6 giây.
+  if (Array.isArray(c.nhan)) {
+    state.nhanTheoHoiThoai = state.nhanTheoHoiThoai || {};
+    state.nhanTheoHoiThoai[c.id] = c.nhan;
+  }
   const sig = SIGNAL[c.status] || "plain";
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
@@ -841,6 +847,8 @@ function convRow(c, hangDoi) {
       <span class="row__title">${esc(customer)} ${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
       <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
       ${sub}
+      ${(c.nhan || []).length ? `<span class="row__nhan">${c.nhan.map((n) =>
+        `<span class="nhan">${esc(n)}</span>`).join("")}</span>` : ""}
     </span>
     <span class="row__side">
       ${hangDoi ? choBadge(c.cho_bao_lau_phut) : unread ? `<span class="unread">${unread}</span>` : ""}
@@ -867,19 +875,32 @@ $$("#convfilter .chip").forEach((chip) =>
 );
 
 async function loadConversations() {
-  const query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
-  const result = await api("/inbox/conversations?limit=100" + query);
+  let query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
+  if (state.convTim) query += `&q=${encodeURIComponent(state.convTim)}`;
+  if (state.convNhan) query += `&nhan=${encodeURIComponent(state.convNhan)}`;
+  const [result, nhanDs] = await Promise.all([
+    api("/inbox/conversations?limit=100" + query),
+    api("/inbox/nhan").catch(() => ({ nhan: [] })),
+  ]);
+  veLocNhan(nhanDs.nhan || []);
   const list = result.items || [];
   $("#convlist").innerHTML = list.length
     ? list.map(convRow).join("")
-    : '<p class="empty">Chưa có hội thoại nào.</p>';
+    : `<p class="empty">${state.convTim || state.convNhan
+        ? "Không có hội thoại nào khớp." : "Chưa có hội thoại nào."}</p>`;
   wireConvRows("#convlist");
   if (state.openConv) await loadThread(state.openConv);
 }
 
 async function loadThread(id) {
   let c;
-  try { c = await api("/inbox/conversations/" + id); }
+  let ghiChu = [];
+  try {
+    [c, ghiChu] = await Promise.all([
+      api("/inbox/conversations/" + id),
+      api(`/inbox/conversations/${id}/ghi-chu`).then((r) => r.ghi_chu).catch(() => []),
+    ]);
+  }
   catch { $("#convdetail").innerHTML = '<p class="empty">Không tìm thấy hội thoại.</p>'; return; }
 
   const msgs = c.messages.map((m) => {
@@ -1026,6 +1047,18 @@ async function loadThread(id) {
         ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
       </button>
     </div>
+    <div class="nhanbar">
+      ${(state.nhanTheoHoiThoai && state.nhanTheoHoiThoai[id] || []).map((n) =>
+        `<span class="nhan">${esc(n)}<button type="button" class="nhan__go" data-go-nhan="${esc(n)}"
+          aria-label="Gỡ nhãn ${esc(n)}">×</button></span>`).join("")}
+      <button type="button" class="btn btn--sm btn--ghost" id="btn-them-nhan">+ Nhãn</button>
+      <button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>
+    </div>
+    ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>
+      <summary>Ghi chú nội bộ (${ghiChu.length}) — khách không thấy</summary>
+      ${ghiChu.map((g) => `<div class="ghichu__dong"><b>${esc(g.nguoi || "—")}</b>
+        <span class="msg__meta">${clock(g.tao_luc)}</span><p>${esc(g.noi_dung)}</p></div>`).join("")}
+    </details>` : ""}
     <div class="opsbar">
       <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
@@ -6902,3 +6935,75 @@ $("#mauNhanhHuy")?.addEventListener("click", () => {
   const f = $("#mauNhanhForm");
   f.reset(); f.mau_id.value = "";
 });
+
+/* ---------------- Nhãn, ghi chú, tìm hội thoại ---------------- */
+/* Nhãn mô tả MỘT VỤ VIỆC ("chờ hàng về"), khác nhãn của khách ở Customer
+ * 360. Thêm nhãn và ghi chú bằng hộp hỏi (`hoiHop`) chứ không bằng ô trong
+ * panel: vòng làm mới 6 giây dựng lại cả panel, chữ đang gõ trong đó sẽ mất. */
+
+function veLocNhan(ds) {
+  const k = $("#nhanfilter");
+  if (!k) return;
+  k.hidden = !ds.length && !state.convNhan;
+  k.innerHTML = ds.map((n) => `<button type="button" class="chip ${state.convNhan === n.nhan ? "is-on" : ""}"
+    data-loc-nhan="${esc(n.nhan)}">${esc(n.nhan)} <span class="chip__so">${n.so}</span></button>`).join("");
+}
+
+$("#nhanfilter")?.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-loc-nhan]");
+  if (!b) return;
+  state.convNhan = state.convNhan === b.dataset.locNhan ? "" : b.dataset.locNhan;
+  loadConversations();
+});
+
+$("#convtim")?.addEventListener("input", (ev) => {
+  clearTimeout(state.henTim);
+  state.henTim = setTimeout(() => {
+    const q = ev.target.value.trim();
+    state.convTim = q.length >= 2 ? q : "";
+    loadConversations();
+  }, 300);
+});
+
+document.addEventListener("click", async (ev) => {
+  const id = state.openConv;
+  if (!id) return;
+  if (ev.target.closest("#btn-them-nhan")) {
+    const d = await hoiHop({
+      tieu_de: "Gắn nhãn cho hội thoại",
+      phu: "Nhãn mô tả vụ việc này, ví dụ: chờ hàng về, khiếu nại ship, đã báo giá.",
+      truong: [{ name: "nhan", label: "Nhãn", required: true, maxlength: 40 }],
+      nut: "Gắn nhãn",
+    });
+    if (!d || !d.nhan) return;
+    try {
+      await api(`/inbox/conversations/${id}/nhan`, { method: "POST", body: JSON.stringify({ nhan: d.nhan }) });
+      toast("Đã gắn nhãn.");
+      loadConversations();
+    } catch (e) { toast(e.message, true); }
+  } else if (ev.target.closest("[data-go-nhan]")) {
+    const n = ev.target.closest("[data-go-nhan]").dataset.goNhan;
+    try {
+      await api(`/inbox/conversations/${id}/nhan/${encodeURIComponent(n)}`, { method: "DELETE" });
+      loadConversations();
+    } catch (e) { toast(e.message, true); }
+  } else if (ev.target.closest("#btn-them-ghichu")) {
+    const d = await hoiHop({
+      tieu_de: "Ghi chú nội bộ",
+      phu: "Chỉ người trong cửa hàng thấy — KHÔNG gửi cho khách. Dùng để bàn giao giữa ca.",
+      truong: [{ name: "noi_dung", label: "Ghi chú", type: "textarea", rows: 4,
+                 required: true, maxlength: 5000 }],
+      nut: "Lưu ghi chú",
+    });
+    if (!d || !d.noi_dung) return;
+    try {
+      await api(`/inbox/conversations/${id}/ghi-chu`, { method: "POST", body: JSON.stringify({ noi_dung: d.noi_dung }) });
+      state.moGhiChu = true;
+      toast("Đã lưu ghi chú.");
+      loadThread(id);
+    } catch (e) { toast(e.message, true); }
+  }
+});
+document.addEventListener("toggle", (ev) => {
+  if (ev.target.classList && ev.target.classList.contains("ghichu")) state.moGhiChu = ev.target.open;
+}, true);

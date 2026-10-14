@@ -48,7 +48,8 @@ RA = ROOT / "docs" / "kien-truc.md"
 # Nhóm bảng theo phần nghiệp vụ. Một ERD 16 bảng phẳng thì không ai đọc
 # nổi; chia nhóm là thứ biến một mớ hộp thành một câu chuyện.
 NHOM = {
-    "Hội thoại": ["conversations", "messages", "ho_so_khach", "processed_webhooks"],
+    "Hội thoại": ["conversations", "messages", "ho_so_khach", "processed_webhooks",
+                  "hoi_thoai_nhan", "hoi_thoai_ghi_chu", "tra_loi_nhanh"],
     "Bán hàng": ["orders", "ton_kho", "kho_bien_dong"],
     "Tri thức (RAG)": ["documents", "chunks"],
     "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],

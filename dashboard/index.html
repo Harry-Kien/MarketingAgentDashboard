@@ -280,12 +280,19 @@
       </div>
       <div class="convo">
         <aside class="convo__list">
+          <!-- Tìm theo tên khách hoặc NỘI DUNG tin, gõ không dấu vẫn ra.
+               Ô này nằm NGOÀI vùng vòng làm mới dựng lại, nên chữ đang gõ
+               không mất. -->
+          <input type="search" id="convtim" class="convtim" maxlength="100"
+                 aria-label="Tìm hội thoại theo tên khách hoặc nội dung tin"
+                 placeholder="Tìm tên khách, nội dung tin…" autocomplete="off">
           <div class="filterbar" id="convfilter">
             <button type="button" class="chip is-on" data-status="all">Tất cả</button>
             <button type="button" class="chip" data-status="assist">Chờ duyệt</button>
             <button type="button" class="chip" data-status="escalated">Đã chuyển</button>
             <button type="button" class="chip" data-status="auto">Tự xử lý</button>
           </div>
+          <div class="filterbar filterbar--nhan" id="nhanfilter" hidden></div>
           <div id="convlist" class="rows"></div>
         </aside>
         <section class="convo__detail" id="convdetail">

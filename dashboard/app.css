@@ -2033,3 +2033,31 @@ svg { flex: none; }
 .mau-nhanh__dong b { color: hsl(var(--primary)); margin-right: 6px; }
 .mau-nhanh__dong span { color: hsl(var(--muted-foreground)); }
 .mau-nhanh__dong.is-chon, .mau-nhanh__dong:hover { background: hsl(var(--accent)); }
+
+/* ---------------- Nhãn, ghi chú, tìm hội thoại ---------------- */
+.convtim {
+  width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 8px 12px;
+  border: 1px solid hsl(var(--input)); border-radius: var(--radius);
+  background: hsl(var(--card)); font: inherit; font-size: 14px;
+}
+.filterbar--nhan { flex-wrap: wrap; }
+.chip__so { opacity: .6; margin-left: 2px; }
+.row__nhan, .nhanbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.row__nhan { margin-top: 4px; }
+.nhanbar { padding: 6px 16px; border-bottom: 1px solid hsl(var(--border)); }
+.nhan {
+  display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px;
+  border-radius: 999px; font-size: 12px; line-height: 18px;
+  background: hsl(var(--warning) / .12); color: hsl(var(--warning));
+}
+.nhan__go { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; }
+/* Ghi chú nội bộ phải trông KHÁC HẲN tin khách: người trực liếc qua là biết
+ * đây là chữ nội bộ, không phải thứ đã gửi đi. */
+.ghichu {
+  margin: 8px 16px; padding: 8px 12px; border-left: 3px solid hsl(var(--warning));
+  background: hsl(var(--warning) / .06); border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 13px;
+}
+.ghichu summary { cursor: pointer; font-weight: 600; color: hsl(var(--warning)); }
+.ghichu__dong { padding-top: 6px; }
+.ghichu__dong p { margin: 2px 0 0; white-space: pre-wrap; }

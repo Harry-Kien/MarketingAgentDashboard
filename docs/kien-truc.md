@@ -126,12 +126,12 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-56 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+59 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
-| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` |
+| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` |
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
@@ -632,6 +632,28 @@ erDiagram
         TIMESTAMPTZ tao_luc
         _ con_1_cot_nua
     }
+    tra_loi_nhanh {
+        UUID id
+        TEXT ma_tat
+        TEXT noi_dung
+        UUID tao_boi
+        TIMESTAMPTZ tao_luc
+        TIMESTAMPTZ sua_luc
+    }
+    hoi_thoai_nhan {
+        UUID conversation_id
+        TEXT nhan
+        UUID tao_boi
+        TIMESTAMPTZ tao_luc
+        KEY PRIMARY
+    }
+    hoi_thoai_ghi_chu {
+        UUID id
+        UUID conversation_id
+        TEXT noi_dung
+        UUID tao_boi
+        TIMESTAMPTZ tao_luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -669,6 +691,10 @@ erDiagram
     channel_accounts ||--o{ credential_secrets : ""
     contacts ||--o{ data_retention_jobs : ""
     nguoi_dung ||--o{ data_retention_jobs : ""
+    conversations ||--o{ hoi_thoai_ghi_chu : ""
+    nguoi_dung ||--o{ hoi_thoai_ghi_chu : ""
+    conversations ||--o{ hoi_thoai_nhan : ""
+    nguoi_dung ||--o{ hoi_thoai_nhan : ""
     channel_accounts ||--o{ inbox_events : ""
     conversations ||--o{ messages : ""
     nguoi_dung ||--o{ nguoi_dung_vai_tro : ""
@@ -688,6 +714,7 @@ erDiagram
     channel_accounts ||--o{ sla_policies : ""
     nguoi_dung ||--o{ team_members : ""
     teams ||--o{ team_members : ""
+    nguoi_dung ||--o{ tra_loi_nhanh : ""
     vai_tro ||--o{ vai_tro_quyen : ""
     videos ||--o{ video_assets : ""
     conversations ||--o{ videos : ""

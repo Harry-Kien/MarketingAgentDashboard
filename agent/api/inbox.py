@@ -37,6 +37,18 @@ class InboxFilters:
     channel: str | None = None
     status: str | None = None
     assignee_id: UUID | None = None
+    nhan: str | None = None
+    q: str | None = None
+
+
+def mau_tim(q: str) -> str:
+    """
+    Chuỗi tìm cho `LIKE`, đã thoát ký tự đại diện.
+
+    Không thoát thì gõ "%" là khớp MỌI hội thoại, và gõ "_" là khớp mọi ký
+    tự — người trực tưởng tìm được, thật ra là đang xem cả danh sách.
+    """
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def encode_cursor(updated_at: datetime, conversation_id: UUID) -> str:
@@ -93,6 +105,24 @@ class PostgresInboxQueryRepository:
             clauses.append(
                 f"conversation.assigned_to = {bind(filters.assignee_id)}"
             )
+        if filters.nhan:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM hoi_thoai_nhan nhan_loc "
+                "WHERE nhan_loc.conversation_id = conversation.id "
+                f"AND nhan_loc.nhan = {bind(filters.nhan)})"
+            )
+        if filters.q:
+            # Bỏ dấu + chữ thường ở CẢ hai phía: gõ "kem chong nang" ra tin
+            # "Kem chống nắng". Biểu thức khớp đúng chỉ mục trigram của
+            # 0029_tim_noi_dung_tin.sql — viết khác đi là quét cả bảng.
+            mau = bind(mau_tim(filters.q))
+            tim = f"'%' || lower(public.bo_dau({mau})) || '%'"
+            clauses.append(
+                f"(lower(public.bo_dau(coalesce(conversation.customer_name, ''))) LIKE {tim} "
+                "OR EXISTS (SELECT 1 FROM messages tim_tin "
+                "WHERE tim_tin.conversation_id = conversation.id "
+                f"AND lower(public.bo_dau(tim_tin.content)) LIKE {tim}))"
+            )
         if cursor is not None:
             ts_param = bind(cursor[0])
             id_param = bind(cursor[1])
@@ -114,6 +144,11 @@ class PostgresInboxQueryRepository:
                    conversation.msg_count, conversation.updated_at,
                    latest.content AS last_message,
                    latest.delivery_status AS last_delivery_status,
+                   ARRAY(
+                       SELECT nhan_hien.nhan FROM hoi_thoai_nhan nhan_hien
+                       WHERE nhan_hien.conversation_id = conversation.id
+                       ORDER BY nhan_hien.nhan
+                   ) AS nhan,
                    (
                        SELECT count(*)
                        FROM messages unread_message
@@ -396,6 +431,8 @@ async def list_inbox_conversations(
     channel: str | None = None,
     status: str | None = None,
     assignee_id: UUID | None = None,
+    nhan: str | None = Query(None, max_length=40),
+    q: str | None = Query(None, max_length=100),
     cursor: str | None = None,
     limit: int = Query(50, ge=1, le=100),
     user: dict = Depends(can_quyen("hoi_thoai.doc")),
@@ -411,7 +448,11 @@ async def list_inbox_conversations(
     rows = await repository.list_conversations(
         user_id=user_id,
         is_admin=is_admin,
-        filters=InboxFilters(account_id, channel, status, assignee_id),
+        # Dưới 2 ký tự thì bỏ qua: "a" khớp gần như mọi tin, một lượt quét
+        # tốn mà không thu hẹp được gì.
+        filters=InboxFilters(account_id, channel, status, assignee_id,
+                             (nhan or "").strip() or None,
+                             q.strip() if q and len(q.strip()) >= 2 else None),
         cursor=decoded,
         limit=limit + 1,
     )

@@ -193,10 +193,7 @@ function drawTape(tape) {
     const id = ev.target.closest("[data-conv]")?.dataset.conv;
     if (!id) return;
     state.openConv = id;
-    $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "hoithoai"));
-    $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "hoithoai"));
-    state.view = "hoithoai";
-    refresh();
+    doiMan("hoithoai");
   };
 
   $("#tape-now").textContent = tape.length
@@ -742,6 +739,19 @@ async function loadOverview() {
      hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
      lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
      API đã xếp sẵn ai chờ lâu nhất lên đầu. */
+  /* Hai khối dưới đây (`#queue` và `#videoqueue`) chỉ tồn tại trong màn
+     Ca trực. Nạp chúng khi đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
+     ĐO ĐƯỢC 22.09.2026 trên dashboard đang chạy: `loadOverview()` phát BA
+     request, và `refresh()` gọi nó mỗi 6 giây bất kể màn nào đang mở —
+     tức 30 request/phút mỗi tab, trong đó hai phần ba kéo tới 200 hội
+     thoại và 30 video mà không ai nhìn. Nhân với số người trực thì đó là
+     tải thật trên máy chủ, đổi lấy không gì cả.
+
+     Vẫn giữ `/overview` chạy mọi lúc: nó nuôi các con số trên thanh điều
+     hướng, và người trực cần thấy "Ca trực" nhảy số kể cả khi đang đứng ở
+     màn khác — đó chính là cách họ biết có việc mới. */
+  if (state.view !== "ca") return;
+
   const waiting = await api("/conversations?status=can_nguoi&limit=200");
   $("#queue").innerHTML = waiting.length
     ? waiting.map((c) => convRow(c, true)).join("")
@@ -840,10 +850,7 @@ function wireConvRows(scope) {
   $$(`${scope} [data-conv]`).forEach((el) =>
     el.addEventListener("click", () => {
       state.openConv = el.dataset.conv;
-      state.view = "hoithoai";
-      $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "hoithoai"));
-      $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "hoithoai"));
-      refresh();
+      doiMan("hoithoai");
     })
   );
 }
@@ -1296,10 +1303,14 @@ async function loadThread(id) {
 
 function openCustomer(id) {
   state.openContact = id;
-  state.view = "khachhang";
-  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "khachhang"));
-  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "khachhang"));
-  loadContacts();
+  /* Đi qua `doiMan` chứ KHÔNG gọi thẳng `loadContacts()`.
+   *
+   * Bản cũ gọi thẳng, nên thiếu `loadTruongKhach()` mà `refresh()` vẫn gọi
+   * cho màn này. Hệ quả: `oTruongKhach()` thấy `truongKhach.ds` rỗng và
+   * `return ""` — toàn bộ trường tuỳ biến BIẾN MẤT, không báo gì, cho tới
+   * khi vòng 6 giây tình cờ vá lại. Mở hồ sơ khách từ hội thoại là đúng
+   * đường đi vào lỗi ấy. */
+  doiMan("khachhang");
 }
 
 $("#contactsearch")?.addEventListener("submit", (ev) => {
@@ -1651,6 +1662,70 @@ function oTruongKhach(contact) {
       <button class="btn btn--sm" type="submit">Lưu thông tin thêm</button></form>`;
 }
 
+/* Khoá nhận dạng một ô nhập, BỀN qua mỗi lần dựng lại DOM.
+ *
+ * Không dùng tham chiếu phần tử được: sau `innerHTML` thì phần tử cũ đã
+ * chết. Phải là khoá tính từ nội dung — mã trường, hoặc form + tên ô. */
+function _khoaO(o) {
+  if (o.dataset.tkNhieu) return `tkn:${o.dataset.tkNhieu}:${o.value}`;
+  if (o.dataset.tk) return `tk:${o.dataset.tk}`;
+  const f = o.closest("form");
+  return `${f ? f.id : "khong-form"}:${o.name || ""}`;
+}
+
+/* Ô này người ta có TỰ SỬA không?
+ *
+ * Phân biệt được điều đó mới là phần khó. Giữ lại TẤT CẢ các ô thì một
+ * đồng nghiệp vừa đổi trường tuỳ biến ở máy khác sẽ bị giá trị cũ trên
+ * màn này đè ngược lại — chữa một lỗi im lặng bằng một lỗi im lặng tệ hơn.
+ *
+ * `defaultValue`/`defaultChecked` chính là giá trị vừa dựng từ dữ liệu máy
+ * chủ (DOM sinh bằng innerHTML nên thuộc tính HTML là bản của máy chủ).
+ * Lệch với nó nghĩa là người dùng đã gõ. */
+function _oDaSua(o) {
+  if (o.type === "checkbox" || o.type === "radio") return o.checked !== o.defaultChecked;
+  if (o.tagName === "SELECT") {
+    const mac = o.querySelector("option[selected]");
+    return o.value !== (mac ? mac.value : (o.options[0] || {}).value);
+  }
+  return o.value !== o.defaultValue;
+}
+
+function _luuDangGo(goc) {
+  const giu = { gia: new Map(), oFocus: null, dau: null, cuoi: null };
+  if (!goc) return giu;
+  $$("input, textarea, select", goc).forEach((o) => {
+    const k = _khoaO(o);
+    if (_oDaSua(o)) {
+      giu.gia.set(k, o.type === "checkbox" || o.type === "radio" ? o.checked : o.value);
+    }
+    if (document.activeElement === o) {
+      giu.oFocus = k;
+      // selectionStart ném với input type=email/number -> bọc try.
+      try { giu.dau = o.selectionStart; giu.cuoi = o.selectionEnd; } catch { /* không có con trỏ */ }
+    }
+  });
+  return giu;
+}
+
+function _traDangGo(goc, giu) {
+  if (!goc) return;
+  $$("input, textarea, select", goc).forEach((o) => {
+    const k = _khoaO(o);
+    if (giu.gia.has(k)) {
+      const v = giu.gia.get(k);
+      if (o.type === "checkbox" || o.type === "radio") o.checked = v;
+      else o.value = v;
+    }
+    if (giu.oFocus === k) {
+      o.focus();
+      if (giu.dau != null && o.setSelectionRange) {
+        try { o.setSelectionRange(giu.dau, giu.cuoi); } catch { /* ô không nhận con trỏ */ }
+      }
+    }
+  });
+}
+
 async function loadContactDetail(id) {
   let contact;
   try { contact = await api(`/contacts/${id}`); }
@@ -1668,7 +1743,14 @@ async function loadContactDetail(id) {
     <button class="timeline-item" type="button" data-open-conv="${conv.id}">
       ${srcBadge(conv.channel)}<span>${esc(conv.account_name)} · ${esc(conv.status)}</span><time>${clock(conv.updated_at)}</time>
     </button>`).join("");
-  $("#contactdetail").innerHTML = `
+  /* Panel này bị dựng lại mỗi 6 giây (refresh -> loadContacts -> hàm này).
+   * Không giữ chữ đang gõ thì ô ghi chú bàn giao 5000 ký tự biến mất giữa
+   * chừng: không lỗi, không toast, người trực chỉ thấy ô trống và tưởng
+   * mình bấm nhầm. Cùng bài đã giải cho ô sửa tin nhắn bằng `state.suaText`
+   * và cho ô Sức khoẻ kênh bằng `state.sucKhoeKenh`. */
+  const oGoc = $("#contactdetail");
+  const dangGo = _luuDangGo(oGoc);
+  oGoc.innerHTML = `
     <div class="profile-head"><span class="avatar avatar--lg">${esc((contact.display_name || "K").slice(0, 1).toUpperCase())}</span>
       <div><p class="eyebrow">CUSTOMER 360</p><h2>${esc(contact.display_name || "Khách")}</h2>
         <p>${esc(contact.phone || "Chưa có số điện thoại")} · ${esc(contact.email || "Chưa có email")}</p></div>
@@ -1702,14 +1784,18 @@ async function loadContactDetail(id) {
     <h3 class="subhead">Consent</h3><div class="consent-row">${consents || '<span class="empty">Chưa ghi nhận consent.</span>'}</div>
     <form id="contact-consent-form" class="consent-form">
       <input name="purpose" maxlength="80" required placeholder="Mục đích, ví dụ marketing">
-      <select name="status"><option value="granted">Đồng ý</option><option value="denied">Từ chối</option><option value="withdrawn">Rút lại</option></select>
+      <select name="status" aria-label="Trạng thái consent"><option value="granted">Đồng ý</option><option value="denied">Từ chối</option><option value="withdrawn">Rút lại</option></select>
       <input name="source" maxlength="300" required placeholder="Nguồn bằng chứng">
       <button class="btn btn--sm" type="submit">Ghi consent</button>
     </form>
     <h3 class="subhead">Ghi chú nội bộ</h3><div class="contact-notes">${notes || '<span class="empty">Chưa có ghi chú.</span>'}</div>
     <form id="contact-note-form" class="note-form"><textarea name="body" maxlength="5000" required placeholder="Thông tin cần bàn giao cho đội chăm sóc…"></textarea>
-      <select name="visibility"><option value="team">Cả đội</option><option value="manager">Quản lý</option></select><button class="btn btn--sm" type="submit">Lưu ghi chú</button></form>
+      <select name="visibility" aria-label="Ai đọc được ghi chú này"><option value="team">Cả đội</option><option value="manager">Quản lý</option></select><button class="btn btn--sm" type="submit">Lưu ghi chú</button></form>
     <h3 class="subhead">Hội thoại</h3><div class="timeline">${conversations || '<p class="empty">Chưa có hội thoại.</p>'}</div>`;
+
+  /* Trả lại NGAY sau khi dựng, trước khi gắn sự kiện: gán `.value` không
+     phát `input`, nên không có nguy cơ kích hoạt nhầm handler nào. */
+  _traDangGo(oGoc, dangGo);
 
   $("#contact-truong-form")?.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1795,10 +1881,8 @@ async function loadContactDetail(id) {
     } catch (error) { toast(error.message, true); }
   });
   $$('[data-open-conv]').forEach((button) => button.addEventListener("click", () => {
-    state.openConv = button.dataset.openConv; state.view = "hoithoai";
-    $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === "hoithoai"));
-    $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === "hoithoai"));
-    loadConversations();
+    state.openConv = button.dataset.openConv;
+    doiMan("hoithoai");
   }));
 }
 

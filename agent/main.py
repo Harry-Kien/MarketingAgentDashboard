@@ -615,7 +615,11 @@ async def lifespan(app: FastAPI):
     # request đầu tiên — mà lỗi đó chỉ hiện khi có client thật gọi tới, tức
     # là hỏng im lặng cho tới đúng lúc cần dùng.
     mcp_ctx = None
-    if settings.mcp_token and (_m := getattr(app.state, "mcp_app", None)):
+    if settings.mcp_token and (_tao := getattr(app.state, "tao_mcp_app", None)):
+        # Bản MỚI cho mỗi lần chạy — xem `tao_mcp_app` về vì sao dùng lại
+        # một bản là hỏng từ app thứ hai trở đi trong cùng tiến trình.
+        _m = _tao()
+        app.state.mcp_app = _m
         mcp_ctx = _m.router.lifespan_context(_m)
         await mcp_ctx.__aenter__()
     if poller:
@@ -626,6 +630,9 @@ async def lifespan(app: FastAPI):
     if mcp_ctx is not None:
         with suppress(Exception):
             await mcp_ctx.__aexit__(None, None, None)
+        # Gỡ tham chiếu: app đã tắt thì request tới /mcp phải nổ rõ ràng,
+        # không phục vụ bằng một session manager đã đóng.
+        app.state.mcp_app = None
 
     for task in tasks_nen:
         task.cancel()
@@ -1668,11 +1675,59 @@ async def _mcp_them_gach_cheo(request: Request):
 if settings.mcp_token:
     from agent.mcp_server import mcp as _mcp
 
-    _mcp_app = _mcp.streamable_http_app(streamable_http_path="/", stateless_http=True)
-    app.mount("/mcp", _mcp_app, name="mcp")
-    # Cất lại để `lifespan` khởi động được nó. Mount không tự chạy lifespan
-    # của app con — đây là chỗ mọi lần mount ASGI lồng nhau bị vấp.
-    app.state.mcp_app = _mcp_app
+    def tao_mcp_app():
+        """
+        Dựng MỘT app MCP MỚI. Gọi lại mỗi lần lifespan khởi động.
+
+        VÌ SAO KHÔNG DÙNG LẠI MỘT BẢN DUY NHẤT
+        --------------------------------------
+        `StreamableHTTPSessionManager.run()` chỉ chạy được ĐÚNG MỘT LẦN cho
+        mỗi thể hiện; lần thứ hai nó ném
+        "run() can only be called once per instance".
+
+        Sản xuất không thấy lỗi này vì lifespan chỉ chạy một lần rồi tiến
+        trình sống mãi. Nhưng bộ test thì dựng app nhiều lần trong CÙNG một
+        tiến trình, nên từ app thứ hai trở đi mọi test dùng lifespan đều
+        ERROR.
+
+        ĐO ĐƯỢC 22.09.2026 trên `HEAD` chưa sửa gì: `pytest
+        tests/test_thanh_vien_kenh.py` với Postgres thật cho 9 passed,
+        4 errors — toàn bộ là lỗi này. Nó ẩn suốt vì ở máy phát triển các
+        test ấy bị bỏ qua do thiếu `TEST_DATABASE_URL`.
+
+        Dựng mới mỗi lần là đúng cả hai phía: sản xuất vẫn một lần, test
+        được bao nhiêu lần cũng sạch.
+        """
+        return _mcp.streamable_http_app(streamable_http_path="/", stateless_http=True)
+
+    class _McpChuyenTiep:
+        """
+        Chuyển tiếp sang app MCP ĐANG hiệu lực.
+
+        Mount giữ tham chiếu cố định tới đối tượng lúc mount, nên nếu mount
+        thẳng app MCP thì việc dựng bản mới ở lifespan vô nghĩa — mount vẫn
+        phục vụ bản cũ. Lớp mỏng này đọc `app.state.mcp_app` tại thời điểm
+        có request, nên luôn trỏ đúng bản vừa dựng.
+        """
+
+        async def __call__(self, scope, receive, send):
+            con = getattr(app.state, "mcp_app", None)
+            if con is None:
+                # Nổ to chứ không trả 404 im lặng: 404 ở đây trông y hệt
+                # "sai đường dẫn", và người ta sẽ đi sửa URL thay vì sửa
+                # vòng đời.
+                raise RuntimeError(
+                    "MCP chưa khởi động: lifespan của app chưa chạy, hoặc "
+                    "đã tắt. Đây là lỗi vòng đời, không phải sai đường dẫn."
+                )
+            await con(scope, receive, send)
+
+    app.mount("/mcp", _McpChuyenTiep(), name="mcp")
+    # Chưa dựng app con ở đây — `lifespan` dựng, vì mỗi lần chạy cần một bản
+    # riêng. Mount không tự chạy lifespan của app con; đó là chỗ mọi lần
+    # mount ASGI lồng nhau bị vấp.
+    app.state.mcp_app = None
+    app.state.tao_mcp_app = tao_mcp_app
 
 class _GiaoDienLuonHoiLai(StaticFiles):
     """`StaticFiles` nhưng bắt trình duyệt hỏi lại trước khi dùng bản đệm.

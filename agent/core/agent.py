@@ -94,6 +94,50 @@ class Reply:
     goi_ky_nang: list[str] = field(default_factory=list)
 
 
+# ══ DANH MỤC LỚP LƯỚI — NGUỒN SỰ THẬT DUY NHẤT ═══════════════════════════
+#
+# VÌ SAO PHẢI CÓ DANH MỤC NÀY
+# ---------------------------
+# ĐO ĐƯỢC 22.09.2026: số lớp lưới được gõ tay ở NĂM chỗ, và chúng không
+# khớp nhau. `CLAUDE.md` và `docs/ky-nang.md` ghi "sáu"; còn
+# `docs/co-so-ly-thuyet.md`, `docs/kien-truc.md` và `docs/thuc-nghiem.md`
+# ghi "năm". Tệ hơn con số: bảng trong `co-so-ly-thuyet.md` liệt kê
+# `_stalls` như một lớp lưới — nó KHÔNG phải, nó là cú nhắc gọi lại công cụ
+# và không hề đặt `luoi_bat` — đồng thời bỏ sót lưới ③ (tin cậy thấp) và
+# lưới ⑥ (chẩn đoán y tế trong câu trả lời).
+#
+# CLAUDE.md dặn "đừng gỡ lớp nào mà không đọc co-so-ly-thuyet.md mục 6",
+# rồi chính mục ấy mô tả sai tập hợp cần bảo vệ. Một người tin nó sẽ đi tìm
+# `_stalls` để bảo trì và không biết lưới ⑥ tồn tại.
+#
+# Nên con số thôi không tự gõ nữa: đếm từ đây. Cùng lý do với
+# `docs/kien-truc.md` — thứ nào sinh được thì sinh, đừng gõ.
+LOP_LUOI: dict[str, str] = {
+    # mã `luoi_bat`      -> chặn cách trượt nào
+    "tran_hoi_thoai": "Trần chi phí một hội thoại",
+    "injection": "Tin khách có dấu hiệu tiêm chỉ dẫn, quét TRƯỚC khi gọi model",
+    "tin_cay_thap": "Căn cứ yếu — soi độ tin cậy của đoạn tri thức lấy được",
+    "bat_buoc_chuyen": "CÂU HỎI chạm luật quảng cáo / ranh giới y tế",
+    "hua_khong_goi": "Model NÓI sẽ chuyển người nhưng không gọi công cụ",
+    "chan_doan_y_te": "CÂU TRẢ LỜI chứa chẩn đoán y tế",
+}
+
+# Mã escalate KHÔNG phải lớp lưới: đường chuyển người chạy đúng thiết kế,
+# không phải lưới bắt một cú trượt. Tách ra để đếm lưới không lẫn với
+# chúng — gộp vào là con số phồng lên mà không ai biết vì sao.
+MA_CHUYEN_KHAC: dict[str, str] = {
+    "tran_ngay": "Chạm trần chi phí NGÀY (chốt ngân sách, phạm vi toàn cục)",
+    "het_vong": "Hết số vòng gọi công cụ cho phép",
+    "cong_cu_chuyen_nguoi": "Agent chủ động gọi công cụ chuyển người",
+    "cong_cu_yeu_cau": "Công cụ trả về yêu cầu cần người xử lý",
+}
+
+
+def so_lop_luoi() -> int:
+    """Đếm lớp lưới. Tài liệu gọi hàm này thay vì gõ số."""
+    return len(LOP_LUOI)
+
+
 _CAT_CHUOI = 400
 _CAT_DANH_SACH = 20
 

@@ -13,6 +13,7 @@ from agent.omnichannel.outbound_service import (
     PostgresOutboundRepository,
     handover_idempotency_key,
 )
+from conftest import dem_bo_qua_integration, dia_chi_csdl_kiem_thu
 
 
 class _Transaction:
@@ -547,8 +548,9 @@ def test_postgres_lock_idempotency_chay_that_tren_postgresql():
     Bài học: chỗ nào fake thay cho driver thì chỗ đó phải có một test chạm
     driver thật, dù chỉ một.
     """
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = dia_chi_csdl_kiem_thu()
     if not database_url:
+        dem_bo_qua_integration()
         pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
 
     import asyncpg

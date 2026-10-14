@@ -66,15 +66,26 @@ def test_so_test_khai_trong_tai_lieu_khop_thuc_te():
     """Con số gõ tay là con số sẽ lệch."""
     m = re.search(r"(\d+) test", MD)
     assert m, "không khai số test"
-    that = len(list((ROOT / "tests").glob("test_*.py")))
-    assert that > 0
-    # Không so tuyệt đối — chỉ chặn lệch quá xa để còn thấy được.
+    khai = int(m.group(1))
+
+    # SO VỚI THỰC TẾ, không so với một khoảng gõ tay.
     #
-    # Khoảng cũ là 300–900, dựng khi bộ test còn ~440 ca. Bộ đã lớn gấp ba
-    # rưỡi, nên chính CÂU CHẶN NÀY thành thứ nói sai: nó đỏ khi tài liệu
-    # được cập nhật cho ĐÚNG. Nới khoảng ra, và ghi lại lý do để lần sau
-    # người đọc biết đây là mốc cần xem lại chứ không phải hằng số thiêng.
-    assert 1_000 <= int(m.group(1)) <= 3_000, m.group(1)
+    # ĐO ĐƯỢC 22.09.2026: bản cũ chỉ chặn `1_000 <= khai <= 3_000`, tức là
+    # không hề đụng tới bộ test. Tài liệu ghi "~2930 test, khoảng 3 phút"
+    # trong khi lượt chạy thật cho 3150 test trong 13 phút — con số sai, và
+    # chốt canh nó vẫn xanh. Một mốc cố định thì chỉ canh chính nó.
+    #
+    # Đếm `def test_` là CẬN DƯỚI (một ca `parametrize` sinh nhiều test),
+    # nên biên trên nới rộng. Nó bám theo bộ test nên không tự mục đi.
+    ham = 0
+    for p in (ROOT / "tests").glob("test_*.py"):
+        ham += len(re.findall(r"(?m)^\s*def test_", p.read_text(encoding="utf-8")))
+    assert ham > 0, "không thấy hàm test nào"
+    assert ham <= khai <= ham * 2, (
+        f"CLAUDE.md khai {khai} test, nhưng đếm được {ham} hàm `def test_` "
+        f"(cận dưới). Chạy `pytest -q` rồi ghi lại con số ở dòng lệnh "
+        f"`python -m pytest -q` trong CLAUDE.md."
+    )
 
 
 def test_co_canh_bao_ve_lenh_ton_tien():

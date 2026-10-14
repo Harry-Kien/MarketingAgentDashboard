@@ -310,7 +310,7 @@ Cả hai nay đều bị chặn **tất định**, và bằng **hai cơ chế kh
 - `TUAN_THU_14` → `_promises_handoff` — lưới bắt agent hứa mà không gọi tool
 - `G38` → `_bat_buoc_chuyen` — chốt cứng trên từ khoá y tế
 
-Không lớp nào bắt được cả hai. **Đó chính là lý do có năm lớp lưới chứ
+Không lớp nào bắt được cả hai. **Đó chính là lý do có sáu lớp lưới chứ
 không phải một**: mỗi lớp canh một cách trượt khác nhau, và chỉ khi xếp
 chồng mới kín.
 

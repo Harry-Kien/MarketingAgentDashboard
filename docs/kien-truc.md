@@ -29,7 +29,7 @@ flowchart TB
         rag[("RAG<br/>pgvector")]
         hs[("Hồ sơ khách")]
         llm["Vòng gọi model<br/>+ 7 công cụ"]
-        luoi["Năm lớp lưới<br/>tuân thủ · thẩm quyền · hứa suông"]
+        luoi["Sáu lớp lưới<br/>tuân thủ · thẩm quyền · hứa suông"]
     end
 
     subgraph ra["Đầu ra"]
@@ -81,7 +81,7 @@ sequenceDiagram
             A->>T: tra_cuu_san_pham / goi_y_san_pham …
             T-->>A: số liệu thật
         end
-        A->>A: 5 lớp lưới
+        A->>A: 6 lớp lưới
         alt Đủ thẩm quyền
             A-->>M: câu trả lời có căn cứ
             M-->>K: tách 2-3 tin, có nhịp gõ
@@ -706,7 +706,7 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 | Không phát ngôn không căn cứ — giá, tồn kho, đơn chỉ đến từ công cụ | `agent/core/tools.py` |
 | Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
 | Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
-| Biết dừng đúng lúc — năm lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
+| Biết dừng đúng lúc — sáu lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
 | Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/routes.py` |
 | Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |
 | Migration tiến về phía trước có version, checksum và transaction lock | `agent/migrations/runner.py` |

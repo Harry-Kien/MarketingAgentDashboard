@@ -37,11 +37,13 @@ from agent.omnichannel.outbox import (
     OutboxStatus,
     PostgresOutboxRepository,
 )
+from conftest import dem_bo_qua_integration, dia_chi_csdl_kiem_thu
 
 
 def test_delivery_guard_khong_vi_pham_luat_for_update_cua_postgres():
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = dia_chi_csdl_kiem_thu()
     if not database_url:
+        dem_bo_qua_integration()
         pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
 
     import asyncpg

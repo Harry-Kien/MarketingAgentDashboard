@@ -181,7 +181,7 @@ flowchart TB
         rag[("RAG<br/>pgvector")]
         hs[("Hồ sơ khách")]
         llm["Vòng gọi model<br/>+ 7 công cụ"]
-        luoi["Năm lớp lưới<br/>tuân thủ · thẩm quyền · hứa suông"]
+        luoi["«SO_LUOI_HOA» lớp lưới<br/>tuân thủ · thẩm quyền · hứa suông"]
     end
 
     subgraph ra["Đầu ra"]
@@ -228,7 +228,7 @@ sequenceDiagram
             A->>T: tra_cuu_san_pham / goi_y_san_pham …
             T-->>A: số liệu thật
         end
-        A->>A: 5 lớp lưới
+        A->>A: «SO_LUOI» lớp lưới
         alt Đủ thẩm quyền
             A-->>M: câu trả lời có căn cứ
             M-->>K: tách 2-3 tin, có nhịp gõ
@@ -278,7 +278,13 @@ def dung_tai_lieu() -> str:
     if chua_nhom:
         nhom_md.append(f"| (chưa xếp nhóm) | {' · '.join(f'`{b}`' for b in chua_nhom)} |")
 
-    return f"""# Kiến trúc hệ thống
+    # Điền số lớp lưới NGAY TRONG hàm này, không để ở `main()`.
+    #
+    # `tests/test_so_do.py` so nội dung file trên đĩa với đúng giá trị hàm
+    # này trả về. Điền ở `main()` thì file đã có "Sáu" còn hàm vẫn trả
+    # "«SO_LUOI_HOA»" — test báo tài liệu cũ vĩnh viễn, trong khi tài liệu
+    # thực ra đang đúng. Hàm này phải là bản đầy đủ của tài liệu.
+    return _dien_so_lop_luoi(f"""# Kiến trúc hệ thống
 
 > **Sơ đồ cơ sở dữ liệu trong tài liệu này được SINH RA từ
 > `agent/schema.sql` và `agent/migrations/versions/*.sql`** bằng
@@ -346,11 +352,33 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 | Không phát ngôn không căn cứ — giá, tồn kho, đơn chỉ đến từ công cụ | `agent/core/tools.py` |
 | Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
 | Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
-| Biết dừng đúng lúc — năm lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
+| Biết dừng đúng lúc — «SO_LUOI_CHU» lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
 | Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/routes.py` |
 | Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |
 | Migration tiến về phía trước có version, checksum và transaction lock | `agent/migrations/runner.py` |
-"""
+""")
+
+
+_SO_CHU = {4: ("Bốn", "bốn"), 5: ("Năm", "năm"), 6: ("Sáu", "sáu"),
+           7: ("Bảy", "bảy"), 8: ("Tám", "tám")}
+
+
+def _dien_so_lop_luoi(md: str) -> str:
+    """
+    Điền số lớp lưới bằng cách ĐẾM, không gõ.
+
+    ĐO ĐƯỢC 22.09.2026: con số này từng được gõ tay ở năm chỗ và lệch nhau
+    — `CLAUDE.md` ghi sáu, tài liệu do script này sinh ra ghi năm. Tài liệu
+    sinh tự động mà vẫn chứa một con số gõ tay thì nó chỉ *trông* như được
+    sinh ra; phần sai nhất lại là phần không ai nghi ngờ.
+    """
+    from agent.core.agent import LOP_LUOI
+
+    n = len(LOP_LUOI)
+    hoa, thuong = _SO_CHU.get(n, (str(n), str(n)))
+    return (md.replace("«SO_LUOI_HOA»", hoa)
+              .replace("«SO_LUOI_CHU»", thuong)
+              .replace("«SO_LUOI»", str(n)))
 
 
 def main() -> int:

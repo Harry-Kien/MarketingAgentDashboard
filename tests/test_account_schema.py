@@ -14,6 +14,7 @@ import asyncpg
 import pytest
 
 from agent.migrations.runner import apply_all
+from conftest import dia_chi_csdl_kiem_thu, dem_bo_qua_integration
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,8 +74,9 @@ def test_bi_mat_chi_nam_trong_ciphertext():
 
 def test_foundation_migration_chay_tren_postgresql_that_khi_duoc_cap_url():
     """Chạy baseline + migration hai lần và kiểm invariant bằng truy vấn thật."""
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = dia_chi_csdl_kiem_thu()
     if not database_url:
+        dem_bo_qua_integration()
         pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
 
     async def verify():

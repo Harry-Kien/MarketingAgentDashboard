@@ -26,13 +26,15 @@ import os
 from pathlib import Path
 
 import pytest
+from conftest import dia_chi_csdl_kiem_thu, dem_bo_qua_integration
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_bo_dau_chay_duoc_khi_search_path_rong():
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = dia_chi_csdl_kiem_thu()
     if not database_url:
+        dem_bo_qua_integration()
         pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
 
     import asyncpg

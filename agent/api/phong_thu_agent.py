@@ -26,13 +26,22 @@ BO_VANG = GOC / "data" / "eval" / "golden.jsonl"
 BO_VANG_MAU = GOC / "data" / "eval" / "golden.example.jsonl"
 
 # Nhãn tiếng Việt cho mã lớp lưới — một chỗ, dashboard không tự dịch.
+#
+# Danh sách MÃ lấy thẳng từ `agent.core.agent`, không gõ lại. Bản gõ tay
+# trước đây là bản sao thứ hai của cùng một tập hợp: thêm một lưới trong
+# `agent.py` mà quên thêm ở đây thì dashboard hiện ô nhãn TRỐNG, không lỗi,
+# không log — người trực chỉ thấy một dòng thiếu chữ và không biết vì sao.
 NHAN_LUOI = {
-    "tran_hoi_thoai": "Trần chi phí hội thoại", "tran_ngay": "Trần chi phí ngày",
-    "injection": "Quét prompt injection", "tin_cay_thap": "Độ tin cậy thấp",
-    "bat_buoc_chuyen": "Câu hỏi bắt buộc chuyển người", "hua_khong_goi": "Hứa chuyển mà không gọi",
+    "tran_hoi_thoai": "Trần chi phí hội thoại",
+    "injection": "Quét prompt injection",
+    "tin_cay_thap": "Độ tin cậy thấp",
+    "bat_buoc_chuyen": "Câu hỏi bắt buộc chuyển người",
+    "hua_khong_goi": "Hứa chuyển mà không gọi",
     "chan_doan_y_te": "Chẩn đoán y tế trong câu trả lời",
-    "cong_cu_chuyen_nguoi": "Agent chủ động chuyển người", "cong_cu_yeu_cau": "Công cụ yêu cầu người",
+    "tran_ngay": "Trần chi phí ngày",
     "het_vong": "Vượt số vòng gọi công cụ",
+    "cong_cu_chuyen_nguoi": "Agent chủ động chuyển người",
+    "cong_cu_yeu_cau": "Công cụ yêu cầu người",
 }
 
 

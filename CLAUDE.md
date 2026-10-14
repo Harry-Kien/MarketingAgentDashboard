@@ -65,9 +65,25 @@ không ai kiểm.
 
 ```bash
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
-python -m pytest -q               # ~2930 test, khoảng 3 phút, không gọi API model
+python -m pytest -q               # ~3310 test, khoảng 11 phút, không gọi API model
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 ```
+
+**Bật Postgres TRƯỚC khi chạy test**, nếu không lượt chạy sẽ bỏ qua hơn
+một trăm test — đúng nhóm canh quyền, phiên, phạm vi tầm nhìn và khôi phục
+sao lưu:
+
+```bash
+docker compose up -d db
+```
+
+`pytest` tự dò Postgres ở `127.0.0.1:5433` và dùng nó khi không có
+`TEST_DATABASE_URL`; nó tạo CSDL `kt_<ngẫu nhiên>` riêng rồi xoá, không
+đụng `marketing_agent`. Không dò được thì cuối lượt có **một khối cảnh báo
+đỏ** nói rõ nhóm nào không chạy — trước đây chuyện này chỉ hiện ra dưới
+dạng `124 skipped` lẫn giữa mấy nghìn dấu chấm, và "xanh hết" ở mục *Trước
+khi báo là xong* trở thành xanh giả. Đặt `KHONG_DUNG_POSTGRES_LOCAL=1` để
+tắt phép dò.
 
 Sau khi khởi động máy, dựng cả hệ thống bằng **một lệnh**:
 

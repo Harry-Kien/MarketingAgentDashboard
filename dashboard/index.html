@@ -935,22 +935,35 @@
 
             <div class="field field--wide" data-cauhinh="tra_tai_lieu" hidden>
               <span>Chỉ tra trong nhóm tài liệu <em class="hint">gõ một mẩu tên tài liệu đã nạp ở màn Tri thức</em></span>
-              <input name="nhom_tai_lieu" list="plugin-nhom-ds" maxlength="100" placeholder="bao-hanh">
+              <input name="nhom_tai_lieu" list="plugin-nhom-ds" maxlength="100" placeholder="bao-hanh"
+                     aria-label="Nhóm tài liệu">
               <datalist id="plugin-nhom-ds"></datalist>
               <span>Số đoạn lấy về <em class="hint">1–8, thường để 4</em></span>
-              <input name="k" type="number" min="1" max="8" value="4">
+              <!-- Khối này có HAI ô nhập nên không bọc chung một <label> được:
+                   label bọc nhiều ô chỉ gắn với ô đầu, ô sau vẫn không tên.
+                   Nhãn nhìn thấy nằm ở <span> và <span> đang mang style
+                   `.field > span`, đổi nó thành <label> là vỡ giao diện. -->
+              <input name="k" type="number" min="1" max="8" value="4"
+                     aria-label="Số đoạn tài liệu lấy về">
             </div>
 
-            <div class="field field--wide" data-cauhinh="chuyen_chuyen_biet" hidden>
+            <!-- `<label>` chứ không `<div>`: khối này có đúng MỘT ô nhập nên
+                 bọc bằng label là gắn được nhãn mà không đổi gì về hình —
+                 `.field` và `.field > span` vẫn khớp y nguyên. Đây cũng là
+                 lối chung của file này (81 `label.field` so với 5 `div.field`). -->
+            <label class="field field--wide" data-cauhinh="chuyen_chuyen_biet" hidden>
               <span>Câu người trực sẽ đọc <em class="hint">để biết vì sao hội thoại tới tay mình</em></span>
               <input name="ly_do" maxlength="200" placeholder="Khách hỏi hợp tác bán buôn">
-            </div>
+            </label>
 
             <div class="field field--wide" data-cauhinh="goi_api_doc" hidden>
               <span>Địa chỉ cần gọi <em class="hint">bắt đầu bằng https:// · chỗ điền giá trị viết {ma} · máy chủ phải nằm trong KY_NANG_HOST_CHO_PHEP</em></span>
-              <input name="url" maxlength="400" placeholder="https://noi-bo.example.com/tra/{ma}">
+              <input name="url" maxlength="400" placeholder="https://noi-bo.example.com/tra/{ma}"
+                     aria-label="Địa chỉ cần gọi">
               <span>Chờ tối đa (giây)</span>
-              <input name="han_giay" type="number" min="1" max="30" value="5">
+              <!-- Cũng là khối hai ô — xem lý do ở khối `tra_tai_lieu` bên trên. -->
+              <input name="han_giay" type="number" min="1" max="30" value="5"
+                     aria-label="Chờ tối đa, tính bằng giây">
             </div>
 
             <details class="field--wide plugin-nangcao" id="plugin-nangcao">

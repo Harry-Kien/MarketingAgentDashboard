@@ -993,6 +993,7 @@ svg { flex: none; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
+
 /* ============================================================
    Nhãn nguồn kênh
    ============================================================ */
@@ -1985,3 +1986,36 @@ svg { flex: none; }
 .anhlon img { max-width: 100%; max-height: 70vh; border-radius: var(--radius); background: hsl(var(--background)); }
 .anhlon figcaption { font-size: 14px; color: hsl(var(--muted-foreground)); }
 .kho__anh { cursor: zoom-in; }
+
+/* ============================================================
+   Vùng bấm trên màn CẢM ỨNG — đặt CUỐI FILE có chủ ý
+   ============================================================
+
+   ĐO ĐƯỢC 22.09.2026 ở khung 375px: ô tick cao 13–16px trên ba màn. WCAG
+   2.2 AA (2.5.8 Target Size) lấy mốc tối thiểu 24×24.
+
+   Không phải chuyện thẩm mỹ. Nặng nhất là ô tick chọn khách ở màn Khách
+   hàng: nó dùng để GIAO KHÁCH HÀNG LOẠT, nên bấm trượt một ô là giao nhầm
+   một khách cho nhân viên khác — và luồng ấy chỉ xác nhận MỘT lần cho cả
+   lô, không xác nhận từng người.
+
+   Khoá theo `pointer: coarse` chứ không theo bề rộng: quyết định ở chỗ
+   người ta bấm bằng NGÓN TAY hay bằng chuột. Cửa sổ desktop hẹp vẫn dùng
+   chuột nên không cần nới; máy tính bảng rộng thì cần.
+
+   VÌ SAO Ở CUỐI FILE: đặt khối này cạnh `prefers-reduced-motion` (gần đầu
+   file) thì `.chonkhach input { width: 16px }` ở phần sau THẮNG — cùng độ
+   ưu tiên, luật đứng sau ăn. Đo lại sau khi sửa: màn Đăng bài lên 24px
+   nhưng màn Khách hàng vẫn 16px. Đứng cuối là cách giữ nguyên độ ưu tiên
+   mà vẫn chắc chắn ăn, không phải rải `!important`. */
+@media (pointer: coarse) {
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Nới cả vùng bấm quanh ô, không chỉ chính ô. */
+  .chonkhach { padding-inline: 10px 8px; }
+  .chonkhach input { width: 24px; height: 24px; }
+}

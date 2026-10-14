@@ -12,6 +12,7 @@ quên xét thư mục cha, và bản thứ hai thừa hưởng nguyên lỗi ấ
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import uuid
 from pathlib import Path
@@ -19,6 +20,150 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Đếm số test integration bị bỏ qua, để in một dòng TO ở cuối lượt chạy.
+_DEM_BO_QUA = {"n": 0}
+
+# Postgres của `docker compose up -d` trong repo này.
+#
+# CSDL riêng tên `kiemthu`, KHÔNG phải `marketing_agent` (dữ liệu khách
+# thật) và cũng không phải `postgres` (CSDL quản trị, không có lược đồ).
+# Cùng cách CI làm: workflow trỏ `TEST_DATABASE_URL` vào một CSDL riêng rồi
+# chạy `scripts.dung_csdl_kiem_thu`.
+#
+# Từng trỏ nhầm vào `/postgres` ở bản đầu, và hậu quả đúng kiểu đỏ-vì-hạ-
+# tầng: `relation "outbox_jobs" does not exist`. Test nào tạo CSDL mới qua
+# fixture thì không sao (nó chỉ lấy phần máy chủ), nhưng test nào dùng
+# THẲNG url thì gãy.
+_POSTGRES_COMPOSE = "postgresql://agent:agent@127.0.0.1:5433/kiemthu"
+
+
+def _co_mo_duoc(url: str, giay: float = 3.0) -> bool:
+    """
+    Có Postgres ĐĂNG NHẬP ĐƯỢC ở địa chỉ này không.
+
+    Phải đăng nhập thật, không chỉ bắt tay TCP. Bắt tay TCP xanh với BẤT KỲ
+    thứ gì đang nghe ở cổng 5433 — một Postgres khác của người dùng, hay
+    một dịch vụ chẳng liên quan. Khi ấy lưới tự dò biến hơn trăm test từ
+    "bỏ qua sạch" thành "lỗi xác thực hàng loạt", và người nhận là người
+    vừa clone repo về. Đổi một lỗi im lặng lấy một trận đỏ vô nghĩa thì
+    không phải là cải thiện.
+
+    Chạy ĐÚNG MỘT LẦN mỗi lượt (`lru_cache` ở hàm gọi nó), nên vài chục
+    mili-giây này không đáng kể.
+    """
+    try:
+        import asyncpg
+    except ImportError:
+        return False
+
+    async def thu() -> bool:
+        try:
+            conn = await asyncio.wait_for(asyncpg.connect(url), timeout=giay)
+        except Exception:
+            # Bắt rộng có chủ ý: máy chủ chưa lên, sai mật khẩu, sai CSDL,
+            # hết giờ — mọi trường hợp đều dẫn tới cùng một kết luận là
+            # "không dùng được", và không cái nào đáng làm đỏ lượt chạy.
+            return False
+        await conn.close()
+        return True
+
+    try:
+        return asyncio.run(thu())
+    except RuntimeError:
+        # Đã có vòng lặp đang chạy (pytest-asyncio) — coi như không dò được
+        # còn hơn là đâm vào vòng lặp của người khác.
+        return False
+
+
+@functools.lru_cache(maxsize=1)
+def dia_chi_csdl_kiem_thu() -> str | None:
+    """
+    Địa chỉ Postgres cho test integration, hoặc None nếu không có.
+
+    VÌ SAO TỰ DÒ CHỨ KHÔNG BẮT NGƯỜI TA ĐẶT BIẾN
+    ---------------------------------------------
+    ĐO ĐƯỢC 22.09.2026: chạy `pytest -q` ở máy phát triển cho
+    `3150 passed, 124 skipped` — và 124 cái bị bỏ qua CHÍNH LÀ nhóm chạm
+    Postgres thật: quyền, phiên, phạm vi tầm nhìn, khôi phục sao lưu. Đúng
+    lúc ấy container Postgres VẪN ĐANG CHẠY ở cổng 5433. Thiếu mỗi một biến
+    môi trường.
+
+    CLAUDE.md dặn "trước khi báo là xong: pytest phải xanh hết". Dấu xanh
+    ấy đang bỏ qua đúng nhóm test canh những ràng buộc đắt nhất, và dòng
+    `124 skipped` thì trôi mất giữa 3150 dấu chấm.
+
+    CI không dính vì workflow có sẵn `TEST_DATABASE_URL`
+    (`test_ci_co_postgres.py` canh việc đó). Nên đây thuần tuý là lỗ ở vòng
+    lặp tại máy — chỗ người ta chạy test nhiều nhất.
+
+    Thứ tự ưu tiên giữ nguyên tính dự đoán được: biến môi trường luôn thắng,
+    tự dò chỉ là lưới đỡ. Đặt `KHONG_DUNG_POSTGRES_LOCAL=1` để tắt lưới ấy.
+    """
+    url = os.getenv("TEST_DATABASE_URL")
+    if url:
+        return url
+    if os.getenv("KHONG_DUNG_POSTGRES_LOCAL"):
+        return None
+
+    # Dò MÁY CHỦ trước: đăng nhập vào CSDL quản trị `postgres`. CSDL
+    # `kiemthu` có thể chưa tồn tại ở lần chạy đầu, nên dò thẳng nó sẽ luôn
+    # trả False và lưới không bao giờ bật.
+    goc = _POSTGRES_COMPOSE.rpartition("/")[0]
+    if not _co_mo_duoc(f"{goc}/postgres"):
+        return None
+
+    # Dựng CSDL và lược đồ — đúng việc CI làm bằng một bước riêng
+    # (`scripts.dung_csdl_kiem_thu`). Idempotent: migration có version nên
+    # lần chạy sau không làm gì thêm.
+    #
+    # Tạo CSDL từ conftest nghe mạnh tay, nhưng fixture `csdl_kiem_thu`
+    # vốn đã tạo và xoá CSDL `kt_<uuid>` trên đúng máy chủ này ở mỗi test.
+    # Thêm một CSDL `kiemthu` cố định không phải là quyền mới.
+    try:
+        from scripts.dung_csdl_kiem_thu import dung
+
+        asyncio.run(dung(_POSTGRES_COMPOSE))
+    except Exception as e:
+        # Không dựng được thì BÁO, đừng im: im lặng ở đây đưa người ta trở
+        # lại đúng tình trạng cũ — hơn trăm test bỏ qua mà không rõ vì sao.
+        print(f"\n[conftest] Không dựng được CSDL kiểm thử: {type(e).__name__}: {e}")
+        return None
+    return _POSTGRES_COMPOSE
+
+
+def dem_bo_qua_integration() -> None:
+    """
+    Cho các file tự kiểm CSDL (không qua fixture `csdl_kiem_thu`) góp số vào
+    cùng một bộ đếm — nếu không, dòng cảnh báo cuối lượt sẽ đếm thiếu và
+    báo nhẹ hơn thực tế.
+    """
+    _DEM_BO_QUA["n"] += 1
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """
+    Bỏ qua bao nhiêu test thì phải NÓI TO bấy nhiêu.
+
+    `124 skipped` nằm lẫn trong dòng tổng kết là thứ người ta đọc lướt qua.
+    Mà nhóm bị bỏ chính là nhóm canh phân quyền và phạm vi dữ liệu — bỏ qua
+    nó rồi báo "xanh hết" là đúng định nghĩa xanh giả.
+    """
+    n = _DEM_BO_QUA["n"]
+    if not n:
+        return
+    terminalreporter.write_sep("=", "CẢNH BÁO: TEST POSTGRES KHÔNG CHẠY", red=True, bold=True)
+    terminalreporter.write_line(
+        f"{n} test integration bị bỏ qua — gồm quyền, phiên, phạm vi tầm nhìn "
+        "và khôi phục sao lưu."
+    )
+    terminalreporter.write_line(
+        "Lượt chạy này KHÔNG chứng minh được các ràng buộc ấy còn đúng."
+    )
+    terminalreporter.write_line("Bật lên:  docker compose up -d db")
+    terminalreporter.write_line(
+        f"Hoặc trỏ tay: TEST_DATABASE_URL={_POSTGRES_COMPOSE}"
+    )
 
 
 def nguoi_thu(*quyen: str, ten: str = "kt", **them) -> dict:
@@ -71,8 +216,9 @@ def csdl_kiem_thu():
     biến ấy biến mất khỏi CI thì test ở kia đỏ trước, nên việc bỏ qua ở đây
     không thể lặng lẽ thành vĩnh viễn.
     """
-    url = os.getenv("TEST_DATABASE_URL")
+    url = dia_chi_csdl_kiem_thu()
     if not url:
+        _DEM_BO_QUA["n"] += 1
         pytest.skip("chưa cấp TEST_DATABASE_URL cho integration PostgreSQL")
 
     import asyncpg

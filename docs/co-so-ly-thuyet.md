@@ -156,23 +156,35 @@ nội dung công khai — tần suất khác 0 là không chấp nhận được
 trong prompt để mô hình làm đúng ngay từ đầu, một lần trong mã để chặn khi
 mô hình trượt.
 
-[`agent/core/agent.py`](../agent/core/agent.py) có **năm lớp** như vậy, mỗi
-lớp canh một cách trượt khác nhau:
+[`agent/core/agent.py`](../agent/core/agent.py) có **sáu lớp** như vậy, mỗi
+lớp canh một cách trượt khác nhau. Danh mục chính thức là hằng `LOP_LUOI`
+trong chính tệp ấy — bảng dưới đây phải khớp với nó, và có test canh:
 
-| Lớp | Chặn gì |
-|---|---|
-| `_bat_buoc_chuyen` | câu hỏi chạm luật quảng cáo / ranh giới y tế |
-| `phong_thu.quet` | prompt injection, trước khi gọi mô hình |
-| `_stalls` | mô hình hứa "để em kiểm tra" rồi dừng |
-| `_promises_handoff` | mô hình *nói* sẽ chuyển người nhưng không gọi công cụ |
-| trần chi phí | hội thoại vượt ngân sách |
+| # | Mã `luoi_bat` | Hàm hiện thực | Soi cái gì | Chặn cách trượt nào |
+|---|---|---|---|---|
+| ① | `tran_hoi_thoai` | so với `hs.tran_chi_phi` | chi phí tích luỹ | hội thoại vượt ngân sách |
+| ② | `injection` | `phong_thu.quet` | **tin khách**, trước khi gọi mô hình | tiêm chỉ dẫn |
+| ③ | `tin_cay_thap` | `_confidence` | độ tin cậy đoạn tri thức | trả lời khi căn cứ quá yếu |
+| ④ | `bat_buoc_chuyen` | `_bat_buoc_chuyen` | **câu hỏi** của khách | luật quảng cáo / ranh giới y tế |
+| ⑤ | `hua_khong_goi` | `_promises_handoff` | **câu trả lời** vừa sinh | *nói* sẽ chuyển người mà không gọi công cụ |
+| ⑥ | `chan_doan_y_te` | `_chan_doan_y_te` | **câu trả lời** vừa sinh | tự gọi tên bệnh cho khách |
+
+Để ý tham số của từng lưới — đó là chỗ chúng khác nhau, và là lý do không
+gộp được: ② soi đầu vào, ④ soi câu hỏi, ⑤ và ⑥ soi đầu ra.
+
+> **`_stalls` KHÔNG phải một lớp lưới.** Bảng này trước đây liệt kê nó, và
+> đó là một sai sót đáng kể chứ không chỉ sai con số: `_stalls` không đặt
+> `luoi_bat`, không chuyển người, mà ép thêm **đúng một** vòng gọi công cụ
+> khi mô hình hứa suông rồi dừng. Nó là cú nhắc, không phải chốt chặn.
+> Người tin bảng cũ sẽ đi bảo trì `_stalls` như một lưới an toàn, và không
+> biết lưới ⑥ tồn tại.
 
 **Bằng chứng thực nghiệm.** 13 lần chạy bộ 56 câu vàng ghi nhận **2 lần bỏ
 sót chuyển người**. Kiểm lại trên mã hiện tại: cả hai nay đều bị chặn tất
 định, và bằng **hai cơ chế khác nhau** — không lớp nào bắt được cả hai. Chi
 tiết ở [thuc-nghiem.md](thuc-nghiem.md) mục 2.3.
 
-Đây là lý do có năm lớp chứ không phải một.
+Đây là lý do có sáu lớp chứ không phải một.
 
 ---
 

@@ -244,7 +244,7 @@ python -m scripts.sinh_token MCP_TOKEN
 Không dùng `python -c "...print(token)"` — nó để lại bí mật trong lịch sử
 terminal và trong ảnh chụp màn hình.
 
-**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục quyền,
+**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 42 quyền,
 và `kiem_moi_route_co_quyen(app)` chạy lúc khởi động: route nào dưới `/api`
 hay `/tich-hop` chưa có `Depends(can_quyen("..."))` và cũng không nằm trong
 `MIEN_TRU` thì **máy chủ không lên**.

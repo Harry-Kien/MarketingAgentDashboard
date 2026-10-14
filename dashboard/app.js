@@ -6904,12 +6904,13 @@ async function loadMauNhanh() {
   const r = await api("/tra-loi-nhanh");
   ds.innerHTML = r.mau.length ? r.mau.map((m) => `
     <div class="row">
-      <div class="row__main"><b>/${esc(m.ma_tat)}</b>
-        <span class="row__sub">${esc(m.noi_dung)}</span></div>
-      ${sua ? `<div class="row__nut">
+      <span class="row__flag row__flag--plain"></span>
+      <span class="row__body"><span class="row__title">/${esc(m.ma_tat)}</span>
+        <span class="row__sub">${esc(m.noi_dung)}</span></span>
+      ${sua ? `<span class="row__side">
         <button type="button" class="btn btn--sm" data-mau-sua="${esc(m.id)}">Sửa</button>
         <button type="button" class="btn btn--sm btn--halt" data-mau-xoa="${esc(m.id)}">Xoá</button>
-      </div>` : ""}
+      </span>` : ""}
     </div>`).join("")
     : '<p class="empty">Chưa có mẫu nào.</p>';
   ds.querySelectorAll("[data-mau-sua]").forEach((b) => b.addEventListener("click", () => {

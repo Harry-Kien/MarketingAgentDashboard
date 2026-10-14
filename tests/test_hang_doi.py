@@ -56,7 +56,11 @@ def _goi(monkeypatch, status, rows, limit=60):
 
     monkeypatch.setattr(routes.db, "fetch", fetch_gia)
     monkeypatch.setattr(routes.runtime, "is_busy", lambda _: False)
-    kq = asyncio.run(routes.list_conversations(status=status, limit=limit))
+    # Người thấy mọi kênh: test này đo THỨ TỰ hàng đợi, không đo phạm vi
+    # kênh — phạm vi có bộ test riêng (test_pham_vi_kenh_route_cu.py).
+    nguoi = {"id": "00000000-0000-0000-0000-000000000001",
+             "quyen": frozenset({"hoi_thoai.doc", "hoi_thoai.xem_tat_ca"})}
+    kq = asyncio.run(routes.list_conversations(status=status, limit=limit, _quyen=nguoi))
     return da_chay["sql"], kq
 
 

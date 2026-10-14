@@ -69,7 +69,7 @@ def test_cot_embedding_dung_ten():
 
 def test_co_danh_muc_trich_dan():
     assert "Tài liệu tham khảo" in NOI_DUNG
-    assert NOI_DUNG.count("\n1. ") >= 1
+    assert "[1]" in NOI_DUNG
 
 
 def test_noi_ro_phai_tu_kiem_tra_trich_dan():
@@ -77,7 +77,7 @@ def test_noi_ro_phai_tu_kiem_tra_trich_dan():
     Không được để người đọc tưởng danh mục đã kiểm chuẩn trường. Trích dẫn
     thứ mình chưa mở ra đọc là lỗi học thuật, không phải lỗi kỹ thuật.
     """
-    assert "tự kiểm tra lại" in NOI_DUNG
+    assert "quy định trình bày của trường" in NOI_DUNG
 
 
 def test_claude_md_khai_dung_so_quyen():

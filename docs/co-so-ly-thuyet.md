@@ -282,7 +282,9 @@ không phải một dòng chú thích ở cuối tệp.
 
 ## Tài liệu tham khảo
 
-Định dạng IEEE. Mỗi mục có DOI, mã arXiv hoặc URL để tra lại.
+Định dạng IEEE. Mỗi mục có DOI, mã arXiv hoặc URL để tra lại. Chuẩn
+trích dẫn mỗi trường một khác — đối chiếu với quy định trình bày của trường
+trước khi nộp; danh mục này chưa được kiểm theo chuẩn riêng nào của trường.
 
 [1] P. Lewis *et al.*, "Retrieval-Augmented Generation for
     Knowledge-Intensive NLP Tasks," in *Advances in Neural Information

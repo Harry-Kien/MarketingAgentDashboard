@@ -1,6 +1,7 @@
 # Chạy bộ kiểm thử mỗi lần push và mỗi pull request.
 #
-# CHỈ chạy phần tất định — khoảng 2760 ca trong tests/, không gọi API model.
+# CHỈ chạy phần tất định trong tests/, không gọi API model. Không ghi số ca
+# ở đây — con số gõ tay là con số sẽ cũ (từng ghi 2760 khi đã hơn 3300).
 # Bộ 56 câu hỏi vàng (scripts/eval.py) KHÔNG chạy ở đây, có chủ đích:
 # nó gọi Vertex AI thật, tốn tiền, mất 13 phút, và không tất định (bốn lần
 # chạy liên tiếp cho 51, 55, 52, 54 điểm). Một CI đỏ ngẫu nhiên thì người
@@ -68,8 +69,13 @@ jobs:
         # đi cho xanh lại, tức quay về đúng chỗ cũ.
         run: python -m scripts.dung_csdl_kiem_thu
 
-      - name: Chạy kiểm thử
-        run: python -m pytest tests/ -q
+      - name: Chạy kiểm thử (kèm độ phủ)
+        # Độ phủ đo trên `agent/` — mã chạy thật, không tính scripts/tests.
+        # Ngưỡng là SÀN chống tụt, không phải mục tiêu: nâng dần khi thêm
+        # test hành vi. Đo lần đầu 14.10.2026; xem requirements-dev.txt.
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest tests/ -q --cov=agent --cov-report=term:skip-covered --cov-report=xml --cov-fail-under=68
 
       - name: Kiểm mọi module import được
         # pytest chỉ chạm tới module nào test import. Bước này bắt lỗi cú
@@ -78,30 +84,15 @@ jobs:
         run: |
           python - <<'PY'
           import importlib, sys
-          mods = [
-              "agent.main", "agent.config", "agent.db", "agent.runtime",
-              "agent.core.agent", "agent.core.llm", "agent.core.rag",
-              "agent.core.tools", "agent.core.tu_nhien",
-              "agent.core.du_lieu_ca_nhan",
-              "agent.core.gio_lam_viec", "agent.core.cham_nhieu_luot",
-              "agent.core.xac_thuc", "agent.suc_khoe", "agent.canh_gac",
-              "agent.channels.base", "agent.channels.registry",
-              "agent.channels.zalocrm", "agent.channels.chatwoot",
-              "agent.channels.zalocrm_accounts",
-              # zalo_personal vắng mặt ở đây suốt một thời gian dài dù nó là
-              # adapter của kênh ĐANG CHẠY THẬT — đúng loại lỗ mà bước này
-              # sinh ra để bịt.
-              "agent.channels.zalo_personal",
-              "agent.tri_thuc", "agent.tri_thuc.nganh",
-              "agent.migrations.runner",
-              "agent.publish.base", "agent.publish.registry",
-              "agent.publish.service", "agent.publish.analytics",
-              "agent.publish.copywriter", "agent.publish.chien_dich",
-              "agent.publish.n8n", "agent.publish.meta", "agent.publish.tiktok",
-              "agent.publish.manual",
-              "agent.video.pipeline", "agent.video.worker",
-              "agent.api.routes", "agent.mcp_server",
-          ]
+          import pkgutil
+          import agent
+          # TỰ DÒ, không gõ tay. Danh sách gõ tay trước đây thiếu
+          # zalo_personal suốt một thời gian dài dù đó là kênh ĐANG CHẠY
+          # THẬT — mỗi module mới là một lần phải nhớ thêm, và người ta quên.
+          mods = sorted(
+              m.name for m in pkgutil.walk_packages(agent.__path__, "agent.")
+              if ".migrations.versions" not in m.name
+          )
           hong = []
           for m in mods:
               try:
@@ -148,6 +139,32 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit --desc
+
+  # ===============================================================
+  #  Sidecar Zalo cá nhân — kênh đang chạy thật, test Node riêng
+  # ===============================================================
+  # Trước 14.10.2026 CI không chạy test của sidecar dù nó là đường nhận
+  # 34/39 tin khách đo được. Hỏng ở đây là kiểu hỏng im lặng tệ nhất của
+  # repo: tin nhân viên vào outbox rồi chết sau tám lần thử.
+  sidecar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: connectors/zalo-personal-sidecar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: connectors/zalo-personal-sidecar/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Dò lỗ hổng mức cao
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
   # ===============================================================
   #  Máy vừa clone repo có chạy được không

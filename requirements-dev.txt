@@ -5,3 +5,6 @@
 # chạy — bản mới hơn biết thêm lỗ hổng mới, và đó chính là điều ta muốn.
 ruff
 pip-audit
+# pytest-cov: đo độ phủ trong CI (--cov-fail-under). Ghim vì nó là một phần
+# của phép đo — đổi bản là đổi cách đếm, con số trước sau không so được.
+pytest-cov==6.0.0

@@ -192,12 +192,23 @@ def test_nhan_ca_token_lan_phien_dashboard():
     """
     src = _inspect.getsource(_app_main.chan_neu_chua_dang_nhap)
     assert "Bearer" in src
-    assert "doc_phien" in src.split('duong.startswith("/mcp")')[1][:600]
+    assert "doc_phien" in _khoi_mcp(src)
+
+
+def _khoi_mcp(src: str) -> str:
+    """
+    Khối xử lý /mcp — tới nhánh `duong.startswith(` kế tiếp, không cắt cứng
+    theo số ký tự. Cửa sổ 600/700 ký tự cũ đỏ ngay khi khối dài thêm một
+    dòng chú thích (đổi `==` sang compare_digest, 14.10.2026) dù hành vi
+    không đổi gì.
+    """
+    sau = src.split('duong.startswith("/mcp")', 1)[1]
+    return sau.split("duong.startswith(", 1)[0]
 
 
 def test_chan_khi_khong_co_gi():
     src = _inspect.getsource(_app_main.chan_neu_chua_dang_nhap)
-    assert "401" in src.split('duong.startswith("/mcp")')[1][:700]
+    assert "401" in _khoi_mcp(src)
 
 
 def test_mcp_khong_nam_trong_danh_sach_mo():

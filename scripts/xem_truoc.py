@@ -33,6 +33,9 @@ import re
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 GOC = Path(__file__).resolve().parent.parent
 CONG = 8010
 CSDL = "kt_xem_truoc"

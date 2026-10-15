@@ -122,6 +122,8 @@ class ChannelAccountService:
         display_name = command.display_name.strip()
         if not display_name:
             raise ValueError("tên hiển thị tài khoản không được để trống")
+        from agent import goi_cuoc
+        await goi_cuoc.kiem_them_kenh()
         account_id = uuid4()
         external_id = (command.external_account_id or "").strip()
         if external_id:

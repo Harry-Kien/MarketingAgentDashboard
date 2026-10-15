@@ -55,6 +55,15 @@ CSDL_DIEU_KHIEN = "saas_dieu_khien"
 IMAGE_APP = os.environ.get("CSKH_IMAGE_APP", "cskh-app:latest")
 IMAGE_SIDECAR = os.environ.get("CSKH_IMAGE_SIDECAR", "cskh-sidecar:latest")
 
+# Gói cước: (số kênh, số nhân viên đang hoạt động, hội thoại AI mỗi tháng).
+# 0 = không giới hạn. App tự chặn khi vượt — agent/goi_cuoc.py.
+GOI: dict[str, tuple[int, int, int]] = {
+    "dung_thu": (2, 3, 200),
+    "co_ban": (3, 5, 1500),
+    "chuyen_nghiep": (10, 20, 8000),
+    "khong_gioi_han": (0, 0, 0),
+}
+
 # Mã đi thẳng vào TÊN role/CSDL/container — định danh SQL không tham số hoá
 # được, nên chặn ở đây bằng danh sách ký tự cho phép, không bằng thoát chuỗi.
 _MA = re.compile(r"^[a-z0-9]{3,20}$")
@@ -102,8 +111,10 @@ def dien(mau: str, gia_tri: dict[str, str]) -> str:
 
 def sinh_tep(ma: str, ten_mien: str, bi_mat: dict[str, str], *,
              image_app: str = IMAGE_APP, image_sidecar: str = IMAGE_SIDECAR) -> dict[str, str]:
+    k, nv, ai = GOI["dung_thu"]
     gia_tri = {"MA": ma, "TEN_MIEN": ten_mien, "IMAGE_APP": image_app,
-               "IMAGE_SIDECAR": image_sidecar, **bi_mat}
+               "IMAGE_SIDECAR": image_sidecar, "GIOI_HAN_KENH": str(k),
+               "GIOI_HAN_NHAN_VIEN": str(nv), "GIOI_HAN_AI": str(ai), **bi_mat}
     return {
         ".env": dien((MAU / "env.cua_hang").read_text(encoding="utf-8"), gia_tri),
         "compose.yml": dien((MAU / "compose.cua_hang.yml").read_text(encoding="utf-8"), gia_tri),
@@ -130,6 +141,23 @@ def sinh_caddy(cac_cua_hang: list[tuple[str, str]], email: str = "") -> str:
 }}
 """)
     return dau + "\n".join(khoi)
+
+
+def dat_goi_env(env: str, goi: str) -> str:
+    """Thay (hoặc thêm) các dòng gói cước trong nội dung .env — giữ nguyên phần còn lại."""
+    if goi not in GOI:
+        raise LoiCuaHang(f"Không có gói {goi!r}. Có: {', '.join(GOI)}")
+    k, nv, ai = GOI[goi]
+    moi = {"GOI_CUOC": goi, "GIOI_HAN_KENH": str(k), "GIOI_HAN_NHAN_VIEN": str(nv),
+           "GIOI_HAN_HOI_THOAI_AI_THANG": str(ai)}
+    dong = env.splitlines()
+    for khoa, gia_tri in moi.items():
+        vi_tri = [i for i, d in enumerate(dong) if d.startswith(f"{khoa}=")]
+        if vi_tri:
+            dong[vi_tri[0]] = f"{khoa}={gia_tri}"
+        else:
+            dong.append(f"{khoa}={gia_tri}")
+    return "\n".join(dong) + "\n"
 
 
 def _q(s: str) -> str:
@@ -314,6 +342,17 @@ class MatPhang:
                                   f"cap_nhat_luc = now() WHERE ma = {_q(ma)};")
         self._ghi_caddy()
 
+    def doi_goi(self, ma: str, goi: str) -> None:
+        kiem_ma(ma)
+        tep = self.thu_muc / ma / ".env"
+        tep.write_text(dat_goi_env(tep.read_text(encoding="utf-8"), goi),
+                       encoding="utf-8", newline="\n")
+        self.sql(CSDL_DIEU_KHIEN, f"UPDATE cua_hang SET goi = {_q(goi)}, "
+                                  f"cap_nhat_luc = now() WHERE ma = {_q(ma)};")
+        # Hạn mức đọc từ .env lúc khởi động — phải dựng lại container để áp.
+        self.docker("compose", "-p", f"cskh-{ma}", "up", "-d", "--force-recreate", "app",
+                    cwd=self.thu_muc / ma)
+
     def sao_luu(self, ma: str) -> Path:
         kiem_ma(ma)
         dich = self.goc / "sao_luu" / ma
@@ -381,6 +420,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("kiem")
     for ten in ("tam_dung", "chay", "khoi_dong_lai"):
         sub.add_parser(ten).add_argument("ma")
+    g = sub.add_parser("goi")
+    g.add_argument("ma")
+    g.add_argument("ten_goi", choices=sorted(GOI))
     s = sub.add_parser("sao_luu")
     s.add_argument("ma", nargs="?")
     s.add_argument("--tat-ca", action="store_true")
@@ -413,6 +455,11 @@ def main(argv: list[str] | None = None) -> int:
         elif ts.lenh in ("tam_dung", "chay", "khoi_dong_lai"):
             mp.doi_trang_thai(ts.ma, ts.lenh)
             print(f"{ts.lenh}: {ts.ma} xong")
+        elif ts.lenh == "goi":
+            mp.doi_goi(ts.ma, ts.ten_goi)
+            k, nv, ai = GOI[ts.ten_goi]
+            print(f"{ts.ma}: gói {ts.ten_goi} — {k or '∞'} kênh, {nv or '∞'} nhân viên, "
+                  f"{ai or '∞'} hội thoại AI/tháng. Đã dựng lại app.")
         elif ts.lenh == "sao_luu":
             ds = [c["ma"] for c in mp.danh_sach()] if ts.tat_ca else [ts.ma]
             if not ds or ds == [None]:

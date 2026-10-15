@@ -110,6 +110,8 @@ async def tao_nguoi_dung(
         raise ValueError("Mật khẩu phải từ 8 ký tự")
     if vai_tro not in VAI_TRO:
         raise ValueError(f"Vai trò không hợp lệ. Chỉ nhận: {VAI_TRO}")
+    from agent import goi_cuoc
+    await goi_cuoc.kiem_them_nhan_vien()
 
     row = await db.fetchrow(
         "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam, ho_ten, vai_tro) "

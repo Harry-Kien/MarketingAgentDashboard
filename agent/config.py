@@ -309,6 +309,12 @@ class Settings(BaseSettings):
     # SENTRY_DSN: gửi lỗi về Sentry hoặc GlitchTip tự host.
     # METRICS_TOKEN: bật /metrics cho Prometheus (Bearer). Trống thì /metrics 404.
     sentry_dsn: str = ""
+    # Gói cước của cửa hàng (agent/goi_cuoc.py). Mặt phẳng điều khiển đặt
+    # theo gói; 0 = không giới hạn — chạy một cửa hàng như cũ không đổi gì.
+    goi_cuoc: str = "khong_gioi_han"
+    gioi_han_kenh: int = 0
+    gioi_han_nhan_vien: int = 0
+    gioi_han_hoi_thoai_ai_thang: int = 0
     metrics_token: str = ""
 
     # Mẫu gói tin gửi tới CANH_GAC_WEBHOOK. Để trống là dùng dạng mặc định.

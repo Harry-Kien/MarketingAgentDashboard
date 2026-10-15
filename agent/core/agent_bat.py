@@ -56,6 +56,13 @@ async def agent_duoc_tra_loi(
         if conv.get("status") == "escalated" or conv.get("mode") == "human":
             return KetQua(False, "Hội thoại này đã do người tiếp quản")
 
+    if conv is not None and conv.get("id") is not None:
+        from agent import goi_cuoc
+        if not await goi_cuoc.con_luot_ai(conv["id"]):
+            hm = goi_cuoc.han_muc()
+            return KetQua(False, f"Hết lượt hội thoại AI của gói {hm.goi} trong tháng "
+                                 f"({hm.hoi_thoai_ai_thang}) — nâng gói để agent nhận tiếp")
+
     if account_id is not None:
         dong = await db.fetchrow(
             "SELECT agent_bat, display_name, agent_tat_ly_do "

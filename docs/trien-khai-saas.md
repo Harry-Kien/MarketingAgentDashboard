@@ -63,6 +63,7 @@ Sau đó trong dashboard của cửa hàng:
 | Kiểm sức khoẻ (mã thoát ≠ 0 nếu hỏng) | `python3 -m scripts.cua_hang kiem` |
 | Tạm dừng / chạy lại | `python3 -m scripts.cua_hang tam_dung shopa` · `chay shopa` |
 | Khởi động lại sau khi sửa `.env` | `python3 -m scripts.cua_hang khoi_dong_lai shopa` |
+| Đổi gói (dung_thu, co_ban, chuyen_nghiep, khong_gioi_han) | `python3 -m scripts.cua_hang goi shopa co_ban` |
 | Sao lưu một / tất cả | `python3 -m scripts.cua_hang sao_luu shopa` · `sao_luu --tat-ca` |
 | Xoá hẳn (sao lưu trước) | `python3 -m scripts.cua_hang xoa shopa --xac-nhan shopa` |
 

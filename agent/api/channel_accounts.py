@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from agent.goi_cuoc import VuotHanMuc
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
@@ -118,6 +119,9 @@ def _raise_public(exc: Exception) -> None:
         raise HTTPException(409, str(exc)) from exc
     if isinstance(exc, AccountDisabled):
         raise HTTPException(409, str(exc)) from exc
+    if isinstance(exc, VuotHanMuc):
+        # 402: yêu cầu hợp lệ, chỉ là gói không cho — nói rõ để nâng gói.
+        raise HTTPException(402, str(exc)) from exc
     raise exc
 
 
@@ -246,7 +250,7 @@ async def create_account(
             ),
             actor=_actor(user),
         )
-    except (AccountAlreadyExists, AccountDisabled, AccountNotFound) as exc:
+    except (AccountAlreadyExists, AccountDisabled, AccountNotFound, VuotHanMuc) as exc:
         _raise_public(exc)
     return account.to_public(has_credentials=bool(credentials))
 

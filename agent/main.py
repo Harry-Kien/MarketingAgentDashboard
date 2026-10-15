@@ -60,6 +60,7 @@ from agent.config import ROOT, settings
 from agent.core import agent as brain
 from agent.core import anh_khach
 from agent import canh_gac
+from agent import quan_sat
 from agent.core import (agent_bat, agent_ho_so, cong_viec,
                         du_lieu_ca_nhan, gio_lam_viec, quyen, xac_thuc)
 from agent.core import tu_nhien
@@ -471,6 +472,8 @@ async def lifespan(app: FastAPI):
     # bí mật vào log mỗi lần canh gác chạy. Cài bộ lọc sau khi có lời gọi
     # đầu tiên là đã muộn.
     nhat_ky.dung_nhat_ky()
+    # Sau bộ lọc nhật ký: Sentry dùng cùng bộ che bí mật.
+    quan_sat.bat_sentry()
 
     await db.init_db()
 
@@ -860,6 +863,7 @@ app.include_router(tra_loi_nhanh_router)
 app.include_router(hoi_thoai_nhan_router)
 app.include_router(bao_cao_nhan_vien_router)
 app.include_router(thanh_toan_router)
+app.include_router(quan_sat.router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một
 # đoạn. Đặt sớm hơn là nó nuốt cả /healthz, /mcp và trang dashboard.

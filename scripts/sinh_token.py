@@ -65,6 +65,7 @@ CHO_PHEP = {
     "SHIPPING_WEBHOOK_SECRET": "bí mật trong URL webhook hãng vận chuyển",
     # Bốn bí mật của Langfuse (profile "trace") — từng gõ cứng trong
     # docker-compose.yml, tức công khai trên GitHub.
+    "METRICS_TOKEN": "token Bearer cho /metrics (Prometheus)",
     "LANGFUSE_DB_MAT_KHAU": "mật khẩu CSDL riêng của Langfuse",
     "LANGFUSE_NEXTAUTH_SECRET": "khoá ký phiên đăng nhập Langfuse",
     "LANGFUSE_SALT": "muối băm API key của Langfuse",

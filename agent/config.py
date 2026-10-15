@@ -305,6 +305,11 @@ class Settings(BaseSettings):
     #
     # Sinh token: python -c "import secrets; print(secrets.token_urlsafe(32))"
     mcp_token: str = ""
+    # Quan sát khi host (agent/quan_sat.py). Trống = tắt.
+    # SENTRY_DSN: gửi lỗi về Sentry hoặc GlitchTip tự host.
+    # METRICS_TOKEN: bật /metrics cho Prometheus (Bearer). Trống thì /metrics 404.
+    sentry_dsn: str = ""
+    metrics_token: str = ""
 
     # Mẫu gói tin gửi tới CANH_GAC_WEBHOOK. Để trống là dùng dạng mặc định.
     #

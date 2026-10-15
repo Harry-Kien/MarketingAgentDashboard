@@ -1,0 +1,51 @@
+# Lớp NỀN dùng chung cho mọi cửa hàng: Postgres (mỗi cửa hàng một CSDL +
+# role riêng) và Caddy (TLS tự động, định tuyến theo tên miền).
+#
+#   docker compose -f trien_khai/docker-compose.nen.yml --env-file trien_khai/.env.nen up -d
+#
+# `trien_khai/.env.nen` do `python -m scripts.cua_hang khoi_tao` sinh, giữ
+# mật khẩu superuser Postgres — chỉ mặt phẳng điều khiển dùng, KHÔNG app
+# nào của cửa hàng có nó.
+name: cskh-nen
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cskh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quan_tri
+      POSTGRES_PASSWORD: ${POSTGRES_MAT_KHAU:?chạy scripts.cua_hang khoi_tao trước}
+      POSTGRES_DB: saas_dieu_khien
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    # Không mở cổng ra ngoài máy: chỉ app trong mạng cskh-nen gọi được.
+    # Mặt phẳng điều khiển chạy lệnh qua `docker exec`.
+    networks: [nen]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quan_tri -d saas_dieu_khien"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2
+    container_name: cskh-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_du_lieu:/data
+      - caddy_cau_hinh:/config
+    networks: [nen]
+
+volumes:
+  postgres:
+  caddy_du_lieu:
+  caddy_cau_hinh:
+
+networks:
+  nen:
+    name: cskh-nen

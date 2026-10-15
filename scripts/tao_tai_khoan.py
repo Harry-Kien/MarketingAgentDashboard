@@ -44,6 +44,11 @@ async def main(argv: list[str]) -> int:
         print(__doc__)
         return 1
     ten, mat_khau = argv[0], argv[1]
+    if mat_khau == "-":
+        # Đọc từ stdin: mật khẩu trên dòng lệnh nằm trong danh sách tiến
+        # trình và lịch sử shell. `scripts/cua_hang.py` tạo quản trị viên
+        # đầu tiên của mỗi cửa hàng theo đường này.
+        mat_khau = sys.stdin.readline().strip()
     vai_tro = "quan_tri" if "--quan-tri" in argv else "nhan_vien"
 
     await db.init_db()

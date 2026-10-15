@@ -1,0 +1,48 @@
+# Cửa hàng «MA» — SINH bởi `python -m scripts.cua_hang tao`. Không sửa tay.
+#
+# ĐÚNG MỘT bản app: outbox, lịch đăng bài và vòng giữ phiên Zalo không chịu
+# được hai bản cùng chạy (tin gửi đôi cho khách). Không `scale`, không
+# `replicas` > 1. tests/test_cua_hang_cli.py canh.
+name: cskh-«MA»
+
+services:
+  app:
+    image: «IMAGE_APP»
+    container_name: cskh-«MA»-app
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - du_lieu:/app/data
+    networks: [noi_bo, nen]
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 768m
+
+  sidecar:
+    image: «IMAGE_SIDECAR»
+    container_name: cskh-«MA»-sidecar
+    restart: unless-stopped
+    environment:
+      ZALO_SIDECAR_SECRET: «SIDECAR_SECRET»
+      ZALO_CONTROL_PLANE_URL: http://app:8000/webhook/native/zalo-personal
+    networks: [noi_bo]
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 256m
+
+volumes:
+  du_lieu:
+    name: cskh-«MA»-du-lieu
+
+networks:
+  # Sidecar chỉ nói chuyện với app của CHÍNH cửa hàng này.
+  noi_bo:
+    name: cskh-«MA»-noi-bo
+  # Mạng chung với Postgres và Caddy (tạo bởi docker-compose.nen.yml).
+  nen:
+    name: cskh-nen
+    external: true

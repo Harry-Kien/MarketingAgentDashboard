@@ -131,3 +131,10 @@ app.err.log
 
 # Đường dẫn mã cho bản xem trước (scripts/xem_truoc.py) — riêng từng máy.
 .claude/xem_truoc_thu_muc
+
+# Mặt phẳng điều khiển SaaS: bí mật, cấu hình sinh ra và bản sao lưu của
+# từng cửa hàng — scripts/cua_hang.py.
+trien_khai/cua_hang/
+trien_khai/.env.nen
+trien_khai/sao_luu/
+trien_khai/caddy/Caddyfile

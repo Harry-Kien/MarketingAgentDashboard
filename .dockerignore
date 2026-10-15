@@ -1,0 +1,33 @@
+# Chặn bí mật và dữ liệu vận hành khỏi image. Một image lọt .env là mọi
+# cửa hàng chạy image ấy mang khoá của máy phát triển.
+.env
+.env.*
+!.env.example
+data/catalog.json
+data/knowledge/
+data/uploads/
+data/sao_luu/
+data/backups/
+data/eval/ket-qua-*.json
+data/eval/nhieu-luot-*.json
+data/eval/golden.jsonl
+data/*.log
+*.log
+*.bak
+
+.git
+.venv
+.claude
+.serena
+.superpowers
+.playwright-cli
+.ruff_cache
+__pycache__
+**/__pycache__
+ZaloCRM
+chatwoot-personal
+video-studio
+output
+tests
+docs
+connectors/zalo-personal-sidecar/node_modules

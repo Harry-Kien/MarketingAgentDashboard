@@ -19,6 +19,12 @@
 *.html  text eol=lf
 *.css   text eol=lf
 *.js    text eol=lf
+*.mjs   text eol=lf
+# Chạy trong container Linux: CRLF làm shebang thành "/bin/sh" và
+# container chết lúc khởi động với "not found" — trỏ sai hướng hoàn toàn.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Caddyfile*  text eol=lf
 
 *.png   binary
 *.jpg   binary

@@ -58,11 +58,17 @@ Thứ tự theo tác động lên người trực mỗi ngày:
 
 ## Giai đoạn 2 — Nền SaaS
 
-1. **Đa thuê bao:** bảng `cua_hang`, cột `cua_hang_id` trên mọi bảng nghiệp
-   vụ, Postgres RLS (`FORCE`, role app không phải owner,
-   `set_config('app.cua_hang_id', $1, true)` trong mỗi transaction), test
-   chứng minh hai cửa hàng không thấy nhau. Kho tri thức, catalog, cấu
-   hình động, khoá vault tách theo cửa hàng.
+Kế hoạch: `2026-10-15-giai-doan-2-nen-saas-silo.md`
+
+> **Đổi hướng 15.10.2026:** đa thuê bao theo mô hình **silo** (mỗi cửa hàng
+> một CSDL + một container), KHÔNG phải RLS. Khảo sát đo được app chạy bằng
+> superuser (bỏ qua RLS), ~50 bảng không có khoá cửa hàng, 13 vòng nền và
+> >10 bộ đệm xuyên dữ liệu — bật RLS sai một chỗ là "âm thầm thấy 0 dòng".
+> Lý do đầy đủ trong kế hoạch Giai đoạn 2. Pool + RLS là dự án riêng khi
+> vượt vài trăm cửa hàng.
+
+1. ~~RLS trên một CSDL chung~~ → silo: `scripts/cua_hang.py` dựng CSDL,
+   role, container, tên miền TLS cho từng cửa hàng.
 2. **Vòng nền chạy được nhiều bản:** PgQueuer (MIT) cho việc bền vững;
    advisory lock bầu một "trưởng" cho vòng định kỳ (`schedule_loop` hiện có
    thể **đăng bài hai lần**).

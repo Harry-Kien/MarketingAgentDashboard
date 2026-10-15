@@ -126,6 +126,12 @@ MIEN_TRU: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/api/dang-xuat"),
     ("GET", "/api/toi"),
     ("POST", "/api/toi/doi-mat-khau"),
+    # 2FA của CHÍNH mình — ai đăng nhập cũng phải tự bảo vệ được tài khoản.
+    # Route vẫn đòi đăng nhập (bat_buoc_dang_nhap); tắt đòi gõ lại mật khẩu.
+    ("GET", "/api/toi/hai-buoc"),
+    ("POST", "/api/toi/hai-buoc/bat-dau"),
+    ("POST", "/api/toi/hai-buoc/xac-nhan"),
+    ("POST", "/api/toi/hai-buoc/tat"),
     ("GET", "/api/suc-khoe"),
     ("GET", "/api/he-thong"),
     ("GET", "/api/connect/meta/callback"),   # xác thực bằng state token

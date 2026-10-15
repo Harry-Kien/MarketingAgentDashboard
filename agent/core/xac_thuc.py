@@ -184,6 +184,9 @@ async def doi_mat_khau(ten_dang_nhap: str, mat_khau_moi: str) -> bool:
 # lại chỉ ra đúng tên nào có thật.
 
 DANG_NHAP_TOI_DA = 8        # số lần sai cho phép trong một cửa sổ
+# Theo IP: cao hơn vì nhiều nhân viên chung một mạng văn phòng (một IP NAT),
+# nhưng vẫn chặn được kẻ dò đổi tên mỗi lượt — kiểu mà bộ đếm theo tên bỏ lọt.
+DANG_NHAP_TOI_DA_IP = 30
 DANG_NHAP_CUA_SO = 15 * 60  # độ dài cửa sổ, tính bằng giây
 
 # ten_dang_nhap -> các mốc thời gian thất bại còn trong cửa sổ
@@ -251,22 +254,36 @@ def xoa_that_bai(ten_dang_nhap: str) -> None:
     _that_bai.pop((ten_dang_nhap or "").strip().lower(), None)
 
 
-def bi_khoa_tam(ten_dang_nhap: str, t: float | None = None) -> int:
+def bi_khoa_tam(ten_dang_nhap: str, t: float | None = None,
+                toi_da: int = DANG_NHAP_TOI_DA) -> int:
     """
     Còn phải chờ bao nhiêu GIÂY nữa mới được thử lại. 0 nghĩa là được thử.
     """
     ten = (ten_dang_nhap or "").strip().lower()
     t = _bay_gio(t)
     moc = _con_trong_cua_so(ten, t)
-    if len(moc) < DANG_NHAP_TOI_DA:
+    if len(moc) < toi_da:
         return 0
     # Mở khoá khi lần sai thứ (n - TOI_DA + 1) tính từ cuối trôi khỏi cửa sổ.
-    som_nhat = moc[-DANG_NHAP_TOI_DA]
+    som_nhat = moc[-toi_da]
     return max(1, int(DANG_NHAP_CUA_SO - (t - som_nhat)) + 1)
 
 
-async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
-    """Trả token phiên, hoặc None nếu sai. KHÔNG nói sai ở đâu."""
+class CanMaHaiBuoc(Exception):
+    """Mật khẩu đúng, tài khoản bật 2FA, chưa gửi mã — hỏi mã, CHƯA tạo phiên."""
+
+
+class MaHaiBuocSai(Exception):
+    """Mật khẩu đúng nhưng mã 2FA sai — tính là một lần đăng nhập sai."""
+
+
+async def dang_nhap(ten_dang_nhap: str, mat_khau: str, ma_2fa: str = "",
+                    ip: str = "") -> str | None:
+    """Trả token phiên, hoặc None nếu sai. KHÔNG nói sai ở đâu.
+
+    Bật 2FA thì ném `CanMaHaiBuoc` (chưa gửi mã) hoặc `MaHaiBuocSai`.
+    `ip` thêm một bộ đếm theo IP: kẻ dò đổi tên mỗi lượt vẫn bị chặn.
+    """
     ten_dang_nhap = (ten_dang_nhap or "").strip().lower()
 
     # Chốt tần suất đứng TRƯỚC cả truy vấn CSDL: đang bị khoá thì không
@@ -277,9 +294,14 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
                            ly_do=f"quá {DANG_NHAP_TOI_DA} lần sai",
                            con_giay=con)
         return None
+    khoa_ip = f"ip:{ip}" if ip else ""
+    if khoa_ip and (con := bi_khoa_tam(khoa_ip, toi_da=DANG_NHAP_TOI_DA_IP)) > 0:
+        await db.log_event("auth.khoa_tam", actor=ten_dang_nhap[:40],
+                           ly_do=f"IP quá {DANG_NHAP_TOI_DA_IP} lần sai", con_giay=con)
+        return None
 
     nd = await db.fetchrow(
-        "SELECT id, mat_khau_bam, vai_tro, khoa FROM nguoi_dung "
+        "SELECT id, mat_khau_bam, vai_tro, khoa, hai_buoc_bat FROM nguoi_dung "
         "WHERE ten_dang_nhap = $1", ten_dang_nhap,
     )
 
@@ -290,6 +312,8 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
         await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
                            ly_do="không có tài khoản")
         ghi_that_bai(ten_dang_nhap)
+        if khoa_ip:
+            ghi_that_bai(khoa_ip)
         return None
 
     if nd["khoa"]:
@@ -302,7 +326,21 @@ async def dang_nhap(ten_dang_nhap: str, mat_khau: str) -> str | None:
         await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
                            ly_do="sai mật khẩu")
         ghi_that_bai(ten_dang_nhap)
+        if khoa_ip:
+            ghi_that_bai(khoa_ip)
         return None
+
+    if nd.get("hai_buoc_bat"):
+        if not (ma_2fa or "").strip():
+            raise CanMaHaiBuoc()
+        from agent.core import hai_buoc
+        if not await hai_buoc.kiem(nd["id"], ma_2fa):
+            await db.log_event("auth.that_bai", actor=ten_dang_nhap[:40],
+                               ly_do="sai mã hai bước")
+            ghi_that_bai(ten_dang_nhap)
+            if khoa_ip:
+                ghi_that_bai(khoa_ip)
+            raise MaHaiBuocSai()
 
     xoa_that_bai(ten_dang_nhap)
     token = secrets.token_urlsafe(32)

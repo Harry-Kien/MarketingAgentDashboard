@@ -98,3 +98,6 @@ segno==1.6.6
 # Gửi lỗi về Sentry hoặc GlitchTip tự host khi SENTRY_DSN có giá trị (MIT).
 # Tuỳ chọn — app chạy bình thường khi thiếu DSN. Xem agent/quan_sat.py.
 sentry-sdk==2.72.0
+
+# Xác thực hai bước TOTP cho dashboard (MIT). Xem agent/core/hai_buoc.py.
+pyotp==2.10.0

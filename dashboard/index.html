@@ -149,6 +149,11 @@
         <span>Mật khẩu</span>
         <input name="mat_khau" type="password" autocomplete="current-password" required>
       </label>
+      <!-- Chỉ hiện khi máy chủ đòi (tài khoản đã bật xác thực hai bước). -->
+      <label class="field" id="loginMa" hidden>
+        <span>Mã xác thực (6 số, hoặc mã dự phòng)</span>
+        <input name="ma_2fa" inputmode="numeric" autocomplete="one-time-code" maxlength="20">
+      </label>
       <button type="submit" class="btn btn--primary">Đăng nhập</button>
       <p class="cong__loi" id="loginerr"></p>
       <p class="cong__note"><b>Nhân viên:</b> tài khoản do quản trị cấp ở màn

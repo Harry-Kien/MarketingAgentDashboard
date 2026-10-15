@@ -3264,6 +3264,7 @@ async function kiemPhien() {
     if (nhan) nhan.innerHTML =
       `${esc(nguoi.ho_ten || nguoi.ten_dang_nhap)}`
       + ` · <a href="#" id="doimk" style="color:inherit">đổi mật khẩu</a>`
+      + ` · <a href="#" id="haibuoc" style="color:inherit">bảo mật 2 bước</a>`
       + ` · <a href="#" id="logout" style="color:inherit">thoát</a>`;
     const doi = $("#doimk");
     if (doi) doi.addEventListener("click", (e) => {
@@ -3340,6 +3341,11 @@ $("#loginform").addEventListener("submit", async (e) => {
     // Thông báo giữ nguyên như máy chủ trả về — không tách "sai tên" khỏi
     // "sai mật khẩu", vì tách ra là chỉ cho người dò biết tên nào có thật.
     $("#loginerr").textContent = err.message || "Đăng nhập không thành công";
+    // Mật khẩu đúng, tài khoản bật 2FA: hiện ô mã và giữ nguyên chữ đã gõ.
+    if (err.chi_tiet && err.chi_tiet.can_ma_2fa) {
+      $("#loginMa").hidden = false;
+      e.target.ma_2fa.focus();
+    }
     btn.disabled = false;
   }
 });
@@ -7093,5 +7099,49 @@ document.addEventListener("click", async (ev) => {
     toast(r.da_truoc ? "Hội thoại đã được giải quyết từ trước."
       : `Đã giải quyết${r.csat === "đã hỏi" ? " — đã hỏi khách chấm điểm" : ""}.`);
     loadConversations();
+  } catch (e) { toast(e.message, true); }
+});
+
+/* ---------------- Bảo mật hai bước (TOTP) ---------------- */
+/* Bật là HAI bước: quét QR, rồi gõ một mã thật — bật ngay khi sinh bí mật
+ * là khoá người dùng ra ngoài nếu họ quét hỏng. Mã dự phòng chỉ hiện MỘT
+ * lần, ngay sau khi bật. */
+document.addEventListener("click", async (ev) => {
+  if (!ev.target.closest("#haibuoc")) return;
+  ev.preventDefault();
+  try {
+    const tt = await api("/toi/hai-buoc");
+    if (tt.bat) {
+      const d = await hoiHop({
+        tieu_de: "Tắt xác thực hai bước",
+        phu: `Đang bật · còn ${tt.ma_du_phong_con} mã dự phòng. Tắt thì chỉ còn mật khẩu bảo vệ tài khoản.`,
+        truong: [{ name: "mat_khau", label: "Gõ lại mật khẩu", type: "password", required: true }],
+        nut: "Tắt", nguy_hiem: true,
+      });
+      if (!d || !d.mat_khau) return;
+      await api("/toi/hai-buoc/tat", { method: "POST", body: JSON.stringify({ mat_khau: d.mat_khau }) });
+      toast("Đã tắt xác thực hai bước.");
+      return;
+    }
+    const moi = await api("/toi/hai-buoc/bat-dau", { method: "POST" });
+    const cho = hoiHop({
+      tieu_de: "Bật xác thực hai bước",
+      phu: "Quét mã bằng Google Authenticator, Authy hoặc 1Password, rồi nhập mã 6 số đang hiện.",
+      truong: [{ name: "ma", label: "Mã 6 số", required: true, maxlength: 6 }],
+      nut: "Bật",
+    });
+    // Ảnh QR do MÁY CHỦ vẽ (segno) — chèn vào phần mô tả của hộp hỏi.
+    const phu = $("#hoiPhu");
+    phu.innerHTML = `${esc(phu.textContent)}<span class="qr-2fa">${moi.svg}</span>`
+      + `<small>Không quét được: nhập tay khoá trong <code>${esc(moi.uri.split("secret=")[1]?.split("&")[0] || "")}</code></small>`;
+    const d = await cho;
+    if (!d || !d.ma) return;
+    const r = await api("/toi/hai-buoc/xac-nhan", { method: "POST", body: JSON.stringify({ ma: d.ma }) });
+    await hoiHop({
+      tieu_de: "Đã bật — lưu mã dự phòng",
+      phu: "Mỗi mã dùng MỘT lần khi mất điện thoại. Lưu ở nơi an toàn; trang này sẽ không hiện lại.\n\n"
+        + r.ma_du_phong.join("   "),
+      truong: [], nut: "Đã lưu",
+    });
   } catch (e) { toast(e.message, true); }
 });

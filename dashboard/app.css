@@ -2076,3 +2076,8 @@ svg { flex: none; }
 /* Cờ trung tính: dòng không mang trạng thái (mẫu trả lời nhanh) và trạng
  * thái lạ trong convRow — không có lớp này thì cột 3px trong suốt. */
 .row__flag--plain { background: hsl(var(--border)); }
+
+/* ---------------- Bảo mật hai bước ---------------- */
+.qr-2fa { display: block; margin: 12px auto; width: 180px; }
+.qr-2fa svg { width: 100%; height: auto; display: block; background: #fff; }
+#hoiPhu { white-space: pre-wrap; }

@@ -193,7 +193,11 @@ def test_khong_noi_sai_ten_hay_sai_mat_khau():
     soi chú thích thì đỏ vì lý do sai.
     """
     src = inspect.getsource(routes.dang_nhap)
-    nem = [d for d in src.split("HTTPException(401,")[1:]]
+    # Hai lỗi 401 của 2FA (mang `can_ma_2fa`) chỉ ném SAU khi mật khẩu đã
+    # đúng — chúng không phân biệt sai tên với sai mật khẩu. Thông báo cho
+    # sai tên/mật khẩu là các 401 dạng chuỗi trơn.
+    nem = [d for d in src.split("HTTPException(401,")[1:]
+           if not d.lstrip().startswith("{")]
     assert nem, "không thấy chỗ ném lỗi 401"
     thong_bao = nem[0].split(")")[0]
     assert "Tên đăng nhập hoặc mật khẩu không đúng" in thong_bao
@@ -473,8 +477,10 @@ def test_moi_nhanh_that_bai_deu_ghi_vao_bo_dem():
     khẩu. Bỏ sót một đường là để hở đúng đường đó cho người dò.
     """
     src = inspect.getsource(xac_thuc.dang_nhap)
-    assert src.count("ghi_that_bai(") == 3
-    assert src.count('log_event("auth.that_bai"') == 3
+    # Bốn đường: thêm "sai mã hai bước" (14.10.2026). Mã 2FA sai mà không
+    # đếm là cho kẻ đã có mật khẩu thử mã 6 số không giới hạn.
+    assert src.count("ghi_that_bai(ten_dang_nhap)") == 4
+    assert src.count('log_event("auth.that_bai"') == 4
 
 
 def test_bo_dem_khong_phinh_vo_han():

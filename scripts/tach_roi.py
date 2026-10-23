@@ -34,6 +34,36 @@ if os.name == "nt":
     _CO_TACH_JOB = _CO_RIENG | subprocess.CREATE_BREAKAWAY_FROM_JOB
 
 
+def python_that(python_venv: Path) -> tuple[str, dict[str, str]]:
+    """
+    Từ `.venv/Scripts/python.exe` -> (trình thông dịch THẬT, biến môi trường).
+
+    VÌ SAO: trên Windows `python.exe` trong venv chỉ là bộ khởi chạy — nó
+    bật trình thông dịch gốc làm tiến trình CON, gói con trong một job
+    "chết theo cha", rồi ngồi chờ (vì thế mỗi uvicorn có hai PID). Bật bộ
+    khởi chạy ở chế độ tách rời (không console) thì nó không sống nổi: đo
+    23.10.2026, tiến trình ngủ 300 giây bật qua bộ khởi chạy chết sau dưới 21
+    giây, bật thẳng trình gốc thì sống — app production chết đúng như vậy.
+
+    Làm đúng việc bộ khởi chạy làm, không qua nó: chạy trình gốc (`home`
+    trong `pyvenv.cfg`) với `__PYVENV_LAUNCHER__` trỏ về venv — trình gốc
+    đọc biến này để nhận `sys.prefix` là venv và nạp đúng thư viện của venv.
+
+    Không phải venv (không có `pyvenv.cfg`) hoặc không phải Windows: trả
+    nguyên đường dẫn, không thêm biến nào.
+    """
+    cfg = python_venv.parent.parent / "pyvenv.cfg"
+    if os.name != "nt" or not cfg.exists():
+        return str(python_venv), {}
+    for dong in cfg.read_text(encoding="utf-8").splitlines():
+        khoa, _, gia_tri = dong.partition("=")
+        if khoa.strip() == "home":
+            goc = Path(gia_tri.strip()) / "python.exe"
+            if goc.exists():
+                return str(goc), {"__PYVENV_LAUNCHER__": str(python_venv)}
+    return str(python_venv), {}
+
+
 def bat(lenh: list[str], *, cwd: Path | str, nhat_ky: Path,
         env: dict[str, str] | None = None) -> str:
     """

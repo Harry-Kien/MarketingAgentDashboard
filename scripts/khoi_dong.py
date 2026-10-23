@@ -199,11 +199,15 @@ def _app_song() -> bool:
 def _bat_app() -> str:
     # Tách rời: lượt chạy của người canh bị Task Scheduler dừng là KHÔNG được
     # kéo app chết theo — xem scripts/tach_roi.py (đo được 23.10.2026).
+    # Trình thông dịch THẬT, không qua bộ khởi chạy của venv: bộ khởi chạy
+    # không sống nổi khi bật tách rời và kéo app chết theo (xem python_that).
+    if os.name == "nt":
+        exe, them = tach_roi.python_that(GOC / ".venv" / "Scripts" / "python.exe")
+    else:
+        exe, them = sys.executable, {}
     return tach_roi.bat(
-        [str(GOC / ".venv" / "Scripts" / "python.exe")
-         if os.name == "nt" else sys.executable,
-         "-m", "uvicorn", "agent.main:app", "--port", str(CONG_APP)],
-        cwd=GOC, nhat_ky=GOC / "app.log",
+        [exe, "-m", "uvicorn", "agent.main:app", "--port", str(CONG_APP)],
+        cwd=GOC, nhat_ky=GOC / "app.log", env={**os.environ, **them},
     )
 
 

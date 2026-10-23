@@ -88,3 +88,44 @@ def test_nguoi_canh_chay_python_khong_dem_dau_ra():
     """Lượt bị dừng giữa chừng mà dầu ra còn trong bộ đệm là mất sạch nhật ký."""
     bat = (ROOT / "scripts" / "canh_gac_ngoai.bat").read_text(encoding="ascii")
     assert "python.exe\" -u -m scripts.canh_gac_ngoai" in bat
+
+
+def test_python_that_doc_home_trong_pyvenv_cfg(tmp_path, monkeypatch):
+    """Bộ khởi chạy venv chết khi bật tách rời — phải bật thẳng trình gốc."""
+    goc = tmp_path / "Python312"
+    goc.mkdir()
+    (goc / "python.exe").write_text("", encoding="utf-8")
+    venv = tmp_path / ".venv"
+    (venv / "Scripts").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text(f"home = {goc}\nversion = 3.12.5\n", encoding="utf-8")
+    stub = venv / "Scripts" / "python.exe"
+    monkeypatch.setattr(tach_roi.os, "name", "nt")
+    exe, env = tach_roi.python_that(stub)
+    assert exe == str(goc / "python.exe")
+    assert env == {"__PYVENV_LAUNCHER__": str(stub)}
+
+
+def test_python_that_khong_phai_venv_thi_giu_nguyen(tmp_path):
+    exe = tmp_path / "python.exe"
+    assert tach_roi.python_that(exe) == (str(exe), {})
+
+
+@pytest.mark.skipif(os.name != "nt", reason="bộ khởi chạy venv chỉ có trên Windows")
+def test_trinh_that_nap_dung_thu_vien_cua_venv(tmp_path):
+    """Đo thật: trình gốc + __PYVENV_LAUNCHER__ thấy sys.prefix là venv và import được uvicorn."""
+    stub = ROOT / ".venv" / "Scripts" / "python.exe"
+    if not stub.exists():
+        stub = Path(sys.prefix) / "Scripts" / "python.exe"
+    if not (stub.parent.parent / "pyvenv.cfg").exists():
+        pytest.skip("không chạy trong venv")
+    exe, them = tach_roi.python_that(stub)
+    r = subprocess.run([exe, "-c", "import sys, uvicorn; print(sys.prefix)"],
+                       env={**os.environ, **them}, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr[-400:]
+    assert Path(r.stdout.strip()).resolve() == stub.parent.parent.resolve()
+
+
+def test_app_bat_bang_trinh_that_khong_qua_bo_khoi_chay():
+    nguon = (ROOT / "scripts" / "khoi_dong.py").read_text(encoding="utf-8")
+    than = nguon[nguon.index("def _bat_app"):nguon.index("def _tat_app")]
+    assert "python_that(" in than

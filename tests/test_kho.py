@@ -212,8 +212,8 @@ def test_anh_di_sau_loi():
     Nhận ảnh trước khi biết đó là gì thì khách phải tự đoán. Nhận lời trước
     rồi thấy ảnh mới là thứ tự tự nhiên của người bán hàng.
     """
-    from agent import main as app_main
-    src = inspect.getsource(app_main.handle_inbound)
+    from agent.omnichannel import xu_ly_tin_vao
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     assert src.index("_gui_nhu_nguoi") < src.index("reply.anh_can_gui")
 
 

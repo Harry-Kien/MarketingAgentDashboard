@@ -170,7 +170,7 @@ def test_dang_ky_webhook_va_quyen_oauth_du():
 
 @pytest.fixture
 def nhanh(monkeypatch):
-    from agent import main
+    from agent.omnichannel import xu_ly_tin_vao
     hop = {"sql": [], "su_kien": [], "an": [], "bat": "bat", "loi": None}
 
     async def execute(sql, *a):
@@ -189,12 +189,12 @@ def nhanh(monkeypatch):
     async def get_for_account(_):
         return _Ad()
 
-    monkeypatch.setattr(main.db, "execute", execute)
-    monkeypatch.setattr(main.db, "log_event", log_event)
-    monkeypatch.setattr(main.cau_hinh_dong, "lay",
+    monkeypatch.setattr(xu_ly_tin_vao.db, "execute", execute)
+    monkeypatch.setattr(xu_ly_tin_vao.db, "log_event", log_event)
+    monkeypatch.setattr(xu_ly_tin_vao.cau_hinh_dong, "lay",
                         lambda k: hop["bat"] if k == "AN_BINH_LUAN_CO_SDT" else "")
-    monkeypatch.setattr(main.channels, "get_for_account", get_for_account)
-    return main, hop
+    monkeypatch.setattr(xu_ly_tin_vao.channels, "get_for_account", get_for_account)
+    return xu_ly_tin_vao, hop
 
 
 def _tin(loi):
@@ -202,27 +202,27 @@ def _tin(loi):
 
 
 def test_binh_luan_chuyen_nguoi_khong_goi_agent(nhanh):
-    main, hop = nhanh
-    asyncio.run(main._xu_ly_binh_luan(_tin("giá bao nhiêu"), uuid.uuid4()))
+    xu_ly_tin_vao, hop = nhanh
+    asyncio.run(xu_ly_tin_vao._xu_ly_binh_luan(_tin("giá bao nhiêu"), uuid.uuid4()))
     assert any("status = 'escalated'" in s for s in hop["sql"])
     assert hop["an"] == []                     # không có SĐT thì không ẩn
 
 
 def test_co_sdt_va_da_bat_thi_an(nhanh):
-    main, hop = nhanh
-    asyncio.run(main._xu_ly_binh_luan(_tin("ib em 0912 345 678"), uuid.uuid4()))
+    xu_ly_tin_vao, hop = nhanh
+    asyncio.run(xu_ly_tin_vao._xu_ly_binh_luan(_tin("ib em 0912 345 678"), uuid.uuid4()))
     assert hop["an"] == ["555_777"] and "binh_luan.da_an" in hop["su_kien"]
 
 
 def test_tat_thi_khong_an(nhanh):
-    main, hop = nhanh
+    xu_ly_tin_vao, hop = nhanh
     hop["bat"] = "tat"
-    asyncio.run(main._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
+    asyncio.run(xu_ly_tin_vao._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
     assert hop["an"] == []
 
 
 def test_an_hong_thi_ghi_canh_bao_khong_nuot(nhanh):
-    main, hop = nhanh
+    xu_ly_tin_vao, hop = nhanh
     hop["loi"] = "Graph 403"
-    asyncio.run(main._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
+    asyncio.run(xu_ly_tin_vao._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
     assert "binh_luan.an_that_bai" in hop["su_kien"]

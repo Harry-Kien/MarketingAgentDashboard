@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agent import main as app_main  # noqa: E402
+from agent.omnichannel import xu_ly_tin_vao  # noqa: E402
 from agent.channels.base import ChannelAdapter, Delivery  # noqa: E402
 from agent.core import gio_lam_viec  # noqa: E402
 from agent.channels.chatwoot import NHAN_CHO_NGUOI, ChatwootAdapter  # noqa: E402
@@ -142,7 +142,7 @@ def _bat_nhat_ky(monkeypatch) -> list[tuple]:
     async def gia(kind, **kw):
         ghi.append((kind, kw))
 
-    monkeypatch.setattr(app_main.db, "log_event", gia)
+    monkeypatch.setattr(xu_ly_tin_vao.db, "log_event", gia)
     return ghi
 
 
@@ -156,8 +156,8 @@ def test_khach_duoc_bao_khi_chuyen_nguoi(monkeypatch):
     async def queue(_cid, text):
         da_queue.append(text)
 
-    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
-    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    monkeypatch.setattr(xu_ly_tin_vao, "_queue_handover_notice", queue)
+    asyncio.run(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
     assert da_queue, "không xếp câu báo khách vào outbox"
     assert not kenh.da_gui, "đã gọi provider trước khi outbox commit"
 
@@ -180,8 +180,8 @@ def test_cau_bao_la_co_dinh_khong_phai_loi_model(monkeypatch):
     async def queue(_cid, text):
         da_queue.append(text)
 
-    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
-    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    monkeypatch.setattr(xu_ly_tin_vao, "_queue_handover_notice", queue)
+    asyncio.run(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
     # Chuỗi gửi đi phải là MỘT TRONG hai câu cố định của cấu hình.
     assert da_queue[0] in (settings.tin_chuyen_nguoi,
                            gio_lam_viec.tin_chuyen_nguoi())
@@ -199,8 +199,8 @@ def test_gui_hong_thi_phai_de_lai_dau_vet(monkeypatch):
     async def queue(_cid, _text):
         raise RuntimeError("500 Internal Server Error")
 
-    monkeypatch.setattr(app_main, "_queue_handover_notice", queue)
-    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    monkeypatch.setattr(xu_ly_tin_vao, "_queue_handover_notice", queue)
+    asyncio.run(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
 
     loai = [k for k, _ in ghi]
     assert "escalate.bao_that_bai" in loai, "gửi hỏng mà không ai biết"
@@ -215,7 +215,7 @@ def test_gui_hong_thi_phai_de_lai_dau_vet(monkeypatch):
 def test_kenh_no_thi_khong_lam_sap_luong(monkeypatch):
     ghi = _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia(no=RuntimeError("mạng đứt"))
-    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    asyncio.run(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
     assert "escalate.bao_that_bai" in [k for k, _ in ghi]
 
 
@@ -223,7 +223,7 @@ def test_ngoai_cua_so_gui_thi_van_ghi_nhat_ky(monkeypatch):
     """Không gửi được vì hết cửa sổ 24h cũng là khách không nhận được gì."""
     ghi = _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia(gui_duoc=False)
-    asyncio.run(app_main.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
+    asyncio.run(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(kenh, "c1", None))
     assert not kenh.da_gui
     assert "escalate.khong_gui_duoc" in [k for k, _ in ghi]
 
@@ -232,7 +232,7 @@ def test_bao_nhan_vien_hong_cung_phai_keu(monkeypatch):
     """Hàng chờ rò rỉ là chuyện lớn, không phải chi tiết trang trí."""
     ghi = _bat_nhat_ky(monkeypatch)
     kenh = _KenhGia(no=RuntimeError("chatwoot sập"))
-    asyncio.run(app_main.bao_nhan_vien_tiep_quan(kenh, "c1", None, "vượt thẩm quyền"))
+    asyncio.run(xu_ly_tin_vao.bao_nhan_vien_tiep_quan(kenh, "c1", None, "vượt thẩm quyền"))
     assert "escalate.bao_kenh_that_bai" in [k for k, _ in ghi]
 
 
@@ -249,7 +249,7 @@ def test_chi_bao_o_che_do_auto():
     Chế độ assist thì người duyệt mọi thứ. Tự gửi thêm một câu là đi ngược
     ý nghĩa của chế độ đó.
     """
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     assert 'reply.escalate and runtime.mode() == "auto"' in src
 
 
@@ -258,13 +258,13 @@ def test_chi_bao_o_che_do_auto():
 # =====================================================================
 
 def test_bat_va_tat_dang_go():
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     assert "bao_dang_go(msg.conversation_ref, True)" in src
     assert "bao_dang_go(msg.conversation_ref, False)" in src
 
 
 def test_tat_dang_go_nam_trong_finally():
     """Agent lỗi giữa chừng thì dấu 'đang gõ' vẫn phải tắt, không quay mãi."""
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     sau_finally = src.split("finally:", 1)[1][:300]
     assert "bao_dang_go(msg.conversation_ref, False)" in sau_finally

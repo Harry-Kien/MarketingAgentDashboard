@@ -15,6 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent.omnichannel import xu_ly_tin_vao
 from agent import db
 from agent.channels.webchat import WebchatAdapter
 from agent.config import settings
@@ -216,9 +217,7 @@ async def send_webchat_message(
     )
     if message is None:
         raise HTTPException(422, "Tin webchat không hợp lệ")
-    from agent.main import handle_inbound
-
-    tasks.add_task(handle_inbound, message)
+    tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
     _cors(response, origin)
     return {"ok": True, "queued": True, "client_message_id": body.client_message_id}
 

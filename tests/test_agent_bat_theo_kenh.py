@@ -205,7 +205,7 @@ def test_main_py_that_su_goi_va_sinh_viec():
     Test trên mô phỏng thứ `handle_inbound` làm. Nếu `main.py` không gọi
     như vậy thì test vẫn xanh trong khi hệ thống thật vẫn im lặng.
     """
-    noi_dung = (ROOT / "agent" / "main.py").read_text(encoding="utf-8")
+    noi_dung = (ROOT / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(encoding="utf-8")
     assert "agent_bat.agent_duoc_tra_loi(" in noi_dung
     vt = noi_dung.index("agent_bat.agent_duoc_tra_loi(")
     doan = noi_dung[vt:vt + 1400]

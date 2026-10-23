@@ -102,7 +102,7 @@ def test_moi_kich_ban_chay_kho_deu_khong_no():
 
 def test_history_xen_ke_user_assistant():
     """
-    History phải dựng ĐÚNG như `agent/main.py:_history()` — user/assistant
+    History phải dựng ĐÚNG như `agent/omnichannel/xu_ly_tin_vao.py:_history()` — user/assistant
     xen kẽ, lượt đầu là user. Dựng khác đi thì bộ đo không còn đo cái đang
     chạy thật, và mọi con số nó in ra đều nói về một hệ thống khác.
     """

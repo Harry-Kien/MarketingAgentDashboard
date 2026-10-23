@@ -234,7 +234,7 @@ def test_anh_di_CUNG_luot_hoi_khong_tach_ra():
 def test_main_truyen_dinh_kem_sang_agent():
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "agent" / "main.py").read_text(
+    src = (Path(__file__).resolve().parents[1] / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(
         encoding="utf-8")
     assert "anh_khach.lay_khoi_anh" in src
     assert "anh=khoi_anh" in src
@@ -247,7 +247,7 @@ def test_tai_anh_hong_thi_noi_that_voi_model():
     """
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "agent" / "main.py").read_text(
+    src = (Path(__file__).resolve().parents[1] / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(
         encoding="utf-8")
     assert "KHÔNG tải về xem được" in src
 

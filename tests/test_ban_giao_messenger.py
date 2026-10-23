@@ -96,8 +96,8 @@ def test_luong_xu_ly_LUU_tin_standby_roi_moi_dung():
     thì tin khách biến mất, đúng loại lỗi nghiêm trọng nhất repo từng có.
     Phải lưu xong rồi mới thoát.
     """
-    from agent import main as app_main
-    src = inspect.getsource(app_main.handle_inbound)
+    from agent.omnichannel import xu_ly_tin_vao
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     vi_tri_luu = src.index("_ingest_inbound(msg)")
     vi_tri_chan = src.index('.get("standby")')
     assert vi_tri_luu < vi_tri_chan, "chặn standby trước khi lưu -> mất tin khách"
@@ -108,8 +108,8 @@ def test_tin_standby_ep_hoi_thoai_sang_escalated():
     Quyền có thể bị app khác giành, không đi qua đường chuyển người của ta.
     Lúc đó đây là lần DUY NHẤT hệ thống biết được điều đó.
     """
-    from agent import main as app_main
-    src = inspect.getsource(app_main.handle_inbound)
+    from agent.omnichannel import xu_ly_tin_vao
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     khoi = src[src.index('.get("standby")'):][:400]
     assert "escalated" in khoi
 

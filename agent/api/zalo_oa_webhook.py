@@ -38,6 +38,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from agent.omnichannel import xu_ly_tin_vao
 from agent.channels.factory import AccountAdapterFactory
 from agent.channels.ten_khach import lam_giau_ten
 from agent.config import settings
@@ -204,8 +205,6 @@ async def zalo_oa_webhook(
         return JSONResponse({"ok": True, "skipped": "không phải tin văn bản đến"})
 
     # Trả 200 ngay để Zalo không gửi lại; xử lý ở nền.
-    from agent.main import handle_inbound
-
     for m in tin:
-        tasks.add_task(handle_inbound, m)
+        tasks.add_task(xu_ly_tin_vao.handle_inbound, m)
     return JSONResponse({"ok": True, "queued": len(tin)})

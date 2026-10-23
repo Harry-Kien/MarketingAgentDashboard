@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agent import main as app_main  # noqa: E402
+from agent.omnichannel import xu_ly_tin_vao  # noqa: E402
 from agent.channels.chatwoot import ChatwootAdapter  # noqa: E402
 
 
@@ -138,7 +138,7 @@ def test_anh_khong_kem_chu_thi_chuyen_nguoi():
     Chặn chữ mà bỏ lọt ảnh thì chốt tuân thủ chỉ là hình thức: khách nào
     gửi ảnh là đi vòng qua được.
     """
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     assert "msg.attachments and not msg.text.strip()" in src
 
 
@@ -148,14 +148,14 @@ def test_chuyen_nguoi_vi_anh_van_bao_cho_khach():
     Quên gọi thì khách gửi ảnh xong nhận lại đúng sự im lặng — vẫn bị bỏ
     rơi, chỉ khác là nay có bản ghi để sau này truy ra.
     """
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     truoc_return = src.split("msg.attachments and not msg.text.strip()")[1]
     assert "adapter_bao_nguoi" in truoc_return.split("history = await")[0]
 
 
 def test_bao_nguoi_cham_ca_hai_phia():
     """Nhân viên cần ghi chú trong hộp thư của kênh; khách cần một câu."""
-    src = inspect.getsource(app_main.adapter_bao_nguoi)
+    src = inspect.getsource(xu_ly_tin_vao.adapter_bao_nguoi)
     assert "bao_nhan_vien_tiep_quan" in src
     assert "bao_khach_dang_chuyen_nguoi" in src
 
@@ -172,8 +172,8 @@ def test_nhanh_anh_dung_CHUNG_duong_bao_voi_nhanh_chu():
     Chừng nào cả hai còn gọi CÙNG một hàm thì lỗi ấy không tái phát được.
     Tách ra lần nữa là ca này đỏ.
     """
-    anh = inspect.getsource(app_main.adapter_bao_nguoi)
-    chu = inspect.getsource(app_main.handle_inbound)
+    anh = inspect.getsource(xu_ly_tin_vao.adapter_bao_nguoi)
+    chu = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     for ham in ("bao_nhan_vien_tiep_quan", "bao_khach_dang_chuyen_nguoi"):
         assert ham in anh and ham in chu, f"{ham} không dùng chung cho cả hai nhánh"
     # Và không nhánh nào được tự gọi thẳng xuống adapter nữa.
@@ -183,7 +183,7 @@ def test_nhanh_anh_dung_CHUNG_duong_bao_voi_nhanh_chu():
 
 def test_cau_bao_van_theo_gio_lam_viec():
     """Ngoài giờ thì không được hứa 'sẽ nhắn lại sớm' ở đây nữa."""
-    src = inspect.getsource(app_main.bao_khach_dang_chuyen_nguoi)
+    src = inspect.getsource(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi)
     assert "gio_lam_viec.tin_chuyen_nguoi()" in src
 
 
@@ -193,7 +193,7 @@ def test_nhanh_anh_khong_con_nuot_loi_im_lang():
     hỏng, khách nhận lại đúng sự im lặng mà docstring của hàm nói là phải
     tránh — và không ai biết.
     """
-    src = inspect.getsource(app_main.adapter_bao_nguoi)
+    src = inspect.getsource(xu_ly_tin_vao.adapter_bao_nguoi)
     assert "suppress(Exception)" not in src
 
 
@@ -207,7 +207,7 @@ def test_agent_duoc_bao_la_co_anh():
     gửi ảnh kèm "cái này còn hàng không ạ?" mà nhận về "mình muốn hỏi sản
     phẩm nào ạ?".
     """
-    src = inspect.getsource(app_main.handle_inbound)
+    src = inspect.getsource(xu_ly_tin_vao.handle_inbound)
     assert "khách gửi kèm" in src
 
 
@@ -216,7 +216,7 @@ def test_anh_duoc_luu_vao_csdl():
     không biết khách từng gửi gì."""
     from agent.omnichannel.inbox_service import PostgresInboxTransaction
 
-    ingest = inspect.getsource(app_main._ingest_inbound)
+    ingest = inspect.getsource(xu_ly_tin_vao._ingest_inbound)
     normalized = inspect.getsource(PostgresInboxTransaction.insert_attachment)
     assert "InboxService" in ingest
     assert "INSERT INTO attachments" in normalized

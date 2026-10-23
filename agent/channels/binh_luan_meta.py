@@ -14,7 +14,7 @@ VÌ SAO AGENT KHÔNG TỰ TRẢ LỜI BÌNH LUẬN
 --------------------------------------
 Agent hay tách câu trả lời thành 2–3 tin cho tự nhiên. Với bình luận, chỉ
 tin đầu đi được; phần còn lại bị từ chối. Nên bình luận vào inbox ở trạng
-thái chờ người, như tin `standby` — xem `agent/main.py::handle_inbound`.
+thái chờ người, như tin `standby` — xem `agent/omnichannel/xu_ly_tin_vao.py::handle_inbound`.
 """
 from __future__ import annotations
 

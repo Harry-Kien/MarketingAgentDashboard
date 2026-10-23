@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from agent.omnichannel import xu_ly_tin_vao
 from agent.channels.factory import AccountAdapterFactory
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
@@ -222,11 +223,8 @@ async def native_meta_webhook(
         signature=request.headers.get("x-hub-signature-256", ""),
         payload=payload,
     )
-    # Import muộn để tránh vòng main -> router -> main lúc khởi động.
-    from agent.main import handle_inbound
-
     for message in messages:
-        tasks.add_task(handle_inbound, message)
+        tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
     return JSONResponse({"ok": True, "queued": len(messages)})
 
 
@@ -280,8 +278,6 @@ async def native_meta_account_webhook(
         signature=request.headers.get("x-hub-signature-256", ""),
         payload=payload,
     )
-    from agent.main import handle_inbound
-
     for message in messages:
-        tasks.add_task(handle_inbound, message)
+        tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
     return JSONResponse({"ok": True, "queued": len(messages)})

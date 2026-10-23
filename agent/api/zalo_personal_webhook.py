@@ -11,6 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
+from agent.omnichannel import xu_ly_tin_vao
 from agent.channels.zalo_personal import ZaloPersonalAdapter
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
@@ -182,8 +183,6 @@ async def zalo_personal_callback(
             return {"ok": True, "skipped": True}
         if la_tin_tu_chinh_minh(message.customer_ref, account.external_account_id):
             return {"ok": True, "skipped": "tin_tu_chinh_minh"}
-        from agent.main import handle_inbound
-
-        tasks.add_task(handle_inbound, message)
+        tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
         return {"ok": True, "queued": 1}
     raise HTTPException(422, "Loại callback sidecar không được hỗ trợ")

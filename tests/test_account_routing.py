@@ -6,7 +6,7 @@ import inspect
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from agent import main as app_main
+from agent.omnichannel import xu_ly_tin_vao
 from agent.api import hoi_thoai_cu, routes
 from agent.channels.base import InboundMessage, con_trong_cua_so
 from agent.omnichannel.inbox_service import InboxIngestResult
@@ -41,9 +41,9 @@ def test_handle_inbound_dung_inbox_service_truoc_khi_xu_ly_ai(monkeypatch):
             should_reply=False,
         )
 
-    monkeypatch.setattr(app_main, "_ingest_inbound", ingest, raising=False)
+    monkeypatch.setattr(xu_ly_tin_vao, "_ingest_inbound", ingest, raising=False)
 
-    asyncio.run(app_main.handle_inbound(message))
+    asyncio.run(xu_ly_tin_vao.handle_inbound(message))
 
     assert calls == [message]
 
@@ -180,16 +180,16 @@ def test_ai_auto_reply_enqueue_tung_phan_khong_go_provider(monkeypatch):
             payload={"conversation_ref": message.conversation_ref, "text": text},
         )
 
-    monkeypatch.setattr(app_main, "_queue_ai_text", queue, raising=False)
+    monkeypatch.setattr(xu_ly_tin_vao, "_queue_ai_text", queue, raising=False)
     monkeypatch.setattr(
-        app_main.tu_nhien,
+        xu_ly_tin_vao.tu_nhien,
         "lam_tu_nhien",
         lambda _text, lan_dau: ["Phần một", "Phần hai"],
     )
-    monkeypatch.setattr(app_main, "_la_tin_dau", lambda _cid: _async_value(True))
+    monkeypatch.setattr(xu_ly_tin_vao, "_la_tin_dau", lambda _cid: _async_value(True))
 
     result = asyncio.run(
-        app_main._gui_nhu_nguoi(Adapter(), message, conversation_id, "Trả lời")
+        xu_ly_tin_vao._gui_nhu_nguoi(Adapter(), message, conversation_id, "Trả lời")
     )
 
     assert len(result) == 2
@@ -205,8 +205,8 @@ async def _async_value(value):
 
 
 def test_ai_file_va_handover_notice_deu_di_qua_outbox():
-    source = inspect.getsource(app_main.handle_inbound)
-    handover = inspect.getsource(app_main.bao_khach_dang_chuyen_nguoi)
+    source = inspect.getsource(xu_ly_tin_vao.handle_inbound)
+    handover = inspect.getsource(xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi)
 
     assert "_queue_ai_file" in source
     assert "adapter.send_file" not in source
@@ -235,10 +235,10 @@ def test_handover_notice_chi_queue_sau_khi_kiem_tra_cua_so(monkeypatch):
             payload={"conversation_ref": "customer-1", "text": text},
         )
 
-    monkeypatch.setattr(app_main, "_queue_handover_notice", queue, raising=False)
+    monkeypatch.setattr(xu_ly_tin_vao, "_queue_handover_notice", queue, raising=False)
 
     asyncio.run(
-        app_main.bao_khach_dang_chuyen_nguoi(
+        xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(
             Adapter(), "customer-1", conversation_id
         )
     )

@@ -95,7 +95,7 @@ async def chay_kich_ban(kb: dict, cid, *, kho: bool = False) -> dict:
     """
     Chạy hết một kịch bản, giữ history tích luỹ qua các lượt.
 
-    History dựng đúng như `agent/main.py:_history()` — vai `user`/`assistant`
+    History dựng đúng như `agent/omnichannel/xu_ly_tin_vao.py:_history()` — vai `user`/`assistant`
     xen kẽ, lượt đầu là `user`. Dựng khác đi thì bộ đo không còn đo cái đang
     chạy thật, và một bộ đo như vậy tệ hơn không có.
     """

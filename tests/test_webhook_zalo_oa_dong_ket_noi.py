@@ -80,12 +80,12 @@ def _dung_moi_truong(monkeypatch, tin):
     monkeypatch.setattr(mod, "_kho", lambda: (_Repo(), _Loader()))
     monkeypatch.setattr(mod, "AccountAdapterFactory", _Factory)
 
-    import agent.main as m
+    from agent.omnichannel import xu_ly_tin_vao
 
     async def _khong_lam_gi(_msg):
         return None
 
-    monkeypatch.setattr(m, "handle_inbound", _khong_lam_gi)
+    monkeypatch.setattr(xu_ly_tin_vao, "handle_inbound", _khong_lam_gi)
 
     app = FastAPI()
     app.include_router(mod.router)

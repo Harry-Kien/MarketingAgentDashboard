@@ -40,7 +40,7 @@ chỉ ấy quy về đúng bảng dưới đây, nên đọc một file bất k�
     A8  kho_ky_nang.xoa_dem + goi.xoa_dem
 
   CHẶNG B · DỰNG NGỮ CẢNH — chạy ở MỌI tin nhắn của khách
-    B1  agent/main.py  handle_inbound   lưu tin, COMMIT, rồi mới gọi lõi agent
+    B1  omnichannel/xu_ly_tin_vao.py  handle_inbound  lưu tin, COMMIT, rồi mới gọi lõi agent
     B2  core/agent.py  respond()        chặng 1–3: trần chi phí, quét, ngữ cảnh
     B3  goi.py  huong_dan_cho_luot      hướng dẫn — vào theo TỪ KHOÁ
     B4  kho_ky_nang.py  cong_cu_dang_bat  lược đồ — vào KHÔNG cần từ khoá

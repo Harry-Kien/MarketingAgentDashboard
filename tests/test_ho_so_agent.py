@@ -186,6 +186,6 @@ def test_main_truyen_ho_so_theo_kenh():
     Mã trong `agent.py` đúng mà `main.py` không truyền hồ sơ vào thì mọi
     kênh chạy bằng mặc định — và test ở trên vẫn xanh.
     """
-    nguon = (ROOT / "agent" / "main.py").read_text(encoding="utf-8")
+    nguon = (ROOT / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(encoding="utf-8")
     assert "agent_ho_so.cho_kenh(msg.account_id)" in nguon
     assert "ho_so=ho_so" in nguon

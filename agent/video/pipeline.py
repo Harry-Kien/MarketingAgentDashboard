@@ -230,7 +230,7 @@ async def request_video(
         if not exists:
             conversation_id = None
 
-    row = await db.fetchrow(
+    row = await db.fetchrow_chac(
         "INSERT INTO videos (conversation_id, title, brief, kind, status) "
         "VALUES ($1,$2,$3,$4,'queued') RETURNING id",
         conversation_id,

@@ -38,3 +38,18 @@ def test_ci_tu_do_module_khong_go_tay():
 
 def test_ci_khong_ghi_so_ca_test():
     assert not re.search(r"khoảng \d{3,} ca", CI)
+
+
+def test_ci_kiem_kieu_bang_mypy_tren_agent():
+    """
+    mypy tìm ra bốn lỗi thật mà bộ test không chạm tới (23.10.2026). Gỡ bước
+    này khỏi CI là để lớp lỗi ấy quay lại mà không ai biết.
+    """
+    import tomllib
+
+    assert re.search(r"^\s+mypy\s*$", CI, re.M), "CI phải chạy mypy"
+    assert re.search(r"^mypy==", (ROOT / "requirements-dev.txt").read_text(encoding="utf-8"), re.M)
+    cau_hinh = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["mypy"]
+    assert cau_hinh["files"] == ["agent"]
+    # Bỏ qua lỗi import thiếu stub là được; tắt cả kiểm bằng `ignore_errors` thì không.
+    assert not cau_hinh.get("ignore_errors")

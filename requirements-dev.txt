@@ -8,3 +8,6 @@ pip-audit
 # pytest-cov: đo độ phủ trong CI (--cov-fail-under). Ghim vì nó là một phần
 # của phép đo — đổi bản là đổi cách đếm, con số trước sau không so được.
 pytest-cov==6.0.0
+# mypy: kiểm kiểu tĩnh, cấu hình ở pyproject.toml. Ghim vì bản mới thêm
+# quy tắc mới — nâng bản là một lần sửa có chủ ý, không phải CI tự đỏ.
+mypy==1.15.0

@@ -264,7 +264,7 @@ class ZaloCRMAdapter(ChannelAdapter):
 
     async def khach(self, contact_id: str) -> dict | None:
         """Một khách cụ thể, kèm ghi chú và thẻ mà nhân viên đã gắn."""
-        if not self.cau_hinh_du() or not contact_id:
+        if not settings.zalocrm_api_key or not contact_id:
             return None
         try:
             r = await self._client.get(f"/api/public/contacts/{contact_id}")

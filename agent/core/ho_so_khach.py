@@ -128,7 +128,7 @@ async def lay(customer_ref: str, channel: str) -> dict | None:
 
 
 async def _bao_dam(customer_ref: str, channel: str, ten: str = "") -> dict:
-    return await db.fetchrow(
+    return await db.fetchrow_chac(
         """
         INSERT INTO ho_so_khach (customer_ref, channel, ten)
         VALUES ($1, $2, $3)

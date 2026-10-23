@@ -79,7 +79,8 @@ class AccountAdapterFactory:
             )
         if self._credentials is None:
             raise AccountAdapterNotFound("chưa cấu hình credential loader")
-        loaded = await self._credentials.load(account.id)
+        kho_khoa = self._credentials
+        loaded = await kho_khoa.load(account.id)
         if not loaded:
             raise AccountAdapterNotFound("tài khoản native không có credential")
         credentials = dict(loaded)
@@ -110,7 +111,7 @@ class AccountAdapterFactory:
             # tới lúc khởi động lại tiến trình — xem
             # tests/test_zalo_oa_token_chet.py.
             async def reload_credentials() -> Mapping[str, Any] | None:
-                return await self._credentials.load(account.id)
+                return await kho_khoa.load(account.id)
 
             kwargs["on_credentials_reload"] = reload_credentials
         return adapter_class(**kwargs)

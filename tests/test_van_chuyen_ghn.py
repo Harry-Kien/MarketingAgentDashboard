@@ -409,3 +409,31 @@ def test_cot_cu_da_bi_XOA_han_khoi_csdl():
 
     # CHECK phải bỏ TRƯỚC khi xoá cột nó ràng, nếu không Postgres từ chối.
     assert mig.index("DROP CONSTRAINT") < mig.index("DROP COLUMN")
+
+
+def test_tra_cuu_gap_ma_trang_thai_la_thi_KHONG_no_va_khong_doan(monkeypatch):
+    """
+    `map_status` trả None khi không nhận ra mã — và hợp đồng nói chỗ gọi
+    phải xử lý. `tra_cuu` của GHN đã không xử lý: nó trả `ok=True` với
+    trạng thái `None`, rồi `tra_cuu_van_don` gọi `.value` trên None và
+    lượt tra cứu của khách nổ (mypy bắt được 23.10.2026). Mã lạ phải thành
+    `ok=False` có lời giải thích — không ghi gì vào đơn, không đoán.
+    """
+    import httpx
+
+    from agent.shipping import ghn as mod
+
+    def xu_ly(_req):
+        return httpx.Response(200, json={"code": 200, "data": {
+            "status": "trang_thai_moi_toanh", "log": [
+                {"status": "trang_thai_moi_toanh", "updated_date": "2026-10-23T08:00:00Z"},
+                {"status": "delivering", "updated_date": "2026-10-22T08:00:00Z"},
+            ]}})
+
+    goc = httpx.AsyncClient
+    monkeypatch.setattr(mod.httpx, "AsyncClient",
+                        lambda **kw: goc(transport=httpx.MockTransport(xu_ly), **kw))
+    kq = asyncio.run(mod.GHNShippingProvider(token="t", shop_id="1").tra_cuu("GHN123"))
+    assert kq.ok is False
+    assert "trang_thai_moi_toanh" in (kq.loi or "")
+    assert all(m.trang_thai_noi_bo is not None for m in kq.lich_su)

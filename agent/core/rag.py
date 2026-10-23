@@ -112,7 +112,7 @@ def _embed_sync(texts: list[str], task: str) -> list[list[float]]:
     region = settings.gcp_region if settings.gcp_region != "global" else "us-central1"
     vertexai.init(project=settings.gcp_project_id, location=region)
     model = TextEmbeddingModel.from_pretrained(EMBED_MODEL)
-    inputs = [TextEmbeddingInput(t, task) for t in texts]
+    inputs: list[str | TextEmbeddingInput] = [TextEmbeddingInput(t, task) for t in texts]
     return [e.values for e in model.get_embeddings(inputs)]
 
 
@@ -374,7 +374,7 @@ async def ingest(title: str, source: str, text: str) -> int:
     # Xoá trước khi ghi. `chunks` có ON DELETE CASCADE nên đoạn cũ đi theo.
     await db.execute("DELETE FROM documents WHERE source = $1", source)
 
-    doc = await db.fetchrow(
+    doc = await db.fetchrow_chac(
         "INSERT INTO documents (title, source, chunk_count) VALUES ($1,$2,$3) "
         "RETURNING id",
         title,

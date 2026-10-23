@@ -28,7 +28,7 @@ async def ghi_so_lieu(post_id: str, kenh: str, *, luot_xem=0, luot_thich=0,
     Giữ lịch sử để vẽ được đường tăng trưởng — biết bài đạt 10k view sau
     1 giờ hay sau 1 tuần là hai câu chuyện hoàn toàn khác nhau.
     """
-    row = await db.fetchrow(
+    row = await db.fetchrow_chac(
         "INSERT INTO post_metrics (post_id, kenh, url, luot_xem, luot_thich, "
         "binh_luan, chia_se, luot_click) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) "
         "RETURNING *",

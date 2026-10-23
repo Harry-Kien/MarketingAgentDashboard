@@ -59,6 +59,13 @@ class DbGia:
             return {"id": uuid4(), "status": "pending_approval"}
         return None
 
+    async def fetchrow_chac(self, sql, *args):
+        # Cùng hợp đồng với agent.db.fetchrow_chac: không có dòng là nổ.
+        row = await self.fetchrow(sql, *args)
+        if row is None:
+            raise LookupError(sql)
+        return row
+
     async def execute(self, sql, *args):
         self.cau.append((sql, args))
         if self.hong_o_buoc and self.hong_o_buoc in sql:

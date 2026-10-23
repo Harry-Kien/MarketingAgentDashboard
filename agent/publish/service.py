@@ -55,7 +55,7 @@ async def tao_bai(
     tags = hashtags if hashtags is not None else _tach_hashtag(noi_dung)
     vi_pham = kiem_tra_tuan_thu(f"{tieu_de} {noi_dung} {' '.join(tags)}")
 
-    row = await db.fetchrow(
+    row = await db.fetchrow_chac(
         "INSERT INTO posts (video_id, tieu_de, noi_dung, hashtags, kenh, "
         "                   trang_thai, lich_dang, tao_boi) "
         "VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
@@ -133,7 +133,7 @@ async def dang_bai(post_id: str, *, boi: str = "nguoi") -> dict:
     else:
         trang_thai = "da_dang"
 
-    row = await db.fetchrow(
+    row = await db.fetchrow_chac(
         "UPDATE posts SET trang_thai=$2, ket_qua=$3, updated_at=now() "
         "WHERE id=$1 RETURNING *",
         post_id, trang_thai, ket_qua,
@@ -156,7 +156,7 @@ async def duyet(post_id: str, *, boi: str = "nguoi") -> dict:
         if hen.tzinfo is None:
             hen = hen.replace(tzinfo=timezone.utc)
         if hen > datetime.now(timezone.utc):
-            row = await db.fetchrow(
+            row = await db.fetchrow_chac(
                 "UPDATE posts SET trang_thai='da_len_lich', updated_at=now() "
                 "WHERE id=$1 RETURNING *", post_id,
             )

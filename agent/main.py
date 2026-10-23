@@ -14,6 +14,7 @@ import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from typing import cast
 
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -914,7 +915,7 @@ async def webhook_messenger(request: Request, tasks: BackgroundTasks) -> JSONRes
     except (json.JSONDecodeError, ValueError):
         return JSONResponse({"ok": False, "error": "payload không phải JSON"}, 400)
 
-    ad = channels.get("messenger")
+    ad = cast(messenger.MessengerAdapter, channels.get("messenger"))
 
     # Đổi quyền hội thoại. Xử lý TRƯỚC tin nhắn: nếu cùng một lô vừa báo
     # "quyền về tay ta" vừa mang tin mới, thì tin ấy phải được agent trả lời
@@ -1006,8 +1007,9 @@ async def webhook(
         supplied = (
             request.headers.get("x-webhook-secret")
             or request.query_params.get("token", "")
+            or ""
         )
-        if not secrets.compare_digest(supplied, settings.webhook_secret):
+        if not secrets.compare_digest(supplied, settings.webhook_secret or ""):
             return JSONResponse({"ok": False, "error": "sai secret"}, status_code=401)
 
     try:

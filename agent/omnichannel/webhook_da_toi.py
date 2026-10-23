@@ -70,7 +70,7 @@ def _da_toi(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(metadata, Mapping):
         return {}
     muc = metadata.get(KHOA)
-    return muc if isinstance(muc, Mapping) else {}
+    return dict(muc) if isinstance(muc, Mapping) else {}
 
 
 def so_dia_chi(

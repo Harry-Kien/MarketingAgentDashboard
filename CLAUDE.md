@@ -67,6 +67,7 @@ không ai kiểm.
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
 python -m pytest -q               # ~3310 test, khoảng 11 phút, không gọi API model
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
+mypy                              # kiểm kiểu agent/ — phải 0 lỗi (pyproject.toml)
 ```
 
 **Bật Postgres TRƯỚC khi chạy test**, nếu không lượt chạy sẽ bỏ qua hơn
@@ -302,7 +303,7 @@ không lên GitHub:
 ## Trước khi báo là xong
 
 1. `python -m pytest -q` — phải xanh hết
-2. `ruff check .` — phải sạch
+2. `ruff check .` và `mypy` — phải sạch
 3. Đổi schema hoặc chạy eval thì **sinh lại tài liệu**
 4. Sửa thứ đọc dữ liệu không-đi-theo-repo thì **thử trên bản clone sạch**
    (CI có job `clone-sach` làm việc này, nhưng biết sớm thì tốt hơn)

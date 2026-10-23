@@ -124,18 +124,24 @@ async def tao_tu_chuyen_nguoi(
     Nhưng cũng KHÔNG im lặng: hỏng thì ghi nhật ký ở mức lỗi. Nuốt không
     dấu vết là cách khối này trở nên vô dụng mà không ai biết.
     """
-    tieu_de = f"Khách cần người trả lời: {ten_khach}".strip(": ") or \
-        "Khách cần người trả lời"
     try:
-        # `agent.db` chỉ có fetch/fetchrow/execute — không có `fetchval`.
+        # Tên và khách lấy từ CHÍNH hội thoại khi người gọi không có trong
+        # tay — `handle_inbound` chỉ cầm id. Trước 23.10.2026 nó truyền tên
+        # từ một dict không có khoá ấy, nên mọi việc tự sinh đều vô danh và
+        # không gắn khách. Gộp vào một câu SQL: không thêm lượt khứ hồi nào
+        # trên đường xử lý tin khách.
         dong = await db.fetchrow(
             "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, "
             "                       conversation_id, contact_id) "
-            "VALUES ($1, $2, 'agent', 'cao', $3, $4) "
+            "SELECT 'Khách cần người trả lời' || coalesce(': ' || coalesce("
+            "           nullif($1, ''), nullif(c.customer_name, '')), ''), "
+            "       $2, 'agent', 'cao', $3::uuid, coalesce($4::uuid, c.contact_id) "
+            "FROM (SELECT 1) _ LEFT JOIN conversations c ON c.id = $3::uuid "
             # Đụng `idx_cong_viec_agent_mot_viec` thì bỏ qua — hội thoại này
             # đã có việc đang mở, không cần việc thứ hai.
             "ON CONFLICT DO NOTHING RETURNING id",
-            tieu_de, ly_do, conversation_id, contact_id,
+            (ten_khach or "").strip(), ly_do, str(conversation_id),
+            str(contact_id) if contact_id else None,
         )
         return str(dong["id"]) if dong else None
     except Exception as exc:  # noqa: BLE001

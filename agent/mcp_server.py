@@ -343,9 +343,10 @@ def main() -> None:
     if "--http" in sys.argv:
         # HTTP cho client từ xa. Chỉ nghe 127.0.0.1: máy chủ này KHÔNG có
         # xác thực, mở ra mạng là mở luôn dữ liệu khách hàng.
-        mcp.settings.host = "127.0.0.1"
-        mcp.settings.port = 8765
-        mcp.run(transport="streamable-http")
+        #
+        # mcp 2.0: host/port là tham số của `run()`, không còn ở `settings`
+        # — gán vào `settings` là ValueError ngay lúc khởi động.
+        mcp.run(transport="streamable-http", host="127.0.0.1", port=8765)
     else:
         mcp.run(transport="stdio")
 

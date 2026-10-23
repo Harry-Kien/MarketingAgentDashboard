@@ -76,7 +76,7 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
     `conversation_id`. Mỗi phiên tạo một hội thoại mới là tích luỹ rác
     trong CSDL — một dòng cho mọi phiên là cách duy nhất không rác.
     """
-    tk = await db.fetchrow(
+    tk = await db.fetchrow_chac(
         """
         INSERT INTO channel_accounts (channel, display_name, external_account_id,
                                       status, capabilities, metadata, is_legacy)
@@ -93,11 +93,11 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
         account_id,
     )
     if lien_he is None:
-        lien_he = await db.fetchrow(
+        lien_he = await db.fetchrow_chac(
             "INSERT INTO contacts (display_name) VALUES ($1) RETURNING id", "Khách thử"
         )
     contact_id = lien_he["id"]
-    diem = await db.fetchrow(
+    diem = await db.fetchrow_chac(
         """
         INSERT INTO contact_points (contact_id, channel_account_id, external_user_id)
         VALUES ($1, $2, $3)
@@ -106,7 +106,7 @@ async def hoi_thoai_thu(phien_id: str) -> uuid.UUID:
         """,
         contact_id, account_id, "phong-thu",
     )
-    conv = await db.fetchrow(
+    conv = await db.fetchrow_chac(
         """
         INSERT INTO conversations (account_id, contact_id, contact_point_id, channel,
                                    nen_tang, external_id, customer_name, customer_ref,

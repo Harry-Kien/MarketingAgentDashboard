@@ -12,6 +12,8 @@ gọi ngược về /api/posts/{id}/callback báo kết quả thật.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from ..config import settings
@@ -76,7 +78,7 @@ class N8nPublisher(PublishAdapter):
                 ok=False, kenh=target.kenh, detail=f"n8n không nhận: {exc}"[:300]
             )
 
-        data = {}
+        data: Any = {}
         try:
             data = r.json() if r.content else {}
         except ValueError:

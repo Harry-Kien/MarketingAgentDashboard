@@ -203,7 +203,7 @@ async def kiem_mot_lan() -> dict:
     cho_nay = bool(muc and muc.get("trang_thai") == suc_khoe.CANH_BAO)
     if cho_nay and not _cho_truoc:
         await _bao("khach_cho", "Có khách đang chờ người",
-                   muc.get("ghi_chu", ""), kq)
+                   (muc or {}).get("ghi_chu", ""), kq)
     elif _cho_truoc and not cho_nay:
         await _bao("khach_cho_xong", "Đã xử lý hết khách chờ",
                    muc.get("ghi_chu", "") if muc else "", kq)

@@ -1302,7 +1302,7 @@ async def khach_vo_chu(
     tin cả hai, và thôi nhìn cả hai.
     """
     dieu_kien = "owner_user_id IS NULL AND status = 'active'"
-    tong = await db.fetchrow(
+    tong = await db.fetchrow_chac(
         f"SELECT count(*) AS so, min(first_seen) AS lau_nhat "  # noqa: S608
         f"FROM contacts WHERE {dieu_kien}")
     ds = await db.fetch(

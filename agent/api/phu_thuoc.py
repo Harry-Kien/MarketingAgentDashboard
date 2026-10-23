@@ -84,7 +84,7 @@ def can_quyen(*quyen: str):
     # Nhãn để `kiem_moi_route_co_quyen()` nhận ra endpoint đã khai quyền.
     # Không có nhãn thì chốt lúc khởi động coi như chưa khai, và máy chủ
     # không lên — hỏng-đóng, đúng ý.
-    kiem.quyen_yeu_cau = quyen
+    kiem.quyen_yeu_cau = quyen  # type: ignore[attr-defined]  # nhãn gắn lên hàm
     return kiem
 
 

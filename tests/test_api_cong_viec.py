@@ -341,6 +341,51 @@ def test_agent_chuyen_nguoi_thi_SINH_MOT_VIEC(csdl_kiem_thu):
     assert "thuốc trị mụn" in v["mo_ta"]
 
 
+def test_viec_tu_sinh_tu_lay_ten_va_khach_tu_hoi_thoai(csdl_kiem_thu):
+    """
+    `handle_inbound` không có tên khách trong tay — nó chỉ có id hội thoại.
+    Trước 23.10.2026 nó truyền `conv.get("customer_name")` từ một dict KHÔNG
+    có khoá ấy, nên MỌI việc tự sinh đều tên "Khách cần người trả lời", không
+    tên, không gắn khách: người trực phải mở từng việc mới biết là ai. Không
+    nổ, không nhật ký — mypy bắt được, test thì không.
+    """
+    from agent.core import cong_viec as cv
+
+    async def chay(url):
+        import asyncpg
+
+        from agent import db
+        from agent.migrations.runner import apply_all
+
+        async def _codec(conn):
+            await conn.set_type_codec("jsonb", encoder=json.dumps,
+                                      decoder=json.loads, schema="pg_catalog")
+
+        pool = await asyncpg.create_pool(url, min_size=1, max_size=2, init=_codec)
+        cu = db._pool
+        db._pool = pool
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
+                await apply_all(conn)
+                cid = await _dung_hoi_thoai(conn, ext="ext-ten",
+                                            ten_khach="Chị Lan")
+                contact = await conn.fetchval(
+                    "SELECT contact_id FROM conversations WHERE id = $1", cid)
+
+            await cv.tao_tu_chuyen_nguoi(cid, ly_do="khách gửi ảnh")
+            async with pool.acquire() as conn:
+                v = await conn.fetchrow("SELECT * FROM cong_viec LIMIT 1")
+            return dict(v), contact
+        finally:
+            db._pool = cu
+            await pool.close()
+
+    v, contact = asyncio.run(chay(csdl_kiem_thu))
+    assert "Chị Lan" in v["tieu_de"]
+    assert v["contact_id"] == contact and contact is not None
+
+
 def test_viec_tu_sinh_lai_duoc_sau_khi_viec_cu_da_xong(csdl_kiem_thu):
     """
     Chốt "một việc mỗi hội thoại" chỉ áp cho việc ĐANG MỞ. Khách quay lại

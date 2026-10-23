@@ -68,6 +68,23 @@ async def fetchrow(sql: str, *args: Any) -> dict | None:
     return dict(row) if row else None
 
 
+async def fetchrow_chac(sql: str, *args: Any) -> dict:
+    """
+    Truy vấn CHẮC CHẮN có một dòng: `count(*)`, `INSERT ... RETURNING` không
+    kèm `ON CONFLICT DO NOTHING`, `ON CONFLICT DO UPDATE ... RETURNING`.
+
+    Không có dòng thì nổ NGAY với câu SQL trong thông báo — thay vì để
+    `None` trôi tới dòng sau thành `'NoneType' object is not subscriptable`,
+    lỗi không nói được truy vấn nào hụt. Gọi qua `fetchrow` (tên module) để
+    test vá `db.fetchrow` vẫn vá trúng cả đường này.
+    """
+    row = await fetchrow(sql, *args)
+    if row is None:
+        raise LookupError("truy vấn lẽ ra trả một dòng nhưng không có: "
+                          + " ".join(sql.split())[:160])
+    return row
+
+
 async def execute(sql: str, *args: Any) -> str:
     async with pool().acquire() as conn:
         return await conn.execute(sql, *args)

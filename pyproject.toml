@@ -1,0 +1,30 @@
+# Chỉ chứa cấu hình mypy. Đặt ở đây (TOML, luôn đọc UTF-8) chứ không ở
+# mypy.ini: trên Windows mypy đọc .ini theo bảng mã hệ thống (cp1258) và nổ
+# ngay ở chú thích tiếng Việt. pytest đọc pytest.ini, ruff đọc ruff.toml —
+# hai tệp đó được ưu tiên hơn tệp này, nên thêm tệp này không đổi gì ở chúng.
+
+[tool.mypy]
+# Kiểm kiểu tĩnh cho `agent/` — chạy trong CI, phải SẠCH.
+#
+# Vì sao bật: lượt chạy đầu tiên (23.10.2026) tìm ra 104 lỗi, trong đó BỐN
+# lỗi thật mà ~3500 test không chạm tới — đúng loại "hỏng im lặng":
+#   - `ZaloCRMAdapter.khach()` gọi một phương thức không tồn tại;
+#   - `python -m agent.mcp_server --http` nổ ngay dòng đầu sau khi nâng mcp 2.0;
+#   - tra cứu GHN gặp mã trạng thái lạ thì gọi `.value` trên None;
+#   - việc tự sinh khi chuyển người không bao giờ có tên khách.
+#
+# Mức kiểm: mặc định của mypy (thân hàm không chú thích kiểu thì không soi).
+# Không bật --strict: repo không chú thích kiểu khắp nơi, và một bộ kiểm luôn
+# đỏ là bộ kiểm người ta tắt đi. Sàn là "0 lỗi"; nâng dần.
+python_version = "3.12"
+files = ["agent"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# PyYAML không kèm stub; cài types-PyYAML chỉ để kiểm một dòng import đọc
+# SKILL.md là thêm một gói phải ghim.
+[[tool.mypy.overrides]]
+module = ["yaml", "yaml.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true

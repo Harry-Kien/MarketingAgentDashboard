@@ -243,3 +243,23 @@ def test_vong_doi_mcp_chay_trong_vong_doi_app():
     src = _inspect.getsource(_app_main.lifespan)
     assert "lifespan_context" in src
     assert "__aexit__" in src
+
+
+# =====================================================================
+#  Chạy riêng qua HTTP (`python -m agent.mcp_server --http`)
+# =====================================================================
+
+def test_che_do_http_khoi_dong_duoc_va_chi_nghe_127(monkeypatch):
+    """
+    mcp 2.0 bỏ `settings.host`/`settings.port`: đặt vào là ValueError ngay
+    dòng đầu, tức lệnh `--http` CHƯA BAO GIỜ chạy được kể từ lần nâng bản
+    (mypy bắt được 23.10.2026). Host/port nay đi qua `run()`; và vẫn phải
+    là 127.0.0.1 — máy chủ này không có xác thực.
+    """
+    goi: dict = {}
+    monkeypatch.setattr(mcp_server.mcp, "run",
+                        lambda transport="stdio", **kw: goi.update(transport=transport, **kw))
+    monkeypatch.setattr(sys, "argv", ["agent.mcp_server", "--http"])
+    mcp_server.main()
+    assert goi["transport"] == "streamable-http"
+    assert goi["host"] == "127.0.0.1"

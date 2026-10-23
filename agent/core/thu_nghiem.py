@@ -217,7 +217,7 @@ def tran() -> float:
 
     gt = runtime.STATE.get("phong_thu_tran_ngay_usd", settings.phong_thu_tran_ngay_usd)
     try:
-        return float(gt or 0.0)
+        return float(gt or 0.0)  # type: ignore[arg-type]  # STATE là object; sai kiểu đã bắt ở dưới
     except (TypeError, ValueError):
         return 0.0
 

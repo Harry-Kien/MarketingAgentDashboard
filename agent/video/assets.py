@@ -59,7 +59,7 @@ def _normalize_one(raw: bytes, dest: Path) -> tuple[int, int]:
     if fmt not in ALLOWED_FORMATS:
         raise AssetError(f"Định dạng {fmt or 'lạ'} không nhận; chỉ jpg/png/webp")
 
-    img = Image.open(io.BytesIO(raw))
+    img: Image.Image = Image.open(io.BytesIO(raw))
 
     # Xoay theo EXIF. Ảnh điện thoại thường nằm ngang trong dữ liệu và chỉ
     # đứng lên nhờ cờ Orientation — bỏ qua bước này là ảnh vào video bị nằm.
@@ -76,7 +76,7 @@ def _normalize_one(raw: bytes, dest: Path) -> tuple[int, int]:
         img = img.convert("RGB")
 
     if max(img.size) > MAX_EDGE:
-        img.thumbnail((MAX_EDGE, MAX_EDGE), Image.LANCZOS)
+        img.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Không truyền `exif=` — mọi siêu dữ liệu bị bỏ lại ở đây, có chủ đích.

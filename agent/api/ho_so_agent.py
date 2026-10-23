@@ -86,7 +86,7 @@ async def tao(
     nguoi: dict = Depends(can_quyen("agent.dieu_khien")),
 ) -> dict[str, Any]:
     try:
-        d = await db.fetchrow(
+        d = await db.fetchrow_chac(
             "INSERT INTO agent_ho_so (ten, mo_ta, huong_dan, nguong_tu_tin, "
             "tran_chi_phi, bat) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
             body.ten.strip(), body.mo_ta.strip(), body.huong_dan.strip(),

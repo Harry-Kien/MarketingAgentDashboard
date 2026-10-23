@@ -733,7 +733,7 @@ class _DanhMucChuaNap(list):
             "Công cụ này được kê là KHÔNG cần danh mục nhưng đang đọc danh "
             "mục. Bỏ tên nó khỏi _KHONG_CAN_DANH_MUC trong agent/core/tools.py")
 
-    __iter__ = __getitem__ = __len__ = __contains__ = __bool__ = _no
+    __iter__ = __getitem__ = __len__ = __contains__ = __bool__ = _no  # type: ignore[assignment]
 
 
 _DANH_MUC_CHUA_NAP = _DanhMucChuaNap()
@@ -894,7 +894,7 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     # chạm, để kê nhầm thì lộ ra ngay lần chạy đầu chứ không phải ở một
     # khách thật ba tuần sau.
     if name in _KHONG_CAN_DANH_MUC:
-        products = _DANH_MUC_CHUA_NAP
+        products: list[dict] = _DANH_MUC_CHUA_NAP
     else:
         catalog = await _catalog_song()
         products = catalog.get("san_pham", [])
@@ -1254,7 +1254,7 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
 
     # --- Chốt 6: chống tạo trùng (unique index trên conversation + items) ---
     try:
-        row = await db.fetchrow(
+        row = await db.fetchrow_chac(
             """
             INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt,
                                 khach_dia_chi, items, tong_tien, trang_thai, ghi_chu)

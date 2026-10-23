@@ -121,7 +121,10 @@ async def xac_nhan(uid: UUID, ma: str) -> list[str] | None:
     nd = await _doc(uid)
     if nd is None or not nd["totp_ma_hoa"]:
         return None
-    b = _buoc_khop(_giai(dict(nd)), ma)
+    bi_mat = _giai(dict(nd))
+    if bi_mat is None:
+        return None
+    b = _buoc_khop(bi_mat, ma)
     if b is None:
         return None
     ma_du_phong = [secrets.token_hex(5) for _ in range(SO_MA_DU_PHONG)]

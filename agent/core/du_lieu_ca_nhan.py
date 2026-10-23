@@ -291,7 +291,7 @@ async def xin_duyet_xoa(sdt: str, *, ly_do: str, nguoi_id, nguoi_ten: str = "?")
     if cu:
         return {"phieu_id": str(cu["id"]), "trang_thai": cu["status"], "da_co_san": True}
 
-    row = await db.fetchrow(
+    row = await db.fetchrow_chac(
         "INSERT INTO data_retention_jobs "
         "  (contact_id, kind, requested_by, reason, dry_run, sdt_van_tay, sdt_che) "
         "VALUES ("
@@ -624,7 +624,7 @@ async def don_theo_thoi_han(chi_dem: bool = False) -> dict:
     nhiều (Luật Kế toán 2015, Điều 41).
     """
     ngay = max(1, int(settings.luu_hoi_thoai_ngay))
-    dem = await db.fetchrow(
+    dem = await db.fetchrow_chac(
         "SELECT count(*) c FROM conversations WHERE updated_at < now() - ($1 || ' days')::interval",
         str(ngay),
     )

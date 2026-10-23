@@ -134,7 +134,7 @@ async def tao(
         if not co:
             raise HTTPException(422, "Người nhận không tồn tại hoặc đã bị khoá.")
 
-    d = await db.fetchrow(
+    d = await db.fetchrow_chac(
         "INSERT INTO cong_viec (tieu_de, mo_ta, nguoi_nhan, nguoi_giao, "
         "uu_tien, han, contact_id, conversation_id, nguon) "
         "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'nguoi') RETURNING id",

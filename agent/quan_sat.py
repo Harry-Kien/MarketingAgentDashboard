@@ -78,7 +78,7 @@ async def _so_do() -> list[str]:
                             "WHERE status IN ('pending','processing','retry','dead') GROUP BY 1"):
         dong.append(f'cskh_outbox_jobs{{status="{_nhan(r["status"])}"}} {r["n"]}')
 
-    r = await db.fetchrow(
+    r = await db.fetchrow_chac(
         "SELECT count(*) FILTER (WHERE role = 'customer') AS vao, "
         "count(*) FILTER (WHERE direction = 'outbound') AS ra "
         "FROM messages WHERE created_at > now() - interval '5 minutes'")
@@ -86,7 +86,7 @@ async def _so_do() -> list[str]:
              f'cskh_tin_5_phut{{huong="vao"}} {r["vao"] if r else 0}',
              f'cskh_tin_5_phut{{huong="ra"}} {r["ra"] if r else 0}']
 
-    r = await db.fetchrow("SELECT count(*) AS n FROM conversations "
+    r = await db.fetchrow_chac("SELECT count(*) AS n FROM conversations "
                           "WHERE status IN ('assist','escalated') AND state IN ('open','pending')")
     dong += ["# HELP cskh_hoi_thoai_cho_nguoi Hội thoại đang chờ người xử lý.",
              "# TYPE cskh_hoi_thoai_cho_nguoi gauge",
@@ -98,7 +98,7 @@ async def _so_do() -> list[str]:
                             "FROM worker_heartbeats"):
         dong.append(f'cskh_vong_nen_tuoi_giay{{vong="{_nhan(r["worker_name"])}"}} {float(r["t"]):.0f}')
 
-    r = await db.fetchrow("SELECT coalesce(sum(cost_usd), 0) AS c FROM messages "
+    r = await db.fetchrow_chac("SELECT coalesce(sum(cost_usd), 0) AS c FROM messages "
                           "WHERE created_at >= date_trunc('day', now())")
     dong += ["# HELP cskh_chi_phi_model_hom_nay_usd Chi phí model từ 0h (UTC).",
              "# TYPE cskh_chi_phi_model_hom_nay_usd gauge",

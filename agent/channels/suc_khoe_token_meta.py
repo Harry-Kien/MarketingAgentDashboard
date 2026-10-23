@@ -66,7 +66,8 @@ def doc_suc_khoe(
     cần dựng máy chủ giả.
     """
     bay_gio = bay_gio or datetime.now(timezone.utc)
-    d = du_lieu.get("data") if isinstance(du_lieu.get("data"), Mapping) else du_lieu
+    goc = du_lieu.get("data")
+    d: Mapping[str, Any] = goc if isinstance(goc, Mapping) else du_lieu
 
     con_song = bool(d.get("is_valid"))
     ngay_token = _ngay_con_lai(d.get("expires_at"), bay_gio)

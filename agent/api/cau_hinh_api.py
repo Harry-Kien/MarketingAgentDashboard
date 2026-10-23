@@ -4,6 +4,8 @@ API cấu hình agent và xác nhận bảng giá ERP.
 from __future__ import annotations
 
 
+from typing import Any
+
 from fastapi import (APIRouter, Depends, HTTPException)
 
 from agent import db, runtime
@@ -25,7 +27,7 @@ router = APIRouter(prefix="/api")
 # Con số trần trụi không nói được hậu quả: "0.55" không cho biết nâng lên
 # thì gì xảy ra. Mỗi thiết lập vì thế đi kèm câu "cao hơn thì…" và "thấp
 # hơn thì…" — hai hướng, vì cả hai hướng đều có giá.
-_MO_TA_CAU_HINH = {
+_MO_TA_CAU_HINH: dict[str, dict[str, Any]] = {
     "enabled": {
         "nhan": "Agent đang chạy",
         "kieu": "bool",

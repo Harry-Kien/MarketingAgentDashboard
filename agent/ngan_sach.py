@@ -157,7 +157,7 @@ def tran() -> float:
         getattr(settings, "tran_chi_phi_ngay_usd", 0.0),
     )
     try:
-        return float(gt or 0.0)
+        return float(gt or 0.0)  # type: ignore[arg-type]  # STATE là object; sai kiểu đã bắt ở dưới
     except (TypeError, ValueError):
         return 0.0
 

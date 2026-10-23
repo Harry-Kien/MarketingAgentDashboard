@@ -85,7 +85,7 @@ async def doc_ghi_chu(conversation_id: UUID,
 async def them_ghi_chu(conversation_id: UUID, body: GhiChuIn,
                        nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict[str, Any]:
     await chan_neu_ngoai_kenh(conversation_id, nguoi)
-    r = await db.fetchrow(
+    r = await db.fetchrow_chac(
         "INSERT INTO hoi_thoai_ghi_chu (conversation_id, noi_dung, tao_boi) "
         "VALUES ($1,$2,$3) RETURNING id, tao_luc",
         conversation_id, body.noi_dung.strip(), UUID(str(nguoi["id"])))

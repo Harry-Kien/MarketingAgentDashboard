@@ -69,12 +69,12 @@ def font_path(bold: bool = False) -> str | None:
     return None
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     path = font_path(bold)
     return ImageFont.truetype(path, size) if path else ImageFont.load_default(size)
 
 
-def _text_width(draw: ImageDraw.ImageDraw, text: str, font) -> int:
+def _text_width(draw: ImageDraw.ImageDraw, text: str, font) -> float:
     box = draw.textbbox((0, 0), text, font=font)
     return box[2] - box[0]
 
@@ -135,7 +135,7 @@ def _cover(src: Image.Image, size) -> Image.Image:
     scale = max(size[0] / src.width, size[1] / src.height)
     resized = src.resize(
         (max(1, int(src.width * scale)), max(1, int(src.height * scale))),
-        Image.LANCZOS,
+        Image.Resampling.LANCZOS,
     )
     left = (resized.width - size[0]) // 2
     top = (resized.height - size[1]) // 2
@@ -173,7 +173,7 @@ def base_frame(image_path=None, accent: bool = False, day_ve: str | None = None)
         if lech:
             # Ảnh đã phủ kín khung: dịch nội dung rồi lấp mép bằng chính nó
             # kéo giãn, không để lộ dải trống.
-            nen = khung.resize((size[0] + abs(lech) * 2, size[1]), Image.LANCZOS)
+            nen = khung.resize((size[0] + abs(lech) * 2, size[1]), Image.Resampling.LANCZOS)
             nen.paste(khung, (abs(lech) + lech, 0))
             khung = nen.crop((abs(lech), 0, abs(lech) + size[0], size[1]))
         return khung
@@ -189,7 +189,7 @@ def base_frame(image_path=None, accent: bool = False, day_ve: str | None = None)
     scale = min(khung_rong / src.width, size[1] / src.height)
     fg = src.resize(
         (max(1, int(src.width * scale)), max(1, int(src.height * scale))),
-        Image.LANCZOS,
+        Image.Resampling.LANCZOS,
     )
     # Dán qua mặt nạ MÉP MỀM. Dán thẳng thì ảnh vuông đặt trên nền mờ để lại
     # một đường viền chữ nhật cứng, nhìn như hai lớp dán chồng chứ không như
@@ -235,6 +235,7 @@ def _scrim(box, alpha: int, vung_trong: str) -> Image.Image:
     if vung_trong in ("trai", "phai"):
         strip = Image.new("L", (WIDTH, 1))
         px = strip.load()
+        assert px is not None  # ảnh vừa tạo trong bộ nhớ luôn nạp được
         for x in range(WIDTH):
             if vung_trong == "trai":
                 px[x, 0] = profile(x, 0, x1 + pad, toward_high=True)
@@ -243,6 +244,7 @@ def _scrim(box, alpha: int, vung_trong: str) -> Image.Image:
     else:
         strip = Image.new("L", (1, HEIGHT))
         px = strip.load()
+        assert px is not None  # ảnh vừa tạo trong bộ nhớ luôn nạp được
         for y in range(HEIGHT):
             if vung_trong == "tren":
                 px[0, y] = profile(y, 0, y1 + pad, toward_high=True)
@@ -251,7 +253,7 @@ def _scrim(box, alpha: int, vung_trong: str) -> Image.Image:
                 # nền tối, nên không dừng ở đáy hộp.
                 px[0, y] = profile(y, y0 - pad, HEIGHT, toward_high=False)
 
-    layer.paste(dark, (0, 0), strip.resize((WIDTH, HEIGHT), Image.BILINEAR))
+    layer.paste(dark, (0, 0), strip.resize((WIDTH, HEIGHT), Image.Resampling.BILINEAR))
     return layer
 
 
@@ -305,7 +307,7 @@ def write_scene(scene: dict, asset, work: Path, index: int):
 
     # Chữ bên trái -> đẩy sản phẩm sang phải, và ngược lại.
     vung = analysis.get("vung_trong")
-    day_ve = {"trai": "phai", "phai": "trai"}.get(vung)
+    day_ve = {"trai": "phai", "phai": "trai"}.get(vung or "")
     base = base_frame(
         asset.get("file_path"),
         accent=bool(scene.get("nhan_manh")),

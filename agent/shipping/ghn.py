@@ -313,14 +313,36 @@ class GHNShippingProvider(BaseShippingProvider):
                     except Exception:
                         pass
                 st = str(log.get("status", ""))
+                st_noi_bo = self.map_status(st)
+                if st_noi_bo is None:
+                    # Mốc lịch sử mang mã lạ: bỏ mốc đó, không gán bừa
+                    # "đang giao" — hợp đồng của `map_status`.
+                    continue
                 timeline.append(
                     TrackingTimelineItem(
                         thoi_gian=t_dt,
                         trang_thai_hang=st,
-                        trang_thai_noi_bo=self.map_status(st),
+                        trang_thai_noi_bo=st_noi_bo,
                         dia_diem=str(log.get("station", "")),
                         mo_ta=str(log.get("status_name", "")),
                     )
+                )
+
+            if internal_status is None:
+                # Mã hiện tại lạ: KHÔNG được báo `ok` — `tra_cuu_van_don` sẽ
+                # ghi trạng thái xuống đơn, và trước 23.10.2026 nó gọi
+                # `.value` trên None rồi nổ ngay giữa lượt tra cứu của khách.
+                # `ok=False` thì không ghi gì; trạng thái đi kèm chỉ là chỗ
+                # giữ như các nhánh lỗi khác, người đọc `loi` biết phải kiểm.
+                return TrackingResult(
+                    ok=False,
+                    ma_van_don=ma_van_don,
+                    don_vi="ghn",
+                    trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+                    trang_thai_goc=carrier_status,
+                    vi_tri_hien_tai=station,
+                    lich_su=timeline,
+                    loi=f"GHN trả trạng thái chưa nhận ra: {carrier_status!r} — cần người kiểm",
                 )
 
             return TrackingResult(

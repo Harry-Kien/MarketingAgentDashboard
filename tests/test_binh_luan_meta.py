@@ -226,3 +226,39 @@ def test_an_hong_thi_ghi_canh_bao_khong_nuot(nhanh):
     hop["loi"] = "Graph 403"
     asyncio.run(xu_ly_tin_vao._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
     assert "binh_luan.an_that_bai" in hop["su_kien"]
+
+
+def test_kenh_khong_ho_tro_an_thi_bao_ly_do_doc_duoc(nhanh, monkeypatch):
+    """
+    Bình luận có SĐT tới từ một kênh không ẩn được: phải ghi `an_that_bai`
+    với lý do người đọc hiểu, không phải "AttributeError: ...".
+    """
+    from agent.channels.base import ChannelAdapter
+
+    class _KhongAn(ChannelAdapter):
+        name = "kenh_thu"
+
+        def parse(self, payload):
+            return None
+
+        async def send_text(self, conversation_ref, text):
+            return Delivery(True)
+
+        async def send_file(self, conversation_ref, path, caption=""):
+            return Delivery(True)
+
+    mod, hop = nhanh
+    chi_tiet: list = []
+
+    async def log_event(kind, **kw):
+        hop["su_kien"].append(kind)
+        chi_tiet.append(kw.get("chi_tiet"))
+
+    async def get_for_account(_):
+        return _KhongAn()
+
+    monkeypatch.setattr(mod.db, "log_event", log_event)
+    monkeypatch.setattr(mod.channels, "get_for_account", get_for_account)
+    asyncio.run(mod._xu_ly_binh_luan(_tin("0912345678"), uuid.uuid4()))
+    assert "binh_luan.an_that_bai" in hop["su_kien"]
+    assert "không hỗ trợ ẩn bình luận" in (chi_tiet[-1] or "")

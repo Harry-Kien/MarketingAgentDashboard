@@ -41,7 +41,7 @@ def _muc(ten: str, trang_thai: str, ghi_chu: str, **them) -> dict:
 async def _kiem_db() -> dict:
     t0 = time.perf_counter()
     try:
-        row = await db.fetchrow("SELECT count(*) AS n FROM conversations")
+        row = await db.fetchrow_chac("SELECT count(*) AS n FROM conversations")
         ms = int((time.perf_counter() - t0) * 1000)
         return _muc("Cơ sở dữ liệu", TOT,
                     f"{row['n']} hội thoại · phản hồi {ms}ms", latency_ms=ms)
@@ -500,7 +500,7 @@ async def _kiem_don_ket_erp() -> dict:
         return _muc("Đơn chờ đồng bộ ERP", TOT,
                     "ERP_GHI_DON đang tắt — đơn không đi sang ERP")
     try:
-        row = await db.fetchrow(
+        row = await db.fetchrow_chac(
             """
             SELECT count(*) AS n,
                    coalesce(max(EXTRACT(EPOCH FROM (now() - created_at))), 0)

@@ -127,7 +127,7 @@ def liet_ke() -> None:
         print(f"Chưa có bản sao lưu nào trong {KHO}")
         print("Tạo bản đầu tiên:  python -m scripts.sao_luu")
         return
-    tong = 0
+    tong = 0.0
     for f in sorted(KHO.iterdir(), reverse=True):
         mb = f.stat().st_size / 1_048_576
         tong += mb

@@ -160,7 +160,7 @@ class Cong:
         con_hang = [lo for lo in ds if lo.het_han and (lo.so_luong or 0) > 0]
         if not con_hang:
             return None
-        return min(con_hang, key=lambda lo: lo.het_han)
+        return min(con_hang, key=lambda lo: lo.het_han or "")
 
     def _ghi_cache(self, ten: str, ma: str, gia_tri, luc: float) -> None:
         """Ghi vào cache LRU, bỏ ô cũ nhất khi vượt trần."""

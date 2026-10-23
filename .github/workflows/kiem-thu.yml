@@ -123,6 +123,13 @@ jobs:
           pip install ruff
           ruff check .
 
+      - name: Kiểm kiểu tĩnh (mypy)
+        # Cấu hình ở pyproject.toml. Lượt đầu tìm ra bốn lỗi thật mà bộ test
+        # không chạm tới; sàn là 0 lỗi — một lỗi kiểu mới là CI đỏ.
+        run: |
+          pip install -r requirements-dev.txt
+          mypy
+
       - name: Dò lỗ hổng đã biết trong thư viện
         # 17 thư viện ghim cứng bằng ==. Ghim là tốt cho tính lặp lại, nhưng
         # nó cũng nghĩa là một CVE công bố hôm nay sẽ nằm im trong repo cho

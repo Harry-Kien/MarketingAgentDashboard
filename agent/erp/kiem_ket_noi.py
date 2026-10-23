@@ -18,9 +18,12 @@ này đi qua HTTP tới trình duyệt và hay bị chụp màn hình gửi đi 
 from __future__ import annotations
 
 import time
+from typing import Any, Awaitable, Callable, TypeVar
 
 from agent.config import settings
 from agent.erp.hop_dong import LoiERP
+
+T = TypeVar("T")
 
 TOT, CANH_BAO, CHAN = "tot", "canh_bao", "chan"
 
@@ -44,7 +47,7 @@ def _muc(ten: str, muc: str, ghi_chu: str, goi_y: str = "", **them) -> dict:
             "goi_y": goi_y, **them}
 
 
-async def _do(ham, *args) -> tuple[object, float]:
+async def _do(ham: Callable[..., Awaitable[T]], *args: Any) -> tuple[T, float]:
     t0 = time.perf_counter()
     kq = await ham(*args)
     return kq, (time.perf_counter() - t0) * 1000

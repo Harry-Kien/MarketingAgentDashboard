@@ -238,9 +238,8 @@ async def handle_inbound(msg: InboundMessage) -> None:
         if "đã do người tiếp quản" not in cho_phep.ly_do:
             await db.log_event("conversation.escalated", ref_id=cid,
                                reason=cho_phep.ly_do)
-            await cong_viec.tao_tu_chuyen_nguoi(
-                cid, ly_do=cho_phep.ly_do,
-                ten_khach=conv.get("customer_name") or "")
+            # Tên khách: `tao_tu_chuyen_nguoi` tự đọc từ hội thoại.
+            await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=cho_phep.ly_do)
         return
 
     # KHÁCH GỬI ẢNH KHÔNG KÈM CHỮ -> CHUYỂN NGƯỜI, KHÔNG ĐOÁN
@@ -266,8 +265,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
         # tạo việc thì chuyện này chỉ được nhớ tới nếu tình cờ có ai mở
         # đúng hội thoại — và "tình cờ" không phải một cơ chế.
         await cong_viec.tao_tu_chuyen_nguoi(
-            cid, ly_do="Khách gửi ảnh không kèm chữ — agent không đoán.",
-            ten_khach=conv.get("customer_name") or "")
+            cid, ly_do="Khách gửi ảnh không kèm chữ — agent không đoán.")
         with suppress(Exception):
             await adapter_bao_nguoi(msg, cid)
         return
@@ -444,8 +442,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
             "conversation.escalated", ref_id=cid, reason=reply.escalate_reason
         )
         await cong_viec.tao_tu_chuyen_nguoi(
-            cid, ly_do=reply.escalate_reason or "agent không xử lý được",
-            ten_khach=(conv or {}).get("customer_name") or "")
+            cid, ly_do=reply.escalate_reason or "agent không xử lý được")
         await bao_nhan_vien_tiep_quan(
             adapter, msg.conversation_ref, cid,
             reply.escalate_reason or "agent không xử lý được",

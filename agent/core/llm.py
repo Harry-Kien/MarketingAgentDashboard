@@ -409,7 +409,8 @@ async def _complete_gemini(
 
     data = r.json()
     candidates = data.get("candidates") or []
-    text_parts, tool_calls = [], []
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
     if candidates:
         for part in candidates[0].get("content", {}).get("parts", []) or []:
             if "text" in part:
@@ -466,7 +467,7 @@ def _anthropic_client(*, provider_name: str | None = None, api_key: str = ""):
                 "LLM_PROVIDER=anthropic nhưng thiếu ANTHROPIC_API_KEY. Nhập ở "
                 "dashboard → Cấu hình → Cài đặt API, hoặc đặt trong .env"
             )
-        khoa_cache = ("anthropic", key)
+        khoa_cache: tuple[str, ...] = ("anthropic", key)
         if khoa_cache not in _ANTHROPIC_CACHE:
             from anthropic import Anthropic
 
@@ -552,7 +553,8 @@ async def _complete_claude(
     started = time.perf_counter()
     resp = (client or _anthropic_client()).messages.create(**kwargs)
 
-    text_parts, tool_calls = [], []
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
     for block in resp.content:
         if block.type == "text":
             text_parts.append(block.text)

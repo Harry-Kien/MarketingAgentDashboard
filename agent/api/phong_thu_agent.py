@@ -211,5 +211,5 @@ async def goi_y(_: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
 
 @router.get("/ngan-sach")
 async def ngan_sach(_: dict = Depends(can_quyen("phong_thu.dung"))) -> dict:
-    _, da_tieu, tran = thu_nghiem.con_tran()
+    _con, da_tieu, tran = thu_nghiem.con_tran()
     return {"da_tieu": da_tieu, "tran": tran}

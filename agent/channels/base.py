@@ -135,6 +135,18 @@ class ChannelAdapter(ABC):
         """
         return None
 
+    async def an_binh_luan(self, comment_id: str) -> Delivery:
+        """
+        Ẩn một bình luận công khai (có số điện thoại khách) trên Trang.
+
+        Mặc định trả THẤT BẠI có lý do, không phải `None`: người gọi ghi
+        `binh_luan.an_that_bai` kèm lý do, và người trực biết phải ẩn tay.
+        Trước đây chỉ adapter Messenger có hàm này; bình luận từ kênh khác
+        đi tới đây là AttributeError — vẫn được ghi, nhưng với một lý do
+        kỹ thuật không ai hiểu.
+        """
+        return Delivery(False, f"kênh {self.name} không hỗ trợ ẩn bình luận")
+
     async def aclose(self) -> None:
         """
         Đóng tài nguyên (client HTTP) lúc tắt ứng dụng.

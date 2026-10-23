@@ -283,6 +283,7 @@ erDiagram
         BOOLEAN khoa
         TIMESTAMPTZ tao_luc
         TIMESTAMPTZ dang_nhap_cuoi
+        _ con_6_cot_nua
     }
     vai_tro {
         UUID id

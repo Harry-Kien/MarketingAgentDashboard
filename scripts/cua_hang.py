@@ -175,6 +175,11 @@ def sql_tao_csdl(ma: str, mat_khau: str) -> list[tuple[str, str]]:
                      "NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"),
         ("postgres", f"CREATE DATABASE {r} OWNER {r};"),
         ("postgres", f"REVOKE ALL ON DATABASE {r} FROM PUBLIC;"),
+        # Postgres mặc định cho PUBLIC quyền CONNECT vào MỌI CSDL. Đo được
+        # 23.10.2026: role cửa hàng mới kết nối được vào CSDL khác (không đọc
+        # được bảng — nhưng một lớp phòng thủ thiếu là một lớp). Thu ở CSDL hệ
+        # thống mỗi lần tạo: chạy lại vô hại, và không phụ thuộc ai nhớ làm.
+        ("postgres", f"REVOKE CONNECT ON DATABASE postgres, {CSDL_DIEU_KHIEN} FROM PUBLIC;"),
         # Extension tạo bằng superuser: role thường không tạo được `vector`.
         # App chạy schema.sql với CREATE EXTENSION IF NOT EXISTS — có sẵn rồi
         # thì lệnh ấy không đòi quyền gì.

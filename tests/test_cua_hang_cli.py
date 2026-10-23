@@ -102,6 +102,8 @@ def test_tao_khong_dua_bi_mat_len_dong_lenh(mp, tmp_path):
 def test_tao_role_khong_phai_superuser(mp):
     sql = " ".join(s for _, s in ch.sql_tao_csdl("shopa", "x"))
     assert "NOSUPERUSER" in sql and "NOCREATEDB" in sql and "REVOKE ALL ON DATABASE ch_shopa" in sql
+    # Đo 23.10.2026: thiếu dòng này thì role cửa hàng kết nối được CSDL khác.
+    assert "REVOKE CONNECT ON DATABASE postgres, saas_dieu_khien FROM PUBLIC" in sql
 
 
 def test_trung_ma_hoac_ten_mien_bi_chan(tmp_path, monkeypatch):

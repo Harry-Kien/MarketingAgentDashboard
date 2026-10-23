@@ -36,6 +36,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from scripts import tach_roi
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -145,11 +147,11 @@ def main() -> int:
         )
 
     nhat_ky = GOC / "sidecar.log"
-    with open(nhat_ky, "a", encoding="utf-8") as f:
-        subprocess.Popen(
-            ["node", "src/server.mjs"],
-            cwd=str(THU_MUC), env=moi_truong, stdout=f, stderr=f,
-        )
+    # Tách rời khỏi tiến trình bật nó — xem scripts/tach_roi.py.
+    cach = tach_roi.bat(["node", "src/server.mjs"], cwd=THU_MUC,
+                        nhat_ky=nhat_ky, env=moi_truong)
+    if cach.startswith("KHÔNG"):
+        print(f"Cảnh báo: {cach}")
 
     if _song(cong):
         print(f"Sidecar sống trên http://127.0.0.1:{cong} — nhật ký: {nhat_ky.name}")

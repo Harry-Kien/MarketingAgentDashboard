@@ -66,6 +66,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from scripts import tach_roi
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -194,14 +196,15 @@ def _app_song() -> bool:
     return _http_ok(f"http://127.0.0.1:{CONG_APP}/healthz")
 
 
-def _bat_app() -> None:
-    with open(GOC / "app.log", "a", encoding="utf-8") as f:
-        subprocess.Popen(
-            [str(GOC / ".venv" / "Scripts" / "python.exe")
-             if os.name == "nt" else sys.executable,
-             "-m", "uvicorn", "agent.main:app", "--port", str(CONG_APP)],
-            cwd=str(GOC), stdout=f, stderr=f,
-        )
+def _bat_app() -> str:
+    # Tách rời: lượt chạy của người canh bị Task Scheduler dừng là KHÔNG được
+    # kéo app chết theo — xem scripts/tach_roi.py (đo được 23.10.2026).
+    return tach_roi.bat(
+        [str(GOC / ".venv" / "Scripts" / "python.exe")
+         if os.name == "nt" else sys.executable,
+         "-m", "uvicorn", "agent.main:app", "--port", str(CONG_APP)],
+        cwd=GOC, nhat_ky=GOC / "app.log",
+    )
 
 
 def _tat_app() -> None:
@@ -232,10 +235,13 @@ def buoc_app(bat_lai: bool = False) -> tuple[bool, str]:
     if bat_lai:
         _tat_app()
         time.sleep(2)
-    _bat_app()
+    cach = _bat_app()
+    # Chỉ nói cách bật khi nó là tin XẤU — "tách rời" là bình thường, in ra
+    # mỗi lần chỉ làm nhật ký người canh khó đọc.
+    them = f" · {cach}" if cach.startswith("KHÔNG") else ""
     if _cho(_app_song, giay=60):
-        return True, ("bật lại để đọc .env mới" if bat_lai else "vừa bật")
-    return False, "không lên sau 60 giây — xem app.log"
+        return True, ("bật lại để đọc .env mới" if bat_lai else "vừa bật") + them
+    return False, "không lên sau 60 giây — xem app.log" + them
 
 
 def buoc_sidecar() -> tuple[bool, str]:

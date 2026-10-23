@@ -5,14 +5,20 @@
 # nghìn cảnh báo về độ dài dòng, và người ta sẽ tắt linter đi — rồi mất luôn
 # phần bắt lỗi thật.
 #
-# Chọn đúng ba nhóm:
-#   F   pyflakes  — biến chưa định nghĩa, import thừa, f-string hỏng
-#   E9  lỗi cú pháp và lỗi chạy
-#   B   bugbear   — bẫy thật, ví dụ `zip()` cắt ngầm
+# Chọn các nhóm chỉ bắt LỖI:
+#   F       pyflakes  — biến chưa định nghĩa, import thừa, f-string hỏng
+#   E9      lỗi cú pháp và lỗi chạy
+#   B       bugbear   — bẫy thật, ví dụ `zip()` cắt ngầm
+#   PLE     lỗi pylint — gọi sai số tham số, `return` trong `__init__`...
+#   RUF006  `asyncio.create_task()` không giữ tham chiếu: task bị dọn rác
+#           giữa chừng, vòng nền dừng IM LẶNG. Repo có 13 vòng nền.
+# Hai nhóm sau thêm 23.10.2026 khi đang ở 0 lỗi — giữ sàn, không dọn nợ.
+# KHÔNG bật ASYNC: 28 cảnh báo đọc tệp cục bộ nhỏ trong hàm async, sửa
+# không đáng, để đỏ thì người ta tắt cả linter.
 line-length = 100
 
 [lint]
-select = ["F", "E9", "B"]
+select = ["F", "E9", "B", "PLE", "RUF006"]
 
 # B008: "đừng gọi hàm trong giá trị mặc định của tham số". Đúng với Python
 # thường, SAI với FastAPI — `Depends()` và `File()` bắt buộc phải nằm đúng

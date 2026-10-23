@@ -258,7 +258,7 @@ def test_nhanh_khoi_phuc_dung_dung_bien_cua_no():
             f"nhánh {bien} kiểm biến {m.group(1)!r} — biến của nhánh khác, "
             "luôn rỗng ở đây nên nút bấm không ăn gì"
         )
-        khac = set(re.findall(r"(b[a-z]{1,3})\.dataset", than)) - {bien}
+        khac = set(re.findall(r"\b(b[a-z]{1,3})\.dataset\b", than)) - {bien}
         assert not khac, f"nhánh {bien} còn đọc dataset của {khac}"
 
 

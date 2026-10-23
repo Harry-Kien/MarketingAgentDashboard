@@ -41,7 +41,7 @@
 | Mục | Căn cứ |
 |---|---|
 | Kiến trúc tổng thể, sơ đồ CSDL | `docs/kien-truc.md` (sinh từ mã) |
-| Luồng một tin nhắn: webhook → inbox → agent → outbox | `agent/main.py::handle_inbound`, `agent/omnichannel/` |
+| Luồng một tin nhắn: webhook → inbox → agent → outbox | `agent/omnichannel/xu_ly_tin_vao.py::handle_inbound`, `agent/omnichannel/` |
 | Phân quyền hỏng-đóng | `agent/core/quyen.py`, `kiem_moi_route_co_quyen` |
 | Bảo mật | AES-256-GCM `agent/security/credential_vault.py`; scrypt + phiên băm `agent/core/xac_thuc.py`; HMAC webhook |
 

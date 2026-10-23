@@ -1,3 +1,5 @@
+/* TỆP SINH RA — ĐỪNG SỬA TAY. Mã nguồn ở dashboard/src/*.js; sửa ở đó rồi
+   chạy: python -m scripts.dong_goi_dashboard */
 /* Trạm điều độ — logic giao diện. Không framework, không build step. */
 
 const $  = (s, r = document) => r.querySelector(s);

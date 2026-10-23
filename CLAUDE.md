@@ -170,6 +170,15 @@ cũng im lặng y hệt gói kỹ năng: dashboard vẫn hiện máy chủ "đan
 công cụ đã đổi ở phía máy chủ mà chưa Đồng bộ lại. Mã thoát khác 0 khi có
 mục HỎNG.
 
+JavaScript của dashboard viết ở `dashboard/src/*.js` (mỗi tệp một miền
+màn hình). `dashboard/app.js` là tệp **sinh ra** — nối nguyên văn, trình
+duyệt nhận đúng byte đó. Sửa ở `src/` rồi đóng gói; sửa thẳng `app.js` là
+lần đóng gói sau xoá mất (có test canh cả hai chiều):
+
+```bash
+python -m scripts.dong_goi_dashboard
+```
+
 Sinh lại tài liệu **sau khi đổi schema, thêm kỹ năng, hoặc chạy eval** (có
 test canh việc này):
 

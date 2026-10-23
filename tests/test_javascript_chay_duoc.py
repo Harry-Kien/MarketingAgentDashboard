@@ -49,7 +49,9 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-JS = sorted((ROOT / "dashboard").glob("*.js"))
+# Cả tệp nguồn ở dashboard/src/: mỗi tệp tự parse được, để lỗi cú pháp chỉ
+# đúng TỆP người vừa sửa chứ không chỉ "app.js dòng 4.812".
+JS = sorted((ROOT / "dashboard").glob("*.js")) + sorted((ROOT / "dashboard" / "src").glob("*.js"))
 
 _NODE = shutil.which("node")
 # GitHub Actions đặt CI=true. Runner ubuntu-latest có sẵn node.

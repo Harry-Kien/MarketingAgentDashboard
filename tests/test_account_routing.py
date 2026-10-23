@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from agent import main as app_main
-from agent.api import routes
+from agent.api import hoi_thoai_cu, routes
 from agent.channels.base import InboundMessage, con_trong_cua_so
 from agent.omnichannel.inbox_service import InboxIngestResult
 from agent.omnichannel.outbound_service import QueuedOutbound
@@ -64,20 +64,20 @@ def test_staff_reply_enqueue_chu_khong_goi_provider_truc_tiep(monkeypatch):
             payload={"conversation_ref": "customer-1", "text": body.text},
         )
 
-    monkeypatch.setattr(routes, "_queue_staff_reply", queue, raising=False)
+    monkeypatch.setattr(hoi_thoai_cu, "_queue_staff_reply", queue, raising=False)
     # Test này gọi thẳng hàm nên KHÔNG đi qua dependency của FastAPI, và
     # chốt tầm nhìn cần CSDL. Vô hiệu nó ở đây vì đang đo một việc khác:
     # "enqueue chứ không gọi provider". Bản thân chốt ấy có bộ test riêng
     # chạy trên app thật — tests/test_chan_tra_loi_khach_nguoi_khac.py.
     async def bo_qua_chot(cid, nguoi):
         return None
-    monkeypatch.setattr(routes, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
+    monkeypatch.setattr(hoi_thoai_cu, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
 
     # Cửa sổ nhắn tin cũng cần CSDL + adapter; có bộ test riêng —
     # tests/test_cua_so_tin_nhan_vien.py.
     async def trong_cua_so(cid):
         return None
-    monkeypatch.setattr(routes, "_xet_cua_so_hoac_409", trong_cua_so)
+    monkeypatch.setattr(hoi_thoai_cu, "_xet_cua_so_hoac_409", trong_cua_so)
 
     result = asyncio.run(
         routes.staff_send(
@@ -111,13 +111,13 @@ def test_approve_draft_enqueue_existing_message(monkeypatch):
             payload={"conversation_ref": "customer-1", "text": "Bản nháp"},
         )
 
-    monkeypatch.setattr(routes, "_queue_approved_draft", queue, raising=False)
+    monkeypatch.setattr(hoi_thoai_cu, "_queue_approved_draft", queue, raising=False)
 
     # Cùng lý do với test trên: gọi thẳng hàm thì không có CSDL cho chốt
     # tầm nhìn; nó có bộ test riêng trên app thật.
     async def bo_qua_chot(cid, nguoi):
         return None
-    monkeypatch.setattr(routes, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
+    monkeypatch.setattr(hoi_thoai_cu, "chan_neu_khong_duoc_tra_loi", bo_qua_chot)
 
     async def khong_co_tin(*a, **k):
         return None

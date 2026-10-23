@@ -8,6 +8,7 @@ thành phỏng đoán có định dạng đẹp.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import sys
 from pathlib import Path
 
@@ -340,7 +341,7 @@ def test_moi_tai_lieu_dashboard_co_source_rieng():
     """
     import ast
 
-    src = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    src = nguon_api()
     cay = ast.parse(src)
     ham = next(
         n for n in ast.walk(cay)

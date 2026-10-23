@@ -354,7 +354,7 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 | Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
 | Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
 | Biết dừng đúng lúc — «SO_LUOI_CHU» lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
-| Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/routes.py` |
+| Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/hoi_thoai_cu.py` |
 | Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |
 | Migration tiến về phía trước có version, checksum và transaction lock | `agent/migrations/runner.py` |
 """)

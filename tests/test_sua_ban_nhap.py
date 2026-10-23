@@ -173,19 +173,19 @@ class _Outbound:
 
 
 def _dung_csdl(monkeypatch, hang):
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _CSDL(hang)
     monkeypatch.setattr(routes.db, "fetchrow", gia.fetchrow)
     monkeypatch.setattr(routes.db, "execute", gia.execute)
     monkeypatch.setattr(routes.db, "log_event", gia.log_event)
-    monkeypatch.setattr(routes, "OutboundService", _Outbound)
+    monkeypatch.setattr(hoi_thoai_cu, "OutboundService", _Outbound)
     _Outbound.da_gui = []
     return gia
 
 
 def test_sua_roi_duyet_thi_outbox_nhan_noi_dung_MOI(monkeypatch):
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     _dung_csdl(monkeypatch, _nhap(content="Bản AI viết."))
     chay(routes._queue_approved_draft(uuid.uuid4(), noi_dung="Bản người sửa.", boi="kien"))
@@ -194,7 +194,7 @@ def test_sua_roi_duyet_thi_outbox_nhan_noi_dung_MOI(monkeypatch):
 
 
 def test_ban_goc_duoc_giu_lai_va_ghi_ten_nguoi_sua(monkeypatch):
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap(content="Bản AI viết."))
     chay(routes._queue_approved_draft(uuid.uuid4(), noi_dung="Bản người sửa.", boi="kien"))
@@ -217,7 +217,7 @@ def test_sua_lan_hai_khong_ghi_de_ban_AI_dau_tien(monkeypatch):
     `noi_dung_goc` là bản AI, không phải "bản trước đó". Ghi đè ở lần sửa thứ
     hai là mất bản AI vĩnh viễn mà không ai biết.
     """
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap(content="Bản sửa lần một.", noi_dung_goc="Bản AI viết."))
     chay(routes._queue_approved_draft(uuid.uuid4(), noi_dung="Bản sửa lần hai.", boi="kien"))
@@ -230,7 +230,7 @@ def test_sua_lan_hai_khong_ghi_de_ban_AI_dau_tien(monkeypatch):
 
 def test_duyet_khong_kem_noi_dung_giu_nguyen_hanh_vi_cu(monkeypatch):
     """Nút 'Duyệt và gửi' cũ không gửi body — đường ấy phải chạy y như trước."""
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap(content="Bản AI viết."))
     chay(routes._queue_approved_draft(uuid.uuid4()))
@@ -242,7 +242,7 @@ def test_duyet_khong_kem_noi_dung_giu_nguyen_hanh_vi_cu(monkeypatch):
 
 
 def test_noi_dung_sai_thi_KHONG_ghi_gi_va_KHONG_gui(monkeypatch):
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap())
     with pytest.raises(routes.LoiSuaNhap):
@@ -256,7 +256,7 @@ def test_noi_dung_sai_thi_KHONG_ghi_gi_va_KHONG_gui(monkeypatch):
 # ---------------------------------------------------------------
 
 def test_cum_cam_thi_dung_lai_hoi_truoc_khi_gui(monkeypatch):
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap())
     with pytest.raises(routes.CanXacNhanQuangCao) as e:
@@ -270,7 +270,7 @@ def test_cum_cam_thi_dung_lai_hoi_truoc_khi_gui(monkeypatch):
 
 def test_xac_nhan_roi_thi_gui_va_de_lai_dau_vet(monkeypatch):
     """Người có quyền bỏ qua cảnh báo — nhưng không được bỏ qua trong im lặng."""
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap())
     chay(routes._queue_approved_draft(
@@ -285,7 +285,7 @@ def test_xac_nhan_roi_thi_gui_va_de_lai_dau_vet(monkeypatch):
 
 def test_nhat_ky_sua_khong_chep_noi_dung_tin(monkeypatch):
     """`events` không phải chỗ nhân bản chữ gửi cho khách — xem docs/du-lieu-ca-nhan.md."""
-    from agent.api import routes
+    from agent.api import hoi_thoai_cu, routes  # noqa: F401
 
     gia = _dung_csdl(monkeypatch, _nhap(content="Bản AI viết."))
     chay(routes._queue_approved_draft(uuid.uuid4(), noi_dung="Bản người sửa.", boi="kien"))

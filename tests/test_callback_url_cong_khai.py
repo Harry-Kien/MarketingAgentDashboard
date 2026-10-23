@@ -17,6 +17,7 @@ Nên máy chủ phải nói cho dashboard biết.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import re
 from pathlib import Path
 
@@ -32,7 +33,7 @@ def _than_goc_cong_khai() -> str:
 
 def test_overview_tra_ve_dia_chi_cong_khai():
     """Dashboard đã tải overview sẵn — gửi kèm ở đó, không cần thêm lượt gọi."""
-    src = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    src = nguon_api()
     assert '"public_base_url"' in src, "overview phải trả về địa chỉ công khai"
 
 

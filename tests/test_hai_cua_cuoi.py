@@ -7,6 +7,7 @@ màn hình gọi ĐÚNG đường, và màn hình nói ĐÚNG SỰ THẬT về v
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import os
 import sys
 from pathlib import Path
@@ -55,7 +56,7 @@ def test_nut_xoa_that_bi_khoa_boi_phieu_duyet():
         encoding="utf-8")
     assert hasattr(du_lieu_ca_nhan, "ChuaDuyet")
 
-    routes = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    routes = nguon_api()
     assert "du_lieu_ca_nhan.ChuaDuyet" in routes, "route phải đổi lỗi chưa-duyệt thành 409"
 
     # Và giao diện vẽ khối xoá theo trạng thái phiếu, không vẽ sẵn nút đỏ.

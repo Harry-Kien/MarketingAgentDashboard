@@ -380,8 +380,9 @@ def test_khong_co_trang_tao_tai_khoan_dau_tien_tren_web():
     Trang bootstrap trên web là một cửa mở: giữa lúc cài xong và lúc chủ hệ
     thống kịp vào tạo tài khoản, ai chạm được cổng đó đều tự phong quản trị.
     """
-    src = inspect.getsource(routes)
-    assert "bootstrap" not in src.lower()
+    from tests.nguon_api import nguon_api
+
+    assert "bootstrap" not in nguon_api().lower()
     assert (ROOT / "scripts" / "tao_tai_khoan.py").exists()
 
 

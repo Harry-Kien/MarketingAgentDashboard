@@ -151,20 +151,24 @@ def test_xem_tat_ca_thay_ca_hai_kenh(csdl_kiem_thu):
 
 def test_moi_route_co_conv_id_deu_chot_pham_vi():
     """
-    Canh cấu trúc: route mới thêm vào `routes.py` có `{conv_id}` mà quên chốt
+    Canh cấu trúc: route mới thêm vào tầng API có `{conv_id}` mà quên chốt
     là lỗ cũ quay lại. Hoặc gọi thẳng, hoặc đi qua chốt mức tầm nhìn (đã gọi
     chốt phạm vi bên trong), hoặc đi qua routing service (tự kiểm thành viên).
     """
-    src = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
-    khoi = re.split(r"\n(?=@router\.)", src)
-    thieu = []
+    from tests.nguon_api import nguon_api
+
+    khoi = re.split(r"\n(?=@router\.)", nguon_api())
+    thieu, da_xet = [], 0
     for k in khoi:
         m = re.match(r'@router\.\w+\("(/conversations/\{conv_id\}[^"]*)"', k)
         if not m:
             continue
+        da_xet += 1
         than = k.split("\n\n\n", 1)[0]
         if not any(x in than for x in ("chan_neu_ngoai_kenh(",
                                        "chan_neu_khong_duoc_tra_loi(",
                                        "ConversationRoutingService(")):
             thieu.append(m.group(1))
+    # Không xét route nào là xanh giả — đã xảy ra khi routes.py được tách (23.10.2026).
+    assert da_xet >= 6, f"chỉ xét được {da_xet} route — bộ đọc nguồn hỏng?"
     assert not thieu, f"route chưa chốt phạm vi kênh: {thieu}"

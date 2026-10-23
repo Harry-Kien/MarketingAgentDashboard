@@ -11,6 +11,7 @@ Cùng khuôn với `tests/test_tin_chet_phai_keu.py` — cùng một loại lỗ
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import os
 import re
 import sys
@@ -20,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("GCP_PROJECT_ID", "test")
 
-ROUTES = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+ROUTES = nguon_api()
 CONTACTS = (ROOT / "agent" / "api" / "contacts.py").read_text(encoding="utf-8")
 JS = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
 

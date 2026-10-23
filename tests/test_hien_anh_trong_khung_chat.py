@@ -21,6 +21,7 @@ Tin của khách gửi vào thì CÓ `url` (CDN của Zalo/Meta) nên vẫn hi�
 """
 from __future__ import annotations
 
+from tests.nguon_api import duong_api
 import inspect
 from pathlib import Path
 
@@ -32,7 +33,7 @@ CSS = (ROOT / "dashboard" / "app.css").read_text(encoding="utf-8")
 def test_co_duong_phuc_vu_tep_dinh_kem():
     from agent.api.routes import router
 
-    duong = {getattr(r, "path", "") for r in router.routes}
+    duong = duong_api()
     assert "/api/attachments/{attachment_id}/file" in duong
 
 

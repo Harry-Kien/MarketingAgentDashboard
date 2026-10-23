@@ -22,6 +22,7 @@ ngồi chờ mãi không thấy trả lời.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import ast
 import asyncio
 import pathlib
@@ -181,7 +182,7 @@ def test_keu_SAU_khi_giao_dich_xong():
 # ---------------------------------------------------------------
 
 def test_overview_dem_tin_chet():
-    routes = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    routes = nguon_api()
     assert "tin_chet" in routes
     assert "status = 'dead'" in routes
 
@@ -191,7 +192,7 @@ def test_dem_tin_chet_KHONG_gioi_han_24_gio():
     Cắt theo 24 giờ là để tin chết tự biến mất khỏi màn hình sau một đêm —
     đúng cái đã xảy ra suốt hơn một tuần.
     """
-    routes = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    routes = nguon_api()
     # Chỉ soi CHÍNH CÂU SQL, không soi vùng chữ quanh nó.
     #
     # Bản đầu quét 200 ký tự phía trước và bắt phải chữ "24 giờ" trong

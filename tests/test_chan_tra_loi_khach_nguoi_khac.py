@@ -24,6 +24,7 @@ Chặn một đường mà để hở đường kia là không chặn gì cả.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import os
 import sys
 from pathlib import Path
@@ -128,6 +129,6 @@ def test_chot_dat_o_MOT_cho_dung_chung():
     Ba route cùng gọi một hàm, thay vì mỗi route tự nhớ kiểm. Chép ba bản
     là bảo đảm sẽ có một bản quên — và bản quên không nổ, nó chỉ cho qua.
     """
-    nguon = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    nguon = nguon_api()
     assert nguon.count("await chan_neu_khong_duoc_tra_loi(") == 3
     assert "async def chan_neu_khong_duoc_tra_loi(" in nguon

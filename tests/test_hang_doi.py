@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from agent.api import routes  # noqa: E402
+from agent.api import hoi_thoai_cu, routes  # noqa: E402
 from agent.config import settings  # noqa: E402
 
 
@@ -55,7 +55,7 @@ def _goi(monkeypatch, status, rows, limit=60):
         return rows
 
     monkeypatch.setattr(routes.db, "fetch", fetch_gia)
-    monkeypatch.setattr(routes.runtime, "is_busy", lambda _: False)
+    monkeypatch.setattr(hoi_thoai_cu.runtime, "is_busy", lambda _: False)
     # Người thấy mọi kênh: test này đo THỨ TỰ hàng đợi, không đo phạm vi
     # kênh — phạm vi có bộ test riêng (test_pham_vi_kenh_route_cu.py).
     nguoi = {"id": "00000000-0000-0000-0000-000000000001",

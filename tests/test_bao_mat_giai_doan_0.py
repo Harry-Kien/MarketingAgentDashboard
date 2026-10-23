@@ -8,6 +8,7 @@ file công khai mà không ai nghĩ là bí mật.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -53,7 +54,7 @@ def test_cookie_tu_bat_secure_khi_https():
 
 
 def test_dang_nhap_dung_cookie_can_secure():
-    src = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    src = nguon_api()
     assert "secure=settings.cookie_bao_mat" not in src
     assert "secure=settings.cookie_can_secure" in src
 

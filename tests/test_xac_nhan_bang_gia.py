@@ -19,6 +19,7 @@ khi ai đó đổi sang bảng giá sỉ.
 """
 from __future__ import annotations
 
+from tests.nguon_api import cay_api
 import asyncio
 import json
 import pathlib
@@ -203,7 +204,7 @@ def test_api_khong_nhan_ten_bang_gia_tu_client():
     """
     import ast
 
-    cay = ast.parse((ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8"))
+    cay = cay_api()
     for node in ast.walk(cay):
         if not (isinstance(node, ast.AsyncFunctionDef)
                 and node.name == "ghi_xac_nhan_bang_gia"):

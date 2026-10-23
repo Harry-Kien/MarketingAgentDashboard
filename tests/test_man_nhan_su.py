@@ -16,6 +16,7 @@ dòng đỏ nào để mà đi tìm.
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import re
 import sys
 from pathlib import Path
@@ -71,7 +72,7 @@ def test_khong_the_tu_khoa_minh_van_con_chan_o_may_chu():
     Màn hình có nút thì càng dễ bấm nhầm vào chính mình. Chốt ở máy chủ phải
     còn — nút trên màn hình KHÔNG được thay thế nó.
     """
-    routes = (ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    routes = nguon_api()
     assert "Không tự khoá tài khoản của mình được" in routes
 
 

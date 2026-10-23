@@ -16,6 +16,7 @@ Ca quan trọng nhất tệp này: `test_nap_lai_duoc_gia_tri_da_luu`.
 """
 from __future__ import annotations
 
+from tests.nguon_api import cay_api
 import asyncio
 import json
 import pathlib
@@ -220,7 +221,7 @@ def test_endpoint_runtime_ghi_xuong_csdl():
     """
     import ast
 
-    cay = ast.parse((ROOT / "agent" / "api" / "routes.py").read_text(encoding="utf-8"))
+    cay = cay_api()
     for node in ast.walk(cay):
         if not (isinstance(node, ast.AsyncFunctionDef) and node.name == "set_runtime"):
             continue

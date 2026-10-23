@@ -25,6 +25,7 @@ HAI ĐƯỜNG GỬI, VÀ VÌ SAO CẢ HAI
 """
 from __future__ import annotations
 
+from tests.nguon_api import duong_api
 import inspect
 
 import pytest
@@ -33,7 +34,7 @@ import pytest
 def test_co_duong_gui_file_cho_nhan_vien():
     from agent.api.routes import router
 
-    duong = {getattr(r, "path", "") for r in router.routes}
+    duong = duong_api()
     assert "/api/conversations/{conv_id}/send-file" in duong
 
 

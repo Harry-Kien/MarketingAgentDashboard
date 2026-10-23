@@ -9,6 +9,7 @@ canh gác bỏ qua tài khoản disabled. Test đọc SQL, không cần Postgres
 """
 from __future__ import annotations
 
+from tests.nguon_api import nguon_api
 import asyncio
 import uuid
 
@@ -111,5 +112,5 @@ def test_lay_phien_het_han_tra_none(monkeypatch):
 def test_danh_sach_va_tong_quan_loai_phong_thu():
     from pathlib import Path
 
-    nguon = (Path(__file__).resolve().parent.parent / "agent" / "api" / "routes.py").read_text(encoding="utf-8")
+    nguon = nguon_api()
     assert nguon.count("channel <> 'phong_thu'") >= 3

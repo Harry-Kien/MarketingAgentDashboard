@@ -217,6 +217,9 @@ def dung_lai() -> tuple[bool, str]:
                       ("app", lambda: k.buoc_app(bat_lai=True)), ("sidecar", k.buoc_sidecar)):
         ok, mo_ta = buoc()
         ket.append(f"{ten}: {mo_ta}")
+        # In NGAY từng bước: lượt bị Task Scheduler dừng giữa chừng (23.10.2026,
+        # nhiều lượt chỉ để lại dòng mốc giờ trống) vẫn để lại dấu nó dừng ở đâu.
+        print(f"  · {ten}: {mo_ta}", flush=True)
         if not ok:
             return False, " · ".join(ket)
     return True, " · ".join(ket)
@@ -297,6 +300,7 @@ def main() -> int:
         _bao("hong", f"{DIA_CHI} không trả lời trong {CHO_GIAY}s — {ly_do}. "
                      f"Lần sau còn hỏng sẽ tự dựng lại.")
     elif viec == "dung_lai":
+        print(f"[dang_dung_lai] {ly_do}", flush=True)
         ok, mo_ta = dung_lai()
         if ok and _song_sau_dung_lai():
             _bao("tu_dung_lai", f"{ly_do} → {mo_ta}")

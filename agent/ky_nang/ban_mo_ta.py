@@ -577,152 +577,169 @@ def _doc_cau_thu(loai: str, tho) -> tuple[CauThu, ...]:
     return tuple(ra)
 
 
+def _kiem_tra_tai_lieu(ch: dict, ten_tham_so: set[str]) -> dict:
+    nhom = _chu(ch.get("nhom_tai_lieu", ""), "cau_hinh.nhom_tai_lieu")
+    if not nhom:
+        raise LoiBanMoTa(
+            "tra_tai_lieu cần cau_hinh.nhom_tai_lieu — một mẩu chữ có "
+            "trong TIÊU ĐỀ nhóm tài liệu muốn giới hạn, ví dụ 'bao-hanh'. "
+            "Bỏ trống thì plugin này thành bản sao của tim_kien_thuc."
+        )
+    if len(nhom) > 100:
+        raise LoiBanMoTa("cau_hinh.nhom_tai_lieu quá 100 ký tự.")
+    k = ch.get("k", 4)
+    if not isinstance(k, int) or not 1 <= k <= 8:
+        raise LoiBanMoTa("cau_hinh.k phải là số nguyên 1–8.")
+    if not ten_tham_so:
+        raise LoiBanMoTa(
+            "tra_tai_lieu cần đúng một tham số để nhận câu hỏi tra cứu."
+        )
+    return {"nhom_tai_lieu": nhom, "k": k}
+
+
+def _kiem_tra_bang(ch: dict, ten_tham_so: set[str]) -> dict:
+    bang = ch.get("bang")
+    if not isinstance(bang, dict) or not bang:
+        raise LoiBanMoTa(
+            "tra_bang cần cau_hinh.bang là object khoá→giá trị, ví dụ "
+            '{"hà nội": "Số 1 Trần Duy Hưng"}.'
+        )
+    if len(bang) > 500:
+        raise LoiBanMoTa("Bảng quá 500 dòng. Dữ liệu cỡ đó nên vào kho tri thức.")
+    sach: dict[str, str] = {}
+    for k_, v_ in bang.items():
+        if not isinstance(k_, str) or not isinstance(v_, str):
+            raise LoiBanMoTa("Mọi khoá và giá trị trong bang phải là chuỗi.")
+        if len(v_) > 500:
+            raise LoiBanMoTa(f"Giá trị của khoá {k_!r} quá 500 ký tự.")
+        sach[k_.strip()] = v_.strip()
+    if not ten_tham_so:
+        raise LoiBanMoTa("tra_bang cần đúng một tham số để nhận khoá cần tra.")
+    if (cap := khoa_long_nhau(sach)) is not None:
+        ngan, dai = cap
+        raise LoiBanMoTa(
+            f"Khoá {ngan!r} nằm lọt trong khoá {dai!r}. Câu hỏi nào chỉ "
+            f"chứa {ngan!r} sẽ nhận câu trả lời của dòng đó một cách chắc "
+            f"nịch, kể cả khi khách đang hỏi về dòng khác — không mơ hồ "
+            f"nên cũng không có ai hỏi lại. Hãy viết khoá đủ riêng, ví dụ "
+            f"{dai!r} và một tên cụ thể khác thay cho {ngan!r}."
+        )
+    return {"bang": sach}
+
+
+def _kiem_chuyen_chuyen_biet(ch: dict, ten_tham_so: set[str]) -> dict:
+    ly_do = _chu(ch.get("ly_do", ""), "cau_hinh.ly_do")
+    if not ly_do:
+        raise LoiBanMoTa(
+            "chuyen_chuyen_biet cần cau_hinh.ly_do — câu người trực đọc "
+            "để biết vì sao hội thoại tới tay mình."
+        )
+    if len(ly_do) > 200:
+        raise LoiBanMoTa("cau_hinh.ly_do quá 200 ký tự.")
+    return {"ly_do": ly_do}
+
+
+def _kiem_goi_api_doc(ch: dict, ten_tham_so: set[str]) -> dict:
+    url = _chu(ch.get("url", ""), "cau_hinh.url")
+    if not url:
+        raise LoiBanMoTa("goi_api_doc cần cau_hinh.url.")
+    # Kiểm URL nằm ở `mang.py` — nó cần tra DNS nên không kiểm được ở
+    # đây mà không kéo mạng vào một hàm thuần. Ở đây chỉ chặn dạng sai.
+    if not url.startswith(("http://", "https://")):
+        raise LoiBanMoTa("cau_hinh.url phải bắt đầu bằng https://.")
+    if len(url) > 400:
+        raise LoiBanMoTa("cau_hinh.url quá 400 ký tự.")
+    for t in ten_tham_so:
+        if "{" + t + "}" not in url:
+            raise LoiBanMoTa(
+                f"Tham số {t!r} khai rồi nhưng không xuất hiện trong url "
+                "dưới dạng {" + t + "}. Tham số không dùng tới là dấu "
+                "hiệu cấu hình sai."
+            )
+    return {"url": url, "han_giay": float(ch.get("han_giay", 5.0))}
+
+
+def _kiem_mcp(ch: dict, ten_tham_so: set[str]) -> dict:
+    # Công cụ của máy chủ MCP: lược đồ tham số lấy NGUYÊN từ máy chủ, vì
+    # `ThamSo` chỉ biết chuỗi còn máy chủ khai số/mảng — dựng lại là mô
+    # hình điền sai kiểu. Vẫn kiểm hình dạng: đây là thứ đi vào lời gọi
+    # model ở MỌI lượt.
+    may_chu = _chu(ch.get("may_chu", ""), "cau_hinh.may_chu")
+    if not _TEN_MAY_CHU_RE.match(may_chu):
+        raise LoiBanMoTa("mcp cần cau_hinh.may_chu là tên máy chủ (chữ thường, số, gạch dưới, 2–20 ký tự).")
+    goc = _chu(ch.get("cong_cu_goc", ""), "cau_hinh.cong_cu_goc")
+    if not 1 <= len(goc) <= 100:
+        raise LoiBanMoTa("mcp cần cau_hinh.cong_cu_goc — tên công cụ ở máy chủ, 1–100 ký tự.")
+    luoc_do = ch.get("luoc_do")
+    if not isinstance(luoc_do, dict) or luoc_do.get("type") != "object":
+        raise LoiBanMoTa("cau_hinh.luoc_do phải là JSON Schema object (type = 'object').")
+    thuoc_tinh = luoc_do.get("properties") or {}
+    if not isinstance(thuoc_tinh, dict):
+        raise LoiBanMoTa("cau_hinh.luoc_do.properties phải là object.")
+    if len(thuoc_tinh) > LUOC_DO_THUOC_TINH_TOI_DA:
+        raise LoiBanMoTa(f"Lược đồ có {len(thuoc_tinh)} thuộc tính, quá {LUOC_DO_THUOC_TINH_TOI_DA}.")
+    # Lọc, chứ không chỉ kiểm rồi cho cả dict máy chủ gửi đi tiếp: xem
+    # `_KHOA_LUOC_DO`. Lược đồ này là chữ máy chủ ngoài viết cho mô hình
+    # đọc ở MỌI lượt, nên nó qua đúng bộ quét và đúng loạt trần như ô
+    # `mo_ta` mà người trong nhà gõ.
+    thuoc_tinh_sach = {k: _thuoc_tinh_sach(k, v) for k, v in thuoc_tinh.items()}
+    bat_buoc = [
+        r for r in _bat_buoc_sach(luoc_do.get("required"), "luoc_do.required")
+        if r in thuoc_tinh_sach
+    ]
+    luoc_do_sach = {
+        "type": "object", "properties": thuoc_tinh_sach, "required": bat_buoc,
+    }
+    # Trần trên CẢ lược đồ, đo sau khi lọc: từng thuộc tính đều dưới trần
+    # riêng mà 20 cái gộp lại vẫn thành vài nghìn ký tự, và số ấy nhân với
+    # mỗi lượt gọi mô hình chứ không phải một lần lúc lưu.
+    do_dai = len(json.dumps(luoc_do_sach, ensure_ascii=False))
+    if do_dai > LUOC_DO_JSON_TOI_DA:
+        raise LoiBanMoTa(
+            f"Lược đồ dài {do_dai} ký tự sau khi lọc, quá "
+            f"{LUOC_DO_JSON_TOI_DA}. Cả lược đồ này đi vào MỌI lời gọi mô "
+            "hình — công cụ cần nhiều tham số đến thế thì tách ở phía máy "
+            "chủ MCP."
+        )
+    for k in ("ghi", "ghi_cho_phep", "bat_truoc"):
+        if k in ch and not isinstance(ch[k], bool):
+            raise LoiBanMoTa(f"cau_hinh.{k} phải là true/false.")
+    ghi = bool(ch.get("ghi", False))
+    ra = {
+        "may_chu": may_chu, "cong_cu_goc": goc,
+        "luoc_do": luoc_do_sach,
+        "ghi": ghi,
+        # Cờ "cho phép ghi ngoài phòng thử" chỉ có nghĩa với công cụ ghi.
+        "ghi_cho_phep": bool(ch.get("ghi_cho_phep", False)) if ghi else False,
+    }
+    # `bat_truoc`: công cụ này có đang bật lúc TẮT máy chủ không —
+    # `kho_mcp.bat_tat` ghi vào lúc tắt và xoá đi lúc bật lại. Hàm này lọc
+    # khoá lạ (xem `_KHOA_LUOC_DO`), nên không kể tên ở đây là cờ rụng
+    # ngay lần ghi đầu và việc khôi phục lặng lẽ không bao giờ chạy. Chỉ
+    # kèm khi CÓ: mọi công cụ đều mang một khoá luôn False thì không phân
+    # biệt được "chưa từng tắt" với "tắt rồi, lúc ấy đang tắt".
+    if "bat_truoc" in ch:
+        ra["bat_truoc"] = bool(ch["bat_truoc"])
+    return ra
+
+
+# Một hàm kiểm cho mỗi loại plugin. Thêm loại mới mà quên thêm vào đây
+# thì `_kiem_cau_hinh` nổ "chưa có bộ kiểm" ngay lúc lưu — hỏng-đóng.
+_KIEM_THEO_LOAI = {
+    "tra_tai_lieu": _kiem_tra_tai_lieu,
+    "tra_bang": _kiem_tra_bang,
+    "chuyen_chuyen_biet": _kiem_chuyen_chuyen_biet,
+    "goi_api_doc": _kiem_goi_api_doc,
+    "mcp": _kiem_mcp,
+}
+
+
 def _kiem_cau_hinh(loai: str, ch: dict, tham_so: list[ThamSo]) -> dict:
     """Mỗi loại plugin có ô cấu hình riêng. Sai ở đây là hỏng lúc chạy."""
-    ten_tham_so = {t.ten for t in tham_so}
-
-    if loai == "tra_tai_lieu":
-        nhom = _chu(ch.get("nhom_tai_lieu", ""), "cau_hinh.nhom_tai_lieu")
-        if not nhom:
-            raise LoiBanMoTa(
-                "tra_tai_lieu cần cau_hinh.nhom_tai_lieu — một mẩu chữ có "
-                "trong TIÊU ĐỀ nhóm tài liệu muốn giới hạn, ví dụ 'bao-hanh'. "
-                "Bỏ trống thì plugin này thành bản sao của tim_kien_thuc."
-            )
-        if len(nhom) > 100:
-            raise LoiBanMoTa("cau_hinh.nhom_tai_lieu quá 100 ký tự.")
-        k = ch.get("k", 4)
-        if not isinstance(k, int) or not 1 <= k <= 8:
-            raise LoiBanMoTa("cau_hinh.k phải là số nguyên 1–8.")
-        if not ten_tham_so:
-            raise LoiBanMoTa(
-                "tra_tai_lieu cần đúng một tham số để nhận câu hỏi tra cứu."
-            )
-        return {"nhom_tai_lieu": nhom, "k": k}
-
-    if loai == "tra_bang":
-        bang = ch.get("bang")
-        if not isinstance(bang, dict) or not bang:
-            raise LoiBanMoTa(
-                "tra_bang cần cau_hinh.bang là object khoá→giá trị, ví dụ "
-                '{"hà nội": "Số 1 Trần Duy Hưng"}.'
-            )
-        if len(bang) > 500:
-            raise LoiBanMoTa("Bảng quá 500 dòng. Dữ liệu cỡ đó nên vào kho tri thức.")
-        sach: dict[str, str] = {}
-        for k_, v_ in bang.items():
-            if not isinstance(k_, str) or not isinstance(v_, str):
-                raise LoiBanMoTa("Mọi khoá và giá trị trong bang phải là chuỗi.")
-            if len(v_) > 500:
-                raise LoiBanMoTa(f"Giá trị của khoá {k_!r} quá 500 ký tự.")
-            sach[k_.strip()] = v_.strip()
-        if not ten_tham_so:
-            raise LoiBanMoTa("tra_bang cần đúng một tham số để nhận khoá cần tra.")
-        if (cap := khoa_long_nhau(sach)) is not None:
-            ngan, dai = cap
-            raise LoiBanMoTa(
-                f"Khoá {ngan!r} nằm lọt trong khoá {dai!r}. Câu hỏi nào chỉ "
-                f"chứa {ngan!r} sẽ nhận câu trả lời của dòng đó một cách chắc "
-                f"nịch, kể cả khi khách đang hỏi về dòng khác — không mơ hồ "
-                f"nên cũng không có ai hỏi lại. Hãy viết khoá đủ riêng, ví dụ "
-                f"{dai!r} và một tên cụ thể khác thay cho {ngan!r}."
-            )
-        return {"bang": sach}
-
-    if loai == "chuyen_chuyen_biet":
-        ly_do = _chu(ch.get("ly_do", ""), "cau_hinh.ly_do")
-        if not ly_do:
-            raise LoiBanMoTa(
-                "chuyen_chuyen_biet cần cau_hinh.ly_do — câu người trực đọc "
-                "để biết vì sao hội thoại tới tay mình."
-            )
-        if len(ly_do) > 200:
-            raise LoiBanMoTa("cau_hinh.ly_do quá 200 ký tự.")
-        return {"ly_do": ly_do}
-
-    if loai == "goi_api_doc":
-        url = _chu(ch.get("url", ""), "cau_hinh.url")
-        if not url:
-            raise LoiBanMoTa("goi_api_doc cần cau_hinh.url.")
-        # Kiểm URL nằm ở `mang.py` — nó cần tra DNS nên không kiểm được ở
-        # đây mà không kéo mạng vào một hàm thuần. Ở đây chỉ chặn dạng sai.
-        if not url.startswith(("http://", "https://")):
-            raise LoiBanMoTa("cau_hinh.url phải bắt đầu bằng https://.")
-        if len(url) > 400:
-            raise LoiBanMoTa("cau_hinh.url quá 400 ký tự.")
-        for t in ten_tham_so:
-            if "{" + t + "}" not in url:
-                raise LoiBanMoTa(
-                    f"Tham số {t!r} khai rồi nhưng không xuất hiện trong url "
-                    "dưới dạng {" + t + "}. Tham số không dùng tới là dấu "
-                    "hiệu cấu hình sai."
-                )
-        return {"url": url, "han_giay": float(ch.get("han_giay", 5.0))}
-
-    if loai == "mcp":
-        # Công cụ của máy chủ MCP: lược đồ tham số lấy NGUYÊN từ máy chủ, vì
-        # `ThamSo` chỉ biết chuỗi còn máy chủ khai số/mảng — dựng lại là mô
-        # hình điền sai kiểu. Vẫn kiểm hình dạng: đây là thứ đi vào lời gọi
-        # model ở MỌI lượt.
-        may_chu = _chu(ch.get("may_chu", ""), "cau_hinh.may_chu")
-        if not _TEN_MAY_CHU_RE.match(may_chu):
-            raise LoiBanMoTa("mcp cần cau_hinh.may_chu là tên máy chủ (chữ thường, số, gạch dưới, 2–20 ký tự).")
-        goc = _chu(ch.get("cong_cu_goc", ""), "cau_hinh.cong_cu_goc")
-        if not 1 <= len(goc) <= 100:
-            raise LoiBanMoTa("mcp cần cau_hinh.cong_cu_goc — tên công cụ ở máy chủ, 1–100 ký tự.")
-        luoc_do = ch.get("luoc_do")
-        if not isinstance(luoc_do, dict) or luoc_do.get("type") != "object":
-            raise LoiBanMoTa("cau_hinh.luoc_do phải là JSON Schema object (type = 'object').")
-        thuoc_tinh = luoc_do.get("properties") or {}
-        if not isinstance(thuoc_tinh, dict):
-            raise LoiBanMoTa("cau_hinh.luoc_do.properties phải là object.")
-        if len(thuoc_tinh) > LUOC_DO_THUOC_TINH_TOI_DA:
-            raise LoiBanMoTa(f"Lược đồ có {len(thuoc_tinh)} thuộc tính, quá {LUOC_DO_THUOC_TINH_TOI_DA}.")
-        # Lọc, chứ không chỉ kiểm rồi cho cả dict máy chủ gửi đi tiếp: xem
-        # `_KHOA_LUOC_DO`. Lược đồ này là chữ máy chủ ngoài viết cho mô hình
-        # đọc ở MỌI lượt, nên nó qua đúng bộ quét và đúng loạt trần như ô
-        # `mo_ta` mà người trong nhà gõ.
-        thuoc_tinh_sach = {k: _thuoc_tinh_sach(k, v) for k, v in thuoc_tinh.items()}
-        bat_buoc = [
-            r for r in _bat_buoc_sach(luoc_do.get("required"), "luoc_do.required")
-            if r in thuoc_tinh_sach
-        ]
-        luoc_do_sach = {
-            "type": "object", "properties": thuoc_tinh_sach, "required": bat_buoc,
-        }
-        # Trần trên CẢ lược đồ, đo sau khi lọc: từng thuộc tính đều dưới trần
-        # riêng mà 20 cái gộp lại vẫn thành vài nghìn ký tự, và số ấy nhân với
-        # mỗi lượt gọi mô hình chứ không phải một lần lúc lưu.
-        do_dai = len(json.dumps(luoc_do_sach, ensure_ascii=False))
-        if do_dai > LUOC_DO_JSON_TOI_DA:
-            raise LoiBanMoTa(
-                f"Lược đồ dài {do_dai} ký tự sau khi lọc, quá "
-                f"{LUOC_DO_JSON_TOI_DA}. Cả lược đồ này đi vào MỌI lời gọi mô "
-                "hình — công cụ cần nhiều tham số đến thế thì tách ở phía máy "
-                "chủ MCP."
-            )
-        for k in ("ghi", "ghi_cho_phep", "bat_truoc"):
-            if k in ch and not isinstance(ch[k], bool):
-                raise LoiBanMoTa(f"cau_hinh.{k} phải là true/false.")
-        ghi = bool(ch.get("ghi", False))
-        ra = {
-            "may_chu": may_chu, "cong_cu_goc": goc,
-            "luoc_do": luoc_do_sach,
-            "ghi": ghi,
-            # Cờ "cho phép ghi ngoài phòng thử" chỉ có nghĩa với công cụ ghi.
-            "ghi_cho_phep": bool(ch.get("ghi_cho_phep", False)) if ghi else False,
-        }
-        # `bat_truoc`: công cụ này có đang bật lúc TẮT máy chủ không —
-        # `kho_mcp.bat_tat` ghi vào lúc tắt và xoá đi lúc bật lại. Hàm này lọc
-        # khoá lạ (xem `_KHOA_LUOC_DO`), nên không kể tên ở đây là cờ rụng
-        # ngay lần ghi đầu và việc khôi phục lặng lẽ không bao giờ chạy. Chỉ
-        # kèm khi CÓ: mọi công cụ đều mang một khoá luôn False thì không phân
-        # biệt được "chưa từng tắt" với "tắt rồi, lúc ấy đang tắt".
-        if "bat_truoc" in ch:
-            ra["bat_truoc"] = bool(ch["bat_truoc"])
-        return ra
-
-    raise LoiBanMoTa(f"Loại {loai!r} chưa có bộ kiểm cấu hình.")
+    kiem = _KIEM_THEO_LOAI.get(loai)
+    if kiem is None:
+        raise LoiBanMoTa(f"Loại {loai!r} chưa có bộ kiểm cấu hình.")
+    return kiem(ch, {t.ten for t in tham_so})
 
 
 def thanh_cong_cu(bm: BanMoTa) -> dict:

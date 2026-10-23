@@ -72,10 +72,10 @@ jobs:
       - name: Chạy kiểm thử (kèm độ phủ)
         # Độ phủ đo trên `agent/` — mã chạy thật, không tính scripts/tests.
         # Ngưỡng là SÀN chống tụt, không phải mục tiêu: nâng dần khi thêm
-        # test hành vi. Đo lần đầu 14.10.2026; xem requirements-dev.txt.
+        # test hành vi. Đo lần đầu 14.10.2026 (68%); 23.10.2026 đo 72% -> sàn 70.
         run: |
           pip install -r requirements-dev.txt
-          python -m pytest tests/ -q --cov=agent --cov-report=term:skip-covered --cov-report=xml --cov-fail-under=68
+          python -m pytest tests/ -q --cov=agent --cov-report=term:skip-covered --cov-report=xml --cov-fail-under=70
 
       - name: Kiểm mọi module import được
         # pytest chỉ chạm tới module nào test import. Bước này bắt lỗi cú

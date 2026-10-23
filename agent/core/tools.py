@@ -844,37 +844,7 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     # Đặt TRƯỚC lời gọi danh mục: câu hỏi chính sách không cần đọc catalog,
     # và nạp catalog cho một câu hỏi về đổi trả là công vô ích mỗi lượt.
     if name == "tim_kien_thuc":
-        from agent.core import rag
-
-        cau_hoi = (args.get("cau_hoi") or "").strip()
-        if not cau_hoi:
-            return {"tim_thay": False, "ghi_chu": "Thiếu câu hỏi tra cứu."}
-
-        passages = await rag.retrieve(cau_hoi, k=TIM_K)
-        if not passages:
-            # Nói rõ phải làm gì tiếp. Trả về một dict rỗng thì model tự bịa
-            # ra đường đi, và đường nó hay chọn là đoán bừa.
-            return {
-                "tim_thay": False,
-                "ghi_chu": (
-                    "Kho tài liệu không có căn cứ cho câu này. KHÔNG được đoán. "
-                    "Hãy nói thẳng là mình chưa có thông tin, hoặc gọi "
-                    "chuyen_nhan_vien nếu khách cần câu trả lời chắc chắn. "
-                    "Đừng tra lại cùng một câu hỏi."
-                ),
-            }
-        return {
-            "tim_thay": True,
-            "doan": [
-                {
-                    "tai_lieu": p.doc_title,
-                    "noi_dung": p.content.strip()[:TIM_DAI_TOI_DA],
-                    "diem": round(p.score, 3),
-                }
-                for p in passages
-            ],
-            "ghi_chu": "Chỉ trả lời dựa trên các đoạn trên. Nêu tên tài liệu khi trích.",
-        }
+        return await _tim_kien_thuc(args)
 
     # CHỈ NẠP DANH MỤC CHO CÔNG CỤ THẬT SỰ CẦN.
     #
@@ -901,176 +871,15 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
 
     # ---------- tra cứu một sản phẩm ----------
     if name == "tra_cuu_san_pham":
-        q = _norm(args.get("ten_san_pham", ""))
-        ranked = sorted(
-            ((_score(q, sp), sp) for sp in products), key=lambda x: x[0], reverse=True
-        )
-        if ranked and ranked[0][0] >= 0.5:
-            best_score, best = ranked[0]
-            if len(ranked) > 1 and ranked[1][0] == best_score < 1.0:
-                return {
-                    "tim_thay": False,
-                    "ghi_chu": "Tên mơ hồ, khớp nhiều sản phẩm. Hỏi lại khách "
-                               "tên đầy đủ, tuyệt đối không đoán.",
-                    "ung_vien": [p.get("ten") for s, p in ranked if s == best_score],
-                }
-            out = {"tim_thay": True, **best}
-            out["con_hang"] = (best.get("ton_kho") or 0) > 0
-
-            # HẠN DÙNG — chỉ thêm khi BIẾT CHẮC.
-            #
-            # `Cong.han_dung()` trả về lô hết hạn sớm nhất trong số các lô
-            # ta biết chắc CÒN HÀNG, và trả None nếu không chắc. Không có
-            # nhánh nào ở đây đoán thay: thiếu khoá `han_su_dung` thì model
-            # không có gì để nói, đúng như ý muốn.
-            #
-            # Tuyệt đối không đặt một giá trị mặc định kiểu "không rõ" —
-            # chuỗi đó nằm trong ngữ cảnh là model sẽ nhắc lại nó với khách,
-            # và "hạn dùng: không rõ" nghe như một sự thật về sản phẩm chứ
-            # không phải một khoảng trống trong dữ liệu.
-            lo = await _han_dung(best.get("ma", ""))
-            if lo is not None:
-                out["han_su_dung"] = lo.het_han
-                out["ma_lo"] = lo.ma_lo
-            # Khách hỏi ĐÍCH DANH thì vẫn trả giá và tồn — hai số ấy có
-            # thật, đến từ ERP. Nhưng phải nói rõ là KHÔNG có nửa tư vấn,
-            # nếu không model sẽ lấp chỗ trống bằng suy đoán từ tên hàng.
-            if not best.get("duoc_gioi_thieu", True):
-                out["ghi_chu"] = (
-                    "Mặt hàng này CHƯA có hồ sơ tư vấn: giá và tồn kho là "
-                    "thật, nhưng không có căn cứ nào về loại da phù hợp, "
-                    "thành phần hay cách dùng. Chỉ được nói giá và còn hàng "
-                    "hay không. Khách hỏi thêm thì gọi chuyen_nhan_vien."
-                )
-            return out
-        return {
-            "tim_thay": False,
-            "ghi_chu": "Không có sản phẩm này trong danh mục. Đừng đoán — "
-                       "hãy nói không tìm thấy và hỏi lại tên chính xác.",
-            "goi_y_dung_ten": [p.get("ten") for p in products[:6]],
-        }
+        return await _tra_cuu_san_pham(args, products)
 
     # ---------- gợi ý theo nhu cầu ----------
     if name == "goi_y_san_pham":
-        loai_da = _norm(args.get("loai_da", ""))
-        nhu_cau = _norm(args.get("nhu_cau", ""))
-        nhom = _norm(args.get("nhom", ""))
-        gia_max = args.get("gia_toi_da")
-
-        hits = []
-        for sp in products:
-            if nhom and nhom not in _norm(sp.get("loai", "")):
-                continue
-            if gia_max and (sp.get("gia") or 0) > int(gia_max):
-                continue
-            # Mọi vế so sánh PHẢI đi qua _norm — nó bỏ dấu tiếng Việt. Trộn
-            # chuỗi đã bỏ dấu với chuỗi còn dấu là không bao giờ khớp.
-            if loai_da:
-                pool = _norm(" ".join(sp.get("da_phu_hop") or []))
-                if _norm("mọi loại da") not in pool and not any(
-                    w in pool for w in loai_da.split() if len(w) > 2
-                ):
-                    continue
-            if nhu_cau:
-                pool = _norm(
-                    " ".join(sp.get("van_de_ho_tro") or [])
-                    + " " + " ".join(sp.get("thanh_phan_chinh") or [])
-                    + " " + str(sp.get("ten", ""))
-                )
-                if not any(w in pool for w in nhu_cau.split() if len(w) > 2):
-                    continue
-            hits.append(sp)
-
-        if not hits:
-            return {
-                "so_luong": 0,
-                "ghi_chu": "Không có sản phẩm nào khớp tiêu chí. Hỏi thêm khách "
-                           "để thu hẹp, không được bịa sản phẩm.",
-            }
-        # SKU CHƯA CÓ HỒ SƠ TƯ VẤN THÌ KHÔNG ĐƯỢC GỢI Ý
-        #
-        # `agent/erp/cong.py:193` gắn cờ `duoc_gioi_thieu=False` cho mặt hàng
-        # có bên ERP mà chưa ai viết nửa tư vấn, và ghi `erp.thieu_ho_so`.
-        # Nhưng KHÔNG mã nào đọc cờ đó — đã tìm khắp repo: chỉ có nơi đặt,
-        # tài liệu, và test. Cảnh báo có, chặn thì không.
-        #
-        # Hậu quả đúng như `docs/van-hanh.md` mô tả: "agent giới thiệu một
-        # sản phẩm nghe rất chung chung". Nó biết tên và giá, không biết hợp
-        # loại da nào — và vẫn đem ra khuyên. Đó là phát ngôn không có căn cứ,
-        # đúng thứ cả hệ thống dựng lên để ngăn.
-        #
-        # Cờ VẮNG MẶT thì coi như được giới thiệu: nguồn `tep` không gắn cờ
-        # này, và mặc định chặn sẽ làm câm toàn bộ gợi ý trên bản chạy file.
-        du_can_cu = [h for h in hits if h.get("duoc_gioi_thieu", True)]
-        thieu_ho_so = [h.get("ten") for h in hits if not h.get("duoc_gioi_thieu", True)]
-
-        if not du_can_cu:
-            return {
-                "so_luong": 0,
-                "thieu_ho_so_tu_van": thieu_ho_so,
-                "ghi_chu": (
-                    "Có mặt hàng khớp tiêu chí nhưng CHƯA có hồ sơ tư vấn, nên "
-                    "không đủ căn cứ để khuyên. Nói thẳng với khách là cần nhân "
-                    "viên tư vấn kỹ hơn rồi gọi chuyen_nhan_vien. Tuyệt đối "
-                    "không suy đoán công dụng từ tên sản phẩm."
-                ),
-            }
-
-        con_hang = [h for h in du_can_cu if (h.get("ton_kho") or 0) > 0]
-        ket_qua = {
-            "so_luong": len(du_can_cu),
-            "san_pham": [_tom_tat(h) for h in (con_hang or du_can_cu)[:6]],
-            "het_hang": [
-                h.get("ten") for h in du_can_cu if (h.get("ton_kho") or 0) == 0
-            ],
-        }
-        if thieu_ho_so:
-            ket_qua["thieu_ho_so_tu_van"] = thieu_ho_so
-            ket_qua["ghi_chu"] = (
-                "Vài mặt hàng khác cũng khớp tiêu chí nhưng chưa có hồ sơ tư "
-                "vấn nên đã bị loại khỏi danh sách gợi ý. KHÔNG nhắc tên chúng "
-                "với khách."
-            )
-        return ket_qua
+        return await _goi_y_san_pham(args, products)
 
     # ---------- gửi ảnh sản phẩm ----------
     if name == "gui_anh_san_pham":
-        q = _norm(args.get("ten_san_pham", ""))
-        ranked = sorted(
-            ((_score(q, sp), sp) for sp in products), key=lambda x: x[0], reverse=True
-        )
-        if not ranked or ranked[0][0] < 0.5:
-            return {"gui_duoc": False,
-                    "ly_do": "Không rõ khách muốn xem ảnh sản phẩm nào. Hỏi lại tên."}
-        sp = ranked[0][1]
-        anh = _anh_san_pham(sp["ma"])
-        if not anh:
-            return {"gui_duoc": False,
-                    "ly_do": f"Chưa có ảnh cho {sp['ten']}. Mô tả bằng lời thay vì hứa gửi ảnh."}
-
-        # CHỐT NGUỒN ẢNH — đặt ở đây vì đây là chỗ ảnh đi ra tay khách.
-        # Xem `_duoc_gui_anh` cho lý do đầy đủ: sáu lớp lưới đều soi CHỮ,
-        # nên một tuyên bố quảng cáo nằm trong ẢNH đi qua được tất cả.
-        duoc, vi_sao = _duoc_gui_anh(
-            _nguon_anh(sp["ma"]), bool(catalog.get("du_lieu_mau")),
-        )
-        if not duoc:
-            return {"gui_duoc": False, "ly_do": vi_sao}
-
-        # Tool KHÔNG tự gửi. Nó báo "gửi được" kèm đường dẫn; việc gửi do
-        # lớp kênh làm trong main.py — cùng cách `tao_video` báo `da_nhan`.
-        # Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không
-        # nên biết.
-        return {
-            "gui_duoc": True,
-            "ma": sp["ma"],
-            "ten": sp["ten"],
-            "duong_dan": str(anh),
-            "ghi_chu_cho_agent": (
-                "Ảnh đang được gửi. Vẫn phải trả lời bằng lời như bình thường, "
-                "đừng chỉ nói 'em gửi ảnh nhé' rồi dừng."
-            ),
-        }
+        return await _gui_anh_san_pham(args, products, catalog)
 
     # ---------- đơn hàng ----------
     if name == "tra_cuu_don_hang":
@@ -1100,6 +909,217 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
         return await _tao_video(args, products, conversation_id)
 
     return {"loi": f"Không có công cụ tên {name}"}
+
+
+async def _tim_kien_thuc(args: dict) -> dict:
+    """Tra kho tri thức. Không đọc danh mục — câu hỏi chính sách không cần."""
+    from agent.core import rag
+
+    cau_hoi = (args.get("cau_hoi") or "").strip()
+    if not cau_hoi:
+        return {"tim_thay": False, "ghi_chu": "Thiếu câu hỏi tra cứu."}
+
+    passages = await rag.retrieve(cau_hoi, k=TIM_K)
+    if not passages:
+        # Nói rõ phải làm gì tiếp. Trả về một dict rỗng thì model tự bịa
+        # ra đường đi, và đường nó hay chọn là đoán bừa.
+        return {
+            "tim_thay": False,
+            "ghi_chu": (
+                "Kho tài liệu không có căn cứ cho câu này. KHÔNG được đoán. "
+                "Hãy nói thẳng là mình chưa có thông tin, hoặc gọi "
+                "chuyen_nhan_vien nếu khách cần câu trả lời chắc chắn. "
+                "Đừng tra lại cùng một câu hỏi."
+            ),
+        }
+    return {
+        "tim_thay": True,
+        "doan": [
+            {
+                "tai_lieu": p.doc_title,
+                "noi_dung": p.content.strip()[:TIM_DAI_TOI_DA],
+                "diem": round(p.score, 3),
+            }
+            for p in passages
+        ],
+        "ghi_chu": "Chỉ trả lời dựa trên các đoạn trên. Nêu tên tài liệu khi trích.",
+    }
+
+
+async def _tra_cuu_san_pham(args: dict, products: list[dict]) -> dict:
+    """Tra ĐÍCH DANH một sản phẩm: giá, tồn, hạn dùng nếu biết chắc."""
+    q = _norm(args.get("ten_san_pham", ""))
+    ranked = sorted(
+        ((_score(q, sp), sp) for sp in products), key=lambda x: x[0], reverse=True
+    )
+    if ranked and ranked[0][0] >= 0.5:
+        best_score, best = ranked[0]
+        if len(ranked) > 1 and ranked[1][0] == best_score < 1.0:
+            return {
+                "tim_thay": False,
+                "ghi_chu": "Tên mơ hồ, khớp nhiều sản phẩm. Hỏi lại khách "
+                           "tên đầy đủ, tuyệt đối không đoán.",
+                "ung_vien": [p.get("ten") for s, p in ranked if s == best_score],
+            }
+        out = {"tim_thay": True, **best}
+        out["con_hang"] = (best.get("ton_kho") or 0) > 0
+
+        # HẠN DÙNG — chỉ thêm khi BIẾT CHẮC.
+        #
+        # `Cong.han_dung()` trả về lô hết hạn sớm nhất trong số các lô
+        # ta biết chắc CÒN HÀNG, và trả None nếu không chắc. Không có
+        # nhánh nào ở đây đoán thay: thiếu khoá `han_su_dung` thì model
+        # không có gì để nói, đúng như ý muốn.
+        #
+        # Tuyệt đối không đặt một giá trị mặc định kiểu "không rõ" —
+        # chuỗi đó nằm trong ngữ cảnh là model sẽ nhắc lại nó với khách,
+        # và "hạn dùng: không rõ" nghe như một sự thật về sản phẩm chứ
+        # không phải một khoảng trống trong dữ liệu.
+        lo = await _han_dung(best.get("ma", ""))
+        if lo is not None:
+            out["han_su_dung"] = lo.het_han
+            out["ma_lo"] = lo.ma_lo
+        # Khách hỏi ĐÍCH DANH thì vẫn trả giá và tồn — hai số ấy có
+        # thật, đến từ ERP. Nhưng phải nói rõ là KHÔNG có nửa tư vấn,
+        # nếu không model sẽ lấp chỗ trống bằng suy đoán từ tên hàng.
+        if not best.get("duoc_gioi_thieu", True):
+            out["ghi_chu"] = (
+                "Mặt hàng này CHƯA có hồ sơ tư vấn: giá và tồn kho là "
+                "thật, nhưng không có căn cứ nào về loại da phù hợp, "
+                "thành phần hay cách dùng. Chỉ được nói giá và còn hàng "
+                "hay không. Khách hỏi thêm thì gọi chuyen_nhan_vien."
+            )
+        return out
+    return {
+        "tim_thay": False,
+        "ghi_chu": "Không có sản phẩm này trong danh mục. Đừng đoán — "
+                   "hãy nói không tìm thấy và hỏi lại tên chính xác.",
+        "goi_y_dung_ten": [p.get("ten") for p in products[:6]],
+    }
+
+
+async def _goi_y_san_pham(args: dict, products: list[dict]) -> dict:
+    """Gợi ý theo loại da / nhu cầu / nhóm / giá — chỉ hàng ĐỦ hồ sơ tư vấn."""
+    loai_da = _norm(args.get("loai_da", ""))
+    nhu_cau = _norm(args.get("nhu_cau", ""))
+    nhom = _norm(args.get("nhom", ""))
+    gia_max = args.get("gia_toi_da")
+
+    hits = []
+    for sp in products:
+        if nhom and nhom not in _norm(sp.get("loai", "")):
+            continue
+        if gia_max and (sp.get("gia") or 0) > int(gia_max):
+            continue
+        # Mọi vế so sánh PHẢI đi qua _norm — nó bỏ dấu tiếng Việt. Trộn
+        # chuỗi đã bỏ dấu với chuỗi còn dấu là không bao giờ khớp.
+        if loai_da:
+            pool = _norm(" ".join(sp.get("da_phu_hop") or []))
+            if _norm("mọi loại da") not in pool and not any(
+                w in pool for w in loai_da.split() if len(w) > 2
+            ):
+                continue
+        if nhu_cau:
+            pool = _norm(
+                " ".join(sp.get("van_de_ho_tro") or [])
+                + " " + " ".join(sp.get("thanh_phan_chinh") or [])
+                + " " + str(sp.get("ten", ""))
+            )
+            if not any(w in pool for w in nhu_cau.split() if len(w) > 2):
+                continue
+        hits.append(sp)
+
+    if not hits:
+        return {
+            "so_luong": 0,
+            "ghi_chu": "Không có sản phẩm nào khớp tiêu chí. Hỏi thêm khách "
+                       "để thu hẹp, không được bịa sản phẩm.",
+        }
+    # SKU CHƯA CÓ HỒ SƠ TƯ VẤN THÌ KHÔNG ĐƯỢC GỢI Ý
+    #
+    # `agent/erp/cong.py:193` gắn cờ `duoc_gioi_thieu=False` cho mặt hàng
+    # có bên ERP mà chưa ai viết nửa tư vấn, và ghi `erp.thieu_ho_so`.
+    # Nhưng KHÔNG mã nào đọc cờ đó — đã tìm khắp repo: chỉ có nơi đặt,
+    # tài liệu, và test. Cảnh báo có, chặn thì không.
+    #
+    # Hậu quả đúng như `docs/van-hanh.md` mô tả: "agent giới thiệu một
+    # sản phẩm nghe rất chung chung". Nó biết tên và giá, không biết hợp
+    # loại da nào — và vẫn đem ra khuyên. Đó là phát ngôn không có căn cứ,
+    # đúng thứ cả hệ thống dựng lên để ngăn.
+    #
+    # Cờ VẮNG MẶT thì coi như được giới thiệu: nguồn `tep` không gắn cờ
+    # này, và mặc định chặn sẽ làm câm toàn bộ gợi ý trên bản chạy file.
+    du_can_cu = [h for h in hits if h.get("duoc_gioi_thieu", True)]
+    thieu_ho_so = [h.get("ten") for h in hits if not h.get("duoc_gioi_thieu", True)]
+
+    if not du_can_cu:
+        return {
+            "so_luong": 0,
+            "thieu_ho_so_tu_van": thieu_ho_so,
+            "ghi_chu": (
+                "Có mặt hàng khớp tiêu chí nhưng CHƯA có hồ sơ tư vấn, nên "
+                "không đủ căn cứ để khuyên. Nói thẳng với khách là cần nhân "
+                "viên tư vấn kỹ hơn rồi gọi chuyen_nhan_vien. Tuyệt đối "
+                "không suy đoán công dụng từ tên sản phẩm."
+            ),
+        }
+
+    con_hang = [h for h in du_can_cu if (h.get("ton_kho") or 0) > 0]
+    ket_qua = {
+        "so_luong": len(du_can_cu),
+        "san_pham": [_tom_tat(h) for h in (con_hang or du_can_cu)[:6]],
+        "het_hang": [
+            h.get("ten") for h in du_can_cu if (h.get("ton_kho") or 0) == 0
+        ],
+    }
+    if thieu_ho_so:
+        ket_qua["thieu_ho_so_tu_van"] = thieu_ho_so
+        ket_qua["ghi_chu"] = (
+            "Vài mặt hàng khác cũng khớp tiêu chí nhưng chưa có hồ sơ tư "
+            "vấn nên đã bị loại khỏi danh sách gợi ý. KHÔNG nhắc tên chúng "
+            "với khách."
+        )
+    return ket_qua
+
+
+async def _gui_anh_san_pham(args: dict, products: list[dict], catalog: dict) -> dict:
+    """Báo ảnh nào được gửi. KHÔNG tự gửi — lớp kênh gửi sau."""
+    q = _norm(args.get("ten_san_pham", ""))
+    ranked = sorted(
+        ((_score(q, sp), sp) for sp in products), key=lambda x: x[0], reverse=True
+    )
+    if not ranked or ranked[0][0] < 0.5:
+        return {"gui_duoc": False,
+                "ly_do": "Không rõ khách muốn xem ảnh sản phẩm nào. Hỏi lại tên."}
+    sp = ranked[0][1]
+    anh = _anh_san_pham(sp["ma"])
+    if not anh:
+        return {"gui_duoc": False,
+                "ly_do": f"Chưa có ảnh cho {sp['ten']}. Mô tả bằng lời thay vì hứa gửi ảnh."}
+
+    # CHỐT NGUỒN ẢNH — đặt ở đây vì đây là chỗ ảnh đi ra tay khách.
+    # Xem `_duoc_gui_anh` cho lý do đầy đủ: sáu lớp lưới đều soi CHỮ,
+    # nên một tuyên bố quảng cáo nằm trong ẢNH đi qua được tất cả.
+    duoc, vi_sao = _duoc_gui_anh(
+        _nguon_anh(sp["ma"]), bool(catalog.get("du_lieu_mau")),
+    )
+    if not duoc:
+        return {"gui_duoc": False, "ly_do": vi_sao}
+
+    # Tool KHÔNG tự gửi. Nó báo "gửi được" kèm đường dẫn; việc gửi do
+    # lớp kênh làm trong main.py — cùng cách `tao_video` báo `da_nhan`.
+    # Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không
+    # nên biết.
+    return {
+        "gui_duoc": True,
+        "ma": sp["ma"],
+        "ten": sp["ten"],
+        "duong_dan": str(anh),
+        "ghi_chu_cho_agent": (
+            "Ảnh đang được gửi. Vẫn phải trả lời bằng lời như bình thường, "
+            "đừng chỉ nói 'em gửi ảnh nhé' rồi dừng."
+        ),
+    }
 
 
 # ===============================================================

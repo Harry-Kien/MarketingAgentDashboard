@@ -4,6 +4,7 @@ import { Zalo } from 'zca-js';
 
 import { verifyRequest } from './auth.mjs';
 import { layMetadataAnh } from './anh-metadata.mjs';
+import { kiemDiaChiNghe } from './dia-chi-nghe.mjs';
 import { SessionManager } from './session-manager.mjs';
 
 const host = process.env.ZALO_SIDECAR_HOST ?? '127.0.0.1';
@@ -11,9 +12,7 @@ const port = Number(process.env.ZALO_SIDECAR_PORT ?? 3210);
 const secret = process.env.ZALO_SIDECAR_SECRET ?? '';
 const callbackUrl = process.env.ZALO_CONTROL_PLANE_URL ?? 'http://127.0.0.1:8000/webhook/native/zalo-personal';
 if (secret.length < 32) throw new Error('ZALO_SIDECAR_SECRET phải dài ít nhất 32 ký tự');
-if (!['127.0.0.1', '::1', 'localhost'].includes(host)) {
-  throw new Error('Sidecar chỉ được bind localhost');
-}
+kiemDiaChiNghe(host, process.env);
 
 async function callback(accountId, event, data) {
   const body = JSON.stringify({ event, ...(event === 'message' ? { message: data } : { data }) });

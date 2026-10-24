@@ -8,6 +8,9 @@ ENV NODE_ENV=production \
     # Trong mạng nội bộ của cửa hàng: app gọi sidecar bằng tên dịch vụ, nên
     # phải nghe trên mọi giao diện CỦA CONTAINER — cổng không mở ra ngoài.
     ZALO_SIDECAR_HOST=0.0.0.0 \
+    # Cờ cho phép nghe ngoài localhost — mã chặn 0.0.0.0 nếu thiếu cờ này
+    # (src/dia-chi-nghe.mjs). Thiếu cờ là container khởi động lại vô hạn.
+    ZALO_SIDECAR_TRONG_CONTAINER=1 \
     ZALO_SIDECAR_PORT=3210
 
 WORKDIR /srv

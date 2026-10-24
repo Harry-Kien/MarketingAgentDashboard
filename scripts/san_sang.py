@@ -28,6 +28,7 @@ bỏ qua cả hai.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 from pathlib import Path
@@ -49,6 +50,49 @@ MAU_MAC_DINH = ("doi-chuoi", "thay-doi", "changeme", "password", "secret",
 
 def _muc(ten: str, muc: str, ghi: str, sua: str = "") -> dict:
     return {"ten": ten, "muc": muc, "ghi": ghi, "sua": sua}
+
+
+def trong_silo() -> bool:
+    """
+    Đang chạy trong container của một cửa hàng (mô hình silo, VPS)?
+
+    Bốn mục dưới đây được viết cho máy chạy tay (Windows, .env là tệp, sao
+    lưu và người canh chạy NGAY trên máy). Trong container thì cấu hình là
+    biến môi trường, sao lưu và người canh do MẶT PHẲNG ĐIỀU KHIỂN chạy từ
+    bên ngoài (`scripts/cua_hang.py`), cổng chỉ Caddy mở. Đo 24.10.2026:
+    chạy nguyên bản trong container ra 5 việc CHẶN, ba trong đó giả — một
+    bảng đỏ giả là bảng người ta thôi đọc, và lúc đó mục đỏ THẬT trốn trong
+    đám đỏ giả.
+
+    Cờ đặt RÕ trong `.env` của cửa hàng (trien_khai/mau/env.cua_hang), không
+    đoán qua `/.dockerenv`: đoán sai là âm thầm bỏ kiểm.
+    """
+    return os.environ.get("CSKH_SILO") == "1"
+
+
+def _dau_moc(ten_tep: str) -> dict | None:
+    """Dấu mốc mặt phẳng điều khiển ghi vào volume của cửa hàng (JSON có `luc`)."""
+    f = ROOT / "data" / ten_tep
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"luc": None, "hong": "tệp dấu mốc không đọc được"}
+
+
+def _tuoi_gio(luc: str | None) -> float | None:
+    from datetime import datetime, timezone
+
+    if not luc:
+        return None
+    try:
+        t = datetime.fromisoformat(luc)
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - t).total_seconds() / 3600
 
 
 def _cong_mo_ra_ngoai(cong: int) -> bool:
@@ -78,10 +122,15 @@ def _cong_mo_ra_ngoai(cong: int) -> bool:
 def kiem_bi_mat() -> dict:
     """Việc 1 — đổi mọi bí mật mặc định."""
     env = ROOT / ".env"
-    if not env.exists():
+    if trong_silo() and not env.exists():
+        # Container: cấu hình là biến môi trường (env_file của compose).
+        dong_env = [f"{k}={v}" for k, v in os.environ.items()]
+    elif not env.exists():
         return _muc("Bí mật", CHAN, "chưa có file .env", "cp .env.example .env")
+    else:
+        dong_env = env.read_text(encoding="utf-8", errors="replace").splitlines()
     xau = []
-    for dong in env.read_text(encoding="utf-8", errors="replace").splitlines():
+    for dong in dong_env:
         d = dong.strip()
         if not d or d.startswith("#") or "=" not in d:
             continue
@@ -131,6 +180,13 @@ def kiem_cong() -> dict:
     một dấu xanh vì lý do đó tệ hơn không kiểm: nó khiến người ta bật dịch
     vụ lên rồi tưởng đã kiểm rồi.
     """
+    if trong_silo():
+        # Trong container, app nghe 0.0.0.0 TRONG mạng Docker — thử nối từ
+        # IP của container luôn "mở", vô nghĩa. Điều cần canh là compose
+        # không publish cổng nào ngoài Caddy; tests/test_trien_khai_cong.py
+        # canh điều đó ở mẫu compose.
+        return _muc("Cổng ra mạng LAN", DU,
+                    "container silo: chỉ Caddy mở 80/443, app/sidecar/Postgres không publish cổng")
     ho = [(3210, "Zalo sidecar"), (5678, "n8n"), (5433, "PostgreSQL"), (8000, "Dashboard")]
     chay = [(c, t) for c, t in ho if _dang_chay(c)]
     if not chay:
@@ -173,8 +229,36 @@ async def kiem_tai_khoan() -> dict:
     return _muc("Tài khoản", DU, f"{len(r)} tài khoản ({qt} quản trị)")
 
 
+def doc_sao_luu_silo(sao_luu: dict | None, phuc_hoi: dict | None) -> dict:
+    """
+    Phần thuần, cho container silo: `sao_luu` / `phuc_hoi` là dấu mốc mặt
+    phẳng điều khiển ghi sau MỖI lần `cua_hang sao_luu` / `thu_phuc_hoi`
+    THÀNH CÔNG (thất bại thì không ghi — dấu mốc cũ dần lên và mục này đỏ).
+    """
+    ten = "Sao lưu"
+    sua = ("Trên máy chủ: python3 -m scripts.cua_hang sao_luu --tat-ca (cron 2 giờ sáng, "
+           "do scripts/cai_vps.sh đặt) rồi python3 -m scripts.cua_hang thu_phuc_hoi <ma>")
+    tuoi = _tuoi_gio((sao_luu or {}).get("luc"))
+    if tuoi is None:
+        return _muc(ten, CHAN, "chưa có bản sao lưu nào do máy chủ ghi nhận", sua)
+    if tuoi > 36:
+        return _muc(ten, CANH_BAO, f"bản mới nhất đã {int(tuoi)} giờ — lịch sao lưu đã ngừng?", sua)
+    tuoi_ph = _tuoi_gio((phuc_hoi or {}).get("luc"))
+    if tuoi_ph is None:
+        return _muc(ten, CANH_BAO,
+                    f"sao lưu {int(tuoi)} giờ trước, nhưng CHƯA TỪNG thử phục hồi", sua)
+    if tuoi_ph > 24 * 31:
+        return _muc(ten, CANH_BAO,
+                    f"lần thử phục hồi cuối đã {int(tuoi_ph // 24)} ngày", sua)
+    return _muc(ten, DU,
+                f"sao lưu {int(tuoi)} giờ trước · thử phục hồi được "
+                f"{(phuc_hoi or {}).get('so_bang', '?')} bảng, {int(tuoi_ph // 24)} ngày trước")
+
+
 def kiem_sao_luu() -> dict:
     """Việc 5 — sao lưu tự động, và đã thử phục hồi."""
+    if trong_silo():
+        return doc_sao_luu_silo(_dau_moc(".sao_luu_ngoai"), _dau_moc(".thu_phuc_hoi"))
     thu_muc = ROOT / "data" / "backup"
     if not thu_muc.exists() or not any(thu_muc.iterdir()):
         return _muc("Sao lưu", CHAN, "chưa có bản sao lưu nào",
@@ -357,7 +441,10 @@ def doc_nguoi_canh(tuoi_phut: float | None) -> dict:
     biết nó đã chạy lại chưa và đã làm gì.
     """
     ten = "Người canh bên ngoài"
-    sua = ("Đăng ký task 5 phút một lần: xem đầu scripts/canh_gac_ngoai.py "
+    sua = ("Trên VPS: cron `cua_hang kiem --sua` 5 phút một lần (scripts/cai_vps.sh "
+           "đặt sẵn). Trên máy Windows: task schtasks, xem đầu scripts/canh_gac_ngoai.py. "
+           "Không có nó, app chết lúc 2 giờ sáng là chết tới sáng") if trong_silo() else (
+           "Đăng ký task 5 phút một lần: xem đầu scripts/canh_gac_ngoai.py "
            "(schtasks trên Windows, cron trên Linux). Không có nó, app chết "
            "lúc 2 giờ sáng là chết tới sáng")
     if tuoi_phut is None:
@@ -1037,6 +1124,51 @@ async def kiem_ton_kho() -> dict:
     )
 
 
+def doc_erp_song(loai: str, loi: str | None) -> dict:
+    """
+    Phần thuần: ERP được cấu hình có TRẢ LỜI không.
+
+    Đo 24.10.2026: ERPNext đã tắt SÁU ngày, bộ ngắt mạch nổ 91 lần, và bảng
+    này vẫn ghi "Ghi đơn sang ERP: đủ" — mục ấy chỉ đọc hai công tắc trong
+    .env, chưa bao giờ hỏi ERP. Agent không nói sai (lùi về danh mục tệp)
+    nhưng giá và tồn là số CŨ, và đơn không sang ERP. Xanh giả kiểu này
+    đúng là thứ bảng này sinh ra để diệt.
+    """
+    ten = "ERP trả lời"
+    if (loai or "tep").strip().lower() == "tep":
+        return _muc(ten, DU, "không dùng ERP — danh mục và kho trong hệ thống")
+    if loi is None:
+        return _muc(ten, DU, f"{loai} trả lời")
+    return _muc(ten, CHAN, f"{loai} KHÔNG trả lời ({loi}) — giá/tồn đang là số cũ từ tệp, "
+                           "đơn không sang ERP",
+                "Bật lại ERP (docker compose -f docker-compose.erpnext.yml up -d trên máy "
+                "này; trên VPS: python3 -m scripts.cua_hang erp chay). Hoặc đặt ERP_LOAI=tep "
+                "nếu thôi dùng ERP")
+
+
+async def kiem_erp_song() -> dict:
+    loai = (settings.erp_loai or "tep").strip().lower()
+    if loai == "tep":
+        return doc_erp_song(loai, None)
+    if loai != "erpnext":
+        # Không đoán là "trả lời" cho loại chưa có phép kiểm — đó là xanh giả.
+        return _muc("ERP trả lời", CANH_BAO, f"chưa có phép kiểm sống cho {loai}",
+                    "Mở ERP xem tận mắt, hoặc chạy python -m scripts.thu_erp")
+    import httpx
+
+    url = (settings.erpnext_url or "").rstrip("/")
+    if not url:
+        return doc_erp_song(loai, "ERPNEXT_URL trống")
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            r = await c.get(f"{url}/api/method/ping")
+        if r.status_code != 200:
+            return doc_erp_song(loai, f"HTTP {r.status_code}")
+    except httpx.HTTPError as exc:
+        return doc_erp_song(loai, type(exc).__name__)
+    return doc_erp_song(loai, None)
+
+
 async def chay() -> int:
     muc = [
         kiem_bi_mat(), await kiem_khoa_api(), await kiem_embedding(),
@@ -1046,7 +1178,7 @@ async def chay() -> int:
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),
-        kiem_ghi_don(), kiem_van_chuyen(),
+        await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
         kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]

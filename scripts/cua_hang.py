@@ -219,8 +219,15 @@ def _chay_that(lenh: list[str], *, dau_vao: str | None = None,
 
 def _chay_nhi_phan(lenh, *, dau_vao=None, cwd=None, nhi_phan=False):
     if nhi_phan:
-        return subprocess.run(lenh, cwd=cwd, capture_output=True, check=False)
+        # dau_vao dạng bytes: đẩy bản sao lưu vào pg_restore qua stdin.
+        return subprocess.run(lenh, cwd=cwd, input=dau_vao, capture_output=True, check=False)
     return _chay_that(lenh, dau_vao=dau_vao, cwd=cwd)
+
+
+def _bay_gio() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class MatPhang:
@@ -368,7 +375,86 @@ class MatPhang:
         if kq.returncode != 0 or not kq.stdout:
             raise LoiCuaHang(f"pg_dump ch_{ma} hỏng hoặc rỗng — KHÔNG có bản sao lưu.")
         tep.write_bytes(kq.stdout)
+        # Dấu mốc cho `san_sang` trong container — CHỈ ghi khi thành công, nên
+        # lịch sao lưu ngừng thì dấu mốc cũ dần và mục Sao lưu tự đỏ.
+        self._ghi_dau_moc(ma, ".sao_luu_ngoai",
+                          {"luc": _bay_gio(), "tep": tep.name, "byte": len(kq.stdout)})
         return tep
+
+    def _ghi_dau_moc(self, ma: str, ten: str, noi_dung: dict) -> bool:
+        """Ghi một tệp JSON nhỏ vào volume dữ liệu của cửa hàng (qua container app)."""
+        kq = self.chay(["docker", "exec", "-i", f"cskh-{ma}-app", "sh", "-c",
+                        f"cat > /app/data/{ten}"], dau_vao=json.dumps(noi_dung))
+        return kq.returncode == 0
+
+    def thu_phuc_hoi(self, ma: str) -> dict:
+        """
+        Phục hồi bản sao lưu MỚI NHẤT vào một CSDL tạm, đếm bảng, so với CSDL
+        thật, rồi xoá CSDL tạm. Không đụng CSDL đang chạy.
+
+        Bản sao lưu chưa từng phục hồi thử thì chưa phải bản sao lưu: tệp có
+        thể rỗng một nửa, thiếu extension, hay hỏng định dạng — và chỉ biết
+        vào đúng ngày cần nó.
+        """
+        kiem_ma(ma)
+        ds = sorted((self.goc / "sao_luu" / ma).glob(f"ch_{ma}-*.dump"))
+        if not ds:
+            raise LoiCuaHang(f"chưa có bản sao lưu nào của {ma} — chạy sao_luu {ma} trước.")
+        tep = ds[-1]
+        tam = f"thu_{ma}_{time.strftime('%Y%m%d%H%M%S')}"
+        self.sql("postgres", f"CREATE DATABASE {tam};")
+        try:
+            self.sql(tam, 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS '
+                          'unaccent; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF '
+                          'NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS pgcrypto;')
+            kq = self.chay(["docker", "exec", "-i", PG, "pg_restore", "-U", PG_QUAN_TRI,
+                            "-d", tam, "--no-owner", "--exit-on-error"],
+                           dau_vao=tep.read_bytes(), nhi_phan=True)
+            if kq.returncode != 0:
+                loi = (kq.stderr or b"").decode("utf-8", "replace").strip()[:400]
+                raise LoiCuaHang(f"phục hồi {tep.name} HỎNG: {loi}")
+            dem = ("SELECT count(*) FROM information_schema.tables "
+                   "WHERE table_schema = 'public';")
+            so_bang = int(self.sql(tam, dem, mot_dong=True).strip() or 0)
+            so_that = int(self.sql(f"ch_{ma}", dem, mot_dong=True).strip() or 0)
+            so_tin = int(self.sql(tam, "SELECT count(*) FROM messages;", mot_dong=True).strip() or 0)
+            if so_bang == 0 or so_bang < so_that:
+                raise LoiCuaHang(f"bản phục hồi có {so_bang} bảng, CSDL thật có {so_that} — thiếu.")
+        finally:
+            self.sql("postgres", f"DROP DATABASE IF EXISTS {tam} WITH (FORCE);")
+        kq_moc = {"luc": _bay_gio(), "tep": tep.name, "so_bang": so_bang, "so_tin": so_tin}
+        self._ghi_dau_moc(ma, ".thu_phuc_hoi", kq_moc)
+        return kq_moc
+
+    def sua_hong(self) -> list[tuple[str, str]]:
+        """
+        Người canh trên VPS (cron 5 phút): container app/sidecar nào không
+        chạy hoặc `unhealthy` thì khởi động lại; MỌI lượt ghi nhịp đập vào
+        volume để `san_sang` biết người canh còn sống.
+
+        `restart: unless-stopped` chỉ lo container THOÁT. Container còn sống
+        mà treo (healthcheck đỏ) thì Docker không tự khởi động lại — đúng
+        kiểu chết mà vẫn "Up".
+        """
+        viec: list[tuple[str, str]] = []
+        for c in self.danh_sach():
+            if c["trang_thai"] != "chay":
+                continue
+            ma = c["ma"]
+            for vai in ("app", "sidecar"):
+                ten = f"cskh-{ma}-{vai}"
+                kq = self.chay(["docker", "inspect", "-f",
+                                "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}",
+                                ten])
+                trang = (kq.stdout or "").strip() if kq.returncode == 0 else "không có"
+                if trang.startswith("running") and "unhealthy" not in trang:
+                    continue
+                r = self.chay(["docker", "start" if not trang.startswith("running") else "restart",
+                               ten])
+                viec.append((ten, f"{trang or '?'} -> " + ("đã bật lại" if r.returncode == 0
+                                                        else f"BẬT LẠI HỎNG: {(r.stderr or '')[:120]}")))
+            self._ghi_dau_moc(ma, ".canh_gac_ngoai", {"luc": _bay_gio()})
+        return viec
 
     def xoa(self, ma: str, xac_nhan: str) -> Path:
         kiem_ma(ma)
@@ -395,12 +481,39 @@ def _chi_chu_doc(tep: Path) -> None:
         pass                    # Windows: quyền theo ACL, không theo chmod
 
 
+def bao_nguoi_van_hanh(noi_dung: str, goc: Path = TRIEN_KHAI) -> bool:
+    """
+    Gửi một dòng tới webhook của NGƯỜI VẬN HÀNH (`CANH_GAC_WEBHOOK` trong
+    .env.nen — khác webhook của từng cửa hàng). Không có thì chỉ in: cron
+    gửi đầu ra qua thư nếu máy có cấu hình mail, còn không thì nằm trong
+    /var/log/cskh-canh.log do scripts/cai_vps.sh đặt.
+    """
+    tep = goc / ".env.nen"
+    m = re.search(r"^CANH_GAC_WEBHOOK=(.+)$", tep.read_text(encoding="utf-8"), re.M) \
+        if tep.exists() else None
+    if not m or not m.group(1).strip():
+        return False
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            m.group(1).strip(), data=json.dumps({"text": noi_dung}).encode("utf-8"),
+            headers={"content-type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10):
+            return True
+    except OSError as exc:
+        print(f"Không gửi được báo động: {type(exc).__name__}", file=sys.stderr)
+        return False
+
+
 def khoi_tao(goc: Path = TRIEN_KHAI, email: str = "") -> list[str]:
     """Sinh .env.nen (mật khẩu superuser Postgres) và Caddyfile rỗng nếu chưa có."""
     viec = []
     env = goc / ".env.nen"
     if not env.exists():
-        env.write_text(f"POSTGRES_MAT_KHAU={secrets.token_urlsafe(32)}\nTLS_EMAIL={email}\n",
+        env.write_text(f"POSTGRES_MAT_KHAU={secrets.token_urlsafe(32)}\nTLS_EMAIL={email}\n"
+                       "# Webhook nhận báo động của người vận hành (n8n/Telegram/Slack...).\n"
+                       "CANH_GAC_WEBHOOK=\n",
                        encoding="utf-8", newline="\n")
         _chi_chu_doc(env)
         viec.append(f"đã sinh {env.relative_to(goc.parent)}")
@@ -422,7 +535,10 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--ten", required=True)
     t.add_argument("--ten-mien", required=True)
     sub.add_parser("liet_ke")
-    sub.add_parser("kiem")
+    kk = sub.add_parser("kiem")
+    kk.add_argument("--sua", action="store_true",
+                    help="bật lại container chết/treo và ghi nhịp đập người canh (cron)")
+    sub.add_parser("thu_phuc_hoi").add_argument("ma")
     for ten in ("tam_dung", "chay", "khoi_dong_lai"):
         sub.add_parser(ten).add_argument("ma")
     g = sub.add_parser("goi")
@@ -452,11 +568,22 @@ def main(argv: list[str] | None = None) -> int:
             for c in mp.danh_sach():
                 print(f"{c['ma']:20} {c['trang_thai']:9} {c['goi']:10} {c['ten_mien']}  — {c['ten']}")
         elif ts.lenh == "kiem":
+            if ts.sua:
+                viec = mp.sua_hong()
+                for ten, mo_ta in viec:
+                    print(f"SỬA {ten}: {mo_ta}")
+                if viec:
+                    bao_nguoi_van_hanh("Người canh VPS đã phải bật lại: "
+                                       + "; ".join(f"{t} ({m})" for t, m in viec))
             hong = 0
             for ma, ok, trang in mp.kiem():
                 print(f"{'ỔN ' if ok else 'HỎNG'} {ma:20} {trang}")
                 hong += not ok
             return 1 if hong else 0
+        elif ts.lenh == "thu_phuc_hoi":
+            kq = mp.thu_phuc_hoi(ts.ma)
+            print(f"{ts.ma}: phục hồi {kq['tep']} được {kq['so_bang']} bảng, "
+                  f"{kq['so_tin']} tin nhắn — CSDL tạm đã xoá.")
         elif ts.lenh in ("tam_dung", "chay", "khoi_dong_lai"):
             mp.doi_trang_thai(ts.ma, ts.lenh)
             print(f"{ts.lenh}: {ts.ma} xong")

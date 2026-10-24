@@ -3,17 +3,27 @@
 .env
 .env.*
 !.env.example
-data/catalog.json
-data/knowledge/
-data/uploads/
-data/sao_luu/
-data/backups/
+*.log
+*.bak
+
+# data/: DANH SÁCH CHO PHÉP, không phải danh sách cấm. Bản cấm cũ chặn
+# `data/backups/` trong khi sao lưu thật nằm ở `data/backup/` — dựng image
+# trên máy đang chạy thật là đóng gói luôn bản sao lưu CSDL khách hàng
+# (đo 24.10.2026). Mọi thứ trong data/ bị chặn, trừ đúng những gì git theo
+# dõi; tests/test_dockerignore.py canh hai danh sách khớp nhau.
+data/*
+!data/anh_xa_ma.example.json
+!data/catalog.example.json
+!data/catalog.blanica.json
+!data/eval/
 data/eval/ket-qua-*.json
 data/eval/nhieu-luot-*.json
 data/eval/golden.jsonl
-data/*.log
-*.log
-*.bak
+!data/goi-ky-nang/
+!data/knowledge.example/
+!data/mau/
+!data/products/
+!data/xac_thuc_domain/
 
 .git
 .venv

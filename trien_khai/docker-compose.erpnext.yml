@@ -1,0 +1,137 @@
+# ERPNext CHO VPS — bản chạy thật, khác `docker-compose.erpnext.yml` ở gốc
+# repo (bản phát triển trên máy cá nhân):
+#
+#   · mật khẩu SINH NGẪU NHIÊN (trien_khai/erp/.env.erp, do
+#     `python3 -m scripts.cua_hang erp khoi_tao` tạo), không gõ cứng;
+#   · KHÔNG publish cổng nào — app cửa hàng gọi `cskh-erp-frontend:8080`
+#     qua mạng `cskh-nen`, người dùng vào qua Caddy (erp.<tên miền>, TLS);
+#   · có đủ worker hàng đợi + scheduler + websocket như bố cục chính thức
+#     của frappe_docker. Bản phát triển chỉ chạy gunicorn: việc nền và việc
+#     theo lịch của ERPNext (email, tính lại tồn, báo cáo định kỳ) KHÔNG
+#     BAO GIỜ chạy — hỏng im lặng kiểu ERP.
+#
+#   docker compose -f trien_khai/docker-compose.erpnext.yml --env-file trien_khai/erp/.env.erp up -d
+#
+# Ảnh ghim bằng DIGEST của ĐÚNG bản đang giữ dữ liệu trên máy cũ (erpnext
+# 15.120.0 / frappe 15.118.0): khôi phục bản sao lưu vào mã KHÁC phiên bản
+# là phải chạy di trú CSDL — không lùi được, trên dữ liệu giá vốn và đơn.
+name: cskh-erp
+
+x-anh: &anh frappe/erpnext@sha256:3dbb54eeb910672c145d913c543feebb5e819e0f6c2071570894a73b5984de1a   # frappe/erpnext:v15 (15.120.0)
+x-chung: &chung
+  image: *anh
+  restart: unless-stopped
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+  networks: [erp]
+  depends_on: [db, redis-cache, redis-queue]
+
+services:
+  db:
+    image: mariadb@sha256:553351e202c5f01c9e703d7d1d2b037a0aedb43c4fed79b3615d9183655f02c5   # mariadb:10.6
+    container_name: cskh-erp-db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ERP_DB_MAT_KHAU:?chạy scripts.cua_hang erp khoi_tao trước}
+    volumes:
+      - db:/var/lib/mysql
+    networks: [erp]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis-cache:
+    image: redis@sha256:d0c875bdacfb5c4d2c2d9124de3f53cee1dc9ceff8936bd459fabc135cb33015   # redis:6.2-alpine
+    container_name: cskh-erp-redis-cache
+    restart: unless-stopped
+    networks: [erp]
+
+  redis-queue:
+    image: redis@sha256:d0c875bdacfb5c4d2c2d9124de3f53cee1dc9ceff8936bd459fabc135cb33015   # redis:6.2-alpine
+    container_name: cskh-erp-redis-queue
+    restart: unless-stopped
+    volumes:
+      - redis_queue:/data
+    networks: [erp]
+
+  # Chạy MỘT LẦN mỗi lần `up`: ghi cấu hình chung (CSDL, Redis) vào sites/.
+  configurator:
+    <<: *chung
+    container_name: cskh-erp-configurator
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host db;
+        bench set-config -gp db_port 3306;
+        bench set-config -g redis_cache "redis://redis-cache:6379";
+        bench set-config -g redis_queue "redis://redis-queue:6379";
+        bench set-config -g redis_socketio "redis://redis-queue:6379";
+        bench set-config -gp socketio_port 9000;
+    depends_on: []
+
+  backend:
+    <<: *chung
+    container_name: cskh-erp-backend
+
+  websocket:
+    <<: *chung
+    container_name: cskh-erp-websocket
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+
+  queue-short:
+    <<: *chung
+    container_name: cskh-erp-queue-short
+    command: ["bench", "worker", "--queue", "short,default"]
+
+  queue-long:
+    <<: *chung
+    container_name: cskh-erp-queue-long
+    command: ["bench", "worker", "--queue", "long,default,short"]
+
+  scheduler:
+    <<: *chung
+    container_name: cskh-erp-scheduler
+    command: ["bench", "schedule"]
+
+  frontend:
+    <<: *chung
+    container_name: cskh-erp-frontend
+    command: ["nginx-entrypoint.sh"]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      # Một site duy nhất, tên `localhost` — đúng tên site trên máy cũ, để
+      # bản sao lưu khôi phục nguyên vẹn. Mọi Host (erp.<tên miền> từ Caddy,
+      # cskh-erp-frontend từ app) đều trỏ vào site đó.
+      FRAPPE_SITE_NAME_HEADER: localhost
+      UPSTREAM_REAL_IP_ADDRESS: 0.0.0.0/0
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "on"
+      PROXY_READ_TIMEOUT: "120"
+      CLIENT_MAX_BODY_SIZE: 50m
+    depends_on: [backend, websocket]
+    networks: [erp, nen]
+
+volumes:
+  db:
+    name: cskh-erp-db
+  sites:
+    name: cskh-erp-sites
+  redis_queue:
+    name: cskh-erp-redis-queue
+
+networks:
+  erp:
+    name: cskh-erp
+  nen:
+    name: cskh-nen
+    external: true

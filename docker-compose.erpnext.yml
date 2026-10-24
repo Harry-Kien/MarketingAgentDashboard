@@ -57,7 +57,7 @@ services:
       - erpnext-net
 
   erpnext-web:
-    image: frappe/erpnext@sha256:d2605a65e15be0c5adc943b16fa7cdc445cb4f3f3a9acbeaf3af6915397bc116   # frappe/erpnext:v15
+    image: frappe/erpnext@sha256:3dbb54eeb910672c145d913c543feebb5e819e0f6c2071570894a73b5984de1a   # frappe/erpnext:v15 — bản ĐANG giữ dữ liệu (24.10.2026)
     container_name: erpnext-web
     restart: unless-stopped
     environment:

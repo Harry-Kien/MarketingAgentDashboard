@@ -29,9 +29,13 @@ def test_co_healthcheck():
 
 
 def test_dockerignore_chan_bi_mat_va_du_lieu():
-    for mau in (".env", ".env.*", "data/catalog.json", "data/uploads/", ".git", ".venv"):
+    for mau in (".env", ".env.*", ".git", ".venv"):
         assert mau in IGNORE, mau
     assert "!.env.example" in IGNORE
+    # data/ là danh sách CHO PHÉP từ 24.10.2026 (xem tests/test_dockerignore.py):
+    # chặn hết, rồi mở đúng mục git theo dõi — catalog thật và tệp khách không được mở.
+    assert "data/*" in IGNORE
+    assert "!data/catalog.json" not in IGNORE and "!data/uploads/" not in IGNORE
 
 
 def test_mot_tien_trinh_moi_cua_hang():

@@ -87,3 +87,12 @@ def test_erp_kiem_that_bang_mang(monkeypatch):
     assert asyncio.run(ss.kiem_erp_song())["muc"] == ss.CHAN
     monkeypatch.setattr(ss.settings, "erp_loai", "odoo")
     assert asyncio.run(ss.kiem_erp_song())["muc"] == ss.CANH_BAO
+
+
+def test_duong_dan_tep_khong_bi_coi_la_bi_mat_mac_dinh(monkeypatch, tmp_path):
+    """`/run/secrets/gcp.json` chứa chữ "secret" — từng bị báo CHẶN oan."""
+    monkeypatch.setattr(ss, "ROOT", tmp_path)
+    monkeypatch.setenv("CSKH_SILO", "1")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/run/secrets/gcp.json")
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+    assert ss.kiem_bi_mat()["muc"] == ss.DU

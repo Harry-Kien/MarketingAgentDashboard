@@ -15,6 +15,10 @@ Mỗi cửa hàng: CSDL + role riêng (không phải superuser), container riên
 volume dữ liệu riêng, bí mật riêng. Một cửa hàng hỏng không kéo cửa hàng
 khác; xoá một cửa hàng là xoá một CSDL và một volume.
 
+> **Chuyển cửa hàng đang chạy trên máy cá nhân lên VPS?** Đọc
+> `docs/len-vps.md` — đường ngắn nhất, đã diễn tập thật, có một lệnh cài máy
+> chủ (`trien_khai/cai_vps.sh`) và một lệnh chuyển nhà (`chuyen_nha` → `cua_hang nhap`).
+
 ## 1. Máy chủ
 
 - Ubuntu 24.04, **4 vCPU / 16 GB RAM** chở được khoảng 20–30 cửa hàng
@@ -61,6 +65,11 @@ Sau đó trong dashboard của cửa hàng:
 |---|---|
 | Danh sách cửa hàng | `python3 -m scripts.cua_hang liet_ke` |
 | Kiểm sức khoẻ (mã thoát ≠ 0 nếu hỏng) | `python3 -m scripts.cua_hang kiem` |
+| Người canh: bật lại container chết/treo (cron 5 phút) | `python3 -m scripts.cua_hang kiem --sua` |
+| Thử phục hồi bản sao lưu mới nhất vào CSDL tạm | `python3 -m scripts.cua_hang thu_phuc_hoi shopa` · `--tat-ca` |
+| Nhập cửa hàng từ gói chuyển nhà | `python3 -m scripts.cua_hang nhap shopa --ten … --ten-mien … --goi … --mat-khau-tep …` |
+| Vertex AI bằng service account | thêm `--gcp-khoa khoa.json` vào `tao` / `nhap` |
+| ERPNext dùng chung | `python3 -m scripts.cua_hang erp khoi_tao --ten-mien erp.…` · `erp chay` · `erp sao_luu` · `erp ping` |
 | Tạm dừng / chạy lại | `python3 -m scripts.cua_hang tam_dung shopa` · `chay shopa` |
 | Khởi động lại sau khi sửa `.env` | `python3 -m scripts.cua_hang khoi_dong_lai shopa` |
 | Đổi gói (dung_thu, co_ban, chuyen_nghiep, khong_gioi_han) | `python3 -m scripts.cua_hang goi shopa co_ban` |

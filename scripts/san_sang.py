@@ -136,6 +136,11 @@ def kiem_bi_mat() -> dict:
             continue
         khoa, gia = d.split("=", 1)
         gia = gia.strip().strip('"').strip("'").lower()
+        # Đường dẫn tệp không phải bí mật: `/run/secrets/gcp.json` chứa chữ
+        # "secret" và từng bị báo CHẶN oan (24.10.2026) — trong container còn
+        # có PATH, HOME... đều là đường dẫn.
+        if gia.startswith("/"):
+            continue
         if gia and any(m in gia for m in MAU_MAC_DINH):
             xau.append(khoa)      # CHỈ tên khoá, không bao giờ in giá trị
     if xau:

@@ -25,7 +25,9 @@ def test_moi_duong_dan_ton_tai():
 def test_moi_lenh_cua_hang_deu_co_that():
     """Lệnh con lấy từ CHÍNH mã nguồn script, không gõ lại danh sách."""
     src = (ROOT / "scripts" / "cua_hang.py").read_text(encoding="utf-8")
-    co = set(re.findall(r'add_parser\("(\w+)"\)', src))
+    # Bắt cả add_parser("x", help=...) — bản cũ chỉ bắt add_parser("x") nên
+    # lệnh có help= bị coi là "không tồn tại" (đỏ giả, 24.10.2026).
+    co = set(re.findall(r'add_parser\("(\w+)"', src))
     co |= {x.strip().strip('"') for x in re.search(r"for ten in \(([^)]*)\)", src).group(1).split(",")}
     dung = set(re.findall(r"scripts\.cua_hang (\w+)", MD)) | set(re.findall(r"`(\w+) shopa`", MD))
     assert dung <= co, dung - co

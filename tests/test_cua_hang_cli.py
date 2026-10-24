@@ -161,3 +161,16 @@ def test_bi_mat_trien_khai_bi_gitignore():
     for mau in ("trien_khai/cua_hang/", "trien_khai/.env.nen", "trien_khai/sao_luu/",
                 "trien_khai/caddy/Caddyfile"):
         assert mau in gi, mau
+
+
+def test_doc_duong_sao_luu_bench_that():
+    """Bản in THẬT của ERPNext 15.120 (24.10.2026): đường dẫn tương đối với sites/."""
+    ra = ("Backup Summary for localhost at 2026-10-24 22:36:12.852182\n"
+          "Config  : ./localhost/private/backups/20261024_223609-localhost-site_config_backup.json 161.0B\n"
+          "Database: ./localhost/private/backups/20261024_223609-localhost-database.sql.gz         847.2KiB\n"
+          "Public  : ./localhost/private/backups/20261024_223609-localhost-files.tar               10.0KiB\n"
+          "Private : ./localhost/private/backups/20261024_223609-localhost-private-files.tar       10.0KiB\n")
+    d = ch.duong_sao_luu_bench(ra)
+    assert len(d) == 4
+    assert all(x.startswith("/home/frappe/frappe-bench/sites/localhost/private/backups/") for x in d)
+    assert any(x.endswith("-database.sql.gz") for x in d)

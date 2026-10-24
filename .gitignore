@@ -138,3 +138,8 @@ trien_khai/cua_hang/
 trien_khai/.env.nen
 trien_khai/sao_luu/
 trien_khai/caddy/Caddyfile
+
+# Gói chuyển nhà lên VPS: CSDL khách + khoá kho bí mật — tuyệt đối không lên git.
+chuyen_nha/
+trien_khai/erp/.env.erp
+trien_khai/erp/sao_luu/

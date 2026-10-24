@@ -170,6 +170,10 @@ cũng im lặng y hệt gói kỹ năng: dashboard vẫn hiện máy chủ "đan
 công cụ đã đổi ở phía máy chủ mà chưa Đồng bộ lại. Mã thoát khác 0 khi có
 mục HỎNG.
 
+**Lên VPS**: `docs/len-vps.md` — `trien_khai/cai_vps.sh` cài máy chủ,
+`python -m scripts.chuyen_nha dong_goi` đóng gói cửa hàng máy này (mã hoá),
+`python3 -m scripts.cua_hang nhap` dựng lại trên VPS. Đã diễn tập thật.
+
 JavaScript của dashboard viết ở `dashboard/src/*.js` (mỗi tệp một miền
 màn hình). `dashboard/app.js` là tệp **sinh ra** — nối nguyên văn, trình
 duyệt nhận đúng byte đó. Sửa ở `src/` rồi đóng gói; sửa thẳng `app.js` là

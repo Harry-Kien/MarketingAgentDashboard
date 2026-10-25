@@ -59,7 +59,8 @@ def _than(ten: str) -> str:
 def test_giet_tunnel_cu_TRUOC_khi_bat_cai_moi():
     than = _than("main")
     i_giet = than.find("_giet_tunnel_cu")
-    i_bat = than.find("Popen")
+    # Bật qua `_bat_tach_roi` (tách khỏi người bật, 25.10.2026) — trước là Popen.
+    i_bat = than.find("_bat_tach_roi(")
     assert i_giet != -1, "main không tắt tunnel cũ"
     assert i_bat != -1, "main không bật tunnel nào"
     assert i_giet < i_bat, "tắt tunnel cũ SAU khi bật cái mới là tắt luôn cái mới"
@@ -195,3 +196,11 @@ def test_nhac_dan_lai_webhook():
     assert "webhook" in than.lower() and "Console" in than, (
         "không nhắc dán lại URL webhook sau khi tên miền đổi"
     )
+
+
+def test_cloudflared_bat_tach_roi_khong_popen_tran():
+    """Popen trần là tunnel chết theo phiên / lượt người canh — Facebook mất chiều nhận."""
+    for ham in ("main", "chay_co_dinh"):
+        assert "Popen" not in _than(ham), f"{ham} bật cloudflared bằng Popen trần"
+        assert "_bat_tach_roi(" in _than(ham), ham
+    assert "tach_roi.bat(" in _than("_bat_tach_roi")

@@ -166,6 +166,24 @@ def mo_nhat_ky(duong: Path, *, mo=open, cho_giay: float = 1.5):
     return subprocess.DEVNULL, duong
 
 
+def _bat_tach_roi(lenh: list[str], f, nhat_ky: Path) -> None:
+    """
+    Bật cloudflared TÁCH RỜI khỏi tiến trình bật nó (scripts/tach_roi.py).
+
+    Bật bằng Popen trần thì tunnel chết theo người bật: phiên làm việc đóng,
+    hay lượt người canh bị Task Scheduler dừng — đúng cơ chế đã giết app
+    23.10.2026. Tunnel chết là Facebook và Zalo OA mất chiều nhận tin, im lặng.
+    """
+    from scripts import tach_roi
+
+    if f is not subprocess.DEVNULL:
+        f.close()
+    import os
+
+    tach_roi.bat(lenh, cwd=GOC, nhat_ky=nhat_ky if f is not subprocess.DEVNULL
+                 else Path(os.devnull))
+
+
 def _doi_env(domain: str) -> None:
     tep = GOC / ".env"
     if not tep.exists():
@@ -410,11 +428,8 @@ def chay_co_dinh(exe: str, token: str, dia_chi: str) -> int:
     f, nhat_ky = mo_nhat_ky(NHAT_KY)
     if nhat_ky != NHAT_KY:
         print(f"  Không ghi được {NHAT_KY.name}, dùng {nhat_ky} thay thế.")
-    subprocess.Popen(
-        [exe, "tunnel", "--edge-ip-version", "4", "--protocol", "http2",
-         "run", "--token", token],
-        stdout=f, stderr=f,
-    )
+    _bat_tach_roi([exe, "tunnel", "--edge-ip-version", "4", "--protocol", "http2",
+                   "run", "--token", token], f, nhat_ky)
 
     if not dia_chi:
         print("  Thiếu PUBLIC_BASE_URL trong .env — điền tên miền bạn đã khai")
@@ -468,15 +483,8 @@ def main() -> int:
         print(f"Không ghi được {NHAT_KY.name}, dùng {nhat_ky} thay thế.")
 
     # `--edge-ip-version 4`: xem cái bẫy số 2 ở đầu tệp.
-    try:
-        subprocess.Popen(
-            [exe, "tunnel", "--url", f"http://localhost:{CONG_APP}",
-             "--edge-ip-version", "4", "--protocol", "http2"],
-            stdout=f, stderr=f,
-        )
-    finally:
-        if f is not subprocess.DEVNULL:
-            f.close()
+    _bat_tach_roi([exe, "tunnel", "--url", f"http://localhost:{CONG_APP}",
+                   "--edge-ip-version", "4", "--protocol", "http2"], f, nhat_ky)
 
     print("Đang mở tunnel …")
     domain = _cho_domain(nhat_ky)

@@ -155,3 +155,35 @@ def test_tai_lieu_van_hanh_co_hai_muc_do_moi():
 
     doc = (Path(__file__).resolve().parent.parent / "docs" / "van-hanh.md").read_text(encoding="utf-8")
     assert "[tu_dung_lai]" in doc and "[bo_cuoc]" in doc
+
+
+# ---------------- địa chỉ công khai (Facebook nhận tin) ----------------
+
+def test_cong_khai_song_thi_khong_lam_gi():
+    viec, moc = cg.quyet_dinh_cong_khai("https://x.trycloudflare.com", True, [], T0)
+    assert viec is None and moc == []
+
+
+def test_chay_noi_bo_co_y_thi_khong_dung_tunnel():
+    """`khoi_dong --khong-tunnel` là lựa chọn của người vận hành, không phải hỏng."""
+    viec, _ = cg.quyet_dinh_cong_khai("http://host.docker.internal:8000", False, [], T0)
+    assert viec is None
+
+
+def test_cong_khai_chet_thi_noi_lai_toi_da_ba_lan_moi_gio():
+    moc: list[str] = []
+    for i in range(3):
+        viec, moc = cg.quyet_dinh_cong_khai("https://x.trycloudflare.com", False, moc, _sau(5 * i))
+        assert viec == "noi_lai"
+    viec, moc = cg.quyet_dinh_cong_khai("https://x.trycloudflare.com", False, moc, _sau(15))
+    assert viec == "bo_cuoc" and len(moc) == 3
+    viec, _ = cg.quyet_dinh_cong_khai("https://x.trycloudflare.com", False, moc, _sau(70))
+    assert viec == "noi_lai", "qua một giờ thì được thử lại"
+
+
+def test_main_goi_canh_cong_khai_khi_app_song():
+    import inspect
+
+    than = inspect.getsource(cg.main)
+    assert "_lo_cong_khai()" in than
+    assert than.index("if song:") < than.index("_lo_cong_khai()")

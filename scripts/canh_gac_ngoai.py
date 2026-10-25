@@ -291,6 +291,70 @@ def _lo_sidecar() -> None:
                      "python -m scripts.chay_sidecar_zalo --hien để xem lỗi.")
 
 
+TRANG_THAI_CONG_KHAI = ROOT / "data" / ".noi_lai_facebook"
+NOI_LAI_TOI_DA_MOI_GIO = 3
+
+
+def quyet_dinh_cong_khai(url: str, song: bool, moc: list[str],
+                         bay_gio: datetime) -> tuple[str | None, list[str]]:
+    """
+    Phần thuần: địa chỉ công khai chết thì có bật `noi_lai_facebook` không.
+
+    Trả (việc, mốc mới) với việc: None | "noi_lai" | "bo_cuoc".
+    Không phải https (đã chọn chạy nội bộ, `khoi_dong --khong-tunnel`) thì
+    không đụng: người vận hành CỐ Ý không có cổng công khai.
+    """
+    if not url.startswith("https://") or song:
+        return None, moc
+    con = _trong_mot_gio(moc, bay_gio)
+    if len(con) >= NOI_LAI_TOI_DA_MOI_GIO:
+        return "bo_cuoc", con
+    return "noi_lai", [*con, bay_gio.isoformat()]
+
+
+def _lo_cong_khai() -> None:
+    """
+    Tunnel chết thì bật `scripts.noi_lai_facebook` TÁCH RỜI: dựng lại tunnel
+    và tự khai địa chỉ mới với Meta. Đo 25.10.2026: Meta gọi một tên miền
+    tunnel đã chết từ lâu, Facebook không nhận tin khách nào, không gì báo
+    đỏ — vì app vẫn sống, người canh chỉ nhìn app.
+
+    Tách rời vì việc ấy mất 1–3 phút (chờ tunnel, bật lại app) mà lượt canh
+    chỉ có 3 phút trước khi Task Scheduler dừng nó.
+    """
+    from scripts import noi_lai_facebook as nl
+    from scripts.chay_tunnel import _doc_env
+
+    url = _doc_env("PUBLIC_BASE_URL")
+    if not url.startswith("https://"):
+        return
+    try:
+        moc = json.loads(TRANG_THAI_CONG_KHAI.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        moc = []
+    viec, moc = quyet_dinh_cong_khai(url, nl.cong_khai_song_nhanh(url), moc,
+                                     datetime.now(_VN))
+    if viec is None:
+        return
+    TRANG_THAI_CONG_KHAI.write_text(json.dumps(moc), encoding="utf-8")
+    if viec == "bo_cuoc":
+        _bao("hong", f"địa chỉ công khai {url} vẫn chết sau {NOI_LAI_TOI_DA_MOI_GIO} lần dựng "
+                     "lại tunnel trong một giờ — Facebook/Zalo OA không nhận được tin. "
+                     "Xem data/noi_lai_facebook.log; lâu dài: lên VPS (docs/len-vps.md).")
+        return
+    from scripts import tach_roi
+
+    exe, them = tach_roi.python_that(ROOT / ".venv" / "Scripts" / "python.exe") \
+        if sys.platform == "win32" else (sys.executable, {})
+    import os
+
+    tach_roi.bat([exe, "-m", "scripts.noi_lai_facebook"], cwd=ROOT,
+                 nhat_ky=ROOT / "data" / "noi_lai_facebook.out",
+                 env={**os.environ, **them})
+    _bao("tu_dung_lai", f"địa chỉ công khai {url} không trả lời — đã bật dựng lại tunnel "
+                        "và tự khai với Meta (kết quả: data/noi_lai_facebook.log)")
+
+
 def main() -> int:
     truoc = _doc_truoc()
     song, ly_do = _song()
@@ -320,6 +384,10 @@ def main() -> int:
     # bật riêng thêm lần nữa là hai tiến trình sidecar tranh cổng 3210.
     if song:
         _lo_sidecar()
+        try:
+            _lo_cong_khai()
+        except Exception as exc:  # noqa: BLE001 — canh cổng hỏng không được chặn ghi trạng thái
+            print(f"[hong] canh địa chỉ công khai lỗi: {type(exc).__name__}: {exc}", flush=True)
 
     _ghi(moi)
     # Mã thoát khác 0 khi hỏng, để Task Scheduler và cron cũng biết.

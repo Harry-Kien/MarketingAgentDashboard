@@ -31,27 +31,42 @@ GOC = Path(__file__).resolve().parent.parent
 NHAT_KY = GOC / "data" / "noi_lai_facebook.log"
 
 
-def cong_khai_song_nhanh(url: str, timeout: float = 10.0) -> bool:
-    """
-    Địa chỉ công khai có trả lời /healthz không — nhanh (≤ ~30 giây), cho
-    người canh chạy mỗi 5 phút.
+SO_LAN_THU = 3
 
-    DNS của máy lỗi thì hỏi DNS công cộng rồi gọi thẳng vào IP: resolver nhà
-    mạng từng "mù" tên miền tunnel vừa cấp (bộ nhớ dự án), và kết luận "chết"
-    từ đó là dựng lại một tunnel đang khoẻ — đổi tên miền vô cớ, mỗi 5 phút.
+
+def cong_khai_song_nhanh(url: str, timeout: float = 10.0, *, so_lan: int = SO_LAN_THU,
+                         nghi: float = 3.0) -> bool:
+    """
+    Địa chỉ công khai có trả lời /healthz không — cho người canh, 5 phút một lần.
+
+    Kết luận "chết" là việc ĐẮT: người canh sẽ dựng lại tunnel, tên miền đổi,
+    địa chỉ Zalo OA người vận hành đã dán thành vô hiệu. Nên chỉ kết luận chết
+    khi MỌI đường đều không trả lời, qua nhiều lần thử:
+
+      · DNS của máy lỗi -> hỏi DNS công cộng rồi gọi thẳng IP (resolver nhà
+        mạng từng "mù" tên miền tunnel vừa cấp — bộ nhớ dự án);
+      · QUÁ HẠN hay lỗi khác -> cũng thử đường IP, rồi thử lại lượt sau. Đo
+        26.10.2026: tunnel trycloudflare thỉnh thoảng chậm quá 10 giây
+        (`context canceled` trong tunnel.log), bản một-lần-thử báo "chết"
+        cho một tunnel trả 200 sau 1,5 giây ở lần gọi kế tiếp.
     """
     from scripts import chay_tunnel as ct
 
     if not url.startswith("https://"):
         return False
-    try:
-        with urllib.request.urlopen(f"{url.rstrip('/')}/healthz", timeout=timeout) as r:
-            return r.status == 200
-    except (urllib.error.URLError, OSError) as exc:
-        if not ct._la_loi_dns(exc):
-            return False
     host = url.split("://", 1)[1].split("/", 1)[0]
-    return any(ct._goi_qua_ip(host, ip, timeout=timeout) for ip in ct._ip_qua_doh(host)[:2])
+    for lan in range(so_lan):
+        try:
+            with urllib.request.urlopen(f"{url.rstrip('/')}/healthz", timeout=timeout) as r:
+                if r.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        if any(ct._goi_qua_ip(host, ip, timeout=timeout) for ip in ct._ip_qua_doh(host)[:2]):
+            return True
+        if lan + 1 < so_lan:
+            time.sleep(nghi)
+    return False
 
 
 def _ghi(dong: str) -> None:

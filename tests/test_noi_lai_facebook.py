@@ -34,13 +34,52 @@ def test_ten_mien_khong_con_ton_tai_thi_chet(monkeypatch):
     assert nl.cong_khai_song_nhanh("https://da-chet.trycloudflare.com") is False
 
 
-def test_loi_khong_phai_dns_thi_khong_hoi_doh(monkeypatch):
-    hoi: list[str] = []
+class _Tra:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_cham_mot_lan_khong_bi_coi_la_chet(monkeypatch):
+    """26.10.2026: tunnel chậm quá 10 giây một lần, lần sau trả 200 — không được báo chết."""
+    lan = []
+
+    def _cham_roi_tra(*_a, **_k):
+        lan.append(1)
+        if len(lan) == 1:
+            raise urllib.error.URLError(TimeoutError("timed out"))
+        return _Tra()
+
+    monkeypatch.setattr(nl.urllib.request, "urlopen", _cham_roi_tra)
+    monkeypatch.setattr(ct, "_ip_qua_doh", lambda host: [])
+    monkeypatch.setattr(nl.time, "sleep", lambda s: None)
+    assert nl.cong_khai_song_nhanh("https://x.trycloudflare.com") is True
+    assert len(lan) == 2
+
+
+def test_qua_han_thi_cung_thu_duong_ip(monkeypatch):
+    def _qua_han(*_a, **_k):
+        raise urllib.error.URLError(TimeoutError("timed out"))
+
+    monkeypatch.setattr(nl.urllib.request, "urlopen", _qua_han)
+    monkeypatch.setattr(ct, "_ip_qua_doh", lambda host: ["104.16.0.1"])
+    monkeypatch.setattr(ct, "_goi_qua_ip", lambda host, ip, **k: True)
+    assert nl.cong_khai_song_nhanh("https://x.trycloudflare.com") is True
+
+
+def test_moi_duong_deu_hong_qua_moi_lan_thu_moi_la_chet(monkeypatch):
+    goi = []
 
     def _tu_choi(*_a, **_k):
+        goi.append(1)
         raise urllib.error.URLError(ConnectionRefusedError())
 
     monkeypatch.setattr(nl.urllib.request, "urlopen", _tu_choi)
-    monkeypatch.setattr(ct, "_ip_qua_doh", lambda host: hoi.append(host) or [])
+    monkeypatch.setattr(ct, "_ip_qua_doh", lambda host: [])
+    monkeypatch.setattr(nl.time, "sleep", lambda s: None)
     assert nl.cong_khai_song_nhanh("https://x.trycloudflare.com") is False
-    assert hoi == []
+    assert len(goi) == nl.SO_LAN_THU

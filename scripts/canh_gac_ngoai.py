@@ -332,7 +332,7 @@ def _lo_cong_khai() -> None:
         moc = json.loads(TRANG_THAI_CONG_KHAI.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         moc = []
-    viec, moc = quyet_dinh_cong_khai(url, nl.cong_khai_song_nhanh(url), moc,
+    viec, moc = quyet_dinh_cong_khai(url, nl.cong_khai_song_nhanh(url, timeout=8.0), moc,
                                      datetime.now(_VN))
     if viec is None:
         return

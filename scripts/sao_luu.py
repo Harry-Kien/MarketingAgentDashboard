@@ -122,6 +122,61 @@ def don_ban_cu(giu: int) -> int:
     return da_xoa
 
 
+DAU_MOC_PHUC_HOI = ROOT / "data" / ".thu_phuc_hoi"
+_DEM_BANG = "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"
+
+
+def thu_phuc_hoi() -> tuple[bool, str]:
+    """
+    Phục hồi bản `db-*.sql.gz` MỚI NHẤT vào một CSDL tạm, đếm bảng và tin
+    nhắn, so với CSDL thật, rồi xoá CSDL tạm. Không đụng CSDL đang chạy.
+
+    Bản sao lưu chưa từng phục hồi thử thì chưa phải bản sao lưu: tệp có
+    thể nén hỏng, thiếu extension, hay cắt giữa chừng — và chỉ biết vào đúng
+    ngày cần nó. Thành công thì ghi dấu mốc `data/.thu_phuc_hoi` để
+    `scripts.san_sang` xác nhận; thất bại thì KHÔNG ghi (dấu mốc cũ dần, mục
+    Sao lưu tự đỏ lại).
+    """
+    import json
+
+    ct = _container()
+    if not ct:
+        return False, "không thấy container Postgres đang chạy"
+    ban = sorted(KHO.glob("db-*.sql.gz"))
+    if not ban:
+        return False, "chưa có bản db-*.sql.gz nào — chạy python -m scripts.sao_luu trước"
+    tep = ban[-1]
+    user, ten_db = _thong_tin_db()
+    tam = "thu_phuc_hoi_" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+    def psql(csdl: str, sql: str, dau_vao: bytes | None = None) -> subprocess.CompletedProcess:
+        lenh = ["docker", "exec", "-i", ct, "psql", "-U", user, "-d", csdl, "-v",
+                "ON_ERROR_STOP=1", "-X", "-q", "-At"]
+        if sql:
+            lenh += ["-c", sql]
+        return subprocess.run(lenh, input=dau_vao, capture_output=True, timeout=600)
+
+    tao = psql(ten_db, f"CREATE DATABASE {tam};")
+    if tao.returncode != 0:
+        return False, "không tạo được CSDL tạm: " + tao.stderr.decode(errors="replace")[-200:]
+    try:
+        with gzip.open(tep, "rb") as f:
+            kq = psql(tam, "", dau_vao=f.read())
+        if kq.returncode != 0:
+            return False, f"phục hồi {tep.name} HỎNG: " + kq.stderr.decode(errors="replace")[-300:]
+        so_bang = int(psql(tam, _DEM_BANG).stdout.decode().strip() or 0)
+        so_that = int(psql(ten_db, _DEM_BANG).stdout.decode().strip() or 0)
+        so_tin = int(psql(tam, "SELECT count(*) FROM messages;").stdout.decode().strip() or 0)
+    finally:
+        psql(ten_db, f"DROP DATABASE IF EXISTS {tam} WITH (FORCE);")
+    if so_bang == 0 or so_bang < so_that:
+        return False, f"bản phục hồi có {so_bang} bảng, CSDL thật có {so_that} — thiếu"
+    DAU_MOC_PHUC_HOI.write_text(json.dumps({
+        "luc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "tep": tep.name, "so_bang": so_bang, "so_tin": so_tin}), encoding="utf-8")
+    return True, f"{tep.name}: {so_bang} bảng, {so_tin} tin nhắn — CSDL tạm đã xoá"
+
+
 def liet_ke() -> None:
     if not KHO.exists() or not any(KHO.iterdir()):
         print(f"Chưa có bản sao lưu nào trong {KHO}")
@@ -140,11 +195,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--liet-ke", action="store_true")
     ap.add_argument("--giu", type=int, default=GIU_MAC_DINH)
+    ap.add_argument("--thu-phuc-hoi", action="store_true",
+                    help="phục hồi bản mới nhất vào CSDL tạm để chứng minh nó dùng được")
     args = ap.parse_args()
 
     if args.liet_ke:
         liet_ke()
         return 0
+    if args.thu_phuc_hoi:
+        ok, ghi_chu = thu_phuc_hoi()
+        print(("Thử phục hồi ĐẠT: " if ok else "Thử phục hồi HỎNG: ") + ghi_chu)
+        return 0 if ok else 1
 
     dau = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     print(f"Sao lưu lúc {dau} (UTC)\n")

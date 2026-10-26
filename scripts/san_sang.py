@@ -273,13 +273,29 @@ def kiem_sao_luu() -> dict:
     from datetime import datetime, timezone
     moi = datetime.fromtimestamp(ban[-1].stat().st_mtime, timezone.utc)
     ngay = (datetime.now(timezone.utc) - moi).days
+    return doc_sao_luu_may(len(ban), ngay, _dau_moc(".thu_phuc_hoi"))
+
+
+def doc_sao_luu_may(so_ban: int, ngay: int, phuc_hoi: dict | None) -> dict:
+    """
+    Phần thuần, cho máy chạy tay: có bản sao lưu gần đây VÀ đã thử phục hồi
+    được trong 31 ngày qua (`python -m scripts.sao_luu --thu-phuc-hoi` ghi
+    dấu mốc `data/.thu_phuc_hoi` khi ĐẠT) thì mới là đủ.
+    """
     if ngay > 2:
         return _muc("Sao lưu", CANH_BAO, f"bản mới nhất đã {ngay} ngày",
                     "đặt lịch chạy hằng ngày")
-    return _muc("Sao lưu", CANH_BAO,
-                f"{len(ban)} bản, mới nhất {ngay} ngày trước",
-                "Bản sao lưu CHƯA TỪNG phục hồi thử thì chưa phải bản sao "
-                "lưu — máy không kiểm hộ việc này được.")
+    tuoi = _tuoi_gio((phuc_hoi or {}).get("luc"))
+    if tuoi is None or tuoi > 24 * 31:
+        return _muc("Sao lưu", CANH_BAO,
+                    f"{so_ban} bản, mới nhất {ngay} ngày trước — "
+                    + ("CHƯA TỪNG thử phục hồi" if tuoi is None
+                       else f"lần thử phục hồi cuối đã {int(tuoi // 24)} ngày"),
+                    "Bản sao lưu chưa phục hồi thử thì chưa phải bản sao lưu. "
+                    "Chạy: python -m scripts.sao_luu --thu-phuc-hoi")
+    return _muc("Sao lưu", DU,
+                f"{so_ban} bản, mới nhất {ngay} ngày trước · thử phục hồi được "
+                f"{(phuc_hoi or {}).get('so_bang', '?')} bảng, {int(tuoi // 24)} ngày trước")
 
 
 def kiem_du_lieu_that() -> dict:

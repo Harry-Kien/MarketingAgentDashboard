@@ -187,3 +187,16 @@ def test_main_goi_canh_cong_khai_khi_app_song():
     than = inspect.getsource(cg.main)
     assert "_lo_cong_khai()" in than
     assert than.index("if song:") < than.index("_lo_cong_khai()")
+
+
+def test_tu_thu_phuc_hoi_moi_tuan_khong_moi_5_phut():
+    assert cg.can_thu_phuc_hoi(None, None), "chưa từng thử thì thử ngay"
+    assert not cg.can_thu_phuc_hoi(3, None), "đạt 3 ngày trước thì chưa cần"
+    assert cg.can_thu_phuc_hoi(8, 2), "đạt đã 8 ngày, lần thử cuối 2 ngày trước"
+    assert not cg.can_thu_phuc_hoi(8, 0.01), "vừa thử (có thể hỏng) thì đợi mai"
+
+
+def test_main_goi_tu_thu_phuc_hoi():
+    import inspect
+
+    assert "_lo_thu_phuc_hoi()" in inspect.getsource(cg.main)

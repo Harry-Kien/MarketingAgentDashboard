@@ -96,3 +96,13 @@ def test_duong_dan_tep_khong_bi_coi_la_bi_mat_mac_dinh(monkeypatch, tmp_path):
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/run/secrets/gcp.json")
     monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
     assert ss.kiem_bi_mat()["muc"] == ss.DU
+
+
+def test_sao_luu_may_can_thu_phuc_hoi_moi_du():
+    """Máy chạy tay: có bản sao lưu thôi chưa đủ — phải đã phục hồi thử được."""
+    m = ss.doc_sao_luu_may(28, 0, None)
+    assert m["muc"] == ss.CANH_BAO and "CHƯA TỪNG" in m["ghi"] and "--thu-phuc-hoi" in m["sua"]
+    assert ss.doc_sao_luu_may(28, 0, {"luc": _luc(24 * 40)})["muc"] == ss.CANH_BAO
+    m = ss.doc_sao_luu_may(28, 0, {"luc": _luc(2), "so_bang": 61})
+    assert m["muc"] == ss.DU and "61 bảng" in m["ghi"]
+    assert ss.doc_sao_luu_may(28, 5, {"luc": _luc(2)})["muc"] == ss.CANH_BAO, "bản cũ vẫn là cảnh báo"

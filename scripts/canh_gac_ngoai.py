@@ -355,6 +355,49 @@ def _lo_cong_khai() -> None:
                         "và tự khai với Meta (kết quả: data/noi_lai_facebook.log)")
 
 
+THU_PHUC_HOI_MOI_NGAY = 7
+
+
+def can_thu_phuc_hoi(tuoi_dau_moc_ngay: float | None, tuoi_lan_thu_ngay: float | None) -> bool:
+    """
+    Phần thuần: tới lúc tự thử phục hồi bản sao lưu chưa.
+
+    Dấu mốc ĐẠT cũ hơn 7 ngày (hoặc chưa có) VÀ lần THỬ gần nhất (kể cả hỏng)
+    đã quá 1 ngày — thử hỏng thì mai thử lại, không thử mỗi 5 phút.
+    """
+    if tuoi_dau_moc_ngay is not None and tuoi_dau_moc_ngay < THU_PHUC_HOI_MOI_NGAY:
+        return False
+    return tuoi_lan_thu_ngay is None or tuoi_lan_thu_ngay >= 1
+
+
+def _lo_thu_phuc_hoi() -> None:
+    """
+    Tự chứng minh bản sao lưu dùng được, mỗi tuần một lần.
+
+    Một lần thử phục hồi từ tháng trước không nói gì về bản sao lưu hôm nay —
+    và việc "nhớ chạy tay mỗi tuần" là việc không ai làm. Chạy TÁCH RỜI: dựng
+    CSDL tạm mất vài chục giây, lượt canh chỉ có 3 phút.
+    """
+    import os
+    import time
+
+    def tuoi(p: Path) -> float | None:
+        return (time.time() - p.stat().st_mtime) / 86400 if p.exists() else None
+
+    moc, lan = ROOT / "data" / ".thu_phuc_hoi", ROOT / "data" / ".thu_phuc_hoi_lan_thu"
+    if not can_thu_phuc_hoi(tuoi(moc), tuoi(lan)):
+        return
+    lan.write_text(datetime.now(_VN).isoformat(), encoding="utf-8")
+    from scripts import tach_roi
+
+    exe, them = tach_roi.python_that(ROOT / ".venv" / "Scripts" / "python.exe") \
+        if sys.platform == "win32" else (sys.executable, {})
+    tach_roi.bat([exe, "-m", "scripts.sao_luu", "--thu-phuc-hoi"], cwd=ROOT,
+                 nhat_ky=ROOT / "data" / "thu_phuc_hoi.out", env={**os.environ, **them})
+    print("[thu_phuc_hoi] đã bật thử phục hồi bản sao lưu (kết quả: data/thu_phuc_hoi.out)",
+          flush=True)
+
+
 def main() -> int:
     truoc = _doc_truoc()
     song, ly_do = _song()
@@ -388,6 +431,10 @@ def main() -> int:
             _lo_cong_khai()
         except Exception as exc:  # noqa: BLE001 — canh cổng hỏng không được chặn ghi trạng thái
             print(f"[hong] canh địa chỉ công khai lỗi: {type(exc).__name__}: {exc}", flush=True)
+        try:
+            _lo_thu_phuc_hoi()
+        except Exception as exc:  # noqa: BLE001 — cùng lý do
+            print(f"[hong] tự thử phục hồi lỗi: {type(exc).__name__}: {exc}", flush=True)
 
     _ghi(moi)
     # Mã thoát khác 0 khi hỏng, để Task Scheduler và cron cũng biết.

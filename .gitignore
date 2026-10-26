@@ -147,3 +147,6 @@ trien_khai/erp/sao_luu/
 # Trạng thái và nhật ký của người canh địa chỉ công khai (scripts/noi_lai_facebook.py).
 data/.noi_lai_facebook
 data/noi_lai_facebook.*
+data/.thu_phuc_hoi
+data/.thu_phuc_hoi_lan_thu
+data/thu_phuc_hoi.out

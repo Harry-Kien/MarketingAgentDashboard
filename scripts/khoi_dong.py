@@ -269,9 +269,24 @@ def buoc_tunnel() -> tuple[bool, str, bool]:
     r = _chay(sys.executable, "-m", "scripts.chay_tunnel", giay=300)
     sau = _doc_env("PUBLIC_BASE_URL")
     if r.returncode != 0:
-        dong = [d for d in (r.stdout or "").splitlines() if d.strip()]
-        return False, (dong[-1] if dong else "không bật được")[:160], False
+        return False, ly_do_hong(r), False
     return True, sau, (sau != truoc)
+
+
+def ly_do_hong(r: subprocess.CompletedProcess) -> str:
+    """
+    Câu giải thích khi một bước con hỏng: dòng cuối stdout, KHÔNG có thì
+    dòng cuối stderr (traceback), không có nữa thì mã thoát.
+
+    Đo 26.10.2026: người canh dựng lại tunnel hai lần, nhật ký chỉ ghi
+    "không bật được" — lỗi thật nằm trong stderr mà bản cũ không đọc. Một
+    câu báo hỏng không nói vì sao là câu báo người ta không làm gì được.
+    """
+    for nguon in (r.stdout, r.stderr):
+        dong = [d.strip() for d in (nguon or "").splitlines() if d.strip()]
+        if dong:
+            return dong[-1][:200]
+    return f"thoát mã {r.returncode}, không in gì"
 
 
 def buoc_bo_tunnel() -> tuple[bool, str, bool]:

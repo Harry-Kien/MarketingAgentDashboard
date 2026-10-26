@@ -335,3 +335,16 @@ def test_lan_2_cung_hong_thi_van_bao_hong(monkeypatch, capsys):
     _gia_lap(monkeypatch, app_lan_1=False, app_lan_2=False)
     assert k.main() == 1
     assert "Ứng dụng" in capsys.readouterr().out.split("CHƯA XONG")[-1]
+
+
+def test_buoc_hong_noi_ly_do_tu_stderr_khi_stdout_rong():
+    """26.10.2026: nhật ký chỉ ghi "không bật được" — lỗi thật nằm trong stderr."""
+    import subprocess
+
+    from scripts import khoi_dong as k
+
+    r = subprocess.CompletedProcess([], 1, stdout="", stderr="Traceback...\nOSError: [WinError 5] Access is denied\n")
+    assert k.ly_do_hong(r) == "OSError: [WinError 5] Access is denied"
+    r = subprocess.CompletedProcess([], 1, stdout="Không thấy cloudflared.\n", stderr="x\n")
+    assert k.ly_do_hong(r) == "Không thấy cloudflared."
+    assert "mã 3" in k.ly_do_hong(subprocess.CompletedProcess([], 3, stdout="", stderr=""))

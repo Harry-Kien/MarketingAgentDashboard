@@ -21,7 +21,7 @@ from agent import cau_hinh_dong
 from agent.config import settings
 from agent.core import llm
 from agent.erp.erpnext import NguonErpNext
-from agent.shipping import ghn
+from agent.shipping import ghn, ghtk
 
 from .routes import can_quyen
 
@@ -105,6 +105,15 @@ async def kiem_nhom(nhom: str, ghi_de: dict[str, str]) -> dict[str, Any]:
             return {"ok": False, "chi_tiet": _che(f"{type(exc).__name__}: {exc}"[:200], api_key, api_secret), "ms": 0, "khoa_da_kiem": khoa_da_kiem}
         return {"ok": bool(song), "chi_tiet": "ERPNext xác thực được" if song else "ERPNext từ chối xác thực", "ms": 0, "khoa_da_kiem": khoa_da_kiem}
     if nhom == "van_chuyen":
+        # Kiểm GHTK khi cửa hàng chạy GHTK, hoặc khi chỉ có token GHTK. Kiểm
+        # GHN cho một cửa hàng dùng GHTK là báo đỏ một hãng họ không dùng.
+        tk_ghtk = _hien_hanh("GHTK_TOKEN", ghi_de)
+        if tk_ghtk and (settings.shipping_provider.strip().lower() == "ghtk"
+                        or not _hien_hanh("GHN_TOKEN", ghi_de)):
+            ok, chi_tiet, ms = await ghtk.kiem_ket_noi(
+                token=tk_ghtk, ma_doi_tac=_hien_hanh("GHTK_MA_DOI_TAC", ghi_de))
+            return {"ok": ok, "chi_tiet": _che(chi_tiet, tk_ghtk), "ms": ms,
+                    "khoa_da_kiem": ["GHTK_TOKEN"]}
         khoa_da_kiem = ["GHN_TOKEN"]
         token = _hien_hanh("GHN_TOKEN", ghi_de)
         ok, chi_tiet, ms = await ghn.kiem_ket_noi(

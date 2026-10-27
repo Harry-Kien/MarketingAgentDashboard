@@ -520,7 +520,8 @@ def kiem_ghi_don() -> dict:
 
 
 def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
-                   url: str) -> dict:
+                   url: str, ten_token: str = "GHN_TOKEN",
+                   ten_shop: str = "GHN_SHOP_ID") -> dict:
     """
     Phần thuần: vận chuyển đang nối thật, hay đang chạy bằng hàng giả.
 
@@ -551,13 +552,14 @@ def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
             ten, CANH_BAO,
             "đang dùng hãng GIẢ (mock) — mã vận đơn phát ra KHÔNG tra được "
             "ở đâu cả",
-            "Đặt SHIPPING_PROVIDER=ghn kèm GHN_TOKEN và GHN_SHOP_ID. Để "
+            "Đặt SHIPPING_PROVIDER=ghn (kèm GHN_TOKEN, GHN_SHOP_ID) hoặc "
+            "ghtk (kèm GHTK_TOKEN, GHTK_KHO_ID). Để "
             "nguyên thì nhân viên sẽ nhắn cho khách một mã vận đơn không "
             "tồn tại, và chỉ vỡ ra khi khách hỏi lại",
         )
 
-    thieu = [t for t, co in (("GHN_TOKEN", co_token),
-                             ("GHN_SHOP_ID", co_shop_id)) if not co]
+    thieu = [t for t, co in ((ten_token, co_token),
+                             (ten_shop, co_shop_id)) if not co]
     if thieu:
         return _muc(
             ten, CHAN,
@@ -566,7 +568,8 @@ def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
             "SHIPPING_PROVIDER=mock nếu chưa tới lúc nối thật",
         )
 
-    if "dev-" in (url or "") or "sandbox" in (url or "").lower():
+    thap = (url or "").lower()
+    if "dev-" in thap or "sandbox" in thap or "staging" in thap or "ghtklab" in thap:
         return _muc(
             ten, CANH_BAO,
             f"{p} đang trỏ vào môi trường THỬ ({url[:48]}…)",
@@ -579,10 +582,28 @@ def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
 
 
 def kiem_van_chuyen() -> dict:
+    # Đọc qua cau_hinh_dong, không đọc thẳng settings: token điền trên
+    # dashboard nằm trong CSDL, và đọc .env thì mục này báo CHẶN "thiếu
+    # token" cho một cửa hàng đã cấu hình đúng — đỏ giả, rồi người ta thôi
+    # đọc bảng. `kiem_khoa_api` chạy trước đã nạp CSDL; không nạp được thì
+    # `lay` tự lui về .env.
+    from agent import cau_hinh_dong
+
+    p = (getattr(settings, "shipping_provider", "") or "").strip().lower()
+    if p == "ghtk":
+        from agent.shipping.ghtk import KHOA_LAY_HANG
+
+        co_kho = bool(cau_hinh_dong.lay("GHTK_KHO_ID")) or all(
+            cau_hinh_dong.lay(k) for k in KHOA_LAY_HANG)
+        return doc_van_chuyen(
+            provider=p, co_token=bool(cau_hinh_dong.lay("GHTK_TOKEN")),
+            co_shop_id=co_kho, url=getattr(settings, "ghtk_api_url", "") or "",
+            ten_token="GHTK_TOKEN", ten_shop="GHTK_KHO_ID (hoặc đủ GHTK_LAY_*)",
+        )
     return doc_van_chuyen(
-        provider=getattr(settings, "shipping_provider", "") or "",
-        co_token=bool((getattr(settings, "ghn_token", "") or "").strip()),
-        co_shop_id=bool(str(getattr(settings, "ghn_shop_id", "") or "").strip()),
+        provider=p,
+        co_token=bool(cau_hinh_dong.lay("GHN_TOKEN")),
+        co_shop_id=bool(cau_hinh_dong.lay("GHN_SHOP_ID")),
         url=getattr(settings, "ghn_api_url", "") or "",
     )
 

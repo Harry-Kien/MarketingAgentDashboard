@@ -100,3 +100,6 @@ class WebhookEventResult:
     thoi_gian: datetime | None = None
     du_lieu_goc: dict[str, Any] = field(default_factory=dict)
     loi: str = ""
+    # Mã hãng nhận ra nhưng không phải trạng thái chính thức — xem
+    # `BaseShippingProvider.MA_CHI_THONG_TIN`. Đúng thì chỉ ghi nhật ký.
+    chi_thong_tin: bool = False

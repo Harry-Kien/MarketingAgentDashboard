@@ -224,9 +224,10 @@ def test_nha_xe_KHONG_duoc_tu_ghi_de_map_status():
     lộ ra khi chạy thử trọn vòng trên CSDL thật, không phải qua test đơn vị.
     """
     from agent.shipping.ghn import GHNShippingProvider
+    from agent.shipping.ghtk import GHTKShippingProvider
     from agent.shipping.mock import MockShippingProvider
 
-    for lop in (GHNShippingProvider, MockShippingProvider):
+    for lop in (GHNShippingProvider, GHTKShippingProvider, MockShippingProvider):
         assert "map_status" not in vars(lop), (
             f"{lop.__name__} tự ghi đè map_status — lưới chặn mã lạ bị vô hiệu"
         )

@@ -167,6 +167,20 @@ class Settings(BaseSettings):
     vietqr_so_tk: str = ""
     vietqr_ten_tk: str = ""
     ghn_shop_id: str = ""
+    # GHTK. Mặc định trỏ STAGING (khachhang-staging.ghtklab.com để lấy token
+    # thử). Lên thật: https://services.giaohangtietkiem.vn
+    ghtk_api_url: str = "https://services-staging.ghtklab.com"
+    ghtk_token: str = ""
+    # Mã đối tác gửi trong header X-Client-Source (trang GHTK cấp kèm token).
+    ghtk_ma_doi_tac: str = ""
+    # Nơi lấy hàng: mã kho trên GHTK, HOẶC đủ năm trường lấy hàng dưới đây.
+    ghtk_kho_id: str = ""
+    ghtk_lay_ten: str = ""
+    ghtk_lay_sdt: str = ""
+    ghtk_lay_dia_chi: str = ""
+    ghtk_lay_tinh: str = ""
+    ghtk_lay_huyen: str = ""
+    ghtk_lay_phuong: str = ""
     # Bí mật nằm trong URL webhook. TRỐNG = TỪ CHỐI mọi webhook vận chuyển,
     # không phải chấp nhận tất cả — xem agent/shipping/service.py
     shipping_webhook_secret: str = ""

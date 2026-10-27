@@ -15,7 +15,7 @@ Chúng khai ở `models.InternalShippingStatus`.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
 
 from .models import (
     CreateWaybillRequest,
@@ -105,6 +105,16 @@ class BaseShippingProvider(ABC):
     Mọi hãng đều phải hiện thực đủ các phương thức này.
     """
 
+    # Mã RIÊNG của hãng, tra TRƯỚC bảng chung. GHTK nói bằng số ("5" là đã
+    # giao) — đổ số vào bảng chung là "5" của hãng sau mặc nhiên cũng thành
+    # "đã giao". Hãng KHAI bảng, không ghi đè `map_status`: lưới "mã lạ thì
+    # None, không đoán" phải nằm ở một chỗ (test_nha_xe_KHONG_duoc_tu_ghi_de_map_status).
+    BANG_MA_RIENG: ClassVar[dict[str, InternalShippingStatus]] = {}
+    # Mã hãng NHẬN RA nhưng KHÔNG phải trạng thái chính thức (shipper tự báo,
+    # đối soát công nợ). Ghi nhật ký, không đổi đơn, không nhắn khách, không
+    # đụng kho. Khác mã lạ ở chỗ: không gọi người — người không có gì để làm.
+    MA_CHI_THONG_TIN: ClassVar[frozenset[str]] = frozenset()
+
     @property
     @abstractmethod
     def code(self) -> str:
@@ -148,8 +158,14 @@ class BaseShippingProvider(ABC):
         Trả `None` nghĩa là KHÔNG NHẬN RA — chỗ gọi phải xử lý, không được
         coi như "đang giao".
         """
+        thap = str(carrier_status or "").strip().lower()
+        if thap in self.BANG_MA_RIENG:
+            return self.BANG_MA_RIENG[thap]
         trang_thai, _goc = anh_xa_trang_thai(carrier_status)
         return trang_thai
+
+    def chi_thong_tin(self, carrier_status: str) -> bool:
+        return str(carrier_status or "").strip().lower() in self.MA_CHI_THONG_TIN
 
     async def huy_van_don(self, ma_van_don: str) -> tuple[bool, str]:
         """Mặc định: hãng không cho huỷ qua API. Ghi đè nếu hãng hỗ trợ."""

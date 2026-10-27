@@ -3,6 +3,7 @@ Phân hệ kết nối đối tác vận chuyển (GHN, GHTK, Mock).
 """
 from .base import BaseShippingProvider
 from .ghn import GHNShippingProvider
+from .ghtk import GHTKShippingProvider
 from .mock import MockShippingProvider
 from .models import (
     CreateWaybillRequest,
@@ -17,6 +18,7 @@ from .service import get_provider, tao_van_don_cho_don, tra_cuu_van_don, xu_ly_w
 __all__ = [
     "BaseShippingProvider",
     "GHNShippingProvider",
+    "GHTKShippingProvider",
     "MockShippingProvider",
     "CreateWaybillRequest",
     "CreateWaybillResult",

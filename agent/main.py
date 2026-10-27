@@ -684,6 +684,29 @@ _MO_MAU = (
 )
 
 
+def doc_than_webhook_van_chuyen(raw: bytes, content_type: str) -> dict | None:
+    """
+    JSON (GHN) hoặc form urlencoded (GHTK). Không đọc được thì None.
+
+    GHTK gửi webhook dạng `application/x-www-form-urlencoded` — tài liệu ghi
+    rõ, dù ví dụ thân lại vẽ bằng JSON. Chỉ nhận JSON là trả 400 cho MỌI cập
+    nhật trạng thái GHTK, và GHTK chỉ gửi lại một lần rồi bỏ: đơn kẹt ở
+    "đang giao" mãi, hoàn kho không bao giờ chạy, không ai biết.
+    """
+    from urllib.parse import parse_qsl
+
+    if "x-www-form-urlencoded" in content_type.lower():
+        try:
+            return dict(parse_qsl(raw.decode("utf-8"), keep_blank_values=True))
+        except UnicodeDecodeError:
+            return None
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 @app.post("/webhook/shipping/{hang}")
 async def webhook_shipping(
     request: Request, hang: str = "ghn", token: str = "",
@@ -702,10 +725,9 @@ async def webhook_shipping(
     from agent.shipping import xu_ly_webhook_van_chuyen
 
     raw = await request.body()
-    try:
-        payload = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-        return JSONResponse({"ok": False, "error": "payload không phải JSON"},
+    payload = doc_than_webhook_van_chuyen(raw, request.headers.get("content-type", ""))
+    if payload is None:
+        return JSONResponse({"ok": False, "error": "payload không phải JSON hay form"},
                             status_code=400)
 
     ket_qua = await xu_ly_webhook_van_chuyen(

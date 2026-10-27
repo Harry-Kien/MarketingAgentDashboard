@@ -98,3 +98,51 @@ def test_muc_nay_co_trong_bang_san_sang():
 
     # Bảng nằm trong `chay()`; `main()` chỉ bọc asyncio.run quanh nó.
     assert "kiem_van_chuyen" in inspect.getsource(san_sang.chay)
+
+
+# ------------------------------------------------------------------ GHTK
+
+def test_ghtk_staging_thi_canh_bao():
+    m = doc_van_chuyen(provider="ghtk", co_token=True, co_shop_id=True,
+                       url="https://services-staging.ghtklab.com",
+                       ten_token="GHTK_TOKEN", ten_shop="GHTK_KHO_ID")
+    assert m["muc"] == CANH_BAO
+
+
+def test_ghtk_that_du_khoa_thi_du():
+    m = doc_van_chuyen(provider="ghtk", co_token=True, co_shop_id=True,
+                       url="https://services.giaohangtietkiem.vn",
+                       ten_token="GHTK_TOKEN", ten_shop="GHTK_KHO_ID")
+    assert m["muc"] == DU
+
+
+def _gia_lap(monkeypatch, provider: str, khoa: dict[str, str]):
+    from agent import cau_hinh_dong
+    from scripts import san_sang
+
+    monkeypatch.setattr(san_sang.settings, "shipping_provider", provider)
+    monkeypatch.setattr(cau_hinh_dong, "lay", lambda k: khoa.get(k, ""))
+    return san_sang.kiem_van_chuyen()
+
+
+def test_ghtk_thieu_token_chi_dung_ten_khoa_GHTK(monkeypatch):
+    m = _gia_lap(monkeypatch, "ghtk", {"GHTK_KHO_ID": "1"})
+    assert m["muc"] == CHAN and "GHTK_TOKEN" in m["ghi"] and "GHN" not in m["ghi"]
+
+
+def test_ghtk_dia_chi_lay_hang_thay_cho_ma_kho(monkeypatch):
+    from agent.shipping.ghtk import KHOA_LAY_HANG
+
+    m = _gia_lap(monkeypatch, "ghtk", {"GHTK_TOKEN": "t", **dict.fromkeys(KHOA_LAY_HANG, "x")})
+    assert m["muc"] != CHAN
+
+
+def test_khoa_dien_tren_dashboard_duoc_tinh(monkeypatch):
+    """
+    Token điền trên dashboard nằm trong CSDL, không trong .env. Đọc thẳng
+    settings là báo CHẶN "thiếu token" cho cửa hàng đã cấu hình đúng — đỏ
+    giả, và một bảng đỏ giả là bảng người ta thôi đọc.
+    """
+    monkeypatch.setattr("scripts.san_sang.settings.ghn_token", "")
+    m = _gia_lap(monkeypatch, "ghn", {"GHN_TOKEN": "tu-dashboard", "GHN_SHOP_ID": "1"})
+    assert m["muc"] != CHAN

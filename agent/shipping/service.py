@@ -13,6 +13,7 @@ from agent.config import settings
 from agent.core import kho
 from .base import BaseShippingProvider
 from .ghn import GHNShippingProvider
+from .ghtk import GHTKShippingProvider
 from .mock import MockShippingProvider
 from .models import (
     CreateWaybillRequest,
@@ -32,6 +33,8 @@ def get_provider(name: str | None = None) -> BaseShippingProvider:
     if key not in _PROVIDERS:
         if key == "ghn":
             _PROVIDERS[key] = GHNShippingProvider()
+        elif key == "ghtk":
+            _PROVIDERS[key] = GHTKShippingProvider()
         else:
             _PROVIDERS[key] = MockShippingProvider(code=key, name="Mock Shipping Partner")
     return _PROVIDERS[key]
@@ -397,6 +400,19 @@ async def xu_ly_webhook_van_chuyen(
         return {"ok": True, "note": "Không tìm thấy đơn hàng trong hệ thống"}
 
     st_noi_bo = event.trang_thai_noi_bo
+
+    # Mã hãng NHẬN RA nhưng không phải trạng thái chính thức (GHTK: shipper
+    # tự báo "đã giao", đối soát công nợ). Ghi lại để tra cứu, KHÔNG đổi đơn,
+    # không nhắn khách, không đụng kho — và không gọi người như mã lạ, vì
+    # người chẳng có gì để làm. Đọc "shipper báo đã giao" thành đã giao là
+    # nhắn cảm ơn khách trước khi hàng tới.
+    if event.chi_thong_tin:
+        await db.log_event(
+            "shipping.thong_tin", carrier=provider_name,
+            ma_don=str(order.get("ma_don") or ""), ma_van_don=event.ma_van_don,
+            trang_thai_goc=event.trang_thai_goc, mo_ta=event.mo_ta[:200],
+        )
+        return {"ok": True, "chi_thong_tin": True}
 
     # Mã hãng không nhận ra: GIỮ NGUYÊN trạng thái cũ, gọi người, và KHÔNG
     # nói gì với khách. Đoán bừa "đang giao" là trả lời sai cho kiện đã mất.

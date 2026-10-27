@@ -126,12 +126,12 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-60 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+62 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
-| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` · `csat` |
+| **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` · `csat` · `quy_tac_tu_dong` · `quy_tac_lan_chay` |
 | **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
 | **Tri thức (RAG)** | `documents` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
@@ -663,6 +663,25 @@ erDiagram
         SMALLINT diem
         TIMESTAMPTZ tra_loi_luc
     }
+    quy_tac_tu_dong {
+        UUID id
+        TEXT ten
+        TEXT su_kien
+        JSONB dieu_kien
+        JSONB hanh_dong
+        BOOLEAN bat
+        INT thu_tu
+        UUID tao_boi
+        _ con_2_cot_nua
+    }
+    quy_tac_lan_chay {
+        BIGSERIAL id
+        UUID quy_tac_id
+        UUID conversation_id
+        TEXT ket_qua
+        JSONB chi_tiet
+        TIMESTAMPTZ luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -718,6 +737,9 @@ erDiagram
     nguoi_dung ||--o{ phien : ""
     posts ||--o{ post_metrics : ""
     videos ||--o{ posts : ""
+    conversations ||--o{ quy_tac_lan_chay : ""
+    quy_tac_tu_dong ||--o{ quy_tac_lan_chay : ""
+    nguoi_dung ||--o{ quy_tac_tu_dong : ""
     nguoi_dung ||--o{ routing_cursors : ""
     routing_rules ||--o{ routing_cursors : ""
     channel_accounts ||--o{ routing_rules : ""

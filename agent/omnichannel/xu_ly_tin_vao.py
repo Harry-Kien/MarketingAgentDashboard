@@ -23,7 +23,7 @@ from agent.channels.base import InboundMessage
 from agent.config import settings
 from agent.core import agent as brain
 from agent.core import agent_bat, agent_ho_so, anh_khach, cong_viec, gio_lam_viec, tu_nhien
-from agent.omnichannel import giai_quyet
+from agent.omnichannel import giai_quyet, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
 from agent.omnichannel.outbound_service import (
     OutboundService,
@@ -216,6 +216,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
             return
         if await giai_quyet.mo_lai_neu_da_giai_quyet(cid):
             conv["status"], conv["mode"] = "auto", "auto"
+
+    # QUY TẮC TỰ ĐỘNG của cửa hàng (agent/omnichannel/tu_dong.py) — chạy
+    # TRƯỚC agent: quy tắc "chuyển người" phải chặn được agent ngay ở tin
+    # này, không phải từ tin sau. Hỏng thì tự ghi nhật ký và không chặn gì.
+    tu_dong_kq = await tu_dong.chay_tin_khach(msg, cid)
+    if tu_dong_kq.dung_agent:
+        return
 
     # Agent có được trả lời hội thoại này không — ba nấc: công tắc toàn cục,
     # bật/tắt theo TÀI KHOẢN KÊNH, và người đã tiếp quản hội thoại.

@@ -643,6 +643,77 @@
         </form>
       </section>
 
+      <!-- QUY TẮC TỰ ĐỘNG: khi khách nhắn → nếu thoả điều kiện → làm hành động.
+           Chỉ chọn trong danh sách đóng (agent/omnichannel/tu_dong.py) — không
+           gọi URL, không chạy mã. Gửi tin CHỈ bằng mẫu trả lời nhanh ở trên,
+           nên mọi câu tự động gửi đều đã qua bộ soi cụm cấm quảng cáo. -->
+      <section class="panel">
+        <h2 class="panel__head">Quy tắc tự động
+          <span class="panel__note">khi khách nhắn → nếu … → thì …</span></h2>
+        <p class="panel__note">
+          Chạy <b>trước</b> agent, theo thứ tự số nhỏ trước. Gửi mẫu và tạo việc chỉ
+          làm <b>một lần mỗi hội thoại</b> — khách nhắn mười tin không nhận mười câu chào.
+        </p>
+        <div id="qtDs" class="rows"></div>
+        <form id="qtForm" class="form" hidden>
+          <input type="hidden" name="qt_id">
+          <div class="form__row">
+            <label class="field"><span>Tên quy tắc</span>
+              <input name="ten" maxlength="80" required placeholder="Chào khách ngoài giờ"></label>
+            <label class="field"><span>Thứ tự <em class="hint">nhỏ chạy trước</em></span>
+              <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
+            <label class="quyen__o"><input name="bat" type="checkbox" checked> Đang bật</label>
+          </div>
+          <h3 class="panel__head qt__muc">Nếu <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
+          <div class="field field--wide"><span>Kênh <em class="hint">không chọn = mọi kênh</em></span>
+            <span class="tk__nhieu" id="qtKenh"></span></div>
+          <div class="form__row">
+            <label class="field"><span>Tin có chứa một trong các từ <em class="hint">cách nhau bằng dấu phẩy, không phân biệt dấu</em></span>
+              <input name="chua_tu" placeholder="đổi trả, hoàn tiền, khiếu nại"></label>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Giờ làm việc</span>
+              <select name="ngoai_gio">
+                <option value="">bất kỳ lúc nào</option>
+                <option value="true">chỉ NGOÀI giờ làm việc</option>
+                <option value="false">chỉ TRONG giờ làm việc</option>
+              </select></label>
+            <label class="field"><span>Tin đầu tiên</span>
+              <select name="lan_dau">
+                <option value="">bất kỳ tin nào</option>
+                <option value="true">chỉ tin ĐẦU TIÊN của khách</option>
+                <option value="false">không phải tin đầu tiên</option>
+              </select></label>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Hội thoại CÓ nhãn</span>
+              <input name="nhan_co" maxlength="40" placeholder="vip"></label>
+            <label class="field"><span>Hội thoại CHƯA có nhãn</span>
+              <input name="nhan_khong" maxlength="40" placeholder="đã chào"></label>
+          </div>
+          <h3 class="panel__head qt__muc">Thì <span class="panel__note">điền ít nhất một</span></h3>
+          <div class="form__row">
+            <label class="field"><span>Gắn nhãn</span>
+              <input name="hd_gan_nhan" maxlength="40" placeholder="ngoài giờ"></label>
+            <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt</em></span>
+              <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
+            <datalist id="qtMauDs"></datalist>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
+              <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả"></label>
+            <label class="field"><span>Chuyển người, agent không trả lời <em class="hint">lý do</em></span>
+              <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Lưu quy tắc</button>
+            <button type="button" class="btn btn--sm" id="qtHuy">Bỏ sửa</button>
+          </div>
+        </form>
+        <h3 class="panel__head">Lần chạy gần đây</h3>
+        <div id="qtLanChay" class="rows"></div>
+      </section>
+
       <!-- ĐỊNH TUYẾN TỰ ĐỘNG.
            `AutoRoutingWorker` chạy nền từ lâu, nhưng không màn hình nào tạo
            được đội hay luật — nên nó chạy mỗi vòng, không tìm thấy luật nào,

@@ -2081,3 +2081,11 @@ svg { flex: none; }
 .qr-2fa { display: block; margin: 12px auto; width: 180px; }
 .qr-2fa svg { width: 100%; height: auto; display: block; background: #fff; }
 #hoiPhu { white-space: pre-wrap; }
+
+/* Tiêu đề "Nếu" / "Thì" trong biểu mẫu quy tắc tự động: .form là lưới hai
+   cột, không trải hết hàng thì tiêu đề nằm lọt vào nửa cột trái. */
+.form > .qt__muc { grid-column: 1 / -1; margin: 6px 0 0; padding: 8px 0; }
+/* Ô tích trong .field nhận kiểu của ô nhập chữ (đệm 9px 12px, viền) — chiếm
+   chỗ của chữ bên cạnh, "Zalo cá nhân" bị bẻ thành ba dòng. */
+.field .tk__nhieu input[type="checkbox"] { padding: 0; border: 0; box-shadow: none; }
+.tk__nhieu label { white-space: nowrap; }

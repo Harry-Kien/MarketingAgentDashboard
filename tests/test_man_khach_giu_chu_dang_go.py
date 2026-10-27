@@ -46,6 +46,9 @@ MIEN_TRU: dict[str, str] = {
     "loadTamNhin":
         "chỉ vẽ radio lấy trạng thái từ máy chủ; đổi là lưu ngay, và "
         "listener gắn trên #tamnhin nên sống ngoài khối bị dựng lại",
+    "loadQuyTac":
+        "#qtDs chỉ có nút, không ô nhập; ô tích kênh dựng MỘT lần (khi còn "
+        "rỗng); biểu mẫu #qtForm là HTML tĩnh, không bao giờ bị dựng lại",
 }
 
 

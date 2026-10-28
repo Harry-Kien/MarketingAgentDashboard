@@ -1212,6 +1212,14 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             "thieu_thong_tin": thieu,
             "ly_do": "Thiếu thông tin giao hàng. Hỏi khách cho đủ, không tự điền.",
         }
+    # Phường MỚI ghi kèm tỉnh MỚI mà không thuộc tỉnh ấy = chắc chắn sai
+    # (agent/core/dia_gioi.py chỉ lên tiếng khi chắc). Lên đơn rồi hãng vận
+    # chuyển mới phát hiện là phí ship đi, hàng về, khách chờ thêm vài ngày.
+    from agent.core import dia_gioi
+
+    sai_dia_chi = dia_gioi.mau_thuan(str(args.get("khach_dia_chi") or ""))
+    if sai_dia_chi:
+        return {"tao_duoc": False, "thieu_thong_tin": ["địa chỉ đúng"], "ly_do": sai_dia_chi}
 
     items_in = args.get("items") or []
     if not items_in:

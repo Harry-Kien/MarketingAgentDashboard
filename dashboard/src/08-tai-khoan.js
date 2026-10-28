@@ -1,4 +1,4 @@
-/* ---------------- dữ liệu cá nhân (Nghị định 13/2023) ---------------- */
+/* ---------------- dữ liệu cá nhân (Luật 91/2025, NĐ 356/2025) ---------------- */
 
 // Xoá dữ liệu KHÔNG hoàn tác được. Nên luồng bắt buộc là: tra cứu để nhìn
 // thấy sẽ mất gì -> gõ lại số điện thoại -> mới xoá được. Không có nút xoá

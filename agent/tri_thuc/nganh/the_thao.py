@@ -38,7 +38,7 @@ KHUNG = KhungNganh(
     van_ban_phap_ly=(
         "Nghị định 15/2018/NĐ-CP — an toàn thực phẩm, áp cho thực phẩm bổ sung",
         "Nghị định 181/2013/NĐ-CP — hướng dẫn thi hành Luật Quảng cáo",
-        "Nghị định 13/2023/NĐ-CP — bảo vệ dữ liệu cá nhân",
+        "Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15 và Nghị định 356/2025/NĐ-CP",
     ),
     cum_cam_goi_y=(
         "chữa chấn thương", "trị đau khớp", "phục hồi hoàn toàn",
@@ -178,7 +178,7 @@ KHUNG = KhungNganh(
             ten_tep="du-lieu-ca-nhan-va-quyen-cua-khach.md",
             tieu_de="Dữ liệu cá nhân và quyền của khách",
             vi_sao=(
-                "Nghị định 13/2023 áp cho mọi ngành, không riêng mỹ phẩm. "
+                "Luật Bảo vệ dữ liệu cá nhân 2025 áp cho mọi ngành, không riêng mỹ phẩm. "
                 "Agent phải trả lời đúng khi khách hỏi, và chuyển cho người "
                 "khi khách yêu cầu thực hiện quyền."
             ),

@@ -160,7 +160,7 @@ class NguonGhiERP(Protocol):
     VÌ SAO CÓ `an_danh_khach`
     -------------------------
     Từ lúc đẩy đơn, tên — số điện thoại — địa chỉ khách nằm trong ERP VĨNH
-    VIỄN. Khách có quyền yêu cầu xoá (Nghị định 13/2023), và không có đường
+    VIỄN. Khách có quyền yêu cầu xoá (Luật BVDLCN 91/2025/QH15 Điều 4, Điều 14), và không có đường
     này thì hệ thống báo "đã xoá" trong khi dữ liệu còn nguyên ở đó.
 
     ẨN DANH chứ không xoá hẳn: ERP không cho xoá bản ghi đã có chứng từ, và

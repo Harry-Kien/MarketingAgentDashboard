@@ -1,17 +1,17 @@
 """
-Bảo vệ dữ liệu cá nhân — Nghị định 13/2023/NĐ-CP.
+Bảo vệ dữ liệu cá nhân — Luật 91/2025/QH15 và Nghị định 356/2025/NĐ-CP.
 
 VÌ SAO PHẦN NÀY TỒN TẠI
 -----------------------
 Hệ thống đang lưu họ tên, số điện thoại, địa chỉ giao hàng và toàn bộ nội
-dung hội thoại của khách hàng thật. Nghị định 13/2023/NĐ-CP về bảo vệ dữ
-liệu cá nhân — có hiệu lực từ 01/07/2023, là bản tương đương GDPR của Việt
-Nam — đặt ra ba nghĩa vụ mà trước đây hệ thống không đáp ứng được câu nào:
+dung hội thoại của khách hàng thật. Luật Bảo vệ dữ liệu cá nhân số
+91/2025/QH15 — hiệu lực 01/01/2026, thay Nghị định 13/2023/NĐ-CP — cùng
+Nghị định 356/2025/NĐ-CP hướng dẫn thi hành đặt ra các nghĩa vụ sau:
 
-  Điều 9 khoản 1 mục đ  Chủ thể dữ liệu có quyền YÊU CẦU XOÁ dữ liệu.
-  Điều 9 khoản 1 mục c  Chủ thể dữ liệu có quyền BIẾT hệ thống giữ gì.
-  Điều 16              Dữ liệu chỉ được lưu trong thời hạn phù hợp với
-                       mục đích đã thông báo.
+  Luật Điều 4 khoản 1  Chủ thể có quyền XEM, SỬA, YÊU CẦU XOÁ dữ liệu.
+  Luật Điều 14         Xoá khi chủ thể yêu cầu, khi hết mục đích, hết hạn.
+  Luật Điều 3 khoản 3  Chỉ lưu trong thời hạn phù hợp mục đích xử lý.
+  NĐ 356 Điều 5        THỜI HẠN đáp ứng — xem agent/core/yeu_cau_chu_the.py.
 
 Không có ba thứ này thì câu hỏi "nếu doanh nghiệp thật dùng cái này thì có
 hợp pháp không" chưa có câu trả lời.
@@ -88,7 +88,7 @@ def _dau_van_tay(sdt: str) -> str:
 
 
 # ---------------------------------------------------------------
-#  Quyền được biết (Điều 9.1.c)
+#  Quyền được xem (Luật 91/2025 Điều 4 khoản 1)
 # ---------------------------------------------------------------
 
 async def tra_cuu(sdt: str) -> dict:
@@ -122,7 +122,7 @@ async def tra_cuu(sdt: str) -> dict:
     # `contacts` giữ tên, số, email, hồ sơ; `contact_points` giữ danh tính
     # trên từng kênh (id Zalo, id Facebook); `contact_notes` giữ chữ nhân
     # viên viết về khách. Không đọc chúng ở đây thì màn "hệ thống đang giữ
-    # gì" trả lời THIẾU cho đúng câu hỏi Điều 9.1.c đặt ra, và `xoa()` cũng
+    # gì" trả lời THIẾU cho đúng câu hỏi quyền được xem đặt ra, và `xoa()` cũng
     # không có đường lần tới — hồ sơ ở lại nguyên vẹn sau khi báo "đã xoá".
     ho_so = await db.fetch(
         "SELECT c.id, c.display_name, c.status, "
@@ -174,12 +174,12 @@ async def tra_cuu(sdt: str) -> dict:
         "so_ho_so": len(ho_so),
         "ho_so_khach": ho_so,
         "co_du_lieu": bool(don or hoi_thoai or ho_so),
-        "can_cu": "Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục c",
+        "can_cu": "Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 4 khoản 1; Nghị định 356/2025/NĐ-CP, Điều 5 khoản 3",
     }
 
 
 # ---------------------------------------------------------------
-#  Quyền được xoá (Điều 9.1.đ)
+#  Quyền được xoá (Luật 91/2025 Điều 4 khoản 1, Điều 14)
 # ---------------------------------------------------------------
 
 async def an_danh_ben_erp(sdt: str) -> dict:
@@ -313,7 +313,7 @@ async def xin_duyet_xoa(sdt: str, *, ly_do: str, nguoi_id, nguoi_ten: str = "?")
         # nhau cho cùng một người thì người đi soát không nối được "ai xin
         # xoá" với "đã xoá" — đúng câu hỏi mà nhật ký này sinh ra để trả lời.
         dau_van_tay=_dau_van_tay(so), ly_do=ly_do,
-        can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
+        can_cu="Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 4 khoản 1 và Điều 14; Nghị định 356/2025/NĐ-CP, Điều 5 khoản 4",
     )
     return {"phieu_id": str(row["id"]), "trang_thai": row["status"], "da_co_san": False}
 
@@ -580,7 +580,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         phieu_duyet=str(phieu["id"]),
         nguoi_xin=str(phieu["requested_by"]),
         nguoi_duyet=str(phieu["approved_by"]),
-        can_cu="Nghị định 13/2023/NĐ-CP, Điều 9 khoản 1 mục đ",
+        can_cu="Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 4 khoản 1 và Điều 14; Nghị định 356/2025/NĐ-CP, Điều 5 khoản 4",
     )
     con_thieu = erp["ap_dung"] and not erp["da_lam"]
     return {
@@ -610,7 +610,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
 
 
 # ---------------------------------------------------------------
-#  Thời hạn lưu trữ (Điều 16)
+#  Thời hạn lưu trữ (Luật 91/2025 Điều 3 khoản 3, Điều 14 khoản 1)
 # ---------------------------------------------------------------
 
 async def don_theo_thoi_han(chi_dem: bool = False) -> dict:
@@ -639,6 +639,6 @@ async def don_theo_thoi_han(chi_dem: bool = False) -> dict:
     await db.log_event(
         "pdpd.don_theo_thoi_han", actor="system",
         so_hoi_thoai=n, thoi_han_ngay=ngay,
-        can_cu="Nghị định 13/2023/NĐ-CP, Điều 16",
+        can_cu="Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 3 khoản 3 và Điều 14 khoản 1",
     )
     return {"thoi_han_ngay": ngay, "so_hoi_thoai_qua_han": n, "da_xoa": n}

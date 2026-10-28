@@ -114,7 +114,7 @@ flowchart LR
     nv --- u7["Duyệt bài đăng"]
     nv --- u8["Nhập kho, xử lý đơn"]
 
-    qt --- u9["Xoá dữ liệu khách (NĐ 13)"]
+    qt --- u9["Xoá dữ liệu khách (Luật BVDLCN)"]
     qt --- u10["Bật/tắt agent, đổi ngưỡng"]
     qt --- u11["Quản lý tài khoản"]
 
@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-64 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+65 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -138,6 +138,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
 | **Công việc** | `cong_viec` |
 | **Lịch ca** | `ca_truc` · `ca_nghi` |
+| **Dữ liệu cá nhân** | `yeu_cau_chu_the` |
 | **Hồ sơ agent** | `agent_ho_so` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
@@ -700,6 +701,17 @@ erDiagram
         UUID tao_boi
         TIMESTAMPTZ tao_luc
     }
+    yeu_cau_chu_the {
+        UUID id
+        TEXT loai
+        TEXT dau_van_tay
+        TEXT kenh_nhan
+        TEXT noi_dung
+        BOOLEAN co_ben_thu_ba
+        TIMESTAMPTZ nhan_luc
+        TIMESTAMPTZ han_phan_hoi
+        _ con_9_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -773,6 +785,7 @@ erDiagram
     videos ||--o{ video_assets : ""
     conversations ||--o{ videos : ""
     channel_accounts ||--o{ webhook_deliveries : ""
+    nguoi_dung ||--o{ yeu_cau_chu_the : ""
 ```
 
 Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `created_at`…)

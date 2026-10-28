@@ -255,8 +255,8 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3001"
 
-    # --- Bảo vệ dữ liệu cá nhân (Nghị định 13/2023/NĐ-CP) ---
-    # Điều 16: dữ liệu chỉ được lưu trong thời hạn phù hợp với mục đích đã
+    # --- Bảo vệ dữ liệu cá nhân (Luật 91/2025/QH15, NĐ 356/2025/NĐ-CP) ---
+    # Luật Điều 3 khoản 3: dữ liệu chỉ được lưu trong thời hạn phù hợp với mục đích đã
     # thông báo. 180 ngày là mức hợp lý cho mục đích chăm sóc khách hàng:
     # đủ dài để tra lại lịch sử tư vấn, đủ ngắn để không giữ vô thời hạn.
     # KHÔNG áp cho đơn hàng — chứng từ kế toán có thời hạn riêng dài hơn

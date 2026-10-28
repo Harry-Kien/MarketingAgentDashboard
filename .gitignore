@@ -150,3 +150,7 @@ data/noi_lai_facebook.*
 data/.thu_phuc_hoi
 data/.thu_phuc_hoi_lan_thu
 data/thu_phuc_hoi.out
+
+# Bản nháp hồ sơ BVDLCN sinh từ cấu hình thật — có tên nhà cung cấp, vùng
+# máy chủ của cửa hàng; không đi theo repo.
+data/ho_so_bvdlcn/

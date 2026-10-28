@@ -22,7 +22,7 @@ async function refresh() {
     if (state.view === "cauhinh") { await loadMauNhanh(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
-    if (state.view === "nhatky") { await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
+    if (state.view === "nhatky") { await loadYeuCauChuThe(); await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }

@@ -111,7 +111,10 @@ def test_moi_thao_tac_deu_duoc_ghi_lai():
     for ham in (pdpd.xoa, pdpd.don_theo_thoi_han):
         src = inspect.getsource(ham)
         assert "log_event" in src
-        assert "Nghị định 13/2023" in src, "nhật ký phải nêu căn cứ pháp lý"
+        # Nghị định 13/2023 hết hiệu lực 01-01-2026 — nhật ký nêu văn bản cũ
+        # là bằng chứng tuân thủ dẫn một luật không còn tồn tại.
+        assert "91/2025/QH15" in src, "nhật ký phải nêu căn cứ pháp lý hiện hành"
+        assert "13/2023" not in src
 
 
 # =====================================================================

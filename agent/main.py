@@ -426,7 +426,7 @@ async def don_du_lieu_loop() -> None:
     """
     Dọn hội thoại quá thời hạn lưu trữ, mỗi ngày một lần.
 
-    Nghị định 13/2023/NĐ-CP Điều 16: dữ liệu chỉ được lưu trong thời hạn
+    Luật BVDLCN 91/2025/QH15 Điều 3 khoản 3: dữ liệu chỉ được lưu trong thời hạn
     phù hợp với mục đích đã thông báo. Không có vòng này thì "chính sách
     lưu 180 ngày" chỉ là một dòng trong tài liệu, còn dữ liệu thì nằm đó
     mãi mãi.

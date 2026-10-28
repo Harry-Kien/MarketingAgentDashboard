@@ -59,6 +59,7 @@ NHOM = {
     ],
     "Công việc": ["cong_viec"],
     "Lịch ca": ["ca_truc", "ca_nghi"],
+    "Dữ liệu cá nhân": ["yeu_cau_chu_the"],
     "Hồ sơ agent": ["agent_ho_so"],
     "Vận hành": [
         "nguoi_dung", "phien", "events", "zalo_oa_token", "ky_nang_cai_dat",
@@ -262,7 +263,7 @@ flowchart LR
     nv --- u7["Duyệt bài đăng"]
     nv --- u8["Nhập kho, xử lý đơn"]
 
-    qt --- u9["Xoá dữ liệu khách (NĐ 13)"]
+    qt --- u9["Xoá dữ liệu khách (Luật BVDLCN)"]
     qt --- u10["Bật/tắt agent, đổi ngưỡng"]
     qt --- u11["Quản lý tài khoản"]
 

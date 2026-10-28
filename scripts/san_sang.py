@@ -608,6 +608,45 @@ def kiem_van_chuyen() -> dict:
     )
 
 
+def doc_yeu_cau_chu_the(dem: dict | None) -> dict:
+    """
+    Phần thuần: sổ yêu cầu của khách (Luật BVDLCN 91/2025, NĐ 356/2025 Điều 5).
+
+    QUÁ HẠN LÀ CHẶN, không phải cảnh báo: quá hạn nghĩa là vi phạm ĐÃ xảy
+    ra, không còn là rủi ro. Sắp hết hạn (≤ 2 ngày) mới là cảnh báo.
+    Không đọc được sổ thì cảnh báo — không được im lặng coi như "không có".
+    """
+    ten = "Yêu cầu của khách"
+    if dem is None:
+        return _muc(ten, CANH_BAO, "không đọc được sổ yêu cầu (CSDL?)",
+                    "Kiểm CSDL rồi chạy lại — sổ này là nơi duy nhất đếm hạn luật định")
+    qh = int(dem.get("qua_han", 0))
+    qhph = int(dem.get("qua_han_phan_hoi", 0))
+    sap = int(dem.get("sap_het_han", 0))
+    if qh or qhph:
+        phan = [f"{qh} quá hạn xử lý"] if qh else []
+        phan += [f"{qhph} quá hạn phản hồi 2 ngày làm việc"] if qhph else []
+        return _muc(ten, CHAN, ", ".join(phan),
+                    "Dashboard → Nhật ký → Yêu cầu của khách: xử lý ngay. Quá hạn "
+                    "là vi phạm Nghị định 356/2025 Điều 5")
+    if sap:
+        return _muc(ten, CANH_BAO, f"{sap} yêu cầu hết hạn trong 2 ngày tới",
+                    "Dashboard → Nhật ký → Yêu cầu của khách")
+    return _muc(ten, DU, f"{int(dem.get('dang_mo', 0))} yêu cầu đang mở, không cái nào sắp quá hạn")
+
+
+async def kiem_yeu_cau_chu_the() -> dict:
+    from agent import db
+    from agent.core import yeu_cau_chu_the
+
+    try:
+        await db.init_db()
+        return doc_yeu_cau_chu_the(await yeu_cau_chu_the.dem_canh_bao())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[cảnh báo] không đọc được sổ yêu cầu ({type(exc).__name__})")
+        return doc_yeu_cau_chu_the(None)
+
+
 def kiem_nguoi_canh() -> dict:
     """Người canh bên ngoài (`scripts/canh_gac_ngoai.py`) còn chạy không."""
     from datetime import datetime, timezone
@@ -1221,6 +1260,7 @@ async def chay() -> int:
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
+        await kiem_yeu_cau_chu_the(),
         kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]

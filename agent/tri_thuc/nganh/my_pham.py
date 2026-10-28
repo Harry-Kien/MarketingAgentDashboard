@@ -19,7 +19,7 @@ KHUNG = KhungNganh(
     van_ban_phap_ly=(
         "Thông tư 06/2011/TT-BYT — quản lý mỹ phẩm",
         "Nghị định 181/2013/NĐ-CP — hướng dẫn thi hành Luật Quảng cáo",
-        "Nghị định 13/2023/NĐ-CP — bảo vệ dữ liệu cá nhân",
+        "Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15 và Nghị định 356/2025/NĐ-CP",
     ),
     cum_cam_goi_y=(
         "trị mụn", "đặc trị", "chữa khỏi", "trị nám", "xoá nhăn",
@@ -134,7 +134,7 @@ KHUNG = KhungNganh(
             ten_tep="du-lieu-ca-nhan-va-quyen-cua-khach.md",
             tieu_de="Dữ liệu cá nhân và quyền của khách",
             vi_sao=(
-                "Nghị định 13/2023 cho khách quyền yêu cầu xoá dữ liệu. "
+                "Luật Bảo vệ dữ liệu cá nhân 2025 cho khách quyền yêu cầu xoá dữ liệu. "
                 "Agent phải biết trả lời đúng khi khách hỏi, và biết chuyển "
                 "cho người khi khách yêu cầu thực hiện quyền đó."
             ),

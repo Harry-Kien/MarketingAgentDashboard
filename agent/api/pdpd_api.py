@@ -4,11 +4,15 @@ API dữ liệu cá nhân (Luật BVDLCN): tra cứu, xin duyệt xoá, xoá, d�
 from __future__ import annotations
 
 
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
 from fastapi import (APIRouter, Depends, HTTPException)
 from pydantic import BaseModel, Field
 
 from agent.config import settings
-from agent.core import du_lieu_ca_nhan
+from agent.core import du_lieu_ca_nhan, yeu_cau_chu_the
 
 from .phu_thuoc import (
     can_quyen,
@@ -18,12 +22,14 @@ router = APIRouter(prefix="/api")
 
 
 # ---------------------------------------------------------------
-#  Bảo vệ dữ liệu cá nhân — Nghị định 13/2023/NĐ-CP
+#  Bảo vệ dữ liệu cá nhân — Luật 91/2025/QH15 (hiệu lực 01-01-2026, thay
+#  Nghị định 13/2023) và Nghị định 356/2025/NĐ-CP hướng dẫn thi hành.
 #
-#  Ba quyền của chủ thể dữ liệu mà hệ thống phải đáp ứng được:
-#    Điều 9.1.c  quyền BIẾT hệ thống giữ gì   -> GET  /api/pdpd/{sdt}
-#    Điều 9.1.đ  quyền YÊU CẦU XOÁ            -> POST /api/pdpd/{sdt}/xoa
-#    Điều 16     thời hạn lưu trữ              -> POST /api/pdpd/don-theo-han
+#    Luật Điều 4.1          quyền XEM hệ thống giữ gì -> GET  /api/pdpd/{sdt}
+#    Luật Điều 4.1, 14      quyền YÊU CẦU XOÁ         -> POST /api/pdpd/{sdt}/xoa
+#    Luật Điều 3.3, 14.1    thời hạn lưu trữ          -> POST /api/pdpd/don-theo-han
+#    Luật Điều 4.5,
+#    NĐ 356 Điều 5          THỜI HẠN đáp ứng yêu cầu  -> /api/pdpd/yeu-cau
 # ---------------------------------------------------------------
 
 class XoaDuLieuIn(BaseModel):
@@ -35,6 +41,85 @@ class XoaDuLieuIn(BaseModel):
 
 class XinDuyetXoaIn(BaseModel):
     ly_do: str = Field(min_length=3, max_length=300)
+
+
+# ---------------------------------------------------------------
+#  Sổ yêu cầu của chủ thể dữ liệu — thời hạn NĐ 356/2025 Điều 5
+#
+#  KHAI TRƯỚC `/pdpd/{sdt}`: FastAPI khớp route theo thứ tự khai, và
+#  "yeu-cau" khớp `{sdt}` — khai sau là GET /pdpd/yeu-cau thành tra cứu số
+#  điện thoại "yeu-cau".
+# ---------------------------------------------------------------
+
+class YeuCauIn(BaseModel):
+    loai: Literal["xem", "sua", "xoa", "rut_dong_y", "han_che", "phan_doi", "bao_ve"]
+    sdt: str = Field("", max_length=20)
+    kenh_nhan: Literal["chat", "dien_thoai", "email", "truc_tiep", "van_ban"] = "chat"
+    noi_dung: str = Field("", max_length=500)
+    co_ben_thu_ba: bool = False
+    # Ghi lùi được: khách nhắn hôm qua mà hôm nay mới vào sổ thì hạn vẫn
+    # tính từ HÔM QUA. Tính từ lúc vào sổ là tặng thêm ngày mà luật không cho.
+    nhan_luc: datetime | None = None
+
+
+class GiaHanIn(BaseModel):
+    so_ngay: int = Field(ge=1, le=20)
+    ly_do: str = Field(min_length=5, max_length=300)
+
+
+class DongIn(BaseModel):
+    ket_qua: str = Field("", max_length=500)
+    tu_choi: bool = False
+
+
+def _uid(nguoi: dict) -> UUID | None:
+    try:
+        return UUID(str(nguoi.get("id")))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _lam(coro):
+    try:
+        return await coro
+    except yeu_cau_chu_the.YeuCauHong as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/pdpd/yeu-cau")
+async def yc_liet_ke(ca_da_xong: bool = False,
+                     _q: dict = Depends(can_quyen("khach.pii"))) -> dict:
+    return {"yeu_cau": await yeu_cau_chu_the.liet_ke(ca_da_xong=ca_da_xong),
+            "dem": await yeu_cau_chu_the.dem_canh_bao(),
+            "loai": {k: {"ten": v.ten, "ngay": v.ngay, "ngay_ben_thu_ba": v.ngay_ben_thu_ba,
+                         "gia_han_toi_da": v.gia_han_toi_da} for k, v in yeu_cau_chu_the.LOAI.items()},
+            "can_cu": yeu_cau_chu_the.CAN_CU}
+
+
+@router.post("/pdpd/yeu-cau", status_code=201)
+async def yc_tao(body: YeuCauIn, nguoi: dict = Depends(can_quyen("khach.pii"))) -> dict:
+    return await _lam(yeu_cau_chu_the.tao(
+        loai=body.loai, sdt=body.sdt, kenh_nhan=body.kenh_nhan, noi_dung=body.noi_dung,
+        co_ben_thu_ba=body.co_ben_thu_ba, nhan_luc=body.nhan_luc, tao_boi=_uid(nguoi)))
+
+
+@router.post("/pdpd/yeu-cau/{yid}/phan-hoi")
+async def yc_phan_hoi(yid: UUID, nguoi: dict = Depends(can_quyen("khach.pii"))) -> dict:
+    return await _lam(yeu_cau_chu_the.da_phan_hoi(yid, boi=_uid(nguoi)))
+
+
+@router.post("/pdpd/yeu-cau/{yid}/gia-han")
+async def yc_gia_han(yid: UUID, body: GiaHanIn, nguoi: dict = Depends(can_quyen("khach.pii"))) -> dict:
+    return await _lam(yeu_cau_chu_the.gia_han(yid, so_ngay=body.so_ngay, ly_do=body.ly_do,
+                                               boi=_uid(nguoi)))
+
+
+@router.post("/pdpd/yeu-cau/{yid}/dong")
+async def yc_dong(yid: UUID, body: DongIn, nguoi: dict = Depends(can_quyen("khach.pii"))) -> dict:
+    return await _lam(yeu_cau_chu_the.dong(yid, ket_qua=body.ket_qua, tu_choi=body.tu_choi,
+                                            boi=_uid(nguoi)))
 
 
 @router.get("/pdpd/{sdt}")
@@ -85,7 +170,7 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
         # Ghi TÊN THẬT của người xoá, không ghi "nguoi" chung chung. Xoá dữ
         # liệu cá nhân là việc không hoàn tác được; nhật ký phải trả lời
         # được câu "ai đã làm việc này".
-        return await du_lieu_ca_nhan.xoa(
+        kq = await du_lieu_ca_nhan.xoa(
             sdt, ly_do=f"{body.ly_do} (bởi {nguoi['ten_dang_nhap']})"
         )
     except du_lieu_ca_nhan.ChuaDuyet as exc:
@@ -95,6 +180,13 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    # Chỉ đóng sổ khi đã xoá TRỌN (kể cả bên ERP). `da_xoa=False` mà vẫn
+    # đóng là ghi "đã đáp ứng" cho một yêu cầu còn dở.
+    if kq.get("da_xoa"):
+        kq["yeu_cau_da_dong"] = await yeu_cau_chu_the.dong_yeu_cau_xoa_theo_sdt(
+            du_lieu_ca_nhan.chuan_hoa_sdt(sdt),
+            ket_qua=f"đã xoá qua trang PDPD (bởi {nguoi['ten_dang_nhap']})")
+    return kq
 
 
 @router.get("/pdpd")
@@ -104,7 +196,8 @@ async def pdpd_tong_quan(_quyen: dict = Depends(can_quyen("khach.pii"))) -> dict
         **await du_lieu_ca_nhan.don_theo_thoi_han(chi_dem=True),
         "tu_dong_don": settings.tu_dong_don_du_lieu,
         "can_cu": [
-            "Nghị định 13/2023/NĐ-CP — bảo vệ dữ liệu cá nhân",
+            "Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15",
+            "Nghị định 356/2025/NĐ-CP — hướng dẫn Luật BVDLCN",
             "Luật Kế toán 2015, Điều 41 — thời hạn lưu chứng từ",
         ],
     }

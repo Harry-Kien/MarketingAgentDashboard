@@ -33,7 +33,7 @@ rút — thông tin rõ ràng nhất lại bị bỏ lỡ. Đã gặp đúng chu
 
 RÀNG BUỘC BẢO VỆ DỮ LIỆU
 ------------------------
-Hồ sơ là dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP. Nó phải biến mất khi
+Hồ sơ là dữ liệu cá nhân theo Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15. Nó phải biến mất khi
 khách yêu cầu xoá — xem `agent/core/du_lieu_ca_nhan.py`. Xây trí nhớ mà
 quên đường xoá là tạo ra một kho dữ liệu ngoài tầm kiểm soát.
 """

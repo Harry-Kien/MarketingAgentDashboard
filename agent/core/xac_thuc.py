@@ -11,7 +11,7 @@ Trước lớp này, bất kỳ ai chạm tới cổng 8000 đều làm được
 toàn nhờ nghe ở 127.0.0.1 — nghĩa là an toàn cho tới đúng ngày ai đó đưa
 lên server.
 
-Theo Nghị định 13/2023/NĐ-CP, dữ liệu cá nhân phải có biện pháp bảo vệ.
+Theo Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, dữ liệu cá nhân phải có biện pháp bảo vệ.
 "Không ai biết địa chỉ IP" không phải một biện pháp.
 
 CHỌN CÁCH ĐƠN GIẢN NHẤT ĐỦ DÙNG

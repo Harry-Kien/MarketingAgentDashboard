@@ -1149,7 +1149,7 @@ async def xoa_truong(
 
     Vì sao không lặng lẽ để giá trị nằm lại: đó là dữ liệu cá nhân không
     còn hiện ở đâu trên màn hình, không ai gỡ được, và không ai biết mình
-    đang giữ (Nghị định 13/2023/NĐ-CP). "Xoá định nghĩa" mà dữ liệu vẫn nằm
+    đang giữ (Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15). "Xoá định nghĩa" mà dữ liệu vẫn nằm
     trong CSDL là đúng nghĩa giữ dữ liệu quá hạn trong im lặng.
     """
     async with db.pool().acquire() as conn:

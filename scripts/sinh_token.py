@@ -63,6 +63,9 @@ CHO_PHEP = {
     # Đoán được nó là đánh dấu được đơn "hoàn về" — và hoàn về thì hệ thống
     # tự cộng hàng lại vào kho.
     "SHIPPING_WEBHOOK_SECRET": "bí mật trong URL webhook hãng vận chuyển",
+    # Mật khẩu mã hoá bản sao lưu (scripts/sao_luu.py). Sinh xong phải CẤT
+    # MỘT BẢN ngoài máy: mất nó là mất luôn mọi bản sao lưu đã mã hoá.
+    "SAO_LUU_MAT_KHAU": "mật khẩu mã hoá bản sao lưu — cất một bản ngoài máy",
     # Bốn bí mật của Langfuse (profile "trace") — từng gõ cứng trong
     # docker-compose.yml, tức công khai trên GitHub.
     "METRICS_TOKEN": "token Bearer cho /metrics (Prometheus)",

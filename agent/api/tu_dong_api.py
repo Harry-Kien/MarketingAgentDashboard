@@ -46,6 +46,11 @@ async def _kiem(body: QuyTacIn) -> tuple[dict, list]:
         hd = tu_dong.kiem_hanh_dong(body.hanh_dong)
     except tu_dong.QuyTacHong as exc:
         raise HTTPException(422, str(exc)) from exc
+    # TẮT một quy tắc không được đòi nó hợp lệ: mẫu của quy tắc đã bị xoá
+    # hay dính cụm cấm thì nút "Tắt" trả 422, quy tắc ghi "hỏng" mỗi tin
+    # khách, và lối thoát duy nhất là Xoá (rà soát 28.10.2026).
+    if not body.bat:
+        return dk, hd
     for h in hd:
         if h["loai"] != "gui_mau":
             continue

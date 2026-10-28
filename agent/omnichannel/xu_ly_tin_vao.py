@@ -220,7 +220,8 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # QUY TẮC TỰ ĐỘNG của cửa hàng (agent/omnichannel/tu_dong.py) — chạy
     # TRƯỚC agent: quy tắc "chuyển người" phải chặn được agent ngay ở tin
     # này, không phải từ tin sau. Hỏng thì tự ghi nhật ký và không chặn gì.
-    tu_dong_kq = await tu_dong.chay_tin_khach(msg, cid)
+    tu_dong_kq = await tu_dong.chay_tin_khach(
+        msg, cid, nguoi_dang_tiep=conv.get("mode") == "human")
     if tu_dong_kq.dung_agent:
         return
 

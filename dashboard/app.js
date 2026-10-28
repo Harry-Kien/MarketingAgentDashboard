@@ -7157,8 +7157,12 @@ const TEN_KENH = {
   zalo_personal: "Zalo cá nhân", zalo_oa: "Zalo OA", facebook: "Facebook",
   instagram: "Instagram", whatsapp: "WhatsApp", webchat: "Chat web",
 };
-// Kênh cũ thời chuyển đổi (zalocrm, chatwoot, messenger) không còn tài khoản
-// mới nào — hiện ra chỉ làm người vận hành phân vân chọn nhầm.
+// Kênh qua Chatwoot/ZaloCRM mang tên kênh CŨ ("chatwoot"), không phải
+// "facebook": giấu chúng đi là cửa hàng nhận FB/IG qua Chatwoot đặt quy tắc
+// "kênh Facebook" mà không bao giờ khớp (rà soát 28.10.2026).
+TEN_KENH.chatwoot = "Qua Chatwoot (FB/IG/web)";
+TEN_KENH.zalocrm = "Qua ZaloCRM";
+TEN_KENH.messenger = "Messenger (cũ)";
 const KENH_HIEN = Object.keys(TEN_KENH);
 
 function _moTaQuyTac(q) {

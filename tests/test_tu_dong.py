@@ -323,3 +323,94 @@ def test_lan_dau_chi_tin_dau(csdl_kiem_thu, gio_lam, kenh):
 
     kq1, kq2 = asyncio.run(chay())
     assert kq1.da_lam == ["gắn nhãn khách mới"] and kq2.da_lam == []
+
+
+
+# ------------------------------------------------------------------ rà soát 28.10.2026
+
+def test_mau_hong_van_chuyen_nguoi(csdl_kiem_thu, gio_lam, kenh):
+    """
+    Bản cũ: mẫu bị xoá → cả quy tắc huỷ → "chuyển người" không chạy → AGENT
+    trả lời đúng người cửa hàng muốn giao cho nhân viên.
+    """
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _quy_tac(db, "Đổi trả", {}, [{"loai": "gui_mau", "ma_tat": "da_bi_xoa"},
+                                               {"loai": "chuyen_nguoi", "ly_do": "đổi trả"}])
+            kq = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            lan = await db.fetchrow("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay")
+            return kq, lan
+        finally:
+            await _dong(db)
+
+    kq, lan = asyncio.run(chay())
+    assert kq.dung_agent is True
+    assert lan["ket_qua"] == "da_lam" and "chuyển người" in lan["chi_tiet"]["lam"]
+    assert "da_bi_xoa" in lan["chi_tiet"]["loi"]
+
+
+def test_nguoi_dang_tiep_thi_khong_gui_mau(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await db.execute("INSERT INTO tra_loi_nhanh (ma_tat, noi_dung) VALUES ('chao','Dạ chào chị')")
+            await _quy_tac(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"}])
+            await tu_dong.chay_tin_khach(_msg(tk), cid, nguoi_dang_tiep=True)
+            return (await _v(db, "SELECT count(*) FROM outbox_jobs"),
+                    await db.fetchrow("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay"))
+        finally:
+            await _dong(db)
+
+    so, lan = asyncio.run(chay())
+    assert so == 0 and lan["ket_qua"] == "bo_qua" and lan["chi_tiet"]["bo_qua"]
+
+
+def test_tao_viec_dung_tieu_de_va_nguon_tu_dong(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            # Hội thoại ĐÃ có một việc agent đang mở: bản cũ vẫn ghi "đã tạo việc".
+            await db.execute("INSERT INTO cong_viec (tieu_de, nguon, conversation_id) "
+                             "VALUES ('Khách cần người trả lời', 'agent', $1)", cid)
+            await _quy_tac(db, "Gọi lại", {}, [{"loai": "tao_viec", "tieu_de": "Gọi lại khách đêm"}])
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return [dict(r) for r in await db.fetch(
+                "SELECT tieu_de, nguon FROM cong_viec WHERE conversation_id = $1 ORDER BY tao_luc", cid)]
+        finally:
+            await _dong(db)
+
+    viec = asyncio.run(chay())
+    assert {"tieu_de": "Gọi lại khách đêm", "nguon": "tu_dong"} in viec
+
+
+def test_chuyen_nguoi_bao_ca_khach_va_nhan_vien(csdl_kiem_thu, gio_lam, kenh, monkeypatch):
+    from agent.omnichannel import xu_ly_tin_vao
+
+    goi: list[str] = []
+
+    async def bao_nv(*a, **k):
+        goi.append("nhan_vien")
+
+    async def bao_khach(*a, **k):
+        goi.append("khach")
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_nhan_vien_tiep_quan", bao_nv)
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_khach_dang_chuyen_nguoi", bao_khach)
+
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _quy_tac(db, "Chuyển", {}, [{"loai": "chuyen_nguoi"}])
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            await tu_dong.chay_tin_khach(_msg(tk, "còn đó không"), cid)   # đã ở chế độ người
+            return await db.fetchrow("SELECT outcome FROM conversations WHERE id = $1", cid)
+        finally:
+            await _dong(db)
+
+    c = asyncio.run(chay())
+    assert goi == ["nhan_vien", "khach"] and c["outcome"] == "escalated"
+
+
+def test_tieu_de_viec_qua_ngan_bi_chan_luc_luu():
+    with pytest.raises(QuyTacHong):
+        kiem_hanh_dong([{"loai": "tao_viec", "tieu_de": "ab"}])

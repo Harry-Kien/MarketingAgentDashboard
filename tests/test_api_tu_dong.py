@@ -123,3 +123,23 @@ def test_ghi_nhat_ky_kiem_toan(csdl_kiem_thu):
         finally:
             await conn.close()
     assert asyncio.run(dem()) == 1
+
+
+
+def test_tat_duoc_quy_tac_da_hong(csdl_kiem_thu):
+    """Mẫu của quy tắc bị xoá: nút Tắt vẫn phải chạy — bản cũ trả 422."""
+    import asyncio
+
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        qid = k.post("/api/tu-dong", json=MAU).json()["id"]
+
+        async def xoa_mau():
+            conn = await asyncpg.connect(csdl_kiem_thu)
+            try:
+                await conn.execute("DELETE FROM tra_loi_nhanh WHERE ma_tat = 'chao'")
+            finally:
+                await conn.close()
+        asyncio.run(xoa_mau())
+        assert k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": True}).status_code == 422
+        r = k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": False})
+        assert r.status_code == 200 and r.json()["bat"] is False

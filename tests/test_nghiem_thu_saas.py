@@ -587,3 +587,268 @@ def test_12_giao_nhieu_khach_mot_luot_va_thu_hoi(app_that):
         "contact_ids": ids, "owner_user_id": None, "ly_do": "Hết ca"})
     assert r.status_code == 200 and r.json()["owner_ho_ten"] is None
     assert qt.get("/api/khach-vo-chu").json()["so"] == 3
+
+
+# ------------------------------------------------------------------ 13. quy tắc tự động
+
+def _hoi_thoai_dau(khach) -> dict:
+    from agent import db
+
+    async def doc():
+        return dict(await db.fetchrow("SELECT id, status, mode FROM conversations "
+                                      "ORDER BY created_at LIMIT 1"))
+    return _sql(khach, doc)
+
+
+def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
+    """
+    Quy tắc tự động: khi khách nhắn → nếu … → thì ….
+
+    BƯỚC 1  Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
+    BƯỚC 2  Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
+    BƯỚC 3  Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
+    BƯỚC 4  Hội thoại chuyển người, có nhãn "đổi trả", có MỘT việc, mẫu đã vào hàng gửi.
+    BƯỚC 5  Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
+    BƯỚC 6  Nhân viên XEM được quy tắc nhưng không sửa được — thiếu quyền sửa định tuyến (403).
+    """
+    from agent import db
+
+    qt = _quan_tri_vao(app_that)
+    _, lan = _nhan_vien_moi(qt, "lan")
+    assert qt.post("/api/tra-loi-nhanh", json={
+        "ma_tat": "doitra", "noi_dung": "Dạ shop hỗ trợ đổi trả trong 7 ngày ạ."}).status_code == 201
+    quy_tac = {"ten": "Đổi trả", "dieu_kien": {"chua_tu": ["đổi trả"]},
+               "hanh_dong": [{"loai": "gan_nhan", "nhan": "đổi trả"},
+                             {"loai": "gui_mau", "ma_tat": "khongco"}]}
+    assert qt.post("/api/tu-dong", json=quy_tac).status_code == 422
+    quy_tac["hanh_dong"] = [{"loai": "gan_nhan", "nhan": "đổi trả"},
+                            {"loai": "gui_mau", "ma_tat": "doitra"},
+                            {"loai": "chuyen_nguoi", "ly_do": "khách hỏi đổi trả"}]
+    assert qt.post("/api/tu-dong", json=quy_tac).status_code == 201
+
+    tk = _kenh_webchat(qt, agent_bat=True)
+    _khach_nhan(app_that, tk, "Chị Hoa", "em muốn DOI TRA hàng ạ")
+    c = _hoi_thoai_dau(app_that)
+    assert (c["status"], c["mode"]) == ("escalated", "human")
+
+    async def dem(cid):
+        return {
+            "nhan": [r["nhan"] for r in await db.fetch(
+                "SELECT nhan FROM hoi_thoai_nhan WHERE conversation_id = $1", cid)],
+            "viec": (await db.fetchrow("SELECT count(*) n FROM cong_viec WHERE conversation_id = $1",
+                                       cid))["n"],
+            "mau": (await db.fetchrow("SELECT count(*) n FROM messages WHERE conversation_id = $1 "
+                                      "AND content LIKE 'Dạ shop hỗ trợ đổi trả%'", cid))["n"],
+        }
+    assert _sql(app_that, dem, c["id"]) == {"nhan": ["đổi trả"], "viec": 1, "mau": 1}
+
+    lc = qt.get("/api/tu-dong/lan-chay").json()["lan_chay"]
+    assert lc and lc[0]["ket_qua"] == "da_lam" and "chuyển người" in lc[0]["chi_tiet"]["lam"]
+    _khach_nhan(app_that, tk, "Chị Hoa", "đổi trả giúp em với")
+    assert _sql(app_that, dem, c["id"])["mau"] == 1
+
+    assert lan.get("/api/tu-dong").status_code == 200
+    assert lan.post("/api/tu-dong", json=quy_tac).status_code == 403
+
+
+# ------------------------------------------------------------------ 14. lịch ca
+
+def test_14_lich_ca_va_lich_nghi(app_that):
+    """
+    Lịch ca trực: bộ định tuyến chỉ giao cho người đang trong ca.
+
+    BƯỚC 1  Nhân viên mới chưa xếp ca → "luôn trực".
+    BƯỚC 2  Quản trị xếp ca ở một khung giờ KHÔNG phủ lúc này → nhân viên ngoài ca.
+    BƯỚC 3  Nhân viên tự xem "ca của tôi" → thấy mình ngoài ca và lịch tuần.
+    BƯỚC 4  Ca chồng nhau (ca đêm Chủ nhật vắt sang sáng thứ Hai) bị từ chối (422).
+    BƯỚC 5  Đội có luật định tuyến mà không ai trong ca → cảnh báo hiện ra.
+    BƯỚC 6  Xoá hết ca → về "luôn trực"; thêm lịch nghỉ phủ lúc này → ngoài ca.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    qt = _quan_tri_vao(app_that)
+    lan_id, lan = _nhan_vien_moi(qt, "lan")
+
+    def toi():
+        return next(n for n in qt.get("/api/lich-ca").json()["nguoi"] if n["id"] == lan_id)
+    assert toi()["trong_ca"] is True and toi()["ca"] == []
+
+    vn = datetime.now(timezone(timedelta(hours=7)))
+    ngay_khac = (vn.isoweekday() + 2) % 7 + 1
+    assert qt.put(f"/api/lich-ca/{lan_id}", json={"ca": [
+        {"thu": ngay_khac, "bat_dau": "08:00", "ket_thuc": "09:00"}]}).status_code == 200
+    assert toi()["trong_ca"] is False
+    cua_toi = lan.get("/api/lich-ca/cua-toi").json()
+    assert cua_toi["trong_ca"] is False and len(cua_toi["ca"]) == 1
+
+    assert qt.put(f"/api/lich-ca/{lan_id}", json={"ca": [
+        {"thu": 7, "bat_dau": "22:00", "ket_thuc": "06:00"},
+        {"thu": 1, "bat_dau": "05:00", "ket_thuc": "09:00"}]}).status_code == 422
+
+    r = qt.post("/api/routing/teams", json={"name": "Ca sáng"})
+    assert r.status_code == 201, r.text
+    doi = r.json()["id"]
+    assert qt.put(f"/api/routing/teams/{doi}/members/{lan_id}", json={}).status_code == 200
+    assert qt.post("/api/routing/rules", json={"team_id": doi}).status_code == 201
+    assert any(c["doi"] == "Ca sáng" for c in qt.get("/api/lich-ca").json()["canh_bao"])
+
+    assert qt.put(f"/api/lich-ca/{lan_id}", json={"ca": []}).json()["trong_ca"] is True
+    r = qt.post("/api/lich-ca/nghi", json={
+        "nguoi_dung_id": lan_id, "tu_luc": (vn - timedelta(hours=1)).isoformat(),
+        "den_luc": (vn + timedelta(days=1)).isoformat(), "ly_do": "ốm"})
+    assert r.status_code == 201, r.text
+    assert toi()["trong_ca"] is False and toi()["dang_nghi"] is True
+
+
+# ------------------------------------------------------------------ 15. sổ yêu cầu của khách
+
+def test_15_so_yeu_cau_cua_khach_dem_han_luat_dinh(app_that):
+    """
+    Sổ yêu cầu của khách (Luật BVDLCN 91/2025, NĐ 356/2025 Điều 5).
+
+    BƯỚC 1  Quản trị ghi yêu cầu xoá khách gửi hôm nay → "trong hạn".
+    BƯỚC 2  Ghi yêu cầu xem dữ liệu khách gửi 25 ngày trước → vào sổ đã "QUÁ HẠN".
+    BƯỚC 3  Sổ đếm 1 quá hạn; yêu cầu quá hạn KHÔNG gia hạn được (422).
+    BƯỚC 4  Phản hồi ban đầu, gia hạn một lần; lần gia hạn thứ hai bị từ chối.
+    BƯỚC 5  Từ chối phải nêu căn cứ; đóng xong yêu cầu biến khỏi danh sách đang mở.
+    BƯỚC 6  Sổ không lưu số điện thoại thật; người không có quyền PII không xem được (403).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from agent import db
+
+    qt = _quan_tri_vao(app_that)
+    _, la = _nhan_vien_moi(qt, "khach_moi", vai_tro=None)
+    xoa = qt.post("/api/pdpd/yeu-cau", json={"loai": "xoa", "sdt": "0967 627 336"}).json()
+    assert xoa["tinh_trang"] == "dung_han"
+    cu = (datetime.now(timezone(timedelta(hours=7))) - timedelta(days=25)).isoformat()
+    xem = qt.post("/api/pdpd/yeu-cau", json={"loai": "xem", "nhan_luc": cu}).json()
+    assert xem["tinh_trang"] == "qua_han"
+    assert qt.get("/api/pdpd/yeu-cau").json()["dem"]["qua_han"] == 1
+    assert qt.post(f"/api/pdpd/yeu-cau/{xem['id']}/gia-han",
+                   json={"so_ngay": 5, "ly_do": "chờ ERP"}).status_code == 422
+
+    assert qt.post(f"/api/pdpd/yeu-cau/{xoa['id']}/phan-hoi").status_code == 200
+    assert qt.post(f"/api/pdpd/yeu-cau/{xoa['id']}/gia-han",
+                   json={"so_ngay": 10, "ly_do": "chờ ERP mở lại"}).status_code == 200
+    assert qt.post(f"/api/pdpd/yeu-cau/{xoa['id']}/gia-han",
+                   json={"so_ngay": 1, "ly_do": "lần hai"}).status_code == 422
+
+    assert qt.post(f"/api/pdpd/yeu-cau/{xem['id']}/dong",
+                   json={"tu_choi": True, "ket_qua": ""}).status_code == 422
+    assert qt.post(f"/api/pdpd/yeu-cau/{xem['id']}/dong",
+                   json={"ket_qua": "đã gửi bản sao dữ liệu cho khách"}).status_code == 200
+    assert [y["id"] for y in qt.get("/api/pdpd/yeu-cau").json()["yeu_cau"]] == [xoa["id"]]
+
+    async def tat_ca():
+        return [dict(r) for r in await db.fetch("SELECT * FROM yeu_cau_chu_the")]
+    assert not any("967627336" in str(v) for r in _sql(app_that, tat_ca) for v in r.values())
+    assert la.get("/api/pdpd/yeu-cau").status_code == 403
+
+
+# ------------------------------------------------------------------ 16. gặp nhân viên
+
+def test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that(app_that):
+    """
+    "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã.
+
+    BƯỚC 1  Kênh BẬT agent; khách nhắn "cho em gặp nhân viên!" → chuyển người NGAY, agent không chạy.
+    BƯỚC 2  Hội thoại ở chế độ người, có MỘT việc "Khách đòi gặp nhân viên".
+    BƯỚC 3  Khách KHÔNG nhận câu "em là trợ lý AI" — người đang tiếp, không phải máy.
+    BƯỚC 4  Công tắc thông báo AI có trên Cấu hình (nhóm Bảo vệ dữ liệu cá nhân).
+    """
+    from agent import db
+
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt, agent_bat=True)
+    _khach_nhan(app_that, tk, "Anh Nam", "cho em gặp nhân viên!")
+    c = _hoi_thoai_dau(app_that)
+    assert (c["status"], c["mode"]) == ("escalated", "human")
+
+    async def doc(cid):
+        viec = [r["mo_ta"] for r in await db.fetch(
+            "SELECT mo_ta FROM cong_viec WHERE conversation_id = $1", cid)]
+        tin = [r["content"] for r in await db.fetch(
+            "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'system'", cid)]
+        return viec, tin
+    viec, tin = _sql(app_that, doc, c["id"])
+    assert viec == ["Khách đòi gặp nhân viên."]
+    assert not any("trợ lý AI" in t for t in tin)
+
+    muc = {m["khoa"]: m for m in qt.get("/api/cai-dat-api").json()["muc"]}
+    assert muc["THONG_BAO_AI"]["nhom"] == "bvdlcn"
+
+
+# ------------------------------------------------------------------ 17. webhook GHTK
+
+def test_17_webhook_ghtk_dang_form_cap_nhat_don(app_that, monkeypatch):
+    """
+    Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM).
+
+    BƯỚC 1  Đơn đã có mã vận đơn GHTK; gọi webhook sai bí mật → 401, đơn không đổi.
+    BƯỚC 2  GHTK báo "shipper báo đã giao" (45) — chỉ để tham khảo → đơn KHÔNG đổi.
+    BƯỚC 3  GHTK báo "đã giao" (5) dạng form → đơn chuyển "đã giao".
+    BƯỚC 4  Thân rác (không JSON, không form) → 400.
+    """
+    from agent import db
+    from agent.config import settings
+
+    monkeypatch.setattr(settings, "shipping_webhook_secret", "bi-mat-nghiem-thu")
+
+    async def gieo():
+        await db.execute(
+            "INSERT INTO orders (ma_don, khach_ten, khach_sdt, khach_dia_chi, trang_thai, "
+            "ma_van_don, don_vi_van_chuyen) VALUES ('NT1','Chị Lan','0912345678',"
+            "'12 Lê Lợi, Phường Bến Thành, TP HCM','da_chot','S1.A1.99','ghtk')")
+
+    async def don():
+        return dict(await db.fetchrow("SELECT trang_thai, trang_thai_giao_hang FROM orders "
+                                      "WHERE ma_don = 'NT1'"))
+    _sql(app_that, gieo)
+    form = {"Content-Type": "application/x-www-form-urlencoded"}
+    app_that.cookies.clear()
+    r = app_that.post("/webhook/shipping/ghtk?token=sai", content="label_id=S1.A1.99&status_id=5",
+                      headers=form)
+    assert r.status_code == 401 and _sql(app_that, don)["trang_thai"] == "da_chot"
+
+    r = app_that.post("/webhook/shipping/ghtk?token=bi-mat-nghiem-thu",
+                      content="label_id=S1.A1.99&partner_id=NT1&status_id=45", headers=form)
+    assert r.status_code == 200 and r.json().get("chi_thong_tin") is True
+    assert _sql(app_that, don)["trang_thai"] == "da_chot"
+
+    r = app_that.post("/webhook/shipping/ghtk?token=bi-mat-nghiem-thu",
+                      content="label_id=S1.A1.99&partner_id=NT1&status_id=5", headers=form)
+    assert r.status_code == 200, r.text
+    d = _sql(app_that, don)
+    assert (d["trang_thai"], d["trang_thai_giao_hang"]) == ("da_giao", "delivered")
+
+    assert app_that.post("/webhook/shipping/ghtk?token=bi-mat-nghiem-thu", content="rac",
+                         headers={"Content-Type": "text/plain"}).status_code == 400
+
+
+# ------------------------------------------------------------------ 18. địa chỉ sau sáp nhập
+
+def test_18_dia_chi_mau_thuan_khong_len_don(app_that):
+    """
+    Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025).
+
+    BƯỚC 1  Công cụ lên đơn nhận "Phường Ba Đình, TP Hồ Chí Minh" → không lên đơn, bảo hỏi lại khách.
+    BƯỚC 2  Không đơn nào được ghi vào CSDL.
+    BƯỚC 3  Địa chỉ cũ ba cấp ("Phường Bến Nghé, Quận 1, TP HCM") không bị chặn vì lý do địa chỉ.
+    """
+    from agent import db
+    from agent.core import tools
+
+    async def thu(dia_chi):
+        return await tools._tao_don_hang({
+            "items": [{"ten_san_pham": "không có", "so_luong": 1}], "khach_ten": "Chị Lan",
+            "khach_sdt": "0912345678", "khach_dia_chi": dia_chi, "khach_da_xac_nhan": True},
+            products=[], conversation_id=None)
+
+    async def dem():
+        return (await db.fetchrow("SELECT count(*) n FROM orders"))["n"]
+    kq = _sql(app_that, thu, "12 Lê Lợi, Phường Ba Đình, TP Hồ Chí Minh")
+    assert kq["tao_duoc"] is False and "Hỏi lại khách" in kq["ly_do"]
+    assert _sql(app_that, dem) == 0
+    kq = _sql(app_that, thu, "5 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP HCM")
+    assert "Hỏi lại khách" not in kq.get("ly_do", "")

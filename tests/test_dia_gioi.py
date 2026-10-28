@@ -65,3 +65,15 @@ def test_cong_cu_len_don_dung_lai_khi_dia_chi_mau_thuan():
         "khach_sdt": "0912345678", "khach_dia_chi": "12 Lê Lợi, Phường Ba Đình, TP Hồ Chí Minh",
         "khach_da_xac_nhan": True}, products=[], conversation_id=None))
     assert kq["tao_duoc"] is False and "Ba Đình" in kq["ly_do"]
+
+
+
+@pytest.mark.parametrize("dia_chi", [
+    # Rà soát 28.10.2026 — địa chỉ ĐÚNG từng bị chặn nhầm:
+    "Phường Quang Trung, TP Thái Nguyên, Thái Nguyên",          # TP cấp huyện cũ
+    "12 A, Phường Tân Lập, Thành phố Nha Trang, Khánh Hòa",
+    "Số 5, P. Quang Trung, Hà Đông, Hà Nội",                    # "P." là PHỐ ở Hà Nội
+    "Ngõ 2, Phường Quang Trung, Hà Đông, Hà Nội",               # huyện cũ không tiền tố
+])
+def test_khong_chan_nham_dia_chi_cu(dia_chi):
+    assert d.mau_thuan(dia_chi) is None

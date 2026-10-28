@@ -29,7 +29,12 @@ TEP = Path(__file__).resolve().parent.parent / "du_lieu" / "dia_gioi_vn.json"
 
 _TIEN_TO_TINH = ("thanh pho", "tinh", "tp")
 _TIEN_TO_PHUONG = ("phuong", "xa", "dac khu", "p", "x")
-_TIEN_TO_QUAN = ("quan", "huyen", "thi xa", "q", "h", "tx")
+# Chỉ tiền tố VIẾT ĐỦ mới đủ chắc để CHẶN: ở Hà Nội "P." là PHỐ ("P. Quang
+# Trung, Hà Đông"), và "X." hiếm khi là xã (rà soát 28.10.2026).
+_TIEN_TO_PHUONG_CHAC = ("phuong", "xa", "dac khu")
+# Phần không phải phần cuối mà mang các tiền tố này là cấp HUYỆN cũ — kể cả
+# thành phố/thị xã thuộc tỉnh ("Phường Tân Lập, Thành phố Nha Trang, Khánh Hòa").
+_TIEN_TO_QUAN = ("quan", "huyen", "thi xa", "thanh pho", "thi tran", "tp", "q", "h", "tx")
 # Cách gọi thường gặp → tên chuẩn đã bỏ tiền tố, bỏ dấu.
 _BIET_DANH = {
     "hcm": "ho chi minh", "tphcm": "ho chi minh", "sai gon": "ho chi minh", "sg": "ho chi minh",
@@ -102,15 +107,18 @@ def mau_thuan(dia_chi: str) -> str | None:
     tinh = tim_tinh(phan[-1])
     if tinh is None:
         return None
-    for p in phan[:-1]:
-        if not _co_tien_to(p, _TIEN_TO_PHUONG):
-            continue
-        ten = _bo_tien_to(p, _TIEN_TO_PHUONG)
-        if not ten or ten.isdigit():
-            continue
-        ca_nuoc = _du_lieu()["phuong"].get(ten)
-        if ca_nuoc and not thuoc_tinh(p, tinh):
-            noi = ", ".join(sorted(_du_lieu()["tinh"][x]["ten"] for x in ca_nuoc))
-            return (f"«{p}» không thuộc {tinh['ten']} theo danh mục hành chính sau sáp nhập "
-                    f"(có ở: {noi}). Hỏi lại khách phường/xã và tỉnh/thành cho đúng.")
+    # Địa chỉ MỚI hai cấp là "…, Phường X, Tỉnh Y": chỉ phần NGAY TRƯỚC tỉnh
+    # mới là phường. Xét mọi phần là bắt cả "Phường Quang Trung" nằm trước
+    # một tên huyện cũ không tiền tố ("…, Hà Đông, Hà Nội") — chặn nhầm khách.
+    p = phan[-2]
+    if not _co_tien_to(p, _TIEN_TO_PHUONG_CHAC):
+        return None
+    ten = _bo_tien_to(p, _TIEN_TO_PHUONG)
+    if not ten or ten.isdigit():
+        return None
+    ca_nuoc = _du_lieu()["phuong"].get(ten)
+    if ca_nuoc and not thuoc_tinh(p, tinh):
+        noi = ", ".join(sorted(_du_lieu()["tinh"][x]["ten"] for x in ca_nuoc))
+        return (f"«{p}» không thuộc {tinh['ten']} theo danh mục hành chính sau sáp nhập "
+                f"(có ở: {noi}). Hỏi lại khách phường/xã và tỉnh/thành cho đúng.")
     return None

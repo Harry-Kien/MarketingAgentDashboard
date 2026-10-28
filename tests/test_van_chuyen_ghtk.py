@@ -333,3 +333,17 @@ def test_mac_dinh_tro_vao_staging():
     from agent.config import Settings
 
     assert "staging" in Settings.model_fields["ghtk_api_url"].default
+
+
+
+def test_bo_ten_nuoc_o_cuoi_truoc_khi_tach():
+    """Bản cũ: quận = "TP Hồ Chí Minh", tỉnh = "Việt Nam" — tách sai mà vẫn qua."""
+    assert tach_dia_chi("12 Lê Lợi, Phường Bến Thành, TP Hồ Chí Minh, Việt Nam") is None
+    d = tach_dia_chi("12 Lê Lợi, Phường Bến Nghé, Quận 1, TP Hồ Chí Minh, Việt Nam")
+    assert d and d["province"] == "TP Hồ Chí Minh"
+
+
+def test_xa_lo_la_duong_khong_phai_xa():
+    assert tach_dia_chi("Hẻm 3, Xa lộ Hà Nội, Quận 2, TP HCM") is None
+    d = tach_dia_chi("5 Xa lộ Hà Nội, Phường Thảo Điền, Quận 2, TP HCM")
+    assert d and d["ward"] == "Phường Thảo Điền" and d["address"] == "5 Xa lộ Hà Nội"

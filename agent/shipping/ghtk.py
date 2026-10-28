@@ -52,7 +52,8 @@ def _bo_dau(s: str) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn").strip()
 
 
-_DAU_PHUONG = re.compile(r"^(phuong|xa|thi tran|p\.?|tt\.?)(\s|\d|$)")
+# "Xa lộ Hà Nội" là tên ĐƯỜNG, không phải xã.
+_DAU_PHUONG = re.compile(r"^(?!xa lo\b)(phuong|xa|thi tran|p\.?|tt\.?)(\s|\d|$)")
 _DAU_QUAN = re.compile(r"^(quan|huyen|thi xa|thanh pho|tp\.?|q\.?|h\.?|tx\.?)(\s|\d|$)")
 
 
@@ -72,6 +73,10 @@ def tach_dia_chi(dia_chi: str) -> dict[str, str] | None:
     khách, hoặc tạo tay trên trang GHTK — rẻ hơn một kiện hàng đi lạc.
     """
     phan = [p.strip() for p in str(dia_chi or "").split(",") if p.strip()]
+    # "…, TP Hồ Chí Minh, Việt Nam": bỏ tên nước. Để nguyên là quận = "TP Hồ
+    # Chí Minh", tỉnh = "Việt Nam" — tách sai mà vẫn qua (rà soát 28.10.2026).
+    while phan and _bo_dau(phan[-1]) in ("viet nam", "vietnam", "vn"):
+        phan.pop()
     if len(phan) < 4:
         return None
     phuong, quan, tinh = phan[-3], phan[-2], phan[-1]

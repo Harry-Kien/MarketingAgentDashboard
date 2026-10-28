@@ -23,7 +23,7 @@ from agent.channels.base import InboundMessage
 from agent.config import settings
 from agent.core import agent as brain
 from agent.core import agent_bat, agent_ho_so, anh_khach, cong_viec, gio_lam_viec, tu_nhien
-from agent.omnichannel import giai_quyet, tu_dong
+from agent.omnichannel import giai_quyet, thong_bao_ai, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
 from agent.omnichannel.outbound_service import (
     OutboundService,
@@ -249,6 +249,27 @@ async def handle_inbound(msg: InboundMessage) -> None:
             await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=cho_phep.ly_do)
         return
 
+    # KHÁCH ĐÒI GẶP NGƯỜI -> chuyển ngay, không qua model. Câu thông báo AI
+    # (thong_bao_ai.py) hứa "nhắn gặp nhân viên là gặp người"; lời hứa ấy
+    # giữ bằng mã — NĐ 356/2025 Điều 10 khoản 3 cho khách quyền không bị xử
+    # lý tự động, và để model tự hiểu là có lúc nó "dạ em hỗ trợ mình luôn".
+    if thong_bao_ai.khach_doi_gap_nguoi(msg.text or ""):
+        await db.execute(
+            "UPDATE conversations SET status = 'escalated', mode = 'human', "
+            "version = version + 1, outcome = 'escalated', updated_at = now() "
+            "WHERE id = $1", cid,
+        )
+        await db.log_event("conversation.escalated", ref_id=cid, reason="khách đòi gặp nhân viên")
+        await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do="Khách đòi gặp nhân viên.")
+        # Báo khách ở MỌI chế độ, kể cả Gợi ý: câu báo là câu cố định trong
+        # cấu hình, không phải lời model — và khách vừa đòi gặp người mà
+        # nhận lại im lặng là đúng thứ vừa hứa sẽ không xảy ra.
+        with suppress(Exception):
+            ad = await channels.get_for_account(msg.account_id)
+            await bao_nhan_vien_tiep_quan(ad, msg.conversation_ref, cid, "khách đòi gặp nhân viên")
+            await bao_khach_dang_chuyen_nguoi(ad, msg.conversation_ref, cid)
+        return
+
     # KHÁCH GỬI ẢNH KHÔNG KÈM CHỮ -> CHUYỂN NGƯỜI, KHÔNG ĐOÁN
     # -------------------------------------------------------
     # Model đang chạy nhìn được ảnh, nhưng đó không phải lý do để nó trả
@@ -276,6 +297,11 @@ async def handle_inbound(msg: InboundMessage) -> None:
         with suppress(Exception):
             await adapter_bao_nguoi(msg, cid)
         return
+
+    # Agent SẮP trả lời: báo khách đang nói với trợ lý AI (một lần mỗi hội
+    # thoại). Đặt ở đây chứ không sớm hơn: các nhánh phía trên đều là lúc
+    # NGƯỜI tiếp khách, và "em là trợ lý AI" khi ấy là nói sai.
+    await thong_bao_ai.gui_neu_chua(msg, cid)
 
     history = await _history(cid)
 

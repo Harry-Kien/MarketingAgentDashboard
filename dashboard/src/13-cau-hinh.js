@@ -335,7 +335,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------------- cài đặt API ---------------- */
 
-const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN / GHTK)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook", csat: "Khảo sát hài lòng (CSAT)" };
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN / GHTK)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook", csat: "Khảo sát hài lòng (CSAT)", bvdlcn: "Bảo vệ dữ liệu cá nhân" };
 
 /* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
  * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */

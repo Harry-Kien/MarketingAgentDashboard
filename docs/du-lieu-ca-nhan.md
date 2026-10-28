@@ -16,6 +16,7 @@ thời hạn, mẫu hồ sơ).
 | Luật Điều 9; NĐ 356 Điều 6 | Đồng ý theo từng mục đích, chứng minh được | `contact_consents` (có `evidence`), chốt trong outbox |
 | Luật Điều 4 khoản 5; NĐ 356 Điều 5 | **Thời hạn** đáp ứng yêu cầu | Sổ `yeu_cau_chu_the`, báo đỏ khi quá hạn |
 | Luật Điều 20, 21 | Hồ sơ đánh giá tác động, chuyển ra nước ngoài | `python -m scripts.sinh_ho_so_bvdlcn --ghi` (bản nháp) |
+| NĐ 356 Điều 10 khoản 3, Điều 6 khoản 4 | Báo xử lý tự động, cho gặp người; báo dữ liệu nhạy cảm | `THONG_BAO_AI`, chốt "gặp nhân viên" trước agent |
 
 Thao tác trên dashboard: mục **Nhật ký**.
 
@@ -150,12 +151,13 @@ Tắt tự động: `TU_DONG_DON_DU_LIEU=false`, rồi bấm tay trên dashboard
 
 Ghi rõ để không ai tưởng phần này đã đầy đủ:
 
-- **Dữ liệu nhạy cảm chưa có câu thông báo riêng.** Ảnh vùng da và mô tả
-  tình trạng da là "tình trạng sức khoẻ" — dữ liệu nhạy cảm (NĐ 356/2025
-  Điều 4 khoản 1 điểm d). Phải báo khách đây là dữ liệu nhạy cảm và xin
-  đồng ý (NĐ 356 Điều 6 khoản 4). Câu thông báo là quyết định của cửa hàng.
-- **Chưa thông báo việc xử lý tự động bằng AI** và quyền chọn nói chuyện
-  với người (NĐ 356/2025 Điều 10 khoản 3).
+- **Thông báo đã có, nhưng thông báo chưa phải là đồng ý.** Tin đầu mỗi
+  hội thoại agent trả lời kèm một câu: trợ lý AI, nhắn "gặp nhân viên" để
+  gặp người (chốt trong mã, `agent/omnichannel/thong_bao_ai.py`), ảnh da là
+  dữ liệu nhạy cảm (NĐ 356/2025 Điều 10 khoản 3, Điều 6 khoản 4; công tắc
+  `THONG_BAO_AI`). Luật 91/2025 Điều 9 khoản 4 nói im lặng không phải là
+  đồng ý — xin và lưu sự đồng ý rõ ràng cho dữ liệu nhạy cảm vẫn là việc
+  của cửa hàng (bảng `contact_consents` đã sẵn chỗ lưu bằng chứng).
 - **Hồ sơ đánh giá tác động và hồ sơ chuyển dữ liệu ra nước ngoài chưa
   nộp.** Hệ thống gửi hội thoại tới máy chủ model ngoài Việt Nam, và xử lý
   dữ liệu nhạy cảm nên miễn trừ doanh nghiệp nhỏ không áp dụng (NĐ 356

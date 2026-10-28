@@ -635,6 +635,23 @@ def doc_yeu_cau_chu_the(dem: dict | None) -> dict:
     return _muc(ten, DU, f"{int(dem.get('dang_mo', 0))} yêu cầu đang mở, không cái nào sắp quá hạn")
 
 
+def doc_thong_bao_ai(gia_tri: str) -> dict:
+    """Báo khách đang nói với AI và dữ liệu da là nhạy cảm — NĐ 356/2025 Điều 10.3, 6.4."""
+    ten = "Thông báo AI cho khách"
+    if (gia_tri or "bat").strip().lower() == "bat":
+        return _muc(ten, DU, "tin đầu mỗi hội thoại agent trả lời có câu báo trợ lý AI")
+    return _muc(ten, CANH_BAO,
+                "ĐANG TẮT — khách không được báo là đang nói với AI, không biết cách gặp người",
+                "Dashboard → Cấu hình → Bảo vệ dữ liệu cá nhân → bật. Đây là nghĩa vụ theo "
+                "Nghị định 356/2025 Điều 10 khoản 3 và Điều 6 khoản 4")
+
+
+def kiem_thong_bao_ai() -> dict:
+    from agent import cau_hinh_dong
+
+    return doc_thong_bao_ai(cau_hinh_dong.lay("THONG_BAO_AI"))
+
+
 async def kiem_yeu_cau_chu_the() -> dict:
     from agent import db
     from agent.core import yeu_cau_chu_the
@@ -1260,7 +1277,7 @@ async def chay() -> int:
         await kiem_bi_mat_sidecar(),
         await kiem_outbox(), await kiem_ton_kho(),
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
-        await kiem_yeu_cau_chu_the(),
+        await kiem_yeu_cau_chu_the(), kiem_thong_bao_ai(),
         kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]

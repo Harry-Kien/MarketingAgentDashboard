@@ -164,6 +164,21 @@ class Settings(BaseSettings):
     # "bat" = hỏi khách chấm 1–5 sau khi hội thoại được giải quyết. Mặc định
     # TẮT: thêm một tin vào hội thoại của khách là quyết định của cửa hàng.
     csat_bat: str = "tat"
+    # "bat" = tin đầu của mỗi hội thoại mà AGENT trả lời kèm một câu báo khách
+    # đang nói với trợ lý AI, cách gặp người, và ảnh/tình trạng da là dữ liệu
+    # nhạy cảm (NĐ 356/2025 Điều 10 khoản 3, Điều 6 khoản 4). Mặc định BẬT —
+    # khác CSAT — vì đây là nghĩa vụ luật định, không phải tính năng tuỳ chọn.
+    thong_bao_ai: str = "bat"
+    # Không hứa "24/7": ở chế độ Gợi ý, câu trả lời chờ nhân viên duyệt —
+    # ban đêm không ai duyệt thì "24/7" là hứa sai.
+    # {ten} = tên thương hiệu trong danh mục. Câu CỐ ĐỊNH, không để model
+    # soạn: lời hứa "nhắn gặp nhân viên" được giữ bằng mã (thong_bao_ai.py).
+    tin_thong_bao_ai: str = (
+        "Dạ em là trợ lý AI của {ten} ạ. Mình muốn nói chuyện "
+        "với nhân viên thì nhắn \"gặp nhân viên\" nha. Ảnh hoặc thông tin về "
+        "tình trạng da mình gửi là dữ liệu nhạy cảm — shop chỉ dùng để tư vấn "
+        "cho mình và giữ bảo mật ạ."
+    )
     vietqr_so_tk: str = ""
     vietqr_ten_tk: str = ""
     ghn_shop_id: str = ""

@@ -707,6 +707,17 @@ async def kiem_yeu_cau_chu_the() -> dict:
         return doc_yeu_cau_chu_the(None)
 
 
+def doc_ping_con_song(co_url: bool) -> dict:
+    """Có ai được báo khi CẢ MÁY tắt không — chỉ bên ngoài máy mới làm được."""
+    ten = "Báo khi máy tắt"
+    if co_url:
+        return _muc(ten, DU, "người canh ping Healthchecks mỗi lượt — hết tín hiệu là có báo")
+    return _muc(ten, CANH_BAO,
+                "máy tắt / mất điện / mất mạng thì KHÔNG ai được báo — mọi báo động đều chạy trên chính máy này",
+                "Tạo check miễn phí ở healthchecks.io (chu kỳ 5 phút, ân hạn 10 phút, nối Telegram/email), "
+                "dán URL ping vào CANH_GAC_PING_URL trong .env")
+
+
 def kiem_nguoi_canh() -> dict:
     """Người canh bên ngoài (`scripts/canh_gac_ngoai.py`) còn chạy không."""
     from datetime import datetime, timezone
@@ -1322,7 +1333,7 @@ async def chay() -> int:
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
         await kiem_yeu_cau_chu_the(), kiem_thong_bao_ai(),
         kiem_sao_luu(), *([] if trong_silo() else [kiem_ma_hoa_sao_luu()]),
-        kiem_bao_dong(), kiem_nguoi_canh(),
+        kiem_bao_dong(), kiem_nguoi_canh(), doc_ping_con_song(bool(settings.canh_gac_ping_url.strip())),
         kiem_cookie(), kiem_cong(),
     ]
 

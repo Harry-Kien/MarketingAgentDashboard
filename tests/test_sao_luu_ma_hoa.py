@@ -134,3 +134,50 @@ def test_ho_so_bvdlcn_khai_dung_cau_hinh(monkeypatch):
     monkeypatch.setattr(h.settings, "sao_luu_mat_khau", "mk")
     monkeypatch.setattr(h.settings, "sao_luu_thu_muc_ngoai", "")
     assert "mã hoá AES-256-GCM" in h.sinh() and "Chưa có bản ngoài máy" in h.sinh()
+
+
+# ------------------------------------------------------------------ ping "còn sống"
+
+def test_ping_con_song(monkeypatch):
+    from scripts import canh_gac_ngoai as cg
+
+    goi: list[str] = []
+
+    class _R:
+        def close(self):
+            pass
+
+    def mo(req, timeout=0):
+        goi.append(req.full_url)
+        return _R()
+
+    monkeypatch.setattr(cg.urllib.request, "urlopen", mo)
+    assert cg.ping_con_song(True, "https://hc-ping.com/abc") == "đã ping"
+    assert cg.ping_con_song(False, "https://hc-ping.com/abc/") == "đã ping /fail"
+    assert goi == ["https://hc-ping.com/abc", "https://hc-ping.com/abc/fail"]
+    assert "chưa đặt" in cg.ping_con_song(True, "")
+
+
+def test_ping_hong_khong_nem_khong_lo_url(monkeypatch):
+    from scripts import canh_gac_ngoai as cg
+
+    def no(*a, **k):
+        raise cg.urllib.error.URLError("mất mạng")
+    monkeypatch.setattr(cg.urllib.request, "urlopen", no)
+    kq = cg.ping_con_song(True, "https://hc-ping.com/bi-mat-uuid")
+    assert "hỏng" in kq and "bi-mat-uuid" not in kq
+
+
+def test_nguoi_canh_ping_moi_luot():
+    import inspect
+
+    from scripts import canh_gac_ngoai as cg
+
+    assert "ping_con_song(song)" in inspect.getsource(cg.main)
+
+
+def test_san_sang_ping():
+    from scripts.san_sang import CANH_BAO, DU, doc_ping_con_song
+
+    assert doc_ping_con_song(False)["muc"] == CANH_BAO
+    assert doc_ping_con_song(True)["muc"] == DU

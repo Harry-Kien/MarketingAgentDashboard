@@ -193,6 +193,27 @@ def _bao(muc_do: str, chi_tiet: str) -> None:
         print(f"  (không gửi được báo động: {exc})")
 
 
+def ping_con_song(song: bool, url: str | None = None) -> str:
+    """
+    Báo "còn sống" ra ngoài máy (Healthchecks: GET <url>, hỏng thì <url>/fail).
+
+    Báo động thường (`_bao`) chạy TRÊN máy này — máy tắt là nó tắt theo, và
+    đo được 03.09 và 14.09.2026: máy tắt hàng giờ, không một tin báo nào. Ping
+    đảo chiều: im lặng mới là tín hiệu, và bên nhận nằm ở nơi khác.
+
+    Không bao giờ ném, không in URL (URL là bí mật — ai có nó là ping giả).
+    """
+    url = (url if url is not None else settings.canh_gac_ping_url).strip()
+    if not url:
+        return "bỏ qua (chưa đặt CANH_GAC_PING_URL)"
+    dich = url.rstrip("/") + ("" if song else "/fail")
+    try:
+        urllib.request.urlopen(urllib.request.Request(dich, method="GET"), timeout=10).close()
+        return "đã ping" + ("" if song else " /fail")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return f"ping hỏng: {type(exc).__name__}"
+
+
 def _song() -> tuple[bool, str]:
     try:
         with urllib.request.urlopen(DIA_CHI, timeout=CHO_GIAY) as r:
@@ -437,6 +458,7 @@ def main() -> int:
             print(f"[hong] tự thử phục hồi lỗi: {type(exc).__name__}: {exc}", flush=True)
 
     _ghi(moi)
+    print(f"[ping] {ping_con_song(song)}", flush=True)
     # Mã thoát khác 0 khi hỏng, để Task Scheduler và cron cũng biết.
     return 0 if song else 1
 

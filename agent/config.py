@@ -300,6 +300,11 @@ class Settings(BaseSettings):
     # nơi nhận là việc của doanh nghiệp, và n8n đã chạy sẵn để định tuyến.
     # Để rỗng thì chỉ ghi vào nhật ký.
     canh_gac_webhook: str = ""
+    # Địa chỉ ping "còn sống" (Healthchecks.io hoặc bản tự dựng, BSD-3).
+    # Người canh gọi mỗi lượt; HẾT tín hiệu thì Healthchecks báo bạn. Đây là
+    # đường DUY NHẤT báo được khi cả máy tắt — mọi báo động khác chạy trên
+    # chính cái máy đó. Coi như bí mật: ai có URL là ping giả được.
+    canh_gac_ping_url: str = ""
     # Khách đã được chuyển cho người mà chờ quá số phút này thì canh gác
     # báo động. Đây là phép kiểm DUY NHẤT hướng ra phía khách: tám phép
     # còn lại hỏi "hệ thống có sống không", phép này hỏi "có ai đang bị bỏ

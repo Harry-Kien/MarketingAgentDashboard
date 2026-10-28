@@ -131,11 +131,14 @@ def sinh(bay_gio: datetime | None = None) -> str:
         "- Khoá truy cập dịch vụ ngoài mã hoá trong kho bí mật.",
         "- Xoá dữ liệu cần hai người (người xin, người duyệt); mọi lần xoá ghi nhật ký kèm căn cứ.",
         "- Sổ yêu cầu của khách đếm hạn theo NĐ 356/2025 Điều 5; quá hạn thì báo đỏ.",
-        # KHÔNG ghi "sao lưu mã hoá": bản sao lưu hằng ngày (scripts/sao_luu.py)
-        # là pg_dump nén, chưa mã hoá — chỉ gói chuyển nhà mới mã hoá. Hồ sơ
-        # khai một biện pháp không có là khai sai với cơ quan nhà nước.
-        "- Sao lưu hằng ngày, được thử phục hồi mỗi tuần. **Bản sao lưu chưa mã hoá** — "
-        "[ĐIỀN TAY: nơi cất, ai truy cập được; hoặc bổ sung mã hoá].",
+        # Khai ĐÚNG cấu hình đang chạy: hồ sơ khai một biện pháp không có là
+        # khai sai với cơ quan nhà nước.
+        ("- Sao lưu hằng ngày, mã hoá AES-256-GCM, được thử phục hồi mỗi tuần"
+         + (", có bản ngoài máy." if settings.sao_luu_thu_muc_ngoai.strip()
+            else ". **Chưa có bản ngoài máy** — [ĐIỀN TAY: kế hoạch].")
+         if settings.sao_luu_mat_khau else
+         "- Sao lưu hằng ngày, được thử phục hồi mỗi tuần. **Bản sao lưu chưa mã hoá** — "
+         "[ĐIỀN TAY: nơi cất, ai truy cập được; hoặc bật SAO_LUU_MAT_KHAU]."),
         "- [ĐIỀN TAY: biện pháp vật lý, đào tạo nhân viên, quy trình xử lý sự cố 72 giờ — Luật Điều 23].",
         "",
         "## 9. Việc còn phải làm ngoài hệ thống",

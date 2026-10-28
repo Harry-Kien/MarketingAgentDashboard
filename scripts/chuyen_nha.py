@@ -67,7 +67,7 @@ KHONG_MANG = frozenset({
 # thước gói và chứa dữ liệu khách đã có trong csdl.dump.
 _BO_DU_LIEU = re.compile(
     r"^(backup|backups|sao_luu)(/|$)|\.log(\.|$)|\.err$|\.bak$|^\.canh_gac_ngoai$"
-    r"|^\.sao_luu_ngoai$|^\.thu_phuc_hoi$|^eval/(ket-qua|nhieu-luot)-|^eval/golden\.jsonl$")
+    r"|^\.sao_luu_ngoai$|^\.sao_luu_ra_ngoai_may$|^\.thu_phuc_hoi$|^eval/(ket-qua|nhieu-luot)-|^eval/golden\.jsonl$")
 
 
 class LoiChuyen(Exception):

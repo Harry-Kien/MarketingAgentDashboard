@@ -284,7 +284,10 @@ async def _kiem_hang_doi_video() -> dict:
 
 async def _kiem_sao_luu() -> dict:
     kho = ROOT / "data" / "backup"
-    ban = sorted(kho.glob("db-*.sql.gz"), reverse=True) if kho.exists() else []
+    # Cả bản thường lẫn bản mã hoá (.cskh) — đếm thiếu loại nào là "chưa có
+    # bản sao nào" đỏ giả ngay sau khi bật mã hoá.
+    ban = sorted((p for m in ("db-*.sql.gz", "db-*.sql.gz.cskh") for p in kho.glob(m)),
+                 key=lambda p: p.stat().st_mtime, reverse=True) if kho.exists() else []
     if not ban:
         return _muc("Sao lưu", HONG,
                     "CHƯA CÓ BẢN SAO NÀO — mất dữ liệu là không cứu được")

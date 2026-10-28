@@ -298,6 +298,49 @@ def doc_sao_luu_may(so_ban: int, ngay: int, phuc_hoi: dict | None) -> dict:
                 f"{(phuc_hoi or {}).get('so_bang', '?')} bảng, {int(tuoi // 24)} ngày trước")
 
 
+def doc_ma_hoa_sao_luu(co_mat_khau: bool, ban_moi_ma_hoa: bool | None,
+                       co_thu_muc_ngoai: bool, moc_ngoai: dict | None) -> dict:
+    """
+    Phần thuần: bản sao lưu có mã hoá không, và có bản NGOÀI MÁY không.
+
+    Tách khỏi mục "Sao lưu" ở trên: mục ấy trả lời "có phục hồi được không",
+    mục này trả lời "lạc ra ngoài thì có lộ không, và máy hỏng thì còn gì".
+    Bản sao lưu chứa ảnh da và số điện thoại khách — dữ liệu nhạy cảm theo
+    Luật BVDLCN 91/2025 — nên CẢNH BÁO, không im lặng coi là đủ.
+    """
+    ten = "Mã hoá + ngoài máy"
+    if not co_mat_khau:
+        return _muc(ten, CANH_BAO, "bản sao lưu CHƯA mã hoá — có SĐT, địa chỉ, ảnh da của khách",
+                    "python -m scripts.sinh_token SAO_LUU_MAT_KHAU, cất một bản mật khẩu "
+                    "ngoài máy, rồi đặt SAO_LUU_THU_MUC_NGOAI (USB / thư mục OneDrive)")
+    if ban_moi_ma_hoa is False:
+        return _muc(ten, CANH_BAO, "đã đặt mật khẩu nhưng bản mới nhất vẫn chưa mã hoá",
+                    "chạy python -m scripts.sao_luu — hoặc khởi động lại app để vòng sao lưu đọc .env mới")
+    if not co_thu_muc_ngoai:
+        return _muc(ten, CANH_BAO, "đã mã hoá, nhưng chỉ có MỘT bản, cùng máy",
+                    "đặt SAO_LUU_THU_MUC_NGOAI — máy hỏng hay mất là mất cả dữ liệu lẫn bản sao")
+    tuoi = _tuoi_gio((moc_ngoai or {}).get("luc"))
+    if not (moc_ngoai or {}).get("ok") or tuoi is None or tuoi > 48:
+        ly_do = (moc_ngoai or {}).get("ghi") or "chưa chép lần nào"
+        return _muc(ten, CANH_BAO, f"bản ngoài máy không tươi: {ly_do}"[:160],
+                    "kiểm thư mục SAO_LUU_THU_MUC_NGOAI còn cắm/đồng bộ, rồi chạy python -m scripts.sao_luu")
+    return _muc(ten, DU, f"mã hoá AES-256-GCM · bản ngoài máy {int(tuoi)} giờ trước")
+
+
+def kiem_ma_hoa_sao_luu() -> dict:
+    from scripts import sao_luu
+
+    ban = sao_luu.ban_db()
+    moi = ban[-1].name.endswith(sao_luu.DUOI_MA_HOA) if ban else None
+    moc = None
+    try:
+        moc = json.loads(sao_luu.DAU_MOC_NGOAI.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    return doc_ma_hoa_sao_luu(bool(settings.sao_luu_mat_khau), moi,
+                              bool(settings.sao_luu_thu_muc_ngoai.strip()), moc)
+
+
 def kiem_du_lieu_that() -> dict:
     """Việc 6 và 7 — danh mục, tài liệu và ảnh phải là của doanh nghiệp bạn."""
     thieu = []
@@ -1278,7 +1321,8 @@ async def chay() -> int:
         await kiem_outbox(), await kiem_ton_kho(),
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
         await kiem_yeu_cau_chu_the(), kiem_thong_bao_ai(),
-        kiem_sao_luu(), kiem_bao_dong(), kiem_nguoi_canh(),
+        kiem_sao_luu(), *([] if trong_silo() else [kiem_ma_hoa_sao_luu()]),
+        kiem_bao_dong(), kiem_nguoi_canh(),
         kiem_cookie(), kiem_cong(),
     ]
 

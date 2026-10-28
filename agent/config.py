@@ -241,6 +241,16 @@ class Settings(BaseSettings):
     # sau, nên mặc định BẬT. Bản sao nằm ở data/backup, không lên repo.
     sao_luu_moi_ngay: bool = True
     sao_luu_giu_lai: int = 14
+    # Mật khẩu mã hoá bản sao lưu (AES-256-GCM, scripts/goi_ma_hoa.py). TRỐNG
+    # = bản sao lưu nằm dạng thường — trong đó có ảnh da, số điện thoại,
+    # địa chỉ khách; san_sang cảnh báo. Sinh: python -m scripts.sinh_token
+    # SAO_LUU_MAT_KHAU — và CẤT MỘT BẢN NGOÀI MÁY: mất mật khẩu là mất luôn
+    # mọi bản sao lưu.
+    sao_luu_mat_khau: str = ""
+    # Thư mục ngoài máy (ổ USB, thư mục OneDrive/Google Drive đang đồng bộ).
+    # Chỉ bản ĐÃ MÃ HOÁ được chép ra đây. Trống = chỉ có một bản, cùng máy —
+    # ổ cứng hỏng hay máy mất là mất cả dữ liệu lẫn bản sao.
+    sao_luu_thu_muc_ngoai: str = ""
 
     # --- Phân phối nội dung lên mạng xã hội ---
     # Đường đi ưu tiên: n8n -> API chính thức -> hàng đợi thủ công.

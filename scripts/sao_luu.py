@@ -19,11 +19,23 @@ và phiên bản pg_dump luôn khớp phiên bản server — lệch phiên bả
 nhân kinh điển khiến bản sao lưu không phục hồi được.
 
 Kèm luôn `data/knowledge/` vì đó là tài liệu công ty, không nằm trong git.
+
+MÃ HOÁ VÀ BẢN NGOÀI MÁY
+-----------------------
+Bản sao lưu chứa số điện thoại, địa chỉ và ảnh da của khách — dữ liệu nhạy
+cảm theo Luật BVDLCN 91/2025. Đặt `SAO_LUU_MAT_KHAU` thì bản CSDL được mã hoá
+(AES-256-GCM, cùng định dạng gói chuyển nhà) ngay trong bộ nhớ: bản thường
+không bao giờ chạm đĩa. Đặt `SAO_LUU_THU_MUC_NGOAI` thì bản đã mã hoá được
+chép thêm ra đó — một bản cùng máy không cứu được khi chính cái máy hỏng.
+Bản chưa mã hoá KHÔNG bao giờ được chép ra ngoài.
 """
 from __future__ import annotations
 
 import argparse
 import gzip
+import io
+import json
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -39,6 +51,66 @@ from agent.config import ROOT, settings      # noqa: E402
 
 KHO = ROOT / "data" / "backup"
 GIU_MAC_DINH = 14
+DUOI_MA_HOA = ".cskh"
+# Dấu mốc lần chép ra ngoài máy gần nhất (thành công HAY hỏng) — san_sang
+# đọc để biết bản ngoài máy còn tươi không. Tên khác `.sao_luu_ngoai` của
+# chế độ silo (scripts/cua_hang.py) để hai nghĩa không lẫn vào nhau.
+DAU_MOC_NGOAI = ROOT / "data" / ".sao_luu_ra_ngoai_may"
+_MAU_DB = ("db-*.sql.gz", "db-*.sql.gz" + DUOI_MA_HOA)
+
+
+def ban_db(kho: Path | None = None) -> list[Path]:
+    """Mọi bản sao lưu CSDL — thường và đã mã hoá — cũ trước, mới sau."""
+    kho = kho or KHO
+    if not kho.exists():
+        return []
+    return sorted({p for m in _MAU_DB for p in kho.glob(m)}, key=lambda p: p.name)
+
+
+def doc_ban_db(tep: Path, mat_khau: str | None = None) -> bytes:
+    """Bản sao lưu → SQL thô. Bản `.cskh` cần đúng mật khẩu (sai thì nổ to)."""
+    from scripts import goi_ma_hoa
+
+    if tep.name.endswith(DUOI_MA_HOA):
+        mk = mat_khau if mat_khau is not None else settings.sao_luu_mat_khau
+        if not mk:
+            raise goi_ma_hoa.LoiGoi("bản sao lưu đã mã hoá nhưng SAO_LUU_MAT_KHAU đang trống")
+        buf = io.BytesIO()
+        with tep.open("rb") as f:
+            goi_ma_hoa.giai_ma(f, buf, mk)
+        return gzip.decompress(buf.getvalue())
+    with gzip.open(tep, "rb") as f:
+        return f.read()
+
+
+def chep_ra_ngoai(tep: Path, thu_muc: str | None = None) -> tuple[bool, str]:
+    """
+    Chép một bản ĐÃ MÃ HOÁ ra thư mục ngoài máy. Ghi dấu mốc cả khi hỏng:
+    hỏng mà không ghi gì là bản ngoài máy cũ dần trong im lặng.
+    """
+    noi = (thu_muc if thu_muc is not None else settings.sao_luu_thu_muc_ngoai).strip()
+    if not noi:
+        return False, "chưa đặt SAO_LUU_THU_MUC_NGOAI"
+    if not tep.name.endswith(DUOI_MA_HOA):
+        return False, "KHÔNG chép bản chưa mã hoá ra ngoài máy — đặt SAO_LUU_MAT_KHAU trước"
+    try:
+        dich = Path(noi)
+        dich.mkdir(parents=True, exist_ok=True)
+        tam = dich / (tep.name + ".dang-chep")
+        shutil.copyfile(tep, tam)
+        # Đổi tên sau khi chép xong: thư mục đồng bộ đám mây không được
+        # thấy (và tải lên) một tệp chép dở như thể nó là bản hoàn chỉnh.
+        tam.replace(dich / tep.name)
+        ok, ghi = True, f"đã chép ra {dich}"
+    except OSError as exc:
+        ok, ghi = False, f"KHÔNG chép ra ngoài được: {type(exc).__name__}: {exc}"[:200]
+    try:
+        DAU_MOC_NGOAI.write_text(json.dumps({
+            "luc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ok": ok, "tep": tep.name, "ghi": ghi}), encoding="utf-8")
+    except OSError:
+        pass
+    return ok, ghi
 
 # Dòng cuối của một bản pg_dump hoàn chỉnh. Thiếu nó nghĩa là dump bị cắt
 # giữa chừng — và một bản sao lưu hỏng còn nguy hiểm hơn không có bản nào,
@@ -95,9 +167,22 @@ def sao_luu_db(dich: Path) -> tuple[bool, str]:
         return False, "pg_dump kết thúc bất thường, bản sao không hoàn chỉnh"
 
     dich.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(dich, "wb") as f:
-        f.write(kq.stdout)
-    return True, f"{dich.stat().st_size / 1_048_576:.2f} MB"
+    nen = gzip.compress(kq.stdout)
+    if not settings.sao_luu_mat_khau:
+        dich.write_bytes(nen)
+        return True, f"{dich.stat().st_size / 1_048_576:.2f} MB · CHƯA MÃ HOÁ (đặt SAO_LUU_MAT_KHAU)"
+    from scripts import goi_ma_hoa
+
+    dich = dich.with_name(dich.name + DUOI_MA_HOA)
+    tam = dich.with_name(dich.name + ".dang-ghi")
+    with tam.open("wb") as f:
+        goi_ma_hoa.ma_hoa(io.BytesIO(nen), f, settings.sao_luu_mat_khau)
+    tam.replace(dich)
+    ghi = f"{dich.stat().st_size / 1_048_576:.2f} MB · đã mã hoá"
+    if settings.sao_luu_thu_muc_ngoai.strip():
+        _ok, ngoai = chep_ra_ngoai(dich)
+        ghi += " · " + ngoai
+    return True, ghi
 
 
 def sao_luu_tai_lieu(dich: Path) -> tuple[bool, str]:
@@ -114,11 +199,20 @@ def sao_luu_tai_lieu(dich: Path) -> tuple[bool, str]:
 def don_ban_cu(giu: int) -> int:
     """Xoá bản cũ, giữ lại `giu` bản gần nhất của mỗi loại."""
     da_xoa = 0
-    for mau in ("db-*.sql.gz", "knowledge-*.tar.gz"):
-        ban = sorted(KHO.glob(mau), reverse=True)
-        for cu in ban[giu:]:
+    # Bản CSDL thường và mã hoá đếm CHUNG một hàng: giữ 14 bản gần nhất là
+    # 14 bản, không phải 14 bản mỗi loại.
+    for ban in (ban_db(), sorted(KHO.glob("knowledge-*.tar.gz"), key=lambda p: p.name)):
+        for cu in (ban[:-giu] if giu > 0 else ban):
             cu.unlink(missing_ok=True)
             da_xoa += 1
+    noi = settings.sao_luu_thu_muc_ngoai.strip()
+    if noi and giu > 0 and Path(noi).is_dir():
+        for cu in ban_db(Path(noi))[:-giu]:
+            try:
+                cu.unlink(missing_ok=True)
+                da_xoa += 1
+            except OSError:
+                pass
     return da_xoa
 
 
@@ -142,9 +236,9 @@ def thu_phuc_hoi() -> tuple[bool, str]:
     ct = _container()
     if not ct:
         return False, "không thấy container Postgres đang chạy"
-    ban = sorted(KHO.glob("db-*.sql.gz"))
+    ban = ban_db()
     if not ban:
-        return False, "chưa có bản db-*.sql.gz nào — chạy python -m scripts.sao_luu trước"
+        return False, "chưa có bản sao lưu CSDL nào — chạy python -m scripts.sao_luu trước"
     tep = ban[-1]
     user, ten_db = _thong_tin_db()
     tam = "thu_phuc_hoi_" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -160,8 +254,11 @@ def thu_phuc_hoi() -> tuple[bool, str]:
     if tao.returncode != 0:
         return False, "không tạo được CSDL tạm: " + tao.stderr.decode(errors="replace")[-200:]
     try:
-        with gzip.open(tep, "rb") as f:
-            kq = psql(tam, "", dau_vao=f.read())
+        try:
+            sql = doc_ban_db(tep)
+        except Exception as exc:  # noqa: BLE001 — sai mật khẩu, tệp cắt cụt
+            return False, f"không đọc được {tep.name}: {type(exc).__name__}: {exc}"[:300]
+        kq = psql(tam, "", dau_vao=sql)
         if kq.returncode != 0:
             return False, f"phục hồi {tep.name} HỎNG: " + kq.stderr.decode(errors="replace")[-300:]
         so_bang = int(psql(tam, _DEM_BANG).stdout.decode().strip() or 0)
@@ -197,7 +294,16 @@ def main() -> int:
     ap.add_argument("--giu", type=int, default=GIU_MAC_DINH)
     ap.add_argument("--thu-phuc-hoi", action="store_true",
                     help="phục hồi bản mới nhất vào CSDL tạm để chứng minh nó dùng được")
+    ap.add_argument("--giai-ma", metavar="TEP",
+                    help="giải mã một bản .cskh thành .sql.gz cạnh nó (để phục hồi tay)")
     args = ap.parse_args()
+
+    if args.giai_ma:
+        tep = Path(args.giai_ma)
+        ra = tep.with_name(tep.name.removesuffix(DUOI_MA_HOA))
+        ra.write_bytes(gzip.compress(doc_ban_db(tep)))
+        print(f"Đã giải mã ra {ra} — bản này KHÔNG mã hoá: phục hồi xong thì xoá nó.")
+        return 0
 
     if args.liet_ke:
         liet_ke()
@@ -225,7 +331,7 @@ def main() -> int:
         return 1
 
     print(f"\nXong. Bản sao nằm ở {KHO}")
-    print("\nPhục hồi khi cần:")
+    print("\nPhục hồi khi cần (bản .cskh: giải mã trước bằng --giai-ma <tệp>):")
     print("  gunzip -c data/backup/db-<mốc>.sql.gz | \\")
     print(f"    docker exec -i {_container() or '<container>'} psql -U agent -d marketing_agent")
     return 0

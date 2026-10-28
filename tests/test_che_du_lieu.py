@@ -114,7 +114,8 @@ def test_tron_luot_khong_gui_so_that_ma_van_dung_so_that(san):
     # Kết quả công cụ đi ngược về model cũng phải che.
     assert "AS260819235000" in gui                       # mã đơn KHÔNG bị che
     assert san["cong_cu"] == [{"so_dien_thoai": "0912345678"}]
-    assert r.text == "Dạ đơn của số 0912345678 đang giao, mail lan@gmail.com em đã ghi nhận ạ."
+    # Khách nhận lại ĐÚNG chữ họ đã viết; công cụ nhận số chuẩn hoá (dòng trên).
+    assert r.text == "Dạ đơn của số 0912 345 678 đang giao, mail lan@gmail.com em đã ghi nhận ạ."
     assert r.cong_cu[0]["tham_so"] == {"so_dien_thoai": "0912345678"}
 
 
@@ -155,3 +156,64 @@ def test_chi_agent_gui_chu_khach_sang_model():
     goi = sorted(str(p.relative_to(goc)).replace("\\", "/") for p in goc.rglob("*.py")
                  if p.name != "llm.py" and re.search(r"llm\.complete\(", p.read_text(encoding="utf-8")))
     assert goi == ["core/agent.py", "publish/copywriter.py", "video/pipeline.py", "video/vision.py"], goi
+
+
+
+# ------------------------------------------------------------------ kịch bản hỏng từ rà soát 28.10.2026
+
+@pytest.mark.parametrize("vao,che,cong_cu", [
+    # Số lượng đứng sau KHÔNG bị nuốt vào số điện thoại (bản cũ: "09123456781").
+    ("sđt 0912345678 1 hộp kem", "sđt [SĐT_1] 1 hộp kem", "0912345678"),
+    ("0912.345.678, 2 chai", "[SĐT_1], 2 chai", "0912345678"),
+    # "+84 0912…" không thành "00912…".
+    ("+84 0912 345 678", "[SĐT_1]", "0912345678"),
+    ("bàn 028 3823 4567", "bàn [SĐT_1]", "02838234567"),
+])
+def test_ranh_gioi_so_dien_thoai(vao, che, cong_cu):
+    m = MatNa()
+    assert m.che(vao) == che
+    assert m.mo("[SĐT_1]", cho_cong_cu=True) == cong_cu
+
+
+@pytest.mark.parametrize("giu", [
+    "05.09.2026 10:30",          # ngày giờ — bản cũ che rồi trả về "0509202610:30"
+    "STK 0123456789",            # 01x không phải đầu số di động
+    "giá 1.290.000 đồng",
+])
+def test_khong_che_ngay_gio_so_tai_khoan(giu):
+    assert MatNa().che(giu) == giu
+
+
+def test_tai_lieu_cua_hang_khong_bi_che_va_tra_cuu_dung_cau_da_che(san, monkeypatch):
+    """
+    Hotline shop trong tài liệu mà thành [SĐT_1] thì model có thể lấy số shop
+    điền vào khach_sdt. Và câu hỏi đi vào API embedding (nước ngoài) — phải là
+    bản đã che.
+    """
+    tra = {}
+
+    async def retrieve(q, k=5):
+        tra["q"] = q
+        return []
+    monkeypatch.setattr(brain.rag, "retrieve", retrieve)
+    monkeypatch.setattr(brain.rag, "as_context", lambda p: "Hotline shop: 0987 654 321")
+    asyncio.run(brain.respond(conversation_id=uuid.uuid4(), history=[],
+                              question="em sđt 0912345678, shop có giao không"))
+    assert "0912345678" not in tra["q"] and "[SĐT_1]" in tra["q"]
+    assert "Hotline shop: 0987 654 321" in san["gui"][0]
+
+
+def test_cong_cu_tim_tai_lieu_giu_nguyen_ma(san, monkeypatch):
+    lan = {"n": 0}
+
+    async def complete(**kw):
+        san["gui"].append(json.dumps(kw["messages"], ensure_ascii=False, default=str))
+        lan["n"] += 1
+        if lan["n"] == 1:
+            return LLMResult(text="", model="m", tool_calls=[{
+                "id": "c1", "name": "tim_kien_thuc", "input": {"cau_hoi": "giao tới [SĐT_1]"}}])
+        return LLMResult(text="Dạ có ạ.", model="m")
+    monkeypatch.setattr(brain.llm, "complete", complete)
+    asyncio.run(brain.respond(conversation_id=uuid.uuid4(), history=[],
+                              question="giao tới 0912345678 được không"))
+    assert san["cong_cu"] == [{"cau_hoi": "giao tới [SĐT_1]"}]

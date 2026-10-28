@@ -526,7 +526,13 @@ async def respond(
     # ĐỌC: `passages` được giữ lại NGOÀI biến `context`, vì hai lý do:
     # ĐỌC:   dòng ~478 sẽ THÊM vào nó (đoạn agent tự tra được),
     # ĐỌC:   dòng ~577 sẽ đọc doc_title từ nó để điền Reply.sources.
-    passages = await rag.retrieve(question, k=5)
+    # Bộ che dựng TRƯỚC bước tra tài liệu: `rag.retrieve` nhúng câu hỏi qua
+    # API embedding — cũng là máy chủ ở nước ngoài (rà soát 28.10.2026).
+    from agent.core import che_du_lieu
+
+    mat_na = che_du_lieu.MatNa() if settings.che_du_lieu_gui_model else None
+    cau_gui = mat_na.che(question) if mat_na else question
+    passages = await rag.retrieve(cau_gui, k=5)
     context = rag.as_context(passages)
 
     # Trí nhớ về khách đi CÙNG khối biến động với ngữ cảnh RAG, không đi
@@ -541,6 +547,11 @@ async def respond(
             conversation_id, "tu_tin_nhan",
         )
         if (ngu_canh_khach := await ho_so_khach.lam_ngu_canh(customer_ref, channel)):
+            # Hồ sơ khách là dữ liệu CỦA KHÁCH: che. Tài liệu cửa hàng thì
+            # KHÔNG — hotline, số tài khoản của shop mà thành [SĐT_1] là model
+            # có thể lấy số của shop điền vào khach_sdt.
+            if mat_na:
+                ngu_canh_khach = mat_na.che(ngu_canh_khach)
             context = f"{ngu_canh_khach}\n\n{context}" if context else ngu_canh_khach
 
     # ĐỌC: TRẠM B3 — bản đồ ba chặng ở agent/ky_nang/__init__.py. Đây là
@@ -597,13 +608,7 @@ async def respond(
     # CHE DỮ LIỆU CÁ NHÂN trước khi gửi model ở nước ngoài (che_du_lieu.py).
     # `question` gốc GIỮ NGUYÊN cho các lưới đọc câu khách (④ bắt buộc chuyển
     # người): lưới chạy trong máy này, không có lý do gì cho nó đọc bản đã che.
-    from agent.core import che_du_lieu
-
-    mat_na = che_du_lieu.MatNa() if settings.che_du_lieu_gui_model else None
-    cau_gui = question
     if mat_na:
-        cau_gui = mat_na.che(question)
-        context = mat_na.che(context)
         history = mat_na.che_lich_su(history)
         if mat_na.co_che:
             context = f"{context}\n\n{che_du_lieu.GHI_CHU_CHO_MODEL}"
@@ -703,7 +708,11 @@ async def respond(
             bat_dau_tool = time.perf_counter()
             # Model gọi công cụ bằng MÃ ([SĐT_1]); công cụ cần số THẬT (lên đơn
             # kiểm 9–11 chữ số). Đổi lại ở đây, một chỗ, trước mọi nơi đọc tham số.
-            tham_so = mat_na.mo_obj(call["input"]) if mat_na else call["input"]
+            # Công cụ tra TÀI LIỆU giữ nguyên mã: tham số của nó (câu tìm) đi
+            # tiếp vào API embedding ở nước ngoài, và tài liệu cửa hàng không
+            # cần số của khách để tìm.
+            tham_so = (mat_na.mo_obj(call["input"])
+                       if mat_na and call["name"] not in _TOOL_TRA_TAI_LIEU else call["input"])
             out = await tools.run_tool(call["name"], tham_so, conversation_id)
             cong_cu_da_goi.append({
                 "ten": call["name"], "tham_so": tham_so,
@@ -791,7 +800,8 @@ async def respond(
             # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
             tool_results.append(
                 {"id": call["id"], "name": call["name"],
-                 "output": mat_na.che_obj(out) if mat_na else out}
+                 "output": (mat_na.che_obj(out)
+                            if mat_na and call["name"] not in _TOOL_TRA_TAI_LIEU else out)}
             )
         messages.append({"role": "tool", "results": tool_results})
         final_text = result.text or final_text

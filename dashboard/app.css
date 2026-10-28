@@ -2089,3 +2089,8 @@ svg { flex: none; }
    chỗ của chữ bên cạnh, "Zalo cá nhân" bị bẻ thành ba dòng. */
 .field .tk__nhieu input[type="checkbox"] { padding: 0; border: 0; box-shadow: none; }
 .tk__nhieu label { white-space: nowrap; }
+
+/* "Ca của tôi" trên màn Ca trực: một dòng, không phải một khung — chỉ để
+   người trực biết vì sao không được chia hội thoại mới. */
+.ca-cua-toi { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid hsl(var(--border)); }
+.ca-cua-toi.is-ngoai { border-left-color: hsl(var(--warning)); }

@@ -30,6 +30,7 @@ from agent.api.mcp_may_chu import router as mcp_may_chu_router
 from agent.api.quyen import router as quyen_router
 from agent.api.tra_loi_nhanh import router as tra_loi_nhanh_router
 from agent.api.tu_dong_api import router as tu_dong_router
+from agent.api.lich_ca import router as lich_ca_router
 from agent.api.hoi_thoai_nhan import router as hoi_thoai_nhan_router
 from agent.api.bao_cao_nhan_vien import router as bao_cao_nhan_vien_router
 from agent.api.thanh_toan import router as thanh_toan_router
@@ -871,6 +872,7 @@ app.include_router(oauth_zalo_oa_router)
 app.include_router(tich_hop.router)
 app.include_router(tra_loi_nhanh_router)
 app.include_router(tu_dong_router)
+app.include_router(lich_ca_router)
 app.include_router(hoi_thoai_nhan_router)
 app.include_router(bao_cao_nhan_vien_router)
 app.include_router(thanh_toan_router)

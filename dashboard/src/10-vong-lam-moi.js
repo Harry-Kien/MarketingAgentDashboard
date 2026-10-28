@@ -3,7 +3,7 @@
 async function refresh() {
   try {
     await loadOverview();
-    if (state.view === "ca") { await loadTinChet(); await loadVoChu(); }
+    if (state.view === "ca") { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); }
     if (state.view === "hoithoai") await loadConversations();
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
@@ -21,7 +21,7 @@ async function refresh() {
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
     if (state.view === "cauhinh") { await loadMauNhanh(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
-    if (state.view === "nhansu") await loadNhanSu();
+    if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
     if (state.view === "nhatky") { await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);

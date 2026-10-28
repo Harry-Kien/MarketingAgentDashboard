@@ -149,6 +149,9 @@ class PostgresAutoRoutingTransaction:
              AND conversation.state IN ('open', 'pending')
             WHERE member.team_id = $2
               AND member.is_available
+              -- Hết ca hoặc đang nghỉ thì không giao (0034_lich_ca.sql).
+              -- Người chưa xếp ca nào thì hàm trả true: hành vi cũ giữ nguyên.
+              AND dang_trong_ca(member.user_id, now())
               AND member.skills @> $3::jsonb
             GROUP BY member.user_id, member.max_active
             HAVING count(conversation.id) < member.max_active

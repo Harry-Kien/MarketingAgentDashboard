@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-62 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+64 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -137,6 +137,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
 | **Công việc** | `cong_viec` |
+| **Lịch ca** | `ca_truc` · `ca_nghi` |
 | **Hồ sơ agent** | `agent_ho_so` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
@@ -682,10 +683,29 @@ erDiagram
         JSONB chi_tiet
         TIMESTAMPTZ luc
     }
+    ca_truc {
+        UUID id
+        UUID nguoi_dung_id
+        SMALLINT thu
+        SMALLINT bat_dau
+        SMALLINT ket_thuc
+        TIMESTAMPTZ tao_luc
+    }
+    ca_nghi {
+        UUID id
+        UUID nguoi_dung_id
+        TIMESTAMPTZ tu_luc
+        TIMESTAMPTZ den_luc
+        TEXT ly_do
+        UUID tao_boi
+        TIMESTAMPTZ tao_luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
     messages ||--o{ attachments : ""
+    nguoi_dung ||--o{ ca_nghi : ""
+    nguoi_dung ||--o{ ca_truc : ""
     agent_ho_so ||--o{ channel_accounts : ""
     documents ||--o{ chunks : ""
     contacts ||--o{ cong_viec : ""

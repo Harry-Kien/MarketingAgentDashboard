@@ -58,6 +58,7 @@ NHOM = {
         "vai_tro", "vai_tro_quyen", "nguoi_dung_vai_tro",
     ],
     "Công việc": ["cong_viec"],
+    "Lịch ca": ["ca_truc", "ca_nghi"],
     "Hồ sơ agent": ["agent_ho_so"],
     "Vận hành": [
         "nguoi_dung", "phien", "events", "zalo_oa_token", "ky_nang_cai_dat",

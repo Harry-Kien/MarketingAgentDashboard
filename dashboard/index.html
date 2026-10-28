@@ -242,6 +242,10 @@
     <!-- ============ CA TRỰC ============ -->
     <section class="view is-active" data-view="ca">
       <div class="readout" id="readout"></div>
+      <!-- Ca của tôi. Ẩn khi người này chưa xếp ca nào (luôn trực — không có
+           gì để nói). Hiện khi NGOÀI ca: người trực cần biết vì sao không
+           được chia hội thoại mới, thay vì tưởng hệ thống hỏng. -->
+      <p class="panel__note ca-cua-toi" id="caCuaToi" hidden></p>
 
       <!-- HAI Ô BÁO ĐỘNG Ở TRÊN TRƯỚC ĐÂY LÀ NGÕ CỤT.
            Người trực thấy "Tin KHÔNG gửi được: 3" rồi không đi đâu được —
@@ -1421,6 +1425,18 @@
         <div id="nsNguoi" class="rows">
           <p class="empty">Đang tải…</p>
         </div>
+      </section>
+
+      <!-- LỊCH CA. Bộ định tuyến chỉ giao hội thoại cho người ĐANG trong ca
+           và không trong lịch nghỉ (0034_lich_ca.sql). Người chưa xếp ca nào
+           thì luôn được giao, như trước khi có lịch ca. -->
+      <section class="panel" id="lcPanel" hidden>
+        <h2 class="panel__head">Lịch ca
+          <span class="panel__note">bộ định tuyến chỉ giao hội thoại cho người đang trong ca · chưa xếp ca = luôn trực</span></h2>
+        <div id="lcCanhBao" class="rows"></div>
+        <div id="lcNguoi" class="rows"><p class="empty">Đang tải…</p></div>
+        <h3 class="panel__head">Lịch nghỉ sắp tới</h3>
+        <div id="lcNghi" class="rows"></div>
       </section>
 
       <section class="panel">

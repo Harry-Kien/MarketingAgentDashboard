@@ -594,7 +594,21 @@ async def respond(
     # `phong_thu.boc` vẫn bọc phần CHỮ như cũ: ảnh không đi qua bộ quét tấn
     # công vì bộ quét đọc chữ, còn chữ chèn trong ảnh thì nó không thấy. Đó
     # là lý do lưới thứ sáu soi ĐẦU RA.
-    chu_boc = phong_thu.boc(question)
+    # CHE DỮ LIỆU CÁ NHÂN trước khi gửi model ở nước ngoài (che_du_lieu.py).
+    # `question` gốc GIỮ NGUYÊN cho các lưới đọc câu khách (④ bắt buộc chuyển
+    # người): lưới chạy trong máy này, không có lý do gì cho nó đọc bản đã che.
+    from agent.core import che_du_lieu
+
+    mat_na = che_du_lieu.MatNa() if settings.che_du_lieu_gui_model else None
+    cau_gui = question
+    if mat_na:
+        cau_gui = mat_na.che(question)
+        context = mat_na.che(context)
+        history = mat_na.che_lich_su(history)
+        if mat_na.co_che:
+            context = f"{context}\n\n{che_du_lieu.GHI_CHU_CHO_MODEL}"
+
+    chu_boc = phong_thu.boc(cau_gui)
     noi_dung = ([*anh, {"text": chu_boc}] if anh else chu_boc)
     messages = [*history, {"role": "user", "content": noi_dung}]
     total_cost = 0.0
@@ -687,9 +701,12 @@ async def respond(
         tool_results: list[dict] = []
         for call in result.tool_calls:
             bat_dau_tool = time.perf_counter()
-            out = await tools.run_tool(call["name"], call["input"], conversation_id)
+            # Model gọi công cụ bằng MÃ ([SĐT_1]); công cụ cần số THẬT (lên đơn
+            # kiểm 9–11 chữ số). Đổi lại ở đây, một chỗ, trước mọi nơi đọc tham số.
+            tham_so = mat_na.mo_obj(call["input"]) if mat_na else call["input"]
+            out = await tools.run_tool(call["name"], tham_so, conversation_id)
             cong_cu_da_goi.append({
-                "ten": call["name"], "tham_so": call["input"],
+                "ten": call["name"], "tham_so": tham_so,
                 "ket_qua": cat_ket_qua(out),
                 "ms": int((time.perf_counter() - bat_dau_tool) * 1000),
                 "vong": len(cac_vong),
@@ -703,7 +720,7 @@ async def respond(
             if customer_ref:
                 await _ghi_ho_so(
                     ho_so_khach.tu_tool(
-                        customer_ref, channel, call["name"], call["input"]
+                        customer_ref, channel, call["name"], tham_so
                     ),
                     conversation_id, "tu_tool",
                 )
@@ -732,7 +749,7 @@ async def respond(
 
             if call["name"] == "chuyen_nhan_vien":
                 escalate = True
-                escalate_reason = call["input"].get("ly_do", "")
+                escalate_reason = tham_so.get("ly_do", "")
                 luoi_bat = luoi_bat or "cong_cu_chuyen_nguoi"
 
             # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
@@ -763,15 +780,18 @@ async def respond(
                 from agent.video import pipeline
 
                 video_id = await pipeline.request_video(
-                    title=call["input"].get("tieu_de", "Video"),
-                    brief=call["input"].get("yeu_cau", ""),
-                    kind=call["input"].get("loai", "explainer"),
+                    title=tham_so.get("tieu_de", "Video"),
+                    brief=tham_so.get("yeu_cau", ""),
+                    kind=tham_so.get("loai", "explainer"),
                     conversation_id=conversation_id,
                 )
                 out["video_id"] = video_id
 
+            # Kết quả công cụ đi NGƯỢC về model (tra đơn trả về SĐT, địa chỉ):
+            # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
             tool_results.append(
-                {"id": call["id"], "name": call["name"], "output": out}
+                {"id": call["id"], "name": call["name"],
+                 "output": mat_na.che_obj(out) if mat_na else out}
             )
         messages.append({"role": "tool", "results": tool_results})
         final_text = result.text or final_text
@@ -843,6 +863,15 @@ async def respond(
         thu_nghiem.ghi_nhan(total_cost)
     else:
         ngan_sach.ghi_nhan(total_cost)
+
+    # Đổi mã về số thật TRƯỚC khi gửi khách. Mã model bịa (không có trong
+    # bảng) thì để nguyên và ghi lại — khách thấy "[SĐT_3]" là lỗi lộ ra,
+    # còn hơn một số điện thoại bịa trông như thật.
+    if mat_na:
+        sot = mat_na.ma_con_sot(final_text)
+        final_text = mat_na.mo(final_text)
+        if sot and not dang_thu:
+            await db.log_event("che_du_lieu.ma_la", ref_id=conversation_id, ma=sot[:5])
 
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",

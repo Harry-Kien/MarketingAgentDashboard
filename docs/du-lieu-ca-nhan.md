@@ -16,6 +16,7 @@ thời hạn, mẫu hồ sơ).
 | Luật Điều 9; NĐ 356 Điều 6 | Đồng ý theo từng mục đích, chứng minh được | `contact_consents` (có `evidence`), chốt trong outbox |
 | Luật Điều 4 khoản 5; NĐ 356 Điều 5 | **Thời hạn** đáp ứng yêu cầu | Sổ `yeu_cau_chu_the`, báo đỏ khi quá hạn |
 | Luật Điều 20, 21 | Hồ sơ đánh giá tác động, chuyển ra nước ngoài | `python -m scripts.sinh_ho_so_bvdlcn --ghi` (bản nháp) |
+| Luật Điều 20 (giảm thiểu chuyển ra nước ngoài) | Không gửi SĐT, email, CCCD thật sang model | `agent/core/che_du_lieu.py` — thay bằng mã, đổi lại khi gọi công cụ và trả lời; tên, địa chỉ, ảnh vẫn gửi nguyên |
 | NĐ 356 Điều 10 khoản 3, Điều 6 khoản 4 | Báo xử lý tự động, cho gặp người; báo dữ liệu nhạy cảm | `THONG_BAO_AI`, chốt "gặp nhân viên" trước agent |
 
 Thao tác trên dashboard: mục **Nhật ký**.

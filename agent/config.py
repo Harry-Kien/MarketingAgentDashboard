@@ -305,6 +305,10 @@ class Settings(BaseSettings):
     # đường DUY NHẤT báo được khi cả máy tắt — mọi báo động khác chạy trên
     # chính cái máy đó. Coi như bí mật: ai có URL là ping giả được.
     canh_gac_ping_url: str = ""
+    # Che SĐT, email, CCCD của khách trước khi gửi model ở nước ngoài, đổi lại
+    # khi gọi công cụ và khi trả lời (agent/core/che_du_lieu.py). Mặc định BẬT:
+    # giảm thiểu dữ liệu chuyển ra nước ngoài — Luật BVDLCN 91/2025 Điều 20.
+    che_du_lieu_gui_model: bool = True
     # Khách đã được chuyển cho người mà chờ quá số phút này thì canh gác
     # báo động. Đây là phép kiểm DUY NHẤT hướng ra phía khách: tám phép
     # còn lại hỏi "hệ thống có sống không", phép này hỏi "có ai đang bị bỏ

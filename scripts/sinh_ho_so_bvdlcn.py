@@ -112,6 +112,13 @@ def sinh(bay_gio: datetime | None = None) -> str:
         f"- **CÓ.** Nội dung hội thoại (có thể gồm dữ liệu nhạy cảm ở mục 3) được gửi tới "
         f"**{ten_model}** ({noi_model}) để sinh câu trả lời — trường hợp xử lý trên nền tảng "
         "đặt ngoài lãnh thổ (Luật 91/2025 Điều 20 khoản 1; NĐ 356/2025 Điều 17 khoản 1).",
+        # Khai ĐÚNG phạm vi che: SĐT/email/CCCD có khuôn nên che được; tên,
+        # địa chỉ, ảnh thì không — khai "đã che dữ liệu cá nhân" chung chung
+        # là khai sai với cơ quan nhà nước.
+        ("- Giảm thiểu: số điện thoại, email, số CCCD được thay bằng mã trước khi gửi "
+         "(`agent/core/che_du_lieu.py`); **tên, địa chỉ, nội dung tin và ảnh vẫn gửi nguyên văn**."
+         if settings.che_du_lieu_gui_model else
+         "- Giảm thiểu: **chưa che** — nội dung gửi nguyên văn (CHE_DU_LIEU_GUI_MODEL đang tắt)."),
         "- Hồ sơ chuyển dữ liệu ra nước ngoài gồm: báo cáo đánh giá tác động (Mẫu số 09), "
         "bản sao hợp đồng / điều khoản với bên nhận, chính sách bảo vệ dữ liệu của các bên "
         "(NĐ 356/2025 Điều 18 khoản 2). [ĐIỀN TAY: đính kèm điều khoản dịch vụ và điều khoản "

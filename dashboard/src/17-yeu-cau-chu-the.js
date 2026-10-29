@@ -45,9 +45,10 @@ async function loadYeuCauChuThe() {
     return `<div class="row">
       <span class="row__flag ${co_}"></span>
       <span class="row__body"><span class="row__title">${esc(y.ten_loai)} · <em>${esc(nhan)}</em></span>
-        <span class="row__sub">nhận ${esc(_ngayGio(y.nhan_luc))} · ${y.trang_thai === "moi"
-          ? `phản hồi ${esc(_han(y.han_phan_hoi))} · ` : "đã phản hồi · "}xử lý xong <b>${
-          esc(_han(y.han_xu_ly))}</b>${y.da_gia_han ? " (đã gia hạn)" : ""}${y.noi_dung ? " · " + esc(y.noi_dung) : ""}</span></span>
+        <span class="row__sub">xử lý xong <b>${esc(_han(y.han_xu_ly))}</b>${
+          y.da_gia_han ? " (đã gia hạn)" : ""}${y.trang_thai === "moi"
+          ? ` · phản hồi ${esc(_han(y.han_phan_hoi))}` : " · đã phản hồi"}</span>
+        <span class="row__sub">nhận ${esc(_ngayGio(y.nhan_luc))}${y.noi_dung ? " · " + esc(y.noi_dung) : ""}</span></span>
       <span class="row__side">
         ${y.trang_thai === "moi" ? `<button type="button" class="btn btn--sm" data-yc-phan-hoi="${esc(y.id)}">Đã phản hồi</button>` : ""}
         ${y.da_gia_han ? "" : `<button type="button" class="btn btn--sm" data-yc-gia-han="${esc(y.id)}">Gia hạn</button>`}

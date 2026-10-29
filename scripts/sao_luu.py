@@ -83,6 +83,47 @@ def doc_ban_db(tep: Path, mat_khau: str | None = None) -> bytes:
         return f.read()
 
 
+def ban_moi_con_tuoi(gio: float = 20.0) -> bool:
+    """
+    Bản CSDL mới nhất chưa tới `gio` giờ tuổi. `backup_loop` dùng để không sao
+    lưu ở MỖI lần app khởi động: người canh dựng lại app vài lần một ngày là
+    14 bản giữ lại đều cùng một ngày, mất hết các mốc phục hồi cũ — đúng thứ
+    cần khi hỏng dữ liệu phát hiện chậm (rà soát 28.10.2026).
+    """
+    import time
+
+    ban = ban_db()
+    return bool(ban) and (time.time() - max(p.stat().st_mtime for p in ban)) < gio * 3600
+
+
+def ma_hoa_ban_cu() -> int:
+    """
+    Đã có mật khẩu thì mã hoá lại các bản CSDL cũ còn ở dạng thường — giữ
+    nguyên mốc phục hồi, bỏ bản thường. Không làm thì bật mật khẩu xong, dữ
+    liệu khách vẫn nằm dạng thường thêm 14 vòng sao lưu.
+    """
+    from scripts import goi_ma_hoa
+
+    if not settings.sao_luu_mat_khau:
+        return 0
+    da = 0
+    for cu in ban_db():
+        if cu.name.endswith(DUOI_MA_HOA):
+            continue
+        dich = cu.with_name(cu.name + DUOI_MA_HOA)
+        tam = dich.with_name(dich.name + ".dang-ghi")
+        with cu.open("rb") as vao, tam.open("wb") as ra:
+            goi_ma_hoa.ma_hoa(vao, ra, settings.sao_luu_mat_khau)
+        tam.replace(dich)
+        # Giữ dấu thời gian của bản cũ: thứ tự mốc phục hồi đọc theo mtime.
+        import os
+        st = cu.stat()
+        os.utime(dich, (st.st_atime, st.st_mtime))
+        cu.unlink()
+        da += 1
+    return da
+
+
 def chep_ra_ngoai(tep: Path, thu_muc: str | None = None) -> tuple[bool, str]:
     """
     Chép một bản ĐÃ MÃ HOÁ ra thư mục ngoài máy. Ghi dấu mốc cả khi hỏng:
@@ -179,6 +220,9 @@ def sao_luu_db(dich: Path) -> tuple[bool, str]:
         goi_ma_hoa.ma_hoa(io.BytesIO(nen), f, settings.sao_luu_mat_khau)
     tam.replace(dich)
     ghi = f"{dich.stat().st_size / 1_048_576:.2f} MB · đã mã hoá"
+    so_cu = ma_hoa_ban_cu()
+    if so_cu:
+        ghi += f" · mã hoá lại {so_cu} bản cũ"
     if settings.sao_luu_thu_muc_ngoai.strip():
         _ok, ngoai = chep_ra_ngoai(dich)
         ghi += " · " + ngoai

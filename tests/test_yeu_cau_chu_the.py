@@ -224,7 +224,10 @@ def test_pdpd_xoa_chi_dong_so_khi_xoa_tron():
     from agent.api import pdpd_api
 
     src = inspect.getsource(pdpd_api.pdpd_xoa)
-    assert 'if kq.get("da_xoa"):' in src and "dong_yeu_cau_xoa_theo_sdt" in src
+    # Đóng khi xoá TRỌN, hoặc khi số không còn dữ liệu nào — KHÔNG đóng khi
+    # xoá dở (da_xoa=False vì ERP còn dữ liệu, khong_con_du_lieu vắng).
+    assert 'if kq.get("da_xoa") or kq.get("khong_con_du_lieu"):' in src
+    assert "dong_yeu_cau_xoa_theo_sdt" in src
 
 
 def test_quyen(csdl_kiem_thu):

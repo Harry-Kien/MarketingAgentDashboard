@@ -84,7 +84,28 @@ def _dau_van_tay(sdt: str) -> str:
     từ bảng này sang bảng khác. Băm cho phép chứng minh "đã xử lý yêu cầu
     của số này" mà không giữ lại chính số đó.
     """
-    return hashlib.sha256(sdt.encode()).hexdigest()[:16]
+    # HMAC có KHOÁ, không phải sha256 trần: Việt Nam chỉ có cỡ 10⁹ số điện
+    # thoại, dò ngược sha256 trần mất vài giây — sổ yêu cầu và nhật ký xoá
+    # vẫn đọc ra được số của người vừa xin xoá (rà soát 28.10.2026).
+    import hmac
+
+    return hmac.new(_khoa_van_tay(), sdt.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def _khoa_van_tay() -> bytes:
+    """
+    Khoá dẫn từ khoá chủ của kho bí mật — bản có version NHỎ NHẤT, để xoay
+    khoá (thêm version mới) không đổi dấu băm. Chưa cấu hình kho bí mật
+    (máy dựng thử) thì lui về một hằng: vẫn chạy, nhưng chỉ ở đó.
+    """
+    from agent.config import settings
+    from agent.security.credential_vault import InvalidMasterKeyConfiguration, parse_master_keys
+
+    try:
+        khoa = parse_master_keys(settings.credential_master_keys)
+    except InvalidMasterKeyConfiguration:
+        return b"dau-van-tay-chua-cau-hinh-kho-bi-mat"
+    return hashlib.sha256(b"dau-van-tay-v1|" + khoa[min(khoa)]).digest()
 
 
 # ---------------------------------------------------------------
@@ -505,7 +526,7 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
 
     truoc = await tra_cuu(so)
     if not truoc["co_du_lieu"]:
-        return {"so_dien_thoai": so, "da_xoa": False,
+        return {"so_dien_thoai": so, "da_xoa": False, "khong_con_du_lieu": True,
                 "ghi_chu": "Không tìm thấy dữ liệu nào của số này."}
 
     # CHỐT BỐN MẮT. Ở TRONG LÕI, không ở route: route chỉ là một trong

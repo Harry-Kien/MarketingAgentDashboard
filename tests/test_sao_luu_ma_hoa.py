@@ -181,3 +181,69 @@ def test_san_sang_ping():
 
     assert doc_ping_con_song(False)["muc"] == CANH_BAO
     assert doc_ping_con_song(True)["muc"] == DU
+
+
+
+# ------------------------------------------------------------------ rà soát 28.10.2026
+
+def test_bat_mat_khau_thi_ma_hoa_lai_ban_cu_giu_moc_thoi_gian(kho, monkeypatch):
+    import os
+
+    sl.sao_luu_db(kho / "db-20261001-000000.sql.gz")            # chưa có mật khẩu: bản thường
+    cu = kho / "db-20261001-000000.sql.gz"
+    os.utime(cu, (1_700_000_000, 1_700_000_000))
+    monkeypatch.setattr(sl.settings, "sao_luu_mat_khau", "mk")
+    ok, ghi = sl.sao_luu_db(kho / "db-20261028-000000.sql.gz")
+    assert ok and "mã hoá lại 1 bản cũ" in ghi
+    ten = sorted(p.name for p in kho.iterdir())
+    assert ten == ["db-20261001-000000.sql.gz.cskh", "db-20261028-000000.sql.gz.cskh"]
+    da = kho / "db-20261001-000000.sql.gz.cskh"
+    assert int(da.stat().st_mtime) == 1_700_000_000 and sl.doc_ban_db(da) == SQL
+
+
+def test_khong_sao_luu_lai_khi_ban_moi_con_tuoi(kho):
+    assert sl.ban_moi_con_tuoi() is False
+    sl.sao_luu_db(kho / "db-1.sql.gz")
+    assert sl.ban_moi_con_tuoi() is True
+    import inspect
+
+    import agent.main as m
+    assert "ban_moi_con_tuoi" in inspect.getsource(m.backup_loop)
+
+
+def test_san_sang_chi_co_tep_tai_lieu_la_chan(tmp_path, monkeypatch):
+    """Tệp knowledge-* vẫn ghi mỗi ngày khi pg_dump hỏng — bản cũ nhìn nó mà báo xanh."""
+    from scripts import san_sang
+
+    (tmp_path / "data" / "backup").mkdir(parents=True)
+    (tmp_path / "data" / "backup" / "knowledge-20261028.tar.gz").write_bytes(b"x")
+    monkeypatch.setattr(san_sang, "ROOT", tmp_path)
+    monkeypatch.setattr(sl, "KHO", tmp_path / "data" / "backup")
+    monkeypatch.setattr(san_sang, "trong_silo", lambda: False)
+    assert san_sang.kiem_sao_luu()["muc"] == san_sang.CHAN
+
+
+def test_dau_van_tay_co_khoa_khong_do_nguoc_duoc(monkeypatch):
+    import base64
+    import hashlib
+
+    from agent.core import du_lieu_ca_nhan as dl
+
+    from agent.config import settings
+    monkeypatch.setattr(settings, "credential_master_keys", "1:" + base64.b64encode(b"k" * 32).decode())
+    a = dl._dau_van_tay("0967627336")
+    assert a != hashlib.sha256(b"0967627336").hexdigest()[:16]     # không phải sha256 trần
+    assert a == dl._dau_van_tay("0967627336")                       # ổn định
+    # Xoay khoá (thêm version mới) không đổi dấu băm.
+    monkeypatch.setattr(settings, "credential_master_keys",
+                        "1:" + base64.b64encode(b"k" * 32).decode() + ",2:" + base64.b64encode(b"m" * 32).decode())
+    assert dl._dau_van_tay("0967627336") == a
+
+
+def test_so_khong_con_du_lieu_cung_dong_yeu_cau_xoa():
+    import inspect
+
+    from agent.api import pdpd_api
+
+    src = inspect.getsource(pdpd_api.pdpd_xoa)
+    assert 'kq.get("khong_con_du_lieu")' in src

@@ -399,8 +399,12 @@ async def backup_loop() -> None:
     """
     while True:
         try:
+            from scripts import sao_luu as bk
+
+            if settings.sao_luu_moi_ngay and await asyncio.to_thread(bk.ban_moi_con_tuoi):
+                await asyncio.sleep(3600)   # có bản mới rồi: hẹn kiểm lại sau một giờ
+                continue
             if settings.sao_luu_moi_ngay:
-                from scripts import sao_luu as bk
 
                 dau = __import__("datetime").datetime.now(
                     __import__("datetime").timezone.utc

@@ -182,10 +182,16 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
         raise HTTPException(422, str(exc)) from exc
     # Chỉ đóng sổ khi đã xoá TRỌN (kể cả bên ERP). `da_xoa=False` mà vẫn
     # đóng là ghi "đã đáp ứng" cho một yêu cầu còn dở.
-    if kq.get("da_xoa"):
+    # Số KHÔNG CÒN dữ liệu nào (đã dọn theo hạn, hoặc chưa từng có) cũng là
+    # đã đáp ứng — để mở là sổ báo quá hạn cho một yêu cầu không còn gì để
+    # làm: đỏ giả (rà soát 28.10.2026). Chỉ đóng yêu cầu khớp ĐÚNG dấu băm số
+    # này, nên gõ nhầm số không đóng nhầm yêu cầu của người khác.
+    if kq.get("da_xoa") or kq.get("khong_con_du_lieu"):
         kq["yeu_cau_da_dong"] = await yeu_cau_chu_the.dong_yeu_cau_xoa_theo_sdt(
             du_lieu_ca_nhan.chuan_hoa_sdt(sdt),
-            ket_qua=f"đã xoá qua trang PDPD (bởi {nguoi['ten_dang_nhap']})")
+            ket_qua=("đã xoá qua trang PDPD" if kq.get("da_xoa")
+                     else "hệ thống không còn dữ liệu nào của số này")
+            + f" (bởi {nguoi['ten_dang_nhap']})")
     return kq
 
 

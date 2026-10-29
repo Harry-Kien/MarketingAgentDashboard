@@ -269,7 +269,15 @@ def kiem_sao_luu() -> dict:
         return _muc("Sao lưu", CHAN, "chưa có bản sao lưu nào",
                     "python -m scripts.sao_luu — rồi đặt Task Scheduler chạy "
                     "hằng ngày, và THỬ PHỤC HỒI một lần")
-    ban = sorted(thu_muc.glob("*"), key=lambda p: p.stat().st_mtime)
+    # CHỈ bản CSDL. Lấy tệp mới nhất của cả thư mục là xanh giả: tệp tài
+    # liệu `knowledge-*` vẫn được ghi mỗi ngày kể cả khi pg_dump hỏng (rà
+    # soát 28.10.2026).
+    from scripts import sao_luu
+
+    ban = sorted(sao_luu.ban_db(thu_muc), key=lambda p: p.stat().st_mtime)
+    if not ban:
+        return _muc("Sao lưu", CHAN, "có tệp trong data/backup nhưng KHÔNG có bản CSDL nào",
+                    "python -m scripts.sao_luu — xem dòng 'cơ sở dữ liệu' báo gì")
     from datetime import datetime, timezone
     moi = datetime.fromtimestamp(ban[-1].stat().st_mtime, timezone.utc)
     ngay = (datetime.now(timezone.utc) - moi).days
@@ -332,6 +340,10 @@ def kiem_ma_hoa_sao_luu() -> dict:
 
     ban = sao_luu.ban_db()
     moi = ban[-1].name.endswith(sao_luu.DUOI_MA_HOA) if ban else None
+    if settings.sao_luu_mat_khau and moi and any(
+            not p.name.endswith(sao_luu.DUOI_MA_HOA) for p in ban):
+        # Bản mới nhất đã mã hoá không có nghĩa là mọi bản đã mã hoá.
+        moi = False
     moc = None
     try:
         moc = json.loads(sao_luu.DAU_MOC_NGOAI.read_text(encoding="utf-8"))

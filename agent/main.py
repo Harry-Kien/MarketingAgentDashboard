@@ -685,6 +685,9 @@ _MO_MAU = (
 )
 
 
+HANG_VAN_CHUYEN = ("ghn", "ghtk", "mock")
+
+
 def doc_than_webhook_van_chuyen(raw: bytes, content_type: str) -> dict | None:
     """
     JSON (GHN) hoặc form urlencoded (GHTK). Không đọc được thì None.
@@ -725,9 +728,19 @@ async def webhook_shipping(
     """
     from agent.shipping import xu_ly_webhook_van_chuyen
 
+    # Hãng LẠ: `get_provider` dựng một provider giả cho mọi tên — để lọt là
+    # "/webhook/shipping/abc" đi trọn đường xử lý trên dữ liệu thật.
+    if hang not in HANG_VAN_CHUYEN:
+        await db.log_event("shipping.webhook_hang_la", hang=hang[:40])
+        return JSONResponse({"ok": False, "error": "hãng vận chuyển không có"}, status_code=404)
     raw = await request.body()
-    payload = doc_than_webhook_van_chuyen(raw, request.headers.get("content-type", ""))
+    loai_than = request.headers.get("content-type", "")
+    payload = doc_than_webhook_van_chuyen(raw, loai_than)
     if payload is None:
+        # 400 mà không ghi gì là cập nhật trạng thái mất câm: GHTK chỉ gửi lại
+        # MỘT lần rồi bỏ (rà soát 28.10.2026).
+        await db.log_event("shipping.webhook_khong_doc_duoc", hang=hang,
+                           content_type=loai_than[:80], kich_thuoc=len(raw))
         return JSONResponse({"ok": False, "error": "payload không phải JSON hay form"},
                             status_code=400)
 

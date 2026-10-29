@@ -788,7 +788,8 @@ def test_17_webhook_ghtk_dang_form_cap_nhat_don(app_that, monkeypatch):
     BƯỚC 1  Đơn đã có mã vận đơn GHTK; gọi webhook sai bí mật → 401, đơn không đổi.
     BƯỚC 2  GHTK báo "shipper báo đã giao" (45) — chỉ để tham khảo → đơn KHÔNG đổi.
     BƯỚC 3  GHTK báo "đã giao" (5) dạng form → đơn chuyển "đã giao".
-    BƯỚC 4  Thân rác (không JSON, không form) → 400.
+    BƯỚC 4  Thân rác (không JSON, không form) → 400, có ghi nhật ký.
+    BƯỚC 5  Hãng không có ("/webhook/shipping/abc") → 404, không đụng đơn.
     """
     from agent import db
     from agent.config import settings
@@ -824,6 +825,13 @@ def test_17_webhook_ghtk_dang_form_cap_nhat_don(app_that, monkeypatch):
 
     assert app_that.post("/webhook/shipping/ghtk?token=bi-mat-nghiem-thu", content="rac",
                          headers={"Content-Type": "text/plain"}).status_code == 400
+
+    async def co_su_kien(kind):
+        return (await db.fetchrow("SELECT count(*) n FROM events WHERE kind = $1", kind))["n"]
+    assert _sql(app_that, co_su_kien, "shipping.webhook_khong_doc_duoc") == 1
+    assert app_that.post("/webhook/shipping/abc?token=bi-mat-nghiem-thu",
+                         content="label_id=S1.A1.99&status_id=21", headers=form).status_code == 404
+    assert _sql(app_that, don)["trang_thai"] == "da_giao"
 
 
 # ------------------------------------------------------------------ 18. địa chỉ sau sáp nhập

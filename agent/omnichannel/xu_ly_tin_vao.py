@@ -254,7 +254,10 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # (thong_bao_ai.py) hứa "nhắn gặp nhân viên là gặp người"; lời hứa ấy
     # giữ bằng mã — NĐ 356/2025 Điều 10 khoản 3 cho khách quyền không bị xử
     # lý tự động, và để model tự hiểu là có lúc nó "dạ em hỗ trợ mình luôn".
-    if thong_bao_ai.khach_doi_gap_nguoi(msg.text or ""):
+    doi_ngay = thong_bao_ai.khach_doi_gap_nguoi(msg.text or "")
+    if doi_ngay or await thong_bao_ai.da_doi_gap_nguoi(cid):
+        if doi_ngay:
+            await db.log_event(thong_bao_ai.SU_KIEN_DOI_GAP_NGUOI, ref_id=cid)
         await db.execute(
             "UPDATE conversations SET status = 'escalated', mode = 'human', "
             "version = version + 1, outcome = 'escalated', updated_at = now() "

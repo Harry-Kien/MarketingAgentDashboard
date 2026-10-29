@@ -180,6 +180,10 @@ async def dat_lich(nguoi_dung_id: UUID, body: LichIn,
     # thành "chưa xếp ca" = luôn trực — đúng chiều ngược lại ý người xếp.
     async with db.pool().acquire() as conn:
         async with conn.transaction():
+            # Khoá dòng người dùng: hai lần lưu cùng lúc (READ COMMITTED) thì
+            # DELETE của lần sau không thấy dòng lần trước vừa chèn — hai lịch
+            # trộn vào nhau, ca chồng ca (rà soát 28.10.2026).
+            await conn.execute("SELECT 1 FROM nguoi_dung WHERE id = $1 FOR UPDATE", nguoi_dung_id)
             await conn.execute("DELETE FROM ca_truc WHERE nguoi_dung_id = $1", nguoi_dung_id)
             for thu, a, b in ca:
                 await conn.execute(

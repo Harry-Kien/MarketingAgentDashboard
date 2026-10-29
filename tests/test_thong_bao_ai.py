@@ -32,6 +32,10 @@ def test_doi_gap_nguoi(cau):
 @pytest.mark.parametrize("cau", [
     "nhân viên giao hàng chưa tới ạ", "serum này có hàng thật không", "giá bao nhiêu",
     "kem chống nắng dùng cho người da dầu được không", "", "hàng chính hãng hay hàng thật vậy",
+    # Rà soát 28.10.2026 — bản cũ bắt nhầm những câu này sau khi bỏ dấu:
+    "có ảnh feedback người thật không", "không phải bột đúng không ạ",
+    "nhiều người thất vọng về mẫu cũ", "nhân viên thật nhiệt tình",
+    "em không muốn nói chuyện với ai cả, chỉ hỏi giá",
 ])
 def test_khong_nham(cau):
     assert not tb.khach_doi_gap_nguoi(cau), cau
@@ -161,3 +165,12 @@ def test_san_sang():
 
     assert doc_thong_bao_ai("bat")["muc"] == DU
     assert doc_thong_bao_ai("tat")["muc"] == CANH_BAO
+
+
+
+def test_lua_chon_gap_nguoi_duoc_nho_khi_mo_lai_hoi_thoai():
+    """Mở lại hội thoại đã giải quyết thì agent không tự trả lời lại người vừa đòi gặp người."""
+    src = (ROOT / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(encoding="utf-8")
+    i = src.index("thong_bao_ai.khach_doi_gap_nguoi(")
+    assert "await thong_bao_ai.da_doi_gap_nguoi(cid)" in src[i:i + 300]
+    assert "SU_KIEN_DOI_GAP_NGUOI" in src[i:i + 500]

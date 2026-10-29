@@ -141,6 +141,10 @@ class PostgresAutoRoutingTransaction:
             SELECT member.user_id, member.max_active,
                    count(conversation.id)::int AS active_count
             FROM team_members member
+            -- Người đã KHOÁ không được giao: cảnh báo lịch ca đã loại họ, bộ
+            -- định tuyến thì chưa — hội thoại nằm ở tay người không còn vào
+            -- được (rà soát 28.10.2026).
+            JOIN nguoi_dung nd ON nd.id = member.user_id AND NOT nd.khoa
             JOIN account_memberships membership
               ON membership.user_id = member.user_id
              AND membership.account_id = $1

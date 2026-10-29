@@ -117,6 +117,11 @@ async def giu_hang(items: list[dict], ma_don: str) -> tuple[bool, str]:
     return True, ""
 
 
+# Mọi lý do CỘNG HÀNG LẠI vào kho. Thêm lý do mới mà quên khai ở đây vẫn an
+# toàn: `tra_hang` luôn gộp thêm `ly_do` của chính lời gọi vào tập này.
+LY_DO_HOAN = frozenset({"huy_don", "hoan_hang", "erp_tu_choi"})
+
+
 async def tra_hang(ma_don: str, ly_do: str = "huy_don") -> int:
     """
     Trả lại kho khi đơn bị huỷ.
@@ -124,24 +129,28 @@ async def tra_hang(ma_don: str, ly_do: str = "huy_don") -> int:
     Đọc từ sổ biến động chứ không đọc từ đơn: sổ là thứ ghi CHÍNH XÁC đã
     trừ bao nhiêu. Đơn có thể đã bị sửa, sổ thì không.
 
-    Không trả trùng: mỗi lần bán chỉ được hoàn đúng một lần.
+    Không trả trùng: mỗi lần bán chỉ được hoàn đúng một lần — với MỌI lý do
+    hoàn cộng lại, không phải mỗi lý do một lần. Bản trước chặn trùng theo
+    từng `ly_do`: shop huỷ đơn (huy_don) rồi GHTK báo hàng về (hoan_hang) là
+    cộng kho HAI lần, kho báo có hàng trong khi kệ trống (rà soát 28.10.2026).
+    Kiểm trong giao dịch, có khoá theo mã đơn: hai webhook tới cùng lúc không
+    được cùng thấy "chưa hoàn".
     """
-    da_hoan = await db.fetchrow(
-        "SELECT 1 FROM kho_bien_dong WHERE ma_don = $1 AND ly_do = $2 LIMIT 1",
-        ma_don, ly_do,
-    )
-    if da_hoan:
-        return 0
-
-    ban = await db.fetch(
-        "SELECT ma, thay_doi FROM kho_bien_dong WHERE ma_don = $1 AND ly_do = 'ban'",
-        ma_don,
-    )
-    if not ban:
-        return 0
-
     async with db.pool().acquire() as conn:
         async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext('tra_hang:' || $1))", ma_don)
+            da_hoan = await conn.fetchrow(
+                "SELECT 1 FROM kho_bien_dong WHERE ma_don = $1 AND ly_do = ANY($2::text[]) LIMIT 1",
+                ma_don, sorted(LY_DO_HOAN | {ly_do}),
+            )
+            if da_hoan:
+                return 0
+            ban = await conn.fetch(
+                "SELECT ma, thay_doi FROM kho_bien_dong WHERE ma_don = $1 AND ly_do = 'ban'",
+                ma_don,
+            )
+            if not ban:
+                return 0
             for b in ban:
                 sl = abs(int(b["thay_doi"]))
                 await conn.execute(

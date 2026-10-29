@@ -29,6 +29,7 @@ là hội thoại mới — và được báo lại, đúng như phải thế.
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 import uuid
 
@@ -36,11 +37,25 @@ logger = logging.getLogger(__name__)
 
 # So khớp trên chữ đã bỏ dấu, chữ thường. Cụm NHIỀU từ: "người" trần hay
 # "nhân viên" trần quá phổ biến ("nhân viên giao hàng chưa tới").
+#
+# MỌI cụm phải có ĐỘNG TỪ Ý ĐỊNH (gặp, nói chuyện với, chuyển, gọi). Cụm trần
+# như "người thật", "nhân viên thật", "không phải bot" khớp nhầm sau khi bỏ
+# dấu: "có ảnh feedback người thật không", "nhân viên thật nhiệt tình",
+# "không phải bột đúng không" (bột → bot) — mỗi câu là một khách bị đẩy sang
+# người vĩnh viễn giữa lúc đang hỏi mua (rà soát 28.10.2026).
 CUM_GAP_NGUOI = (
-    "gap nhan vien", "gap nguoi", "noi chuyen voi nhan vien", "noi chuyen voi nguoi",
-    "nguoi that", "nhan vien that", "khong phai bot", "khong noi chuyen voi bot",
-    "khong muon noi chuyen voi ai", "khong muon chat voi bot", "cho gap admin",
+    "gap nhan vien", "gap nguoi", "gap admin", "gap chu shop", "gap quan ly",
+    "noi chuyen voi nhan vien", "noi chuyen voi nguoi", "noi chuyen truc tiep voi",
+    "chuyen cho nhan vien", "chuyen sang nhan vien", "goi nhan vien",
+    "khong muon noi chuyen voi bot", "khong muon chat voi bot",
 )
+_KHONG_MUON_MAY = re.compile(
+    r"(?i:không|ko|k|hông)\s+(?i:muốn|thích)\s+(?i:nói chuyện|chat|nhắn)\s+(?i:với|vs)\s+"
+    r"(?:AI|(?i:máy|bot|robot|trợ lý ảo))\b")
+SU_KIEN_DOI_GAP_NGUOI = "khach.doi_gap_nguoi"
+# Lựa chọn của khách được NHỚ chừng này: hội thoại đã giải quyết rồi mở lại
+# thì agent không tự trả lời lại người vừa nói không muốn nói chuyện với máy.
+NHO_NGAY = 30
 
 
 def _chuan(s: str) -> str:
@@ -55,7 +70,22 @@ def khach_doi_gap_nguoi(van_ban: str) -> bool:
     # đứng đầu) — chấp nhận được, chuyển người thừa còn hơn giữ khách lại
     # với máy khi họ đã đòi gặp người.
     t = f" {_chuan(van_ban)} "
-    return any(f" {c} " in t for c in CUM_GAP_NGUOI)
+    if any(f" {c} " in t for c in CUM_GAP_NGUOI):
+        return True
+    # "nói chuyện với AI / máy / bot" — so trên câu GỐC: bỏ dấu thì "AI" trùng
+    # "ai" (= ai đó), nên chỉ nhận AI VIẾT HOA.
+    return bool(_KHONG_MUON_MAY.search(van_ban or ""))
+
+
+async def da_doi_gap_nguoi(cid: uuid.UUID) -> bool:
+    """Khách đã đòi gặp người trong hội thoại này, trong NHO_NGAY ngày qua."""
+    from agent import db
+
+    r = await db.fetchrow(
+        "SELECT 1 FROM events WHERE kind = $1 AND ref_id = $2 "
+        "AND created_at > now() - make_interval(days => $3) LIMIT 1",
+        SU_KIEN_DOI_GAP_NGUOI, cid, NHO_NGAY)
+    return r is not None
 
 
 def khoa(cid: uuid.UUID) -> str:

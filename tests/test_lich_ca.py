@@ -295,3 +295,62 @@ def test_canh_bao_doi_khong_ai_trong_ca(csdl_kiem_thu):
         asyncio.run(dung(csdl_kiem_thu))
         cb = k.get("/api/lich-ca").json()["canh_bao"]
     assert [c["doi"] for c in cb] == ["Ca đêm"]
+
+
+
+def test_bo_dinh_tuyen_khong_giao_cho_nguoi_bi_khoa(csdl_kiem_thu):
+    """Rà soát 28.10.2026: cảnh báo lịch ca loại người khoá, bộ định tuyến thì chưa."""
+    from agent.omnichannel.auto_routing import PostgresAutoRoutingTransaction
+
+    async def chay():
+        conn = await _mo(csdl_kiem_thu)
+        try:
+            tk = await conn.fetchval(
+                "INSERT INTO channel_accounts (channel, display_name, status, external_account_id) "
+                "VALUES ('webchat','web','active','web-k') RETURNING id")
+            doi = await conn.fetchval("INSERT INTO teams (name) VALUES ('Khoá') RETURNING id")
+            for ten in ("con_lam", "da_nghi_viec"):
+                u = await _nguoi(conn, ten)
+                await conn.execute("INSERT INTO team_members (team_id, user_id) VALUES ($1,$2)", doi, u)
+                await conn.execute("INSERT INTO account_memberships (account_id, user_id) VALUES ($1,$2)", tk, u)
+            await conn.execute("UPDATE nguoi_dung SET khoa = true WHERE ten_dang_nhap = 'da_nghi_viec'")
+            rows = await PostgresAutoRoutingTransaction(conn).candidates(
+                account_id=tk, team_id=doi, required_skills=[])
+            ten = {r["user_id"]: None for r in rows}
+            return [await conn.fetchval("SELECT ten_dang_nhap FROM nguoi_dung WHERE id = $1", u) for u in ten]
+        finally:
+            await conn.close()
+
+    assert asyncio.run(chay()) == ["con_lam"]
+
+
+def test_hoan_kho_mot_lan_cho_moi_ly_do(csdl_kiem_thu):
+    """Shop huỷ đơn rồi GHTK báo hàng về: bản cũ cộng kho HAI lần."""
+    from agent import db
+    from agent.core import kho
+
+    async def chay():
+        from agent.migrations.runner import apply_all
+
+        async def _codec(conn):
+            await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+        db._pool = await asyncpg.create_pool(csdl_kiem_thu, min_size=1, max_size=3, init=_codec)
+        try:
+            async with db._pool.acquire() as conn:
+                await conn.execute((ROOT / "agent" / "schema.sql").read_text(encoding="utf-8"))
+                await apply_all(conn)
+                await conn.execute("INSERT INTO ton_kho (ma, so_luong) VALUES ('SR1', 10) "
+                                   "ON CONFLICT (ma) DO UPDATE SET so_luong = 10")
+                await conn.execute("INSERT INTO kho_bien_dong (ma, thay_doi, ly_do, ma_don) "
+                                   "VALUES ('SR1', -2, 'ban', 'DH-HK')")
+            a = await kho.tra_hang("DH-HK", ly_do="huy_don")
+            b = await kho.tra_hang("DH-HK", ly_do="hoan_hang")
+            c = await asyncio.gather(*(kho.tra_hang("DH-HK", ly_do="huy_don") for _ in range(3)))
+            ton = await db.fetchrow("SELECT so_luong FROM ton_kho WHERE ma = 'SR1'")
+            return a, b, c, ton["so_luong"]
+        finally:
+            await db._pool.close()
+            db._pool = None
+
+    a, b, c, ton = asyncio.run(chay())
+    assert (a, b, list(c), ton) == (1, 0, [0, 0, 0], 12)

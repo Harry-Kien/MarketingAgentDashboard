@@ -10,7 +10,7 @@ from typing import Any
 
 from agent import db
 from agent.config import settings
-from agent.core import kho
+from agent.core import cong_viec, kho
 from .base import BaseShippingProvider
 from .ghn import GHNShippingProvider
 from .ghtk import GHTKShippingProvider
@@ -423,6 +423,19 @@ async def xu_ly_webhook_van_chuyen(
             ma_van_don=event.ma_van_don,
             trang_thai_goc=event.trang_thai_goc,
         )
+        # Nhật ký thôi là không ai biết: kiện có thể đang lạc. Sinh VIỆC cho
+        # người tra trên trang hãng (rà soát 29.10.2026).
+        await cong_viec.tao_tu_van_chuyen(
+            str(order.get("ma_don") or ""),
+            tieu_de=f"Kiểm vận đơn {event.ma_van_don or order.get('ma_don')}: "
+                    f"{provider_name} báo mã lạ",
+            mo_ta=(f"Hãng {provider_name} gửi mã trạng thái "
+                   f"'{event.trang_thai_goc}' mà hệ thống không nhận ra. Trạng "
+                   "thái đơn GIỮ NGUYÊN, khách chưa được báo gì. Tra mã vận đơn "
+                   f"trên trang hãng để biết kiện đang ở đâu. {event.mo_ta or ''}").strip()[:1000],
+            khoa=f"van_chuyen:la:{event.ma_van_don or order.get('ma_don')}:{event.trang_thai_goc}",
+            conversation_id=order.get("conversation_id"), uu_tien="thuong",
+        )
         return {
             "ok": True,
             "can_nguoi_xem": True,
@@ -493,6 +506,18 @@ async def xu_ly_webhook_van_chuyen(
             ma_don=ma_don,
             ma_van_don=ma_van_don,
             ly_do=event.mo_ta or "Giao hàng không thành công",
+        )
+        # "Báo động" chỉ là nhật ký thì không ai báo cả. Giao hỏng cần một
+        # người gọi khách hẹn giao lại TRƯỚC khi hãng thử lần cuối rồi hoàn
+        # hàng — shop chịu phí hoàn (rà soát 29.10.2026).
+        await cong_viec.tao_tu_van_chuyen(
+            ma_don,
+            tieu_de=f"Gọi khách hẹn giao lại đơn {ma_don}",
+            mo_ta=(f"Hãng báo giao không thành công (mã {event.trang_thai_goc}). "
+                   f"Lý do hãng ghi: {event.mo_ta or 'không ghi'}. Gọi khách hẹn "
+                   "lại, rồi báo hãng trên trang của họ.")[:1000],
+            khoa=f"van_chuyen:that_bai:{ma_van_don}:{event.trang_thai_goc}",
+            conversation_id=order.get("conversation_id"),
         )
 
     return {

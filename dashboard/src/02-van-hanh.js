@@ -447,6 +447,50 @@ $("#anhLonDong")?.addEventListener("click", anhLonDong);
 $("#anhLon")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) anhLonDong(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#anhLon")?.classList.add("is-off"); });
 
+/* BÁO CÓ KHÁCH CẦN NGƯỜI ngay trên máy người trực.
+ *
+ * Trước 29.10.2026, chuyển người trên Zalo, Instagram, WhatsApp, chat web chỉ
+ * làm con số ở mục Ca trực nhảy lên — ai đang ở màn khác, hay đang ở tab
+ * khác, thì không thấy gì. Hai lớp, cả hai không cần máy chủ gửi gì thêm:
+ *   - tiêu đề tab mang số việc đang chờ: thấy được cả khi tab nằm sau;
+ *   - thông báo của hệ điều hành khi số hội thoại chờ người TĂNG (không báo
+ *     lần tải đầu: mở dashboard ra mà bị dội mười thông báo cũ là học cách
+ *     tắt nó).
+ * Ngoài dashboard thì đi đường webhook (canh_gac.bao_nhan_vien). */
+const TIEU_DE_GOC = document.title;
+let soCanNguoiTruoc = null;
+
+function baoKhachCanNguoi(escalated, tong) {
+  document.title = tong ? `(${tong}) ${TIEU_DE_GOC}` : TIEU_DE_GOC;
+  const tang = soCanNguoiTruoc !== null && escalated > soCanNguoiTruoc;
+  soCanNguoiTruoc = escalated;
+  if (!tang || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const tb = new Notification("Khách cần người trả lời", {
+      body: `${escalated} hội thoại đang chờ người · mở Ca trực để nhận`,
+      tag: "khach-can-nguoi",
+    });
+    tb.onclick = () => { window.focus(); doiMan("ca"); tb.close(); };
+  } catch { /* Vài trình duyệt di động chỉ cho thông báo qua service worker. */ }
+}
+
+function veNutThongBao() {
+  const o = $("#batThongBao");
+  if (!o) return;
+  if (!("Notification" in window) || Notification.permission === "granted") { o.hidden = true; return; }
+  o.hidden = false;
+  if (Notification.permission === "denied") {
+    o.textContent = "Trình duyệt đang chặn thông báo của trang này — mở cài đặt trang (biểu tượng ổ khoá) để cho phép, nếu muốn được báo khi có khách cần người.";
+    return;
+  }
+  o.innerHTML = 'Máy này chưa được báo khi có khách cần người. <button type="button" class="btn btn--sm" id="nutThongBao">Bật thông báo</button>';
+  $("#nutThongBao").addEventListener("click", async () => {
+    try { await Notification.requestPermission(); } catch { /* trình duyệt cũ */ }
+    veNutThongBao();
+  });
+}
+veNutThongBao();
+
 async function loadOverview() {
   const o = await api("/overview");
   applyRuntime(o.runtime);
@@ -458,6 +502,8 @@ async function loadOverview() {
   // và người trực tưởng ca đang êm.
   $("#c-ca").textContent =
     (o.conversations.waiting || 0) + (o.conversations.escalated || 0);
+  baoKhachCanNguoi(o.conversations.escalated || 0,
+    (o.conversations.waiting || 0) + (o.conversations.escalated || 0));
   $("#c-hoithoai").textContent = o.conversations.total || 0;
   $("#c-video").textContent = o.video.review || 0;
   $("#rail-cost").textContent = usd(o.cost.total_usd);

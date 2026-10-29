@@ -31,7 +31,7 @@ from agent import db
 
 TRANG_THAI = ("moi", "dang_lam", "xong", "huy")
 UU_TIEN = ("thap", "thuong", "cao", "gap")
-NGUON = ("nguoi", "agent")
+NGUON = ("nguoi", "agent", "tu_dong", "van_chuyen")
 
 NHAN_TRANG_THAI = {
     "moi": "Mới",
@@ -143,12 +143,90 @@ async def tao_tu_chuyen_nguoi(
             (ten_khach or "").strip(), ly_do, str(conversation_id),
             str(contact_id) if contact_id else None,
         )
-        return str(dong["id"]) if dong else None
+        if dong is None:
+            return None
+        # Việc MỚI thì báo nhân viên ra ngoài dashboard — ở MỌI kênh. Chỉ
+        # khi việc mới: khách nhắn thêm mười tin vào hội thoại đã chuyển
+        # người không được thành mười tin báo (chốt một-việc-mỗi-hội-thoại
+        # ở trên làm luôn việc chống trùng cho đường báo này).
+        await _bao_viec_moi_cho_nhan_vien(conversation_id)
+        return str(dong["id"])
     except Exception as exc:  # noqa: BLE001
         import logging
 
         logging.getLogger("agent.cong_viec").error(
             "KHÔNG tạo được công việc từ chuyển người (hội thoại %s): %s: %s",
             conversation_id, type(exc).__name__, exc,
+        )
+        return None
+
+
+TEN_KENH = {
+    "zalo_personal": "Zalo cá nhân", "zalo_oa": "Zalo OA",
+    "facebook": "Facebook", "instagram": "Instagram",
+    "whatsapp": "WhatsApp", "webchat": "Chat web",
+}
+
+
+async def _bao_viec_moi_cho_nhan_vien(conversation_id: UUID | str) -> None:
+    """
+    Gửi một tin ngắn tới nhóm nhân viên (xem `canh_gac.bao_nhan_vien`).
+
+    Chỉ nói KÊNH, không nói lý do hay lời khách: lý do chuyển người có thể
+    là "mang thai", "bệnh da" — dữ liệu sức khoẻ, thuộc loại nhạy cảm theo
+    Luật 91/2025, không được đi sang Telegram chỉ để báo "có việc".
+    """
+    from agent import canh_gac
+
+    dong = await db.fetchrow(
+        "SELECT ca.channel FROM conversations c "
+        "LEFT JOIN channel_accounts ca ON ca.id = c.account_id WHERE c.id = $1::uuid",
+        str(conversation_id))
+    kenh = (dong or {}).get("channel") or ""
+    canh_gac.bao_nhan_vien_nen(
+        "Khách cần người trả lời",
+        f"Kênh {TEN_KENH.get(kenh, kenh or 'không rõ')}: agent đã chuyển hội thoại "
+        "cho người. Mở dashboard → Ca trực để nhận.")
+
+
+async def tao_tu_van_chuyen(
+    ma_don: str, *, tieu_de: str, mo_ta: str, khoa: str,
+    conversation_id=None, uu_tien: str = "cao",
+) -> str | None:
+    """
+    Hãng vận chuyển báo một chuyện cần NGƯỜI làm: giao thất bại, mã trạng
+    thái lạ. Trả id việc vừa tạo, hoặc None khi đã có việc cùng `khoa`.
+
+    Trước bản này hai chuyện ấy chỉ là một dòng nhật ký: kiện giao hỏng
+    không ai gọi khách hẹn lại, hãng hoàn hàng về sau ba lần thử, shop chịu
+    phí hoàn — mà không có gì báo lỗi ở đâu (rà soát 29.10.2026).
+
+    `khoa` gắn theo mã vận đơn + trạng thái: hãng phát lại webhook không đẻ
+    việc thứ hai (chỉ mục duy nhất ở CSDL, migration 0038). Không ném khi
+    hỏng — webhook vẫn phải trả lời hãng — nhưng ghi nhật ký mức lỗi.
+    """
+    try:
+        dong = await db.fetchrow(
+            "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, conversation_id, "
+            "                       contact_id, khoa_chong_trung) "
+            "SELECT $1, $2, 'van_chuyen', $3, $4::uuid, c.contact_id, $5 "
+            "FROM (SELECT 1) _ LEFT JOIN conversations c ON c.id = $4::uuid "
+            "ON CONFLICT DO NOTHING RETURNING id",
+            tieu_de[:200], mo_ta, kiem_uu_tien(uu_tien),
+            str(conversation_id) if conversation_id else None, khoa[:300],
+        )
+        if dong is None:
+            return None
+        from agent import canh_gac
+
+        # Mã đơn là mã nội bộ của cửa hàng, không phải dữ liệu của khách.
+        canh_gac.bao_nhan_vien_nen(tieu_de, f"Đơn {ma_don}. Mở dashboard → Công việc.")
+        return str(dong["id"])
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("agent.cong_viec").error(
+            "KHÔNG tạo được công việc vận chuyển (đơn %s): %s: %s",
+            ma_don, type(exc).__name__, exc,
         )
         return None

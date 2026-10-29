@@ -168,6 +168,78 @@ async def bao_dong(chi_tiet: str, *, tieu_de: str = "Cảnh báo hệ thống",
     await _bao(muc_do, tieu_de, chi_tiet, {})
 
 
+# Giữ tham chiếu tới việc nền: asyncio chỉ giữ tham chiếu YẾU, task không ai
+# giữ có thể bị dọn rác giữa chừng — tin báo nhân viên mất mà không lỗi.
+_viec_nen: set[asyncio.Task] = set()
+
+
+async def bao_nhan_vien(tieu_de: str, chi_tiet: str) -> bool:
+    """
+    Báo NHÂN VIÊN có việc cần người — gửi ra ngoài dashboard. Trả đã gửi chưa.
+
+    VÌ SAO CẦN
+    ----------
+    Trước bản này, chuyển người trên Zalo, Instagram, WhatsApp, chat web chỉ
+    đổi màu một dòng trên dashboard (`bao_chuyen_nguoi` của các kênh ấy
+    không làm gì). Không ai mở dashboard thì khách ngồi chờ, và lời hứa "có
+    nhân viên hỗ trợ" thành lời nói suông (rà soát 29.10.2026).
+
+    Đi chung đường webhook với báo động (n8n / Telegram / Zalo bot) — một
+    chỗ cấu hình cho cửa hàng nhỏ. Đặt BAO_NHAN_VIEN_WEBHOOK khi muốn tin
+    khách cần người đi vào nhóm khác với tin máy hỏng.
+
+    KHÔNG gửi tên hay lời khách: tin đi qua bên thứ ba (Telegram…), chỉ cần
+    đủ để người trực biết phải mở dashboard. Dữ liệu cá nhân ở lại trong máy.
+    """
+    if not settings.bao_nhan_vien_chuyen_nguoi:
+        return False
+    if settings.bao_nhan_vien_webhook:
+        url, mau = settings.bao_nhan_vien_webhook, settings.bao_nhan_vien_goi_tin
+    else:
+        url, mau = settings.canh_gac_webhook, settings.canh_gac_goi_tin
+    if not url:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            r = await http.post(url, json=dung_goi_bao_dong(
+                {"muc_do": "can_nguoi", "tieu_de": tieu_de,
+                 "chi_tiet": chi_tiet, "trang_thai": "can_nguoi"}, mau=mau))
+            r.raise_for_status()
+    except httpx.HTTPError as exc:
+        # KHÔNG ghi str(exc): lỗi HTTP của httpx chứa URL, mà URL Telegram
+        # chứa token bot — token vào nhật ký là lộ.
+        ma = getattr(getattr(exc, "response", None), "status_code", None)
+        await db.log_event("bao_nhan_vien.loi_gui", loi=type(exc).__name__,
+                           ma_http=ma, tieu_de=tieu_de[:120])
+        return False
+    return True
+
+
+def bao_nhan_vien_nen(tieu_de: str, chi_tiet: str) -> None:
+    """
+    Gửi `bao_nhan_vien` trong nền. Đường xử lý tin khách không được chờ một
+    webhook bên ngoài (Telegram chậm 10 giây là khách chờ thêm 10 giây), và
+    lỗi gửi không được làm hỏng lượt trả lời.
+    """
+    try:
+        vong = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def _chay() -> None:
+        try:
+            await bao_nhan_vien(tieu_de, chi_tiet)
+        except Exception as exc:  # noqa: BLE001 — việc nền: ghi lại, không ném
+            import logging
+
+            logging.getLogger("agent.canh_gac").error(
+                "Báo nhân viên hỏng: %s", type(exc).__name__)
+
+    t = vong.create_task(_chay())
+    _viec_nen.add(t)
+    t.add_done_callback(_viec_nen.discard)
+
+
 async def kiem_mot_lan() -> dict:
     """Kiểm một lượt và báo nếu trạng thái đổi. Trả kết quả chẩn đoán."""
     global _truoc, _cho_truoc

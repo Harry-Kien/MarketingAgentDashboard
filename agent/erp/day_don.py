@@ -145,6 +145,63 @@ async def day_don(
     return KetQuaDay(ket_cuc="xong", erp_ma_don=kq.erp_ma_don)
 
 
+async def day_don_da_luu(
+    id_don,
+    ma_don: str,
+    khach_ten: str,
+    khach_sdt: str,
+    khach_dia_chi: str,
+    items: list[dict],
+    ghi_chu: str = "",
+) -> KetQuaDay:
+    """
+    Đẩy một đơn ĐÃ LƯU, ĐÃ GIỮ HÀNG, trạng thái `da_chot` sang ERP — rồi ghi
+    kết cục vào `orders`. Một hàm cho cả hai lối vào: đơn agent tự chốt
+    (`tools._tao_don_hang`) và đơn người duyệt trên dashboard.
+
+    VÌ SAO GỘP
+    ----------
+    Trước 29.10.2026 chỉ lối agent đẩy. Nút Duyệt chỉ đổi trạng thái, và
+    vòng nền chỉ thử lại đơn `cho_dong_bo` — nên mọi đơn từ 1 triệu trở lên
+    (đúng loại đơn đáng tiền nhất) KHÔNG BAO GIỜ vào ERP, không lỗi, không
+    nhật ký. Hai lối viết riêng là hai bản của cùng ba kết cục, sớm muộn
+    lệch nhau.
+
+    Ba kết cục, đúng như lối agent:
+      tu_choi  trả hàng về kho, đơn `da_huy`, ghi lý do
+      cho_lai  đơn `cho_dong_bo` để vòng nền thử lại (lưới 1 chặn đơn đôi)
+      xong     ghi `erp_ma_don`
+    """
+    from agent import db
+    from agent.core import kho
+
+    kq = await day_don(
+        ma_don=ma_don, khach_ten=khach_ten, khach_sdt=khach_sdt,
+        khach_dia_chi=khach_dia_chi, items=items, ghi_chu=ghi_chu,
+    )
+    if kq.ket_cuc == "tu_choi":
+        # ERP hiểu và không đồng ý. Trả hàng, huỷ đơn — thà không có đơn
+        # còn hơn có đơn mà kho không bao giờ xuất.
+        await kho.tra_hang(ma_don, ly_do="erp_tu_choi")
+        await db.execute(
+            "UPDATE orders SET trang_thai='da_huy', erp_loi=$2, updated_at=now() "
+            "WHERE id = $1", id_don, kq.ly_do,
+        )
+    elif kq.ket_cuc == "cho_lai":
+        # KHÔNG BIẾT ERP đã ghi hay chưa. Giữ hàng, giữ đơn, để vòng nền thử.
+        await db.execute(
+            "UPDATE orders SET trang_thai='cho_dong_bo', erp_loi=$2, "
+            "erp_so_lan_thu = erp_so_lan_thu + 1, updated_at=now() WHERE id = $1",
+            id_don, kq.ly_do,
+        )
+    elif kq.erp_ma_don:
+        await db.execute(
+            "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now() "
+            "WHERE id = $1", id_don, kq.erp_ma_don,
+        )
+    return kq
+
+
 async def _ghi_nhat_ky(loai: str, **chi_tiet) -> None:
     """Mọi kết cục đều để lại dấu vết.
 

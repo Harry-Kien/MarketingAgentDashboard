@@ -53,7 +53,7 @@ def _thu_muc_ma() -> Path:
 def dung_moi_truong() -> str:
     """Đặt biến môi trường cho bản xem trước. Trả URL máy chủ CSDL (không tên CSDL)."""
     # Đặt TRƯỚC khi đọc .env: vòng dưới không ghi đè biến đã có.
-    for k in ("ZALOCRM_API_KEY", "CANH_GAC_WEBHOOK", "N8N_WEBHOOK_URL"):
+    for k in ("ZALOCRM_API_KEY", "CANH_GAC_WEBHOOK", "BAO_NHAN_VIEN_WEBHOOK", "N8N_WEBHOOK_URL"):
         os.environ[k] = ""
     os.environ["LEGACY_POLLING_BAT"] = "false"
     os.environ["VAI_TRO_TIEN_TRINH"] = "api"

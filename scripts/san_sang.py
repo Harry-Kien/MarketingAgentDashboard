@@ -746,8 +746,9 @@ def kiem_bao_dong() -> dict:
     if settings.canh_gac_webhook:
         return _muc("Báo động tới người", DU, "đã có CANH_GAC_WEBHOOK")
     return _muc("Báo động tới người", CANH_BAO,
-                "CANH_GAC_WEBHOOK trống — canh gác chỉ ghi nhật ký, "
-                "KHÔNG ai nhận được tin",
+                "CANH_GAC_WEBHOOK trống — canh gác chỉ ghi nhật ký, KHÔNG ai "
+                "nhận được tin; khách được chuyển người cũng không ai được báo "
+                "ngoài dashboard",
                 "Trỏ vào một webhook n8n để định tuyến ra Zalo/Telegram. "
                 "Agent chết lúc 2 giờ sáng thì tới sáng mới biết.")
 

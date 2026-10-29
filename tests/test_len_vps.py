@@ -115,6 +115,8 @@ def test_dien_tap_tat_vong_nen_va_bao_dong():
     ra = ch.cau_hinh_nhap({"CANH_GAC_WEBHOOK": "https://that"}, co_gcp=False, co_erp_vps=False,
                           dien_tap=True)
     assert ra["VAI_TRO_TIEN_TRINH"] == "api" and ra["CANH_GAC_WEBHOOK"] == ""
+    # Báo nhân viên đi chung webhook báo động — diễn tập không được nhắn nhóm thật.
+    assert ra["BAO_NHAN_VIEN_WEBHOOK"] == "" and ra["BAO_NHAN_VIEN_CHUYEN_NGUOI"] == "false"
 
 
 # ---------------------------------------------------------------- ERPNext + cổng

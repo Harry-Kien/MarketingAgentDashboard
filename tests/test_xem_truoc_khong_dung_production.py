@@ -26,13 +26,16 @@ def test_launch_json_khong_co_cau_hinh_production():
 def test_xem_truoc_tat_vong_nen_va_dung_csdl_rieng(monkeypatch):
     from scripts import xem_truoc
 
-    for k in ("VAI_TRO_TIEN_TRINH", "DATABASE_URL", "ZALOCRM_API_KEY"):
+    for k in ("VAI_TRO_TIEN_TRINH", "DATABASE_URL", "ZALOCRM_API_KEY",
+              "CANH_GAC_WEBHOOK", "BAO_NHAN_VIEN_WEBHOOK"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h:5433/marketing_agent")
     xem_truoc.dung_moi_truong()
     assert os.environ["VAI_TRO_TIEN_TRINH"] == "api"
     assert os.environ["DATABASE_URL"].endswith("/kt_xem_truoc")
     assert os.environ["ZALOCRM_API_KEY"] == ""
+    # Xem trước không được nhắn vào nhóm thật: báo động lẫn báo nhân viên.
+    assert os.environ["CANH_GAC_WEBHOOK"] == "" and os.environ["BAO_NHAN_VIEN_WEBHOOK"] == ""
 
     from agent import main
     from agent.config import Settings

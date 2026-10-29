@@ -622,7 +622,7 @@ erDiagram
         TEXT trang_thai
         TEXT uu_tien
         TIMESTAMPTZ han
-        _ con_6_cot_nua
+        _ con_7_cot_nua
     }
     agent_ho_so {
         UUID id

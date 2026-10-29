@@ -69,19 +69,85 @@ async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict =
             "ghi_chu": r["ghi_chu"],
             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
             "created_at": r["created_at"].isoformat(),
+            # Màn Đơn hàng VẼ các trường dưới (cờ "Khách xin huỷ", lỗi đồng bộ
+            # ERP, mã vận đơn) — nhưng trước 29.10.2026 API không trả chúng,
+            # nên cờ xin huỷ KHÔNG BAO GIỜ hiện: hàng vẫn gói, khách từ chối
+            # nhận, shop chịu phí hoàn, không lỗi nào. Có test canh mọi trường
+            # màn hình đọc đều có mặt ở đây.
+            **{k: _iso(r.get(k)) for k in _TRUONG_PHU_DON},
         }
         for r in rows
     ]
 
 
+_TRUONG_PHU_DON = (
+    "yeu_cau_huy_luc", "yeu_cau_huy_ly_do",
+    "yeu_cau_doi_tra_luc", "yeu_cau_doi_tra_loai", "yeu_cau_doi_tra_ly_do",
+    "erp_ma_don", "erp_loi", "erp_so_lan_thu",
+    "ma_van_don", "don_vi_van_chuyen", "trang_thai_giao_hang",
+)
+
+
+def _iso(v):
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
+def _items(gia_tri) -> list[dict]:
+    if isinstance(gia_tri, str):
+        import json
+
+        try:
+            gia_tri = json.loads(gia_tri)
+        except ValueError:
+            return []
+    return list(gia_tri or [])
+
+
+def _uuid_don(order_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(order_id)
+    except ValueError:
+        raise HTTPException(404, "Không có đơn này") from None
+
+
 @router.post("/orders/{order_id}/approve")
-async def approve_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
-    oid = uuid.UUID(order_id)
-    await db.execute(
-        "UPDATE orders SET trang_thai='da_chot', updated_at=now() WHERE id=$1", oid
+async def approve_order(order_id: str, nguoi: dict = Depends(can_quyen("don.sua"))) -> dict:
+    """
+    Duyệt đơn đang CHỜ DUYỆT (đơn từ ngưỡng tự chốt trở lên) — rồi đẩy sang
+    ERP như đơn agent tự chốt.
+
+    Hai lỗi của bản trước (rà soát 29.10.2026):
+      - Không kiểm trạng thái: bấm Duyệt trên một đơn ĐÃ HUỶ (hàng đã trả về
+        kho) làm nó thành `da_chot` mà kho không trừ lại — bán một món không
+        còn trên kệ. Nay chỉ `cho_duyet` → `da_chot`, nguyên tử trong một câu.
+      - Không đẩy ERP: đơn lớn nhất không bao giờ vào ERP. Xem
+        `day_don.day_don_da_luu`.
+    """
+    from agent.erp import day_don
+
+    oid = _uuid_don(order_id)
+    don = await db.fetchrow(
+        "UPDATE orders SET trang_thai='da_chot', updated_at=now() "
+        "WHERE id=$1 AND trang_thai='cho_duyet' RETURNING *", oid,
     )
-    await db.log_event("order.approve", actor="staff", ref_id=oid)
-    return {"ok": True}
+    if don is None:
+        hien = await db.fetchrow("SELECT trang_thai FROM orders WHERE id=$1", oid)
+        if hien is None:
+            raise HTTPException(404, "Không có đơn này")
+        raise HTTPException(
+            409, f"Đơn đang ở trạng thái '{hien['trang_thai']}' — chỉ duyệt được "
+                 "đơn đang chờ duyệt.")
+    await db.log_event("order.approve", actor="staff", ref_id=oid, ma_don=don["ma_don"],
+                       boi=nguoi.get("ten_dang_nhap"))
+    kq = await day_don.day_don_da_luu(
+        oid, ma_don=don["ma_don"], khach_ten=str(don.get("khach_ten") or ""),
+        khach_sdt=str(don.get("khach_sdt") or ""),
+        khach_dia_chi=str(don.get("khach_dia_chi") or ""),
+        items=_items(don.get("items")), ghi_chu=str(don.get("ghi_chu") or ""),
+    )
+    trang_thai = {"tu_choi": "da_huy", "cho_lai": "cho_dong_bo"}.get(kq.ket_cuc, "da_chot")
+    return {"ok": kq.ket_cuc != "tu_choi", "ma_don": don["ma_don"], "trang_thai": trang_thai,
+            "erp": kq.ket_cuc, "erp_ma_don": kq.erp_ma_don or None, "erp_loi": kq.ly_do or None}
 
 
 @router.post("/orders/{order_id}/cancel")
@@ -92,10 +158,10 @@ async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"
     Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
     huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
     """
-    oid = uuid.UUID(order_id)
+    oid = _uuid_don(order_id)
     don = await db.fetchrow(
         "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
-        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don", oid,
+        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don, erp_ma_don, ma_van_don", oid,
     )
     if don is None:
         return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
@@ -103,7 +169,85 @@ async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"
     so_dong = await kho.tra_hang(don["ma_don"])
     await db.log_event("order.cancel", actor="staff", ref_id=oid,
                        ma_don=don["ma_don"], so_mat_hang_tra_kho=so_dong)
-    return {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
+    kq: dict = {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
+    # Huỷ ở đây KHÔNG huỷ bên ERP hay bên hãng vận chuyển. Nói thẳng lúc
+    # bấm, để người huỷ tay bên đó — im là ERP vẫn xuất kho, hãng vẫn đi
+    # lấy hàng cho một đơn đã huỷ.
+    ben = []
+    if don.get("erp_ma_don"):
+        ben.append(f"ERP (đơn {don['erp_ma_don']})")
+    if don.get("ma_van_don"):
+        ben.append(f"hãng vận chuyển (vận đơn {don['ma_van_don']})")
+    if ben:
+        kq["can_huy_tay"] = ("Đơn đã có bên " + " và ".join(ben)
+                             + ": vào đó huỷ tay, hệ thống không tự huỷ hộ.")
+        await db.log_event("order.cancel_can_huy_tay", ref_id=oid, ma_don=don["ma_don"],
+                           erp_ma_don=don.get("erp_ma_don"), ma_van_don=don.get("ma_van_don"))
+    return kq
+
+
+@router.get("/van-chuyen/cau-hinh")
+async def van_chuyen_cau_hinh(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
+    """Màn Đơn hàng hỏi: đã nối hãng thật chưa — để biết có hiện nút tạo vận đơn."""
+    from agent.config import settings
+
+    hang = (settings.shipping_provider or "mock").strip().lower()
+    return {"hang": hang, "that": hang in HANG_THAT}
+
+
+class VanDonIn(BaseModel):
+    # Trống = hãng mặc định (SHIPPING_PROVIDER).
+    hang: str = Field("", max_length=10)
+
+
+@router.post("/orders/{order_id}/van-don")
+async def tao_van_don(order_id: str, body: VanDonIn | None = None,
+                      nguoi: dict = Depends(can_quyen("don.sua"))) -> dict:
+    """
+    Tạo vận đơn GHN/GHTK cho một đơn đã chốt — nút "Tạo vận đơn" trên màn
+    Đơn hàng. Bốn chốt (trạng thái, đủ thông tin, đã giữ hàng, chống trùng)
+    nằm trong `shipping.service.tao_van_don_cho_don`; hàm ấy có từ lâu nhưng
+    trước 29.10.2026 không nối vào đâu cả.
+
+    TỪ CHỐI hãng giả lập: vận đơn giả vẫn nhắn khách "đã bàn giao cho hãng,
+    mã vận đơn …" — một mã không tra được ở đâu, cho một kiện chưa rời kệ.
+
+    Khoá theo mã đơn trong lúc gọi hãng: bấm hai lần (hai tab, mạng chậm)
+    không được tạo hai vận đơn — chốt "chưa có mã vận đơn" chỉ đọc, hai lời
+    gọi cùng lúc đều thấy chưa có.
+    """
+    from agent.config import settings
+    from agent.shipping import service
+
+    hang = ((body.hang if body else "") or settings.shipping_provider or "mock").strip().lower()
+    if hang not in HANG_THAT:
+        raise HTTPException(
+            409, f"Chưa nối hãng vận chuyển thật (đang là '{hang}'). Đặt SHIPPING_PROVIDER="
+                 "ghn hoặc ghtk cùng khoá API của hãng trong .env rồi khởi động lại.")
+    oid = _uuid_don(order_id)
+    don = await db.fetchrow("SELECT ma_don FROM orders WHERE id=$1", oid)
+    if don is None:
+        raise HTTPException(404, "Không có đơn này")
+    ma_don = don["ma_don"]
+    async with db.pool().acquire() as conn:
+        if not await conn.fetchval(
+                "SELECT pg_try_advisory_lock(hashtext('van_don:' || $1))", ma_don):
+            raise HTTPException(409, "Đang tạo vận đơn cho đơn này — đợi vài giây rồi tải lại.")
+        try:
+            kq = await service.tao_van_don_cho_don(ma_don, hang)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(hashtext('van_don:' || $1))", ma_don)
+    if not kq.ok:
+        await db.log_event("shipping.tao_that_bai", ref_id=oid, ma_don=ma_don, hang=hang,
+                           loi=(kq.loi or "")[:300], boi=nguoi.get("ten_dang_nhap"))
+        raise HTTPException(422, kq.loi or "Hãng từ chối tạo vận đơn.")
+    return {"ok": True, "ma_don": ma_don, "ma_van_don": kq.ma_van_don, "hang": hang,
+            "phi_van_chuyen": kq.phi_van_chuyen,
+            "da_co_san": bool((kq.thong_tin_them or {}).get("da_co_san"))}
+
+
+# Hãng có bộ nối thật. `mock` cố ý KHÔNG có ở đây — xem `tao_van_don`.
+HANG_THAT = ("ghn", "ghtk")
 
 
 # ---------------------------------------------------------------

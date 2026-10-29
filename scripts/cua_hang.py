@@ -228,7 +228,8 @@ _KHOA_MO_HINH = ("LLM_PROVIDER", "GCP_PROJECT_ID", "GCP_REGION", "GEMINI_REGION"
 # Diễn tập trên một máy có cửa hàng THẬT đang chạy: không vòng nền nào (không
 # outbox gửi tin, không giữ phiên Zalo — hai sidecar một phiên là Zalo đá
 # văng bản thật), không báo động ra ngoài.
-_DIEN_TAP = {"VAI_TRO_TIEN_TRINH": "api", "CANH_GAC_WEBHOOK": "", "CANH_GAC_BAT": "false"}
+_DIEN_TAP = {"VAI_TRO_TIEN_TRINH": "api", "CANH_GAC_WEBHOOK": "", "CANH_GAC_BAT": "false",
+             "BAO_NHAN_VIEN_WEBHOOK": "", "BAO_NHAN_VIEN_CHUYEN_NGUOI": "false"}
 
 
 def cau_hinh_nhap(cau_hinh: dict[str, str], *, co_gcp: bool, co_erp_vps: bool,

@@ -11,6 +11,11 @@ const ORDER_TONE  = {
   cho_duyet: "duyet", da_chot: "chot", da_huy: "huy",
   cho_dong_bo: "duyet", da_giao: "chot",
 };
+/* Khớp `agent/shipping/models.InternalShippingStatus`. */
+const NHAN_GIAO = {
+  delivering: "đang giao", delivered: "đã giao",
+  delivery_failed: "giao thất bại", returned: "đã hoàn về",
+};
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 $$("#orderfilter .chip").forEach((chip) =>
@@ -21,7 +26,16 @@ $$("#orderfilter .chip").forEach((chip) =>
   })
 );
 
+/* Hãng vận chuyển thật đã nối chưa — hỏi MỘT lần mỗi lần tải trang. Chưa
+   nối thì nút "Tạo vận đơn" không hiện: một nút bấm lần nào cũng báo lỗi là
+   nút người ta học cách lờ đi, kể cả khi đã nối xong. */
+let VAN_CHUYEN = null;
+
 async function loadOrders() {
+  if (VAN_CHUYEN === null) {
+    try { VAN_CHUYEN = await api("/van-chuyen/cau-hinh"); }
+    catch { VAN_CHUYEN = { that: false }; }
+  }
   const list = await api("/orders?status=" + (state.orderFilter || "all"));
   const cho = list.filter((o) => o.trang_thai === "cho_duyet").length;
   $("#c-donhang").textContent = cho || "";
@@ -51,6 +65,12 @@ async function loadOrders() {
      * Đơn đã huỷ rồi thì thôi, cờ hết nghĩa.
      */
     const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy";
+    /* Đơn đã chốt, chưa có vận đơn: nút tạo vận đơn ngay trên dòng. Hàm tạo
+       vận đơn có bốn chốt từ lâu, nhưng trước 29.10.2026 không có nút nào
+       gọi tới nó — đơn chốt xong rồi nằm im, phải lên trang hãng gõ tay. */
+    const tao_van_don = VAN_CHUYEN && VAN_CHUYEN.that && o.trang_thai === "da_chot"
+      && !o.ma_van_don && !xin_huy;
+    const doi_tra = o.yeu_cau_doi_tra_luc && o.trang_thai !== "da_huy";
     const bang_xin_huy = xin_huy
       ? `<span class="order__xinhuy"><b>Khách xin huỷ</b> — ${clock(o.yeu_cau_huy_luc)}${
           o.yeu_cau_huy_ly_do ? " · " + esc(o.yeu_cau_huy_ly_do) : ""
@@ -65,6 +85,13 @@ async function loadOrders() {
           ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
           ${srcBadge(o.channel, o.nen_tang)}</span>
         ${bang_xin_huy}
+        ${doi_tra ? `<span class="order__xinhuy"><b>Khách xin ${({ doi: "đổi hàng", tra: "trả hàng" })[o.yeu_cau_doi_tra_loai] || "đổi/trả"}</b> — ${
+            clock(o.yeu_cau_doi_tra_luc)}${o.yeu_cau_doi_tra_ly_do ? " · " + esc(o.yeu_cau_doi_tra_ly_do) : ""
+          }<br>Gọi lại cho khách để thống nhất cách đổi/trả.</span>` : ""}
+        ${o.ma_van_don ? `<span class="order__ship">Vận đơn <b>${esc(o.ma_van_don)}</b>${
+            o.don_vi_van_chuyen ? " · " + esc(o.don_vi_van_chuyen.toUpperCase()) : ""}${
+            o.trang_thai_giao_hang ? " · " + esc(NHAN_GIAO[o.trang_thai_giao_hang] || o.trang_thai_giao_hang) : ""
+          }</span>` : ""}
         ${cho_dong_bo ? `<span class="order__xinhuy"><b>Chưa vào được kho/ERP</b>${
             o.erp_loi ? " — " + esc(o.erp_loi) : ""
           }${o.erp_so_lan_thu ? " · đã thử " + o.erp_so_lan_thu + " lần" : ""
@@ -86,18 +113,36 @@ async function loadOrders() {
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
           </span>` : xin_huy ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ đơn</button>
+          </span>` : tao_van_don ? `<span style="display:flex;gap:6px;margin-top:4px">
+            <button type="button" class="btn btn--sm btn--go" data-ovandon="${o.id}"
+              title="Tạo vận đơn ${esc((VAN_CHUYEN.hang || "").toUpperCase())} và nhắn mã cho khách">Tạo vận đơn</button>
           </span>` : ""}
       </span>
     </div>`;
   }).join("") : '<p class="empty">Chưa có đơn hàng nào.</p>';
 
-  $$("[data-oapprove]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/orders/" + b.dataset.oapprove + "/approve", { method: "POST" });
-    toast("Đã duyệt đơn."); loadOrders();
+  /* Mọi nút đơn hàng báo ĐÚNG kết quả máy chủ trả về. Bản trước báo "Đã
+     duyệt đơn." vô điều kiện — kể cả khi ERP từ chối và đơn vừa bị huỷ. */
+  const bam = (b, viec) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await viec(); } catch (e) { toast(e.message, true); }
+    finally { b.disabled = false; loadOrders(); }
+  });
+  $$("[data-oapprove]").forEach((b) => bam(b, async () => {
+    const r = await api("/orders/" + b.dataset.oapprove + "/approve", { method: "POST" });
+    if (r.erp === "tu_choi") toast("ERP từ chối đơn " + r.ma_don + " — đơn đã huỷ, hàng trả về kho. " + (r.erp_loi || ""), true);
+    else if (r.erp === "cho_lai") toast("Đã duyệt " + r.ma_don + ", nhưng chưa vào được ERP — máy tự thử lại.", true);
+    else toast(r.erp_ma_don ? "Đã duyệt " + r.ma_don + " · ERP " + r.erp_ma_don + "." : "Đã duyệt đơn " + r.ma_don + ".");
   }));
-  $$("[data-ocancel]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
-    toast("Đã huỷ đơn."); loadOrders();
+  $$("[data-ocancel]").forEach((b) => bam(b, async () => {
+    const r = await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
+    if (r.can_huy_tay) toast("Đã huỷ " + r.ma_don + ". " + r.can_huy_tay, true);
+    else toast("Đã huỷ đơn.");
+  }));
+  $$("[data-ovandon]").forEach((b) => bam(b, async () => {
+    const r = await api("/orders/" + b.dataset.ovandon + "/van-don", { method: "POST", body: "{}" });
+    toast(r.da_co_san ? "Đơn đã có vận đơn " + r.ma_van_don + "."
+      : "Đã tạo vận đơn " + r.ma_van_don + " và nhắn mã cho khách.");
   }));
 }
 

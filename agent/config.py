@@ -374,6 +374,13 @@ class Settings(BaseSettings):
     # Trung lập với nhà cung cấp CÓ CHỦ Ý: nơi nhận báo động là quyết định
     # vận hành của doanh nghiệp, không phải hằng số trong mã.
     canh_gac_goi_tin: str = ""
+    # Báo NHÂN VIÊN mỗi khi có việc mới cần người (khách được chuyển người,
+    # giao hàng thất bại…), ở MỌI kênh. Rỗng thì đi chung CANH_GAC_WEBHOOK
+    # với mẫu CANH_GAC_GOI_TIN. Đặt riêng khi muốn tin khách cần người vào
+    # một nhóm khác với tin máy hỏng.
+    bao_nhan_vien_webhook: str = ""
+    bao_nhan_vien_goi_tin: str = ""
+    bao_nhan_vien_chuyen_nguoi: bool = True
 
     cookie_bao_mat: bool = False
 

@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-09-22 01:11 UTC trên commit `e1ab728`. **12/12 kịch bản đạt.**
+Chạy lúc 2026-10-29 01:27 UTC trên commit `05dcca1`. **18/18 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -20,6 +20,12 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 10 | Gộp khách trùng | đạt |
 | 11 | Đếm dữ liệu sẽ xoá, có người thứ hai duyệt | đạt |
 | 12 | Giao khách hàng loạt từ danh sách | đạt |
+| 13 | Quy tắc tự động: khi khách nhắn → nếu … → thì … | đạt |
+| 14 | Lịch ca trực: bộ định tuyến chỉ giao cho người đang trong ca | đạt |
+| 15 | Sổ yêu cầu của khách (Luật BVDLCN 91/2025, NĐ 356/2025 Điều 5) | đạt |
+| 16 | "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã | đạt |
+| 17 | Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM) | đạt |
+| 18 | Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025) | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -140,3 +146,63 @@ Kết quả: **đạt** · `test_12_giao_nhieu_khach_mot_luot_va_thu_hoi`
 3. Mỗi khách có đúng 1 dòng lịch sử giao, cùng lý do.
 4. Giao cho người đã KHOÁ -> 422, không khách nào đổi chủ (một giao dịch).
 5. Thu hồi hàng loạt (không chọn ai) -> cả ba về của chung.
+
+## 13. Quy tắc tự động: khi khách nhắn → nếu … → thì …
+
+Kết quả: **đạt** · `test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi`
+
+1. Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
+2. Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
+3. Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
+4. Hội thoại chuyển người, có nhãn "đổi trả", có MỘT việc, mẫu đã vào hàng gửi.
+5. Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
+6. Nhân viên XEM được quy tắc nhưng không sửa được — thiếu quyền sửa định tuyến (403).
+
+## 14. Lịch ca trực: bộ định tuyến chỉ giao cho người đang trong ca
+
+Kết quả: **đạt** · `test_14_lich_ca_va_lich_nghi`
+
+1. Nhân viên mới chưa xếp ca → "luôn trực".
+2. Quản trị xếp ca ở một khung giờ KHÔNG phủ lúc này → nhân viên ngoài ca.
+3. Nhân viên tự xem "ca của tôi" → thấy mình ngoài ca và lịch tuần.
+4. Ca chồng nhau (ca đêm Chủ nhật vắt sang sáng thứ Hai) bị từ chối (422).
+5. Đội có luật định tuyến mà không ai trong ca → cảnh báo hiện ra.
+6. Xoá hết ca → về "luôn trực"; thêm lịch nghỉ phủ lúc này → ngoài ca.
+
+## 15. Sổ yêu cầu của khách (Luật BVDLCN 91/2025, NĐ 356/2025 Điều 5)
+
+Kết quả: **đạt** · `test_15_so_yeu_cau_cua_khach_dem_han_luat_dinh`
+
+1. Quản trị ghi yêu cầu xoá khách gửi hôm nay → "trong hạn".
+2. Ghi yêu cầu xem dữ liệu khách gửi 25 ngày trước → vào sổ đã "QUÁ HẠN".
+3. Sổ đếm 1 quá hạn; yêu cầu quá hạn KHÔNG gia hạn được (422).
+4. Phản hồi ban đầu, gia hạn một lần; lần gia hạn thứ hai bị từ chối.
+5. Từ chối phải nêu căn cứ; đóng xong yêu cầu biến khỏi danh sách đang mở.
+6. Sổ không lưu số điện thoại thật; người không có quyền PII không xem được (403).
+
+## 16. "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã
+
+Kết quả: **đạt** · `test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that`
+
+1. Kênh BẬT agent; khách nhắn "cho em gặp nhân viên!" → chuyển người NGAY, agent không chạy.
+2. Hội thoại ở chế độ người, có MỘT việc "Khách đòi gặp nhân viên".
+3. Khách KHÔNG nhận câu "em là trợ lý AI" — người đang tiếp, không phải máy.
+4. Công tắc thông báo AI có trên Cấu hình (nhóm Bảo vệ dữ liệu cá nhân).
+
+## 17. Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM)
+
+Kết quả: **đạt** · `test_17_webhook_ghtk_dang_form_cap_nhat_don`
+
+1. Đơn đã có mã vận đơn GHTK; gọi webhook sai bí mật → 401, đơn không đổi.
+2. GHTK báo "shipper báo đã giao" (45) — chỉ để tham khảo → đơn KHÔNG đổi.
+3. GHTK báo "đã giao" (5) dạng form → đơn chuyển "đã giao".
+4. Thân rác (không JSON, không form) → 400, có ghi nhật ký.
+5. Hãng không có ("/webhook/shipping/abc") → 404, không đụng đơn.
+
+## 18. Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025)
+
+Kết quả: **đạt** · `test_18_dia_chi_mau_thuan_khong_len_don`
+
+1. Công cụ lên đơn nhận "Phường Ba Đình, TP Hồ Chí Minh" → không lên đơn, bảo hỏi lại khách.
+2. Không đơn nào được ghi vào CSDL.
+3. Địa chỉ cũ ba cấp ("Phường Bến Nghé, Quận 1, TP HCM") không bị chặn vì lý do địa chỉ.

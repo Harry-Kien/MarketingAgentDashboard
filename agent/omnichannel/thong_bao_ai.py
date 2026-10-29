@@ -20,6 +20,10 @@ CHỈ GỬI KHI AGENT THẬT SỰ TRẢ LỜI
 Hàm này được gọi SAU chốt `agent_bat` trong xu_ly_tin_vao. Agent tắt, nhân
 viên đang tiếp khách, mà vẫn gửi "em là trợ lý AI" là nói sai sự thật.
 
+Ở chế độ Gợi ý VẪN gửi — có chủ ý. Câu khách nhận khi ấy vẫn do AI soạn,
+nhân viên chỉ duyệt trước khi gửi; nói "đang nói với trợ lý AI" là đúng sự
+thật, và im đi vì có người duyệt là giấu khách việc máy viết câu họ đọc.
+
 MỘT LẦN MỖI HỘI THOẠI
 ---------------------
 Khoá chống trùng của outbox (`thong_bao_ai:<hội thoại>`), kiểm trên bảng

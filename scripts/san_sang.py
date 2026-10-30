@@ -887,6 +887,55 @@ async def kiem_bi_mat_sidecar() -> dict:
     return doc_tham_do_sidecar(loi, co_tai_khoan)
 
 
+def doc_phien_zalo(trang_thai: dict[str, str]) -> dict:
+    """
+    Phần thuần của `kiem_phien_zalo`: {tên tài khoản: trạng thái sidecar báo}.
+
+    Hỏi THẲNG sidecar, không đọc `channel_accounts.status` hay lịch sử sức
+    khoẻ: `kiem_kenh` coi kênh là thật khi nó TỪNG có một lần xanh — đo
+    29.10.2026, cả hai nick Zalo mất phiên cả tháng mà mục ấy vẫn "đủ".
+    """
+    ten = "Phiên Zalo cá nhân"
+    if not trang_thai:
+        return _muc(ten, DU, "chưa có tài khoản Zalo cá nhân")
+    dut = {k: v for k, v in trang_thai.items() if v != "connected"}
+    if not dut:
+        return _muc(ten, DU, f"{len(trang_thai)} nick đang kết nối")
+    return _muc(
+        ten, CHAN,
+        "KHÔNG kết nối: " + ", ".join(f"{k} ({v})" for k, v in sorted(dut.items())),
+        "Tin khách của nick này không vào và không gửi được. Vào dashboard → Kết nối "
+        "→ Quét QR. Nếu lỗi là chữ ký, khởi động lại sidecar thay vì quét QR",
+    )
+
+
+async def kiem_phien_zalo() -> dict:
+    """Từng nick Zalo cá nhân có ĐANG kết nối không — hỏi sidecar."""
+    from agent.channels.zalo_personal import ZaloPersonalAdapter
+
+    try:
+        from agent import db
+        await db.init_db()
+        rows = await db.fetch(
+            "SELECT id, display_name FROM channel_accounts "
+            "WHERE channel = 'zalo_personal' AND status <> 'disabled' ORDER BY display_name")
+    except Exception as exc:  # noqa: BLE001
+        return _muc("Phiên Zalo cá nhân", CANH_BAO, f"không đọc được CSDL ({type(exc).__name__})", "")
+    trang_thai: dict[str, str] = {}
+    for r in rows:
+        adapter = ZaloPersonalAdapter(account_id=r["id"], credentials={
+            "sidecar_secret": settings.zalo_sidecar_secret,
+            "sidecar_url": settings.zalo_sidecar_url,
+        })
+        try:
+            trang_thai[str(r["display_name"])] = str((await adapter.status()).get("status") or "?")
+        except RuntimeError as exc:
+            trang_thai[str(r["display_name"])] = str(exc)[:60]
+        finally:
+            await adapter.aclose()
+    return doc_phien_zalo(trang_thai)
+
+
 def doc_khoa_api(provider: str, nguon_khoa: str, co_khoa: bool, giai_ma_hong: int) -> dict:
     ten = "Khoá API"
     if giai_ma_hong:
@@ -1341,7 +1390,7 @@ async def chay() -> int:
         await kiem_kenh(), await kiem_callback_cong_khai(),
         await kiem_webhook_zalo_oa(),
         await kiem_tai_khoan(), await kiem_kho_bi_mat_tai_khoan(),
-        await kiem_bi_mat_sidecar(),
+        await kiem_bi_mat_sidecar(), await kiem_phien_zalo(),
         await kiem_outbox(), await kiem_ton_kho(),
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
         await kiem_yeu_cau_chu_the(), kiem_thong_bao_ai(),

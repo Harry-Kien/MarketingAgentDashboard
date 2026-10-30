@@ -102,9 +102,22 @@ def _cho(dieu_kien, giay: float, nhip: float = 1.0) -> bool:
 
 
 def _chay(*lenh: str, giay: float = 120.0) -> subprocess.CompletedProcess:
+    """
+    Chạy một lệnh ngắn, chờ xong.
+
+    Trên Windows luôn kèm `CREATE_NO_WINDOW`. Đo 29–30.10.2026: người canh
+    bật `noi_lai_facebook` TÁCH RỜI (không console); từ đó mọi lệnh con dạng
+    console bật trần — `python -m scripts.chay_tunnel`, bước dựng lại
+    sidecar — chết sau 3–18 giây với mã 0xC000013A. Tunnel chết cả buổi
+    chiều, mỗi lượt canh "đã bật dựng lại" rồi hỏng y hệt. Tái hiện trên
+    máy này: bật trần chết sau 4 giây, kèm `CREATE_NO_WINDOW` sống đủ 30
+    giây và trả đúng kết quả. Cờ cấp cho tiến trình con một console ẩn
+    riêng, nên nó không phụ thuộc vào việc người bật có console hay không.
+    """
+    co = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     return subprocess.run(
         list(lenh), capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=giay,
+        encoding="utf-8", errors="replace", timeout=giay, creationflags=co,
     )
 
 

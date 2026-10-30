@@ -293,6 +293,7 @@ async def don_phien_loop() -> None:
 
 
 GIU_PHIEN_ZALO_MOI_GIAY = 60
+THU_LAI_KHI_CAN_QUET_GIAY = 1800
 
 
 async def giu_phien_zalo_loop() -> None:
@@ -311,21 +312,17 @@ async def giu_phien_zalo_loop() -> None:
     """
     from agent.omnichannel.account_repository import PostgresAccountRepository
     from agent.omnichannel.accounts import Channel
-    from agent.omnichannel.zalo_session_keeper import (DAU_LECH_BI_MAT,
+    from agent import canh_gac
+    from agent.omnichannel.zalo_session_keeper import (bao_phien_hong, den_luot_thu,
                                                        khoi_phuc_phien_dut)
 
+    # Tài khoản đã báo "lệch bí mật" trong lần chạy này — xem bao_phien_hong.
+    da_bao_lech: set = set()
+
     async def _bao(account_id, ly_do) -> None:
-        # Cần NGƯỜI làm gì đó — máy không tự làm được, nên phải đi ra
-        # ngoài chứ không chỉ nằm im trong nhật ký. Hai bệnh khác nhau
-        # phải mang hai tên: đo được 04.09.2026, 1866 sự kiện
-        # `can_quet_lai` mà bệnh thật là bí mật HMAC trong vault lệch với
-        # `.env` — quét QR bao nhiêu lần cũng không chữa được.
-        kind = (
-            "zalo_personal.lech_bi_mat_sidecar"
-            if str(ly_do).startswith(DAU_LECH_BI_MAT)
-            else "zalo_personal.can_quet_lai"
-        )
-        await db.log_event(kind, actor="system", ref_id=account_id, ly_do=str(ly_do)[:200])
+        await bao_phien_hong(
+            repository, account_id, ly_do, da_bao_lech=da_bao_lech,
+            bao_dong=canh_gac.bao_dong, ghi_nhat_ky=db.log_event)
 
     # Dựng MỘT lần ngoài vòng lặp: repository không giữ trạng thái, nó chỉ
     # bọc pool dùng chung. Dựng lại mỗi nhịp còn khiến closure `_mo` bắt biến
@@ -336,13 +333,16 @@ async def giu_phien_zalo_loop() -> None:
         from agent.api.channel_accounts import _zalo_personal_adapter
         return await _zalo_personal_adapter(account_id, repository)
 
+    # Thời điểm thử khôi phục gần nhất của tài khoản đã biết là cần quét QR.
+    lan_thu_cuoi: dict = {}
+
     while True:
         try:
-            rows = await db.fetch(
-                "SELECT id FROM channel_accounts "
+            rows = [r for r in await db.fetch(
+                "SELECT id, status FROM channel_accounts "
                 "WHERE channel = $1 AND status <> 'disabled'",
                 Channel.ZALO_PERSONAL.value,
-            )
+            ) if den_luot_thu(r, lan_thu_cuoi, khoang_giay=THU_LAI_KHI_CAN_QUET_GIAY)]
             if rows:
                 ket_qua = await khoi_phuc_phien_dut(
                     [r["id"] for r in rows],

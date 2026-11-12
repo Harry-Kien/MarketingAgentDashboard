@@ -12,6 +12,7 @@ from uuid import UUID
 from agent import db
 from agent.channels.base import InboundMessage
 from agent.omnichannel.identity import PostgresIdentityTransaction
+from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,19 +223,19 @@ class PostgresInboxTransaction:
             ) VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,
                 (
-                    SELECT now() + policy.first_response_minutes * interval '1 minute'
+                    SELECT {han_dau}
                     FROM sla_policies policy
                     WHERE policy.active = true AND policy.priority = 'normal'
                       AND (policy.account_id = $1 OR policy.account_id IS NULL)
-                    ORDER BY (policy.account_id = $1) DESC
+                    ORDER BY (policy.account_id IS NOT NULL) DESC
                     LIMIT 1
                 ),
                 (
-                    SELECT now() + policy.resolution_minutes * interval '1 minute'
+                    SELECT {han_xong}
                     FROM sla_policies policy
                     WHERE policy.active = true AND policy.priority = 'normal'
                       AND (policy.account_id = $1 OR policy.account_id IS NULL)
-                    ORDER BY (policy.account_id = $1) DESC
+                    ORDER BY (policy.account_id IS NOT NULL) DESC
                     LIMIT 1
                 )
             )
@@ -246,7 +247,8 @@ class PostgresInboxTransaction:
                 contact_point_id = EXCLUDED.contact_point_id,
                 updated_at = now()
             RETURNING id, status, mode
-            """,
+            """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9, 10))
+               .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 9, 10)),
             message.account_id,
             message.channel,
             message.conversation_ref,
@@ -255,6 +257,7 @@ class PostgresInboxTransaction:
             (message.meta or {}).get("nen_tang_goc"),
             identity["contact_id"],
             identity["id"],
+            *gio_sla(),
         )
 
     async def insert_message(
@@ -336,15 +339,15 @@ class PostgresInboxTransaction:
         )
         await self._connection.execute(
             """
-            INSERT INTO sla_events (conversation_id, kind, due_at, detail)
-            SELECT id, 'started', first_response_due_at,
+            INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail)
+            SELECT id, sla_chu_ky, 'started', first_response_due_at,
                    jsonb_build_object(
                        'first_response_due_at', first_response_due_at,
                        'resolution_due_at', resolution_due_at
                    )
             FROM conversations
             WHERE id = $1 AND first_response_due_at IS NOT NULL
-            ON CONFLICT (conversation_id, kind) DO NOTHING
+            ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
             """,
             conversation_id,
         )

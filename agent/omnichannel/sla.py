@@ -33,27 +33,27 @@ class PostgresSlaRepository:
             async with connection.transaction():
                 first_rows = await connection.fetch(
                     """
-                    INSERT INTO sla_events (conversation_id, kind, due_at, detail)
-                    SELECT conversation.id, 'first_response_breached',
+                    INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail)
+                    SELECT conversation.id, conversation.sla_chu_ky, 'first_response_breached',
                            conversation.first_response_due_at, '{}'
                     FROM conversations conversation
                     WHERE conversation.state IN ('open', 'pending')
                       AND conversation.first_responded_at IS NULL
                       AND conversation.first_response_due_at < now()
-                    ON CONFLICT (conversation_id, kind) DO NOTHING
+                    ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
                     RETURNING conversation_id
                     """
                 )
                 resolution_rows = await connection.fetch(
                     """
-                    INSERT INTO sla_events (conversation_id, kind, due_at, detail)
-                    SELECT conversation.id, 'resolution_breached',
+                    INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail)
+                    SELECT conversation.id, conversation.sla_chu_ky, 'resolution_breached',
                            conversation.resolution_due_at, '{}'
                     FROM conversations conversation
                     WHERE conversation.state IN ('open', 'pending')
                       AND conversation.resolved_at IS NULL
                       AND conversation.resolution_due_at < now()
-                    ON CONFLICT (conversation_id, kind) DO NOTHING
+                    ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
                     RETURNING conversation_id
                     """
                 )

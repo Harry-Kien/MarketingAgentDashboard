@@ -144,6 +144,11 @@ class OutboundService:
             or conversation.get("status") == "escalated"
         ):
             raise OutboundBlocked("AI đã dừng vì người thật đang tiếp quản")
+        # Hội thoại đã giải quyết trong lúc AI soạn: câu trả lời là cho một
+        # lượt phục vụ đã đóng (DEV-03). Khách nhắn lại thì hội thoại mở ra
+        # và lượt mới tự có câu trả lời của nó.
+        if role == "agent" and conversation.get("state") in ("resolved", "closed"):
+            raise OutboundBlocked("AI không gửi vào hội thoại đã giải quyết")
 
     @staticmethod
     async def _ensure_consent_allowed(
@@ -401,7 +406,7 @@ class PostgresOutboundTransaction:
     async def get_conversation(self, conversation_id: UUID):
         return await self._connection.fetchrow(
             """
-            SELECT id, account_id, external_id, status, mode, contact_id
+            SELECT id, account_id, external_id, status, mode, state, contact_id
             FROM conversations WHERE id = $1
             FOR SHARE
             """,

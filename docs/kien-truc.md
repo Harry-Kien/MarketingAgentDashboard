@@ -163,7 +163,7 @@ erDiagram
         TEXT customer_ref
         TEXT status
         TEXT outcome
-        _ con_17_cot_nua
+        _ con_18_cot_nua
     }
     messages {
         UUID id
@@ -520,6 +520,7 @@ erDiagram
         TEXT kind
         TIMESTAMPTZ due_at
         JSONB detail
+        INT chu_ky
     }
     routing_cursors {
         UUID rule_id

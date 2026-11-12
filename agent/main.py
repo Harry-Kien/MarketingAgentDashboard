@@ -564,6 +564,13 @@ async def lifespan(app: FastAPI):
         )
     )
 
+    async def log_tu_giai_quyet_error(error: str) -> None:
+        await db.log_event("auto_resolve.error", error=error)
+
+    from agent.omnichannel.giai_quyet import tu_giai_quyet_loop
+    _nen(tu_giai_quyet_loop(worker_id=f"resolve-{uuid.uuid4()}",
+                            log_error=log_tu_giai_quyet_error))
+
     async def log_routing_error(error: str) -> None:
         await db.log_event("auto_routing.error", error=error)
 

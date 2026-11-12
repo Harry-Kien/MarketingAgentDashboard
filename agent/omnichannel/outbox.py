@@ -387,12 +387,12 @@ class PostgresOutboxRepository:
                         UPDATE conversations
                         SET first_responded_at = coalesce(first_responded_at, now())
                         WHERE id = $1 AND first_responded_at IS NULL
-                        RETURNING id, first_response_due_at
+                        RETURNING id, first_response_due_at, sla_chu_ky
                     )
                     INSERT INTO sla_events (
-                        conversation_id, kind, due_at, detail
+                        conversation_id, chu_ky, kind, due_at, detail
                     )
-                    SELECT id,
+                    SELECT id, sla_chu_ky,
                            CASE WHEN first_response_due_at IS NOT NULL
                                      AND first_response_due_at < now()
                                 THEN 'first_response_breached'
@@ -400,7 +400,7 @@ class PostgresOutboxRepository:
                            first_response_due_at,
                            '{}'
                     FROM responded
-                    ON CONFLICT (conversation_id, kind) DO NOTHING
+                    ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
                     """,
                     link["conversation_id"],
                 )

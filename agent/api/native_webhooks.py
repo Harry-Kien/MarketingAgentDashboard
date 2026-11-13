@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from agent.omnichannel import xu_ly_tin_vao
+from agent.omnichannel import hop_thu_ben
 from agent.channels.factory import AccountAdapterFactory
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
@@ -226,7 +226,7 @@ async def native_meta_webhook(
         payload=payload,
     )
     for message in messages:
-        tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
+        await hop_thu_ben.nhan(message, tasks)
     return JSONResponse({"ok": True, "queued": len(messages)})
 
 
@@ -281,5 +281,5 @@ async def native_meta_account_webhook(
         payload=payload,
     )
     for message in messages:
-        tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
+        await hop_thu_ben.nhan(message, tasks)
     return JSONResponse({"ok": True, "queued": len(messages)})

@@ -350,3 +350,21 @@ async def _quan_tri(ten: str) -> tuple[UUID, str]:
     return nd["id"], token
 
 
+
+
+@pytest.fixture(autouse=True)
+def _xoa_bo_dem_gioi_han():
+    """
+    Bộ đếm giới hạn tần suất webchat sống trong bộ nhớ của tiến trình — tức
+    là sống XUYÊN các test. Không xoá thì một test gửi nhiều tin làm test
+    sau dính 429 vì lý do chẳng liên quan.
+    """
+    import sys
+
+    yield
+    mod = sys.modules.get("agent.api.webchat")
+    if mod is not None:
+        for ten in ("GH_PHIEN_THEO_IP", "GH_TIN_THEO_KHACH", "GH_TIN_THEO_IP", "_GH_GHI_NHAT_KY"):
+            gh = getattr(mod, ten, None)
+            if gh is not None:
+                gh._dem.clear()

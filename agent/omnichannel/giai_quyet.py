@@ -126,6 +126,20 @@ async def mo_lai_neu_da_giai_quyet(cid: UUID) -> bool:
     Agent nhận lại — giống đường Chatwoot cũ (`open` → `auto`): hội thoại
     xong rồi thì không còn ai đang cầm.
     """
+    from agent.config import settings
+
+    if not settings.sla_chu_ky_khi_mo_lai:
+        # Tắt chu kỳ SLA (mặc định): mở lại, giữ nguyên chu kỳ và hạn của
+        # lượt đầu — đúng hành vi trước DEV-01 (trigger vẫn chặn đổi hạn
+        # trong cùng chu kỳ). `first_responded_at` xoá để hộp thư biết lượt
+        # này chưa ai trả lời.
+        r = await db.fetchrow(
+            "UPDATE conversations SET state = 'open', status = 'auto', mode = 'auto', "
+            "outcome = NULL, resolved_at = NULL, first_responded_at = NULL, "
+            "version = version + 1, updated_at = now() "
+            "WHERE id = $1 AND state = 'resolved' RETURNING id", cid)
+        return r is not None
+
     sql = ("""
         WITH mo AS (
             UPDATE conversations c SET

@@ -32,6 +32,14 @@ from tests.test_giai_quyet_csat import Q, _app, _goi  # noqa: E402
 VN = timezone(timedelta(hours=7))
 
 
+@pytest.fixture
+def bat_dev_01_06(monkeypatch):
+    """DEV-01/06 TẮT mặc định (quyết định 13.11.2026); các test hành vi khi BẬT dùng fixture này."""
+    from agent.config import settings
+    monkeypatch.setattr(settings, "sla_theo_gio_lam_viec", True)
+    monkeypatch.setattr(settings, "sla_chu_ky_khi_mo_lai", True)
+
+
 def _schema(url: str) -> None:
     """Dựng schema + mọi migration lên CSDL kiểm thử (qua startup của app thử)."""
     with TestClient(_app(url, nguoi_thu(*Q))):
@@ -130,7 +138,7 @@ def test_moi_cho_dat_han_deu_dung_gio_lam_viec():
 
 # ====================================================================== DEV-01
 
-def test_mo_lai_mo_chu_ky_sla_moi_va_giu_lich_su_cu(csdl_kiem_thu):
+def test_mo_lai_mo_chu_ky_sla_moi_va_giu_lich_su_cu(csdl_kiem_thu, bat_dev_01_06):
     from agent.omnichannel import giai_quyet
 
     _schema(csdl_kiem_thu)
@@ -194,7 +202,7 @@ def test_cung_mot_loai_su_kien_ghi_duoc_o_moi_chu_ky(csdl_kiem_thu):
     ]
 
 
-def test_chinh_sach_rieng_cua_kenh_thang_chinh_sach_chung(csdl_kiem_thu):
+def test_chinh_sach_rieng_cua_kenh_thang_chinh_sach_chung(csdl_kiem_thu, bat_dev_01_06):
     """`ORDER BY (account_id = $1) DESC` xếp chính sách CHUNG (NULL) lên đầu."""
     from agent.omnichannel import giai_quyet
 
@@ -365,3 +373,47 @@ def test_luc_gui_van_huy_tin_ai_khi_nguoi_da_tiep_quan():
 
     src = inspect.getsource(PostgresOutboxRepository.delivery_guard)
     assert 'row["role"] == "agent"' in src and "human_takeover" in src
+
+
+
+# ====================================================================== công tắc (mặc định TẮT)
+
+def test_dev_01_06_mac_dinh_tat_va_khai_trong_env_example():
+    from agent.config import Settings
+    mac_dinh = Settings()
+    assert mac_dinh.sla_theo_gio_lam_viec is False
+    assert mac_dinh.sla_chu_ky_khi_mo_lai is False
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "SLA_THEO_GIO_LAM_VIEC=false" in env and "SLA_CHU_KY_KHI_MO_LAI=false" in env
+
+
+def test_tat_gio_lam_viec_thi_sla_tinh_24_7(monkeypatch):
+    from agent.config import settings
+    from agent.omnichannel import sla_gio
+
+    monkeypatch.setattr(settings, "sla_theo_gio_lam_viec", False)
+    monkeypatch.setattr(settings, "gio_lam_viec_bat", True)
+    assert sla_gio.gio_sla() == (0, 24)
+    bt = sla_gio.bieu_thuc_han("first_response_minutes", 9, 10)
+    assert "business_hours" not in bt and "$9" in bt and "$10" in bt    # giờ riêng của chính sách cũng bỏ qua
+    monkeypatch.setattr(settings, "sla_theo_gio_lam_viec", True)
+    assert sla_gio.gio_sla() == (settings.gio_lam_viec_bat_dau, settings.gio_lam_viec_ket_thuc)
+    assert "business_hours" in sla_gio.bieu_thuc_han("first_response_minutes", 9, 10)
+
+
+def test_tat_chu_ky_thi_mo_lai_giu_han_cu(csdl_kiem_thu, monkeypatch):
+    from agent.config import settings
+    from agent.omnichannel import giai_quyet
+
+    monkeypatch.setattr(settings, "sla_chu_ky_khi_mo_lai", False)
+    _schema(csdl_kiem_thu)
+    tk = _kenh(csdl_kiem_thu)
+    cid = _hoi_thoai(csdl_kiem_thu, tk, "kh-tat", state="resolved", status="closed")
+    cu = _q(csdl_kiem_thu, "SELECT first_response_due_at, resolution_due_at FROM conversations WHERE id=$1", cid)
+    assert _goi(csdl_kiem_thu, giai_quyet.mo_lai_neu_da_giai_quyet, cid) is True
+    assert _goi(csdl_kiem_thu, giai_quyet.mo_lai_neu_da_giai_quyet, cid) is False
+    c = _q(csdl_kiem_thu, "SELECT state, mode, sla_chu_ky, first_response_due_at, resolution_due_at "
+                          "FROM conversations WHERE id=$1", cid)
+    assert (c["state"], c["mode"], c["sla_chu_ky"]) == ("open", "auto", 1)
+    assert c["first_response_due_at"] == cu["first_response_due_at"]
+    assert c["resolution_due_at"] == cu["resolution_due_at"]

@@ -337,6 +337,15 @@ class Settings(BaseSettings):
     gio_lam_viec_bat: bool = True
     gio_lam_viec_bat_dau: int = 8       # giờ Việt Nam, UTC+7
     gio_lam_viec_ket_thuc: int = 21     # 20:59 còn trong giờ, 21:00 thì hết
+    # Hai công tắc SLA, MẶC ĐỊNH TẮT theo quyết định của chủ dự án (13.11.2026).
+    # Mã và test giữ nguyên; bật lại bằng .env, không cần sửa mã hay CSDL.
+    #   SLA_THEO_GIO_LAM_VIEC (DEV-06): hạn SLA chỉ chạy trong giờ làm việc
+    #       GIO_LAM_VIEC_*; tắt = tính liên tục 24/7.
+    #   SLA_CHU_KY_KHI_MO_LAI (DEV-01): khách nhắn lại sau khi đã giải quyết
+    #       thì mở chu kỳ SLA mới với hạn mới; tắt = giữ nguyên hạn của lượt
+    #       đầu (hội thoại mở lại có thể đã quá hạn ngay).
+    sla_theo_gio_lam_viec: bool = False
+    sla_chu_ky_khi_mo_lai: bool = False
     # Tự giải quyết hội thoại nhàn rỗi quá N giờ, khi không còn việc dở nào
     # (agent/omnichannel/giai_quyet.py). 0 = tắt.
     tu_giai_quyet_sau_gio: float = 4.0

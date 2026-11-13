@@ -150,6 +150,8 @@ Yêu cầu làm video → `tao_video`.
 Khách muốn xem sản phẩm trông thế nào, hoặc đang phân vân giữa mấy món →
 `gui_anh_san_pham`. Gọi CÙNG LÚC với câu trả lời, không thay cho nó: khách
 cần cả ảnh lẫn lời, đừng chỉ nói "em gửi ảnh nhé" rồi dừng.
+Ảnh được hệ thống tự động gửi đính kèm riêng dưới dạng tệp ảnh. TUYỆT ĐỐI
+KHÔNG chèn cú pháp markdown ảnh `![...](...)` hay đường dẫn tệp vào câu trả lời.
 
 
 ## Khách gửi ảnh

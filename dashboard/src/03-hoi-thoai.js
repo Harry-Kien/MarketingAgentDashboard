@@ -51,6 +51,17 @@ function choBadge(phut) {
   return `<span class="row__wait${lop}">${nhan}</span>`;
 }
 
+function slaBadge(c) {
+  if (c.sla_breached) {
+    return `<span class="tag tag--halt" title="Đã quá hạn SLA phản hồi đầu tiên">Quá hạn SLA</span>`;
+  }
+  if (c.sla_warning) {
+    const luc = c.first_response_warning_at ? ` (${clock(c.first_response_warning_at)})` : "";
+    return `<span class="tag tag--assist" title="Đã tiêu thụ 50% thời hạn SLA phản hồi đầu tiên${esc(luc)}">Sắp hết SLA</span>`;
+  }
+  return "";
+}
+
 function convRow(c, hangDoi) {
   // Nhãn của hội thoại đang mở lấy từ DÒNG danh sách (đã có sẵn trong phản
   // hồi), khỏi thêm một request nữa mỗi 6 giây.
@@ -75,6 +86,7 @@ function convRow(c, hangDoi) {
         `<span class="nhan">${esc(n)}</span>`).join("")}</span>` : ""}
     </span>
     <span class="row__side">
+      ${slaBadge(c)}
       ${hangDoi ? choBadge(c.cho_bao_lau_phut) : unread ? `<span class="unread">${unread}</span>` : ""}
       <span class="row__time">${clock(c.updated_at)}</span>
     </span>
@@ -260,6 +272,7 @@ async function loadThread(id) {
     <div class="convo__title">
       <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
       <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
+      ${slaBadge(c)}
       <span class="convo__spacer"></span>
       ${srcBadge(c.account_channel, c.nen_tang)}<span class="msg__meta">${esc(c.account_name || "")}</span>
       ${c.contact_id ? `<button type="button" class="btn btn--sm" id="open-contact" data-contact="${c.contact_id}">Customer 360</button>` : ""}
@@ -289,6 +302,8 @@ async function loadThread(id) {
     <div class="opsbar">
       <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
+      ${c.sla_warning ? `<span>Cảnh báo SLA <b>50%${c.first_response_warning_at ? ` (${clock(c.first_response_warning_at)})` : ""}</b></span>` : ""}
+      ${c.sla_breached ? `<span>Trạng thái SLA <b>Quá hạn${c.first_response_breached_at ? ` (${clock(c.first_response_breached_at)})` : ""}</b></span>` : ""}
       <span>Version <b>${c.version || 1}</b></span>
     </div>
     <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}

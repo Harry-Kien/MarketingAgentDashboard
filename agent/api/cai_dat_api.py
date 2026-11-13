@@ -77,6 +77,8 @@ async def kiem_nhom(nhom: str, ghi_de: dict[str, str]) -> dict[str, Any]:
             khoa_da_kiem = ["GEMINI_API_KEY"]
         elif p == "anthropic":
             khoa_da_kiem = ["ANTHROPIC_API_KEY"]
+        elif p == "openai":
+            khoa_da_kiem = ["OPENAI_API_KEY"]
         else:
             # gemini / vertex: xác thực qua gcloud trên máy, không qua API key.
             khoa_da_kiem = []

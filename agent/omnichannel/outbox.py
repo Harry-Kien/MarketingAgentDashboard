@@ -400,7 +400,7 @@ class PostgresOutboxRepository:
                            first_response_due_at,
                            '{}'
                     FROM responded
-                    ON CONFLICT (conversation_id, kind) DO NOTHING
+                    ON CONFLICT (conversation_id, kind, due_at) DO NOTHING
                     """,
                     link["conversation_id"],
                 )

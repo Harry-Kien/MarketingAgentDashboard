@@ -107,6 +107,33 @@ def test_gia_giu_lai_nguon_de_truy_vet():
     assert g.nguon == "Bán lẻ"
 
 
+def test_doc_don_de_doi_soat_chi_doc_sales_order():
+    reqs: list[httpx.Request] = []
+
+    def xu_ly(req: httpx.Request) -> httpx.Response:
+        reqs.append(req)
+        return httpx.Response(200, json={"data": [{
+            "name": "SAL-ORD-09",
+            "status": "Completed",
+            "docstatus": 1,
+            "modified": "2026-11-11 09:30:00",
+        }]})
+
+    don = chay(_nguon(xu_ly).doc_don("SAL-ORD-09"))
+
+    assert don is not None
+    assert don["docstatus"] == 1
+    assert len(reqs) == 1
+    assert reqs[0].method == "GET", "đối soát không được ghi hoặc hủy ERP"
+    assert reqs[0].url.path.endswith("/Sales Order")
+    assert ["name", "=", "SAL-ORD-09"] in json.loads(
+        reqs[0].url.params["filters"]
+    )
+    assert json.loads(reqs[0].url.params["fields"]) == [
+        "name", "status", "docstatus", "modified"
+    ]
+
+
 # --- Bẫy 1: phân trang cắt ngầm --------------------------------------
 
 def test_luon_tat_phan_trang():

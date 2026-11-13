@@ -21,17 +21,34 @@ async function callback(accountId, event, data) {
   const path = new URL(`${callbackUrl}/${accountId}`).pathname;
   const canonical = `${timestamp}.${nonce}.POST.${path}.${body}`;
   const signature = `sha256=${createHmac('sha256', secret).update(canonical).digest('hex')}`;
-  await fetch(`${callbackUrl}/${accountId}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-sidecar-timestamp': timestamp,
-      'x-sidecar-nonce': nonce,
-      'x-sidecar-signature': signature,
-    },
-    body,
-  });
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${callbackUrl}/${accountId}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-sidecar-timestamp': timestamp,
+          'x-sidecar-nonce': nonce,
+          'x-sidecar-signature': signature,
+        },
+        body,
+      });
+      if (res.ok) return;
+      console.error(`Webhook delivery attempt ${attempt} returned status ${res.status}`);
+    } catch (err) {
+      console.error(`Webhook delivery attempt ${attempt} failed: ${err.message}`);
+    }
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * attempt));
+  }
 }
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection in Zalo sidecar:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception in Zalo sidecar:', err);
+});
 
 const manager = new SessionManager({
   zaloFactory: () => new Zalo({

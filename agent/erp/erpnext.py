@@ -30,7 +30,10 @@ from __future__ import annotations
 
 import json
 from datetime import date as _date
+from datetime import datetime as _datetime
+from datetime import timezone as _timezone
 from datetime import timedelta as _timedelta
+from urllib.parse import quote
 
 import httpx
 
@@ -75,6 +78,37 @@ _TRANG_THAI_GIAO = {
     "Return Issued": "returned",
     "Closed": "delivered",
 }
+
+_TRUONG_VAN_DON = (
+    "custom_shipping_tracking_number",
+    "custom_shipping_carrier",
+    "custom_shipping_status",
+    "custom_shipping_synced_at",
+    "custom_shipping_reference",
+)
+
+
+_DOC_META_KEYS = ("doctype", "docstatus", "modified", "creation", "owner")
+
+
+def _khop_truong_van_don(key: str, actual: object, expected: str) -> bool:
+    """So khớp giá trị trường vận đơn, chịu được hậu tố `.000000` của Datetime."""
+    thuc_te = str(actual or "").strip()
+    ky_vong = str(expected or "").strip()
+    if key == "custom_shipping_synced_at":
+        return thuc_te[:19] == ky_vong[:19]
+    return thuc_te == ky_vong
+
+
+def _doc_json_dict(res: httpx.Response, ngu_canh: str) -> dict:
+    try:
+        goi = res.json()
+    except ValueError as exc:
+        raise LoiERP(f"ERPNext trả thân không phải JSON khi {ngu_canh}") from exc
+    data = goi.get("data") if isinstance(goi, dict) else None
+    if not isinstance(data, dict):
+        raise LoiERP(f"ERPNext trả dữ liệu không hợp lệ khi {ngu_canh}")
+    return dict(data)
 
 
 def _thong_diep_loi(res: httpx.Response) -> str:
@@ -420,6 +454,101 @@ class NguonErpNext:
     async def tim_don(self, khoa: str) -> str | None:
         co = await self._lay("Sales Order", [["po_no", "=", khoa]], ["name"])
         return str(co[0]["name"]) if co else None
+
+    async def doc_don(self, erp_ma_don: str) -> dict | None:
+        """Đọc bằng chứng hiện hành của Sales Order, không tạo/sửa/hủy gì."""
+        co = await self._lay(
+            "Sales Order",
+            [["name", "=", erp_ma_don]],
+            ["name", "status", "docstatus", "modified"],
+        )
+        return dict(co[0]) if co else None
+
+    async def doc_van_don(self, erp_ma_don: str) -> dict:
+        """Đọc các custom field vận chuyển của đúng một Sales Order.
+
+        Dùng resource endpoint thay vì list endpoint để phân biệt rõ đơn
+        không tồn tại và cấu hình custom field còn thiếu. Cả hai đều là lỗi
+        vĩnh viễn, retry mạng không thể chữa được.
+        """
+        ma = str(erp_ma_don or "").strip()
+        if not ma:
+            raise TuChoiERP("Thiếu mã Sales Order ERPNext")
+        try:
+            res = await self._client.get(
+                f"/api/resource/Sales%20Order/{quote(ma, safe='')}",
+                headers=self._headers,
+            )
+        except httpx.HTTPError as exc:
+            raise LoiERP(f"Không gọi được ERPNext: {exc}") from exc
+        if res.status_code == 404:
+            raise TuChoiERP(f"ERPNext không có Sales Order {ma}")
+        if res.status_code in (408, 429) or res.status_code >= 500:
+            raise LoiERP(f"ERPNext trả {res.status_code} khi đọc vận đơn")
+        if res.status_code >= 400:
+            raise TuChoiERP(_thong_diep_loi(res))
+        # Frappe có thể lược các custom field đang NULL khỏi document JSON.
+        # Vì vậy "không có key" ở GET chỉ có nghĩa là đang rỗng; khả năng ghi
+        # thật sự được xác minh ở phản hồi PUT ngay sau đó.
+        return _doc_json_dict(res, "đọc vận đơn")
+
+    async def dong_bo_van_don(
+        self,
+        *,
+        erp_ma_don: str,
+        ma_van_don: str,
+        don_vi: str,
+        trang_thai: str,
+        dong_bo_luc: _datetime,
+        tham_chieu: str,
+    ) -> bool:
+        """Ghi vận đơn idempotent; True khi có PUT, False khi ERP đã khớp."""
+        ma = str(erp_ma_don or "").strip()
+        if not ma:
+            raise TuChoiERP("Thiếu mã Sales Order ERPNext")
+        luc = dong_bo_luc.astimezone(_timezone.utc).replace(tzinfo=None).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        payload = {
+            "custom_shipping_tracking_number": ma_van_don,
+            "custom_shipping_carrier": don_vi.upper(),
+            "custom_shipping_status": trang_thai,
+            "custom_shipping_synced_at": luc,
+            "custom_shipping_reference": tham_chieu,
+        }
+        doc = await self.doc_van_don(ma)
+        if all(_khop_truong_van_don(k, doc.get(k), v) for k, v in payload.items()):
+            return False
+        try:
+            res = await self._client.put(
+                f"/api/resource/Sales%20Order/{quote(ma, safe='')}",
+                json=payload,
+                headers=self._headers,
+            )
+        except httpx.HTTPError as exc:
+            # Có thể ERP đã ghi nhưng phản hồi bị mất. Không PUT mù ở đây;
+            # lượt retry sẽ GET trước và nhận ra dữ liệu đã khớp.
+            raise LoiERP(f"Không nhận được phản hồi ERPNext: {exc}") from exc
+        if res.status_code in (408, 429) or res.status_code >= 500:
+            raise LoiERP(f"ERPNext trả {res.status_code} khi ghi vận đơn")
+        if res.status_code >= 400:
+            raise TuChoiERP(_thong_diep_loi(res))
+        written = _doc_json_dict(res, "ghi vận đơn")
+        if any(meta in written for meta in _DOC_META_KEYS):
+            # Frappe bỏ qua âm thầm trường chưa tồn tại hoặc bị chặn ghi và vẫn
+            # trả 200 OK. Vì payload luôn mang giá trị khác rỗng, trường nào
+            # không hiện đúng trong tài liệu sau PUT là lỗi schema/quyền.
+            thieu = [
+                k for k, v in payload.items()
+                if not _khop_truong_van_don(k, written.get(k), v)
+            ]
+            if thieu:
+                raise TuChoiERP(
+                    "ERPNext không lưu được trường vận đơn "
+                    f"({', '.join(thieu)}) — kiểm tra Custom Field / "
+                    "allow_on_submit / quyền ghi"
+                )
+        return True
 
     async def tao_don(
         self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""

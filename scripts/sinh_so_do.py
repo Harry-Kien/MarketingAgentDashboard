@@ -51,8 +51,8 @@ NHOM = {
     "Hội thoại": ["conversations", "messages", "ho_so_khach", "processed_webhooks",
                   "hoi_thoai_nhan", "hoi_thoai_ghi_chu", "tra_loi_nhanh", "csat",
                   "quy_tac_tu_dong", "quy_tac_lan_chay"],
-    "Bán hàng": ["orders", "ton_kho", "kho_bien_dong"],
-    "Tri thức (RAG)": ["documents", "chunks"],
+    "Bán hàng": ["orders", "ton_kho", "kho_bien_dong", "shipping_waybill_requests"],
+    "Tri thức (RAG)": ["documents", "document_versions", "chunks"],
     "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],
     "Quyền và vai trò": [
         "vai_tro", "vai_tro_quyen", "nguoi_dung_vai_tro",
@@ -146,12 +146,17 @@ def doc_schema() -> tuple[dict[str, list[tuple[str, str]]], list[tuple[str, str]
             if item not in bang[table]:
                 bang[table].append(item)
 
+    # Một câu `ALTER TABLE` (như migration 0041) có thể khai báo nhiều cột
+    # mang `REFERENCES` phân tách bởi dấu phẩy trước dấu `;`. Tách từng câu
+    # `ALTER TABLE` rồi tìm mọi `REFERENCES` trong câu đó để không đếm thiếu.
     for match in re.finditer(
-        r"ALTER TABLE\s+(\w+)\s+(?:(?!;).)*?REFERENCES\s+(\w+)",
+        r"ALTER TABLE\s+(\w+)\b([^;]+);",
         sql,
         re.S,
     ):
-        khoa_ngoai.append((match.group(1), match.group(2)))
+        table, than = match.groups()
+        for ref in re.findall(r"REFERENCES\s+(\w+)", than):
+            khoa_ngoai.append((table, ref))
     return bang, khoa_ngoai
 
 

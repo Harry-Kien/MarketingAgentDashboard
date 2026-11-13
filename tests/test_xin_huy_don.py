@@ -71,6 +71,41 @@ def test_luon_chuyen_nguoi(monkeypatch):
     assert ra.get("can_chuyen_nhan_vien") is True
 
 
+def test_yeu_cau_huy_tao_pending_action_lien_ket_don(monkeypatch):
+    """DEV-09 cần task mang order_id để API đối soát đúng một đơn."""
+    from agent import db
+    from agent.core import cong_viec, tools
+
+    order_id = uuid.uuid4()
+    da_goi = {}
+
+    async def danh_dau(ma_don, conv_id, ly_do):
+        return order_id
+
+    async def tao_viec(**kwargs):
+        da_goi.update(kwargs)
+        return str(uuid.uuid4())
+
+    async def bo_qua_log(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(tools, "_danh_dau_xin_huy", danh_dau)
+    monkeypatch.setattr(cong_viec, "tao_tu_yeu_cau_xu_ly_don", tao_viec)
+    monkeypatch.setattr(db, "log_event", bo_qua_log)
+
+    conversation_id = uuid.uuid4()
+    ra = _chay(
+        "xin_huy_don",
+        {"ma_don": "AS-09", "ly_do": "khách đổi ý"},
+        conversation_id,
+    )
+
+    assert ra["da_ghi_nhan"] is True
+    assert da_goi["order_id"] == order_id
+    assert da_goi["conversation_id"] == conversation_id
+    assert da_goi["loai"] == "huy"
+
+
 def test_agent_bi_CAM_noi_da_huy(monkeypatch):
     """Kết quả tool phải dặn thẳng, vì model sẽ trượt sang 'đã huỷ' nếu không."""
     from agent.core import tools

@@ -16,6 +16,15 @@ const NHAN_GIAO = {
   delivering: "đang giao", delivered: "đã giao",
   delivery_failed: "giao thất bại", returned: "đã hoàn về",
 };
+const VAN_DON_DOI_SOAT_CHAN = new Set([
+  "sending", "unknown_timeout", "reconciling", "manual_required",
+]);
+const VAN_DON_YEU_CAU_LABEL = {
+  sending: "Đang gửi GHN",
+  unknown_timeout: "Chờ đối soát GHN",
+  reconciling: "Đang đối soát GHN",
+  manual_required: "Cần xác nhận GHN thủ công",
+};
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 $$("#orderfilter .chip").forEach((chip) =>
@@ -65,26 +74,36 @@ async function loadOrders() {
      * Đơn đã huỷ rồi thì thôi, cờ hết nghĩa.
      */
     const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy";
+    const tt_yc_vd = o.van_don_trang_thai_yeucau || "not_sent";
+    const cho_doi_soat_vd = !o.ma_van_don && VAN_DON_DOI_SOAT_CHAN.has(tt_yc_vd);
     /* Đơn đã chốt, chưa có vận đơn: nút tạo vận đơn ngay trên dòng. Hàm tạo
        vận đơn có bốn chốt từ lâu, nhưng trước 29.10.2026 không có nút nào
        gọi tới nó — đơn chốt xong rồi nằm im, phải lên trang hãng gõ tay. */
     const tao_van_don = VAN_CHUYEN && VAN_CHUYEN.that && o.trang_thai === "da_chot"
-      && !o.ma_van_don && !xin_huy;
+      && !o.ma_van_don && !xin_huy && !cho_doi_soat_vd;
     const doi_tra = o.yeu_cau_doi_tra_luc && o.trang_thai !== "da_huy";
     const bang_xin_huy = xin_huy
       ? `<span class="order__xinhuy"><b>Khách xin huỷ</b> — ${clock(o.yeu_cau_huy_luc)}${
           o.yeu_cau_huy_ly_do ? " · " + esc(o.yeu_cau_huy_ly_do) : ""
         }<br>Dừng đóng gói và gọi lại cho khách trước khi quyết định.</span>`
       : "";
+    const bang_doi_soat_vd = cho_doi_soat_vd
+      ? `<span class="order__xinhuy"><b>${esc(VAN_DON_YEU_CAU_LABEL[tt_yc_vd] || tt_yc_vd)}</b>${
+          o.van_don_client_order_code ? " · mã tham chiếu <b>" + esc(o.van_don_client_order_code) + "</b>" : ""
+        }${o.van_don_so_lan_doi_soat ? " · đã đối soát " + o.van_don_so_lan_doi_soat + " lần" : ""
+        }<br>${esc(o.van_don_ly_do_chan || o.van_don_loi_cuoi || "Đã tạm khoá tạo lại để tránh tạo hai vận đơn GHN.")}</span>`
+      : "";
 
     return `<div class="row${xin_huy ? " row--xinhuy" : ""}">
-      <span class="row__flag row__flag--${xin_huy ? "halt" : (cho_duyet || cho_dong_bo) ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
+      <span class="row__flag row__flag--${(xin_huy || tt_yc_vd === "manual_required") ? "halt" : (cho_duyet || cho_dong_bo || cho_doi_soat_vd) ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
           <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
           ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
+          ${cho_doi_soat_vd ? `<span class="tag tag--${tt_yc_vd === "manual_required" ? "halt" : "duyet"}">${esc(VAN_DON_YEU_CAU_LABEL[tt_yc_vd] || tt_yc_vd)}</span>` : ""}
           ${srcBadge(o.channel, o.nen_tang)}</span>
         ${bang_xin_huy}
+        ${bang_doi_soat_vd}
         ${doi_tra ? `<span class="order__xinhuy"><b>Khách xin ${({ doi: "đổi hàng", tra: "trả hàng" })[o.yeu_cau_doi_tra_loai] || "đổi/trả"}</b> — ${
             clock(o.yeu_cau_doi_tra_luc)}${o.yeu_cau_doi_tra_ly_do ? " · " + esc(o.yeu_cau_doi_tra_ly_do) : ""
           }<br>Gọi lại cho khách để thống nhất cách đổi/trả.</span>` : ""}
@@ -113,6 +132,12 @@ async function loadOrders() {
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
           </span>` : xin_huy ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ đơn</button>
+          </span>` : cho_doi_soat_vd ? `<span style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+            <button type="button" class="btn btn--sm" data-odoisoat="${o.id}"
+              title="Kiểm tra lại vận đơn trên GHN theo client_order_code">Kiểm tra GHN</button>
+            <button type="button" class="btn btn--sm btn--halt" data-oxnvandon="${o.id}"
+              data-omadon="${esc(o.ma_don)}" data-oref="${esc(o.van_don_client_order_code || o.ma_don)}"
+              title="Xác nhận kết quả kiểm tra thủ công trên cổng GHN">Xác nhận GHN</button>
           </span>` : tao_van_don ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--go" data-ovandon="${o.id}"
               title="Tạo vận đơn ${esc((VAN_CHUYEN.hang || "").toUpperCase())} và nhắn mã cho khách">Tạo vận đơn</button>
@@ -143,6 +168,53 @@ async function loadOrders() {
     const r = await api("/orders/" + b.dataset.ovandon + "/van-don", { method: "POST", body: "{}" });
     toast(r.da_co_san ? "Đơn đã có vận đơn " + r.ma_van_don + "."
       : "Đã tạo vận đơn " + r.ma_van_don + " và nhắn mã cho khách.");
+  }));
+  $$("[data-odoisoat]").forEach((b) => bam(b, async () => {
+    const r = await api("/orders/" + b.dataset.odoisoat + "/shipping-reconcile", { method: "POST" });
+    if (r.ok && r.ma_van_don) toast("Đã đối soát GHN: khôi phục vận đơn " + r.ma_van_don + ".");
+    else toast(r.ly_do_chan || r.loi || "Chưa xác nhận được trên GHN; cần kiểm tra thủ công.", true);
+  }));
+  $$("[data-oxnvandon]").forEach((b) => b.addEventListener("click", async () => {
+    const d = await hoiHop({
+      tieu_de: `Xác nhận GHN thủ công · ${b.dataset.omadon}`,
+      phu: `Mã tham chiếu client_order_code: ${b.dataset.oref}. Kiểm tra cổng GHN trước khi xác nhận.`,
+      truong: [
+        {
+          name: "ket_qua",
+          label: "Kết quả kiểm tra trên cổng GHN",
+          type: "select",
+          value: "da_co_van_don",
+          options: [
+            { value: "da_co_van_don", label: "GHN đã tạo vận đơn (nhập mã vận đơn bên dưới)" },
+            { value: "chua_tao_tren_ghn", label: "GHN chưa tạo đơn — mở khoá tạo lại với cùng mã tham chiếu" },
+          ],
+          required: true,
+        },
+        { name: "ma_van_don", label: "Mã vận đơn GHN (bắt buộc nếu GHN đã tạo)", placeholder: "Ví dụ: L8XYZ9", maxlength: 64 },
+        { name: "ghi_chu", label: "Bằng chứng / ghi chú đối soát", type: "textarea", rows: 2, required: true, maxlength: 500, placeholder: "Ví dụ: Đã kiểm tra cổng GHN ShopId..., không có đơn / đã có mã..." },
+      ],
+      nut: "Xác nhận",
+      nguy_hiem: true,
+    });
+    if (!d) return;
+    if (d.ket_qua === "da_co_van_don" && !d.ma_van_don) {
+      toast("Vui lòng nhập mã vận đơn GHN khi chọn GHN đã tạo.", true);
+      return;
+    }
+    try {
+      const r = await api("/orders/" + b.dataset.oxnvandon + "/shipping-manual-confirm", {
+        method: "POST",
+        body: JSON.stringify({
+          ket_qua: d.ket_qua,
+          ma_van_don: d.ma_van_don || "",
+          ghi_chu: d.ghi_chu || "",
+        }),
+      });
+      toast(r.ma_van_don
+        ? `Đã xác nhận vận đơn ${r.ma_van_don}.`
+        : "Đã xác nhận GHN chưa tạo đơn — có thể tạo vận đơn lại.");
+      loadOrders();
+    } catch (e) { toast(e.message, true); }
   }));
 }
 

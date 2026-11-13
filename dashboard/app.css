@@ -1393,6 +1393,7 @@ svg { flex: none; }
 
 .customer360 { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: 12px; height: calc(100vh - 116px); }
 .customer360 > .panel { min-height: 0; overflow: auto; margin: 0; }
+.customer360__detail { padding: 20px 24px 36px; }
 .customer360__list { display: flex; flex-direction: column; }
 .customer360__list .rows { overflow: auto; }
 .searchline { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid hsl(var(--border)); }
@@ -1414,12 +1415,15 @@ svg { flex: none; }
 .consent { padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 999px; font-size: 10.5px; }
 .consent--granted { color: hsl(var(--success)); border-color: hsl(var(--success) / .3); }
 .consent--withdrawn, .consent--denied { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .3); }
-.profile-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.profile-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .profile-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .profile-tag { padding: 4px 7px; border-radius: 999px; background: hsl(var(--primary) / .1); color: hsl(var(--primary)); font-size: 10px; font-weight: 600; }
 .inline-action, .consent-form, .note-form { display: flex; gap: 6px; align-items: center; }
 .inline-action input, .consent-form input, .consent-form select, .note-form textarea, .note-form select { min-width: 0; padding: 7px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 11px; }
-.inline-action input { width: 190px; }.consent-form input { flex: 1; }.consent-form select { width: 105px; }
+.inline-action input { width: 190px; }
+.consent-form { max-width: 720px; }
+.consent-form input { flex: 1; min-width: 140px; }
+.consent-form select { width: 105px; }
 .contact-notes { display: grid; gap: 6px; margin-bottom: 7px; }.contact-note { padding: 8px 10px; border-left: 2px solid hsl(var(--primary)); background: hsl(var(--muted) / .35); border-radius: 0 7px 7px 0; }
 .contact-note p { margin: 0 0 3px; font-size: 11.5px; white-space: pre-wrap; }.contact-note small { color: hsl(var(--muted-foreground)); font-size: 9.5px; }
 .note-form textarea { flex: 1; min-height: 54px; resize: vertical; }.note-form select { width: 90px; }
@@ -1957,6 +1961,46 @@ svg { flex: none; }
 /* Hộp thoại chung: nhiều ô xếp dọc, cách nhau như các ô của màn đăng nhập. */
 .cong__truong { display: flex; flex-direction: column; gap: 14px; }
 .cong__truong:empty { display: none; }
+
+/* Pending Action dùng lại lớp phủ/form hiện có, chỉ nới đủ chỗ cho phần
+   chi tiết và bằng chứng ERP. Không tạo một hệ modal thứ hai. */
+.cong__form.cvketqua {
+  max-width: 620px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.cvk__detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 16px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / .35);
+}
+.cvk__item { min-width: 0; }
+.cvk__item--wide { grid-column: 1 / -1; }
+.cvk__label {
+  display: block; margin-bottom: 2px; font-size: 10px; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.cvk__value { display: block; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.cvk__evidence {
+  min-height: 42px; padding: 10px 12px;
+  border-left: 3px solid hsl(var(--primary));
+  background: hsl(var(--muted) / .4);
+  font-size: 12px; line-height: 1.55;
+}
+.cvk__evidence--pending { border-left-color: hsl(var(--warning)); }
+.cvk__evidence--error { border-left-color: hsl(var(--destructive)); }
+.cvk__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 620px) {
+  .cvk__detail { grid-template-columns: 1fr; }
+  .cvk__item--wide { grid-column: auto; }
+  .cvk__actions > .btn { flex: 1 1 auto; }
+}
 
 /* Bảng tick vai trò mở ngay dưới dòng nhân viên. */
 .ns-vaitro {

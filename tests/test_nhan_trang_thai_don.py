@@ -86,8 +86,8 @@ def test_trang_thai_don_khop_voi_thu_backend_that_su_ghi():
     )
     thay: set[str] = set()
     for cau in re.findall(r"UPDATE orders SET(.{0,400}?)WHERE", ma, re.S):
-        thay |= set(re.findall(r"trang_thai\s*=\s*'(\w+)'", cau))
-        thay |= set(re.findall(r'trang_thai\s*=\s*"(\w+)"', cau))
+        thay |= set(re.findall(r"\btrang_thai\s*=\s*'(\w+)'", cau))
+        thay |= set(re.findall(r'\btrang_thai\s*=\s*"(\w+)"', cau))
 
     assert thay, "Không quét được câu UPDATE orders nào — regex có thể đã mục"
     la = sorted(thay - set(TRANG_THAI_DON))

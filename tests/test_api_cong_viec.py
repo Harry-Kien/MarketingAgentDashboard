@@ -162,6 +162,47 @@ def test_tao_liet_ke_va_doi_trang_thai(csdl_kiem_thu):
                     vid) is True
 
 
+def test_khong_dong_viec_xu_ly_don_qua_api_sua_chung(csdl_kiem_thu):
+    """Task sửa/hủy đơn bắt buộc đi qua đối soát DEV-09."""
+    import asyncpg
+
+    async def dung_du_lieu():
+        conn = await asyncpg.connect(csdl_kiem_thu)
+        try:
+            conv = await _dung_hoi_thoai(conn, ext="guard-order-action")
+            order_id = await conn.fetchval(
+                "INSERT INTO orders (ma_don, conversation_id, khach_ten, "
+                "khach_sdt, khach_dia_chi, items) "
+                "VALUES ('DH-GUARD', $1, 'Khách', '0901', 'HN', '[]') "
+                "RETURNING id",
+                conv,
+            )
+            return await conn.fetchval(
+                "INSERT INTO cong_viec (tieu_de, conversation_id, order_id, "
+                "loai_xu_ly_don) VALUES ('Xử lý hủy đơn', $1, $2, 'huy') "
+                "RETURNING id",
+                conv,
+                order_id,
+            )
+        finally:
+            await conn.close()
+
+    _dung_luoc_do(csdl_kiem_thu)
+    task_id = asyncio.run(dung_du_lieu())
+    with TestClient(_app(csdl_kiem_thu, _sep())) as khach:
+        response = khach.put(
+            f"/api/cong-viec/{task_id}", json={"trang_thai": "xong"}
+        )
+
+    assert response.status_code == 409
+    assert "xác nhận kết quả" in response.json()["detail"]
+    assert _sql(
+        csdl_kiem_thu,
+        "SELECT trang_thai FROM cong_viec WHERE id=$1",
+        task_id,
+    ) == "moi"
+
+
 def test_danh_dau_lam_lai_thi_xoa_xong_luc(csdl_kiem_thu):
     """
     Ràng buộc CSDL là `(trang_thai='xong') = (xong_luc IS NOT NULL)`. Mở

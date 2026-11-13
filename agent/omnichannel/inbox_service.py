@@ -344,7 +344,7 @@ class PostgresInboxTransaction:
                    )
             FROM conversations
             WHERE id = $1 AND first_response_due_at IS NOT NULL
-            ON CONFLICT (conversation_id, kind) DO NOTHING
+            ON CONFLICT (conversation_id, kind, due_at) DO NOTHING
             """,
             conversation_id,
         )

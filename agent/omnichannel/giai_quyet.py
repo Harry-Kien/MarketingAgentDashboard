@@ -22,12 +22,64 @@ from typing import Any
 from uuid import UUID
 
 from agent import cau_hinh_dong, db
+from agent.core import cong_viec
 
 CAU_HOI = ("Dạ shop cảm ơn anh/chị đã nhắn ạ. Anh/chị chấm giúp shop mức hài lòng "
            "từ 1 đến 5 nhé (5 là rất hài lòng) — chỉ cần nhắn một con số ạ.")
 CAM_ON = "Dạ shop cảm ơn anh/chị đã đánh giá ạ!"
 GIO_CHO = 24
 _DIEM = re.compile(r"^\s*([1-5])\s*(sao|⭐)?\s*[.!]?\s*$", re.IGNORECASE)
+
+
+class ConversationHasPendingTasksError(RuntimeError):
+    """Conversation còn công việc phải đóng trước khi Resolve."""
+
+    def __init__(self, tasks: list[dict[str, Any]]) -> None:
+        self.tasks = tasks
+        super().__init__("Không thể Resolve: còn công việc chưa hoàn tất.")
+
+    def api_detail(self) -> dict[str, Any]:
+        return {
+            "code": "conversation_has_pending_tasks",
+            "message": str(self),
+            "pending_tasks": [
+                {
+                    "id": str(task["id"]),
+                    "title": task["tieu_de"],
+                    "state": task["trang_thai"],
+                }
+                for task in self.tasks
+            ],
+        }
+
+
+async def kiem_tra_dieu_kien_resolve(conn: Any, cid: UUID) -> bool:
+    """Khoá Conversation và xác nhận không còn Pending Action đang mở.
+
+    Hàm nhận connection đang nằm trong transaction để cả manual Resolve và
+    Auto Resolve dùng chung một chốt. Trả ``False`` nếu Conversation không
+    tồn tại hoặc đã resolved; trả ``True`` nếu có thể tiếp tục Resolve.
+    """
+    conversation = await conn.fetchrow(
+        "SELECT state FROM conversations WHERE id = $1 FOR UPDATE", cid
+    )
+    if conversation is None or conversation["state"] == "resolved":
+        return False
+
+    rows = await conn.fetch(
+        """
+        SELECT id, tieu_de, trang_thai
+        FROM cong_viec
+        WHERE conversation_id = $1
+          AND trang_thai = ANY($2::text[])
+        ORDER BY tao_luc, id
+        """,
+        cid,
+        list(cong_viec.CHUA_XONG),
+    )
+    if rows:
+        raise ConversationHasPendingTasksError([dict(row) for row in rows])
+    return True
 
 
 def doc_diem(text: str) -> int | None:
@@ -39,6 +91,8 @@ async def giai_quyet(cid: UUID, nguoi_id: UUID | None) -> dict[str, Any]:
     """Đánh dấu đã giải quyết. Trả `{da_truoc, csat}`; 404 do chỗ gọi lo."""
     async with db.pool().acquire() as conn:
         async with conn.transaction():
+            if not await kiem_tra_dieu_kien_resolve(conn, cid):
+                return {"da_truoc": True, "csat": None}
             r = await conn.fetchrow(
                 "UPDATE conversations SET state = 'resolved', status = 'closed', "
                 "outcome = 'resolved', resolved_at = now(), version = version + 1, "
@@ -54,7 +108,7 @@ async def giai_quyet(cid: UUID, nguoi_id: UUID | None) -> dict[str, Any]:
                 "INSERT INTO sla_events (conversation_id, kind, due_at) "
                 "SELECT $1, 'resolution_met', $2::timestamptz "
                 "WHERE $2::timestamptz IS NULL OR now() <= $2::timestamptz "
-                "ON CONFLICT (conversation_id, kind) DO NOTHING",
+                "ON CONFLICT (conversation_id, kind, due_at) DO NOTHING",
                 cid, r["resolution_due_at"])
     await db.log_event("conversation.resolved", ref_id=cid,
                        boi=str(nguoi_id) if nguoi_id else None)
@@ -95,22 +149,36 @@ async def mo_lai_neu_da_giai_quyet(cid: UUID) -> bool:
     """
     r = await db.fetchrow(
         """
-        UPDATE conversations SET
-            state = 'open', status = 'auto', mode = 'auto', outcome = NULL,
-            resolved_at = NULL, first_responded_at = NULL,
-            first_response_due_at = (
-                SELECT now() + p.first_response_minutes * interval '1 minute'
-                FROM sla_policies p WHERE p.active AND p.priority = 'normal'
-                  AND (p.account_id = conversations.account_id OR p.account_id IS NULL)
-                ORDER BY (p.account_id = conversations.account_id) DESC LIMIT 1),
-            resolution_due_at = (
-                SELECT now() + p.resolution_minutes * interval '1 minute'
-                FROM sla_policies p WHERE p.active AND p.priority = 'normal'
-                  AND (p.account_id = conversations.account_id OR p.account_id IS NULL)
-                ORDER BY (p.account_id = conversations.account_id) DESC LIMIT 1),
-            version = version + 1, updated_at = now()
-        WHERE id = $1 AND state = 'resolved'
-        RETURNING id
+        WITH reopened AS (
+            UPDATE conversations SET
+                state = 'open', status = 'auto', mode = 'auto', outcome = NULL,
+                resolved_at = NULL, first_responded_at = NULL,
+                first_response_due_at = (
+                    SELECT now() + p.first_response_minutes * interval '1 minute'
+                    FROM sla_policies p WHERE p.active AND p.priority = 'normal'
+                      AND (p.account_id = conversations.account_id OR p.account_id IS NULL)
+                    ORDER BY (p.account_id = conversations.account_id) DESC LIMIT 1),
+                resolution_due_at = (
+                    SELECT now() + p.resolution_minutes * interval '1 minute'
+                    FROM sla_policies p WHERE p.active AND p.priority = 'normal'
+                      AND (p.account_id = conversations.account_id OR p.account_id IS NULL)
+                    ORDER BY (p.account_id = conversations.account_id) DESC LIMIT 1),
+                version = version + 1, updated_at = now()
+            WHERE id = $1 AND state = 'resolved'
+            RETURNING id, first_response_due_at, resolution_due_at
+        ),
+        sla_started AS (
+            INSERT INTO sla_events (conversation_id, kind, due_at, detail)
+            SELECT id, 'started', first_response_due_at,
+                   jsonb_build_object(
+                       'first_response_due_at', first_response_due_at,
+                       'resolution_due_at', resolution_due_at
+                   )
+            FROM reopened
+            WHERE first_response_due_at IS NOT NULL
+            ON CONFLICT (conversation_id, kind, due_at) DO NOTHING
+        )
+        SELECT id FROM reopened
         """, cid)
     return r is not None
 

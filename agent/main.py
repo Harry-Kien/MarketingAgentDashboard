@@ -605,8 +605,10 @@ async def lifespan(app: FastAPI):
     # nên dựng nó vô điều kiện là an toàn — và có nó ngay từ đầu nghĩa là
     # ngày bật ghi đơn không phải nhớ bật thêm thứ gì.
     from agent.erp.vong_dong_bo import vong_dong_bo_loop
+    from agent.shipping.doi_soat import vong_doi_soat_loop
 
     _nen(vong_dong_bo_loop())
+    _nen(vong_doi_soat_loop())
     # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
     # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
     # thái dở, không ai nhặt lại và không dòng lỗi nào.

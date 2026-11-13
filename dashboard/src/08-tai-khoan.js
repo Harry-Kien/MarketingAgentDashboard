@@ -299,7 +299,25 @@ $("#tamnhin")?.addEventListener("change", async (e) => {
 
 /* ---------------- công việc ---------------- */
 
-const congViec = { trangThai: [], uuTien: [] };
+const congViec = { trangThai: [], uuTien: [], ds: [], banNhap: {} };
+let cvKetQuaDangGui = false;
+let cvKetQuaBangChung = null;
+
+const CV_LOAI_DON = { sua: "Sửa đơn", huy: "Hủy đơn" };
+const CV_KET_QUA = {
+  thanh_cong: "Đã xử lý thành công",
+  khong_the: "Không thể thực hiện",
+  cho_doi_soat: "Đang chờ đối soát",
+};
+
+function cvLaXuLyDon(v) {
+  return Boolean(v.order_id && CV_LOAI_DON[v.loai_xu_ly_don]);
+}
+
+function cvDuocXacNhan() {
+  return state.toiQuyen.has("don.sua")
+    && state.toiQuyen.has("cong_viec.sua");
+}
 
 function cvCoTrangThai(v) {
   /* Cờ màu theo TÌNH TRẠNG THẬT, không theo trạng thái danh nghĩa.
@@ -318,28 +336,226 @@ function cvDong(v, nhanTT, nhanUT) {
     ? `<span class="pill${v.qua_han ? " pill--warn" : ""}">${
         v.qua_han ? "quá hạn " : "hạn "}${hanDoc(v.han)}</span>`
     : "";
+  const xuLyDon = cvLaXuLyDon(v);
+  const loai = xuLyDon
+    ? ` <span class="pill">${esc(CV_LOAI_DON[v.loai_xu_ly_don])}</span>` : "";
+  const don = v.ma_don ? ` · đơn ${esc(v.ma_don)}` : "";
+  const ketQua = v.ket_qua_xu_ly_don
+    ? ` · ${esc(CV_KET_QUA[v.ket_qua_xu_ly_don] || v.ket_qua_xu_ly_don)}` : "";
+  const xacNhan = xuLyDon && cvDuocXacNhan()
+    && !["thanh_cong", "khong_the"].includes(v.ket_qua_xu_ly_don);
   return `<div class="row" data-cv="${esc(v.id)}">
     <span class="row__flag row__flag--${cvCoTrangThai(v)}"></span>
     <div class="row__main">
-      <b>${esc(v.tieu_de)}${v.nguon === "agent"
+      <b>${esc(v.tieu_de)}${loai}${v.nguon === "agent"
         ? ' <span class="pill">agent chuyển</span>' : ""}</b>
       <span class="row__sub">${esc(nhanTT[v.trang_thai] || v.trang_thai)} · ${
-        esc(nhanUT[v.uu_tien] || v.uu_tien)}${
+        esc(nhanUT[v.uu_tien] || v.uu_tien)}${don}${ketQua}${
         v.khach_ten ? " · " + esc(v.khach_ten) : ""}${
-        v.mo_ta ? " · " + esc(v.mo_ta.slice(0, 90)) : ""}</span>
+        v.mo_ta ? " · " + esc(v.mo_ta.slice(0, 90)) : ""} · tạo ${clock(v.tao_luc)}</span>
     </div>
     <div class="row__side">
       <span>${chu} ${han}</span>
       <span class="row__nut">
-        ${v.trang_thai !== "xong"
+        ${!xuLyDon && v.trang_thai !== "xong"
           ? `<button type="button" class="btn btn--sm btn--ghost" data-cvxong="${esc(v.id)}">Xong</button>`
-          : `<button type="button" class="btn btn--sm btn--ghost" data-cvmolai="${esc(v.id)}">Mở lại</button>`}
+          : !xuLyDon
+            ? `<button type="button" class="btn btn--sm btn--ghost" data-cvmolai="${esc(v.id)}">Mở lại</button>`
+            : ""}
+        ${xuLyDon ? `<button type="button" class="btn btn--sm btn--ghost" data-cvchitiet="${esc(v.id)}">Chi tiết</button>` : ""}
+        ${xacNhan ? `<button type="button" class="btn btn--sm" data-cvketqua="${esc(v.id)}">Xác nhận</button>` : ""}
         <button type="button" class="btn btn--sm btn--ghost" data-cvnhan="${esc(v.id)}">Nhận</button>
         <button type="button" class="btn btn--sm btn--ghost" data-cvsua="${esc(v.id)}">Sửa</button>
       </span>
     </div>
   </div>`;
 }
+
+function cvLuuBanNhap() {
+  const id = congViec.dangXem;
+  if (!id || !$("#cvkKetQua") || !$("#cvkLyDo")) return;
+  congViec.banNhap[id] = {
+    ket_qua: $("#cvkKetQua").value,
+    ly_do: $("#cvkLyDo").value,
+  };
+}
+
+function cvDongKetQua() {
+  cvLuuBanNhap();
+  $("#congCvKetQua").classList.add("is-off");
+}
+
+function cvLoiTheoMa(err) {
+  const nhan = {
+    403: "Bạn không có quyền xác nhận công việc này.",
+    404: "Công việc hoặc đơn hàng không còn tồn tại.",
+    409: "Trạng thái hoặc bằng chứng ERPNext không phù hợp.",
+    422: "Dữ liệu xác nhận chưa hợp lệ.",
+  };
+  return `${nhan[err.ma] || "Không gửi được kết quả."} ${err.message || ""}`.trim();
+}
+
+async function cvApiCoHan(path, options = {}, ms = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await api(path, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function cvVeBangChung(v, data = null, loi = "") {
+  const el = $("#cvkBangChung");
+  el.classList.toggle("cvk__evidence--error", Boolean(loi));
+  el.classList.toggle("cvk__evidence--pending", !data && !loi);
+  if (loi) {
+    el.textContent = loi;
+  } else if (!data) {
+    el.textContent = "Đang đọc trạng thái hiện hành từ ERPNext…";
+  } else {
+    el.innerHTML = `<b>ERPNext ${esc(data.erp_tham_chieu)}</b> · ${
+      esc(data.trang_thai || "chưa có trạng thái")} · docstatus ${
+      esc(data.docstatus)}<br>Phiên bản xác minh: ${esc(data.modified || "không có")}`;
+  }
+  $("#cvkDocLai").hidden = !cvDuocXacNhan() || !cvLaXuLyDon(v);
+}
+
+async function cvTaiBangChung(v) {
+  cvKetQuaBangChung = null;
+  cvVeBangChung(v);
+  try {
+    const path = `/orders/${encodeURIComponent(v.order_id)}/action-evidence?cong_viec_id=${
+      encodeURIComponent(v.id)}`;
+    cvKetQuaBangChung = await cvApiCoHan(path, {}, 15000);
+    cvVeBangChung(v, cvKetQuaBangChung);
+  } catch (err) {
+    const msg = err.name === "AbortError"
+      ? "ERPNext phản hồi quá lâu. Công việc chưa thay đổi; thử đọc lại sau."
+      : cvLoiTheoMa(err);
+    cvVeBangChung(v, null, msg);
+  }
+}
+
+async function cvMoKetQua(id, moThaoTac = false) {
+  const v = (congViec.ds || []).find((x) => x.id === id);
+  if (!v || !cvLaXuLyDon(v)) return;
+  cvLuuBanNhap();
+  congViec.dangXem = id;
+  cvKetQuaBangChung = null;
+  const nhap = congViec.banNhap[id] || {
+    ket_qua: v.ket_qua_xu_ly_don || "thanh_cong",
+    ly_do: v.ly_do_ket_qua || "",
+  };
+  $("#cvkTen").textContent = v.tieu_de;
+  $("#cvkPhu").textContent = `${CV_LOAI_DON[v.loai_xu_ly_don]} · đơn ${v.ma_don || "—"}`;
+  $("#cvkChiTiet").innerHTML = [
+    ["Trạng thái", v.trang_thai],
+    ["Ưu tiên", v.uu_tien],
+    ["Người phụ trách", v.nguoi_nhan_ten || "Chưa giao"],
+    ["Tạo lúc", new Date(v.tao_luc).toLocaleString("vi-VN")],
+    ["Mã ERP", v.order_erp_ma_don || "Chưa đồng bộ"],
+    ["Trạng thái đơn", v.order_trang_thai || "—"],
+    ["Xử lý bởi", v.xu_ly_boi_ten || "Chưa xác nhận"],
+    ["Trạng thái ERP đã lưu", v.erp_trang_thai || "Chưa có"],
+    ["Yêu cầu khách hàng", v.mo_ta || "Không có mô tả"],
+    ["Kết quả đã lưu", v.ket_qua_xu_ly_don
+      ? `${CV_KET_QUA[v.ket_qua_xu_ly_don] || v.ket_qua_xu_ly_don}${
+          v.ly_do_ket_qua ? " — " + v.ly_do_ket_qua : ""}` : "Chưa có"],
+  ].map(([label, value], i) => `<div class="cvk__item${i >= 8 ? " cvk__item--wide" : ""}">
+      <span class="cvk__label">${esc(label)}</span><span class="cvk__value">${esc(value)}</span>
+    </div>`).join("");
+  $("#cvkKetQua").value = nhap.ket_qua;
+  $("#cvkLyDo").value = nhap.ly_do;
+  $("#cvkLoi").textContent = "";
+  $("#cvkHoiThoai").hidden = !v.conversation_id;
+  const duocLam = moThaoTac && cvDuocXacNhan()
+    && !["thanh_cong", "khong_the"].includes(v.ket_qua_xu_ly_don);
+  $("#cvkThaoTac").hidden = !duocLam;
+  $("#cvkGui").hidden = !duocLam;
+  $("#cvkDocLai").hidden = !duocLam;
+  $("#congCvKetQua").classList.remove("is-off");
+  if (duocLam) await cvTaiBangChung(v);
+  else cvVeBangChung(v, v.erp_tham_chieu ? {
+    erp_tham_chieu: v.erp_tham_chieu,
+    trang_thai: v.erp_trang_thai,
+    modified: v.erp_sua_luc,
+    docstatus: "—",
+  } : null, v.erp_tham_chieu ? "" : "Chưa có bằng chứng ERPNext đã lưu.");
+}
+
+async function cvGuiKetQua(e) {
+  e.preventDefault();
+  if (cvKetQuaDangGui) return;
+  const v = (congViec.ds || []).find((x) => x.id === congViec.dangXem);
+  if (!v || !cvDuocXacNhan()) return;
+  const d = Object.fromEntries(new FormData(e.currentTarget).entries());
+  const bangChungSua = cvKetQuaBangChung
+    ? cvKetQuaBangChung.modified || null : null;
+  if (d.ket_qua === "thanh_cong"
+      && v.loai_xu_ly_don === "sua" && !bangChungSua) {
+    $("#cvkLoi").textContent =
+      "Yêu cầu sửa thành công chưa có phiên bản ERPNext đã xác minh. Bấm “Đọc lại ERPNext”.";
+    return;
+  }
+  if (d.ket_qua === "khong_the" && String(d.ly_do || "").trim().length < 3) {
+    $("#cvkLoi").textContent = "Kết quả không thể thực hiện cần có lý do rõ ràng.";
+    return;
+  }
+  cvKetQuaDangGui = true;
+  const cvkGui = $("#cvkGui");
+  cvkGui.disabled = true;
+  cvkGui.textContent = "Đang xác nhận…";
+  $("#cvkLoi").textContent = "";
+  try {
+    const result = await cvApiCoHan(
+      `/orders/${encodeURIComponent(v.order_id)}/confirm-action-result`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          cong_viec_id: v.id,
+          loai: v.loai_xu_ly_don,
+          ket_qua: d.ket_qua,
+          ly_do: d.ly_do || "",
+          erp_modified_at: bangChungSua,
+        }),
+      },
+      20000,
+    );
+    delete congViec.banNhap[v.id];
+    const cho = result.ket_qua === "cho_doi_soat";
+    toast(result.thong_bao || (cho ? "Đang chờ đối soát." : "Đã ghi nhận kết quả."), cho);
+    await loadCongViec();
+    const moi = congViec.ds.find((x) => x.id === v.id);
+    if (moi) {
+      moi.trang_thai = result.trang_thai_cong_viec;
+      moi.ket_qua_xu_ly_don = result.ket_qua;
+    }
+    cvDongKetQua();
+  } catch (err) {
+    $("#cvkLoi").textContent = err.name === "AbortError"
+      ? "Yêu cầu bị Timeout; không đổi trạng thái công việc trên giao diện. Tải lại danh sách trước khi thử lại."
+      : cvLoiTheoMa(err);
+  } finally {
+    cvKetQuaDangGui = false;
+    cvkGui.disabled = false;
+    cvkGui.textContent = "Xác nhận kết quả";
+  }
+}
+
+$("#cvkForm")?.addEventListener("submit", cvGuiKetQua);
+$("#cvkDong")?.addEventListener("click", (e) => { e.preventDefault(); cvDongKetQua(); });
+$("#cvkDocLai")?.addEventListener("click", async () => {
+  const v = congViec.ds.find((x) => x.id === congViec.dangXem);
+  if (v && !cvKetQuaDangGui) await cvTaiBangChung(v);
+});
+$("#cvkHoiThoai")?.addEventListener("click", () => {
+  const v = congViec.ds.find((x) => x.id === congViec.dangXem);
+  if (!v?.conversation_id) return;
+  cvDongKetQua();
+  state.openConv = v.conversation_id;
+  doiMan("hoithoai");
+});
 
 /* GIAO VIỆC, ĐỔI ƯU TIÊN, ĐỔI HẠN, HUỶ — bốn việc API đã làm được từ lâu
  * mà màn hình không có đường nào gọi tới.
@@ -378,10 +594,12 @@ async function cvMoSua(id) {
     { name: "han", label: "Hạn", type: "date",
       hint: "để trống là bỏ hạn",
       value: v.han ? String(v.han).slice(0, 10) : "" },
-    { name: "trang_thai", label: "Trạng thái", type: "select",
-      value: v.trang_thai,
-      options: congViec.trangThai.map((t) => ({ value: t.ma, label: t.nhan })) },
   ];
+  if (!cvLaXuLyDon(v)) {
+    truong.push({ name: "trang_thai", label: "Trạng thái", type: "select",
+      value: v.trang_thai,
+      options: congViec.trangThai.map((t) => ({ value: t.ma, label: t.nhan })) });
+  }
   if (nguoiChon) {
     truong.splice(2, 0, { name: "nguoi_nhan", label: "Người phụ trách",
                           type: "select", value: v.nguoi_nhan || "",
@@ -396,7 +614,8 @@ async function cvMoSua(id) {
   });
   if (!d) return;
 
-  const than = { uu_tien: d.uu_tien, trang_thai: d.trang_thai };
+  const than = { uu_tien: d.uu_tien };
+  if (d.trang_thai) than.trang_thai = d.trang_thai;
   // Phân biệt "không gửi" với "gửi rỗng": máy chủ cần cờ riêng mới xoá được
   // hạn và thu hồi được người nhận (xem SuaIn trong agent/api/cong_viec.py).
   if (d.han) than.han = new Date(d.han + "T23:59:59").toISOString();
@@ -474,6 +693,10 @@ $("#cv-them")?.addEventListener("click", async () => {
 });
 
 $("#cv-ds")?.addEventListener("click", async (e) => {
+  const ketqua = e.target.closest("[data-cvketqua]");
+  if (ketqua) { await cvMoKetQua(ketqua.dataset.cvketqua, true); return; }
+  const chitiet = e.target.closest("[data-cvchitiet]");
+  if (chitiet) { await cvMoKetQua(chitiet.dataset.cvchitiet, false); return; }
   const sua = e.target.closest("[data-cvsua]");
   if (sua) { await cvMoSua(sua.dataset.cvsua); return; }
   const xong = e.target.closest("[data-cvxong]");

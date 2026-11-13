@@ -395,6 +395,45 @@ def _confidence(passages: list[rag.Passage], co_du_lieu: bool) -> float:
     return round(min(base, 0.99), 3)
 
 
+def _uuid_or_none(value) -> uuid.UUID | None:
+    """Đọc UUID từ metadata tool mà không để dấu vết lỗi làm hỏng câu trả lời."""
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _knowledge_refs(passages: list[rag.Passage]) -> list[dict]:
+    """Dấu vết bền vững của đúng version/chunk đã đưa cho model."""
+    result: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for passage in passages:
+        if passage.version_id is None and passage.chunk_id is None:
+            continue
+        key = (str(passage.version_id or ""), str(passage.chunk_id or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(
+            {
+                "document_id": (
+                    str(passage.document_id) if passage.document_id else None
+                ),
+                "version_id": str(passage.version_id) if passage.version_id else None,
+                "version": passage.version,
+                "chunk_id": str(passage.chunk_id) if passage.chunk_id else None,
+                "title": passage.doc_title,
+                "source": passage.source,
+                "published_at": (
+                    passage.published_at.isoformat() if passage.published_at else None
+                ),
+            }
+        )
+    return result
+
+
 # Tool trả về TÀI LIỆU, không trả về dữ liệu hệ thống. Đoạn tìm được đi
 # thẳng vào `passages` và tự nâng độ tin cậy qua điểm khớp của chính nó —
 # không cần, và không được, cộng thưởng thêm lần nữa.
@@ -453,7 +492,8 @@ async def respond(
     # ĐỌC:   cửa 2 (dòng ~340) trần ngân sách TOÀN CỤC theo ngày — 25 USD
     # ĐỌC:   cửa 3 (dòng ~354) quét prompt injection            — 13 mẫu
     conv = await db.fetchrow(
-        "SELECT cost_usd FROM conversations WHERE id = $1", conversation_id
+        "SELECT cost_usd, account_id FROM conversations WHERE id = $1",
+        conversation_id,
     )
     spent = float(conv["cost_usd"]) if conv else 0.0
     # Hồ sơ agent của kênh này. `siet()` đã ép mọi ngưỡng về phía NGHIÊM
@@ -532,7 +572,14 @@ async def respond(
 
     mat_na = che_du_lieu.MatNa() if settings.che_du_lieu_gui_model else None
     cau_gui = mat_na.che(question) if mat_na else question
-    passages = await rag.retrieve(cau_gui, k=5)
+    rag_account_id = (
+        conv["account_id"] if conv is not None and "account_id" in conv else None
+    )
+    passages = (
+        await rag.retrieve(cau_gui, k=5, account_id=rag_account_id)
+        if rag_account_id is not None
+        else await rag.retrieve(cau_gui, k=5)
+    )
     context = rag.as_context(passages)
 
     # Trí nhớ về khách đi CÙNG khối biến động với ngữ cảnh RAG, không đi
@@ -744,6 +791,9 @@ async def respond(
                         doc_title=d.get("tai_lieu", ""),
                         content=d.get("noi_dung", ""),
                         score=float(d.get("diem") or 0.0),
+                        version_id=_uuid_or_none(d.get("version_id")),
+                        version=d.get("phien_ban"),
+                        chunk_id=_uuid_or_none(d.get("chunk_id")),
                     ))
             # ĐỌC: MỘT CHỮ `elif` — và nó là bản vá cho lỗi XANH GIẢ.
             # ĐỌC: Bản trước cộng thưởng độ tin cậy cho MỌI lời gọi công cụ,
@@ -783,6 +833,8 @@ async def respond(
                 anh_can_gui.append(
                     {"duong_dan": out["duong_dan"], "ten": out["ten"]}
                 )
+                # Giấu đường dẫn tệp nội bộ khỏi mô hình LLM để tránh mô hình tự chèn markdown link ảnh
+                out = {k: v for k, v in out.items() if k != "duong_dan"}
 
             # Trong phòng thử KHÔNG đặt video thật — tool đã mô phỏng, đây là lớp thứ hai.
             if call["name"] == "tao_video" and out.get("da_nhan") and not dang_thu:
@@ -882,6 +934,21 @@ async def respond(
         final_text = mat_na.mo(final_text)
         if sot and not dang_thu:
             await db.log_event("che_du_lieu.ma_la", ref_id=conversation_id, ma=sot[:5])
+
+    # Lọc bỏ cú pháp markdown ảnh !\[...\](...) nếu mô hình có lỡ sinh ra
+    # vì ảnh đã được hệ thống gửi riêng dưới dạng tệp tin đính kèm
+    final_text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", final_text).strip()
+
+    # `messages.sources` đang là danh sách tên tài liệu và là contract cũ
+    # của Inbox. Giữ nguyên contract đó; lưu dấu vết version/chunk đầy đủ ở
+    # audit event để có thể chứng minh chính xác căn cứ nào đã đi vào model.
+    knowledge_refs = _knowledge_refs(passages)
+    if knowledge_refs and not dang_thu:
+        await db.log_event(
+            "knowledge.retrieved",
+            ref_id=conversation_id,
+            sources=knowledge_refs,
+        )
 
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",

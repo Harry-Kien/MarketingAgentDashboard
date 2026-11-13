@@ -4,13 +4,16 @@ API đơn hàng, tồn kho, danh mục và ảnh sản phẩm.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Literal
 
-from fastapi import (APIRouter, Depends, HTTPException)
+from fastapi import (APIRouter, Depends, HTTPException, Response)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from agent import db
-from agent.core import kho
+from agent.core import cong_viec as cong_viec_core, kho
+from agent.erp.hop_dong import LoiERP
 
 from .phu_thuoc import (
     bat_buoc_dang_nhap,
@@ -48,12 +51,21 @@ async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap),
 
 @router.get("/orders")
 async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict = Depends(can_quyen("don.doc"))) -> list[dict]:
-    sql = "SELECT * FROM orders"
+    sql = (
+        "SELECT o.*, "
+        "r.trang_thai AS van_don_trang_thai_yeucau, "
+        "r.client_order_code AS van_don_client_order_code, "
+        "r.ly_do_chan AS van_don_ly_do_chan, "
+        "r.so_lan_doi_soat AS van_don_so_lan_doi_soat, "
+        "r.loi_cuoi AS van_don_loi_cuoi "
+        "FROM orders o "
+        "LEFT JOIN shipping_waybill_requests r ON r.order_id = o.id"
+    )
     args: list = []
     if status and status != "all":
-        sql += " WHERE trang_thai = $1"
+        sql += " WHERE o.trang_thai = $1"
         args.append(status)
-    sql += f" ORDER BY created_at DESC LIMIT {int(limit)}"
+    sql += f" ORDER BY o.created_at DESC LIMIT {int(limit)}"
     rows = await db.fetch(sql, *args)
     return [
         {
@@ -71,10 +83,16 @@ async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict =
             "created_at": r["created_at"].isoformat(),
             # Màn Đơn hàng VẼ các trường dưới (cờ "Khách xin huỷ", lỗi đồng bộ
             # ERP, mã vận đơn) — nhưng trước 29.10.2026 API không trả chúng,
-            # nên cờ xin huỷ KHÔNG BAO GIỜ hiện: hàng vẫn gói, khách từ chối
+            # nên cờ xin huỷ KHÔNG BAOỜ hiện: hàng vẫn gói, khách từ chối
             # nhận, shop chịu phí hoàn, không lỗi nào. Có test canh mọi trường
             # màn hình đọc đều có mặt ở đây.
             **{k: _iso(r.get(k)) for k in _TRUONG_PHU_DON},
+            "van_don_trang_thai_yeucau": r.get("van_don_trang_thai_yeucau")
+            or ("confirmed" if str(r.get("ma_van_don") or "").strip() else "not_sent"),
+            "van_don_client_order_code": r.get("van_don_client_order_code") or r["ma_don"],
+            "van_don_ly_do_chan": r.get("van_don_ly_do_chan"),
+            "van_don_so_lan_doi_soat": int(r.get("van_don_so_lan_doi_soat") or 0),
+            "van_don_loi_cuoi": r.get("van_don_loi_cuoi"),
         }
         for r in rows
     ]
@@ -85,6 +103,9 @@ _TRUONG_PHU_DON = (
     "yeu_cau_doi_tra_luc", "yeu_cau_doi_tra_loai", "yeu_cau_doi_tra_ly_do",
     "erp_ma_don", "erp_loi", "erp_so_lan_thu",
     "ma_van_don", "don_vi_van_chuyen", "trang_thai_giao_hang",
+    "erp_van_chuyen_trang_thai", "erp_van_chuyen_so_lan_thu",
+    "erp_van_chuyen_thu_lai_luc", "erp_van_chuyen_loi",
+    "erp_van_chuyen_dong_bo_luc",
 )
 
 
@@ -108,6 +129,98 @@ def _uuid_don(order_id: str) -> uuid.UUID:
         return uuid.UUID(order_id)
     except ValueError:
         raise HTTPException(404, "Không có đơn này") from None
+
+
+class XacNhanKetQuaDonIn(BaseModel):
+    cong_viec_id: uuid.UUID
+    loai: Literal["sua", "huy"]
+    ket_qua: Literal["thanh_cong", "khong_the", "cho_doi_soat"]
+    ly_do: str = Field("", max_length=1000)
+    # Với sửa đơn, Dashboard gửi đúng `modified` vừa đọc trên ERPNext.
+    # Backend đọc lại và so khớp để không chốt theo một màn hình đã cũ.
+    erp_modified_at: datetime | None = None
+
+
+@router.get("/orders/{order_id}/action-evidence")
+async def lay_bang_chung_xu_ly_don(
+    order_id: str,
+    cong_viec_id: uuid.UUID,
+    nguoi: dict = Depends(can_quyen("don.sua", "cong_viec.sua")),
+) -> dict:
+    """Đọc snapshot ERP cho UI; không nhận timestamp do nhân viên tự nhập."""
+    oid = _uuid_don(order_id)
+    try:
+        return await cong_viec_core.lay_bang_chung_xu_ly_don(
+            order_id=oid,
+            cong_viec_id=cong_viec_id,
+            nguoi_id=uuid.UUID(str(nguoi["id"])),
+            quyen=frozenset(nguoi.get("quyen") or ()),
+        )
+    except cong_viec_core.KhongTimThayXuLyDon as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except cong_viec_core.KhongDuPhamViXuLyDon as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except cong_viec_core.XungDotXuLyDon as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except LoiERP as exc:
+        raise HTTPException(
+            503, "Chưa đọc được ERPNext; thử đối soát lại sau"
+        ) from exc
+
+
+@router.post("/orders/{order_id}/confirm-action-result")
+async def xac_nhan_ket_qua_xu_ly_don(
+    order_id: str,
+    body: XacNhanKetQuaDonIn,
+    response: Response,
+    nguoi: dict = Depends(can_quyen("don.sua", "cong_viec.sua")),
+) -> dict:
+    """Ghi nhận kết quả người đã làm trên ERP; endpoint này chỉ ĐỌC ERP."""
+    oid = _uuid_don(order_id)
+    try:
+        ket_qua = await cong_viec_core.xac_nhan_ket_qua_don(
+            order_id=oid,
+            cong_viec_id=body.cong_viec_id,
+            loai=body.loai,
+            ket_qua=body.ket_qua,
+            ly_do=body.ly_do,
+            erp_modified_at=body.erp_modified_at,
+            nguoi_id=uuid.UUID(str(nguoi["id"])),
+            quyen=frozenset(nguoi.get("quyen") or ()),
+        )
+    except cong_viec_core.KhongTimThayXuLyDon as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except cong_viec_core.KhongDuPhamViXuLyDon as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except cong_viec_core.XungDotXuLyDon as exc:
+        await db.log_event(
+            "order.action_result.mismatch",
+            actor=nguoi.get("ten_dang_nhap", "?"),
+            ref_id=body.cong_viec_id,
+            order_id=str(oid),
+            loai=body.loai,
+        )
+        raise HTTPException(409, str(exc)) from exc
+    except cong_viec_core.CongViecHong as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if not ket_qua.da_xu_ly_truoc:
+        event = (
+            "order.action_result.pending"
+            if ket_qua.ket_qua == "cho_doi_soat"
+            else "order.action_result.confirmed"
+        )
+        await db.log_event(
+            event,
+            actor=nguoi.get("ten_dang_nhap", "?"),
+            ref_id=body.cong_viec_id,
+            order_id=str(oid),
+            loai=body.loai,
+            ket_qua=ket_qua.ket_qua,
+        )
+    if ket_qua.ket_qua == "cho_doi_soat":
+        response.status_code = 202
+    return ket_qua.api_dict()
 
 
 @router.post("/orders/{order_id}/approve")
@@ -238,12 +351,148 @@ async def tao_van_don(order_id: str, body: VanDonIn | None = None,
         finally:
             await conn.execute("SELECT pg_advisory_unlock(hashtext('van_don:' || $1))", ma_don)
     if not kq.ok:
+        if kq.khong_ro_ket_qua:
+            st_yeu_cau = (kq.thong_tin_them or {}).get("trang_thai_yeu_cau") or "unknown_timeout"
+            ref_code = kq.client_order_code or (kq.thong_tin_them or {}).get("client_order_code") or ma_don
+            await db.log_event(
+                "shipping.tao_chua_ro_ket_qua",
+                ref_id=oid,
+                ma_don=ma_don,
+                hang=hang,
+                client_order_code=ref_code,
+                trang_thai=st_yeu_cau,
+                loi=(kq.loi or "")[:300],
+                boi=nguoi.get("ten_dang_nhap"),
+            )
+            raise HTTPException(
+                409,
+                f"{kq.loi or 'Chưa rõ kết quả tạo vận đơn.'} "
+                f"(trạng thái: {st_yeu_cau}, client_order_code: {ref_code})",
+            )
         await db.log_event("shipping.tao_that_bai", ref_id=oid, ma_don=ma_don, hang=hang,
                            loi=(kq.loi or "")[:300], boi=nguoi.get("ten_dang_nhap"))
         raise HTTPException(422, kq.loi or "Hãng từ chối tạo vận đơn.")
     return {"ok": True, "ma_don": ma_don, "ma_van_don": kq.ma_van_don, "hang": hang,
             "phi_van_chuyen": kq.phi_van_chuyen,
-            "da_co_san": bool((kq.thong_tin_them or {}).get("da_co_san"))}
+            "client_order_code": kq.client_order_code or ma_don,
+            "da_co_san": bool((kq.thong_tin_them or {}).get("da_co_san")),
+            "erp_sync": (kq.thong_tin_them or {}).get("erp_sync")}
+
+
+@router.get("/orders/{order_id}/shipping-reconciliation")
+async def xem_doi_soat_van_don(
+    order_id: str, _quyen: dict = Depends(can_quyen("don.doc"))
+) -> dict:
+    """Xem trạng thái yêu cầu tạo vận đơn và tiến trình đối soát với GHN."""
+    from agent.shipping.doi_soat import lay_trang_thai_doi_soat
+
+    oid = _uuid_don(order_id)
+    don = await db.fetchrow(
+        "SELECT id, ma_don, ma_van_don, don_vi_van_chuyen, trang_thai_giao_hang, "
+        "erp_ma_don, erp_van_chuyen_trang_thai "
+        "FROM orders WHERE id = $1",
+        oid,
+    )
+    if don is None:
+        raise HTTPException(404, "Không có đơn này")
+    chi_tiet = await lay_trang_thai_doi_soat(oid)
+    if chi_tiet is None:
+        chi_tiet = {
+            "order_id": str(oid),
+            "ma_don": don["ma_don"],
+            "provider": don.get("don_vi_van_chuyen") or "ghn",
+            "client_order_code": don["ma_don"],
+            "trang_thai": "confirmed" if don.get("ma_van_don") else "not_sent",
+            "ma_van_don": don.get("ma_van_don"),
+            "so_lan_gui": 1 if don.get("ma_van_don") else 0,
+            "so_lan_doi_soat": 0,
+            "ly_do_chan": None,
+            "loi_cuoi": None,
+            "cho_phep_tao_van_don": not bool(don.get("ma_van_don")),
+        }
+    return {
+        "order_id": str(oid),
+        "ma_don": don["ma_don"],
+        "ma_van_don": don.get("ma_van_don"),
+        "erp_van_chuyen_trang_thai": don.get("erp_van_chuyen_trang_thai"),
+        "reconciliation": chi_tiet,
+    }
+
+
+@router.post("/orders/{order_id}/shipping-reconcile")
+async def doi_soat_van_don_ngay(
+    order_id: str, nguoi: dict = Depends(can_quyen("don.sua"))
+) -> dict:
+    """Nhân viên yêu cầu kiểm tra lại ngay trên GHN bằng `client_order_code` ổn định."""
+    from agent.shipping.doi_soat import kiem_tra_lai_thu_cong
+
+    oid = _uuid_don(order_id)
+    kq = await kiem_tra_lai_thu_cong(
+        oid, actor=str(nguoi.get("ten_dang_nhap") or "staff")
+    )
+    if not kq.get("ok") and kq.get("status_code") in (404, 409):
+        raise HTTPException(int(kq["status_code"]), str(kq.get("loi") or "Không thể đối soát"))
+    return kq
+
+
+class XacNhanVanDonThuCongIn(BaseModel):
+    ket_qua: Literal["da_co_van_don", "chua_tao_tren_ghn"]
+    ma_van_don: str = Field("", max_length=64)
+    ghi_chu: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/orders/{order_id}/shipping-manual-confirm")
+async def xac_nhan_van_don_thu_cong(
+    order_id: str,
+    body: XacNhanVanDonThuCongIn,
+    nguoi: dict = Depends(can_quyen("don.sua")),
+) -> dict:
+    """
+    Nhân viên có quyền ghi nhận kết quả đối soát thủ công sau khi kiểm tra cổng GHN.
+    Không bao giờ tự động tạo lại nếu thiếu xác nhận này khi tự đối soát chưa kết luận.
+    """
+    from agent.shipping.doi_soat import xac_nhan_thu_cong
+
+    oid = _uuid_don(order_id)
+    kq = await xac_nhan_thu_cong(
+        oid,
+        ket_qua=body.ket_qua,
+        ma_van_don=body.ma_van_don,
+        ghi_chu=body.ghi_chu,
+        actor=str(nguoi.get("ten_dang_nhap") or "staff"),
+    )
+    if not kq.get("ok"):
+        raise HTTPException(
+            int(kq.get("status_code") or 409),
+            str(kq.get("loi") or "Không xác nhận được"),
+        )
+    return kq
+
+
+@router.post("/orders/{order_id}/shipping-erp-retry")
+async def thu_lai_dong_bo_van_don_erp(
+    order_id: str, nguoi: dict = Depends(can_quyen("don.sua"))
+) -> dict:
+    """Retry đúng bước ERP; endpoint này không gọi API tạo vận đơn GHN."""
+    from agent.erp.dong_bo_van_don import cho_thu_lai, dong_bo_ngay
+
+    oid = _uuid_don(order_id)
+    don = await db.fetchrow(
+        "SELECT id, ma_don, ma_van_don, erp_ma_don FROM orders WHERE id=$1", oid
+    )
+    if don is None:
+        raise HTTPException(404, "Không có đơn này")
+    if not don.get("ma_van_don"):
+        raise HTTPException(409, "Đơn chưa có mã vận đơn GHN")
+    if not don.get("erp_ma_don"):
+        raise HTTPException(409, "Đơn chưa liên kết Sales Order ERPNext")
+    if not await cho_thu_lai(don["ma_don"]):
+        raise HTTPException(409, "Đồng bộ ERP đang được worker khác xử lý")
+    await db.log_event(
+        "shipping.erp_sync_manual_retry", actor=nguoi.get("ten_dang_nhap", "?"),
+        ref_id=oid, ma_don=don["ma_don"], ma_van_don=don["ma_van_don"],
+    )
+    return await dong_bo_ngay(don["ma_don"])
 
 
 # Hãng có bộ nối thật. `mock` cố ý KHÔNG có ở đây — xem `tao_van_don`.

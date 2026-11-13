@@ -279,43 +279,128 @@ $("#healthrun")?.addEventListener("click", async () => {
 /* ---------------- tri thức ---------------- */
 
 async function loadDocs() {
-  const docs = await api("/knowledge");
+  if (!state.knowledgeAccounts) {
+    state.knowledgeAccounts = await api("/knowledge/accounts");
+    state.knowledgeAccount = state.knowledgeAccount || state.knowledgeAccounts[0]?.id || "";
+    const select = $("#knowledge-account");
+    select.innerHTML = state.knowledgeAccounts.map((account) =>
+      `<option value="${esc(account.id)}">${esc(account.name)} · ${esc(account.channel)}</option>`
+    ).join("");
+    select.value = state.knowledgeAccount;
+    select.addEventListener("change", () => {
+      state.knowledgeAccount = select.value;
+      $('#probeform [name="account_id"]').value = select.value;
+      loadDocs();
+    });
+  }
+  $('#probeform [name="account_id"]').value = state.knowledgeAccount || "";
+  if (!state.knowledgeAccount) {
+    $("#docs").innerHTML = '<p class="empty">Bạn chưa được cấp tài khoản kênh để quản lý tri thức.</p>';
+    return;
+  }
+  const docs = await api(`/knowledge?account_id=${encodeURIComponent(state.knowledgeAccount)}`);
   $("#c-trithuc").textContent = docs.length;
+  const canEdit = state.toiQuyen && state.toiQuyen.has("cau_hinh.sua");
   $("#docs").innerHTML = docs.length ? docs.map((d) => `<div class="row">
-      <span class="row__flag row__flag--auto"></span>
+      <span class="row__flag row__flag--${d.status === "published" ? "auto" : "assist"}"></span>
       <span class="row__body">
-        <span class="row__title">${esc(d.title)}</span>
-        <span class="row__sub">${d.chunks} đoạn · nguồn ${esc(d.source)}</span>
+        <span class="row__title">${esc(d.title)}
+          <span class="tag tag--${d.status === "published" ? "auto" : "assist"}">${d.status === "published" ? `Published v${d.published_version}` : "Draft"}</span>
+        </span>
+        <span class="row__sub">${d.chunks} đoạn · ${d.draft_version ? `Draft v${d.draft_version} · index ${esc(d.index_status)}` : "không có Draft"}${d.index_error ? ` · ${esc(d.index_error)}` : ""}</span>
       </span>
       <span class="row__side">
-        <button type="button" class="btn btn--sm btn--halt" data-doc="${d.id}">Xoá</button>
-        <span class="row__time">${clock(d.created_at)}</span>
+        <span class="row__nut">
+          ${canEdit ? `<button type="button" class="btn btn--sm" data-doc-edit="${d.id}">Sửa Draft</button>` : ""}
+          ${canEdit && d.draft_version_id && d.index_status === "ready" ? `<button type="button" class="btn btn--sm btn--go" data-doc-publish="${d.id}" data-version="${d.draft_version_id}">Publish v${d.draft_version}</button>` : ""}
+          <button type="button" class="btn btn--sm" data-doc-history="${d.id}" data-published="${d.published_version_id || ""}">Lịch sử</button>
+          ${canEdit ? `<button type="button" class="btn btn--sm btn--halt" data-doc-archive="${d.id}">Lưu trữ</button>` : ""}
+        </span>
+        <span class="row__time">${clock(d.updated_at)}</span>
       </span>
     </div>`).join("")
-    : '<p class="empty">Chưa nạp tài liệu nào. Agent sẽ không có căn cứ để trả lời.</p>';
+    : '<p class="empty">Chưa có tài liệu. Tài liệu mới sẽ ở Draft cho tới khi được Publish.</p>';
 
-  $$("[data-doc]").forEach((b) =>
+  $$('[data-doc-edit]').forEach((b) =>
     b.addEventListener("click", async () => {
-      await api("/knowledge/" + b.dataset.doc, { method: "DELETE" });
-      toast("Đã xoá tài liệu.");
-      loadDocs();
+      const d = await api(`/knowledge/${b.dataset.docEdit}?account_id=${encodeURIComponent(state.knowledgeAccount)}`);
+      const f = $("#docform");
+      f.elements.document_id.value = d.id;
+      f.elements.title.value = d.title;
+      f.elements.text.value = d.draft_content || d.published_content || "";
+      $("#docsave").textContent = d.draft_version ? `Lưu Draft v${d.draft_version}` : "Tạo Draft mới";
+      f.elements.title.focus();
     })
   );
+  $$('[data-doc-publish]').forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await api(`/knowledge/${b.dataset.docPublish}/publish`, {
+        method: "POST",
+        body: JSON.stringify({ account_id: state.knowledgeAccount, version_id: b.dataset.version }),
+      });
+      toast(r.already_published ? "Phiên bản này đã Published trước đó." : `Đã Publish v${r.version}.`);
+      await loadDocs();
+    } catch (e) { toast(e.message, true); }
+    finally { b.disabled = false; }
+  }));
+  $$('[data-doc-history]').forEach((b) => b.addEventListener("click", async () => {
+    const versions = await api(`/knowledge/${b.dataset.docHistory}/versions?account_id=${encodeURIComponent(state.knowledgeAccount)}`);
+    $("#docversions").innerHTML = `<h3 class="panel__head">Lịch sử phiên bản</h3>` + versions.map((v) => `<div class="row">
+      <span class="row__flag row__flag--${v.status === "published" ? "auto" : v.status === "draft" ? "assist" : "plain"}"></span>
+      <span class="row__body"><span class="row__title">v${v.version} · ${esc(v.status)}</span>
+        <span class="row__sub">${v.chunk_count} đoạn · index ${esc(v.index_status)} · ${esc(v.content).slice(0, 180)}</span></span>
+      <span class="row__side">${canEdit && ["published", "superseded"].includes(v.status) && v.id !== b.dataset.published
+        ? `<button type="button" class="btn btn--sm" data-doc-rollback="${b.dataset.docHistory}" data-version="${v.id}">Rollback từ v${v.version}</button>` : ""}
+        <span class="row__time">${clock(v.published_at || v.created_at)}</span></span>
+    </div>`).join("");
+    $$('[data-doc-rollback]').forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const r = await api(`/knowledge/${button.dataset.docRollback}/rollback`, {
+          method: "POST",
+          body: JSON.stringify({ account_id: state.knowledgeAccount, version_id: button.dataset.version }),
+        });
+        toast(`Đã rollback thành Published v${r.version}.`);
+        $("#docversions").innerHTML = "";
+        await loadDocs();
+      } catch (e) { toast(e.message, true); }
+      finally { button.disabled = false; }
+    }));
+  }));
+  $$('[data-doc-archive]').forEach((b) => b.addEventListener("click", async () => {
+    await api(`/knowledge/${b.dataset.docArchive}?account_id=${encodeURIComponent(state.knowledgeAccount)}`, { method: "DELETE" });
+    toast("Đã lưu trữ tài liệu; lịch sử vẫn được bảo toàn.");
+    await loadDocs();
+  }));
 }
 
 $("#docform").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const f = new FormData(ev.target);
-  toast("Đang tạo embedding…");
+  const documentId = f.get("document_id");
+  const button = $("#docsave");
+  button.disabled = true;
+  toast("Đang lưu Draft và tạo embedding…");
   try {
-    const r = await api("/knowledge", {
-      method: "POST",
-      body: JSON.stringify({ title: f.get("title"), text: f.get("text") }),
+    const r = await api(documentId ? `/knowledge/${documentId}/draft` : "/knowledge", {
+      method: documentId ? "PUT" : "POST",
+      body: JSON.stringify({ account_id: f.get("account_id"), title: f.get("title"), text: f.get("text") }),
     });
-    toast(`Đã nạp ${r.chunks} đoạn.`);
+    toast(`Đã lưu Draft v${r.version} (${r.chunks} đoạn). Chưa dùng trong RAG cho tới khi Publish.`);
     ev.target.reset();
-    loadDocs();
+    ev.target.elements.account_id.value = state.knowledgeAccount;
+    $("#docsave").textContent = "Lưu Draft";
+    await loadDocs();
   } catch (e) { toast(e.message, true); }
+  finally { button.disabled = false; }
+});
+
+$("#docnew").addEventListener("click", () => {
+  const f = $("#docform");
+  f.reset();
+  f.elements.account_id.value = state.knowledgeAccount || "";
+  $("#docsave").textContent = "Lưu Draft";
 });
 
 $("#probeform").addEventListener("submit", async (ev) => {
@@ -323,13 +408,13 @@ $("#probeform").addEventListener("submit", async (ev) => {
   const q = new FormData(ev.target).get("question");
   try {
     const r = await api("/knowledge/probe", {
-      method: "POST", body: JSON.stringify({ question: q }),
+      method: "POST", body: JSON.stringify({ account_id: state.knowledgeAccount, question: q }),
     });
     $("#probe").innerHTML = r.hits.length ? r.hits.map((h) => `<div class="row">
         <span class="row__flag row__flag--spend"></span>
         <span class="row__body">
-          <span class="row__title">${esc(h.doc)}</span>
-          <span class="row__sub">${esc(h.excerpt)}</span>
+          <span class="row__title">${esc(h.doc)} · v${h.version}</span>
+          <span class="row__sub">${esc(h.excerpt)} · chunk ${esc(h.chunk_id || "—")}</span>
         </span>
         <span class="row__side"><span class="probe__score">${h.score.toFixed(3)}</span></span>
       </div>`).join("")

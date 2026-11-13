@@ -968,3 +968,664 @@ bất cứ lúc nào. Dùng số phụ, và chuẩn bị Zalo OA làm đường 
 
 **Bốn kênh Meta và Zalo OA cần URL HTTPS công khai.** Chúng gọi *vào* hệ
 thống, khác Zalo cá nhân là sidecar chủ động nối *ra*.
+
+---
+
+# PHỤ LỤC HƯỚNG DẪN TRIỂN KHAI & MỞ RỘNG VẬN HÀNH
+
+---
+
+## Phụ lục 1: Đưa cửa hàng lên VPS từng bước
+
+# Đưa cửa hàng lên VPS — từng bước
+
+Tài liệu cho **chủ dự án**: chuyển cửa hàng đang chạy trên máy cá nhân lên
+một máy chủ thuê (VPS) để chạy 24/7. Toàn bộ quy trình đã được **diễn tập
+thật** ngày 24.10.2026 (Docker của máy cũ đóng vai VPS): dữ liệu thật
+198/198 tin, ERPNext khôi phục và xác thực bằng khoá API cũ, token
+Facebook/Zalo giải mã được, sao lưu + thử phục hồi chạy được.
+
+Mô hình kỹ thuật (nhiều cửa hàng một máy, mỗi cửa hàng một CSDL riêng):
+`docs/trien-khai-saas.md`. Tài liệu này chỉ đi đường ngắn nhất cho MỘT cửa hàng.
+
+Thời gian: ~1 giờ lần đầu, trong đó cửa hàng **gián đoạn khoảng 15 phút**
+(từ bước 5 tới hết bước 7).
+
+---
+
+## 0. Chuẩn bị (làm trước, không gián đoạn gì)
+
+**Thuê VPS** — cấu hình tối thiểu, vì ERPNext chạy chung máy:
+
+| | Tối thiểu | Ghi chú |
+|---|---|---|
+| Hệ điều hành | **Ubuntu 24.04 LTS** | script cài chỉ viết cho bản này |
+| CPU / RAM | 4 vCPU / **8 GB** | ERPNext ~2,5 GB, app + sidecar ~1 GB, Postgres |
+| Ổ đĩa | 80 GB SSD | sao lưu giữ 14 ngày nằm trên máy |
+| Vị trí | Việt Nam hoặc Singapore | gần khách, gần máy chủ Zalo |
+
+Nhà cung cấp nào cũng được miễn có Ubuntu 24.04 và địa chỉ IPv4 riêng.
+
+**Mua tên miền** (hoặc dùng tên miền sẵn có), định hai tên con, ví dụ:
+`cskh.blanica.vn` (dashboard + webhook) và `erp.blanica.vn` (ERPNext).
+
+**Tạo khoá Vertex AI** (Google Cloud Console, đúng dự án đang dùng — giá trị
+`GCP_PROJECT_ID` trong `.env` máy này):
+
+1. IAM & Admin → **Service Accounts** → Create service account, tên `cskh-vps`.
+2. Cấp vai trò **Vertex AI User**.
+3. Vào tài khoản vừa tạo → **Keys** → Add key → **JSON** → tải về.
+
+Tệp JSON này là chìa khoá trả tiền model — đừng gửi qua chat, đừng để trong
+thư mục dự án.
+
+**Trỏ DNS**: hai bản ghi **A** của hai tên con về IP của VPS. Trỏ sớm, vì DNS
+cần vài phút tới vài giờ để có hiệu lực; Caddy chỉ xin được chứng chỉ HTTPS
+khi tên miền đã trỏ đúng.
+
+---
+
+## 1. Cài máy chủ (một lệnh)
+
+SSH vào VPS bằng tài khoản root, rồi:
+
+```bash
+git clone <địa chỉ repo> /srv/cskh
+cd /srv/cskh
+bash trien_khai/cai_vps.sh --email-tls ban@vi-du.vn --erp erp.blanica.vn
+```
+
+Repo riêng tư thì `git clone` cần quyền: thêm **deploy key** (SSH, chỉ đọc)
+vào repo trên GitHub, hoặc dùng token cá nhân.
+
+Script cài Docker, tường lửa (chỉ mở SSH/80/443), swap, cập nhật bảo mật tự
+động, dựng image, chạy Postgres + Caddy + ERPNext, và đặt lịch: người canh
+5 phút một lần, sao lưu 2 giờ sáng, thử phục hồi mỗi Chủ nhật. Chạy lại
+script lần nữa là vô hại.
+
+Chờ ERPNext khởi động xong (~2 phút): `python3 -m scripts.cua_hang erp ping`.
+
+---
+
+## 2. Chép khoá Vertex lên VPS
+
+Từ máy này (PowerShell):
+
+```powershell
+scp C:\duong\dan\khoa-cskh-vps.json root@IP_VPS:/root/gcp.json
+```
+
+---
+
+## 3. Kiểm ERPNext máy này đang chạy
+
+Gói chuyển nhà mang theo dữ liệu ERPNext, nên nó phải đang chạy:
+
+```powershell
+curl.exe -s http://127.0.0.1:8080/api/method/ping
+```
+
+Phải ra `{"message":"pong"}`. Không ra thì bật: Docker Desktop →
+khởi động các container `erpnext-*`.
+
+---
+
+## 4. Diễn tập (tuỳ chọn, khuyên làm)
+
+Đóng gói NÓNG (máy này vẫn phục vụ khách), nhập lên VPS ở chế độ diễn tập —
+không gửi tin, không giữ phiên Zalo, không đụng khách:
+
+```powershell
+python -m scripts.chuyen_nha dong_goi
+```
+
+Chép gói lên VPS (bước 6), chạy lệnh bước 7 **thêm `--dien-tap`** và một mã
+khác (ví dụ `thu`), kiểm dashboard, rồi xoá: `python3 -m scripts.cua_hang xoa thu --xac-nhan thu`.
+
+---
+
+## 5. Đóng gói THẬT — bắt đầu gián đoạn
+
+```powershell
+python -m scripts.chuyen_nha dong_goi --dung-may-nay
+```
+
+Lệnh này **tắt task người canh và dừng app + sidecar trên máy này** trước
+khi gói — hai bản cùng chạy là khách nhận tin trả lời đôi, và Zalo đá văng
+một trong hai phiên. Ra hai tệp trong `chuyen_nha\`:
+
+- `goi-<thời điểm>.cskh` — gói đã mã hoá (CSDL, tệp, cấu hình, ERPNext)
+- `goi-<thời điểm>.mat-khau.txt` — mật khẩu của gói
+
+---
+
+## 6. Chép gói lên VPS — HAI lần riêng
+
+```powershell
+scp chuyen_nha\goi-XXXX.cskh root@IP_VPS:/root/
+scp chuyen_nha\goi-XXXX.mat-khau.txt root@IP_VPS:/root/
+```
+
+Gói chứa toàn bộ dữ liệu khách và khoá giải mã token Facebook/Zalo. Mật
+khẩu đi riêng để một tệp lạc không lộ được gì.
+
+---
+
+## 7. Nhập cửa hàng trên VPS
+
+```bash
+cd /srv/cskh
+python3 -m scripts.cua_hang nhap blanica --ten "BLANICA" --ten-mien cskh.blanica.vn \
+  --goi /root/goi-XXXX.cskh --mat-khau-tep /root/goi-XXXX.mat-khau.txt --gcp-khoa /root/gcp.json
+```
+
+Lệnh khôi phục ERPNext, CSDL, tệp dữ liệu, rồi **so số tin nhắn với gói** —
+thiếu dù một tin là dừng và dọn sạch, không bật cửa hàng dở dang. Xong ra
+dòng `Đã nhập cửa hàng blanica: … 198/198 tin …`.
+
+Mở `https://cskh.blanica.vn` — đăng nhập bằng **tài khoản cũ** (đi theo CSDL).
+
+---
+
+## 8. Khai lại địa chỉ ở Meta và Zalo — hết gián đoạn
+
+Tên miền đã cố định, nên đây là **lần khai cuối** (không còn cảnh tunnel
+đổi tên miền rồi kênh chết im lặng).
+
+**Meta (Facebook/Instagram)** — developers.facebook.com → ứng dụng của bạn:
+
+| Mục | Giá trị mới |
+|---|---|
+| Webhooks → Callback URL | `https://cskh.blanica.vn/webhook/native/meta` |
+| Verify token | giữ nguyên như cũ |
+| Facebook Login → Valid OAuth Redirect URIs | `https://cskh.blanica.vn/api/connect/meta/callback` |
+| App Domains | `cskh.blanica.vn` |
+
+**Zalo OA** — developers.zalo.me → ứng dụng:
+
+| Mục | Giá trị mới |
+|---|---|
+| Webhook URL | `https://cskh.blanica.vn/webhook/native/zalo-oa/<account_id>` — lệnh ở bước 9 in đúng địa chỉ |
+| Callback URL (đăng nhập OA) | `https://cskh.blanica.vn/api/connect/zalo-oa/callback` |
+
+Zalo cá nhân KHÔNG cần khai gì: phiên đăng nhập đi theo CSDL và tự khôi
+phục. Zalo đôi khi đòi đăng nhập lại khi thấy địa chỉ IP mới — khi đó vào
+dashboard → **Kết nối** → quét QR.
+
+---
+
+## 9. Kiểm — đừng tin, hãy chạy
+
+```bash
+docker exec cskh-blanica-app python -m scripts.san_sang
+```
+
+Mục nào `[CHẶN]` thì làm theo dòng `└─` ngay dưới nó. Sau đó nhắn thử một
+tin vào Trang Facebook, một tin vào Zalo OA, một tin vào Zalo cá nhân — và
+xem chúng hiện trong dashboard.
+
+---
+
+## 10. Dọn dẹp
+
+- Xoá gói và mật khẩu trên **cả hai máy** khi đã chạy ổn một tuần:
+  `rm /root/goi-*` trên VPS, xoá thư mục `chuyen_nha\` trên máy này.
+- Điền `CANH_GAC_WEBHOOK` trong `/srv/cskh/trien_khai/.env.nen` để nhận báo
+  động khi người canh phải bật lại container hay thử phục hồi hỏng.
+- **Chép sao lưu ra ngoài VPS**: thư mục `/srv/cskh/trien_khai/sao_luu/` và
+  `/srv/cskh/trien_khai/erp/sao_luu/` — sao lưu nằm cùng máy với CSDL không
+  cứu được khi máy hỏng.
+
+---
+
+## Quay lại máy cũ (nếu VPS có sự cố trong ngày đầu)
+
+Máy này vẫn giữ nguyên dữ liệu tới lúc đóng gói. Bật lại:
+
+```powershell
+schtasks /change /tn CanhGacMarketingAgent /enable
+```
+
+```powershell
+schtasks /run /tn CanhGacMarketingAgent
+```
+
+rồi dừng cửa hàng trên VPS (`python3 -m scripts.cua_hang tam_dung blanica`)
+và khai lại địa chỉ ở Meta/Zalo về tunnel. Tin nhắn khách gửi tới VPS trong
+khoảng ấy nằm trên VPS — đừng chạy hai nơi cùng lúc.
+
+---
+
+## Vận hành hằng ngày trên VPS
+
+| Việc | Lệnh (trong `/srv/cskh`) |
+|---|---|
+| Sức khoẻ | `python3 -m scripts.cua_hang kiem` |
+| Sẵn sàng chạy thật | `docker exec cskh-blanica-app python -m scripts.san_sang` |
+| Nhật ký app | `docker logs --tail 100 cskh-blanica-app` |
+| Sao lưu ngay | `python3 -m scripts.cua_hang sao_luu blanica` |
+| Thử phục hồi | `python3 -m scripts.cua_hang thu_phuc_hoi blanica` |
+| Cập nhật phiên bản | `git pull && docker build -t cskh-app:latest . && python3 -m scripts.cua_hang khoi_dong_lai blanica` |
+| Nhật ký người canh | `tail /var/log/cskh-canh.log` |
+
+---
+
+## Phụ lục 2: Triển khai SaaS Silo nhiều cửa hàng
+
+# Triển khai SaaS — nhiều cửa hàng trên một máy chủ
+
+Tài liệu này dành cho người VẬN HÀNH dịch vụ (bạn), không dành cho chủ cửa
+hàng. Mô hình và lý do chọn nó: `docs/superpowers/plans/2026-10-15-giai-doan-2-nen-saas-silo.md`.
+
+```
+Internet ──► Caddy (TLS tự động, *.ten-mien-cua-ban.vn)
+               ├─► cskh-shopa-app ──► Postgres: CSDL ch_shopa (role ch_shopa)
+               │      └─ cskh-shopa-sidecar (Zalo cá nhân)
+               └─► cskh-shopb-app ──► Postgres: CSDL ch_shopb (role ch_shopb)
+                      └─ cskh-shopb-sidecar
+```
+
+Mỗi cửa hàng: CSDL + role riêng (không phải superuser), container riêng,
+volume dữ liệu riêng, bí mật riêng. Một cửa hàng hỏng không kéo cửa hàng
+khác; xoá một cửa hàng là xoá một CSDL và một volume.
+
+> **Chuyển cửa hàng đang chạy trên máy cá nhân lên VPS?** Đọc
+> `docs/len-vps.md` — đường ngắn nhất, đã diễn tập thật, có một lệnh cài máy
+> chủ (`trien_khai/cai_vps.sh`) và một lệnh chuyển nhà (`chuyen_nha` → `cua_hang nhap`).
+
+## 1. Máy chủ
+
+- Ubuntu 24.04, **4 vCPU / 16 GB RAM** chở được khoảng 20–30 cửa hàng
+  (app ~400 MB + sidecar ~150 MB mỗi cửa hàng, Postgres dùng chung).
+- Mở cổng 80 và 443. Không mở 5432 — Postgres chỉ nghe trong mạng Docker.
+- Cài Docker Engine + Compose plugin theo tài liệu chính thức của Docker.
+- Trỏ DNS **wildcard** `*.ten-mien-cua-ban.vn` về IP máy chủ (bản ghi A).
+
+## 2. Dựng lớp nền (một lần)
+
+```bash
+git clone <repo> cskh && cd cskh
+python3 -m scripts.cua_hang khoi_tao --email-tls ban@ten-mien-cua-ban.vn
+docker build -t cskh-app:latest .
+docker build -t cskh-sidecar:latest connectors/zalo-personal-sidecar
+docker compose -f trien_khai/docker-compose.nen.yml --env-file trien_khai/.env.nen up -d
+```
+
+`khoi_tao` sinh `trien_khai/.env.nen` (mật khẩu superuser Postgres) và
+Caddyfile rỗng. Tệp này KHÔNG lên git và KHÔNG có app cửa hàng nào đọc nó.
+
+## 3. Thêm một cửa hàng
+
+```bash
+python3 -m scripts.cua_hang tao shopa --ten "Shop A" --ten-mien shopa.ten-mien-cua-ban.vn
+```
+
+Lệnh này: tạo CSDL `ch_shopa` + role riêng → sinh `.env` với bí mật riêng →
+chạy app + sidecar → chờ app khoẻ → tạo quản trị viên đầu tiên → thêm tên
+miền vào Caddy (TLS tự cấp trong vài giây).
+
+Mật khẩu quản trị viên đầu tiên **không in ra màn hình**: nằm ở
+`trien_khai/cua_hang/shopa/quan_tri_lan_dau.txt`. Gửi cho chủ cửa hàng qua
+kênh an toàn, dặn đổi mật khẩu và bật **bảo mật 2 bước** ngay lần đầu.
+
+Sau đó trong dashboard của cửa hàng:
+1. **Cấu hình → Model**: dán khoá Gemini/Anthropic của cửa hàng.
+2. **Kết nối**: nối Trang Facebook (đăng nhập Meta), Zalo OA, Zalo cá nhân (quét QR).
+3. Khai URL webhook ở Meta/Zalo bằng tên miền của cửa hàng.
+
+## 4. Vận hành hằng ngày
+
+| Việc | Lệnh |
+|---|---|
+| Danh sách cửa hàng | `python3 -m scripts.cua_hang liet_ke` |
+| Kiểm sức khoẻ (mã thoát ≠ 0 nếu hỏng) | `python3 -m scripts.cua_hang kiem` |
+| Người canh: bật lại container chết/treo (cron 5 phút) | `python3 -m scripts.cua_hang kiem --sua` |
+| Thử phục hồi bản sao lưu mới nhất vào CSDL tạm | `python3 -m scripts.cua_hang thu_phuc_hoi shopa` · `--tat-ca` |
+| Nhập cửa hàng từ gói chuyển nhà | `python3 -m scripts.cua_hang nhap shopa --ten … --ten-mien … --goi … --mat-khau-tep …` |
+| Vertex AI bằng service account | thêm `--gcp-khoa khoa.json` vào `tao` / `nhap` |
+| ERPNext dùng chung | `python3 -m scripts.cua_hang erp khoi_tao --ten-mien erp.…` · `erp chay` · `erp sao_luu` · `erp ping` |
+| Tạm dừng / chạy lại | `python3 -m scripts.cua_hang tam_dung shopa` · `chay shopa` |
+| Khởi động lại sau khi sửa `.env` | `python3 -m scripts.cua_hang khoi_dong_lai shopa` |
+| Đổi gói (dung_thu, co_ban, chuyen_nghiep, khong_gioi_han) | `python3 -m scripts.cua_hang goi shopa co_ban` |
+| Sao lưu một / tất cả | `python3 -m scripts.cua_hang sao_luu shopa` · `sao_luu --tat-ca` |
+| Xoá hẳn (sao lưu trước) | `python3 -m scripts.cua_hang xoa shopa --xac-nhan shopa` |
+
+**Lịch sao lưu** (crontab, 2 giờ sáng): `0 2 * * * cd /srv/cskh && python3 -m scripts.cua_hang sao_luu --tat-ca`.
+Chép thư mục `trien_khai/sao_luu/` ra NGOÀI máy chủ (ổ khác, dịch vụ lưu trữ) —
+bản sao lưu nằm cùng máy với CSDL không cứu được khi máy hỏng.
+
+**Khôi phục** một cửa hàng: tạm dừng cửa hàng, rồi
+`docker exec -i cskh-postgres pg_restore -U quan_tri -d ch_shopa --clean < tep.dump`,
+rồi `chay shopa`.
+
+## 5. Cập nhật phiên bản
+
+```bash
+git pull
+docker build -t cskh-app:latest .
+python3 -m scripts.cua_hang khoi_dong_lai shopa      # thử MỘT cửa hàng trước
+python3 -m scripts.cua_hang kiem
+```
+
+Migration chạy tự động khi app khởi động, trên CSDL của từng cửa hàng, bằng
+role của chính cửa hàng ấy (không cần superuser). Cửa hàng đầu lên khoẻ rồi
+mới khởi động lại các cửa hàng còn lại.
+
+## 6. Quan sát
+
+- `SENTRY_DSN` trong `.env` của cửa hàng → lỗi về Sentry hoặc GlitchTip tự host.
+- `METRICS_TOKEN` → `/metrics` cho Prometheus: outbox theo trạng thái (cảnh
+  báo khi `dead` > 0), tin vào/ra, hội thoại chờ người, tuổi nhịp đập từng
+  vòng nền, chi phí model. Xem `agent/quan_sat.py`.
+
+## 7. Giới hạn đã biết
+
+- **Một bản app mỗi cửa hàng.** Vòng nền (outbox, lịch đăng bài, giữ phiên
+  Zalo) không chịu được hai bản cùng chạy. Muốn chịu tải hơn: tăng CPU/RAM
+  cho container, không tăng số bản.
+- **Zalo cá nhân** dùng API không chính thức (zca-js) — có thể bị Zalo khoá
+  tài khoản. Nói rõ với chủ cửa hàng; ưu tiên Zalo OA.
+- **Meta App Review**: cửa hàng ngoài chủ app chỉ nối được Trang sau khi Meta
+  duyệt `pages_messaging`, `pages_manage_engagement`, Human Agent.
+- Trên vài trăm cửa hàng, chi phí bộ nhớ của mô hình silo lớn dần — lúc đó
+  cân nhắc mô hình pool (một CSDL + RLS), đã có bản khảo sát làm đầu vào.
+
+---
+
+## Phụ lục 3: Hướng dẫn thiết lập NextERP (ERPNext) cho Developer
+
+# 📘 HƯỚNG DẪN THIẾT LẬP PHÂN HỆ NEXTERP (ERPNEXT) CHO DEVELOPER
+
+Tài liệu này hướng dẫn chi tiết từng bước cho các lập trình viên (Developers) khi clone dự án về máy, muốn cài đặt, khởi chạy và cấu hình toàn bộ phân hệ Quản trị Doanh nghiệp **NextERP (ERPNext v15)** kết nối trực tiếp với AI Agent.
+
+---
+
+## 🏗️ 1. Tổng quan Kiến trúc
+
+Phân hệ ERP được đóng gói hoàn chỉnh trong Docker Compose ([`docker-compose.erpnext.yml`](../docker-compose.erpnext.yml)):
+
+* 🌐 **Cổng Web App & REST API:** `http://localhost:8080` (hoặc qua Nginx proxy).
+* 🗄️ **Cơ sở dữ liệu:** MariaDB 10.6 (`erpnext-db`).
+* ⚡ **Bộ nhớ đệm & Hàng đợi:** Redis Cache & Redis Queue (`erpnext-redis-cache`, `erpnext-redis-queue`).
+* 📦 **Core Engine:** Frappe Framework / ERPNext v15 (`erpnext-web`).
+
+```mermaid
+graph LR
+    Agent[AI Agent / FastApi :8000] -->|REST API :8080| Proxy[Nginx Proxy :8080]
+    Proxy --> Web[ERPNext Web App]
+    Web --> DB[(MariaDB 10.6)]
+    Web --> Redis[(Redis Cache/Queue)]
+```
+
+---
+
+## ⚙️ 2. Yêu cầu Hệ thống
+
+* **Docker & Docker Compose** (Docker Desktop đã được cài đặt và đang chạy).
+* **Python 3.11+** và môi trường ảo `.venv` của dự án.
+* Dung lượng RAM trống tối thiểu: **2GB - 4GB**.
+
+---
+
+## 🚀 3. Các bước Cài đặt & Thiết lập
+
+### Bước 1: Khởi động cụm Container Docker NextERP
+
+Tại thư mục gốc của dự án, chạy lệnh:
+
+```bash
+# Khởi động toàn bộ 4 container của NextERP chạy ngầm
+docker compose -f docker-compose.erpnext.yml up -d
+```
+
+Kiểm tra trạng thái các container:
+```bash
+docker compose -f docker-compose.erpnext.yml ps
+```
+> Cả 5 service (`erpnext-proxy`, `erpnext-web`, `erpnext-db`,
+> `erpnext-redis-cache`, `erpnext-redis-queue`) phải ở trạng thái **`Up`**.
+
+**Nhưng `Up` CHƯA phải sẵn sàng.** Mở `http://localhost:8080` lúc này sẽ ra
+**404** — container chạy nhưng chưa có *site* nào bên trong. Đó là bước 1b.
+
+---
+
+### Bước 1b: Tạo site (chỉ làm MỘT LẦN, trên máy mới)
+
+Compose chỉ dựng tiến trình; nó không tạo cơ sở dữ liệu của ERPNext. Thiếu
+bước này thì mọi bước sau đều thất bại với 404, và log của `erpnext-web`
+trông hoàn toàn bình thường — gunicorn vẫn báo "Listening at 0.0.0.0:8000".
+Đó là lý do bước này dễ bị bỏ qua nhất.
+
+Trỏ ERPNext tới CSDL và Redis trong cùng mạng docker:
+
+```bash
+docker exec erpnext-web bench set-config -g db_host erpnext-db
+docker exec erpnext-web bench set-config -g redis_cache "redis://erpnext-redis-cache:6379"
+docker exec erpnext-web bench set-config -g redis_queue "redis://erpnext-redis-queue:6379"
+docker exec erpnext-web bench set-config -g redis_socketio "redis://erpnext-redis-queue:6379"
+```
+
+Rồi tạo site. Mất vài phút:
+
+```bash
+docker exec erpnext-web bench new-site localhost --mariadb-root-password erpnext_root_password --admin-password admin --install-app erpnext --no-mariadb-socket
+```
+
+> **Tên site phải là `localhost`.** `nginx.erpnext.conf` gửi header
+> `X-Frappe-Site-Name localhost`; đặt tên khác thì nginx tìm không ra site
+> và vẫn trả 404.
+
+Trên Windows dùng Git Bash, thêm `MSYS_NO_PATHCONV=1` vào đầu mỗi lệnh
+`docker exec` — nếu không, Git Bash bẻ `/home/frappe/...` thành đường dẫn
+Windows và lệnh báo "No such file or directory" một cách khó hiểu.
+
+---
+
+### Bước 2: Đăng nhập vào Giao diện NextERP
+
+1. Mở trình duyệt và truy cập: **[http://localhost:8080](http://localhost:8080)** (hoặc `http://localhost:8080/app`).
+2. Thông tin đăng nhập mặc định:
+   * **Username:** `Administrator`
+   * **Password:** `admin` (hoặc mật khẩu bạn đã cấu hình lúc setup site).
+   *(Nếu hệ thống yêu cầu đổi mật khẩu lần đầu, hãy nhập mật khẩu mới và ghi nhớ lại).*
+
+---
+
+### Bước 3–4 làm tự động (khuyên dùng)
+
+Hai bước dưới đây có thể chạy bằng một lệnh. Nó đăng nhập, sinh khoá API,
+hỏi ERPNext xem có những kho và bảng giá nào, rồi ghi thẳng vào `.env`:
+
+```bash
+python -m scripts.noi_erpnext --xem     # chỉ xem, không sinh khoá
+python -m scripts.noi_erpnext           # làm thật
+```
+
+**Khoá không bao giờ được in ra màn hình** — in ra là để lại bí mật trong
+lịch sử terminal và trong ảnh chụp màn hình. Cùng quy ước với
+`scripts/sinh_token.py`.
+
+Nếu ERPNext có **nhiều hơn một** kho hoặc bảng giá, script liệt kê ra rồi
+**dừng** thay vì tự chọn. Đoán bừa một kho không gây lỗi — nó sai **im
+lặng**, và triệu chứng duy nhất là tồn kho lệch mãi về sau.
+
+Muốn làm tay thì đọc tiếp hai bước dưới.
+
+---
+
+### Bước 3: Tạo API Key & API Secret để AI Agent kết nối
+
+Để AI Agent có thể tự động đọc tồn kho và tạo Đơn bán hàng (Sales Order), bạn cần cấp mã API Token cho tài khoản `Administrator`:
+
+1. Trên thanh tìm kiếm ở đầu trang NextERP, gõ: **`User List`** (hoặc truy cập `http://localhost:8080/app/user`).
+2. Bấm chọn tài khoản **`Administrator`**.
+3. Cuộn chuột xuống phần **API Access** (Truy cập API).
+4. Bấm vào nút **`Generate Keys`** (Tạo khóa).
+5. NextERP sẽ hiển thị một popup chứa:
+   * **API Key:** `e.g. 5a1b2c3d4e5f...`
+   * **API Secret:** `e.g. 9z8y7x6w5v4u...` *(Lưu ý: API Secret chỉ hiển thị duy nhất 1 lần, hãy copy lại ngay)*.
+
+---
+
+### Bước 4: Cấu hình biến môi trường `.env`
+
+Mở file [`.env`](../.env) ở thư mục gốc dự án và điền thông tin vừa tạo:
+
+```env
+# ==========================================
+# CẤU HÌNH NEXTERP / ERPNEXT
+# ==========================================
+ERP_LOAI=erpnext
+ERPNEXT_URL=http://localhost:8080
+ERPNEXT_API_KEY=dán_api_key_vào_đây
+ERPNEXT_API_SECRET=dán_api_secret_vào_đây
+
+# HAI TRƯỜNG DƯỚI ĐÂY LÀ BẮT BUỘC — adapter NỔ ngay lúc khởi động nếu thiếu.
+#
+# Thiếu mã kho thì lời gọi `Bin` trả về tồn của MỌI kho cộng lại: một con số
+# trông hoàn toàn hợp lý và sai, không ai phát hiện cho tới lúc giao hàng từ
+# kho không có hàng. Thiếu bảng giá thì mỗi sản phẩm có thể trả nhiều mức giá.
+#
+# Tên phải khớp CHÍNH XÁC với tên trong ERPNext (mục Kho và Bảng giá).
+ERP_MA_KHO=Kho Chính - AS
+ERP_PRICELIST=Bảng giá bán lẻ
+```
+
+---
+
+### Bước 5: Quản lý & Nhập/Xuất Sản phẩm 100% trên Giao diện Web NextERP
+
+Người quản lý hoặc Dev có thể quản lý sản phẩm hoàn toàn trực quan qua giao diện web:
+
+1. **Xem danh sách sản phẩm:**
+   * Truy cập: **[http://localhost:8080/app/item](http://localhost:8080/app/item)**.
+2. **Xuất danh sách sản phẩm ra Excel / CSV:**
+   * Tích chọn các sản phẩm (hoặc tích chọn tất cả ở ô trên cùng).
+   * Nhìn lên góc trên bên phải, bấm nút **`Thao tác` (Actions)** hoặc **`...`** ➔ Chọn **`Xuất dữ liệu` (Export)** ➔ Chọn định dạng **Excel / CSV** ➔ Bấm **`Tải xuống` (Download)**.
+3. **Nhập dữ liệu hàng loạt (Data Import):**
+   * Truy cập: **[http://localhost:8080/app/data-import](http://localhost:8080/app/data-import)**.
+   * Chọn Doctype là `Item` ➔ Tải file mẫu Excel về điền thông tin và tải lên để hệ thống tự động nạp hàng trăm sản phẩm.
+
+---
+
+## ⚠️ Điều phải biết trước khi nối: ERP chỉ cấp **nửa** dữ liệu
+
+ERPNext cho mã, tên, nhóm hàng, dung tích, **giá** và **tồn kho**. Nó
+**không** cấp — và sẽ không bao giờ cấp — chín trường làm nên chất tư vấn:
+loại da phù hợp, vấn đề hỗ trợ, thành phần chính, cách dùng, pH, số công bố…
+
+Chín trường ấy ở lại `data/catalog.json`. Đây là thiết kế có chủ ý, ghi rõ
+trong `agent/erp/ho_so.py`: ERP kế toán không phải chỗ chứa văn bản tư vấn,
+và để chúng ở ngoài thì **đổi ERP không mất gì**.
+
+Hệ quả cụ thể khi bạn nối ERPNext:
+
+| Tình huống | Agent làm gì |
+|---|---|
+| SKU **có** hồ sơ tư vấn trong `catalog.json` | Tư vấn bình thường |
+| SKU **chưa có** hồ sơ tư vấn | **Bị loại khỏi `goi_y_san_pham`**, và cổng ghi `erp.thieu_ho_so` vào nhật ký |
+| Khách hỏi đích danh SKU chưa có hồ sơ | Vẫn trả giá và tồn (số thật), kèm cảnh báo cấm agent suy đoán công dụng |
+
+Nghĩa là nối ERPNext với 200 SKU mà chưa viết hồ sơ tư vấn nào thì agent sẽ
+**không gợi ý được gì cả**. Nó không hỏng — nó đang từ chối khuyên khi không
+có căn cứ, đúng nguyên tắc của hệ thống.
+
+---
+
+## 🧪 4. Kiểm tra Kết nối & Kiểm thử Tự động
+
+### 1. Kiểm kết nối ERP:
+```bash
+python -m scripts.thu_erp
+```
+
+Lệnh này đọc `ERP_LOAI` rồi thử đúng đường mà agent sẽ đi: xác thực, lấy
+danh mục, hỏi giá và tồn của một mã. Còn chữ `CHẶN` nào thì agent chưa dùng
+được ERP.
+
+### 2. Nạp danh mục lên ERPNext:
+```bash
+python -m scripts.nap_san_pham_erp --thu    # xem trước, KHÔNG ghi gì
+python -m scripts.nap_san_pham_erp          # ghi thật
+```
+
+Chế độ `--thu` chạy được cả khi chưa cấu hình gì — nó không kết nối đi đâu,
+chỉ in ra sẽ đẩy những gì.
+
+Script **từ chối chạy** khi `data/catalog.json` còn cờ `du_lieu_mau: true`.
+Đẩy danh mục mẫu lên ERP thật là đưa hàng không có thật vào hệ thống bán
+hàng, rồi có người lên đơn từ đó.
+
+### 2. Kiểm tra trên Giao diện Web:
+* Truy cập: **[http://localhost:8080/app/item](http://localhost:8080/app/item)** để xem 13 sản phẩm Blanica đã có mặt trên hệ thống.
+* Truy cập: **[http://localhost:8080/app/sales-order](http://localhost:8080/app/sales-order)** để xem các đơn hàng do AI Agent tự động chốt từ Zalo đổ về.
+
+---
+
+## 🛠️ 5. Các lệnh Quản lý Docker thường dùng
+
+| Thao tác | Câu lệnh Terminal |
+| :--- | :--- |
+| **Khởi động NextERP** | `docker compose -f docker-compose.erpnext.yml up -d` |
+| **Tạm dừng NextERP** | `docker compose -f docker-compose.erpnext.yml stop` |
+| **Bật lại sau khi stop** | `docker compose -f docker-compose.erpnext.yml start` |
+| **Xem log container Web** | `docker logs -f erpnext-web` |
+| **Xóa sạch và tạo lại từ đầu** | `docker compose -f docker-compose.erpnext.yml down -v` |
+
+---
+
+## ❓ 6. Xử lý sự cố thường gặp (Troubleshooting)
+
+### 1. Bị trùng cổng `8080`:
+Nếu máy bạn đã có ứng dụng khác chạy cổng `8080`, hãy mở file [`docker-compose.erpnext.yml`](../docker-compose.erpnext.yml) sửa:
+```yaml
+ports:
+  - "8085:80"  # Đổi thành 8085
+```
+Sau đó cập nhật trong `.env`: `ERPNEXT_URL=http://localhost:8085`.
+
+### 2. Quên mật khẩu `Administrator` trong Docker:
+Bạn có thể đặt lại mật khẩu Admin trực tiếp qua lệnh:
+```bash
+docker exec -it erpnext-web bench --site localhost set-admin-password mat_khau_moi_123
+```
+
+### 3. Trang NextERP bị mất CSS (Vỡ giao diện HTML thô)
+
+**Đã sửa trong `docker-compose.erpnext.yml` — mục này giữ lại để giải thích
+nguyên nhân, phòng khi ai đó sửa file compose và làm hỏng lại.**
+
+Nguyên nhân là **hai tầng symlink** mà nginx không đi theo được:
+
+```
+sites/assets   → /home/frappe/frappe-bench/assets           (tầng 1)
+assets/frappe  → .../apps/frappe/frappe/public              (tầng 2)
+assets/erpnext → .../apps/erpnext/erpnext/public            (tầng 2)
+```
+
+Cả ba là **đường dẫn tuyệt đối** chỉ tồn tại trong container `erpnext-web`.
+Nginx mount `sites` rồi đi theo symlink vào hư không → mọi tệp tĩnh **404**
+→ trang hiện ra dạng HTML thô, không CSS, ảnh vỡ.
+
+Backend cũng **không** phục vụ được assets ở chế độ production (đã đo: 404),
+nên proxy `/assets/` sang `erpnext-web` cũng không cứu được.
+
+Cách sửa: cho `assets` và `apps` mỗi thứ một volume riêng, mount vào nginx
+**ở đúng đường dẫn tuyệt đối** mà symlink trỏ tới. Docker tự chép nội dung
+từ ảnh vào volume rỗng ở lần mount đầu, nên không cần lệnh thủ công nào.
+
+> **Vì sao không dùng cách chép tay** `cp -rL ... sites/assets`: entrypoint
+> của ảnh tạo LẠI symlink mỗi lần khởi động — dòng "Linking fresh assets to
+> volume" trong log `erpnext-web`. Bản vá ấy mất sau mỗi
+> `docker compose restart`, và không có gì nhắc người ta chạy lại.
+
+Kiểm nhanh — phải ra `200`:
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" http://localhost:8080/assets/js/frappe-web.bundle.js
+```
+
+---
+
+🎉 **Chúc bạn thiết lập thành công! Mọi thắc mắc vui lòng kiểm tra thêm tài liệu kiến trúc tại [`docs/kien-truc.md`](kien-truc.md).**

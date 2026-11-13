@@ -89,6 +89,10 @@ data/.canh_gac_ngoai
 data/canh_gac_ngoai.log*
 
 # --- Thư mục sinh ra khi chạy, KHÔNG bao giờ vào repo ---
+scratch/
+data/cache/
+all_code.txt
+
 # node_modules của sidecar có hàng nghìn file. Lỡ commit một lần là lịch sử
 # repo phình vĩnh viễn: git không quên được, và `git rm` sau đó chỉ thêm một
 # commit nữa chứ không xoá được quá khứ.

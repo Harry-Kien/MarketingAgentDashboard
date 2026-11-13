@@ -276,7 +276,7 @@ def test_mac_dinh_la_mock_khong_goi_mang():
     """Đổi sang `ghn` là hành động tốn tiền thật — phải do người chọn."""
     from agent.config import Settings
 
-    assert Settings().shipping_provider == "mock"
+    assert Settings(_env_file=None).shipping_provider == "mock"
 
 
 def test_khong_doi_bo_nao_AI_sang_openai():

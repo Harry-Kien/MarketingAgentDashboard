@@ -99,7 +99,7 @@ def test_khoa_ngoai_danh_muc_bi_tu_choi(kho):
 
 def test_provider_ngoai_danh_sach_bi_tu_choi(kho):
     with pytest.raises(cd.KhoaKhongHopLe):
-        asyncio.run(cd.dat("LLM_PROVIDER", "openai", sua_boi="admin"))
+        asyncio.run(cd.dat("LLM_PROVIDER", "deepseek", sua_boi="admin"))
 
 
 def test_model_phai_co_trong_bang_gia(kho):

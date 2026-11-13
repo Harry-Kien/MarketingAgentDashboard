@@ -423,6 +423,19 @@ async def vong_dong_bo_loop() -> None:
                     error=f"{type(exc).__name__}: {exc}"[:200],
                 )
 
+            # GHN đã tạo mã là một giao dịch độc lập. Quét riêng phần ghi
+            # vận đơn sang ERP để lỗi ERP không bao giờ gọi tạo GHN lần hai.
+            if settings.erp_loai == "erpnext":
+                try:
+                    from agent.erp.dong_bo_van_don import quet_dong_bo_van_don
+
+                    await quet_dong_bo_van_don()
+                except Exception as exc:  # noqa: BLE001
+                    await db.log_event(
+                        "shipping.erp_sync_loop_failed",
+                        error=f"{type(exc).__name__}: {exc}"[:200],
+                    )
+
         # Đối soát thưa hơn nhiều lần đẩy đơn: nó quét cả danh mục, và tồn
         # kho lệch là chuyện của giờ chứ không phải của phút.
         if settings.erp_loai != "tep" and lan % DOI_SOAT_MOI_LAN == 1:

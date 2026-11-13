@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import hmac
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from agent import db
 from agent.config import settings
 from agent.core import cong_viec, kho
+from . import doi_soat
 from .base import BaseShippingProvider
 from .ghn import GHNShippingProvider
 from .ghtk import GHTKShippingProvider
@@ -88,6 +90,33 @@ async def _bao_khach(conversation_id, text: str, khoa: str) -> None:
         )
 
 
+async def _dong_bo_erp_sau_luu(
+    order: dict[str, Any], result: CreateWaybillResult
+) -> None:
+    """Thử riêng bước ERP; lỗi ERP không được làm mất kết quả GHN."""
+    if not order.get("erp_ma_don"):
+        result.thong_tin_them["erp_sync"] = {
+            "ok": False, "trang_thai": "not_required",
+            "loi": "Đơn chưa có liên kết Sales Order ERPNext",
+        }
+        return
+    from agent.erp.dong_bo_van_don import dong_bo_ngay
+
+    try:
+        result.thong_tin_them["erp_sync"] = await dong_bo_ngay(
+            str(order["ma_don"])
+        )
+    except Exception as exc:  # noqa: BLE001 - mã GHN vẫn phải được trả về
+        result.thong_tin_them["erp_sync"] = {
+            "ok": False, "trang_thai": "retry",
+            "loi": f"{type(exc).__name__}: {exc}"[:300],
+        }
+        await db.log_event(
+            "shipping.erp_sync_dispatch_failed", ref_id=order.get("id"),
+            ma_don=order.get("ma_don"), ma_van_don=result.ma_van_don,
+        )
+
+
 async def tao_van_don_cho_don(
     ma_don: str, provider_name: str | None = None
 ) -> CreateWaybillResult:
@@ -128,7 +157,7 @@ async def tao_van_don_cho_don(
     # --- CHỐT 4: Chống tạo trùng vận đơn (Idempotency) ---
     ma_van_don_cu = str(order.get("ma_van_don") or "").strip()
     if ma_van_don_cu:
-        return CreateWaybillResult(
+        result = CreateWaybillResult(
             ok=True,
             ma_van_don=ma_van_don_cu,
             don_vi=str(order.get("don_vi_van_chuyen") or "ghn"),
@@ -137,6 +166,16 @@ async def tao_van_don_cho_don(
             trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
             thong_tin_them={"da_co_san": True, "ghi_chu": "Vận đơn đã được tạo trước đó."},
         )
+        # Retry RIÊNG ERP, không gọi hãng lần nữa.
+        if order.get("erp_ma_don") and order.get("erp_van_chuyen_trang_thai") != "synced":
+            await db.execute(
+                "UPDATE orders SET erp_van_chuyen_trang_thai='pending', "
+                "erp_van_chuyen_thu_lai_luc=now() WHERE id=$1 "
+                "AND erp_van_chuyen_trang_thai <> 'processing'",
+                order["id"],
+            )
+        await _dong_bo_erp_sau_luu(order, result)
+        return result
 
     # --- CHỐT 2: Đầy đủ và chuẩn hóa thông tin giao nhận ---
     khach_ten = str(order.get("khach_ten") or "").strip()
@@ -195,6 +234,185 @@ async def tao_van_don_cho_don(
         )
 
     tong_tien = int(order.get("tong_tien") or 0)
+    provider = get_provider(provider_name)
+
+    # --- CHỐT 5 (DEV-08): Yêu cầu tạo vận đơn nguyên tử & mã tham chiếu ổn định ---
+    # Không giữ transaction PostgreSQL trong suốt lúc gọi HTTP ra GHN.
+    claim_token = uuid.uuid4().hex
+    claimed_client_code = ma_don
+    khoa_bo_qua: CreateWaybillResult | None = None
+    recover_existing: dict[str, Any] | None = None
+
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            order_locked = await conn.fetchrow(
+                "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+                order["id"],
+            )
+            if not order_locked:
+                return CreateWaybillResult(
+                    ok=False, loi=f"Không tìm thấy đơn hàng mã '{ma_don}' trong CSDL."
+                )
+            ma_vd_moi = str(order_locked.get("ma_van_don") or "").strip()
+            if ma_vd_moi:
+                khoa_bo_qua = CreateWaybillResult(
+                    ok=True,
+                    ma_van_don=ma_vd_moi,
+                    don_vi=str(order_locked.get("don_vi_van_chuyen") or provider.code),
+                    phi_van_chuyen=int(order_locked.get("phi_van_chuyen") or 0),
+                    ngay_du_kien_giao=order_locked.get("ngay_du_kien_giao"),
+                    trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+                    thong_tin_them={"da_co_san": True, "ghi_chu": "Vận đơn đã được tạo trước đó."},
+                )
+            else:
+                await conn.execute(
+                    """
+                    INSERT INTO shipping_waybill_requests (
+                        order_id, ma_don, provider, client_order_code, trang_thai
+                    )
+                    VALUES ($1, $2, $3, $4, 'not_sent')
+                    ON CONFLICT (order_id) DO NOTHING
+                    """,
+                    order["id"],
+                    ma_don,
+                    provider.code,
+                    ma_don,
+                )
+                req_row = await conn.fetchrow(
+                    "SELECT * FROM shipping_waybill_requests WHERE order_id = $1 FOR UPDATE",
+                    order["id"],
+                )
+                claimed_client_code = str(req_row["client_order_code"])
+                st_req = str(req_row["trang_thai"])
+                now_db = datetime.now(timezone.utc)
+
+                if st_req in ("confirmed", "reconciled") and str(req_row.get("ma_van_don") or "").strip():
+                    recover_existing = dict(req_row)
+                elif st_req == "sending":
+                    khoa_luc = req_row.get("khoa_luc")
+                    da_qua_han = (
+                        khoa_luc is not None
+                        and (now_db - khoa_luc).total_seconds() >= doi_soat.KHOA_GUI_QUA_HAN_GIAY
+                    )
+                    if da_qua_han:
+                        ly_do = (
+                            "Phiên gửi tạo vận đơn trước bị ngắt giữa chừng; "
+                            "chuyển sang đối soát với GHN trước khi cho tạo lại."
+                        )
+                        await conn.execute(
+                            """
+                            UPDATE shipping_waybill_requests
+                            SET trang_thai = 'unknown_timeout',
+                                khoa_luc = NULL,
+                                khoa_boi = NULL,
+                                doi_soat_tiep_luc = now(),
+                                ly_do_chan = $2,
+                                updated_at = now()
+                            WHERE id = $1
+                            """,
+                            req_row["id"],
+                            ly_do,
+                        )
+                        st_req = "unknown_timeout"
+                    else:
+                        ly_do = "Đang có tiến trình khác gửi yêu cầu tạo vận đơn đến hãng — chặn gửi trùng."
+                    khoa_bo_qua = CreateWaybillResult(
+                        ok=False,
+                        khong_ro_ket_qua=True,
+                        don_vi=provider.code,
+                        client_order_code=claimed_client_code,
+                        thong_tin_them={
+                            "trang_thai_yeu_cau": st_req,
+                            "client_order_code": claimed_client_code,
+                            "ly_do_chan": ly_do,
+                        },
+                        loi=ly_do,
+                    )
+                elif st_req in ("unknown_timeout", "reconciling", "manual_required"):
+                    ly_do = str(req_row.get("ly_do_chan") or "").strip() or (
+                        f"Yêu cầu tạo vận đơn đang ở trạng thái '{st_req}'; "
+                        "phải đối soát hoặc xác nhận thủ công trước khi tạo lại."
+                    )
+                    khoa_bo_qua = CreateWaybillResult(
+                        ok=False,
+                        khong_ro_ket_qua=True,
+                        can_nguoi_xac_nhan=(st_req == "manual_required"),
+                        don_vi=provider.code,
+                        client_order_code=claimed_client_code,
+                        thong_tin_them={
+                            "trang_thai_yeu_cau": st_req,
+                            "client_order_code": claimed_client_code,
+                            "ly_do_chan": ly_do,
+                        },
+                        loi=ly_do,
+                    )
+                else:
+                    # Chỉ `not_sent` hoặc `rejected` mới được claim gửi tạo mới,
+                    # luôn giữ nguyên `client_order_code` ban đầu.
+                    await conn.execute(
+                        """
+                        UPDATE shipping_waybill_requests
+                        SET trang_thai = 'sending',
+                            provider = $2,
+                            so_lan_gui = so_lan_gui + 1,
+                            khoa_luc = now(),
+                            khoa_boi = $3,
+                            gui_luc = now(),
+                            ly_do_chan = NULL,
+                            loi_cuoi = NULL,
+                            updated_at = now()
+                        WHERE id = $1
+                        """,
+                        req_row["id"],
+                        provider.code,
+                        claim_token,
+                    )
+
+    if recover_existing is not None:
+        ma_vd_san = str(recover_existing["ma_van_don"]).strip()
+        order_saved = await doi_soat.chot_luu_van_don_thanh_cong(
+            order_id=order["id"],
+            ma_don=ma_don,
+            ma_van_don=ma_vd_san,
+            provider_code=str(recover_existing.get("provider") or provider.code),
+            phi_van_chuyen=int(recover_existing.get("phi_van_chuyen") or 0),
+            du_lieu_phan_hoi=recover_existing.get("du_lieu_phan_hoi") or {},
+            trang_thai_yeu_cau="reconciled",
+            xac_nhan_boi="local_req_recovery",
+        )
+        res_rec = CreateWaybillResult(
+            ok=True,
+            ma_van_don=ma_vd_san,
+            don_vi=str(recover_existing.get("provider") or provider.code),
+            phi_van_chuyen=int(recover_existing.get("phi_van_chuyen") or 0),
+            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            thong_tin_them={"da_co_san": True, "khoi_phuc_tu_yeu_cau": True},
+            client_order_code=claimed_client_code,
+        )
+        await _dong_bo_erp_sau_luu(order_saved, res_rec)
+        return res_rec
+
+    if khoa_bo_qua is not None:
+        if khoa_bo_qua.ok and khoa_bo_qua.ma_van_don:
+            if order.get("erp_ma_don") and order.get("erp_van_chuyen_trang_thai") != "synced":
+                await db.execute(
+                    "UPDATE orders SET erp_van_chuyen_trang_thai='pending', "
+                    "erp_van_chuyen_thu_lai_luc=now() WHERE id=$1 "
+                    "AND erp_van_chuyen_trang_thai <> 'processing'",
+                    order["id"],
+                )
+            await _dong_bo_erp_sau_luu(order, khoa_bo_qua)
+        else:
+            await db.log_event(
+                "shipping.create_blocked_reconcile",
+                ref_id=order["id"],
+                ma_don=ma_don,
+                client_order_code=claimed_client_code,
+                trang_thai=(khoa_bo_qua.thong_tin_them or {}).get("trang_thai_yeu_cau"),
+                ly_do=(khoa_bo_qua.loi or "")[:300],
+            )
+        return khoa_bo_qua
+
     req = CreateWaybillRequest(
         ma_don=ma_don,
         khach_ten=khach_ten,
@@ -205,40 +423,94 @@ async def tao_van_don_cho_don(
         thu_ho_cod=tong_tien,  # Mặc định thu hộ COD = tổng tiền đơn
         tong_khoi_luong_gram=max(300, tong_gram),
         ghi_chu=str(order.get("ghi_chu") or ""),
+        client_order_code=claimed_client_code,
     )
 
-    provider = get_provider(provider_name)
     result = await provider.tao_van_don(req)
+    if not result.client_order_code:
+        result.client_order_code = claimed_client_code
 
     if result.ok and result.ma_van_don:
-        now = datetime.now(timezone.utc)
-        await db.execute(
-            """
-            UPDATE orders
-            SET ma_van_don = $1,
-                don_vi_van_chuyen = $2,
-                trang_thai_giao_hang = $3,
-                phi_van_chuyen = $4,
-                ngay_du_kien_giao = $5,
-                cap_nhat_van_chuyen_luc = $6,
-                updated_at = now()
-            WHERE ma_don = $7
-            """,
-            result.ma_van_don,
-            provider.code,
-            InternalShippingStatus.DELIVERING.value,
-            result.phi_van_chuyen,
-            result.ngay_du_kien_giao,
-            now,
-            ma_don,
-        )
+        try:
+            order_saved = await doi_soat.chot_luu_van_don_thanh_cong(
+                order_id=order["id"],
+                ma_don=ma_don,
+                ma_van_don=result.ma_van_don,
+                provider_code=provider.code,
+                phi_van_chuyen=result.phi_van_chuyen,
+                ngay_du_kien_giao=result.ngay_du_kien_giao,
+                trang_thai_noi_bo=result.trang_thai_noi_bo,
+                du_lieu_phan_hoi=result.thong_tin_them,
+                trang_thai_yeu_cau="confirmed",
+                xac_nhan_boi="ghn_create",
+            )
+        except Exception as db_exc:  # noqa: BLE001 — GHN đã tạo vận đơn nhưng DB lỗi khi lưu
+            ly_do_db = (
+                f"Hãng đã trả mã vận đơn '{result.ma_van_don}' nhưng lưu CSDL thất bại "
+                f"({type(db_exc).__name__}); tạm khoá tạo lại để đối soát khôi phục."
+            )
+            try:
+                await db.execute(
+                    """
+                    UPDATE shipping_waybill_requests
+                    SET trang_thai = 'unknown_timeout',
+                        ma_van_don = COALESCE(NULLIF(TRIM(ma_van_don), ''), $2),
+                        phi_van_chuyen = COALESCE(NULLIF($3::bigint, 0), phi_van_chuyen),
+                        doi_soat_tiep_luc = now(),
+                        khoa_luc = NULL,
+                        khoa_boi = NULL,
+                        ly_do_chan = $4,
+                        loi_cuoi = $5,
+                        updated_at = now()
+                    WHERE order_id = $1 AND khoa_boi = $6
+                    """,
+                    order["id"],
+                    result.ma_van_don,
+                    int(result.phi_van_chuyen or 0),
+                    ly_do_db,
+                    f"{type(db_exc).__name__}: {db_exc}"[:500],
+                    claim_token,
+                )
+            except Exception:  # noqa: BLE001 — không nuốt trạng thái lỗi DB gốc
+                pass
+            try:
+                await db.log_event(
+                    "shipping.save_after_create_failed",
+                    ref_id=order["id"],
+                    ma_don=ma_don,
+                    ma_van_don=result.ma_van_don,
+                    client_order_code=claimed_client_code,
+                    loi=f"{type(db_exc).__name__}: {db_exc}"[:300],
+                )
+            except Exception:
+                pass
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                ma_van_don=result.ma_van_don,
+                don_vi=provider.code,
+                phi_van_chuyen=result.phi_van_chuyen,
+                ngay_du_kien_giao=result.ngay_du_kien_giao,
+                client_order_code=claimed_client_code,
+                thong_tin_them={
+                    **(result.thong_tin_them or {}),
+                    "db_save_failed": True,
+                    "trang_thai_yeu_cau": "unknown_timeout",
+                    "client_order_code": claimed_client_code,
+                },
+                loi=ly_do_db,
+            )
+
         await db.log_event(
             "shipping.created",
             ma_don=ma_don,
             ma_van_don=result.ma_van_don,
             carrier=provider.code,
             phi=result.phi_van_chuyen,
+            client_order_code=claimed_client_code,
         )
+
+        await _dong_bo_erp_sau_luu(order_saved, result)
 
         # BÁO MÃ CHO KHÁCH.
         #
@@ -250,13 +522,97 @@ async def tao_van_don_cho_don(
         # kiện hàng theo thời gian thực. Đưa mã cho khách tự tra trên ứng
         # dụng hãng mới là thông tin chính xác.
         await _bao_khach(
-            order.get("conversation_id"),
+            order_saved.get("conversation_id"),
             f"Dạ đơn {ma_don} của mình đã được bàn giao cho "
             f"{provider.name} rồi ạ.\n\n"
             f"Mã vận đơn: {result.ma_van_don}\n"
             "Mình tra mã này trên ứng dụng của hãng để xem hàng đang ở đâu "
             "nha. Có gì cần hỗ trợ mình cứ nhắn em ạ.",
             f"vandon-tao:{result.ma_van_don}",
+        )
+        return result
+
+    if result.khong_ro_ket_qua:
+        ly_do_treo = (
+            f"Chưa xác định được kết quả tạo vận đơn phía {provider.code.upper()} "
+            "(timeout/mất kết nối); đang chờ đối soát trước khi cho phép tạo lại."
+        )
+        await db.execute(
+            """
+            UPDATE shipping_waybill_requests
+            SET trang_thai = 'unknown_timeout',
+                doi_soat_tiep_luc = now(),
+                khoa_luc = NULL,
+                khoa_boi = NULL,
+                ly_do_chan = $2,
+                loi_cuoi = $3,
+                du_lieu_phan_hoi = $4::jsonb,
+                updated_at = now()
+            WHERE order_id = $1 AND khoa_boi = $5
+            """,
+            order["id"],
+            ly_do_treo,
+            (result.loi or ly_do_treo)[:500],
+            json.dumps(result.thong_tin_them or {}, default=str, ensure_ascii=False),
+            claim_token,
+        )
+        await db.log_event(
+            "shipping.create_unknown_timeout",
+            ref_id=order["id"],
+            ma_don=ma_don,
+            carrier=provider.code,
+            client_order_code=claimed_client_code,
+            loi=(result.loi or "")[:300],
+        )
+        result.thong_tin_them["trang_thai_yeu_cau"] = "unknown_timeout"
+        result.thong_tin_them["client_order_code"] = claimed_client_code
+        result.thong_tin_them["ly_do_chan"] = ly_do_treo
+        return result
+
+    # Thất bại rõ ràng: hoặc kiểm tra trước khi gửi (chưa chạm GHN -> trả về
+    # `not_sent`) hoặc hãng từ chối rõ ràng (`rejected`). Cả hai đều cho phép
+    # gửi lại với CÙNG `client_order_code`.
+    if result.can_nguoi_xac_nhan:
+        await db.execute(
+            """
+            UPDATE shipping_waybill_requests
+            SET trang_thai = 'not_sent',
+                so_lan_gui = GREATEST(0, so_lan_gui - 1),
+                khoa_luc = NULL,
+                khoa_boi = NULL,
+                loi_cuoi = $2,
+                updated_at = now()
+            WHERE order_id = $1 AND khoa_boi = $3
+            """,
+            order["id"],
+            (result.loi or "")[:500],
+            claim_token,
+        )
+    else:
+        await db.execute(
+            """
+            UPDATE shipping_waybill_requests
+            SET trang_thai = 'rejected',
+                khoa_luc = NULL,
+                khoa_boi = NULL,
+                ly_do_chan = NULL,
+                loi_cuoi = $2,
+                du_lieu_phan_hoi = $3::jsonb,
+                updated_at = now()
+            WHERE order_id = $1 AND khoa_boi = $4
+            """,
+            order["id"],
+            (result.loi or "")[:500],
+            json.dumps(result.thong_tin_them or {}, default=str, ensure_ascii=False),
+            claim_token,
+        )
+        await db.log_event(
+            "shipping.create_rejected",
+            ref_id=order["id"],
+            ma_don=ma_don,
+            carrier=provider.code,
+            client_order_code=claimed_client_code,
+            loi=(result.loi or "")[:300],
         )
 
     return result
@@ -298,6 +654,14 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
             UPDATE orders
             SET trang_thai_giao_hang = $1,
                 cap_nhat_van_chuyen_luc = now(),
+                erp_van_chuyen_trang_thai = CASE
+                    WHEN erp_ma_don IS NOT NULL
+                     AND trang_thai_giao_hang IS DISTINCT FROM $1
+                    THEN 'pending' ELSE erp_van_chuyen_trang_thai END,
+                erp_van_chuyen_thu_lai_luc = CASE
+                    WHEN erp_ma_don IS NOT NULL
+                     AND trang_thai_giao_hang IS DISTINCT FROM $1
+                    THEN now() ELSE erp_van_chuyen_thu_lai_luc END,
                 updated_at = now()
             WHERE ma_van_don = $2
             """,
@@ -446,19 +810,74 @@ async def xu_ly_webhook_van_chuyen(
         }
     ma_don = order["ma_don"]
     ma_van_don = order["ma_van_don"] or event.ma_van_don
+    event_time = event.thoi_gian or datetime.now(timezone.utc)
 
-    # Cập nhật trạng thái và lộ trình giao hàng vào CSDL
-    await db.execute(
+    # Chỉ sự kiện mới hơn mới được đổi trạng thái. UPDATE nguyên tử cũng là
+    # chốt chống webhook lặp: không có dòng RETURNING thì không chạy các tác
+    # dụng phụ (nhắn khách, hoàn kho, tạo Pending Action) lần nữa.
+    updated = await db.fetchrow(
         """
         UPDATE orders
         SET trang_thai_giao_hang = $1,
-            cap_nhat_van_chuyen_luc = now(),
+            ma_van_don = COALESCE(ma_van_don, $4),
+            don_vi_van_chuyen = COALESCE(don_vi_van_chuyen, $7),
+            cap_nhat_van_chuyen_luc = $3,
+            lich_su_giao_hang = COALESCE(lich_su_giao_hang, '[]'::jsonb)
+                || jsonb_build_array(jsonb_build_object(
+                    'time', $3, 'status', $5::text, 'description', $6::text,
+                    'carrier', $7::text)),
+            erp_van_chuyen_trang_thai = CASE
+                WHEN erp_ma_don IS NOT NULL THEN 'pending'
+                ELSE erp_van_chuyen_trang_thai END,
+            erp_van_chuyen_thu_lai_luc = CASE
+                WHEN erp_ma_don IS NOT NULL THEN now()
+                ELSE erp_van_chuyen_thu_lai_luc END,
+            erp_van_chuyen_loi = CASE
+                WHEN erp_ma_don IS NOT NULL THEN NULL
+                ELSE erp_van_chuyen_loi END,
             updated_at = now()
         WHERE id = $2
+          AND $3 >= COALESCE(cap_nhat_van_chuyen_luc, '-infinity'::timestamptz)
+          AND (trang_thai_giao_hang IS DISTINCT FROM $1
+               OR ma_van_don IS NULL)
+        RETURNING *
         """,
         st_noi_bo.value,
         order["id"],
+        event_time,
+        event.ma_van_don or None,
+        event.trang_thai_goc,
+        event.mo_ta[:300],
+        provider_name,
     )
+    if updated is None:
+        await db.log_event(
+            "shipping.webhook_ignored", ref_id=order["id"],
+            ma_don=ma_don, ma_van_don=ma_van_don,
+            ly_do="duplicate_or_stale", event_time=event_time.isoformat(),
+        )
+        return {"ok": True, "ignored": True, "note": "Webhook trùng hoặc cũ"}
+    order = updated
+
+    if ma_van_don:
+        await db.execute(
+            """
+            UPDATE shipping_waybill_requests
+            SET trang_thai = 'reconciled',
+                ma_van_don = COALESCE(NULLIF(TRIM(ma_van_don), ''), $2),
+                khoa_luc = NULL,
+                khoa_boi = NULL,
+                doi_soat_tiep_luc = NULL,
+                ly_do_chan = NULL,
+                xac_nhan_luc = COALESCE(xac_nhan_luc, now()),
+                xac_nhan_boi = COALESCE(xac_nhan_boi, 'webhook'),
+                updated_at = now()
+            WHERE order_id = $1
+              AND trang_thai IN ('not_sent', 'sending', 'unknown_timeout', 'reconciling', 'manual_required')
+            """,
+            order["id"],
+            ma_van_don,
+        )
 
     await db.log_event(
         "shipping.status_changed",

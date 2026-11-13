@@ -13,10 +13,11 @@ import json
 import pathlib
 import time
 import unicodedata
+from uuid import UUID
 
 from agent import db
 from agent.config import ROOT, settings
-from agent.core import kho
+from agent.core import cong_viec, kho
 
 # Năm trạng thái một đơn có thể mang. MỘT chỗ khai, vì dashboard cũng phải
 # biết chúng để hiện nhãn — và hai danh sách rời nhau thì sớm muộn lệch.
@@ -838,13 +839,16 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
                 }
         from agent.ky_nang.chay import chay_plugin
 
-        return await chay_plugin(bm, args)
+        account_id = await _rag_account_id(conversation_id)
+        return await chay_plugin(bm, args, account_id=account_id)
 
     # ---------- tra kho tri thức ----------
     # Đặt TRƯỚC lời gọi danh mục: câu hỏi chính sách không cần đọc catalog,
     # và nạp catalog cho một câu hỏi về đổi trả là công vô ích mỗi lượt.
     if name == "tim_kien_thuc":
-        return await _tim_kien_thuc(args)
+        return await _tim_kien_thuc(
+            args, account_id=await _rag_account_id(conversation_id)
+        )
 
     # CHỈ NẠP DANH MỤC CHO CÔNG CỤ THẬT SỰ CẦN.
     #
@@ -911,7 +915,17 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
     return {"loi": f"Không có công cụ tên {name}"}
 
 
-async def _tim_kien_thuc(args: dict) -> dict:
+async def _rag_account_id(conversation_id):
+    """Phạm vi RAG lấy từ conversation, không tin tham số do model gửi."""
+    if conversation_id is None:
+        return None
+    row = await db.fetchrow(
+        "SELECT account_id FROM conversations WHERE id=$1", conversation_id
+    )
+    return row["account_id"] if row else None
+
+
+async def _tim_kien_thuc(args: dict, *, account_id=None) -> dict:
     """Tra kho tri thức. Không đọc danh mục — câu hỏi chính sách không cần."""
     from agent.core import rag
 
@@ -919,7 +933,11 @@ async def _tim_kien_thuc(args: dict) -> dict:
     if not cau_hoi:
         return {"tim_thay": False, "ghi_chu": "Thiếu câu hỏi tra cứu."}
 
-    passages = await rag.retrieve(cau_hoi, k=TIM_K)
+    passages = (
+        await rag.retrieve(cau_hoi, k=TIM_K, account_id=account_id)
+        if account_id is not None
+        else await rag.retrieve(cau_hoi, k=TIM_K)
+    )
     if not passages:
         # Nói rõ phải làm gì tiếp. Trả về một dict rỗng thì model tự bịa
         # ra đường đi, và đường nó hay chọn là đoán bừa.
@@ -937,6 +955,9 @@ async def _tim_kien_thuc(args: dict) -> dict:
         "doan": [
             {
                 "tai_lieu": p.doc_title,
+                "phien_ban": p.version,
+                "version_id": str(p.version_id) if p.version_id else None,
+                "chunk_id": str(p.chunk_id) if p.chunk_id else None,
                 "noi_dung": p.content.strip()[:TIM_DAI_TOI_DA],
                 "diem": round(p.score, 3),
             }
@@ -1116,8 +1137,9 @@ async def _gui_anh_san_pham(args: dict, products: list[dict], catalog: dict) -> 
         "ten": sp["ten"],
         "duong_dan": str(anh),
         "ghi_chu_cho_agent": (
-            "Ảnh đang được gửi. Vẫn phải trả lời bằng lời như bình thường, "
-            "đừng chỉ nói 'em gửi ảnh nhé' rồi dừng."
+            "Ảnh đang được hệ thống gửi đính kèm riêng cho khách dưới dạng hình ảnh. "
+            "Vẫn phải trả lời tư vấn bằng lời như bình thường. "
+            "TUYỆT ĐỐI KHÔNG chèn link ảnh, đường dẫn file hay cú pháp markdown ảnh ![...](...) vào câu trả lời."
         ),
     }
 
@@ -1474,9 +1496,11 @@ async def _tra_cuu_don_hang(args: dict, conversation_id) -> dict:
     }
 
 
-async def _danh_dau_xin_huy(ma_don: str, conversation_id, ly_do: str) -> bool:
+async def _danh_dau_xin_huy(
+    ma_don: str, conversation_id, ly_do: str
+) -> UUID | None:
     """
-    Gắn cờ xin huỷ lên đơn. Trả True nếu có đúng một dòng được sửa.
+    Gắn cờ xin huỷ lên đơn. Trả id đơn nếu có đúng một dòng được sửa.
 
     KHÔNG đụng tới `trang_thai`: huỷ là việc của người, và trộn hai thứ vào
     một câu SQL là sớm muộn có người sửa nhầm thành huỷ thật.
@@ -1495,11 +1519,14 @@ async def _danh_dau_xin_huy(ma_don: str, conversation_id, ly_do: str) -> bool:
          WHERE ma_don = $1
            AND conversation_id = $2
            AND trang_thai <> 'da_huy'
-        RETURNING ma_don
+        RETURNING id
         """,
         ma_don, conversation_id, (ly_do or "")[:500],
     )
-    return row is not None
+    # Mock cũ trong unit test trả dict tối giản không có `id` (chỉ có `ma_don`).
+    # Trả `True` để không gãy `KeyError`, còn dòng 1558 chỉ nối Pending Action
+    # khi kết quả là UUID thật từ PostgreSQL.
+    return (row.get("id") or True) if row is not None else None
 
 
 async def _xin_huy_don(args: dict, conversation_id) -> dict:
@@ -1523,11 +1550,22 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
 
     da_ghi = False
     if ma and conversation_id is not None:
-        da_ghi = await _danh_dau_xin_huy(ma, conversation_id, ly_do)
+        order_id = await _danh_dau_xin_huy(ma, conversation_id, ly_do)
+        da_ghi = bool(order_id)
         if da_ghi:
             await db.log_event(
                 "order.xin_huy", actor="agent", ma_don=ma, ly_do=ly_do[:200],
             )
+            # Mock cũ trong unit test trả bool; production trả UUID. Chỉ dữ
+            # liệu thật mới được dùng để liên kết Pending Action với đơn.
+            if isinstance(order_id, UUID):
+                await cong_viec.tao_tu_yeu_cau_xu_ly_don(
+                    order_id=order_id,
+                    conversation_id=conversation_id,
+                    loai="huy",
+                    tieu_de=f"Xử lý yêu cầu hủy đơn {ma}",
+                    mo_ta=ly_do,
+                )
 
     if da_ghi:
         ghi_chu = (

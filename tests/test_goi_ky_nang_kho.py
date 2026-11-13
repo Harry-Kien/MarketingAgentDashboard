@@ -30,12 +30,14 @@ def test_rag_xoa_nguon_theo_tien_to(monkeypatch):
 
     async def execute(sql, *a):
         sql_da_chay.append((" ".join(sql.split()), a))
-        return "DELETE 3"
+        return "UPDATE 3"
 
     monkeypatch.setattr(rag.db, "execute", execute)
     n = chay(rag.xoa_nguon("goi:abc:"))
     assert n == 3
-    assert "DELETE FROM documents WHERE source LIKE $1" in sql_da_chay[0][0]
+    assert "UPDATE documents" in sql_da_chay[0][0]
+    assert "lifecycle_status='archived'" in sql_da_chay[0][0]
+    assert "source LIKE $1" in sql_da_chay[0][0]
     assert sql_da_chay[0][1] == ("goi:abc:%",)
 
 

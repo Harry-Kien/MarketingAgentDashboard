@@ -24,7 +24,14 @@ def chay(coro):
 @pytest.fixture
 def san(monkeypatch):
     """Giả mọi phụ thuộc ngoài của respond(); trả về hộp để test nhét kịch bản."""
-    hop = {"kich_ban": [], "goi_tool": [], "ngan_sach": [], "thu": [], "video": []}
+    hop = {
+        "kich_ban": [],
+        "goi_tool": [],
+        "ngan_sach": [],
+        "thu": [],
+        "video": [],
+        "events": [],
+    }
 
     async def fetchrow(sql, *a):
         return {"cost_usd": 0.0}
@@ -38,6 +45,9 @@ def san(monkeypatch):
     async def cong_cu_dang_bat(tat_ca):
         return tat_ca
 
+    async def log_event(kind, **detail):
+        hop["events"].append((kind, detail))
+
     async def complete(**kw):
         return hop["kich_ban"].pop(0)
 
@@ -50,6 +60,7 @@ def san(monkeypatch):
                 "danh_sach": list(range(50)), "thu_nghiem": True}
 
     monkeypatch.setattr(brain.db, "fetchrow", fetchrow)
+    monkeypatch.setattr(brain.db, "log_event", log_event)
     monkeypatch.setattr(brain.ngan_sach, "con_ngan_sach", con_ngan_sach)
     monkeypatch.setattr(brain.ngan_sach, "ghi_nhan", lambda c: hop["ngan_sach"].append(c))
     monkeypatch.setattr(thu_nghiem, "ghi_nhan", lambda c: hop["thu"].append(c))
@@ -73,6 +84,45 @@ def _chot(text):
 def test_reply_mac_dinh_rong():
     r = brain.Reply(text="x")
     assert r.cong_cu == [] and r.vong == [] and r.luoi_bat is None
+
+
+def test_rag_ghi_dau_vet_document_version_va_chunk(san, monkeypatch):
+    document_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    chunk_id = uuid.uuid4()
+
+    async def retrieve(q, k=5):
+        return [
+            brain.rag.Passage(
+                doc_title="Chính sách đổi trả",
+                content="Được đổi trong bảy ngày.",
+                score=0.9,
+                document_id=document_id,
+                version_id=version_id,
+                version=3,
+                chunk_id=chunk_id,
+                source="dashboard:test",
+            )
+        ]
+
+    monkeypatch.setattr(brain.rag, "retrieve", retrieve)
+    san["kich_ban"] = [_chot("Dạ, được đổi trong bảy ngày ạ.")]
+    conversation_id = uuid.uuid4()
+    chay(
+        brain.respond(
+            conversation_id=conversation_id,
+            history=[],
+            question="Đổi trả trong bao lâu?",
+        )
+    )
+
+    event = next(item for item in san["events"] if item[0] == "knowledge.retrieved")
+    assert event[1]["ref_id"] == conversation_id
+    ref = event[1]["sources"][0]
+    assert ref["document_id"] == str(document_id)
+    assert ref["version_id"] == str(version_id)
+    assert ref["version"] == 3
+    assert ref["chunk_id"] == str(chunk_id)
 
 
 def test_thu_thap_cong_cu_va_vong(san):

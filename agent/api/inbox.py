@@ -71,6 +71,55 @@ def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
 
 
 class PostgresInboxQueryRepository:
+    _SLA_STATUS_COLUMNS_SQL = """
+        (
+            SELECT warn.created_at
+            FROM sla_events warn
+            WHERE warn.conversation_id = conversation.id
+              AND warn.kind = 'first_response_warning'
+              AND warn.due_at = conversation.first_response_due_at
+            ORDER BY warn.created_at DESC
+            LIMIT 1
+        ) AS first_response_warning_at,
+        (
+            SELECT breached.created_at
+            FROM sla_events breached
+            WHERE breached.conversation_id = conversation.id
+              AND breached.kind = 'first_response_breached'
+              AND breached.due_at = conversation.first_response_due_at
+            ORDER BY breached.created_at DESC
+            LIMIT 1
+        ) AS first_response_breached_at,
+        (
+            conversation.state IN ('open', 'pending')
+            AND conversation.first_responded_at IS NULL
+            AND conversation.first_response_due_at IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM sla_events warn
+                WHERE warn.conversation_id = conversation.id
+                  AND warn.kind = 'first_response_warning'
+                  AND warn.due_at = conversation.first_response_due_at
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM sla_events breached
+                WHERE breached.conversation_id = conversation.id
+                  AND breached.kind = 'first_response_breached'
+                  AND breached.due_at = conversation.first_response_due_at
+            )
+        ) AS sla_warning,
+        (
+            conversation.state IN ('open', 'pending')
+            AND conversation.first_responded_at IS NULL
+            AND conversation.first_response_due_at IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM sla_events breached
+                WHERE breached.conversation_id = conversation.id
+                  AND breached.kind = 'first_response_breached'
+                  AND breached.due_at = conversation.first_response_due_at
+            )
+        ) AS sla_breached
+    """.strip()
+
     def __init__(self, pool_provider: Callable[[], Any] = db.pool):
         self._pool_provider = pool_provider
 
@@ -140,7 +189,9 @@ class PostgresInboxQueryRepository:
                    conversation.priority, conversation.assigned_to,
                    conversation.assigned_team_id, conversation.version,
                    conversation.first_response_due_at,
+                   conversation.first_responded_at,
                    conversation.resolution_due_at,
+                   {self._SLA_STATUS_COLUMNS_SQL},
                    conversation.msg_count, conversation.updated_at,
                    latest.content AS last_message,
                    latest.delivery_status AS last_delivery_status,
@@ -185,9 +236,10 @@ class PostgresInboxQueryRepository:
         user_id: UUID,
         is_admin: bool,
     ) -> dict[str, Any] | None:
-        sql = """
+        sql = f"""
             SELECT conversation.*, account.display_name AS account_name,
-                   account.channel AS account_channel
+                   account.channel AS account_channel,
+                   {self._SLA_STATUS_COLUMNS_SQL}
             FROM conversations conversation
             JOIN channel_accounts account ON account.id = conversation.account_id
             WHERE conversation.id = $1

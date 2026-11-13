@@ -92,7 +92,7 @@ def test_nhan_vien_xem_duoc_nhung_khong_ghi_duoc(kho):
 def test_khoa_la_va_gia_tri_sai_bi_422(kho):
     c = _app(admin=True)
     assert c.put("/api/cai-dat-api/ERP_LOAI", json={"gia_tri": "erpnext"}).status_code == 422
-    assert c.put("/api/cai-dat-api/LLM_PROVIDER", json={"gia_tri": "openai"}).status_code == 422
+    assert c.put("/api/cai-dat-api/LLM_PROVIDER", json={"gia_tri": "deepseek"}).status_code == 422
 
 
 def test_kiem_tra_dung_gia_tri_gui_len_va_khong_luu(kho, monkeypatch):

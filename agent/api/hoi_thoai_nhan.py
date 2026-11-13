@@ -109,4 +109,9 @@ async def giai_quyet_hoi_thoai(
     await chan_neu_ngoai_kenh(conversation_id, nguoi)
     if await db.fetchrow("SELECT 1 FROM conversations WHERE id = $1", conversation_id) is None:
         raise HTTPException(404, "Không thấy hội thoại")
-    return await giai_quyet.giai_quyet(conversation_id, UUID(str(nguoi["id"])))
+    try:
+        return await giai_quyet.giai_quyet(
+            conversation_id, UUID(str(nguoi["id"]))
+        )
+    except giai_quyet.ConversationHasPendingTasksError as exc:
+        raise HTTPException(status_code=409, detail=exc.api_detail()) from exc

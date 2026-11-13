@@ -77,6 +77,10 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-2.5-pro": (1.25, 10.00),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4-turbo": (10.00, 30.00),
+    "gpt-3.5-turbo": (0.50, 1.50),
 }
 MAX_RETRIES = 4          # cho 429/503 tam thoi cua Vertex
 
@@ -584,6 +588,176 @@ async def _complete_claude(
 
 
 # ===============================================================
+#  OpenAI
+# ===============================================================
+
+def _openai_url(path: str = "/chat/completions") -> str:
+    from agent import cau_hinh_dong
+
+    base = (cau_hinh_dong.lay("OPENAI_BASE_URL") or settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+    p = path.lstrip("/")
+    return f"{base}/{p}"
+
+
+def _openai_key(api_key: str = "") -> str:
+    from agent import cau_hinh_dong
+
+    key = api_key or cau_hinh_dong.lay("OPENAI_API_KEY") or settings.openai_api_key
+    if not key:
+        raise RuntimeError(
+            "LLM_PROVIDER=openai nhưng thiếu OPENAI_API_KEY. Nhập ở "
+            "dashboard → Cấu hình → Cài đặt API, hoặc đặt trong .env"
+        )
+    return key
+
+
+def _openai_content(content):
+    if isinstance(content, str):
+        return content
+    parts: list[dict] = []
+    for blk in content or []:
+        if blk.get("type") == "image":
+            mime = blk.get("media_type", "image/jpeg")
+            b64 = blk.get("data", "")
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"},
+            })
+        elif blk.get("text"):
+            parts.append({"type": "text", "text": blk["text"]})
+    return parts or ""
+
+
+def _to_openai(messages: list[dict], tools: list[dict] | None) -> tuple[list[dict], list[dict] | None]:
+    oa_msgs: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role == "user":
+            oa_msgs.append({"role": "user", "content": _openai_content(m.get("content"))})
+        elif role == "assistant":
+            msg: dict[str, Any] = {"role": "assistant"}
+            if m.get("content"):
+                msg["content"] = m["content"]
+            oa_tool_calls = []
+            for tc in m.get("tool_calls") or []:
+                inp = tc.get("input") or {}
+                args_str = inp if isinstance(inp, str) else json.dumps(inp, ensure_ascii=False)
+                oa_tool_calls.append({
+                    "id": tc.get("id") or f"call_{len(oa_tool_calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": args_str,
+                    },
+                })
+            if oa_tool_calls:
+                msg["tool_calls"] = oa_tool_calls
+            oa_msgs.append(msg)
+        elif role == "tool":
+            for r in m.get("results") or []:
+                out = r.get("output", "")
+                content_str = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
+                oa_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": r.get("id", ""),
+                    "content": content_str,
+                })
+
+    oa_tools = None
+    if tools:
+        oa_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+                },
+            }
+            for t in tools
+        ]
+    return oa_msgs, oa_tools
+
+
+async def _complete_openai(
+    *, system: dict, messages: list[dict], model: str, max_tokens: int,
+    tools: list[dict] | None, api_key: str = "",
+) -> LLMResult:
+    oa_messages, oa_tools = _to_openai(messages, tools)
+    sys_text = "\n\n".join(x for x in (system.get("stable"), system.get("volatile")) if x)
+    if sys_text:
+        oa_messages = [{"role": "system", "content": sys_text}, *oa_messages]
+
+    key = _openai_key(api_key=api_key)
+    url = _openai_url("/chat/completions")
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": oa_messages,
+        "max_tokens": max_tokens,
+    }
+    if oa_tools:
+        body["tools"] = oa_tools
+
+    started = time.perf_counter()
+    delay = 2.0
+    last = ""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for attempt in range(MAX_RETRIES):
+            r = await client.post(url, headers=headers, json=body)
+            if r.status_code < 400:
+                break
+            last = f"OpenAI {r.status_code}: {r.text[:300]}"
+            if r.status_code not in MA_THU_LAI or attempt == MAX_RETRIES - 1:
+                raise RuntimeError(last)
+            await asyncio.sleep(delay)
+            delay *= 2
+        else:  # pragma: no cover
+            raise RuntimeError(last)
+
+    data = r.json()
+    choices = data.get("choices") or []
+    choice = choices[0] if choices else {}
+    msg = choice.get("message") or {}
+    text = msg.get("content") or ""
+
+    tool_calls: list[dict] = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        args_raw = fn.get("arguments") or "{}"
+        try:
+            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        except Exception:
+            args = {}
+        tool_calls.append({
+            "id": tc.get("id") or f"call_{len(tool_calls)}",
+            "name": fn.get("name", ""),
+            "input": args,
+        })
+
+    u = data.get("usage") or {}
+    t_in = int(u.get("prompt_tokens") or 0)
+    t_out = int(u.get("completion_tokens") or 0)
+    prompt_details = u.get("prompt_tokens_details") or {}
+    c_read = int(prompt_details.get("cached_tokens") or 0)
+
+    return LLMResult(
+        text=text.strip(),
+        model=model,
+        tokens_in=max(0, t_in - c_read),
+        tokens_out=t_out,
+        cache_read=c_read,
+        cost_usd=price(model, max(0, t_in - c_read), t_out, c_read),
+        latency_ms=int((time.perf_counter() - started) * 1000),
+        tool_calls=tool_calls,
+        stop_reason=choice.get("finish_reason") or "",
+    )
+
+
+# ===============================================================
 #  Cửa vào duy nhất
 # ===============================================================
 
@@ -609,8 +783,13 @@ async def complete(
             system=system, messages=messages, model=model,
             max_tokens=max_tokens, tools=tools, effort=effort,
         )
+    if p == "openai":
+        return await _complete_openai(
+            system=system, messages=messages, model=model,
+            max_tokens=max_tokens, tools=tools,
+        )
     raise RuntimeError(
-        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: gemini_api | gemini | vertex | anthropic."
+        f"LLM_PROVIDER không hợp lệ: {p!r}. Nhận: gemini_api | gemini | vertex | anthropic | openai."
     )
 
 
@@ -661,6 +840,12 @@ async def kiem_khoa(
             r = await asyncio.wait_for(
                 _complete_claude(system=system, messages=messages, model=model,
                                  max_tokens=8, tools=None, effort="low", client=client),
+                timeout,
+            )
+        elif p == "openai":
+            r = await asyncio.wait_for(
+                _complete_openai(system=system, messages=messages, model=model,
+                                 max_tokens=8, tools=None, api_key=api_key),
                 timeout,
             )
         else:

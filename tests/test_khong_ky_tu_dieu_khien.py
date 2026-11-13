@@ -13,7 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-_BO_QUA = {"node_modules", ".venv", ".git", "__pycache__", "worktrees", "video-studio"}
+_BO_QUA = {
+    "node_modules", ".venv", ".git", "__pycache__", "worktrees", "video-studio",
+    "chatwoot-personal", "ZaloCRM",
+}
 _DUOI = ("*.py", "*.js", "*.mjs", "*.html", "*.sql", "*.css", "*.md")
 _XAU = {chr(c) for c in range(32)} - {"\n", "\r", "\t"}
 

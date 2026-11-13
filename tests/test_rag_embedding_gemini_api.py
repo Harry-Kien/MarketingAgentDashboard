@@ -46,6 +46,10 @@ def test_embed_tai_lieu_ghi_model_dang_dung(monkeypatch):
     """Ghi lúc nạp tài liệu, không ghi lúc hỏi: hỏi thì không đổi kho."""
     ghi = []
 
+    # Cố định nhánh embedding được mock: cấu hình runtime có thể đã được
+    # test khác chuyển sang OpenAI/Gemini API và không được phép gọi mạng thật.
+    monkeypatch.setattr(rag, "embed_model_hien_hanh", lambda: rag.EMBED_MODEL_API)
+
     async def execute(sql, *args):
         ghi.append(args)
 

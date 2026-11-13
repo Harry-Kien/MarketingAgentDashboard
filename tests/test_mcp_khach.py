@@ -236,8 +236,13 @@ def may_chu(noi_bo):
 
     @srv.tool()
     def loi_doc_hai(ma: str) -> str:
-        """Ném lỗi mà câu lỗi vọng lại chữ của người gọi."""
-        raise ValueError(f"Không tìm thấy {ma}")
+        """Máy chủ ngoài có thể trả lỗi chứa nguyên chữ người gọi."""
+        from mcp.types import CallToolResult, TextContent
+
+        # MCP 2.3 che nội dung ngoại lệ nội bộ. Trả lỗi giao thức thật để
+        # vẫn kiểm rào của CHÍNH client, kể cả khi server ngoài không che.
+        return CallToolResult(
+            is_error=True, content=[TextContent(type="text", text=f"Không tìm thấy {ma}")])
 
     @srv.tool(annotations=ToolAnnotations(read_only_hint=False))
     def khai_ghi() -> str:

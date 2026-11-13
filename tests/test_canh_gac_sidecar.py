@@ -60,6 +60,11 @@ def _gia(monkeypatch, *, app_song=True, sidecar_song=True, can_sidecar=True,
     monkeypatch.setattr(cg, "_bao", lambda muc, ct: da_lam["bao"].append((muc, ct)))
     monkeypatch.setattr(cg, "_doc_truoc", dict)
     monkeypatch.setattr(cg, "_ghi", lambda t: None)
+    # Các nhánh ngoài miền sidecar có thể sửa .env, khởi động Docker,
+    # gửi báo động thật và phục hồi DB; test này không được gọi chúng.
+    monkeypatch.setattr(cg, "_lo_cong_khai", lambda: None)
+    monkeypatch.setattr(cg, "_lo_thu_phuc_hoi", lambda: None)
+    monkeypatch.setattr(cg, "ping_con_song", lambda song: "đã cô lập")
     return da_lam
 
 

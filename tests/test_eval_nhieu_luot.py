@@ -100,6 +100,19 @@ def test_moi_kich_ban_chay_kho_deu_khong_no():
         _chay_kho(k)
 
 
+def test_cli_kho_khong_dung_csdl_va_khong_gia_diem_ai(monkeypatch, capsys):
+    async def cam(*a, **k):
+        raise AssertionError("Chế độ khô không được chạm CSDL cửa hàng")
+
+    for ten in ("init_db", "execute", "close_db"):
+        monkeypatch.setattr(ev.db, ten, cam)
+    monkeypatch.setattr(ev.brain, "respond", cam)
+    assert asyncio.run(ev.main(kho=True)) == 0
+    ra = capsys.readouterr().out
+    assert "không đo chất lượng AI" in ra
+    assert "Kịch bản đạt" not in ra
+
+
 def test_history_xen_ke_user_assistant():
     """
     History phải dựng ĐÚNG như `agent/omnichannel/xu_ly_tin_vao.py:_history()` — user/assistant

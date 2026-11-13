@@ -123,6 +123,10 @@ def test_main_hong_hai_lan_thi_dung_lai_va_bao(monkeypatch, tmp_path):
     monkeypatch.setattr(cg, "_bao", lambda muc_do, chi_tiet: bao.append((muc_do, chi_tiet)))
     monkeypatch.setattr(cg, "dung_lai", lambda: (True, "app vừa bật · sidecar vừa bật"))
     monkeypatch.setattr(cg, "_song_sau_dung_lai", lambda: True)
+    monkeypatch.setattr(cg, "_lo_sidecar", lambda: None)
+    monkeypatch.setattr(cg, "_lo_cong_khai", lambda: None)
+    monkeypatch.setattr(cg, "_lo_thu_phuc_hoi", lambda: None)
+    monkeypatch.setattr(cg, "ping_con_song", lambda song: "đã cô lập")
 
     ma = cg.main()
 
@@ -140,6 +144,7 @@ def test_main_dung_lai_that_bai_thi_van_bao_va_thoat_khac_0(monkeypatch, tmp_pat
     monkeypatch.setattr(cg, "_song", lambda: (False, "ConnectionRefusedError"))
     monkeypatch.setattr(cg, "_bao", lambda muc_do, chi_tiet: bao.append((muc_do, chi_tiet)))
     monkeypatch.setattr(cg, "dung_lai", lambda: (False, "Postgres không nhận kết nối"))
+    monkeypatch.setattr(cg, "ping_con_song", lambda song: "đã cô lập")
 
     assert cg.main() == 1
     assert bao[0][0] == "tu_dung_lai_hong" and "Postgres" in bao[0][1]

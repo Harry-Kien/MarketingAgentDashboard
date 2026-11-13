@@ -5,6 +5,9 @@
 # chạy — bản mới hơn biết thêm lỗ hổng mới, và đó chính là điều ta muốn.
 ruff
 pip-audit
+# Phụ thuộc của pip-audit: bản cũ vẫn thoả >= nhưng có CVE đã vá.
+filelock==4.2.7
+msgpack==1.2.4
 # pytest-cov: đo độ phủ trong CI (--cov-fail-under). Ghim vì nó là một phần
 # của phép đo — đổi bản là đổi cách đếm, con số trước sau không so được.
 pytest-cov==6.0.0

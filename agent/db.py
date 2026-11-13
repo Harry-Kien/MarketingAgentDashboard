@@ -29,17 +29,24 @@ async def init_db() -> asyncpg.Pool:
             schema="pg_catalog",
         )
 
-    _pool = await asyncpg.create_pool(
+    moi = await asyncpg.create_pool(
         settings.database_url,
         min_size=1,
         max_size=10,
         command_timeout=30,
         init=_setup,
     )
-    schema = (Path(__file__).parent / "schema.sql").read_text(encoding="utf-8")
-    async with _pool.acquire() as conn:
-        await conn.execute(schema)
-        await apply_all(conn)
+    # Chỉ công bố pool khi lược đồ ĐÃ sẵn sàng. Giữ pool sau migration hỏng
+    # khiến lần thử lại bỏ qua migration và báo như đã khởi tạo thành công.
+    try:
+        schema = (Path(__file__).parent / "schema.sql").read_text(encoding="utf-8")
+        async with moi.acquire() as conn:
+            await conn.execute(schema)
+            await apply_all(conn)
+    except BaseException:
+        await moi.close()
+        raise
+    _pool = moi
     return _pool
 
 

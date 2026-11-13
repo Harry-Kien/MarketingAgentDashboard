@@ -24,7 +24,15 @@ httpx==0.28.1
 # FastAPI cần cái này để nhận file tải lên (ảnh sản phẩm). Không import
 # trực tiếp ở đâu, nhưng thiếu là endpoint upload trả 500.
 python-multipart==0.0.32
-python-dotenv==1.2.1
+python-dotenv==1.2.4
+
+# Ghim các phụ thuộc gián tiếp có bản vá bảo mật: chỉ nâng gói cha không
+# thay bản đã cài khi nó vẫn thoả điều kiện >= của gói cha (pip mặc định).
+certifi==2026.10.23
+opentelemetry-api==1.45.2
+pyasn1==0.6.5
+pyjwt==2.15.1
+urllib3==2.8.0
 # `agent/api/tich_hop.py` import THẲNG thư viện này để bắc cầu WebSocket cho
 # hộp thư Chatwoot. Hiện nó vẫn về máy nhờ đi kèm `uvicorn[standard]` — tức
 # là một phụ thuộc thật đang núp sau phụ thuộc của người khác. Ngày uvicorn
@@ -57,7 +65,7 @@ anthropic[vertex]==0.123.0
 # Mở hệ thống ra cho Claude Desktop / Claude Code. Xem docs/mcp.md.
 # CẢNH BÁO: 2.0 đổi bố cục gói so với 1.x — mcp.server.mcpserver.MCPServer
 # thay cho mcp.server.fastmcp.FastMCP. Đừng nâng mà không sửa mã.
-mcp[cli]==2.0.0
+mcp[cli]==2.3.0
 # `agent/ky_nang/mcp_khach.py` import THẲNG httpx2. Đây KHÔNG phải httpx đổi
 # tên: `mcp` 2.0 dựng `httpx2.AsyncClient`, và trộn `httpx.Timeout` vào đó là
 # TypeError ngay lúc dựng khách — mọi lời gọi MCP chết dưới dạng "không gọi
@@ -68,7 +76,7 @@ httpx2==2.12.0
 # --- Video ----------------------------------------------------
 # Chuẩn hoá ảnh sản phẩm (xoay theo EXIF, xoá EXIF, hạ kích thước) và vẽ
 # toàn bộ bố cục chữ — xem agent/video/renderers/layout.py.
-pillow==12.3.0
+pillow==13.0.0
 
 # --- Dữ liệu doanh nghiệp -------------------------------------
 # Đọc/ghi Excel cho ba script nạp danh mục và bổ sung tư vấn

@@ -613,6 +613,10 @@ def doc_van_chuyen(provider: str, co_token: bool, co_shop_id: bool,
             "tồn tại, và chỉ vỡ ra khi khách hỏi lại",
         )
 
+    if p not in {"ghn", "ghtk"}:
+        return _muc(ten, CHAN, "tên hãng vận chuyển không được hỗ trợ",
+                    "Chọn SHIPPING_PROVIDER=ghn hoặc ghtk; none nếu cửa hàng tự gửi")
+
     thieu = [t for t, co in ((ten_token, co_token),
                              (ten_shop, co_shop_id)) if not co]
     if thieu:
@@ -1191,9 +1195,15 @@ def _host_goc(url: str) -> str:
 async def kiem_webhook_zalo_oa() -> dict:
     from agent import db
 
-    dong = await db.fetch(
-        "SELECT display_name, metadata FROM channel_accounts "
-        "WHERE channel = 'zalo_oa' AND status IN ('active', 'degraded')")
+    try:
+        await db.init_db()
+        dong = await db.fetch(
+            "SELECT display_name, metadata FROM channel_accounts "
+            "WHERE channel = 'zalo_oa' AND status IN ('active', 'degraded')")
+    except Exception as exc:  # noqa: BLE001 — mất DB vẫn phải in đủ bảng readiness
+        return _muc("Webhook Zalo OA", CHAN,
+                    f"không đọc được CSDL ({type(exc).__name__})",
+                    "Kiểm kết nối PostgreSQL rồi chạy lại readiness")
     return doc_webhook_zalo_oa([dict(d) for d in dong],
                                settings.public_base_url or "")
 

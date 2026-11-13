@@ -206,35 +206,47 @@ async def main(loc: str | None = None, kho: bool = False) -> int:
         print(f"Không có kịch bản nào thuộc nhóm {loc!r}")
         return 1
 
-    await db.init_db()
+    if not kho:
+        await db.init_db()
     # Dùng CHUNG phép dựng hội thoại với bộ 56 câu vàng.
     #
     # Bản trước tự chép một câu INSERT với `ON CONFLICT (channel,
     # external_id)`. Migration 0001 đã BỎ ràng buộc đó và đặt `account_id`
     # vào nhóm NOT NULL, nên câu chép ấy chết ngay dòng đầu — kể cả `--kho`,
     # chế độ đáng lẽ chạy được mà không tốn đồng nào.
-    cid = await hoi_thoai_eval(
-        external_id="eval-nhieu-luot",
-        ten="Bo kich ban nhieu luot",
-        customer_ref="eval-nl",
-    )
+    cid = None
+    if not kho:
+        cid = await hoi_thoai_eval(
+            external_id="eval-nhieu-luot",
+            ten="Bo kich ban nhieu luot",
+            customer_ref="eval-nl",
+        )
 
     tong_luot = sum(len(k["luot"]) for k in kbs)
     print(f"Chạy {len(kbs)} kịch bản · {tong_luot} lượt"
           f"{' (KHÔ — không gọi model)' if kho else ''}\n")
+    if kho:
+        print("Dữ liệu trả lời GIẢ để kiểm bộ chạy; không đo chất lượng AI.\n")
 
     ket_qua = []
     for i, kb in enumerate(kbs, 1):
         # Trần chi phí tính theo hội thoại; chạy dồn nhiều kịch bản trên cùng
         # một bản ghi sẽ chạm trần, và mọi kịch bản sau đều "chuyển người vì
         # vượt trần" — một kết quả sai mà trông y như thật.
-        await db.execute("UPDATE conversations SET cost_usd = 0 WHERE id = $1", cid)
+        if not kho:
+            await db.execute("UPDATE conversations SET cost_usd = 0 WHERE id = $1", cid)
         kq = await chay_kich_ban(kb, cid, kho=kho)
         ket_qua.append(kq)
-        dau = "đạt" if kq["dat"] else "SAI"
+        dau = "đã chạy giả" if kho else ("đạt" if kq["dat"] else "SAI")
         print(f"  [{i:2}/{len(kbs)}] {dau} {kq['id']:7} {kq['mo_ta'][:56]}")
-        if not kq["dat"]:
+        if not kho and not kq["dat"]:
             _in_loi(kq)
+
+    if kho:
+        # Câu giả cố định có thể sai kỳ vọng của kịch bản. Không sửa câu giả
+        # theo đáp án để lấy điểm đẹp, cũng không gọi đó là chất lượng AI.
+        print(f"\nHoàn tất bộ chạy: {len(ket_qua)}/{len(kbs)} kịch bản; không chạm CSDL/model.")
+        return 0
 
     await db.execute("DELETE FROM conversations WHERE external_id = 'eval-nhieu-luot'")
 

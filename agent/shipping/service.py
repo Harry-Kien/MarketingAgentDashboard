@@ -29,7 +29,9 @@ _PROVIDERS: dict[str, BaseShippingProvider] = {}
 
 def get_provider(name: str | None = None) -> BaseShippingProvider:
     global _PROVIDERS
-    key = (name or settings.shipping_provider or "mock").strip().lower()
+    key = ((settings.shipping_provider if name is None else name) or "").strip().lower()
+    if key not in {"ghn", "ghtk", "mock"}:
+        raise ValueError("Chưa chọn hãng vận chuyển hợp lệ (ghn/ghtk); mock chỉ dùng diễn tập.")
     if key not in _PROVIDERS:
         if key == "ghn":
             _PROVIDERS[key] = GHNShippingProvider()
@@ -98,6 +100,10 @@ async def tao_van_don_cho_don(
       3. Chốt 3: Kho còn hàng & đã trừ kho thành công.
       4. Chốt 4: Chống tạo trùng (Đơn chưa có mã vận đơn).
     """
+    try:
+        provider = get_provider(provider_name)
+    except ValueError as exc:
+        return CreateWaybillResult(ok=False, loi=str(exc))
     order = await db.fetchrow(
         "SELECT * FROM orders WHERE ma_don = $1", ma_don
     )
@@ -207,7 +213,6 @@ async def tao_van_don_cho_don(
         ghi_chu=str(order.get("ghi_chu") or ""),
     )
 
-    provider = get_provider(provider_name)
     result = await provider.tao_van_don(req)
 
     if result.ok and result.ma_van_don:
@@ -272,7 +277,12 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
     )
     if not order:
         # Thử tra trực tiếp sang hãng nếu là mã vận đơn rời
-        provider = get_provider()
+        try:
+            provider = get_provider()
+        except ValueError as exc:
+            return TrackingResult(ok=False, ma_van_don=ma_sach, don_vi="",
+                                  trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+                                  trang_thai_goc="khong_tra_duoc", loi=str(exc))
         return await provider.tra_cuu(ma_sach)
 
     ma_van_don = str(order.get("ma_van_don") or "").strip()
@@ -288,7 +298,12 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
         )
 
     provider_name = str(order.get("don_vi_van_chuyen") or "mock")
-    provider = get_provider(provider_name)
+    try:
+        provider = get_provider(provider_name)
+    except ValueError as exc:
+        return TrackingResult(ok=False, ma_van_don=ma_van_don, don_vi=provider_name,
+                              trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+                              trang_thai_goc="khong_tra_duoc", loi=str(exc))
     result = await provider.tra_cuu(ma_van_don)
 
     # Cập nhật lại vị trí / trạng thái vào CSDL nếu có thay đổi
@@ -376,7 +391,10 @@ async def xu_ly_webhook_van_chuyen(
         )
         return {"ok": False, "error": ly_do_chan, "http_status": 401}
 
-    provider = get_provider(provider_name)
+    try:
+        provider = get_provider(provider_name)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "http_status": 400}
     event: WebhookEventResult = provider.parse_webhook(payload, headers)
 
     if not event.hop_le:

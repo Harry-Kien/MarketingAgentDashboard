@@ -15,7 +15,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.omnichannel import xu_ly_tin_vao
+from agent.core.gioi_han import GioiHanTanSuat
+from agent.omnichannel import hop_thu_ben
 from agent import db
 from agent.channels.webchat import WebchatAdapter
 from agent.config import settings
@@ -174,6 +175,30 @@ async def _authorize(account_id: UUID, request: Request):
     return credentials, origin, claims
 
 
+# Giới hạn tần suất cho cửa công khai (agent/core/gioi_han.py). Mức đặt rộng
+# cho người thật — một khách gõ 20 tin một phút là đã rất nhanh — và đủ chặt
+# để một vòng lặp không đốt hết trần chi phí model của cả ngày.
+GH_PHIEN_THEO_IP = GioiHanTanSuat(20, 600)       # mở 20 phiên / 10 phút / IP
+GH_TIN_THEO_KHACH = GioiHanTanSuat(20, 60)       # 20 tin / phút / khách
+GH_TIN_THEO_IP = GioiHanTanSuat(60, 60)          # 60 tin / phút / IP (nhiều khách chung mạng)
+_GH_GHI_NHAT_KY = GioiHanTanSuat(1, 60)          # ghi nhật ký tối đa 1 lần / phút / khoá
+
+
+def _ip(request: Request) -> str:
+    # IP thật: uvicorn --proxy-headers đã lấy từ X-Forwarded-For của Caddy.
+    return request.client.host if request.client else "?"
+
+
+async def _chan_neu_qua_nhieu(gh: GioiHanTanSuat, khoa: str, account_id: UUID) -> None:
+    if gh.cho_phep(khoa):
+        return
+    if _GH_GHI_NHAT_KY.cho_phep(f"{id(gh)}:{khoa}"):
+        await db.log_event("webchat.gioi_han", ref_id=account_id,
+                           so_lan=gh.so_lan, trong_giay=gh.trong_giay)
+    raise HTTPException(429, "Bạn gửi nhanh quá, vui lòng đợi một chút rồi thử lại.",
+                        headers={"Retry-After": str(gh.con_cho(khoa))})
+
+
 @router.post("/{account_id}/session")
 async def create_webchat_session(
     account_id: UUID,
@@ -181,6 +206,7 @@ async def create_webchat_session(
     request: Request,
     response: Response,
 ) -> dict[str, Any]:
+    await _chan_neu_qua_nhieu(GH_PHIEN_THEO_IP, f"{account_id}:{_ip(request)}", account_id)
     _account, credentials = await _account_credentials(account_id)
     origin = request.headers.get("origin", "").rstrip("/")
     if not origin or not _origin_allowed(origin, credentials):
@@ -205,6 +231,9 @@ async def send_webchat_message(
     tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     credentials, origin, claims = await _authorize(account_id, request)
+    # Kiểm SAU khi xác thực vé: chỉ đếm khách thật, kẻ không có vé đã bị 401.
+    await _chan_neu_qua_nhieu(GH_TIN_THEO_IP, f"{account_id}:{_ip(request)}", account_id)
+    await _chan_neu_qua_nhieu(GH_TIN_THEO_KHACH, f"{account_id}:{claims['visitor_id']}", account_id)
     adapter = WebchatAdapter(account_id=account_id, credentials=credentials)
     message = adapter.parse(
         {
@@ -217,7 +246,7 @@ async def send_webchat_message(
     )
     if message is None:
         raise HTTPException(422, "Tin webchat không hợp lệ")
-    tasks.add_task(xu_ly_tin_vao.handle_inbound, message)
+    await hop_thu_ben.nhan(message, tasks)
     _cors(response, origin)
     return {"ok": True, "queued": True, "client_message_id": body.client_message_id}
 

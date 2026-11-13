@@ -56,7 +56,7 @@ from agent.api.oauth_zalo_oa import router as oauth_zalo_oa_router
 from agent.api import tich_hop
 from agent.channels import chatwoot, messenger
 from agent.channels import registry as channels
-from agent.omnichannel import xu_ly_tin_vao
+from agent.omnichannel import hop_thu_ben, xu_ly_tin_vao
 from agent.channels import zalocrm_accounts as zalo_acc
 from agent.config import ROOT, settings
 from agent import canh_gac
@@ -571,6 +571,13 @@ async def lifespan(app: FastAPI):
     _nen(tu_giai_quyet_loop(worker_id=f"resolve-{uuid.uuid4()}",
                             log_error=log_tu_giai_quyet_error))
 
+    async def log_hop_thu_error(error: str) -> None:
+        await db.log_event("tin_vao.error", error=error)
+
+    # Hộp thư bền: nhặt lại tin khách bị bỏ dở khi app chết giữa chừng.
+    _nen(hop_thu_ben.hop_thu_ben_loop(worker_id=f"inbox-{uuid.uuid4()}",
+                                      log_error=log_hop_thu_error))
+
     async def log_routing_error(error: str) -> None:
         await db.log_event("auto_routing.error", error=error)
 
@@ -975,7 +982,7 @@ async def webhook_messenger(request: Request, tasks: BackgroundTasks) -> JSONRes
 
     inbound = ad.parse_nhieu(payload)
     for m in inbound:
-        tasks.add_task(xu_ly_tin_vao.handle_inbound, m)
+        await hop_thu_ben.nhan(m, tasks)
     # Luôn 200: Meta thử lại khi nhận mã khác, và thử lại một payload ta cố
     # ý bỏ qua (tin vọng, sự kiện đã đọc) là vòng lặp không lối ra.
     return JSONResponse({"ok": True, "queued": len(inbound)})
@@ -1097,7 +1104,7 @@ async def webhook(
 
     # Trả 200 ngay để kênh không retry; xử lý ở nền.
     for m in inbound:
-        tasks.add_task(xu_ly_tin_vao.handle_inbound, m)
+        await hop_thu_ben.nhan(m, tasks)
     return JSONResponse({"ok": True, "queued": len(inbound)})
 
 

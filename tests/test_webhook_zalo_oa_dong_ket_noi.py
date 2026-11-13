@@ -87,6 +87,17 @@ def _dung_moi_truong(monkeypatch, tin):
 
     monkeypatch.setattr(xu_ly_tin_vao, "handle_inbound", _khong_lam_gi)
 
+    # Test này không có CSDL. Bước ghi hộp thư bền có bộ test riêng trên
+    # Postgres thật (tests/test_hop_thu_ben_va_gioi_han.py).
+    from uuid import uuid4
+
+    from agent.omnichannel import hop_thu_ben
+
+    async def _ghi_gia(_msg, _tasks=None):
+        return uuid4()
+
+    monkeypatch.setattr(hop_thu_ben, "nhan", _ghi_gia)
+
     app = FastAPI()
     app.include_router(mod.router)
     return TestClient(app), gian_diep

@@ -75,6 +75,7 @@ NHOM = {
     ],
     "Inbox native": [
         "webhook_deliveries",
+        "tin_vao",
         "attachments",
         "outbox_jobs",
         "inbox_events",

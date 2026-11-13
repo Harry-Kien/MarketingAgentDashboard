@@ -364,6 +364,27 @@ async def handle_inbound(msg: InboundMessage) -> None:
         with suppress(Exception):
             await adapter.bao_dang_go(msg.conversation_ref, False)
 
+    # PHẢN HỒI LỖI THỜI (DEV-03). Model mất vài giây tới vài chục giây; trong
+    # lúc ấy khách có thể nhắn thêm, nhân viên có thể tiếp quản, hoặc hội
+    # thoại đã được giải quyết. Gửi câu trả lời cho tin CŨ lúc đó là:
+    #   - khách nhận hai câu trả lời cho hai tin, câu sau mâu thuẫn câu trước
+    #     (lượt của tin mới đã có cả tin cũ trong lịch sử);
+    #   - AI nói chen vào lúc người thật đang trả lời;
+    #   - và đoạn cập nhật trạng thái ngay dưới ghi `mode='assist'` ĐÈ lên
+    #     lựa chọn tiếp quản của nhân viên — kéo hội thoại về tay AI.
+    # Bỏ câu trả lời, ghi lại lý do và chi phí đã tốn. NGOẠI LỆ: AI xin
+    # chuyển người thì vẫn chuyển — tín hiệu "vượt thẩm quyền" (mang thai,
+    # bệnh da…) không được mất chỉ vì khách nhắn thêm một tin.
+    if not reply.escalate:
+        ly_do_cu = await ly_do_loi_thoi(cid, ingested.message_id)
+        if ly_do_cu:
+            await db.execute(
+                "UPDATE conversations SET cost_usd = cost_usd + $2 WHERE id = $1",
+                cid, reply.cost_usd)
+            await db.log_event("agent.superseded", ref_id=cid, ly_do=ly_do_cu,
+                               cost_usd=reply.cost_usd, do_dai=len(reply.text or ""))
+            return
+
     # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt.
     auto_send = runtime.mode() == "auto" and not reply.escalate
     queued_parts: list[QueuedOutbound] = []
@@ -581,6 +602,43 @@ async def bao_nhan_vien_tiep_quan(
             "escalate.bao_kenh_that_bai", ref_id=cid,
             ly_do=f"{type(exc).__name__}: {exc}"[:200],
         )
+
+
+LY_DO_LOI_THOI = {
+    "co_tin_moi_hon": "khách đã nhắn tin mới hơn trong lúc AI soạn",
+    "nguoi_da_tiep_quan": "nhân viên đã tiếp quản trong lúc AI soạn",
+    "da_giai_quyet": "hội thoại đã được giải quyết trong lúc AI soạn",
+}
+
+
+async def ly_do_loi_thoi(cid, message_id) -> str | None:
+    """
+    Câu trả lời AI vừa soạn cho tin `message_id` còn dùng được không. Trả mã
+    lý do (khoá của LY_DO_LOI_THOI) nếu đã LỖI THỜI, None nếu còn dùng được.
+
+    So theo thời điểm LƯU tin trong CSDL, không theo giờ khách gửi: giờ của
+    kênh có thể lệch, còn thứ tự lưu là thứ tự hệ thống thật sự biết tới.
+    """
+    r = await db.fetchrow(
+        """
+        SELECT c.mode, c.state,
+               EXISTS (
+                   SELECT 1 FROM messages m
+                   WHERE m.conversation_id = c.id AND m.role = 'customer'
+                     AND m.id <> $2
+                     AND m.created_at > (SELECT created_at FROM messages WHERE id = $2)
+               ) AS co_tin_moi
+        FROM conversations c WHERE c.id = $1
+        """, cid, message_id)
+    if r is None:
+        return None
+    if r["mode"] == "human":
+        return "nguoi_da_tiep_quan"
+    if r["state"] in ("resolved", "closed"):
+        return "da_giai_quyet"
+    if r["co_tin_moi"]:
+        return "co_tin_moi_hon"
+    return None
 
 
 async def _history(cid: uuid.UUID) -> list[dict]:

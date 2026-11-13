@@ -340,6 +340,9 @@ class Settings(BaseSettings):
     gio_lam_viec_bat: bool = True
     gio_lam_viec_bat_dau: int = 8       # giờ Việt Nam, UTC+7
     gio_lam_viec_ket_thuc: int = 21     # 20:59 còn trong giờ, 21:00 thì hết
+    # Tự giải quyết hội thoại nhàn rỗi quá N giờ, khi không còn việc dở nào
+    # (agent/omnichannel/giai_quyet.py). 0 = tắt.
+    tu_giai_quyet_sau_gio: float = 4.0
     tin_chuyen_nguoi_ngoai_gio: str = (
         "Dạ phần này em nhờ bạn có chuyên môn bên em hỗ trợ mình cho chắc ạ. "
         "Giờ này bên em ngoài giờ làm việc rồi, bạn ấy sẽ nhắn lại cho mình "

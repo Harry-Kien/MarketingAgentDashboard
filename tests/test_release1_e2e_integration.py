@@ -89,7 +89,7 @@ def test_dev12_migration_upgrade_from_pre_0039_preserves_legacy_data(csdl_kiem_t
     all_files = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
     pre_0039 = [p for p in all_files if int(p.name.split("_", 1)[0]) < 39]
     post_0039 = [p for p in all_files if int(p.name.split("_", 1)[0]) >= 39]
-    assert [p.name[:4] for p in post_0039] == ["0039", "0040", "0041", "0042", "0043", "0044", "0045"]
+    assert [p.name[:4] for p in post_0039] == ["0039", "0040", "0041", "0042", "0043", "0044", "0045", "0046"]
 
     async def run():
         conn = await asyncpg.connect(csdl_kiem_thu)

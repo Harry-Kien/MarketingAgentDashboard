@@ -78,4 +78,3 @@ SELECT
 FROM orders o
 WHERE NULLIF(TRIM(o.ma_van_don), '') IS NOT NULL
 ON CONFLICT (order_id) DO NOTHING;
-

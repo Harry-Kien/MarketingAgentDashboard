@@ -212,3 +212,116 @@ async def ghi_diem_neu_la_csat(cid: UUID, text: str) -> bool:
     except Exception:  # noqa: BLE001 — điểm đã ghi; lời cảm ơn hỏng thì ghi lại
         await db.log_event("csat.cam_on_that_bai", ref_id=cid)
     return True
+
+
+_DIEU_KIEN_TU_GIAI_QUYET = """
+    c.state IN ('open', 'pending')
+    -- Nhân viên đang cầm, hoặc đã chuyển người: người quyết định khi nào xong.
+    AND c.mode <> 'human' AND c.status NOT IN ('escalated', 'closed')
+    -- Nhàn rỗi thật: không tin nào, theo chiều nào, trong khoảng chờ.
+    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id
+                    AND m.created_at > now() - make_interval(secs => $1))
+    -- Tin cuối KHÔNG phải của khách: khách hỏi mà chưa ai trả lời là yêu
+    -- cầu chưa được giải quyết, không phải hội thoại đã xong.
+    AND (SELECT m.role FROM messages m WHERE m.conversation_id = c.id
+         ORDER BY m.created_at DESC LIMIT 1) IN ('agent', 'staff', 'system')
+    -- Bản nháp chờ duyệt, tin chưa gửi xong hoặc gửi hỏng: còn việc dở.
+    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id
+                    AND m.delivery_status IN ('draft', 'queued', 'sending', 'failed', 'dead'))
+    AND NOT EXISTS (SELECT 1 FROM outbox_jobs j WHERE j.conversation_id = c.id
+                    AND j.status IN ('pending', 'retry', 'processing', 'dead'))
+    -- Công việc đang mở gắn với hội thoại: có người đang phải làm gì đó (Resolve Guard DEV-04).
+    AND NOT EXISTS (SELECT 1 FROM cong_viec v WHERE v.conversation_id = c.id
+                    AND v.trang_thai = ANY($3::text[]))
+    -- Đơn còn treo: chờ duyệt, chờ đồng bộ ERP, khách xin huỷ hay đổi/trả.
+    AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.conversation_id = c.id AND (
+            o.trang_thai IN ('cho_duyet', 'cho_dong_bo')
+         OR (o.yeu_cau_huy_luc IS NOT NULL AND o.trang_thai <> 'da_huy')
+         OR (o.yeu_cau_doi_tra_luc IS NOT NULL AND o.trang_thai <> 'da_huy'
+             AND o.yeu_cau_doi_tra_luc > now() - interval '14 days')))
+"""
+
+
+async def tu_giai_quyet_mot_luot(gio: float, gioi_han: int = 50) -> list[UUID]:
+    """
+    Giải quyết các hội thoại nhàn rỗi quá `gio` giờ. Trả danh sách id đã đóng.
+
+    CHỌN VÀ ĐÓNG TRONG MỘT GIAO DỊCH, KHOÁ DÒNG
+    -------------------------------------------
+    Chọn xong mới đóng ở câu sau là để lọt khoảnh khắc khách vừa nhắn tin
+    mới: hội thoại bị đóng ngay sau khi khách hỏi. `FOR UPDATE` giữ dòng
+    hội thoại tới khi đóng xong; tin mới của khách cập nhật hội thoại nên
+    phải chờ — và điều kiện được kiểm lại trên đúng dòng đã khoá.
+
+    KHÔNG hỏi CSAT: hỏi "anh/chị chấm điểm" sau bốn giờ im lặng là làm phiền,
+    và tỉ lệ trả lời thấp sẽ kéo sai số đo hài lòng của nhân viên.
+    """
+    if gio <= 0:
+        return []
+    da_dong: list[UUID] = []
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                f"""
+                WITH chon AS (
+                    SELECT c.id FROM conversations c
+                    WHERE {_DIEU_KIEN_TU_GIAI_QUYET}
+                    ORDER BY c.updated_at
+                    LIMIT $2
+                    FOR UPDATE OF c SKIP LOCKED
+                )
+                UPDATE conversations c SET
+                    state = 'resolved', status = 'closed', outcome = 'resolved',
+                    resolved_at = now(), version = c.version + 1, updated_at = now()
+                FROM chon WHERE c.id = chon.id
+                RETURNING c.id, c.account_id, c.resolution_due_at
+                """, float(gio) * 3600, int(gioi_han), list(cong_viec.CHUA_XONG))
+            for r in rows:
+                cid = r["id"]
+                # Kết thúc lượt giao đang mở: hội thoại đã xong, người ấy rảnh tay.
+                await conn.execute(
+                    "UPDATE conversation_assignments SET ended_at = now() "
+                    "WHERE conversation_id = $1 AND ended_at IS NULL", cid)
+                # Ghi nhận resolution_met theo schema hiện hành của Release 1 (không cần cột chu_ky)
+                await conn.execute(
+                    "INSERT INTO sla_events (conversation_id, kind, due_at) "
+                    "SELECT $1, 'resolution_met', $2::timestamptz "
+                    "WHERE $2::timestamptz IS NULL OR now() <= $2::timestamptz "
+                    "ON CONFLICT (conversation_id, kind, due_at) DO NOTHING",
+                    cid, r["resolution_due_at"])
+                await conn.execute(
+                    "INSERT INTO inbox_events (account_id, topic, ref_id, payload) "
+                    "VALUES ($1, 'conversation.updated', $2, $3)",
+                    r["account_id"], cid, {"tu_giai_quyet": True})
+                da_dong.append(cid)
+    for cid in da_dong:
+        await db.log_event("conversation.resolved", ref_id=cid, boi=None, tu_dong=True,
+                           ly_do=f"nhàn rỗi quá {gio:g} giờ, không còn việc dở")
+    return da_dong
+
+
+async def heartbeat_tu_giai_quyet(worker_id: str) -> None:
+    await db.execute(
+        "INSERT INTO worker_heartbeats (worker_name, worker_id, last_seen_at, detail) "
+        "VALUES ('auto-resolve', $1, now(), '{}') "
+        "ON CONFLICT (worker_name) DO UPDATE SET worker_id = excluded.worker_id, "
+        "last_seen_at = excluded.last_seen_at", worker_id)
+
+
+async def tu_giai_quyet_loop(*, worker_id: str, moi_giay: float = 300.0,
+                             log_error=None) -> None:
+    """Vòng nền: mỗi `moi_giay` một lượt. Không bao giờ chết vì một lượt hỏng."""
+    import asyncio
+
+    from agent.config import settings
+
+    while True:
+        try:
+            await tu_giai_quyet_mot_luot(float(settings.tu_giai_quyet_sau_gio))
+            await heartbeat_tu_giai_quyet(worker_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — vòng nền phải tự hồi phục
+            if log_error is not None:
+                await log_error(f"{type(exc).__name__}: {exc}"[:500])
+        await asyncio.sleep(moi_giay)

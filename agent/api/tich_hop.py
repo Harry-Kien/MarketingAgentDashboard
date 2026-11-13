@@ -174,13 +174,16 @@ async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
 @router.api_route(
     "/{ten}/{duong:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    # Proxy truyền giao thức của ứng dụng ngoài, không phải API nghiệp vụ.
+    # Một handler nhiều method sinh operationId trùng trong OpenAPI.
+    include_in_schema=False,
 )
 async def proxy(request: Request, ten: str, duong: str = "",
                 _: dict = Depends(can_quyen("tich_hop.doc"))) -> Response:
     return await chuyen_tiep(request, ten, duong)
 
 
-@router.api_route("/{ten}", methods=["GET", "HEAD"])
+@router.api_route("/{ten}", methods=["GET", "HEAD"], include_in_schema=False)
 async def proxy_goc(request: Request, ten: str,
                     _: dict = Depends(can_quyen("tich_hop.doc"))) -> Response:
     return await chuyen_tiep(request, ten, "")

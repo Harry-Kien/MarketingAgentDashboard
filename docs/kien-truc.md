@@ -126,7 +126,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-67 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+68 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -142,7 +142,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Hồ sơ agent** | `agent_ho_so` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
-| **Inbox native** | `webhook_deliveries` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
+| **Inbox native** | `webhook_deliveries` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` · `truong_khach` |
 | **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
 
@@ -735,6 +735,17 @@ erDiagram
         TEXT ma_van_don
         BIGINT phi_van_chuyen
         _ con_13_cot_nua
+    }
+    tin_vao {
+        UUID id
+        TEXT dedupe_key
+        UUID account_id
+        TEXT kenh
+        JSONB payload
+        TEXT trang_thai
+        INT so_lan_thu
+        TIMESTAMPTZ cho_den
+        _ con_2_cot_nua
     }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""

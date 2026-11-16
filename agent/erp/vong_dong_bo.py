@@ -50,7 +50,8 @@ class KhoDon(Protocol):
 
     async def don_cho_dong_bo(self, gioi_han: int = 20) -> list[dict]: ...
 
-    async def danh_dau_da_day(self, id_don: Any, erp_ma_don: str) -> None: ...
+    async def danh_dau_da_day(self, id_don: Any, erp_ma_don: str,
+                              ly_do: str = "") -> bool | None: ...
 
     async def danh_dau_that_bai(self, id_don: Any, ly_do: str) -> None: ...
 
@@ -98,7 +99,13 @@ async def quet_mot_luot(
             continue
 
         if kq.ket_cuc == "xong":
-            await kho_don.danh_dau_da_day(don["id"], kq.erp_ma_don)
+            con_song = await kho_don.danh_dau_da_day(
+                don["id"], kq.erp_ma_don, ly_do=getattr(kq, "ly_do", "") or "")
+            if con_song is False:
+                # Đơn bị huỷ trong lúc đẩy: ERP có đơn, bên này thì không.
+                # `PostgresKhoDon` đã sinh việc huỷ tay; ở đây chỉ đếm.
+                thong_ke["huy_giua_chung"] = thong_ke.get("huy_giua_chung", 0) + 1
+                continue
             await _kêu(ghi_nhat_ky, "erp.don_dong_bo_muon",
                        ma_don=don.get("ma_don"), erp_ma_don=kq.erp_ma_don,
                        so_lan=so_lan + 1)
@@ -149,15 +156,39 @@ class PostgresKhoDon:
         )
         return [dict(r) for r in rows]
 
-    async def danh_dau_da_day(self, id_don, erp_ma_don: str) -> None:
-        from agent import db
+    async def danh_dau_da_day(self, id_don, erp_ma_don: str, ly_do: str = "") -> bool:
+        """
+        Trả False khi đơn KHÔNG còn `cho_dong_bo` (bị huỷ trong lúc đẩy).
 
-        await db.execute(
+        `AND trang_thai='cho_dong_bo'`: bản trước UPDATE theo id trơn, nên
+        đơn người vừa huỷ (hàng đã trả kho) sống lại thành `da_chot` — kho
+        không trừ lại, hàng bị bán hai lần (rà soát 11.2026).
+        """
+        from agent import db
+        from agent.erp import day_don
+
+        dong = await db.fetchrow(
             "UPDATE orders SET trang_thai='da_chot', erp_ma_don=$2, "
-            "erp_dong_bo_luc=now(), erp_loi=NULL, updated_at=now() "
-            "WHERE id=$1",
+            "erp_dong_bo_luc=now(), erp_loi=$3, updated_at=now() "
+            "WHERE id=$1 AND trang_thai='cho_dong_bo' RETURNING ma_don, conversation_id",
+            id_don, erp_ma_don, (ly_do or None),
+        )
+        if dong is not None:
+            if ly_do:
+                await day_don.bao_don_chua_submit(
+                    dong["ma_don"], erp_ma_don, ly_do, dong.get("conversation_id"))
+            return True
+        # ERP ĐÃ nhận. Ghi mã ERP lên đơn (đã huỷ) để người huỷ tay biết mã
+        # nào, rồi sinh việc — im lặng là kho ERP xuất hàng cho đơn đã huỷ.
+        hien = await db.fetchrow(
+            "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now() "
+            "WHERE id=$1 RETURNING ma_don, trang_thai, conversation_id",
             id_don, erp_ma_don,
         )
+        if hien is not None:
+            await day_don.bao_don_huy_con_song_ben_erp(
+                hien["ma_don"], erp_ma_don, hien.get("conversation_id"))
+        return False
 
     async def danh_dau_that_bai(self, id_don, ly_do: str) -> None:
         from agent import db
@@ -174,9 +205,12 @@ class PostgresKhoDon:
         # `cho_duyet` chứ không phải `da_huy`: máy bỏ cuộc, NGƯỜI quyết định
         # số phận đơn. Tự huỷ đơn của khách vì ERP không nhận là vượt thẩm
         # quyền — có thể chỉ là cấu hình sai, sửa xong là đẩy được.
+        #
+        # `AND trang_thai='cho_dong_bo'`: đơn người đã huỷ không được "sống
+        # lại" thành chờ duyệt.
         await db.execute(
             "UPDATE orders SET trang_thai='cho_duyet', erp_loi=$2, "
-            "updated_at=now() WHERE id=$1",
+            "updated_at=now() WHERE id=$1 AND trang_thai='cho_dong_bo'",
             id_don, ly_do[:500],
         )
 

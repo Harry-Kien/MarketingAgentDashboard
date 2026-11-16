@@ -375,7 +375,11 @@ def test_bao_nhan_vien_chay_nen_khong_chan_luong_tin():
     from agent.core import cong_viec
 
     assert "bao_nhan_vien_nen(" in inspect.getsource(cong_viec._bao_viec_moi_cho_nhan_vien)
-    assert "bao_nhan_vien_nen(" in inspect.getsource(cong_viec.tao_tu_van_chuyen)
+    # Việc vận chuyển và việc đơn hàng đi chung một đường tạo việc hệ thống;
+    # canh cả đường chung lẫn việc hai hàm công khai thật sự đi qua nó.
+    assert "bao_nhan_vien_nen(" in inspect.getsource(cong_viec._tao_viec_he_thong)
+    for ham in (cong_viec.tao_tu_van_chuyen, cong_viec.tao_tu_don_hang):
+        assert "_tao_viec_he_thong(" in inspect.getsource(ham)
 
 
 def test_env_example_khai_bao_nhan_vien():

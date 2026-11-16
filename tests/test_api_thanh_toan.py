@@ -127,6 +127,36 @@ def test_don_huy_khong_tao_ma(csdl_kiem_thu, ngan_hang):
         assert k.get(f"/api/orders/{oid}/vietqr").status_code == 409
 
 
+@pytest.mark.parametrize("trang_thai", ["cho_duyet", "cho_dong_bo", "da_giao"])
+def test_chi_don_da_chot_moi_tao_duoc_ma(csdl_kiem_thu, ngan_hang, trang_thai):
+    """
+    `cho_duyet`: người chưa duyệt, khách chuyển tiền cho đơn có thể bị từ
+    chối. `da_giao`: đã thu COD rồi, chuyển nữa là trả hai lần.
+    """
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*Q))) as k:
+        oid = _dung(csdl_kiem_thu, trang_thai=trang_thai)
+        assert k.get(f"/api/orders/{oid}/vietqr").status_code == 409
+        assert k.get(f"/api/orders/{oid}/vietqr.svg").status_code == 409
+        assert k.post(f"/api/orders/{oid}/vietqr/gui").status_code == 409
+
+
+def test_ma_qr_tru_phan_khach_da_tra(csdl_kiem_thu, ngan_hang):
+    async def da_thu(oid: str, so: int):
+        conn = await asyncpg.connect(csdl_kiem_thu)
+        try:
+            await conn.execute("UPDATE orders SET so_tien_da_thu=$2 WHERE id=$1::uuid", oid, so)
+        finally:
+            await conn.close()
+
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*Q))) as k:
+        oid = _dung(csdl_kiem_thu)
+        asyncio.run(da_thu(oid, 75000))
+        assert k.get(f"/api/orders/{oid}/vietqr").json()["so_tien"] == 200000
+        asyncio.run(da_thu(oid, 275000))
+        r = k.get(f"/api/orders/{oid}/vietqr")
+        assert r.status_code == 409 and "trả đủ" in r.json()["detail"]
+
+
 def test_don_cua_kenh_khong_duoc_giao_la_404(csdl_kiem_thu, ngan_hang):
     with TestClient(_app(csdl_kiem_thu, nguoi_thu(*Q))) as k:
         oid = _dung(csdl_kiem_thu, thanh_vien=False)

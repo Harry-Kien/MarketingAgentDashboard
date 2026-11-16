@@ -64,7 +64,15 @@ async function loadOrders() {
      *
      * Đơn đã huỷ rồi thì thôi, cờ hết nghĩa.
      */
-    const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy";
+    /* Đơn ĐÃ GIAO thì cờ xin huỷ cũng thôi nghĩa: hàng đã ở nhà khách, đó là
+       đổi trả — và máy chủ từ chối huỷ đơn đã giao (cộng kho món không có
+       trên kệ). */
+    const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy" && o.trang_thai !== "da_giao";
+    /* Tiền khách đã trả trước (VietQR). Hiện ngay trên dòng để người đóng
+       gói biết; vận đơn chỉ thu hộ phần còn lại. Không có dòng này thì
+       khách đã chuyển khoản bị shipper thu lần hai. */
+    const da_thu = Number(o.so_tien_da_thu || 0);
+    const con_mo = o.trang_thai === "da_chot" || o.trang_thai === "cho_dong_bo";
     /* Đơn đã chốt, chưa có vận đơn: nút tạo vận đơn ngay trên dòng. Hàm tạo
        vận đơn có bốn chốt từ lâu, nhưng trước 29.10.2026 không có nút nào
        gọi tới nó — đơn chốt xong rồi nằm im, phải lên trang hãng gõ tay. */
@@ -101,13 +109,18 @@ async function loadOrders() {
       </span>
       <span class="row__side">
         <span class="order__total">${vnd(o.tong_tien)}</span>
+        ${da_thu > 0 ? `<span class="tag tag--auto" title="${
+            o.da_thu_luc ? "Ghi lúc " + esc(clock(o.da_thu_luc)) : ""}">Đã thu ${vnd(da_thu)}</span>` : ""}
         <span class="row__time">${clock(o.created_at)}</span>
-        ${o.trang_thai !== "da_huy" ? `<span class="order__qr">
+        ${o.trang_thai === "da_chot" ? `<span class="order__qr">
             <a class="btn btn--sm btn--ghost" href="/api/orders/${o.id}/vietqr.svg" target="_blank"
                rel="noopener" title="Mở mã VietQR (tổng hàng + phí ship)">QR</a>
             ${o.conversation_id ? `<button type="button" class="btn btn--sm" data-oqr-gui="${o.id}"
                title="Gửi mã QR thanh toán vào hội thoại của đơn">Gửi QR</button>` : ""}
           </span>` : ""}
+        ${con_mo ? `<button type="button" class="btn btn--sm btn--ghost" data-odathu="${o.id}"
+            data-ma="${esc(o.ma_don)}" data-goi-y="${Number(o.tong_tien || 0) + Number(o.phi_van_chuyen || 0)}"
+            data-da-thu="${da_thu}" title="Ghi nhận khách đã chuyển khoản — vận đơn chỉ thu hộ phần còn lại">Đã nhận tiền</button>` : ""}
         ${cho_duyet ? `<span style="display:flex;gap:6px;margin-top:4px">
             <button type="button" class="btn btn--sm btn--go" data-oapprove="${o.id}">Duyệt</button>
             <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
@@ -136,8 +149,33 @@ async function loadOrders() {
   }));
   $$("[data-ocancel]").forEach((b) => bam(b, async () => {
     const r = await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
-    if (r.can_huy_tay) toast("Đã huỷ " + r.ma_don + ". " + r.can_huy_tay, true);
+    const nhac = [r.can_huy_tay, r.can_hoan_tien].filter(Boolean).join(" ");
+    if (nhac) toast("Đã huỷ " + r.ma_don + ". " + nhac, true);
     else toast("Đã huỷ đơn.");
+  }));
+  /* "Đã nhận tiền": người đối chiếu sao kê rồi ghi TỔNG đã nhận. Máy chủ
+     ghi đè chứ không cộng dồn — bấm hai lần không thành trừ COD hai lần. */
+  $$("[data-odathu]").forEach((b) => bam(b, async () => {
+    const daCo = Number(b.dataset.daThu || 0);
+    const d = await hoiHop({
+      tieu_de: `Đã nhận tiền đơn ${b.dataset.ma}`,
+      phu: "Đối chiếu sao kê ngân hàng trước khi ghi — hệ thống không đọc được tài khoản. "
+        + "Vận đơn tạo sau đó chỉ thu hộ phần còn lại.",
+      truong: [
+        { name: "so_tien", label: "Tổng số tiền đã nhận (đồng)", type: "number",
+          value: daCo > 0 ? daCo : b.dataset.goiY, min: 1, step: 1, required: true },
+        { name: "ghi_chu", label: "Ghi chú", hint: "mã giao dịch ngân hàng…", maxlength: 300 },
+      ],
+      nut: "Ghi đã nhận",
+    });
+    if (!d) return;
+    const r = await api("/orders/" + b.dataset.odathu + "/da-thu-tien", {
+      method: "POST",
+      body: JSON.stringify({ so_tien: parseInt(d.so_tien, 10), ghi_chu: d.ghi_chu || "" }),
+    });
+    if (r.can_sua_cod) toast("Đã ghi " + vnd(r.so_tien_da_thu) + ". " + r.can_sua_cod, true);
+    else toast("Đã ghi nhận " + vnd(r.so_tien_da_thu) + " cho đơn " + r.ma_don
+      + " · còn thu hộ " + vnd(r.thu_ho_cod) + ".");
   }));
   $$("[data-ovandon]").forEach((b) => bam(b, async () => {
     const r = await api("/orders/" + b.dataset.ovandon + "/van-don", { method: "POST", body: "{}" });

@@ -140,9 +140,15 @@ async def day_don(
         await _ghi_nhat_ky("erp.don_bi_tu_choi", ma_don=ma_don, ly_do=kq.ly_do)
         return KetQuaDay(ket_cuc="tu_choi", ly_do=kq.ly_do)
 
+    if kq.ly_do:
+        # ERP CÓ đơn nhưng kèm lời cảnh báo (ERPNext: tạo được mà chưa
+        # submit — kho bên ERP chưa giữ chỗ). Bản trước bỏ `ly_do` ở đây:
+        # kết cục "xong" sạch sẽ, không ai biết đơn đang là bản nháp.
+        await _ghi_nhat_ky("erp.don_chua_submit", ma_don=ma_don,
+                           erp_ma_don=kq.erp_ma_don, ly_do=kq.ly_do)
     await _ghi_nhat_ky("erp.don_da_day", ma_don=ma_don,
                        erp_ma_don=kq.erp_ma_don)
-    return KetQuaDay(ket_cuc="xong", erp_ma_don=kq.erp_ma_don)
+    return KetQuaDay(ket_cuc="xong", erp_ma_don=kq.erp_ma_don, ly_do=kq.ly_do)
 
 
 async def day_don_da_luu(
@@ -179,27 +185,82 @@ async def day_don_da_luu(
         ma_don=ma_don, khach_ten=khach_ten, khach_sdt=khach_sdt,
         khach_dia_chi=khach_dia_chi, items=items, ghi_chu=ghi_chu,
     )
+    # Mọi UPDATE dưới đây đều kèm điều kiện trạng thái: lời gọi ERP mất vài
+    # giây, và người có thể bấm Huỷ đúng lúc ấy. UPDATE theo id trơn là đơn
+    # vừa huỷ (hàng đã trả kho) SỐNG LẠI thành `cho_dong_bo` — vòng nền đẩy
+    # nó sang ERP, kho bên này không trừ lại (rà soát 11.2026).
     if kq.ket_cuc == "tu_choi":
         # ERP hiểu và không đồng ý. Trả hàng, huỷ đơn — thà không có đơn
         # còn hơn có đơn mà kho không bao giờ xuất.
         await kho.tra_hang(ma_don, ly_do="erp_tu_choi")
         await db.execute(
             "UPDATE orders SET trang_thai='da_huy', erp_loi=$2, updated_at=now() "
-            "WHERE id = $1", id_don, kq.ly_do,
+            "WHERE id = $1 AND trang_thai = 'da_chot'", id_don, kq.ly_do,
         )
     elif kq.ket_cuc == "cho_lai":
         # KHÔNG BIẾT ERP đã ghi hay chưa. Giữ hàng, giữ đơn, để vòng nền thử.
         await db.execute(
             "UPDATE orders SET trang_thai='cho_dong_bo', erp_loi=$2, "
-            "erp_so_lan_thu = erp_so_lan_thu + 1, updated_at=now() WHERE id = $1",
+            "erp_so_lan_thu = erp_so_lan_thu + 1, updated_at=now() "
+            "WHERE id = $1 AND trang_thai = 'da_chot'",
             id_don, kq.ly_do,
         )
     elif kq.erp_ma_don:
-        await db.execute(
-            "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now() "
-            "WHERE id = $1", id_don, kq.erp_ma_don,
+        # Mã ERP là SỰ THẬT (đơn đã có bên ERP), nên ghi kể cả khi đơn vừa bị
+        # huỷ — người huỷ tay bên ERP cần biết mã nào.
+        dong = await db.fetchrow(
+            "UPDATE orders SET erp_ma_don=$2, erp_dong_bo_luc=now(), erp_loi=$3 "
+            "WHERE id = $1 RETURNING trang_thai, conversation_id",
+            id_don, kq.erp_ma_don, kq.ly_do or None,
         )
+        if dong is not None and dong["trang_thai"] == "da_huy":
+            await bao_don_huy_con_song_ben_erp(
+                ma_don, kq.erp_ma_don, dong.get("conversation_id"))
+        elif kq.ly_do:
+            await bao_don_chua_submit(
+                ma_don, kq.erp_ma_don, kq.ly_do,
+                dong.get("conversation_id") if dong else None)
     return kq
+
+
+async def bao_don_huy_con_song_ben_erp(ma_don: str, erp_ma_don: str,
+                                       conversation_id=None) -> None:
+    """
+    ERP nhận đơn đúng lúc người huỷ đơn bên này: đơn đã huỷ, hàng đã trả kho,
+    còn bên ERP là một Sales Order sống — kho ERP sẽ xuất hàng cho nó.
+
+    Không tự huỷ bên ERP (huỷ chứng từ là việc có hậu quả kế toán); sinh
+    VIỆC cho người, vì một dòng nhật ký là thứ không ai đọc.
+    """
+    from agent.core import cong_viec
+
+    await _ghi_nhat_ky("erp.don_huy_nhung_erp_da_nhan", ma_don=ma_don,
+                       erp_ma_don=erp_ma_don)
+    await cong_viec.tao_tu_don_hang(
+        ma_don,
+        tieu_de=f"Huỷ tay đơn ERP {erp_ma_don} (đơn {ma_don} đã huỷ)",
+        mo_ta=(f"Đơn {ma_don} bị huỷ trong lúc hệ thống đang đẩy sang ERP, và "
+               f"ERP đã nhận thành {erp_ma_don}. Bên này hàng đã trả về kho; bên "
+               "ERP đơn vẫn sống. Vào ERP huỷ đơn này, kẻo kho ERP xuất hàng."),
+        khoa=f"don_hang:erp_huy_tay:{erp_ma_don}",
+        conversation_id=conversation_id,
+    )
+
+
+async def bao_don_chua_submit(ma_don: str, erp_ma_don: str, ly_do: str,
+                              conversation_id=None) -> None:
+    """Đơn nằm bên ERP ở dạng NHÁP: kho ERP chưa giữ chỗ. Người phải submit tay."""
+    from agent.core import cong_viec
+
+    await cong_viec.tao_tu_don_hang(
+        ma_don,
+        tieu_de=f"Submit tay đơn ERP {erp_ma_don}",
+        mo_ta=(f"Đơn {ma_don} đã vào ERP thành {erp_ma_don} nhưng CHƯA submit "
+               f"({ly_do[:300]}). Kho ERP chưa giữ chỗ hàng. Mở đơn trong ERP, "
+               "sửa chỗ ERP báo rồi bấm Submit."),
+        khoa=f"don_hang:erp_chua_submit:{erp_ma_don}",
+        conversation_id=conversation_id, uu_tien="thuong",
+    )
 
 
 async def _ghi_nhat_ky(loai: str, **chi_tiet) -> None:

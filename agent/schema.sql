@@ -227,10 +227,11 @@ CREATE INDEX IF NOT EXISTS idx_order_xin_huy ON orders (yeu_cau_huy_luc DESC)
 CREATE INDEX IF NOT EXISTS idx_order_created ON orders (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_status  ON orders (trang_thai);
 
--- Chống tạo trùng: khách nhắn "ok" hai lần không được ra hai đơn.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_order_dedupe
-    ON orders (conversation_id, md5(items::text))
-    WHERE trang_thai <> 'da_huy';
+-- Chống tạo trùng (khách nhắn "ok" hai lần) nằm trong MÃ, không ở đây:
+-- xem `tools._tao_don_hang` và migration 0041. Chỉ mục UNIQUE cũ không có
+-- giới hạn thời gian, nên chặn VĨNH VIỄN khách mua lại đúng món cũ. ĐỪNG
+-- thêm lại nó vào file này — schema.sql chạy mỗi lần khởi động, trước mọi
+-- migration, nên nó sẽ được dựng lại ngay sau khi 0041 xoá.
 
 -- --- Bài đăng mạng xã hội ------------------------------------
 -- Agent soạn nội dung + gắn video, người duyệt, rồi PublishAdapter

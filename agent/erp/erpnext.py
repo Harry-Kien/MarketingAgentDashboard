@@ -418,8 +418,28 @@ class NguonErpNext:
         return str(moi.get("name") or "")
 
     async def tim_don(self, khoa: str) -> str | None:
-        co = await self._lay("Sales Order", [["po_no", "=", khoa]], ["name"])
-        return str(co[0]["name"]) if co else None
+        """
+        Đơn đã có bên ERP chưa — và nếu có mà còn NHÁP thì submit nốt.
+
+        Lần trước có thể đã tạo xong rồi mới hỏng ở bước submit (mạng đứt,
+        ERP 5xx). Bản trước thấy đơn là trả "xong": bản nháp nằm đó mãi, kho
+        ERP không giữ chỗ, và mọi lần thử lại đều "xong" (rà soát 11.2026).
+        """
+        co = await self._lay(
+            "Sales Order", [["po_no", "=", khoa]], ["name", "docstatus"],
+        )
+        if not co:
+            return None
+        ten = str(co[0]["name"])
+        if self._submit_don and int(co[0].get("docstatus") or 0) == 0:
+            try:
+                await self._submit("Sales Order", ten)
+            except TuChoiERP as exc:
+                # LoiERP, không phải TuChoiERP: đơn ĐÃ có bên ERP. Từ chối ở
+                # đây là tầng trên huỷ đơn bên này và trả kho — trong khi bản
+                # nháp vẫn nằm bên ERP. Thử lại, quá số lần thì người xem.
+                raise LoiERP(f"Đơn {ten} còn là bản nháp, submit bị từ chối: {exc}") from exc
+        return ten
 
     async def tao_don(
         self, khoa: str, khach_id: str, dong: list[DongDon], ghi_chu: str = ""
@@ -474,11 +494,21 @@ class NguonErpNext:
         return KetQuaDon(thanh_cong=True, erp_ma_don=ten_don)
 
     async def _submit(self, doctype: str, ten: str) -> None:
-        """Chuyển một chứng từ từ Draft sang chính thức."""
-        res = await self._client.put(
-            f"{self._goc}/api/resource/{doctype}/{ten}",
-            json={"docstatus": 1}, headers=self._headers,
-        )
+        """Chuyển một chứng từ từ Draft sang chính thức.
+
+        Lỗi mạng và 5xx là KHÔNG BIẾT (LoiERP → thử lại; `tim_don` sẽ submit
+        nốt bản nháp). Bản trước để `httpx` ném thẳng ra — tầng trên gặp một
+        lỗi lạ thay vì một kết cục có nghĩa.
+        """
+        try:
+            res = await self._client.put(
+                f"{self._goc}/api/resource/{doctype}/{ten}",
+                json={"docstatus": 1}, headers=self._headers,
+            )
+        except httpx.HTTPError as exc:
+            raise LoiERP(f"Mất kết nối khi submit {doctype} {ten}: {exc}") from exc
+        if res.status_code >= 500:
+            raise LoiERP(f"ERPNext {res.status_code} khi submit {doctype} {ten}")
         if res.status_code >= 400:
             raise TuChoiERP(_thong_diep_loi(res))
 
@@ -492,8 +522,13 @@ class NguonErpNext:
         """
         rows = await self._lay(
             "Delivery Note",
+            # Lọc theo DÒNG phiếu giao trỏ về Sales Order. Bản trước lọc
+            # `po_no = erp_ma_don` — nhưng `po_no` chứa mã đơn NỘI BỘ, còn
+            # `erp_ma_don` là tên Sales Order: không bao giờ khớp, trạng thái
+            # giao từ ERP chưa từng chạy (rà soát 11.2026).
             # `docstatus=1` là đã submit. Bản nháp chưa xuất kho gì cả.
-            [["po_no", "=", erp_ma_don], ["docstatus", "=", 1]],
+            [["Delivery Note Item", "against_sales_order", "=", erp_ma_don],
+             ["docstatus", "=", 1]],
             ["name", "status"],
         )
         if not rows:

@@ -90,6 +90,21 @@ async def _bao_khach(conversation_id, text: str, khoa: str) -> None:
         )
 
 
+def tien_thu_ho(order: dict) -> int:
+    """
+    Tiền shipper thu hộ (COD) = tổng hàng trừ phần khách ĐÃ trả trước.
+
+    Bản trước luôn thu hộ bằng tổng tiền: khách đã chuyển khoản theo mã
+    VietQR vẫn bị thu lần nữa lúc nhận hàng — và không có chỗ nào ghi là
+    khách đã trả (rà soát 11.2026). `so_tien_da_thu` do người ghi bằng nút
+    "Đã nhận tiền" trên màn Đơn hàng. Không bao giờ âm: khách trả dư (cả
+    phí ship) thì COD là 0, không phải shipper trả lại tiền.
+    """
+    tong = int(order.get("tong_tien") or 0)
+    da_thu = int(order.get("so_tien_da_thu") or 0)
+    return max(0, tong - da_thu)
+
+
 async def tao_van_don_cho_don(
     ma_don: str, provider_name: str | None = None
 ) -> CreateWaybillResult:
@@ -208,7 +223,7 @@ async def tao_van_don_cho_don(
         khach_dia_chi=khach_dia_chi,
         items=shipping_items,
         tong_tien=tong_tien,
-        thu_ho_cod=tong_tien,  # Mặc định thu hộ COD = tổng tiền đơn
+        thu_ho_cod=tien_thu_ho(order),
         tong_khoi_luong_gram=max(300, tong_gram),
         ghi_chu=str(order.get("ghi_chu") or ""),
     )
@@ -217,7 +232,11 @@ async def tao_van_don_cho_don(
 
     if result.ok and result.ma_van_don:
         now = datetime.now(timezone.utc)
-        await db.execute(
+        # `AND trang_thai = 'da_chot'`: người có thể bấm Huỷ trong lúc ta chờ
+        # hãng trả lời. Bản trước UPDATE theo mã đơn trơn — đơn huỷ mang mã
+        # vận đơn, màn hình hiện "đang giao", khách được nhắn "đã bàn giao"
+        # cho một kiện lẽ ra không đi.
+        da_ghi = await db.fetchrow(
             """
             UPDATE orders
             SET ma_van_don = $1,
@@ -227,7 +246,8 @@ async def tao_van_don_cho_don(
                 ngay_du_kien_giao = $5,
                 cap_nhat_van_chuyen_luc = $6,
                 updated_at = now()
-            WHERE ma_don = $7
+            WHERE ma_don = $7 AND trang_thai = 'da_chot'
+            RETURNING id
             """,
             result.ma_van_don,
             provider.code,
@@ -237,6 +257,29 @@ async def tao_van_don_cho_don(
             now,
             ma_don,
         )
+        if da_ghi is None:
+            # Vận đơn ĐÃ có bên hãng, đơn thì không còn `da_chot`. Không ai
+            # huỷ hộ phía hãng — sinh việc, kẻo shipper vẫn tới lấy hàng.
+            await db.log_event(
+                "shipping.van_don_cho_don_da_huy", ma_don=ma_don,
+                ma_van_don=result.ma_van_don, carrier=provider.code,
+            )
+            await cong_viec.tao_tu_van_chuyen(
+                ma_don,
+                tieu_de=f"Huỷ vận đơn {result.ma_van_don} bên {provider.name}",
+                mo_ta=(f"Vận đơn {result.ma_van_don} được tạo cho đơn {ma_don}, "
+                       "nhưng đơn đã bị huỷ (hoặc đổi trạng thái) trong lúc chờ hãng "
+                       "trả lời. Vào trang hãng huỷ vận đơn này, kẻo shipper vẫn "
+                       "tới lấy hàng."),
+                khoa=f"van_chuyen:huy_tay:{result.ma_van_don}",
+                conversation_id=order.get("conversation_id"),
+            )
+            return CreateWaybillResult(
+                ok=False,
+                loi=(f"Đơn {ma_don} không còn ở trạng thái đã chốt (vừa bị huỷ?) "
+                     f"nhưng hãng ĐÃ tạo vận đơn {result.ma_van_don}. Vào trang "
+                     "hãng huỷ tay vận đơn này — đã sinh việc nhắc."),
+            )
         await db.log_event(
             "shipping.created",
             ma_don=ma_don,
@@ -489,8 +532,34 @@ async def xu_ly_webhook_van_chuyen(
     # Xử lý theo từng trạng thái cốt lõi:
     # 1. ĐÃ GIAO (DELIVERED): Đóng đơn hàng thành công & Nhắn tin cảm ơn khách
     if st_noi_bo == InternalShippingStatus.DELIVERED:
+        # Đơn ĐÃ HUỶ bên này (hàng đã cộng lại vào kho) mà hãng báo đã giao:
+        # KHÔNG đổi sang `da_giao`. Bản trước đổi — kho vẫn đếm món đang ở
+        # nhà khách, và đơn huỷ "sống lại" không ai biết. Hàng thật đã đi:
+        # người phải quyết thu tiền hay thu hồi, và trừ lại kho.
+        if order.get("trang_thai") == "da_huy":
+            await db.log_event(
+                "shipping.giao_don_da_huy", ma_don=ma_don, ma_van_don=ma_van_don,
+                carrier=provider_name,
+            )
+            await cong_viec.tao_tu_don_hang(
+                ma_don,
+                tieu_de=f"Hãng báo ĐÃ GIAO đơn đã huỷ {ma_don}",
+                mo_ta=(f"Đơn {ma_don} đã huỷ (hàng đã cộng lại kho), nhưng "
+                       f"{provider_name} báo đã giao vận đơn {ma_van_don}. Liên hệ "
+                       "khách để thu tiền hoặc thu hồi hàng, rồi kiểm kê lại kho "
+                       "(Kho → Kiểm kê) — hệ thống KHÔNG tự trừ kho."),
+                khoa=f"don_hang:giao_don_da_huy:{ma_van_don or ma_don}",
+                conversation_id=order.get("conversation_id"),
+            )
+            return {
+                "ok": True,
+                "can_nguoi_xem": True,
+                "ma_don": ma_don,
+                "note": "Đơn đã huỷ mà hãng báo đã giao — giữ trạng thái, đã sinh việc.",
+            }
         await db.execute(
-            "UPDATE orders SET trang_thai = 'da_giao', updated_at = now() WHERE id = $1",
+            "UPDATE orders SET trang_thai = 'da_giao', updated_at = now() "
+            "WHERE id = $1 AND trang_thai <> 'da_huy'",
             order["id"],
         )
         # Khoá gắn theo MÃ VẬN ĐƠN và trạng thái: GHN phát lại webhook là

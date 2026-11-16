@@ -35,6 +35,33 @@ CON_SONG = frozenset({"connected"})
 # được 04.09.2026: 1866 sự kiện "cần quét QR lại" với đúng lý do này.
 DAU_LECH_BI_MAT = "LỆCH BÍ MẬT SIDECAR"
 
+# Đầu chuỗi lý do khi KHÔNG VỚI TỚI sidecar (hoặc sidecar không với tới
+# Zalo). Cũng KHÔNG phải "hết phiên": phiên vẫn nằm nguyên trong vault, chỉ
+# là chưa gọi được. Đo trên CSDL thật: 2015 sự kiện `ConnectError: sidecar
+# không phản hồi` bị ghi `can_quet_lai` — tài khoản bị đổi sang
+# REAUTH_REQUIRED và việc khôi phục bị hoãn 30 phút, nên khi sidecar sống
+# lại, kênh vẫn nằm chết thêm nửa giờ và dashboard bảo người đi quét QR vô
+# ích.
+DAU_SIDECAR_KHONG_TOI = "SIDECAR KHÔNG TỚI"
+BAO_KHONG_TOI_MOI_GIAY = 3600
+
+# Dấu hiệu lỗi MẠNG (httpx phía app, fetch/undici phía sidecar). Đối chiếu
+# chuỗi vì lỗi tới đây đã qua `RuntimeError(delivery.detail)` của adapter —
+# kiểu ngoại lệ gốc đã mất.
+_DAU_LOI_MANG = (
+    "sidecar không phản hồi",       # ZaloPersonalAdapter._request bắt httpx.HTTPError
+    "ConnectError", "ConnectTimeout", "ReadTimeout", "WriteTimeout",
+    "PoolTimeout", "RemoteProtocolError", "ReadError", "NetworkError",
+    "fetch failed", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND",
+    "EAI_AGAIN", "socket hang up", "sidecar HTTP 5",
+)
+
+
+def la_loi_mang(ly_do: str) -> bool:
+    """Lỗi là do KHÔNG VỚI TỚI (sidecar/Zalo), không phải do mất đăng nhập."""
+    s = str(ly_do)
+    return s.startswith(DAU_SIDECAR_KHONG_TOI) or any(d in s for d in _DAU_LOI_MANG)
+
 
 def den_luot_thu(row, lan_thu_cuoi: dict, *, khoang_giay: float, bay_gio: float | None = None) -> bool:
     """
@@ -62,6 +89,8 @@ async def bao_phien_hong(
     da_bao_lech: set,
     bao_dong: Callable[..., Awaitable[None]],
     ghi_nhat_ky: Callable[..., Awaitable[None]],
+    da_bao_khong_toi: dict | None = None,
+    bay_gio: float | None = None,
 ) -> bool:
     """
     Cần NGƯỜI làm gì đó cho một nick Zalo — máy không tự làm được. Trả đã
@@ -85,13 +114,37 @@ async def bao_phien_hong(
 
     Lệch bí mật KHÔNG đổi trạng thái tài khoản: phiên Zalo vẫn tốt, chỉ
     sidecar cần khởi động lại; nhớ trong bộ nhớ (`da_bao_lech`) là đủ.
+
+    KHÔNG VỚI TỚI sidecar (lỗi mạng, sidecar đang khởi động lại) cũng KHÔNG
+    đổi trạng thái và KHÔNG hoãn lượt thử: nhịp sau thử lại như thường.
+    Ghi sự kiện riêng `zalo_personal.sidecar_khong_toi` và báo động — tối
+    đa một lần mỗi giờ mỗi nick (`da_bao_khong_toi`), vì sidecar chết lâu
+    thì vẫn phải có người biết, nhưng không phải sáu mươi lần một giờ.
     """
+    import time
+
     from agent.omnichannel.accounts import AccountStatus
     from agent.omnichannel.credential_loader import SYSTEM_ACTOR_ID
 
-    lech = str(ly_do).startswith(DAU_LECH_BI_MAT)
     tk = await repository.get(account_id)
     ten = getattr(tk, "display_name", None) or str(account_id)
+    if la_loi_mang(ly_do):
+        nho = da_bao_khong_toi if da_bao_khong_toi is not None else {}
+        nay = time.monotonic() if bay_gio is None else bay_gio
+        truoc = nho.get(account_id)
+        if truoc is not None and nay - truoc < BAO_KHONG_TOI_MOI_GIAY:
+            return False
+        nho[account_id] = nay
+        await ghi_nhat_ky("zalo_personal.sidecar_khong_toi", actor="system",
+                          ref_id=account_id, ly_do=str(ly_do)[:200])
+        await bao_dong(
+            f"Zalo cá nhân «{ten}»: app KHÔNG gọi được sidecar ({str(ly_do)[:120]}). "
+            "Phiên vẫn còn — KHÔNG cần quét QR. Kiểm sidecar: "
+            "python -m scripts.chay_sidecar_zalo",
+            tieu_de="Sidecar Zalo không phản hồi", muc_do="hong")
+        return True
+
+    lech = str(ly_do).startswith(DAU_LECH_BI_MAT)
     if lech:
         if account_id in da_bao_lech:
             return False
@@ -136,6 +189,7 @@ async def khoi_phuc_phien_dut(
     da_khoi_phuc: list = []
     can_quet_lai: list = []
     lech_bi_mat: list = []
+    sidecar_khong_toi: list = []
 
     for account_id in account_ids:
         adapter = None
@@ -169,6 +223,13 @@ async def khoi_phuc_phien_dut(
                     f"({ly_do})"[:200],
                 )
                 continue
+            if la_loi_mang(ly_do):
+                # Không với tới ≠ mất phiên. Gọi nó là "cần quét QR" từng
+                # đẩy tài khoản sang REAUTH_REQUIRED và hoãn khôi phục 30
+                # phút mỗi lần sidecar khởi động lại.
+                sidecar_khong_toi.append(account_id)
+                canh_bao(account_id, f"{DAU_SIDECAR_KHONG_TOI}: {ly_do}"[:200])
+                continue
             can_quet_lai.append(account_id)
             canh_bao(account_id, ly_do)
         finally:
@@ -182,4 +243,5 @@ async def khoi_phuc_phien_dut(
         "da_khoi_phuc": da_khoi_phuc,
         "can_quet_lai": can_quet_lai,
         "lech_bi_mat": lech_bi_mat,
+        "sidecar_khong_toi": sidecar_khong_toi,
     }

@@ -18,10 +18,13 @@ thái chờ người, như tin `standby` — xem `agent/omnichannel/xu_ly_tin_va
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 
 from agent.channels.base import InboundMessage
+
+log = logging.getLogger("agent.binh_luan_meta")
 
 # Số di động VN: 0 hoặc +84/84, rồi đầu 3/5/7/8/9, rồi 8 số. Ghép dấu cách,
 # chấm, gạch giữa các chữ số trước khi soi — khách cố tình viết "0912 345
@@ -39,6 +42,16 @@ def _thoi_diem(giay) -> datetime:
         return datetime.fromtimestamp(int(giay), tz=timezone.utc)
     except (TypeError, ValueError, OSError):
         return datetime.now(timezone.utc)
+
+
+def _tep_binh_luan(v: dict) -> list[dict]:
+    """Ảnh/video đính trong bình luận (`value.photo`, `value.video`)."""
+    ra = []
+    for khoa, loai in (("photo", "image"), ("video", "video")):
+        url = v.get(khoa)
+        if isinstance(url, str) and url.startswith(("http://", "https://")):
+            ra.append({"loai": loai, "url": url, "goc": url, "mime_type": ""})
+    return ra
 
 
 def doc_binh_luan(payload: dict, adapter) -> list[InboundMessage]:
@@ -66,7 +79,20 @@ def doc_binh_luan(payload: dict, adapter) -> list[InboundMessage]:
                 continue
             loi = str(v.get("message") or "").strip()
             cmt = str(v.get("comment_id") or "")
-            if not loi or not cmt:
+            if not cmt:
+                continue
+            # Bình luận kèm ẢNH/VIDEO: Meta đặt URL ở `photo`/`video` của
+            # `value`. Bản trước bỏ hẳn bình luận chỉ có ảnh và bỏ ảnh trong
+            # bình luận có chữ — đúng dạng lỗi số 1 của repo, ở cửa bình luận.
+            # Bình luận không đi qua agent (luôn chuyển người), nên ảnh
+            # không kèm chữ vẫn vào hộp thư cho nhân viên xem.
+            tep = _tep_binh_luan(v)
+            if not loi and not tep:
+                # Không chữ, không URL nào đọc được (sticker không kèm ảnh…):
+                # không có gì để nhân viên xem — nhưng KHÔNG bỏ câm.
+                log.warning("binh_luan_meta: bỏ bình luận %s không có chữ/tệp "
+                            "đọc được (khoá value: %s)", cmt,
+                            ",".join(sorted(str(k) for k in v)))
                 continue
             ra.append(InboundMessage(
                 account_id=adapter.account_id,
@@ -77,7 +103,7 @@ def doc_binh_luan(payload: dict, adapter) -> list[InboundMessage]:
                 text=loi,
                 dedupe_key=f"{adapter.name}:cmt:{cmt}",
                 received_at=_thoi_diem(v.get("created_time")),
-                attachments=[],
+                attachments=tep,
                 meta={"loai": "binh_luan", "comment_id": cmt,
                       "post_id": str(v.get("post_id") or ""),
                       "co_sdt": co_so_dien_thoai(loi),

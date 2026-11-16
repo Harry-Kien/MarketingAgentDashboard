@@ -48,7 +48,7 @@ class _Repo:
         self.tk.status = status
 
 
-def _bao(repo, ly_do, da_bao_lech=None):
+def _bao(repo, ly_do, da_bao_lech=None, da_bao_khong_toi=None, bay_gio=None):
     bao, ghi = [], []
 
     async def bao_dong(chi_tiet, **kw):
@@ -59,8 +59,35 @@ def _bao(repo, ly_do, da_bao_lech=None):
 
     kq = asyncio.run(bao_phien_hong(
         repo, "acc-1", ly_do, da_bao_lech=set() if da_bao_lech is None else da_bao_lech,
-        bao_dong=bao_dong, ghi_nhat_ky=ghi_nhat_ky))
+        bao_dong=bao_dong, ghi_nhat_ky=ghi_nhat_ky,
+        da_bao_khong_toi=da_bao_khong_toi, bay_gio=bay_gio))
     return kq, bao, ghi
+
+
+def test_sidecar_khong_toi_KHONG_doi_trang_thai_va_bao_toi_da_moi_gio():
+    """
+    CSDL thật: 2015 sự kiện ConnectError bị ghi `can_quet_lai`. Không với tới
+    sidecar thì phiên vẫn còn: không đổi sang REAUTH_REQUIRED (đổi là bị hoãn
+    khôi phục 30 phút qua `den_luot_thu`), không bảo người quét QR.
+    """
+    from agent.omnichannel.zalo_session_keeper import DAU_SIDECAR_KHONG_TOI
+
+    repo = _Repo()
+    nho: dict = {}
+    ly_do = f"{DAU_SIDECAR_KHONG_TOI}: RuntimeError: ConnectError: sidecar không phản hồi"
+    kq, bao, ghi = _bao(repo, ly_do, da_bao_khong_toi=nho, bay_gio=1000.0)
+    assert kq is True
+    assert repo.doi == [] and repo.health == []
+    assert repo.tk.status == AccountStatus.ACTIVE
+    assert ghi == ["zalo_personal.sidecar_khong_toi"]
+    assert "KHÔNG cần quét QR" in bao[0] and "chay_sidecar_zalo" in bao[0]
+    # Phút sau: im lặng. Sau một giờ: báo lại — sidecar chết lâu vẫn phải có người biết.
+    assert _bao(repo, ly_do, da_bao_khong_toi=nho, bay_gio=1060.0)[0] is False
+    assert _bao(repo, ly_do, da_bao_khong_toi=nho, bay_gio=1000.0 + 3601)[0] is True
+    # Và tài khoản vẫn được thử mỗi nhịp, không bị hoãn.
+    nho_thu: dict = {}
+    assert all(den_luot_thu({"id": "acc-1", "status": repo.tk.status.value}, nho_thu,
+                            khoang_giay=1800, bay_gio=t) for t in (1.0, 2.0, 3.0))
 
 
 def test_mat_phien_thi_doi_trang_thai_va_bao_dong_mot_lan():

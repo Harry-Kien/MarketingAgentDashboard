@@ -57,10 +57,40 @@ def test_binh_luan_thanh_tin_khach():
     dict(verb="remove"),                # bình luận bị xoá
     dict(verb="edited"),                # sửa — không tạo tin mới
     dict(item="reaction"),              # thả cảm xúc
-    dict(loi=""),                       # bình luận chỉ có sticker/ảnh: không có chữ
 ])
 def test_khong_phai_binh_luan_moi_cua_khach(kw):
     assert blm.doc_binh_luan(_payload(**kw), _adapter()) == []
+
+
+def test_binh_luan_CHI_CO_ANH_van_vao_hop_thu():
+    """
+    Bản trước bỏ bình luận không có chữ — tức là bỏ bình luận chỉ có ảnh,
+    đúng dạng lỗi số 1 của repo ("bộ đọc webhook bỏ tin chỉ có ảnh").
+    """
+    p = _payload(loi="")
+    p["entry"][0]["changes"][0]["value"]["photo"] = "https://scontent.xx.fbcdn.net/anh.jpg"
+    ds = blm.doc_binh_luan(p, _adapter())
+    assert len(ds) == 1
+    assert ds[0].text == ""
+    assert ds[0].attachments == [{"loai": "image", "url": "https://scontent.xx.fbcdn.net/anh.jpg",
+                                  "goc": "https://scontent.xx.fbcdn.net/anh.jpg", "mime_type": ""}]
+    assert ds[0].meta["loai"] == "binh_luan"
+
+
+def test_binh_luan_co_chu_va_anh_giu_ca_hai():
+    p = _payload(loi="mẫu này còn không")
+    p["entry"][0]["changes"][0]["value"]["photo"] = "https://x.fbcdn.net/a.jpg"
+    m = blm.doc_binh_luan(p, _adapter())[0]
+    assert m.text == "mẫu này còn không" and m.attachments[0]["loai"] == "image"
+
+
+def test_binh_luan_khong_chu_khong_tep_bi_bo_CO_GHI_LOG(caplog):
+    """Không có gì đọc được (sticker không kèm URL) thì bỏ — nhưng không câm."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="agent.binh_luan_meta"):
+        assert blm.doc_binh_luan(_payload(loi=""), _adapter()) == []
+    assert any("555_777" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.parametrize("loi", [

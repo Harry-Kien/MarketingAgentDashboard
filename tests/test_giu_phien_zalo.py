@@ -32,6 +32,9 @@ class _Adapter:
         self.da_goi_status += 1
         if self._trang_thai == "chu_ky_sai":
             raise RuntimeError("Chữ ký sidecar không hợp lệ")
+        if self._trang_thai == "sidecar_tat":
+            # Đúng chuỗi ZaloPersonalAdapter._request trả khi httpx ném.
+            raise RuntimeError("ConnectError: sidecar không phản hồi")
         return {"status": self._trang_thai}
 
     async def restore_session(self, session):
@@ -121,4 +124,47 @@ def test_lech_bi_mat_khong_bi_goi_la_het_phien():
     assert adapters["a"].da_goi_restore == 0
     assert bao and bao[0][1].startswith(DAU_LECH_BI_MAT)
     assert "chay_sidecar_zalo" in bao[0][1]
+
+
+def test_sidecar_khong_toi_KHONG_bi_goi_la_het_phien():
+    """
+    CSDL thật: 2015 sự kiện "ConnectError: sidecar không phản hồi" bị ghi
+    `can_quet_lai` — tài khoản sang REAUTH_REQUIRED, khôi phục hoãn 30 phút,
+    dashboard bảo người đi quét QR trong khi phiên vẫn nguyên trong vault.
+    """
+    from agent.omnichannel.zalo_session_keeper import DAU_SIDECAR_KHONG_TOI
+
+    bao = []
+    adapters = {"a": _Adapter("sidecar_tat"), "b": _Adapter("disconnected")}
+    ket_qua = _chay(["a", "b"], adapters, {"a": {"cookie": {}}, "b": {"cookie": {}}},
+                    canh_bao=lambda acc, ly_do: bao.append((acc, ly_do)))
+
+    assert ket_qua["sidecar_khong_toi"] == ["a"]
+    assert ket_qua["can_quet_lai"] == []
+    assert ket_qua["da_khoi_phuc"] == ["b"]          # nick khác vẫn được cứu
+    assert bao == [("a", f"{DAU_SIDECAR_KHONG_TOI}: RuntimeError: ConnectError: "
+                         "sidecar không phản hồi")]
+
+
+def test_khoi_phuc_hong_vi_mang_cung_khong_phai_het_phien():
+    """Sidecar trả `fetch failed` (nó không với tới Zalo) lúc restore."""
+    class _MangHong(_Adapter):
+        async def restore_session(self, session):
+            raise RuntimeError("fetch failed")
+
+    adapters = {"a": _MangHong("disconnected")}
+    ket_qua = _chay(["a"], adapters, {"a": {"cookie": {}}})
+    assert ket_qua["sidecar_khong_toi"] == ["a"] and ket_qua["can_quet_lai"] == []
+
+
+def test_phan_loai_loi_mang_va_loi_dang_nhap():
+    from agent.omnichannel.zalo_session_keeper import la_loi_mang
+
+    for loi in ("RuntimeError: ConnectError: sidecar không phản hồi",
+                "RuntimeError: ReadTimeout: sidecar không phản hồi",
+                "ConnectTimeout", "fetch failed", "sidecar HTTP 502"):
+        assert la_loi_mang(loi), loi
+    for loi in ("RuntimeError: Đăng nhập thất bại", "session hết hạn",
+                "chưa có session đã lưu, cần quét QR lại"):
+        assert not la_loi_mang(loi), loi
 

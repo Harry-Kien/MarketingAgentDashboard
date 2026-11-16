@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import time
 from collections.abc import Mapping
@@ -15,6 +16,38 @@ import httpx
 
 from agent.channels.base import ChannelAdapter, ConnectionCheck, Delivery, InboundMessage
 from .ly_do_loi import chi_tiet_loi
+
+log = logging.getLogger("agent.zalo_personal")
+
+# Loại thread phía Zalo: 0 nhắn riêng một người, 1 nhóm.
+THREAD_NHOM = 1
+
+
+def ly_do_bo_qua(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    VÌ SAO `parse()` bỏ một callback `message` — để GHI LẠI, không bỏ câm.
+
+    Lỗi số 1 lịch sử repo là "bộ đọc webhook bỏ tin chỉ có ảnh" — và nó
+    quay lại y hệt ở Zalo cá nhân: sidecar không đọc ảnh, parse trả None,
+    webhook trả `skipped` không một dòng nhật ký. 80 tin, 0 tệp, không ai
+    biết. Không ghi nội dung tin (đó là lời khách), chỉ ghi hình dạng của nó.
+    """
+    message = payload.get("message") or {}
+    if not isinstance(message, Mapping):
+        return {"ly_do": "message_khong_phai_object"}
+    co_thread = bool(message.get("thread_id"))
+    co_msg_id = bool(message.get("msg_id"))
+    if not co_thread or not co_msg_id:
+        ly_do = "thieu_thread_id_hoac_msg_id"
+    else:
+        ly_do = "khong_co_chu_va_khong_co_tep"
+    return {
+        "ly_do": ly_do,
+        "msg_type": str(message.get("msg_type") or "")[:60],
+        "co_thread_id": co_thread,
+        "co_msg_id": co_msg_id,
+        "so_tep_tho": len(message.get("attachments") or []),
+    }
 
 
 def _received_at(value: Any) -> datetime:
@@ -71,10 +104,12 @@ class ZaloPersonalAdapter(ChannelAdapter):
         # Adapter cũ `zalocrm.py:205` mang đúng `threadType` đi; bản native
         # này đánh rơi nó.
         #
-        # GIỚI HẠN PHẢI NÓI RÕ: bộ nhớ này nằm trong tiến trình. Sau khi
-        # khởi động lại, câu trả lời ĐẦU TIÊN vào một nhóm sẽ lại rơi về 0
-        # cho tới khi có tin mới từ nhóm đó. Vẫn không tệ hơn hôm nay — hôm
-        # nay nó luôn là 0 — nhưng đừng nhầm đây là bản vá kín.
+        # ĐÂY CHỈ LÀ BỘ ĐỆM. Nguồn thật là cột `conversations.thread_type`
+        # (migration 0042), ghi lúc ingest. Vì sao: adapter ĐỌC tin đến là
+        # một instance tạm dựng trong webhook rồi đóng; adapter GỬI là
+        # instance khác nằm trong cache của registry — RAM của cái này
+        # không bao giờ tới cái kia, nên bản chỉ-nhớ-trong-RAM trước đây
+        # luôn gửi 0 (và test của nó xanh giả vì dùng chung một instance).
         self._loai_thread: dict[str, int] = {}
         self._secret = str(credentials.get("sidecar_secret") or "")
         self._owns_client = client is None
@@ -99,14 +134,19 @@ class ZaloPersonalAdapter(ChannelAdapter):
             url = str(raw.get("url") or "")
             if not url:
                 continue
-            attachments.append(
-                {
-                    "loai": str(raw.get("type") or "file"),
-                    "url": url,
-                    "goc": url,
-                    "mime_type": str(raw.get("mime_type") or ""),
-                }
-            )
+            tep: dict[str, Any] = {
+                "loai": str(raw.get("type") or "file"),
+                "url": url,
+                "goc": url,
+                "mime_type": str(raw.get("mime_type") or ""),
+            }
+            # Tên và cỡ tệp (share.file): nhân viên cần biết khách gửi gì
+            # trước khi bấm tải, và `normalize_attachment` đọc `size`.
+            if raw.get("name"):
+                tep["ten"] = str(raw["name"])[:255]
+            if raw.get("size"):
+                tep["size"] = raw["size"]
+            attachments.append(tep)
         text = str(message.get("text") or "").strip()
         if not text and not attachments:
             return None
@@ -172,12 +212,33 @@ class ZaloPersonalAdapter(ChannelAdapter):
             return Delivery(False, str(data.get("error") or "sidecar từ chối")[:200]), data
         return Delivery(True), data
 
-    def _loai(self, conversation_ref: str) -> int:
-        """Loại thread đã nhớ, mặc định 0 (nhắn riêng) khi chưa biết."""
-        return self._loai_thread.get(conversation_ref, 0)
+    async def _loai(self, conversation_ref: str) -> int:
+        """
+        Loại thread của hội thoại: bộ đệm, rồi CSDL, mặc định 0 (nhắn riêng).
+
+        Đọc CSDL hỏng thì lùi về 0 NHƯNG ghi log: gửi sai loại vào nhóm thì
+        Zalo từ chối "Tham số không hợp lệ" — job hỏng có dấu vết, còn lỗi
+        đọc này phải để lại dấu vết riêng để không ai phải đoán.
+        """
+        if conversation_ref in self._loai_thread:
+            return self._loai_thread[conversation_ref]
+        try:
+            from agent import db
+
+            r = await db.fetchrow(
+                "SELECT thread_type FROM conversations "
+                "WHERE account_id = $1 AND external_id = $2",
+                self.account_id, conversation_ref)
+        except Exception:  # noqa: BLE001 — gửi vẫn phải đi, nhưng không câm
+            log.warning("zalo_personal: không đọc được thread_type của %s",
+                        conversation_ref, exc_info=True)
+            return 0
+        loai = int(r["thread_type"]) if r and r["thread_type"] is not None else 0
+        self._loai_thread[conversation_ref] = loai
+        return loai
 
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
-        loai = self._loai(conversation_ref)
+        loai = await self._loai(conversation_ref)
         delivery, data = await self._request(
             "send-text",
             {"thread_id": conversation_ref, "thread_type": loai, "text": text},
@@ -190,7 +251,7 @@ class ZaloPersonalAdapter(ChannelAdapter):
         return _kem_boi_canh(delivery, conversation_ref, loai, len(text))
 
     async def send_file(self, conversation_ref: str, path: str, caption: str = "") -> Delivery:
-        loai = self._loai(conversation_ref)
+        loai = await self._loai(conversation_ref)
         delivery, data = await self._request(
             "send-file",
             {

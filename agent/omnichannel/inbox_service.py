@@ -131,6 +131,20 @@ class InboxService:
             )
 
 
+def _thread_type(message: InboundMessage) -> int | None:
+    """
+    Loại thread kênh báo kèm tin (Zalo: 0 riêng, 1 nhóm), hoặc None.
+
+    Lưu BỀN vào hội thoại vì adapter GỬI không phải adapter đã ĐỌC tin —
+    xem migration 0042 và ZaloPersonalAdapter._loai.
+    """
+    gia_tri = (message.meta or {}).get("thread_type")
+    try:
+        return int(gia_tri) if gia_tri is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _message_hash(message: InboundMessage) -> str:
     canonical = json.dumps(
         {
@@ -219,9 +233,9 @@ class PostgresInboxTransaction:
             INSERT INTO conversations (
                 account_id, channel, external_id, customer_name,
                 customer_ref, nen_tang, contact_id, contact_point_id,
-                first_response_due_at, resolution_due_at
+                thread_type, first_response_due_at, resolution_due_at
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,
+                $1,$2,$3,$4,$5,$6,$7,$8,$11,
                 (
                     SELECT {han_dau}
                     FROM sla_policies policy
@@ -245,6 +259,7 @@ class PostgresInboxTransaction:
                 nen_tang = coalesce(EXCLUDED.nen_tang, conversations.nen_tang),
                 contact_id = EXCLUDED.contact_id,
                 contact_point_id = EXCLUDED.contact_point_id,
+                thread_type = coalesce(EXCLUDED.thread_type, conversations.thread_type),
                 updated_at = now()
             RETURNING id, status, mode
             """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9, 10))
@@ -258,6 +273,7 @@ class PostgresInboxTransaction:
             identity["contact_id"],
             identity["id"],
             *gio_sla(),
+            _thread_type(message),
         )
 
     async def insert_message(

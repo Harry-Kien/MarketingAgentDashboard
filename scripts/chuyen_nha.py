@@ -60,6 +60,11 @@ KHONG_MANG = frozenset({
     "N8N_AUTH_HEADER", "ZALOCRM_BASE_URL", "ZALOCRM_API_KEY", "CHATWOOT_BASE_URL",
     "CHATWOOT_API_TOKEN", "CHATWOOT_ACCOUNT_ID", "CHATWOOT_WEBHOOK_SECRET",
     "GOOGLE_APPLICATION_CREDENTIALS",
+    # URL ping "còn sống" là của MỘT MÁY, không của cửa hàng. Mang sang VPS
+    # thì máy cũ (task Windows còn chạy) và VPS cùng ping một check: một bên
+    # chết, bên kia vẫn ping, Healthchecks xanh — không ai được báo. VPS
+    # phải có check RIÊNG (docs/len-vps.md, bước dọn dẹp).
+    "CANH_GAC_PING_URL",
 })
 
 # Trong data/: thứ của MÁY (nhật ký, sao lưu cục bộ, kết quả đo), không
@@ -67,7 +72,8 @@ KHONG_MANG = frozenset({
 # thước gói và chứa dữ liệu khách đã có trong csdl.dump.
 _BO_DU_LIEU = re.compile(
     r"^(backup|backups|sao_luu)(/|$)|\.log(\.|$)|\.err$|\.bak$|^\.canh_gac_ngoai$"
-    r"|^\.sao_luu_ngoai$|^\.sao_luu_ra_ngoai_may$|^\.thu_phuc_hoi$|^eval/(ket-qua|nhieu-luot)-|^eval/golden\.jsonl$")
+    r"|^\.sao_luu_ngoai$|^\.sao_luu_may_chu$|^\.sao_luu_ra_ngoai_may$|^\.thu_phuc_hoi$"
+    r"|^\.ping_con_song$|^eval/(ket-qua|nhieu-luot)-|^eval/golden\.jsonl$")
 
 
 class LoiChuyen(Exception):

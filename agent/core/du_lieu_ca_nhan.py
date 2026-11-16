@@ -112,18 +112,40 @@ def _khoa_van_tay() -> bytes:
 #  Quyền được xem (Luật 91/2025 Điều 4 khoản 1)
 # ---------------------------------------------------------------
 
-async def tra_cuu(sdt: str) -> dict:
-    """Hệ thống đang giữ những gì về số điện thoại này."""
+# Lọc theo kênh cho `tra_cuu(..., chi_kenh_cua=uid)`. `$K` là id người hỏi;
+# NULL = không lọc (luồng xoá, quản trị, người có quyền xem-tất-cả).
+_KENH_HOI_THOAI = ("($K::uuid IS NULL OR EXISTS (SELECT 1 FROM account_memberships am "
+                   "WHERE am.account_id = c.account_id AND am.user_id = $K::uuid))")
+_KENH_DON = ("($K::uuid IS NULL OR EXISTS (SELECT 1 FROM conversations cv "
+             "JOIN account_memberships am ON am.account_id = cv.account_id "
+             "WHERE cv.id = o.conversation_id AND am.user_id = $K::uuid))")
+_KENH_HO_SO = ("($K::uuid IS NULL OR EXISTS (SELECT 1 FROM contact_points p "
+               "JOIN account_memberships am ON am.account_id = p.channel_account_id "
+               "WHERE p.contact_id = c.id AND am.user_id = $K::uuid))")
+
+
+async def tra_cuu(sdt: str, *, chi_kenh_cua: UUID | None = None) -> dict:
+    """
+    Hệ thống đang giữ những gì về số điện thoại này.
+
+    `chi_kenh_cua`: chỉ trả dữ liệu thuộc kênh người này là thành viên. Trang
+    PDPD mở cho quyền `khach.pii`, mà vai trò Nhân viên mặc định có quyền ấy
+    — không lọc thì gõ một số điện thoại là đọc được tên, địa chỉ, hội thoại
+    của khách ở MỌI kênh, lách bộ lọc kênh mà màn Khách hàng và Đơn hàng giữ.
+    Luồng XOÁ (`xoa`) không bao giờ lọc: xoá thiếu một kênh là báo "đã xoá"
+    mà dữ liệu còn đó.
+    """
     so = chuan_hoa_sdt(sdt)
     if len(so) < 9:
         raise ValueError("Số điện thoại không hợp lệ")
 
     don = await db.fetch(
-        "SELECT ma_don, khach_ten, khach_dia_chi, tong_tien, trang_thai, "
-        "       created_at, conversation_id "
-        "FROM orders WHERE regexp_replace(khach_sdt, '\\D', '', 'g') LIKE $1 "
-        "ORDER BY created_at DESC",
-        f"%{so[-9:]}",
+        "SELECT o.ma_don, o.khach_ten, o.khach_dia_chi, o.tong_tien, o.trang_thai, "
+        "       o.created_at, o.conversation_id "
+        "FROM orders o WHERE regexp_replace(o.khach_sdt, '\\D', '', 'g') LIKE $1 "
+        f"  AND {_KENH_DON.replace('$K', '$2')} "
+        "ORDER BY o.created_at DESC",
+        f"%{so[-9:]}", chi_kenh_cua,
     )
     # Khách để lại số trong nội dung chat mà chưa lên đơn -> vẫn là dữ liệu
     # cá nhân đang lưu, phải tìm ra.
@@ -131,11 +153,13 @@ async def tra_cuu(sdt: str) -> dict:
         "SELECT DISTINCT c.id, c.channel, c.customer_name, c.msg_count, c.updated_at, "
         "       c.contact_id "
         "FROM conversations c JOIN messages m ON m.conversation_id = c.id "
-        "WHERE regexp_replace(m.content, '\\D', '', 'g') LIKE $1 "
-        "   OR c.id = ANY($2::uuid[]) "
+        "WHERE (regexp_replace(m.content, '\\D', '', 'g') LIKE $1 "
+        "       OR c.id = ANY($2::uuid[])) "
+        f"  AND {_KENH_HOI_THOAI.replace('$K', '$3')} "
         "ORDER BY c.updated_at DESC",
         f"%{so[-9:]}%",
         [d["conversation_id"] for d in don if d["conversation_id"]],
+        chi_kenh_cua,
     )
 
     # Hồ sơ CRM — NƠI LƯU THỨ TƯ, và nơi bị bỏ quên lâu nhất.
@@ -155,9 +179,11 @@ async def tra_cuu(sdt: str) -> dict:
         "FROM contacts c "
         "WHERE c.status <> 'deleted' "
         "  AND (right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 9) = $1 "
-        "       OR c.id = ANY($2::uuid[]))",
+        "       OR c.id = ANY($2::uuid[])) "
+        f"  AND {_KENH_HO_SO.replace('$K', '$3')}",
         so[-9:],
         [h["contact_id"] for h in hoi_thoai if h.get("contact_id")],
+        chi_kenh_cua,
     )
 
     # Vòng hai: hội thoại của chính những hồ sơ ấy. Khách không phải lúc nào
@@ -169,8 +195,9 @@ async def tra_cuu(sdt: str) -> dict:
         them = await db.fetch(
             "SELECT DISTINCT c.id, c.channel, c.customer_name, c.msg_count, "
             "       c.updated_at, c.contact_id "
-            "FROM conversations c WHERE c.contact_id = ANY($1::uuid[])",
-            [h["id"] for h in ho_so],
+            "FROM conversations c WHERE c.contact_id = ANY($1::uuid[]) "
+            f"  AND {_KENH_HOI_THOAI.replace('$K', '$2')}",
+            [h["id"] for h in ho_so], chi_kenh_cua,
         )
         hoi_thoai.extend(h for h in them if h["id"] not in da_co)
         hoi_thoai.sort(key=lambda h: h["updated_at"], reverse=True)
@@ -636,30 +663,95 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
 
 async def don_theo_thoi_han(chi_dem: bool = False) -> dict:
     """
-    Xoá hội thoại quá thời hạn lưu trữ.
+    Dọn dữ liệu cá nhân quá thời hạn lưu trữ — ở MỌI nơi lưu, không chỉ hội
+    thoại.
 
-    Chạy tự động mỗi ngày. `chi_dem=True` để xem sẽ xoá bao nhiêu mà chưa
-    xoá — người vận hành cần nhìn trước khi một vòng lặp nền xoá dữ liệu.
+    Chạy tự động mỗi ngày. `chi_dem=True` để xem sẽ dọn bao nhiêu mà chưa
+    dọn — người vận hành cần nhìn trước khi một vòng lặp nền xoá dữ liệu.
 
-    KHÔNG đụng tới đơn hàng: chứng từ kế toán có thời hạn riêng dài hơn
-    nhiều (Luật Kế toán 2015, Điều 41).
+    VÌ SAO KHÔNG CHỈ XOÁ HỘI THOẠI
+    -----------------------------
+    Bản trước chỉ xoá `conversations`. Hồ sơ CRM (tên, SĐT, email, ghi chú,
+    nhãn, danh tính kênh), hồ sơ ghi nhớ của agent (`ho_so_khach`) và tải
+    trọng sự kiện hộp thư (`inbox_events.payload` — nguyên văn tin khách)
+    nằm đó MÃI MÃI, trong khi trang PDPD công bố "lưu 180 ngày". Một chính
+    sách lưu trữ chỉ đúng cho một bảng là nói sai với khách.
+
+      hội thoại + tin nhắn  quá hạn         -> XOÁ HẲN
+      ho_so_khach           lan_cuoi quá hạn -> XOÁ HẲN
+      inbox_events          quá hạn         -> XOÁ HẲN
+      hồ sơ CRM (contacts)  last_seen quá hạn, KHÔNG còn hội thoại nào và
+                            KHÔNG còn đơn đang mở -> ẨN DANH (`_xoa_ho_so_crm`,
+                            cùng cách với yêu cầu xoá: giữ id cho khoá ngoại)
+
+    KHÔNG xoá, KHÔNG sửa đơn hàng: chứng từ kế toán có thời hạn riêng dài
+    hơn nhiều (Luật Kế toán 2015, Điều 41). Đơn chỉ được ĐỌC để biết khách
+    còn đơn mở thì chưa quên khách.
     """
     ngay = max(1, int(settings.luu_hoi_thoai_ngay))
+    han = str(ngay)
     dem = await db.fetchrow_chac(
-        "SELECT count(*) c FROM conversations WHERE updated_at < now() - ($1 || ' days')::interval",
-        str(ngay),
+        "SELECT "
+        " (SELECT count(*) FROM conversations "
+        "   WHERE updated_at < now() - ($1 || ' days')::interval) AS hoi_thoai, "
+        " (SELECT count(*) FROM ho_so_khach "
+        "   WHERE lan_cuoi < now() - ($1 || ' days')::interval) AS ho_so_ghi_nho, "
+        " (SELECT count(*) FROM inbox_events "
+        "   WHERE created_at < now() - ($1 || ' days')::interval) AS su_kien_hop_thu",
+        han,
     )
-    n = int(dem["c"] or 0)
-    if chi_dem or n == 0:
-        return {"thoi_han_ngay": ngay, "so_hoi_thoai_qua_han": n, "da_xoa": 0}
+    n = int(dem["hoi_thoai"] or 0)
+    n_ghi_nho = int(dem["ho_so_ghi_nho"] or 0)
+    n_su_kien = int(dem["su_kien_hop_thu"] or 0)
+    # Hồ sơ CRM đếm SAU khi tính hội thoại sẽ xoá: khách chỉ còn hội thoại quá
+    # hạn thì sau lượt này là không còn hội thoại nào.
+    ho_so_qua_han = await db.fetch(_SQL_HO_SO_CRM_QUA_HAN, han)
+    ra = {"thoi_han_ngay": ngay, "so_hoi_thoai_qua_han": n,
+          "so_ho_so_ghi_nho_qua_han": n_ghi_nho, "so_su_kien_hop_thu_qua_han": n_su_kien,
+          "so_ho_so_crm_qua_han": len(ho_so_qua_han)}
+    if chi_dem or not (n or n_ghi_nho or n_su_kien or ho_so_qua_han):
+        return {**ra, "da_xoa": 0}
 
-    await db.execute(
+    # Thứ tự: hội thoại trước, rồi mới ẩn danh hồ sơ CRM (truy vấn ở trên đã
+    # coi hội thoại quá hạn như đã mất).
+    da_xoa = _dem(await db.execute(
         "DELETE FROM conversations WHERE updated_at < now() - ($1 || ' days')::interval",
-        str(ngay),
-    )
+        han,
+    ))
+    ghi_nho = _dem(await db.execute(
+        "DELETE FROM ho_so_khach WHERE lan_cuoi < now() - ($1 || ' days')::interval", han))
+    su_kien = _dem(await db.execute(
+        "DELETE FROM inbox_events WHERE created_at < now() - ($1 || ' days')::interval", han))
+    crm = await _xoa_ho_so_crm([dict(h) for h in ho_so_qua_han])
     await db.log_event(
         "pdpd.don_theo_thoi_han", actor="system",
-        so_hoi_thoai=n, thoi_han_ngay=ngay,
+        so_hoi_thoai=da_xoa, thoi_han_ngay=ngay,
+        # Đếm RIÊNG từng bảng: gộp một con số thì lần sau một bảng lặng lẽ
+        # rơi khỏi luồng dọn mà tổng vẫn trông hợp lý.
+        so_ho_so_ghi_nho=ghi_nho, so_su_kien_hop_thu=su_kien,
+        crm_ho_so=crm["ho_so"], crm_ghi_chu=crm["ghi_chu"], crm_nhan=crm["nhan"],
+        crm_danh_tinh=crm["danh_tinh"], crm_dong_y=crm["dong_y"],
         can_cu="Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 3 khoản 3 và Điều 14 khoản 1",
     )
-    return {"thoi_han_ngay": ngay, "so_hoi_thoai_qua_han": n, "da_xoa": n}
+    return {**ra, "da_xoa": da_xoa, "ho_so_ghi_nho_da_xoa": ghi_nho,
+            "su_kien_hop_thu_da_xoa": su_kien, "crm": crm}
+
+
+# Hồ sơ CRM quá hạn: lâu không thấy khách, không còn hội thoại nào CÒN HẠN
+# (hội thoại quá hạn sắp bị xoá cùng lượt), và không còn đơn đang mở —
+# khách đang chờ hàng mà quên tên, quên số là nhân viên không gọi giao được.
+# Trạng thái lạ (thêm sau này) coi là MỞ: giữ nhầm một hồ sơ thêm một ngày
+# rẻ hơn quên nhầm một khách đang có đơn.
+_SQL_HO_SO_CRM_QUA_HAN = (
+    "SELECT c.id FROM contacts c "
+    "WHERE c.status IN ('active', 'deletion_pending') "
+    "  AND c.last_seen < now() - ($1 || ' days')::interval "
+    "  AND NOT EXISTS (SELECT 1 FROM conversations cv WHERE cv.contact_id = c.id "
+    "                  AND cv.updated_at >= now() - ($1 || ' days')::interval) "
+    "  AND NOT EXISTS (SELECT 1 FROM contacts gop WHERE gop.merged_into = c.id) "
+    "  AND (c.phone IS NULL OR NOT EXISTS ("
+    "        SELECT 1 FROM orders o "
+    "        WHERE o.trang_thai NOT IN ('da_huy', 'da_giao') "
+    "          AND right(regexp_replace(o.khach_sdt, '\\D', '', 'g'), 9) "
+    "              = right(regexp_replace(c.phone, '\\D', '', 'g'), 9)))"
+)

@@ -331,7 +331,18 @@ document.addEventListener("click", async (ev) => {
       toast("Đã tắt xác thực hai bước.");
       return;
     }
-    const moi = await api("/toi/hai-buoc/bat-dau", { method: "POST" });
+    // Máy chủ đòi gõ lại mật khẩu trước khi sinh bí mật: phiên bị chiếm
+    // không được tự gắn điện thoại của kẻ khác vào tài khoản.
+    const xn = await hoiHop({
+      tieu_de: "Bật xác thực hai bước",
+      phu: "Gõ lại mật khẩu để tiếp tục.",
+      truong: [{ name: "mat_khau", label: "Mật khẩu", type: "password", required: true }],
+      nut: "Tiếp",
+    });
+    if (!xn || !xn.mat_khau) return;
+    const moi = await api("/toi/hai-buoc/bat-dau", {
+      method: "POST", body: JSON.stringify({ mat_khau: xn.mat_khau }),
+    });
     const cho = hoiHop({
       tieu_de: "Bật xác thực hai bước",
       phu: "Quét mã bằng Google Authenticator, Authy hoặc 1Password, rồi nhập mã 6 số đang hiện.",

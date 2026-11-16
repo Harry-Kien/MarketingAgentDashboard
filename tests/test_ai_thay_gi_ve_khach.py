@@ -288,3 +288,90 @@ def test_khach_chua_giao_luon_la_cua_chung(app_that):
 
     assert qt.put("/api/tam-nhin-khach", json={"muc": "an"}).status_code == 200
     assert _thay(nv, cid) is not None
+
+
+# ---------------------------------------------------------------- trục KÊNH, các cửa phụ
+#
+# Rà soát 16.11.2026: bốn đường lách bộ lọc kênh. Màn Khách hàng lọc đúng,
+# nhưng màn Đơn hàng, trang PDPD và hai route sửa/xem lịch sử khách trả dữ
+# liệu MỌI kênh — bộ lọc ở màn chính chỉ còn là lớp sơn.
+
+def _don_cua_kenh(app, tk: str, ma_don: str = "DH-KENH-1") -> None:
+    """Đơn nối kênh qua hội thoại sinh ra nó — đúng cách agent ghi đơn."""
+    from agent import db
+
+    async def tao(tk_, ma_):
+        cv = await db.fetchrow(
+            "SELECT id FROM conversations WHERE account_id = $1::uuid LIMIT 1", tk_)
+        await db.execute(
+            "INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt, "
+            "khach_dia_chi, tong_tien, trang_thai) "
+            "VALUES ($1, $2, 'Chị Hoa', $3, '12 Lý Thường Kiệt', 350000, 'cho_duyet')",
+            ma_, cv["id"], SDT)
+    _sql(app, tao, tk, ma_don)
+
+
+def test_don_hang_kenh_khac_khong_lo_sdt_dia_chi(app_that):
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    _khach_co_pii(app_that, qt, tk)
+    _don_cua_kenh(app_that, tk)
+    _, ngoai = _nhan_vien_moi(qt, "ngoai")                 # có don.doc, không vào kênh
+    uid, trong = _nhan_vien_moi(qt, "trong")
+    _them_thanh_vien(app_that, tk, uid)
+
+    r = ngoai.get("/api/orders")
+    assert r.status_code == 200
+    assert not any(o["ma_don"] == "DH-KENH-1" for o in r.json()), "lộ đơn kênh khác"
+    assert any(o["ma_don"] == "DH-KENH-1" for o in trong.get("/api/orders").json())
+    # Quản trị (xem mọi kênh) vẫn thấy — siết mà khoá luôn người phải thấy là hỏng kiểu khác.
+    assert any(o["ma_don"] == "DH-KENH-1" for o in qt.get("/api/orders").json())
+
+
+def test_pdpd_tra_cuu_chi_trong_kenh_nhung_noi_ra_con_du_lieu_ngoai(app_that):
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    _khach_co_pii(app_that, qt, tk)
+    _don_cua_kenh(app_that, tk)
+    _, ngoai = _nhan_vien_moi(qt, "ngoai")                 # Nhân viên CÓ khach.pii
+    uid, trong = _nhan_vien_moi(qt, "trong")
+    _them_thanh_vien(app_that, tk, uid)
+
+    d = ngoai.get(f"/api/pdpd/{SDT}").json()
+    assert d["don_hang"] == [] and d["ho_so_khach"] == [] and d["co_du_lieu"] is False
+    assert "12 Lý Thường Kiệt" not in str(d)
+    # Không im lặng: "không giữ gì" trong khi kênh khác có là xanh giả.
+    assert d["con_ngoai_pham_vi"] is True and d["loc_theo_kenh"] is True
+
+    d = trong.get(f"/api/pdpd/{SDT}").json()
+    assert [o["ma_don"] for o in d["don_hang"]] == ["DH-KENH-1"]
+    assert d["con_ngoai_pham_vi"] is False
+
+    d = qt.get(f"/api/pdpd/{SDT}").json()
+    assert d["loc_theo_kenh"] is False and d["so_don_hang"] == 1
+
+
+def test_sua_truong_khach_ngoai_kenh_bi_404(app_that):
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    cid = _khach_co_pii(app_that, qt, tk)
+    _, ngoai = _nhan_vien_moi(qt, "ngoai")                 # có khach.sua, không vào kênh
+    uid, trong = _nhan_vien_moi(qt, "trong")
+    _them_thanh_vien(app_that, tk, uid)
+
+    assert ngoai.put(f"/api/contacts/{cid}/truong", json={"gia_tri": {}}).status_code == 404
+    assert trong.put(f"/api/contacts/{cid}/truong", json={"gia_tri": {}}).status_code == 200
+
+
+def test_lich_su_chu_so_huu_ngoai_kenh_bi_404(app_that):
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    cid = _khach_co_pii(app_that, qt, tk)
+    _, ngoai = _nhan_vien_moi(qt, "ngoai")
+    uid, trong = _nhan_vien_moi(qt, "trong")
+    _them_thanh_vien(app_that, tk, uid)
+    qt.put(f"/api/contacts/{cid}/chu-so-huu", json={"owner_user_id": uid, "ly_do": "Phân công"})
+
+    assert ngoai.get(f"/api/contacts/{cid}/chu-so-huu/lich-su").status_code == 404
+    r = trong.get(f"/api/contacts/{cid}/chu-so-huu/lich-su")
+    assert r.status_code == 200 and r.json()["lich_su"]

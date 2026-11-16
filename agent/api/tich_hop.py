@@ -128,6 +128,48 @@ def _sua_location(gia_tri: str, ten: str, goc: str) -> str:
     return gia_tri
 
 
+# Header do CLIENT đặt mà app đích tin như thể proxy đặt. Chuyển nguyên là
+# để người dùng dashboard tự khai IP nguồn với app đích (qua mặt giới hạn
+# tần suất, nhật ký kiểm toán của nó) — proxy này không cam kết gì về chúng.
+_BO_HEADER_CLIENT = {"host", "content-length", "accept-encoding", "forwarded",
+                     "x-real-ip", "true-client-ip", "cf-connecting-ip"}
+
+
+def loc_cookie(cookie: str) -> str:
+    """
+    Bỏ cookie PHIÊN DASHBOARD khỏi header Cookie, giữ phần còn lại.
+
+    Mọi app sau proxy cùng origin với dashboard, nên trình duyệt gửi kèm
+    cookie phiên của ta trong mọi request vào `/tich-hop/*`. Chuyển nguyên
+    là trao phiên dashboard (đọc PII, gửi tin, xoá dữ liệu) cho app đích —
+    một app tự thêm, hay một bản ZaloCRM/n8n bị chiếm, đọc được nó trong
+    nhật ký request. Cookie của chính app đích (phiên Chatwoot…) thì phải
+    giữ, không thì nó đăng nhập xong là bị đá ra.
+    """
+    from .routes import TEN_COOKIE
+
+    giu = []
+    for manh in (cookie or "").split(";"):
+        ten = manh.split("=", 1)[0].strip()
+        if ten and ten != TEN_COOKIE:
+            giu.append(manh.strip())
+    return "; ".join(giu)
+
+
+def header_chuyen_tiep(cac_header) -> dict[str, str]:
+    ra: dict[str, str] = {}
+    for k, v in cac_header:
+        kl = k.lower()
+        if kl in _BO_HEADER_CLIENT or kl.startswith("x-forwarded-"):
+            continue
+        if kl == "cookie":
+            v = loc_cookie(v)
+            if not v:
+                continue
+        ra[k] = v
+    return ra
+
+
 async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
     """Chuyển một request HTTP sang app đích và mang câu trả lời về."""
     goc = await _dich(ten)
@@ -137,10 +179,7 @@ async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
 
     # Host phải là host của app đích. Giữ nguyên `localhost:8000` thì Rails
     # của Chatwoot chặn ngay vì không khớp danh sách host cho phép.
-    headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in {"host", "content-length", "accept-encoding"}
-    }
+    headers = header_chuyen_tiep(request.headers.items())
     headers["host"] = goc.split("//", 1)[-1]
     headers["accept-encoding"] = "identity"   # không nén: còn sửa được nội dung
 
@@ -161,14 +200,23 @@ async def chuyen_tiep(request: Request, ten: str, duong: str) -> Response:
     ra = {}
     for k, v in tra.headers.items():
         kl = k.lower()
-        if kl in _BO_QUA or kl in _CHAN_NHUNG:
+        if kl in _BO_QUA or kl in _CHAN_NHUNG or kl == "set-cookie":
             continue
         if kl == "location":
             v = _sua_location(v, ten, goc)
         ra[k] = v
 
-    return Response(content=tra.content, status_code=tra.status_code,
-                    headers=ra, media_type=tra.headers.get("content-type"))
+    tra_ve = Response(content=tra.content, status_code=tra.status_code,
+                      headers=ra, media_type=tra.headers.get("content-type"))
+    # Set-Cookie đi TỪNG DÒNG (gộp bằng dấu phẩy là hỏng cookie có `Expires`),
+    # và app đích KHÔNG được đặt cookie mang tên phiên dashboard: cùng origin,
+    # nên đặt được là cấy phiên của kẻ khác vào trình duyệt người dùng.
+    from .routes import TEN_COOKIE
+
+    for v in tra.headers.get_list("set-cookie"):
+        if v.split("=", 1)[0].strip() != TEN_COOKIE:
+            tra_ve.headers.append("set-cookie", v)
+    return tra_ve
 
 
 @router.api_route(
@@ -231,7 +279,11 @@ async def phien_hop_le(ws: WebSocket) -> bool:
     from ..core import xac_thuc
     from .routes import TEN_COOKIE
 
-    return await xac_thuc.doc_phien(ws.cookies.get(TEN_COOKIE, "")) is not None
+    # PHIÊN THÔI CHƯA ĐỦ — PHẢI CÓ QUYỀN `tich_hop.doc`, như route HTTP
+    # `/tich-hop/*`. Bản trước chỉ hỏi "đã đăng nhập chưa": nhân viên bị thu
+    # quyền tích hợp vẫn mở được hộp thư Chatwoot qua WebSocket.
+    nguoi = await xac_thuc.doc_phien(ws.cookies.get(TEN_COOKIE, ""))
+    return nguoi is not None and xac_thuc.duoc_phep(nguoi, "tich_hop.doc")
 
 
 async def cau_websocket(ws: WebSocket, ten: str, duong: str) -> None:
@@ -261,7 +313,8 @@ async def cau_websocket(ws: WebSocket, ten: str, duong: str) -> None:
     try:
         # Cookie phải đi kèm: ActionCable xác thực bằng chính phiên đăng nhập
         # của Chatwoot, không có cookie thì bắt tay xong là bị đá ra ngay.
-        cookie = ws.headers.get("cookie", "")
+        # Nhưng KHÔNG cookie phiên dashboard — xem `loc_cookie`.
+        cookie = loc_cookie(ws.headers.get("cookie", ""))
         async with websockets.connect(
             url, additional_headers={"Cookie": cookie} if cookie else None,
             open_timeout=20, ping_interval=None,

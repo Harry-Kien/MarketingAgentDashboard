@@ -124,13 +124,38 @@ async def yc_dong(yid: UUID, body: DongIn, nguoi: dict = Depends(can_quyen("khac
 
 @router.get("/pdpd/{sdt}")
 async def pdpd_tra_cuu(sdt: str, _quyen: dict = Depends(can_quyen("khach.pii"))) -> dict:
-    """Hệ thống đang giữ những gì về số điện thoại này."""
+    """
+    Hệ thống đang giữ những gì về số điện thoại này — TRONG CÁC KÊNH người
+    hỏi được giao, trừ khi có quyền xem mọi kênh.
+
+    VÌ SAO LỌC MÀ KHÔNG ĐỂ PDPD XEM TOÀN BỘ
+    -------------------------------------
+    `khach.pii` có sẵn trong vai trò Nhân viên. Không lọc thì trang này là
+    cửa sau của bộ lọc kênh: gõ một số là đọc tên, địa chỉ, hội thoại của
+    khách ở kênh mình không được giao. Người PHẢI thấy toàn bộ để trả lời
+    yêu cầu của chủ thể dữ liệu là quản trị / người có `khach.xem_tat_ca`.
+
+    Nhưng lọc mà im lặng là xanh giả ở đúng chỗ nguy hiểm: nhân viên trả lời
+    khách "chúng tôi không giữ gì của anh/chị" trong khi kênh khác có. Nên
+    trả kèm cờ `con_ngoai_pham_vi` (chỉ một cờ, không lộ nội dung) để họ
+    chuyển cho quản trị.
+    """
+    xem_tat_ca = any(q in (_quyen.get("quyen") or ())
+                     for q in ("khach.xem_tat_ca", "hoi_thoai.xem_tat_ca"))
     try:
+        if xem_tat_ca:
+            kq = await du_lieu_ca_nhan.tra_cuu(sdt)
+            kq["con_ngoai_pham_vi"] = False
+        else:
+            kq = await du_lieu_ca_nhan.tra_cuu(sdt, chi_kenh_cua=UUID(str(_quyen["id"])))
+            day_du = await du_lieu_ca_nhan.tra_cuu(sdt)
+            kq["con_ngoai_pham_vi"] = any(
+                day_du[k] > kq[k] for k in ("so_don_hang", "so_hoi_thoai", "so_ho_so"))
+        kq["loc_theo_kenh"] = not xem_tat_ca
         # Kèm luôn trạng thái phiếu duyệt: không kèm thì giao diện phải đoán,
         # và cách đoán duy nhất là cho bấm Xoá rồi đọc lỗi trả về — tức là
         # dạy người vận hành rằng nút Xoá đôi khi không xoá.
-        return {**await du_lieu_ca_nhan.tra_cuu(sdt),
-                "phieu_duyet": await du_lieu_ca_nhan.trang_thai_phieu(sdt)}
+        return {**kq, "phieu_duyet": await du_lieu_ca_nhan.trang_thai_phieu(sdt)}
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

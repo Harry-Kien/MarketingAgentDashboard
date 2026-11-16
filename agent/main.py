@@ -812,8 +812,16 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
             f"Bearer {khoa}".encode(),
         )
         if not cho_phep:
-            cho_phep = await xac_thuc.doc_phien(
-                request.cookies.get(TEN_COOKIE, "")) is not None
+            # Qua PHIÊN thì phải có QUYỀN, không chỉ phiên. Công cụ MCP là một
+            # bó cắt ngang nhiều miền (tra đơn theo mã ở MỌI kênh, kho tri
+            # thức, xếp bài vào hàng đăng) và KHÔNG đi qua `can_quyen` hay bộ
+            # lọc kênh của từng route — nó ngang với giữ MCP_TOKEN, một bí mật
+            # cấu hình. Nên đòi `cau_hinh.sua`: người sửa được cấu hình (kể
+            # cả đặt token ấy) mới được dùng nó qua phiên.
+            nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
+            if nguoi is not None and not xac_thuc.duoc_phep(nguoi, "cau_hinh.sua"):
+                return JSONResponse({"error": "Thiếu quyền: cau_hinh.sua"}, status_code=403)
+            cho_phep = nguoi is not None
         if not cho_phep:
             return JSONResponse({"error": "Cần token MCP"}, status_code=401)
         return await call_next(request)
@@ -857,6 +865,10 @@ async def bat_duong_tuyet_doi(request: Request, call_next):
             nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
             if nguoi is None:
                 return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)
+            # Cùng quyền với route `/tich-hop/*`. Chỉ kiểm phiên thì đây là
+            # đường vòng: người bị thu `tich_hop.doc` đặt Referer là vào được.
+            if not xac_thuc.duoc_phep(nguoi, "tich_hop.doc"):
+                return JSONResponse({"error": "Thiếu quyền: tich_hop.doc"}, status_code=403)
             return await tich_hop.chuyen_tiep(request, ten, duong)
     return await call_next(request)
 

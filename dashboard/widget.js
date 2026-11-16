@@ -111,11 +111,14 @@
     let stored = {}; try { stored = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch {}
     const response = await fetch(`${apiBase}/webchat/${accountId}/session`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ visitor_id: stored.visitorId || null }),
+      // Gửi kèm CHỮ KÝ máy chủ cấp lần trước: máy chủ chỉ giữ visitor_id cũ
+      // (và lịch sử) khi chữ ký đúng — biết visitor_id của người khác không
+      // đủ để đọc hội thoại của họ.
+      body: JSON.stringify({ visitor_id: stored.visitorId || null, visitor_sig: stored.visitorSig || null }),
     });
     if (!response.ok) throw new Error('Kênh hỗ trợ chưa sẵn sàng trên website này.');
     const data = await response.json(); state.token = data.token; state.visitorId = data.visitor_id;
-    localStorage.setItem(storageKey, JSON.stringify({ visitorId: state.visitorId }));
+    localStorage.setItem(storageKey, JSON.stringify({ visitorId: state.visitorId, visitorSig: data.visitor_sig }));
   }
   async function history() {
     const response = await fetch(`${apiBase}/webchat/${accountId}/history`, { headers: headers() });

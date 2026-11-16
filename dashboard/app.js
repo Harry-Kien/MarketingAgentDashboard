@@ -3240,8 +3240,15 @@ $("#pdpdform").addEventListener("submit", async (e) => {
   try { d = await api("/pdpd/" + encodeURIComponent(sdt)); }
   catch (err) { toast(err.message, true); return; }
 
+  /* Máy chủ chỉ trả dữ liệu trong kênh người này được giao. Còn dữ liệu ở
+     kênh khác thì PHẢI nói ra: im lặng là nhân viên trả lời khách "không
+     giữ gì của anh/chị" trong khi kênh khác có — sai nghĩa vụ trả lời yêu
+     cầu của chủ thể dữ liệu. */
+  const ngoai = d.con_ngoai_pham_vi
+    ? `<p class="kit__note"><b>Còn dữ liệu của số này ở kênh bạn không được giao.</b>
+        Chuyển yêu cầu cho quản trị để xem và xử lý đủ.</p>` : "";
   if (!d.co_du_lieu) {
-    $("#pdpdOut").innerHTML =
+    $("#pdpdOut").innerHTML = ngoai ||
       `<p class="empty">Không tìm thấy dữ liệu nào của số ${esc(d.so_dien_thoai)}.</p>`;
     return;
   }
@@ -3280,7 +3287,7 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       </span>
     </div>`).join("");
 
-  $("#pdpdOut").innerHTML = `
+  $("#pdpdOut").innerHTML = `${ngoai}
     <h3 class="subhead">Đơn hàng (${d.so_don_hang}) — sẽ được ẩn danh, không xoá</h3>
     <div class="rows">${don || '<p class="empty">Không có.</p>'}</div>
     <h3 class="subhead">Hội thoại (${d.so_hoi_thoai}) — sẽ bị xoá hẳn cùng mọi tin nhắn</h3>
@@ -3364,7 +3371,7 @@ async function kiemPhien() {
       e.preventDefault();
       $("#mkerr").textContent = "";
       $("#congMk").classList.remove("is-off");
-      $("#mkform").mat_khau_moi.focus();
+      $("#mkform").mat_khau_cu.focus();
     });
     const out = $("#logout");
     if (out) out.addEventListener("click", async (e) => {
@@ -3395,6 +3402,9 @@ $("#mkhuy")?.addEventListener("click", (e) => {
  * Đổi xong máy chủ xoá mọi phiên, kể cả phiên đang dùng. Nên tải lại trang
  * để về màn đăng nhập, thay vì để người dùng bấm tiếp rồi gặp 401 ở một
  * thao tác ngẫu nhiên nào đó và tưởng hệ thống hỏng.
+ *
+ * Gửi kèm mật khẩu HIỆN TẠI: máy chủ đòi, để phiên bị chiếm không tự đổi
+ * được mật khẩu rồi đá chủ thật ra khỏi mọi thiết bị.
  */
 $("#mkform")?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -3409,7 +3419,7 @@ $("#mkform")?.addEventListener("submit", async (e) => {
   try {
     await api("/toi/doi-mat-khau", {
       method: "POST",
-      body: JSON.stringify({ mat_khau_moi: d.mat_khau_moi }),
+      body: JSON.stringify({ mat_khau_cu: d.mat_khau_cu, mat_khau_moi: d.mat_khau_moi }),
     });
     // Không alert(): hộp của trình duyệt chặn cả trang và trông như lỗi.
     // Toast rồi tải lại sau một nhịp — đủ để đọc, không đủ để bấm tiếp.
@@ -7216,7 +7226,18 @@ document.addEventListener("click", async (ev) => {
       toast("Đã tắt xác thực hai bước.");
       return;
     }
-    const moi = await api("/toi/hai-buoc/bat-dau", { method: "POST" });
+    // Máy chủ đòi gõ lại mật khẩu trước khi sinh bí mật: phiên bị chiếm
+    // không được tự gắn điện thoại của kẻ khác vào tài khoản.
+    const xn = await hoiHop({
+      tieu_de: "Bật xác thực hai bước",
+      phu: "Gõ lại mật khẩu để tiếp tục.",
+      truong: [{ name: "mat_khau", label: "Mật khẩu", type: "password", required: true }],
+      nut: "Tiếp",
+    });
+    if (!xn || !xn.mat_khau) return;
+    const moi = await api("/toi/hai-buoc/bat-dau", {
+      method: "POST", body: JSON.stringify({ mat_khau: xn.mat_khau }),
+    });
     const cho = hoiHop({
       tieu_de: "Bật xác thực hai bước",
       phu: "Quét mã bằng Google Authenticator, Authy hoặc 1Password, rồi nhập mã 6 số đang hiện.",

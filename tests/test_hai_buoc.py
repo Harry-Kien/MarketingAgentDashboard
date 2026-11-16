@@ -140,9 +140,11 @@ def test_vong_doi_2fa_tren_csdl_that(csdl_kiem_thu, monkeypatch):
             uri = await hai_buoc.bat_dau(uid, "hai.buoc")
             bi_mat = pyotp.parse_uri(uri).secret
             async with pool.acquire() as conn:
-                tho = await conn.fetchrow("SELECT totp_ma_hoa, hai_buoc_bat FROM nguoi_dung "
-                                          "WHERE id = $1", uid)
-            assert bi_mat.encode() not in bytes(tho["totp_ma_hoa"]), "bí mật lưu nguyên văn"
+                # Bí mật mới nằm ở cột CHỜ (0044) — cột đang dùng chưa đổi.
+                tho = await conn.fetchrow("SELECT totp_cho_ma_hoa, totp_ma_hoa, hai_buoc_bat "
+                                          "FROM nguoi_dung WHERE id = $1", uid)
+            assert bi_mat.encode() not in bytes(tho["totp_cho_ma_hoa"]), "bí mật lưu nguyên văn"
+            assert tho["totp_ma_hoa"] is None, "bat_dau ghi đè bí mật đang dùng"
             assert tho["hai_buoc_bat"] is False, "chưa xác nhận mà đã bật"
 
             assert await hai_buoc.xac_nhan(uid, "000000") is None

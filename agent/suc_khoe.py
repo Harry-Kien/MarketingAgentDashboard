@@ -282,7 +282,103 @@ async def _kiem_hang_doi_video() -> dict:
     return _muc("Hàng đợi video", TOT, ghi)
 
 
+# Dấu mốc mặt phẳng điều khiển (`scripts/cua_hang.py`) ghi vào volume dữ
+# liệu của cửa hàng sau MỖI lần làm THÀNH CÔNG. Cùng tên với `san_sang` và
+# `cua_hang` — tests/test_sao_luu_silo.py canh ba nơi không lệch nhau.
+DAU_MOC_SAO_LUU = ".sao_luu_may_chu"
+# Tên cũ, trước 16.11.2026. Nó tên "ngoài" mà bản sao lưu nằm CÙNG máy — đọc
+# để cửa hàng đang chạy không đỏ oan trong lúc chờ lượt sao lưu đầu sau khi
+# cập nhật, nhưng KHÔNG bao giờ coi nó là bằng chứng mã hoá hay ngoài máy.
+DAU_MOC_SAO_LUU_CU = ".sao_luu_ngoai"
+DAU_MOC_NGOAI_MAY = ".sao_luu_ra_ngoai_may"
+DAU_MOC_THU_PHUC_HOI = ".thu_phuc_hoi"
+
+
+def _trong_silo() -> bool:
+    """Cờ đặt RÕ trong .env cửa hàng — xem `scripts/san_sang.trong_silo`."""
+    import os
+
+    return os.environ.get("CSKH_SILO") == "1"
+
+
+def _doc_dau_moc(ten: str) -> dict | None:
+    """None = chưa có tệp; {} = có mà hỏng (không được thành xanh)."""
+    import json
+
+    f = ROOT / "data" / ten
+    if not f.exists():
+        return None
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _tuoi_gio(luc: object) -> float | None:
+    if not isinstance(luc, str) or not luc:
+        return None
+    try:
+        t = datetime.fromisoformat(luc)
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - t).total_seconds() / 3600
+
+
+def doc_sao_luu_silo(sao_luu: dict | None, ngoai: dict | None,
+                     phuc_hoi: dict | None) -> dict:
+    """
+    Phần thuần cho container silo (VPS).
+
+    VÌ SAO KHÔNG TÌM `data/backup` NHƯ MÁY CHẠY TAY
+    ----------------------------------------------
+    Trong container, sao lưu do mặt phẳng điều khiển chạy TỪ BÊN NGOÀI
+    (`pg_dump` trong container Postgres, cron 2 giờ sáng) — `data/backup`
+    không bao giờ có. Bản cũ tìm ở đó nên luôn HỎNG: màn sức khoẻ đỏ vĩnh
+    viễn, và canh gác (khi ấy chỉ báo lúc trạng thái tổng ĐỔI) im lặng sau
+    lần đầu — kể cả khi sau đó model chết. Một bảng luôn đỏ là bảng người ta
+    thôi đọc, và mục đỏ THẬT trốn trong đó.
+
+    HỎNG chỉ khi chưa có bản nào; mã hoá / ngoài máy / chưa thử phục hồi là
+    CẢNH BÁO — đau thật, nhưng không phải lý do đánh thức ai lúc 2 giờ sáng.
+    """
+    ten = "Sao lưu"
+    tuoi = _tuoi_gio((sao_luu or {}).get("luc"))
+    if tuoi is None:
+        return _muc(ten, HONG, "máy chủ CHƯA ghi nhận bản sao lưu nào — mất dữ liệu "
+                               "là không cứu được (cua_hang sao_luu)")
+    ghi = f"bản gần nhất {tuoi:.0f} giờ trước (máy chủ ghi)"
+    if tuoi > 36:
+        return _muc(ten, CANH_BAO, ghi + " — lịch sao lưu 2 giờ sáng đã ngừng?")
+    if not (sao_luu or {}).get("ma_hoa"):
+        return _muc(ten, CANH_BAO, ghi + " — bản sao lưu CHƯA mã hoá")
+    tuoi_ngoai = _tuoi_gio((ngoai or {}).get("luc"))
+    if not (ngoai or {}).get("ok") or tuoi_ngoai is None or tuoi_ngoai > 48:
+        return _muc(ten, CANH_BAO, ghi + " — chưa có bản NGOÀI máy chủ trong 48 giờ "
+                                         "(máy chủ hỏng là mất cả dữ liệu lẫn bản sao)")
+    tuoi_ph = _tuoi_gio((phuc_hoi or {}).get("luc"))
+    if tuoi_ph is None or tuoi_ph > 24 * 31:
+        return _muc(ten, CANH_BAO, ghi + " — chưa thử phục hồi trong 31 ngày")
+    return _muc(ten, TOT, ghi + f" · mã hoá · ngoài máy {tuoi_ngoai:.0f} giờ trước")
+
+
+def doc_dau_moc_sao_luu_silo() -> dict | None:
+    """Dấu mốc sao lưu; tên cũ thì đọc được nhưng KHÔNG mang cờ mã hoá."""
+    moc = _doc_dau_moc(DAU_MOC_SAO_LUU)
+    if moc is None:
+        cu = _doc_dau_moc(DAU_MOC_SAO_LUU_CU)
+        if cu is not None:
+            moc = {**cu, "ma_hoa": False}
+    return moc
+
+
 async def _kiem_sao_luu() -> dict:
+    if _trong_silo():
+        return doc_sao_luu_silo(doc_dau_moc_sao_luu_silo(),
+                                _doc_dau_moc(DAU_MOC_NGOAI_MAY),
+                                _doc_dau_moc(DAU_MOC_THU_PHUC_HOI))
     kho = ROOT / "data" / "backup"
     # Cả bản thường lẫn bản mã hoá (.cskh) — đếm thiếu loại nào là "chưa có
     # bản sao nào" đỏ giả ngay sau khi bật mã hoá.

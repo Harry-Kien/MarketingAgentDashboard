@@ -193,9 +193,35 @@ xem chúng hiện trong dashboard.
   `rm /root/goi-*` trên VPS, xoá thư mục `chuyen_nha\` trên máy này.
 - Điền `CANH_GAC_WEBHOOK` trong `/srv/cskh/trien_khai/.env.nen` để nhận báo
   động khi người canh phải bật lại container hay thử phục hồi hỏng.
-- **Chép sao lưu ra ngoài VPS**: thư mục `/srv/cskh/trien_khai/sao_luu/` và
-  `/srv/cskh/trien_khai/erp/sao_luu/` — sao lưu nằm cùng máy với CSDL không
-  cứu được khi máy hỏng.
+- **Chép sao lưu ra ngoài VPS** — sao lưu nằm cùng máy với CSDL không cứu
+  được khi máy hỏng. `cua_hang sao_luu` (cron 2 giờ sáng) mã hoá bản CSDL và
+  volume `/app/data` của từng cửa hàng bằng `SAO_LUU_MAT_KHAU` (tự sinh trong
+  `/srv/cskh/trien_khai/.env.nen` nếu chưa có), rồi chép ra ngoài nếu đặt MỘT
+  trong hai dòng trong `.env.nen`:
+  - `SAO_LUU_THU_MUC_NGOAI=/mnt/storage-box` — thư mục đã **mount từ nơi
+    khác** (sshfs, NFS). Thư mục cùng đĩa với VPS bị từ chối: đó không phải
+    "ngoài máy".
+  - `SAO_LUU_LENH_NGOAI=rclone copyto {tep} b2:cskh-sao-luu/{ma}/{ten}` —
+    lệnh chép bất kỳ (tự cài và cấu hình rclone; script không cài gì). Lệnh
+    chạy không qua shell; mã thoát khác 0 là hỏng.
+
+  Dấu mốc "ngoài máy" chỉ được ghi khi chép **thật sự** thành công; chép
+  hỏng thì `cua_hang sao_luu` báo `CANH_GAC_WEBHOOK` và `san_sang` trong
+  container hiện mục *Mã hoá + ngoài máy* là cảnh báo. ERPNext
+  (`/srv/cskh/trien_khai/erp/sao_luu/`) chưa đi theo đường này — chép tay.
+- **Cất NGOÀI máy chủ hai thứ, ngay hôm nay** (trình quản lý mật khẩu, giấy
+  trong két — không để cùng nơi với bản sao lưu):
+  - `SAO_LUU_MAT_KHAU` trong `/srv/cskh/trien_khai/.env.nen` — thiếu nó thì
+    bản sao lưu ngoài máy chỉ là rác mã hoá.
+  - `CREDENTIAL_MASTER_KEYS` trong `/srv/cskh/trien_khai/cua_hang/<ma>/.env`
+    của **từng** cửa hàng — phục hồi CSDL mà thiếu khoá này thì token
+    Facebook/Zalo và bí mật 2FA của nhân viên **không giải mã được**: phải
+    nối lại mọi kênh và mọi người phải đăng ký lại 2FA.
+- **Báo khi máy chủ tắt**: tạo một check MỚI ở healthchecks.io cho VPS (chu kỳ
+  5 phút, ân hạn 10 phút), dán URL vào `CANH_GAC_PING_URL` trong `.env` của
+  cửa hàng. URL của máy cũ KHÔNG đi theo gói chuyển nhà — dùng chung một
+  check thì máy này chết mà máy kia vẫn ping, không ai được báo. Cron
+  `cua_hang kiem --sua` ping mỗi 5 phút; `san_sang` kiểm cú ping thật.
 
 ---
 

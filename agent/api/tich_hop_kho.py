@@ -40,6 +40,10 @@ class LoiUngDung(ValueError):
 # ký tự nào cần thoát, và để `..` hay `/` không lọt vào.
 _TEN_RE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 
+# Máy chủ metadata đám mây KHÔNG nằm trong dải link-local (IPv6 của AWS là
+# ULA, Python xếp vào `is_private`) — liệt kê riêng.
+_METADATA = frozenset({ipaddress.ip_address("fd00:ec2::254")})
+
 # Bốn app viết sẵn. Không xoá được, không ghi đè được — chúng có xử lý
 # riêng trong `_dich()` (đọc `zalocrm_base_url` / `chatwoot_base_url`).
 MAC_DINH: dict[str, str] = {
@@ -112,7 +116,17 @@ def kiem_dia_chi(dia_chi: str) -> str:
 
     for *_, sockaddr in thong_tin:
         ip = ipaddress.ip_address(sockaddr[0])
-        if not (ip.is_private or ip.is_loopback or ip.is_link_local):
+        # LINK-LOCAL BỊ CHẶN dù Python xếp 169.254/16 vào `is_private`:
+        # 169.254.169.254 (và fd00:ec2::254 của AWS) là máy chủ METADATA đám
+        # mây — trả khoá truy cập tạm của chính VPS. Cho nối vào đó là ai có
+        # quyền `tich_hop.sua` lấy được khoá hạ tầng qua proxy nhúng.
+        if ip.is_link_local or ip in _METADATA:
+            raise LoiUngDung(
+                f"{host!r} phân giải ra {ip} — dải link-local/metadata đám mây. "
+                "Proxy nhúng không được trỏ vào đó: máy chủ metadata trả khoá "
+                "truy cập của chính máy chủ."
+            )
+        if not (ip.is_private or ip.is_loopback):
             raise LoiUngDung(
                 f"{host!r} phân giải ra địa chỉ CÔNG KHAI {ip}. Proxy nhúng "
                 "chỉ dành cho công cụ nội bộ — cho phép địa chỉ công khai là "

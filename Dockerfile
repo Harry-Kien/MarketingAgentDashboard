@@ -45,6 +45,14 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # --workers): outbox, lịch đăng bài, sao lưu không chịu được hai bản chạy.
 # --proxy-headers: đứng sau Caddy, IP thật của khách nằm trong
 # X-Forwarded-For — bộ đếm chống dò mật khẩu theo IP cần nó.
+#
+# TIN X-Forwarded-For TỪ AI: uvicorn đọc biến FORWARDED_ALLOW_IPS. Mặc định
+# "*" vì IP của Caddy trong mạng `cskh-nen` do Docker cấp động (compose nền
+# không ghim subnet) — ghim sai là MỌI khách cùng một IP (của Caddy) và bộ
+# đếm chống dò khoá cả cửa hàng. Cái giá của "*": container khác trong mạng
+# nền (app cửa hàng khác, sidecar) tự khai được IP nguồn. Ghim được IP Caddy
+# thì đặt FORWARDED_ALLOW_IPS=<ip> trong .env cửa hàng — KHÔNG cần build lại.
+ENV FORWARDED_ALLOW_IPS="*"
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "agent.main:app", "--host", "0.0.0.0", \
-     "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--port", "8000", "--proxy-headers"]

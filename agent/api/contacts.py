@@ -570,6 +570,21 @@ def _scope(user: Mapping[str, Any]) -> tuple[UUID, bool]:
     return UUID(str(user["id"])), "khach.xem_tat_ca" in user.get("quyen", ())
 
 
+async def _chan_neu_khong_thay(repository: PostgresContactRepository,
+                               contact_id: UUID, user: dict) -> None:
+    """
+    404 nếu khách nằm ngoài phạm vi kênh của người này — cùng mệnh đề với
+    `contact_detail`. Người xem-tất-cả không bị lọc kênh (khách chưa có danh
+    tính kênh nào, ví dụ nhập tay, vẫn sửa được); route tự kiểm khách tồn tại.
+    """
+    user_id, is_admin = _scope(user)
+    if is_admin:
+        return
+    if await repository.get_visible(contact_id=contact_id, user_id=user_id,
+                                    is_admin=False) is None:
+        raise HTTPException(404, "Không tìm thấy contact")
+
+
 def _raise_identity(exc: IdentityError) -> None:
     if isinstance(exc, ContactNotFound):
         raise HTTPException(404, str(exc)) from exc
@@ -978,7 +993,12 @@ async def giao_khach_hang_loat(
 async def lich_su_chu_so_huu(
     contact_id: UUID,
     _q: dict = Depends(can_quyen("khach.doc")),
+    repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
+    # Cùng chốt kênh với `contact_detail`: lịch sử giao khách nói ai phụ
+    # trách khách nào, kèm lý do — không thấy khách thì không thấy lịch sử.
+    # 404, không 403: 403 xác nhận khách tồn tại.
+    await _chan_neu_khong_thay(repository, contact_id, _q)
     ds = await db.fetch(
         "SELECT ls.id, ls.owner_user_id, ls.ly_do, ls.luc, "
         "       chu.ho_ten AS owner_ho_ten, "
@@ -1183,6 +1203,7 @@ async def dat_truong_khach(
     contact_id: UUID,
     body: HoSoIn,
     user: dict = Depends(can_quyen("khach.sua")),
+    repository: PostgresContactRepository = Depends(get_contact_repository),
 ) -> dict[str, Any]:
     """
     Ghi giá trị các trường tuỳ biến cho một khách.
@@ -1190,7 +1211,12 @@ async def dat_truong_khach(
     Kiểm kiểu ở MÃ, không chỉ ở giao diện — xem
     `agent/core/truong_khach.py`. Chỉ gộp những khoá gửi lên; khoá không
     gửi thì giữ nguyên, để sửa một ô không xoá mất các ô còn lại.
+
+    Chốt kênh TRƯỚC khi ghi: bản cũ chỉ kiểm `khach.sua`, nên nhân viên kênh
+    A sửa được hồ sơ khách kênh B chỉ bằng id — và đọc lại toàn bộ `profile`
+    trong câu trả lời.
     """
+    await _chan_neu_khong_thay(repository, contact_id, user)
     dinh_nghia = await _danh_sach_truong()
     try:
         sach = truong_khach.kiem_ho_so(dinh_nghia, body.gia_tri)

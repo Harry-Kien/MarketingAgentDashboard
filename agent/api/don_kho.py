@@ -48,12 +48,25 @@ async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap),
 
 @router.get("/orders")
 async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict = Depends(can_quyen("don.doc"))) -> list[dict]:
-    sql = "SELECT * FROM orders"
-    args: list = []
+    # LỌC THEO KÊNH, như hội thoại và khách. Đơn mang SĐT và địa chỉ giao
+    # hàng; trước 16.11.2026 route này trả đơn của MỌI kênh cho ai có
+    # `don.doc` — nhân viên chỉ được giao kênh A đọc được danh bạ khách kênh
+    # B qua màn Đơn hàng, lách đúng bộ lọc kênh mà màn Khách hàng giữ.
+    #
+    # Đơn nối kênh qua hội thoại sinh ra nó. Đơn mồ côi (hội thoại đã xoá
+    # theo thời hạn lưu) không thuộc kênh nào → chỉ người xem-tất-cả thấy.
+    # $1 = xem mọi kênh, $2 = người hỏi.
+    xem_tat_ca = any(q in (_quyen.get("quyen") or ())
+                     for q in ("khach.xem_tat_ca", "hoi_thoai.xem_tat_ca"))
+    sql = ("SELECT o.* FROM orders o "
+           "WHERE ($1 OR EXISTS (SELECT 1 FROM conversations cv "
+           "  JOIN account_memberships am ON am.account_id = cv.account_id "
+           "  WHERE cv.id = o.conversation_id AND am.user_id = $2))")
+    args: list = [xem_tat_ca, uuid.UUID(str(_quyen["id"]))]
     if status and status != "all":
-        sql += " WHERE trang_thai = $1"
         args.append(status)
-    sql += f" ORDER BY created_at DESC LIMIT {int(limit)}"
+        sql += f" AND o.trang_thai = ${len(args)}"
+    sql += f" ORDER BY o.created_at DESC LIMIT {int(limit)}"
     rows = await db.fetch(sql, *args)
     return [
         {

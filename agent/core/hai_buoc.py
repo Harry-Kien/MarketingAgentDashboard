@@ -49,13 +49,23 @@ def _buoc(t: float | None = None) -> int:
     return int((time.time() if t is None else t) // BUOC_GIAY)
 
 
+def _pham_vi_cho(uid: UUID | str) -> str:
+    return f"totp-cho:{uid}"
+
+
 async def bat_dau(uid: UUID, ten: str) -> str:
-    """Sinh bí mật mới (CHƯA bật). Trả URI otpauth:// để vẽ QR."""
+    """
+    Sinh bí mật mới vào cột CHỜ. Trả URI otpauth:// để vẽ QR.
+
+    KHÔNG đụng bí mật đang dùng, KHÔNG tắt 2FA đang bật. Bản cũ đặt
+    `hai_buoc_bat = false` ngay tại đây — phiên bị chiếm gọi đúng một request
+    là gỡ được 2FA. Giờ chỉ `xac_nhan` (mã đúng từ bí mật MỚI) mới thay.
+    """
     bi_mat = pyotp.random_base32()
-    niem = _vault().encrypt_pham_vi({"bi_mat": bi_mat}, pham_vi=_pham_vi(uid))
+    niem = _vault().encrypt_pham_vi({"bi_mat": bi_mat}, pham_vi=_pham_vi_cho(uid))
     await db.execute(
-        "UPDATE nguoi_dung SET totp_phien_ban = $2, totp_nonce = $3, totp_ma_hoa = $4, "
-        "hai_buoc_bat = false, totp_buoc_cuoi = NULL WHERE id = $1",
+        "UPDATE nguoi_dung SET totp_cho_phien_ban = $2, totp_cho_nonce = $3, "
+        "totp_cho_ma_hoa = $4 WHERE id = $1",
         uid, niem.key_version, niem.nonce, niem.ciphertext)
     nha = settings.public_base_url.split("//")[-1].split("/")[0] or "CSKH"
     return pyotp.TOTP(bi_mat).provisioning_uri(name=ten, issuer_name=nha)
@@ -67,6 +77,14 @@ def _giai(nd: dict) -> str | None:
     niem = SealedCredential(nd["totp_phien_ban"], bytes(nd["totp_nonce"]),
                             bytes(nd["totp_ma_hoa"]))
     return _vault().decrypt_pham_vi(niem, pham_vi=_pham_vi(nd["id"]))["bi_mat"]
+
+
+def _giai_cho(nd: dict) -> str | None:
+    if not nd.get("totp_cho_ma_hoa"):
+        return None
+    niem = SealedCredential(nd["totp_cho_phien_ban"], bytes(nd["totp_cho_nonce"]),
+                            bytes(nd["totp_cho_ma_hoa"]))
+    return _vault().decrypt_pham_vi(niem, pham_vi=_pham_vi_cho(nd["id"]))["bi_mat"]
 
 
 def _buoc_khop(bi_mat: str, ma: str, t: float | None = None) -> int | None:
@@ -85,6 +103,7 @@ def _buoc_khop(bi_mat: str, ma: str, t: float | None = None) -> int | None:
 async def _doc(uid: UUID) -> dict | None:
     return await db.fetchrow(
         "SELECT id, hai_buoc_bat, totp_phien_ban, totp_nonce, totp_ma_hoa, "
+        "totp_cho_phien_ban, totp_cho_nonce, totp_cho_ma_hoa, "
         "ma_du_phong, totp_buoc_cuoi FROM nguoi_dung WHERE id = $1", uid)
 
 
@@ -117,20 +136,31 @@ async def kiem(uid: UUID, ma: str, t: float | None = None) -> bool:
 
 
 async def xac_nhan(uid: UUID, ma: str) -> list[str] | None:
-    """Kiểm mã đầu tiên rồi BẬT. Trả mã dự phòng (hiện MỘT lần), None nếu sai."""
+    """
+    Kiểm mã đầu tiên từ bí mật CHỜ rồi mới thay bí mật đang dùng và BẬT.
+    Trả mã dự phòng (hiện MỘT lần), None nếu sai.
+    """
     nd = await _doc(uid)
-    if nd is None or not nd["totp_ma_hoa"]:
+    if nd is None:
         return None
-    bi_mat = _giai(dict(nd))
+    d = dict(nd)
+    bi_mat = _giai_cho(d)
+    if bi_mat is None and not d["hai_buoc_bat"]:
+        # Đăng ký dở từ bản cũ: bí mật nằm ở cột chính, 2FA đang tắt.
+        bi_mat = _giai(d)
     if bi_mat is None:
         return None
     b = _buoc_khop(bi_mat, ma)
     if b is None:
         return None
+    niem = _vault().encrypt_pham_vi({"bi_mat": bi_mat}, pham_vi=_pham_vi(uid))
     ma_du_phong = [secrets.token_hex(5) for _ in range(SO_MA_DU_PHONG)]
     await db.execute(
-        "UPDATE nguoi_dung SET hai_buoc_bat = true, totp_buoc_cuoi = $2, ma_du_phong = $3 "
-        "WHERE id = $1", uid, b, [bam_mat_khau(m) for m in ma_du_phong])
+        "UPDATE nguoi_dung SET hai_buoc_bat = true, totp_buoc_cuoi = $2, ma_du_phong = $3, "
+        "totp_phien_ban = $4, totp_nonce = $5, totp_ma_hoa = $6, "
+        "totp_cho_phien_ban = NULL, totp_cho_nonce = NULL, totp_cho_ma_hoa = NULL "
+        "WHERE id = $1", uid, b, [bam_mat_khau(m) for m in ma_du_phong],
+        niem.key_version, niem.nonce, niem.ciphertext)
     await db.log_event("auth.bat_hai_buoc", ref_id=uid)
     return [f"{m[:5]}-{m[5:]}" for m in ma_du_phong]
 
@@ -138,5 +168,7 @@ async def xac_nhan(uid: UUID, ma: str) -> list[str] | None:
 async def tat(uid: UUID) -> None:
     await db.execute(
         "UPDATE nguoi_dung SET hai_buoc_bat = false, totp_phien_ban = NULL, totp_nonce = NULL, "
-        "totp_ma_hoa = NULL, ma_du_phong = '{}', totp_buoc_cuoi = NULL WHERE id = $1", uid)
+        "totp_ma_hoa = NULL, ma_du_phong = '{}', totp_buoc_cuoi = NULL, "
+        "totp_cho_phien_ban = NULL, totp_cho_nonce = NULL, totp_cho_ma_hoa = NULL "
+        "WHERE id = $1", uid)
     await db.log_event("auth.tat_hai_buoc", ref_id=uid)

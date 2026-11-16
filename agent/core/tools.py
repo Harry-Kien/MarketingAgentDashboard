@@ -1823,6 +1823,9 @@ async def _tra_cuu_van_chuyen(args: dict, conversation_id=None) -> dict:
             "cần xác minh và hỏi số điện thoại đã đặt đơn, rồi gọi "
             "chuyen_nhan_vien để người thật kiểm tra."
         ),
+        # Cùng lý do với `_tra_cuu_don_hang`: dặn là dặn, model thì trượt —
+        # cờ buộc chuyển người bằng mã.
+        "can_chuyen_nhan_vien": True,
     }
     if conversation_id is None:
         return can_xac_minh

@@ -65,7 +65,7 @@ không ai kiểm.
 
 ```bash
 python -m scripts.san_sang        # sẵn sàng chạy với khách thật chưa
-python -m pytest -q               # ~3310 test, khoảng 11 phút, không gọi API model
+python -m pytest -q               # ~4210 test, khoảng 20 phút, không gọi API model
 ruff check .                      # chỉ bắt lỗi, không bắt phong cách
 mypy                              # kiểm kiểu agent/ — phải 0 lỗi (pyproject.toml)
 ```

@@ -135,6 +135,10 @@ Máy chủ đã sẵn sàng nhận cửa hàng. Việc tiếp theo (chi tiết: 
   4. Khai lại webhook ở Meta và Zalo OA theo tên miền mới
   5. docker exec cskh-<ma>-app python -m scripts.san_sang
 
-Bản sao lưu nằm ở $GOC/trien_khai/sao_luu — CHÉP RA NGOÀI máy chủ.
+Bản sao lưu (đã mã hoá) nằm ở $GOC/trien_khai/sao_luu. Để có bản NGOÀI máy chủ,
+điền SAO_LUU_THU_MUC_NGOAI hoặc SAO_LUU_LENH_NGOAI trong trien_khai/.env.nen.
+CẤT NGOÀI MÁY: SAO_LUU_MAT_KHAU (trien_khai/.env.nen) và CREDENTIAL_MASTER_KEYS
+của từng cửa hàng (trien_khai/cua_hang/<ma>/.env) — thiếu chúng thì bản sao lưu
+không mở được, token kênh và bí mật 2FA không giải mã được.
 Webhook báo động của người vận hành: điền CANH_GAC_WEBHOOK trong trien_khai/.env.nen
 HET

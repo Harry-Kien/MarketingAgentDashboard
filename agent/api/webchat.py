@@ -123,8 +123,39 @@ def _cors(response: Response, origin: str) -> None:
     response.headers["Vary"] = "Origin"
 
 
+def ky_visitor(*, secret: str, account_id: UUID, visitor_id: UUID) -> str:
+    """
+    Chữ ký "visitor_id này do máy chủ cấp cho trình duyệt này".
+
+    VÌ SAO CẦN
+    ----------
+    Bản trước nhận `visitor_id` thẳng từ thân request rồi ký vé cho nó. Vé
+    đọc được `/history` và `/events` của visitor đó — nên ai biết visitor_id
+    của khách khác (lộ qua ảnh chụp, nhật ký, máy dùng chung) xin được vé đọc
+    toàn bộ hội thoại của họ. Chốt Origin không cứu được: ngoài trình duyệt
+    thì Origin là một header gõ tay.
+
+    Giờ máy chủ SINH visitor_id; widget giữ nó KÈM chữ ký này để tải lại
+    trang vẫn thấy lịch sử. Không ký riêng theo origin: một cửa hàng nhiều
+    tên miền (www / không www) vẫn là một khách.
+    """
+    thong_diep = f"webchat-visitor|{account_id}|{visitor_id}".encode()
+    return _b64(hmac.new(secret.encode(), thong_diep, hashlib.sha256).digest())
+
+
+def visitor_hop_le(*, secret: str, account_id: UUID, visitor_id: UUID | None,
+                   chu_ky: str | None) -> bool:
+    if visitor_id is None or not chu_ky:
+        return False
+    dung = ky_visitor(secret=secret, account_id=account_id, visitor_id=visitor_id)
+    return hmac.compare_digest(dung, chu_ky)
+
+
 class WebchatSessionIn(BaseModel):
     visitor_id: UUID | None = None
+    # Chữ ký máy chủ trả ở lần mở phiên trước. Thiếu/sai thì visitor_id bị
+    # BỎ QUA và cấp visitor mới — không báo lỗi, để widget cũ vẫn chạy.
+    visitor_sig: str | None = Field(default=None, max_length=128)
 
 
 class WebchatMessageIn(BaseModel):
@@ -211,15 +242,24 @@ async def create_webchat_session(
     origin = request.headers.get("origin", "").rstrip("/")
     if not origin or not _origin_allowed(origin, credentials):
         raise HTTPException(403, "Origin không được phép dùng webchat")
-    visitor_id = body.visitor_id or uuid4()
+    secret = str(credentials["widget_secret"])
+    # Không chữ ký hợp lệ thì KHÔNG tin visitor_id gửi lên — xem `ky_visitor`.
+    visitor_id: UUID = uuid4()
+    if body.visitor_id is not None and visitor_hop_le(
+            secret=secret, account_id=account_id,
+            visitor_id=body.visitor_id, chu_ky=body.visitor_sig):
+        visitor_id = body.visitor_id
     token = issue_widget_token(
-        secret=str(credentials["widget_secret"]),
+        secret=secret,
         account_id=account_id,
         visitor_id=visitor_id,
         origin=origin,
     )
     _cors(response, origin)
-    return {"visitor_id": str(visitor_id), "token": token, "expires_in": 86400}
+    return {"visitor_id": str(visitor_id),
+            "visitor_sig": ky_visitor(secret=secret, account_id=account_id,
+                                      visitor_id=visitor_id),
+            "token": token, "expires_in": 86400}
 
 
 @router.post("/{account_id}/messages", status_code=202)

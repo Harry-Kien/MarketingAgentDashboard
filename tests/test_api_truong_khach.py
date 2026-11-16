@@ -82,7 +82,12 @@ def _sql(url: str, cau: str, *args):
 
 
 def _sep() -> dict:
-    return nguoi_thu("khach.doc", "khach.sua", "cau_hinh.sua",
+    # `khach.xem_tat_ca`: khách ở đây dựng thẳng trong CSDL, không thuộc kênh
+    # nào. Từ 16.11.2026 `PUT /contacts/{id}/truong` chốt kênh như
+    # `contact_detail` — người KHÔNG xem-tất-cả sửa khách ngoài kênh mình là
+    # 404 (canh ở tests/test_ai_thay_gi_ve_khach.py). File này canh kiểu dữ
+    # liệu, không canh kênh.
+    return nguoi_thu("khach.doc", "khach.sua", "khach.xem_tat_ca", "cau_hinh.sua",
                      id=SEP_ID, ten="sep")
 
 

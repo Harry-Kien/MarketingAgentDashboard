@@ -263,7 +263,11 @@ def doc_sao_luu_silo(sao_luu: dict | None, phuc_hoi: dict | None) -> dict:
 def kiem_sao_luu() -> dict:
     """Việc 5 — sao lưu tự động, và đã thử phục hồi."""
     if trong_silo():
-        return doc_sao_luu_silo(_dau_moc(".sao_luu_ngoai"), _dau_moc(".thu_phuc_hoi"))
+        # `.sao_luu_ngoai` là tên CŨ (trước 16.11.2026) — vẫn là bằng chứng
+        # "có bản sao lưu", nhưng không bao giờ là bằng chứng mã hoá/ngoài máy.
+        moc = _dau_moc(DAU_MOC_SAO_LUU)
+        return doc_sao_luu_silo(moc if moc is not None else _dau_moc(".sao_luu_ngoai"),
+                                _dau_moc(".thu_phuc_hoi"))
     thu_muc = ROOT / "data" / "backup"
     if not thu_muc.exists() or not any(thu_muc.iterdir()):
         return _muc("Sao lưu", CHAN, "chưa có bản sao lưu nào",
@@ -335,7 +339,54 @@ def doc_ma_hoa_sao_luu(co_mat_khau: bool, ban_moi_ma_hoa: bool | None,
     return _muc(ten, DU, f"mã hoá AES-256-GCM · bản ngoài máy {int(tuoi)} giờ trước")
 
 
+DAU_MOC_SAO_LUU = ".sao_luu_may_chu"
+DAU_MOC_NGOAI_MAY = ".sao_luu_ra_ngoai_may"
+DAU_MOC_PING = ".ping_con_song"
+
+
+def doc_ma_hoa_sao_luu_silo(moc_sao_luu: dict | None, moc_ngoai: dict | None) -> dict:
+    """
+    Phần thuần, cho container silo: bản sao lưu trên VPS có MÃ HOÁ không, và
+    có bản NGOÀI máy chủ không — đọc dấu mốc THẬT mặt phẳng điều khiển ghi.
+
+    Trước 16.11.2026 mục này bị BỎ HẲN trong silo, nên bảng ra ĐỦ cho một
+    cửa hàng mà bản sao lưu duy nhất là `pg_dump` rõ nằm cùng máy với CSDL
+    (dấu mốc còn tên `.sao_luu_ngoai` — "ngoài" mà không ra ngoài). Xanh giả
+    ở đúng chỗ không được giả: máy chủ hỏng là mất cả dữ liệu lẫn bản sao.
+    """
+    ten = "Mã hoá + ngoài máy"
+    sua_ngoai = ("Trên máy chủ: đặt SAO_LUU_THU_MUC_NGOAI (thư mục mount từ nơi khác) hoặc "
+                 "SAO_LUU_LENH_NGOAI (vd. rclone) trong trien_khai/.env.nen — docs/len-vps.md")
+    if not moc_sao_luu or not moc_sao_luu.get("ma_hoa"):
+        return _muc(ten, CHAN if moc_sao_luu else CANH_BAO,
+                    "bản sao lưu trên máy chủ CHƯA mã hoá — có SĐT, địa chỉ, ảnh da của khách"
+                    if moc_sao_luu else "chưa có bản sao lưu nào do máy chủ ghi nhận",
+                    "Cập nhật mã trên máy chủ (git pull) rồi chạy: python3 -m scripts.cua_hang "
+                    "sao_luu --tat-ca — bản mới sẽ mã hoá bằng SAO_LUU_MAT_KHAU")
+    if moc_sao_luu.get("du_lieu") is False:
+        return _muc(ten, CANH_BAO,
+                    "bản sao lưu THIẾU volume dữ liệu (ảnh khách, tài liệu, danh mục): "
+                    + str(moc_sao_luu.get("du_lieu_ghi") or "")[:100],
+                    "Trên máy chủ: python3 -m scripts.cua_hang sao_luu <ma> và đọc dòng 'dữ liệu'")
+    tuoi = _tuoi_gio((moc_ngoai or {}).get("luc"))
+    if not (moc_ngoai or {}).get("ok") or tuoi is None:
+        return _muc(ten, CANH_BAO, "đã mã hoá, nhưng CHƯA từng chép ra ngoài máy chủ — "
+                                   "máy chủ hỏng là mất cả dữ liệu lẫn bản sao", sua_ngoai)
+    if tuoi > 48:
+        return _muc(ten, CANH_BAO, f"bản ngoài máy gần nhất đã {int(tuoi)} giờ — chép ra ngoài đang hỏng?",
+                    sua_ngoai + ". Xem /var/log/cskh-sao-luu.log")
+    return _muc(ten, DU, f"mã hoá AES-256-GCM · bản ngoài máy {int(tuoi)} giờ trước")
+
+
 def kiem_ma_hoa_sao_luu() -> dict:
+    if trong_silo():
+        moc = _dau_moc(DAU_MOC_SAO_LUU)
+        if moc is None:
+            # Chỉ có dấu mốc tên cũ = bản rõ của mã trước 16.11.2026.
+            moc = _dau_moc(".sao_luu_ngoai")
+            moc = {**moc, "ma_hoa": False} if moc is not None else None
+        return doc_ma_hoa_sao_luu_silo(moc, _dau_moc(DAU_MOC_NGOAI_MAY))
+
     from scripts import sao_luu
 
     ban = sao_luu.ban_db()
@@ -732,6 +783,41 @@ def doc_ping_con_song(co_url: bool) -> dict:
                 "máy tắt / mất điện / mất mạng thì KHÔNG ai được báo — mọi báo động đều chạy trên chính máy này",
                 "Tạo check miễn phí ở healthchecks.io (chu kỳ 5 phút, ân hạn 10 phút, nối Telegram/email), "
                 "dán URL ping vào CANH_GAC_PING_URL trong .env")
+
+
+def doc_ping_silo(co_url: bool, moc: dict | None) -> dict:
+    """
+    Container silo: "báo khi máy tắt" phải là cú ping THẬT từ máy chủ.
+
+    Chỉ xét "có URL" là xanh giả sau khi lên VPS: URL đi theo gói chuyển nhà,
+    nhưng người ping duy nhất từng có là task Windows trên máy cũ — VPS chết
+    thì không ai báo, còn máy cũ vẫn ping hộ thì Healthchecks xanh cho một
+    VPS đã tắt. Giờ cron `cua_hang kiem --sua` (5 phút) ping URL trong .env
+    của cửa hàng và ghi dấu mốc; mục này đọc dấu mốc ấy.
+    """
+    ten = "Báo khi máy tắt"
+    sua = ("Tạo check RIÊNG cho máy chủ này ở healthchecks.io (chu kỳ 5 phút, ân hạn 10 phút), "
+           "dán URL vào CANH_GAC_PING_URL trong trien_khai/cua_hang/<ma>/.env, rồi "
+           "cua_hang khoi_dong_lai <ma>. Cron `cua_hang kiem --sua` sẽ ping mỗi 5 phút")
+    if not co_url:
+        return _muc(ten, CANH_BAO, "máy chủ tắt / mất mạng thì KHÔNG ai được báo", sua)
+    tuoi = _tuoi_gio((moc or {}).get("luc"))
+    if tuoi is None:
+        return _muc(ten, CANH_BAO, "có URL nhưng máy chủ CHƯA ping lần nào — cron người canh chưa chạy?", sua)
+    if tuoi * 60 > 15:
+        return _muc(ten, CANH_BAO, f"lần ping cuối cách đây {int(tuoi * 60)} phút — cron người canh đã ngừng?",
+                    sua)
+    if not (moc or {}).get("ok"):
+        return _muc(ten, CANH_BAO, "máy chủ có ping nhưng KHÔNG tới được Healthchecks (mạng ra ngoài / URL sai)",
+                    sua)
+    return _muc(ten, DU, f"máy chủ ping Healthchecks {int(tuoi * 60)} phút trước — hết tín hiệu là có báo")
+
+
+def kiem_ping_con_song() -> dict:
+    co_url = bool(settings.canh_gac_ping_url.strip())
+    if trong_silo():
+        return doc_ping_silo(co_url, _dau_moc(DAU_MOC_PING))
+    return doc_ping_con_song(co_url)
 
 
 def kiem_nguoi_canh() -> dict:
@@ -1404,8 +1490,8 @@ async def chay() -> int:
         await kiem_outbox(), await kiem_ton_kho(),
         await kiem_erp_song(), kiem_ghi_don(), kiem_van_chuyen(),
         await kiem_yeu_cau_chu_the(), kiem_thong_bao_ai(),
-        kiem_sao_luu(), *([] if trong_silo() else [kiem_ma_hoa_sao_luu()]),
-        kiem_bao_dong(), kiem_nguoi_canh(), doc_ping_con_song(bool(settings.canh_gac_ping_url.strip())),
+        kiem_sao_luu(), kiem_ma_hoa_sao_luu(),
+        kiem_bao_dong(), kiem_nguoi_canh(), kiem_ping_con_song(),
         kiem_cookie(), kiem_cong(),
     ]
 

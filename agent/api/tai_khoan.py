@@ -30,6 +30,9 @@ class DangNhapIn(BaseModel):
 
 
 class DoiMatKhauIn(BaseModel):
+    # Mật khẩu HIỆN TẠI: phiên bị chiếm (cookie lộ, máy quên khoá) không được
+    # tự đổi mật khẩu rồi đá chủ thật ra khỏi mọi thiết bị.
+    mat_khau_cu: str = Field(min_length=1, max_length=200)
     mat_khau_moi: str = Field(min_length=8, max_length=200)
 
 
@@ -115,10 +118,32 @@ async def toi(request: Request) -> dict:
     return nguoi
 
 
+async def _kiem_lai_mat_khau(nguoi: dict, mat_khau: str) -> None:
+    """
+    Gõ lại mật khẩu cho việc nhạy cảm của CHÍNH MÌNH (đổi mật khẩu, bật/đổi/
+    tắt 2FA). Phiên chứng minh "ai đó đang cầm cookie", không chứng minh
+    "đó là chủ tài khoản".
+
+    Dùng CHUNG bộ đếm sai với đăng nhập (theo tên): không thì phiên bị chiếm
+    biến các route này thành máy dò mật khẩu không giới hạn — scrypt chỉ
+    làm chậm, không chặn.
+    """
+    ten = nguoi["ten_dang_nhap"]
+    if (con := xac_thuc.bi_khoa_tam(ten)) > 0:
+        raise HTTPException(429, f"Sai mật khẩu quá nhiều lần — thử lại sau {con} giây.")
+    r = await db.fetchrow("SELECT mat_khau_bam FROM nguoi_dung WHERE id = $1",
+                          uuid.UUID(str(nguoi["id"])))
+    if r is None or not xac_thuc.kiem_mat_khau(mat_khau or "", r["mat_khau_bam"]):
+        xac_thuc.ghi_that_bai(ten)
+        await db.log_event("auth.go_lai_mat_khau_sai", actor=ten)
+        raise HTTPException(403, "Mật khẩu hiện tại không đúng.")
+
+
 @router.post("/toi/doi-mat-khau")
 async def doi_mat_khau(body: DoiMatKhauIn,
                        nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
     """Đổi mật khẩu của chính mình. Mọi phiên đang mở bị đá ra."""
+    await _kiem_lai_mat_khau(nguoi, body.mat_khau_cu)
     await xac_thuc.doi_mat_khau(nguoi["ten_dang_nhap"], body.mat_khau_moi)
     await db.log_event("auth.doi_mat_khau", actor=nguoi["ten_dang_nhap"])
     return {"ok": True, "ghi_chu": "Đã đổi. Mọi thiết bị phải đăng nhập lại."}
@@ -140,13 +165,35 @@ async def hai_buoc_trang_thai(nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict
     return {"bat": bool(r and r["hai_buoc_bat"]), "ma_du_phong_con": r["con"] if r else 0}
 
 
+class BatDauHaiBuocIn(BaseModel):
+    mat_khau: str = Field("", max_length=200)
+    # Chỉ cần khi 2FA ĐANG bật (đổi điện thoại / đăng ký lại).
+    ma: str = Field("", max_length=20)
+
+
 @router.post("/toi/hai-buoc/bat-dau")
-async def hai_buoc_bat_dau(nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
-    """Sinh bí mật mới (CHƯA bật) và trả QR để quét bằng app xác thực."""
+async def hai_buoc_bat_dau(body: BatDauHaiBuocIn | None = None,
+                           nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
+    """
+    Sinh bí mật mới (CHỜ, chưa thay bí mật đang dùng) và trả QR để quét.
+
+    Đòi gõ lại mật khẩu — và nếu 2FA đang bật thì đòi cả mã hiện tại. Trước
+    16.11.2026 route này không hỏi gì và tắt 2FA ngay khi gọi: phiên bị
+    chiếm gỡ được lớp bảo vệ mà chính lớp ấy sinh ra để chặn.
+    """
     import segno
 
     from agent.core import hai_buoc
-    uri = await hai_buoc.bat_dau(uuid.UUID(str(nguoi["id"])), nguoi["ten_dang_nhap"])
+    body = body or BatDauHaiBuocIn(mat_khau="", ma="")
+    uid = uuid.UUID(str(nguoi["id"]))
+    await _kiem_lai_mat_khau(nguoi, body.mat_khau)
+    tt = await db.fetchrow("SELECT hai_buoc_bat FROM nguoi_dung WHERE id = $1", uid)
+    if tt and tt["hai_buoc_bat"]:
+        if not body.ma or not await hai_buoc.kiem(uid, body.ma):
+            xac_thuc.ghi_that_bai(nguoi["ten_dang_nhap"])
+            raise HTTPException(403, "2FA đang bật — nhập mã 6 số hiện tại (hoặc mã dự phòng) "
+                                     "để đăng ký điện thoại mới.")
+    uri = await hai_buoc.bat_dau(uid, nguoi["ten_dang_nhap"])
     import io
     buf = io.BytesIO()
     segno.make(uri, error="m").save(buf, kind="svg", scale=5, border=2)
@@ -170,10 +217,7 @@ async def hai_buoc_tat(body: TatHaiBuocIn,
                        nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
     """Tắt 2FA đòi gõ lại mật khẩu: phiên bị chiếm không được tự gỡ lớp bảo vệ."""
     from agent.core import hai_buoc
-    r = await db.fetchrow("SELECT mat_khau_bam FROM nguoi_dung WHERE id = $1",
-                          uuid.UUID(str(nguoi["id"])))
-    if r is None or not xac_thuc.kiem_mat_khau(body.mat_khau, r["mat_khau_bam"]):
-        raise HTTPException(403, "Mật khẩu không đúng.")
+    await _kiem_lai_mat_khau(nguoi, body.mat_khau)
     await hai_buoc.tat(uuid.UUID(str(nguoi["id"])))
     return {"ok": True}
 

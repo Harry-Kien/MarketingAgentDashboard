@@ -124,9 +124,13 @@ def test_moi_thao_tac_deu_duoc_ghi_lai():
 def test_don_theo_han_khong_dung_toi_don_hang():
     src = inspect.getsource(pdpd.don_theo_thoi_han)
     assert "orders" not in src, (
-        "thời hạn 180 ngày chỉ áp cho hội thoại — chứng từ kế toán có thời "
+        "thời hạn 180 ngày không áp cho đơn — chứng từ kế toán có thời "
         "hạn riêng dài hơn nhiều"
     )
+    # Đơn chỉ được ĐỌC (khách còn đơn mở thì chưa quên khách), không sửa/xoá.
+    sql = pdpd._SQL_HO_SO_CRM_QUA_HAN
+    assert sql.lstrip().upper().startswith("SELECT")
+    assert "UPDATE ORDERS" not in sql.upper() and "DELETE FROM ORDERS" not in sql.upper()
 
 
 def test_xem_truoc_duoc_truoc_khi_xoa():

@@ -249,9 +249,14 @@ def bao_nhan_vien_nen(tieu_de: str, chi_tiet: str) -> None:
     t.add_done_callback(_viec_nen.discard)
 
 
+# Tên các mục đang HỎNG ở lần kiểm trước. Xem "MỤC HỎNG MỚI" trong
+# `kiem_mot_lan()`.
+_tap_hong_truoc: frozenset[str] = frozenset()
+
+
 async def kiem_mot_lan() -> dict:
     """Kiểm một lượt và báo nếu trạng thái đổi. Trả kết quả chẩn đoán."""
-    global _truoc, _cho_truoc
+    global _truoc, _cho_truoc, _tap_hong_truoc
     kq = await suc_khoe.tong_kiem()
     nay = kq.get("trang_thai", "khong_ro")
 
@@ -259,12 +264,28 @@ async def kiem_mot_lan() -> dict:
     hong_nay = nay == "hong"
     hong_truoc = _truoc == "hong"
 
+    # MỤC HỎNG MỚI — KHÔNG CHỈ TRẠNG THÁI TỔNG
+    # ----------------------------------------
+    # Chỉ so trạng thái tổng thì sau mục hỏng ĐẦU TIÊN, mọi mục hỏng sau đều
+    # câm: tổng vẫn "hong", không có gì "đổi". Đo được trên VPS: mục Sao lưu
+    # đỏ vĩnh viễn trong container, nên model chết sau đó KHÔNG ai được báo.
+    # So TẬP tên mục hỏng: thêm mục mới là báo; mục cũ còn hỏng thì vẫn im —
+    # không spam mỗi lượt, đúng luật của cả module.
+    tap_nay = frozenset(
+        str(m.get("ten")) for m in kq.get("muc", [])
+        if m.get("trang_thai") == suc_khoe.HONG
+    )
+    moi = tap_nay - _tap_hong_truoc
+
     if hong_nay and not hong_truoc:
         await _bao("hong", "Hệ thống đang hỏng", _tom_tat(kq), kq)
+    elif hong_nay and moi:
+        await _bao("hong", "Thêm mục hỏng: " + ", ".join(sorted(moi)), _tom_tat(kq), kq)
     elif hong_truoc and not hong_nay:
         await _bao("phuc_hoi", "Đã bình thường trở lại", _tom_tat(kq), kq)
 
     _truoc = nay
+    _tap_hong_truoc = tap_nay
 
     # KHÁCH BỊ BỎ QUÊN — ĐƯỜNG BÁO ĐỘNG RIÊNG
     # ---------------------------------------

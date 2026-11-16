@@ -124,7 +124,14 @@ def test_xoa_sao_luu_truoc_va_doi_xac_nhan(tmp_path):
         m.xoa("shopa", "shopb")
     assert r.lenh == []
     ban = m.xoa("shopa", "shopa")
-    assert ban.exists() and ban.read_bytes() == b"PGDMP-gia"
+    # Bản sao lưu cuối trước khi xoá cũng MÃ HOÁ — mở được bằng mật khẩu .env.nen.
+    import io
+
+    from scripts import goi_ma_hoa
+    ra = io.BytesIO()
+    with ban.open("rb") as f:
+        goi_ma_hoa.giai_ma(f, ra, m.mat_khau_sao_luu(sinh_neu_thieu=False))
+    assert ban.exists() and ra.getvalue() == b"PGDMP-gia"
     thu_tu = [" ".join(lenh) for lenh, dv in r.lenh] + [dv or "" for _, dv in r.lenh]
     i_dump = next(i for i, (lenh, _) in enumerate(r.lenh) if "pg_dump" in lenh)
     i_drop = next(i for i, (_, dv) in enumerate(r.lenh) if dv and "DROP DATABASE" in dv)

@@ -223,6 +223,7 @@ def _chay(monkeypatch, chuoi: list[dict]) -> list[str]:
     monkeypatch.setattr(canh_gac.suc_khoe, "tong_kiem", tong_kiem_gia)
     monkeypatch.setattr(canh_gac, "_truoc", None)
     monkeypatch.setattr(canh_gac, "_cho_truoc", False)
+    monkeypatch.setattr(canh_gac, "_tap_hong_truoc", frozenset())
 
     async def chay_het():
         for _ in chuoi:

@@ -111,6 +111,48 @@ def dien(mau: str, gia_tri: dict[str, str]) -> str:
 
 UID_APP = 10001       # người dùng `cskh` trong Dockerfile
 
+# Đuôi bản sao lưu đã mã hoá — cùng định dạng gói chuyển nhà (scripts/goi_ma_hoa).
+DUOI_MA_HOA = ".cskh"
+
+# Dấu mốc ghi vào volume dữ liệu của cửa hàng. Tên khớp `agent/suc_khoe.py`
+# và `scripts/san_sang.py` — tests/test_sao_luu_silo.py canh không lệch.
+DAU_MOC_SAO_LUU = ".sao_luu_may_chu"
+DAU_MOC_NGOAI_MAY = ".sao_luu_ra_ngoai_may"
+DAU_MOC_THU_PHUC_HOI = ".thu_phuc_hoi"
+DAU_MOC_NGUOI_CANH = ".canh_gac_ngoai"
+DAU_MOC_PING = ".ping_con_song"
+
+
+def _ghi_ma_hoa(tep: Path, ban_ro: bytes, mat_khau: str, goi_ma_hoa) -> None:
+    """Mã hoá trong bộ nhớ rồi ghi qua tệp tạm: bản rõ không chạm đĩa, tệp dở không mang tên thật."""
+    import io
+
+    tam = tep.with_name(tep.name + ".dang-ghi")
+    with tam.open("wb") as f:
+        goi_ma_hoa.ma_hoa(io.BytesIO(ban_ro), f, mat_khau)
+    _chi_chu_doc(tam)
+    tam.replace(tep)
+
+
+def doc_env_cua_hang(tep: Path) -> dict[str, str]:
+    if not tep.exists():
+        return {}
+    return {k: v.strip() for k, v in
+            re.findall(r"^([A-Z][A-Z0-9_]*)=(.*)$", tep.read_text(encoding="utf-8"), re.M)}
+
+
+def _ping_that(url: str, song: bool) -> bool:
+    """GET <url> (sống) hoặc <url>/fail (hỏng), kiểu Healthchecks. Không in URL — nó là bí mật."""
+    import urllib.error
+    import urllib.request
+
+    dich = url.rstrip("/") + ("" if song else "/fail")
+    try:
+        urllib.request.urlopen(urllib.request.Request(dich, method="GET"), timeout=10).close()
+        return True
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
 
 def doc_khoa_gcp(tep: Path) -> dict[str, str]:
     """
@@ -343,10 +385,12 @@ def _bay_gio() -> str:
 class MatPhang:
     """Mọi lệnh ra ngoài (docker, psql, HTTP) đi qua `chay` — test thay được."""
 
-    def __init__(self, chay: Chay = _chay_nhi_phan, goc: Path = TRIEN_KHAI):
+    def __init__(self, chay: Chay = _chay_nhi_phan, goc: Path = TRIEN_KHAI,
+                 ping: Callable[[str, bool], bool] = _ping_that):
         self.chay = chay
         self.goc = goc
         self.thu_muc = goc / "cua_hang"
+        self.ping = ping
 
     # --- psql qua docker exec, SQL qua stdin ---
     def sql(self, csdl: str, lenh: str, *, mot_dong: bool = False) -> str:
@@ -603,21 +647,180 @@ class MatPhang:
         self.docker("compose", "-p", f"cskh-{ma}", "up", "-d", "--force-recreate", "app",
                     cwd=self.thu_muc / ma)
 
+    # --- cấu hình của người vận hành (trien_khai/.env.nen) ---
+    def cau_hinh_nen(self) -> dict[str, str]:
+        tep = self.goc / ".env.nen"
+        if not tep.exists():
+            return {}
+        return {k: v.strip() for k, v in
+                re.findall(r"^([A-Z][A-Z0-9_]*)=(.*)$", tep.read_text(encoding="utf-8"), re.M)}
+
+    def mat_khau_sao_luu(self, *, sinh_neu_thieu: bool = True) -> str:
+        """
+        Mật khẩu mã hoá bản sao lưu (`SAO_LUU_MAT_KHAU` trong .env.nen).
+
+        Thiếu thì SINH và ghi vào .env.nen chứ không lui về bản rõ: máy chủ
+        cài trước 16.11.2026 không có dòng này, và "thiếu cấu hình thì ghi
+        bản rõ" chính là lỗi đang sửa — `pg_dump` rõ chứa SĐT, địa chỉ, ảnh
+        da của khách nằm trơ trên đĩa. In nhắc cất một bản mật khẩu NGOÀI
+        máy: máy hỏng mà mật khẩu chỉ nằm trên máy thì bản ngoài máy là rác.
+        """
+        mk = self.cau_hinh_nen().get("SAO_LUU_MAT_KHAU", "")
+        if mk or not sinh_neu_thieu:
+            return mk
+        from scripts import goi_ma_hoa
+
+        mk = goi_ma_hoa.sinh_mat_khau()
+        tep = self.goc / ".env.nen"
+        tep.parent.mkdir(parents=True, exist_ok=True)
+        cu = tep.read_text(encoding="utf-8") if tep.exists() else ""
+        tep.write_text((cu.rstrip("\n") + "\n" if cu else "")
+                       + "# Mã hoá bản sao lưu (AES-256-GCM). CẤT MỘT BẢN NGOÀI MÁY.\n"
+                       + f"SAO_LUU_MAT_KHAU={mk}\n", encoding="utf-8", newline="\n")
+        _chi_chu_doc(tep)
+        print("ĐÃ SINH SAO_LUU_MAT_KHAU trong trien_khai/.env.nen — chép nó (cùng "
+              "CREDENTIAL_MASTER_KEYS của từng cửa hàng) ra NGOÀI máy chủ ngay. "
+              "Không có nó thì bản sao lưu không mở được.", file=sys.stderr)
+        return mk
+
     def sao_luu(self, ma: str) -> Path:
+        return self.sao_luu_day_du(ma)["tep"]
+
+    def sao_luu_day_du(self, ma: str) -> dict:
+        """
+        `pg_dump` + volume `/app/data`, MÃ HOÁ ngay trong bộ nhớ (bản rõ không
+        chạm đĩa), rồi chép ra ngoài máy nếu đã cấu hình.
+
+        Ba dấu mốc, mỗi cái một nghĩa — gộp lại là lặp đúng lỗi tên
+        `.sao_luu_ngoai` cũ: tên nói "ngoài" mà bản nằm CÙNG máy, và
+        `san_sang` báo ĐỦ cho một cửa hàng chỉ có một bản rõ trên chính VPS.
+          .sao_luu_may_chu       có bản (đã mã hoá) trên máy chủ
+          .sao_luu_ra_ngoai_may  CHỈ ghi khi chép ra ngoài THẬT thành công
+          .thu_phuc_hoi          phục hồi thử được (`thu_phuc_hoi`)
+        """
+        from scripts import goi_ma_hoa
+
         kiem_ma(ma)
+        mk = self.mat_khau_sao_luu()
         dich = self.goc / "sao_luu" / ma
         dich.mkdir(parents=True, exist_ok=True)
-        tep = dich / f"ch_{ma}-{time.strftime('%Y%m%d-%H%M%S')}.dump"
+        dau = f"ch_{ma}-{time.strftime('%Y%m%d-%H%M%S')}"
         kq = self.chay(["docker", "exec", PG, "pg_dump", "-U", PG_QUAN_TRI, "-Fc", f"ch_{ma}"],
                        nhi_phan=True)
         if kq.returncode != 0 or not kq.stdout:
             raise LoiCuaHang(f"pg_dump ch_{ma} hỏng hoặc rỗng — KHÔNG có bản sao lưu.")
-        tep.write_bytes(kq.stdout)
-        # Dấu mốc cho `san_sang` trong container — CHỈ ghi khi thành công, nên
-        # lịch sao lưu ngừng thì dấu mốc cũ dần và mục Sao lưu tự đỏ.
-        self._ghi_dau_moc(ma, ".sao_luu_ngoai",
-                          {"luc": _bay_gio(), "tep": tep.name, "byte": len(kq.stdout)})
-        return tep
+        tep = dich / f"{dau}.dump{DUOI_MA_HOA}"
+        _ghi_ma_hoa(tep, kq.stdout, mk, goi_ma_hoa)
+
+        du_lieu_ok, du_lieu_ghi, tep_du_lieu = self._sao_luu_du_lieu(ma, dich, dau, mk)
+        # Dấu mốc cho `san_sang`/sức khoẻ trong container — CHỈ ghi khi thành
+        # công, nên lịch sao lưu ngừng thì dấu mốc cũ dần và mục Sao lưu tự đỏ.
+        self._ghi_dau_moc(ma, DAU_MOC_SAO_LUU, {
+            "luc": _bay_gio(), "tep": tep.name, "byte": len(kq.stdout), "ma_hoa": True,
+            "du_lieu": du_lieu_ok, "du_lieu_ghi": du_lieu_ghi[:160]})
+        ngoai_ok, ngoai_ghi = self.chep_ra_ngoai(
+            ma, [tep] + ([tep_du_lieu] if tep_du_lieu else []))
+        return {"tep": tep, "du_lieu": du_lieu_ok, "du_lieu_ghi": du_lieu_ghi,
+                "ngoai": ngoai_ok, "ngoai_ghi": ngoai_ghi}
+
+    def _sao_luu_du_lieu(self, ma: str, dich: Path, dau: str,
+                         mk: str) -> tuple[bool, str, Path | None]:
+        """
+        Volume `/app/data`: ảnh khách gửi, tài liệu tri thức, danh mục, phiên
+        Zalo. KHÔNG nằm trong CSDL — chỉ có `pg_dump` thì phục hồi xong agent
+        trả lời bằng danh mục mẫu và mọi ảnh khách trả 404.
+
+        Đọc qua `docker run` mount CHỈ ĐỌC chứ không `docker exec` vào app:
+        cửa hàng đang tạm dừng (hay đang bị xoá) vẫn sao lưu được. Hỏng thì
+        KHÔNG làm hỏng cả lượt — bản CSDL quan trọng hơn — nhưng ghi vào dấu
+        mốc để `san_sang` nói ra, không im lặng.
+        """
+        from scripts import goi_ma_hoa
+
+        compose = self.thu_muc / ma / "compose.yml"
+        m = (re.search(r"^\s*image:\s*(\S+)", compose.read_text(encoding="utf-8"), re.M)
+             if compose.exists() else None)
+        if m is None:
+            return False, "không đọc được image trong compose.yml của cửa hàng", None
+        kq = self.chay(["docker", "run", "--rm", "-v", f"cskh-{ma}-du-lieu:/app/data:ro",
+                        "--entrypoint", "tar", m.group(1), "-cf", "-", "-C", "/app/data", "."],
+                       nhi_phan=True)
+        if kq.returncode != 0 or not isinstance(kq.stdout, bytes) or not kq.stdout:
+            loi = kq.stderr.decode("utf-8", "replace") if isinstance(kq.stderr, bytes) \
+                else str(kq.stderr or "")
+            return False, f"tar volume dữ liệu hỏng: {loi.strip()[:200]}", None
+        tep = dich / f"{dau}-du-lieu.tar{DUOI_MA_HOA}"
+        _ghi_ma_hoa(tep, kq.stdout, mk, goi_ma_hoa)
+        return True, f"{len(kq.stdout) / 1_048_576:.1f} MB", tep
+
+    def _cung_o_dia(self, a: Path, b: Path) -> bool:
+        """Hai đường cùng một thiết bị? (thư mục "ngoài" mà cùng đĩa là không ngoài)."""
+        try:
+            return os.stat(a).st_dev == os.stat(b).st_dev
+        except OSError:
+            return False
+
+    def chep_ra_ngoai(self, ma: str, cac_tep: list[Path]) -> tuple[bool | None, str]:
+        """
+        Chép bản ĐÃ MÃ HOÁ ra ngoài máy chủ. Hai cách, đặt trong .env.nen:
+
+          SAO_LUU_THU_MUC_NGOAI  thư mục đã MOUNT từ nơi khác (Storage Box
+                                 qua sshfs/NFS, ổ mạng). Cùng đĩa với máy chủ
+                                 thì TỪ CHỐI — "ngoài" mà cùng đĩa là xanh giả.
+          SAO_LUU_LENH_NGOAI     lệnh chép, ví dụ
+                                 `rclone copyto {tep} b2:cskh/{ma}/{ten}`
+                                 (rclone tự cài và cấu hình — script này không
+                                 cài gì). Chạy KHÔNG qua shell; mã thoát ≠ 0
+                                 là hỏng.
+
+        Dấu mốc `.sao_luu_ra_ngoai_may` CHỈ ghi khi mọi tệp đã ra tới nơi.
+        Hỏng thì trả (False, lý do) để `main` báo người vận hành; chưa cấu
+        hình thì (None, …) — `san_sang` trong container tự nói là chưa có.
+        """
+        import shlex
+        import shutil
+
+        cfg = self.cau_hinh_nen()
+        thu_muc = cfg.get("SAO_LUU_THU_MUC_NGOAI", "")
+        lenh = cfg.get("SAO_LUU_LENH_NGOAI", "")
+        if not thu_muc and not lenh:
+            return None, "chưa cấu hình SAO_LUU_THU_MUC_NGOAI / SAO_LUU_LENH_NGOAI — chỉ có bản trên máy chủ"
+        if any(not t.name.endswith(DUOI_MA_HOA) for t in cac_tep):
+            return False, "KHÔNG chép bản chưa mã hoá ra ngoài máy"
+        noi = []
+        try:
+            if thu_muc:
+                goc_ngoai = Path(thu_muc)
+                if not goc_ngoai.is_dir():
+                    raise LoiCuaHang(f"thư mục ngoài {thu_muc} không tồn tại (chưa mount?)")
+                if self._cung_o_dia(goc_ngoai, self.goc):
+                    raise LoiCuaHang(f"{thu_muc} nằm CÙNG đĩa với máy chủ — không phải ngoài máy")
+                d = goc_ngoai / ma
+                d.mkdir(parents=True, exist_ok=True)
+                for t in cac_tep:
+                    tam = d / (t.name + ".dang-chep")
+                    shutil.copyfile(t, tam)
+                    if tam.stat().st_size != t.stat().st_size:
+                        raise LoiCuaHang(f"chép {t.name} thiếu byte")
+                    # Đổi tên sau khi chép xong: nơi đồng bộ không được thấy
+                    # một tệp chép dở như thể nó là bản hoàn chỉnh.
+                    tam.replace(d / t.name)
+                noi.append("thư mục ngoài")
+            if lenh:
+                for t in cac_tep:
+                    args = [a.replace("{tep}", str(t)).replace("{ten}", t.name)
+                            .replace("{ma}", ma) for a in shlex.split(lenh)]
+                    kq = self.chay(args)
+                    if kq.returncode != 0:
+                        raise LoiCuaHang(f"lệnh chép ngoài trả mã {kq.returncode}: "
+                                         f"{str(kq.stderr or '').strip()[:200]}")
+                noi.append(f"lệnh {shlex.split(lenh)[0]}")
+        except (OSError, LoiCuaHang, ValueError) as exc:
+            return False, f"KHÔNG chép ra ngoài được: {exc}"[:240]
+        ghi = f"đã chép {len(cac_tep)} tệp ra ngoài ({', '.join(noi)})"
+        self._ghi_dau_moc(ma, DAU_MOC_NGOAI_MAY, {
+            "luc": _bay_gio(), "ok": True, "tep": [t.name for t in cac_tep], "ghi": ghi})
+        return True, ghi
 
     def _ghi_dau_moc(self, ma: str, ten: str, noi_dung: dict) -> bool:
         """Ghi một tệp JSON nhỏ vào volume dữ liệu của cửa hàng (qua container app)."""
@@ -635,10 +838,31 @@ class MatPhang:
         vào đúng ngày cần nó.
         """
         kiem_ma(ma)
-        ds = sorted((self.goc / "sao_luu" / ma).glob(f"ch_{ma}-*.dump"))
+        kho = self.goc / "sao_luu" / ma
+        # Cả bản rõ cũ (trước 16.11.2026) lẫn bản mã hoá; tên mang dấu thời
+        # gian nên xếp theo tên là xếp theo thời gian.
+        ds = sorted([*kho.glob(f"ch_{ma}-*.dump"), *kho.glob(f"ch_{ma}-*.dump{DUOI_MA_HOA}")],
+                    key=lambda p: p.name)
         if not ds:
             raise LoiCuaHang(f"chưa có bản sao lưu nào của {ma} — chạy sao_luu {ma} trước.")
         tep = ds[-1]
+        if tep.name.endswith(DUOI_MA_HOA):
+            import io
+
+            from scripts import goi_ma_hoa
+
+            mk = self.mat_khau_sao_luu(sinh_neu_thieu=False)
+            if not mk:
+                raise LoiCuaHang("bản sao lưu đã mã hoá nhưng .env.nen thiếu SAO_LUU_MAT_KHAU")
+            ra = io.BytesIO()
+            try:
+                with tep.open("rb") as f:
+                    goi_ma_hoa.giai_ma(f, ra, mk)
+            except goi_ma_hoa.LoiGoi as exc:
+                raise LoiCuaHang(f"giải mã {tep.name} HỎNG: {exc}") from None
+            du_lieu = ra.getvalue()
+        else:
+            du_lieu = tep.read_bytes()
         tam = f"thu_{ma}_{time.strftime('%Y%m%d%H%M%S')}"
         self.sql("postgres", f"CREATE DATABASE {tam};")
         try:
@@ -647,7 +871,7 @@ class MatPhang:
                           'NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS pgcrypto;')
             kq = self.chay(["docker", "exec", "-i", PG, "pg_restore", "-U", PG_QUAN_TRI,
                             "-d", tam, "--no-owner", "--exit-on-error"],
-                           dau_vao=tep.read_bytes(), nhi_phan=True)
+                           dau_vao=du_lieu, nhi_phan=True)
             if kq.returncode != 0:
                 loi = (kq.stderr or b"").decode("utf-8", "replace").strip()[:400]
                 raise LoiCuaHang(f"phục hồi {tep.name} HỎNG: {loi}")
@@ -661,7 +885,7 @@ class MatPhang:
         finally:
             self.sql("postgres", f"DROP DATABASE IF EXISTS {tam} WITH (FORCE);")
         kq_moc = {"luc": _bay_gio(), "tep": tep.name, "so_bang": so_bang, "so_tin": so_tin}
-        self._ghi_dau_moc(ma, ".thu_phuc_hoi", kq_moc)
+        self._ghi_dau_moc(ma, DAU_MOC_THU_PHUC_HOI, kq_moc)
         return kq_moc
 
     def sua_hong(self) -> list[tuple[str, str]]:
@@ -679,6 +903,7 @@ class MatPhang:
             if c["trang_thai"] != "chay":
                 continue
             ma = c["ma"]
+            song = True
             for vai in ("app", "sidecar"):
                 ten = f"cskh-{ma}-{vai}"
                 kq = self.chay(["docker", "inspect", "-f",
@@ -689,10 +914,33 @@ class MatPhang:
                     continue
                 r = self.chay(["docker", "start" if not trang.startswith("running") else "restart",
                                ten])
+                song = song and r.returncode == 0
                 viec.append((ten, f"{trang or '?'} -> " + ("đã bật lại" if r.returncode == 0
                                                         else f"BẬT LẠI HỎNG: {(r.stderr or '')[:120]}")))
-            self._ghi_dau_moc(ma, ".canh_gac_ngoai", {"luc": _bay_gio()})
+            self._ghi_dau_moc(ma, DAU_MOC_NGUOI_CANH, {"luc": _bay_gio()})
+            self._ping_cua_hang(ma, song)
         return viec
+
+    def _ping_cua_hang(self, ma: str, song: bool) -> None:
+        """
+        "Báo khi máy tắt" cho TỪNG cửa hàng trên VPS.
+
+        Trước đây chỉ `scripts/canh_gac_ngoai.py` (Windows) ping, và URL ping
+        đi theo gói chuyển nhà sang VPS — nên sau khi lên VPS, hoặc không ai
+        ping (VPS chết im lặng), hoặc máy Windows cũ vẫn ping hộ (xanh giả
+        cho một VPS đã tắt). Giờ cron 5 phút trên chính VPS ping URL đặt
+        trong .env của cửa hàng, và ghi dấu mốc `.ping_con_song` để
+        `san_sang` kiểm cú ping THẬT, không chỉ kiểm "có URL".
+
+        Không có URL thì không ghi dấu mốc: mục ấy sẽ tự nói "chưa ping".
+        """
+        url = doc_env_cua_hang(self.thu_muc / ma / ".env").get("CANH_GAC_PING_URL", "")
+        if not url:
+            return
+        ok = self.ping(url, song)
+        self._ghi_dau_moc(ma, DAU_MOC_PING, {"luc": _bay_gio(), "ok": ok, "song": song})
+        if not ok:
+            print(f"{ma}: ping Healthchecks HỎNG — kiểm mạng ra ngoài / URL", file=sys.stderr)
 
     def xoa(self, ma: str, xac_nhan: str) -> Path:
         kiem_ma(ma)
@@ -908,7 +1156,15 @@ def khoi_tao(goc: Path = TRIEN_KHAI, email: str = "") -> list[str]:
     if not env.exists():
         env.write_text(f"POSTGRES_MAT_KHAU={secrets.token_urlsafe(32)}\nTLS_EMAIL={email}\n"
                        "# Webhook nhận báo động của người vận hành (n8n/Telegram/Slack...).\n"
-                       "CANH_GAC_WEBHOOK=\n",
+                       "CANH_GAC_WEBHOOK=\n"
+                       "# Mã hoá bản sao lưu (AES-256-GCM). CẤT MỘT BẢN NGOÀI MÁY.\n"
+                       f"SAO_LUU_MAT_KHAU={secrets.token_urlsafe(24)}\n"
+                       "# Chép bản sao lưu ra NGOÀI máy chủ — một trong hai (docs/len-vps.md):\n"
+                       "#   thư mục đã mount từ nơi khác (Storage Box qua sshfs, NFS...)\n"
+                       "SAO_LUU_THU_MUC_NGOAI=\n"
+                       "#   hoặc lệnh chép, chạy không qua shell, ví dụ:\n"
+                       "#   rclone copyto {tep} b2:cskh-sao-luu/{ma}/{ten}\n"
+                       "SAO_LUU_LENH_NGOAI=\n",
                        encoding="utf-8", newline="\n")
         _chi_chu_doc(env)
         viec.append(f"đã sinh {env.relative_to(goc.parent)}")
@@ -1055,8 +1311,22 @@ def main(argv: list[str] | None = None) -> int:
             ds = [c["ma"] for c in mp.danh_sach()] if ts.tat_ca else [ts.ma]
             if not ds or ds == [None]:
                 raise LoiCuaHang("Chỉ rõ mã cửa hàng hoặc --tat-ca.")
+            van_de = []
             for ma in ds:
-                print(f"{ma}: {mp.sao_luu(ma)}")
+                kq = mp.sao_luu_day_du(ma)
+                print(f"{ma}: {kq['tep']} (đã mã hoá) · dữ liệu: "
+                      f"{'có' if kq['du_lieu'] else 'HỎNG'} ({kq['du_lieu_ghi']}) · ngoài máy: "
+                      f"{kq['ngoai_ghi']}")
+                if not kq["du_lieu"]:
+                    van_de.append(f"{ma}: volume dữ liệu — {kq['du_lieu_ghi']}")
+                if kq["ngoai"] is False:
+                    van_de.append(f"{ma}: {kq['ngoai_ghi']}")
+            # Hỏng một phần thì BÁO và trả mã ≠ 0: cron ghi log, nhưng log
+            # không ai đọc — bản ngoài máy cũ dần trong im lặng là đúng kiểu
+            # hỏng chỉ lộ ra vào ngày máy chủ chết.
+            if van_de:
+                bao_nguoi_van_hanh("Sao lưu chưa trọn: " + "; ".join(van_de))
+                return 1
         elif ts.lenh == "xoa":
             print(f"Đã xoá {ts.ma}. Bản sao lưu cuối: {mp.xoa(ts.ma, ts.xac_nhan)}")
     except LoiCuaHang as exc:

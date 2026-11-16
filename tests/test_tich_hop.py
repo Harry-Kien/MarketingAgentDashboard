@@ -260,7 +260,8 @@ def test_websocket_co_phien_thi_di_tiep(monkeypatch):
     biết vì sao. Có phiên hợp lệ là phải đi qua được.
     """
     async def hop_le(_token):
-        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri"}
+        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri",
+                "quyen": frozenset({"tich_hop.doc"})}
     monkeypatch.setattr(xac_thuc, "doc_phien", hop_le)
 
     ws = _WSGia(cookies={TEN_COOKIE: "token-tot"})
@@ -278,7 +279,8 @@ def test_websocket_ten_app_la_thi_tu_choi_chu_khong_no():
     WebSocket: không có gì biến nó thành 404, nó chỉ thành lỗi chưa bắt.
     """
     async def hop_le(_token):
-        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri"}
+        return {"id": 1, "ten_dang_nhap": "an", "vai_tro": "quan_tri",
+                "quyen": frozenset({"tich_hop.doc"})}
     tich_hop_xac_thuc = xac_thuc.doc_phien
     xac_thuc.doc_phien = hop_le
     try:

@@ -81,12 +81,27 @@ async def giu_hang(items: list[dict], ma_don: str) -> tuple[bool, str]:
     if not items:
         return True, ""
 
+    # GỘP THEO MÃ trước khi kiểm và trừ. Hai dòng cùng mã (khách gọi một
+    # món hai lần, hoặc hai tên gần nhau khớp cùng một sản phẩm) mà kiểm
+    # riêng từng dòng thì dòng nào cũng "đủ", rồi UPDATE thứ hai đâm vào
+    # CHECK so_luong >= 0 và NÉM LỖI — đơn đã INSERT nằm lại mà kho không
+    # trừ (rà soát 11.2026). Gộp lại thì "không đủ" là một câu trả lời
+    # bình thường, không phải một ngoại lệ.
+    gop: dict[str, int] = {}
+    ten_cua: dict[str, str] = {}
+    for it in items:
+        ma, sl = it.get("ma"), int(it.get("so_luong") or 1)
+        if not ma:
+            continue
+        gop[ma] = gop.get(ma, 0) + sl
+        ten_cua.setdefault(ma, str(it.get("ten") or ma))
+
     async with db.pool().acquire() as conn:
         async with conn.transaction():
-            for it in items:
-                ma, sl = it.get("ma"), int(it.get("so_luong") or 1)
-                if not ma:
-                    continue
+            # Khoá theo thứ tự mã cố định: hai đơn cùng chứa A và B mà khoá
+            # ngược thứ tự nhau là deadlock.
+            for ma in sorted(gop):
+                sl = gop[ma]
                 # FOR UPDATE khoá đúng dòng này tới hết giao dịch.
                 row = await conn.fetchrow(
                     "SELECT so_luong FROM ton_kho WHERE ma = $1 FOR UPDATE", ma
@@ -95,17 +110,15 @@ async def giu_hang(items: list[dict], ma_don: str) -> tuple[bool, str]:
                     return False, f"Mã {ma} không có trong kho."
                 con = int(row["so_luong"])
                 if con < sl:
-                    ten = it.get("ten") or ma
+                    ten = ten_cua[ma]
                     return False, (
                         f"{ten} chỉ còn {con} sản phẩm, không đủ {sl}."
                         if con else f"{ten} đã hết hàng."
                     )
 
             # Tới đây là chắc chắn đủ cả lô -> mới trừ.
-            for it in items:
-                ma, sl = it.get("ma"), int(it.get("so_luong") or 1)
-                if not ma:
-                    continue
+            for ma in sorted(gop):
+                sl = gop[ma]
                 await conn.execute(
                     "UPDATE ton_kho SET so_luong = so_luong - $2, cap_nhat_luc = now() "
                     "WHERE ma = $1", ma, sl,
@@ -170,17 +183,21 @@ async def nhap_hang(ma: str, so_luong: int, ghi_chu: str = "") -> dict:
     if so_luong <= 0:
         raise ValueError("Số lượng nhập phải lớn hơn 0")
 
-    row = await db.fetchrow(
-        "UPDATE ton_kho SET so_luong = so_luong + $2, cap_nhat_luc = now() "
-        "WHERE ma = $1 RETURNING ma, so_luong", ma, so_luong,
-    )
-    if row is None:
-        raise LookupError(f"Không có mã {ma} trong kho")
-
-    await db.execute(
-        "INSERT INTO kho_bien_dong (ma, thay_doi, ly_do, ghi_chu) "
-        "VALUES ($1, $2, 'nhap', $3)", ma, so_luong, ghi_chu,
-    )
+    # Cộng kho và ghi sổ trong CÙNG giao dịch. Tách hai câu thì lỗi ở câu
+    # thứ hai để lại kho đã cộng mà sổ không có dòng nào — đúng loại lệch
+    # mà sổ biến động sinh ra để truy.
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "UPDATE ton_kho SET so_luong = so_luong + $2, cap_nhat_luc = now() "
+                "WHERE ma = $1 RETURNING ma, so_luong", ma, so_luong,
+            )
+            if row is None:
+                raise LookupError(f"Không có mã {ma} trong kho")
+            await conn.execute(
+                "INSERT INTO kho_bien_dong (ma, thay_doi, ly_do, ghi_chu) "
+                "VALUES ($1, $2, 'nhap', $3)", ma, so_luong, ghi_chu,
+            )
     return {"ma": row["ma"], "ton_moi": int(row["so_luong"])}
 
 
@@ -194,19 +211,26 @@ async def dieu_chinh(ma: str, so_luong_moi: int, ly_do: str) -> dict:
     if not ly_do.strip():
         raise ValueError("Điều chỉnh kho bắt buộc phải có lý do")
 
-    cu = await lay(ma)
-    if cu is None:
-        raise LookupError(f"Không có mã {ma} trong kho")
-
-    lech = int(so_luong_moi) - cu
-    await db.execute(
-        "UPDATE ton_kho SET so_luong = $2, cap_nhat_luc = now() WHERE ma = $1",
-        ma, int(so_luong_moi),
-    )
-    await db.execute(
-        "INSERT INTO kho_bien_dong (ma, thay_doi, ly_do, ghi_chu) "
-        "VALUES ($1, $2, 'kiem_ke', $3)", ma, lech, ly_do,
-    )
+    # Đọc số cũ VÀ ghi số mới dưới cùng một khoá dòng. Bản trước đọc rồi
+    # mới ghi, ngoài giao dịch: một đơn bán chen vào giữa thì `lech` ghi sổ
+    # sai đúng bằng số vừa bán, và sổ không còn cộng ra số tồn.
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            r = await conn.fetchrow(
+                "SELECT so_luong FROM ton_kho WHERE ma = $1 FOR UPDATE", ma
+            )
+            if r is None:
+                raise LookupError(f"Không có mã {ma} trong kho")
+            cu = int(r["so_luong"])
+            lech = int(so_luong_moi) - cu
+            await conn.execute(
+                "UPDATE ton_kho SET so_luong = $2, cap_nhat_luc = now() WHERE ma = $1",
+                ma, int(so_luong_moi),
+            )
+            await conn.execute(
+                "INSERT INTO kho_bien_dong (ma, thay_doi, ly_do, ghi_chu) "
+                "VALUES ($1, $2, 'kiem_ke', $3)", ma, lech, ly_do,
+            )
     return {"ma": ma, "cu": cu, "moi": int(so_luong_moi), "lech": lech}
 
 

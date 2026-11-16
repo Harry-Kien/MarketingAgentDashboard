@@ -51,19 +51,31 @@ def _ngan_hang() -> dict[str, str]:
 
 async def _don(order_id: UUID, nguoi: dict) -> dict[str, Any]:
     r = await db.fetchrow(
-        "SELECT id, ma_don, tong_tien, phi_van_chuyen, trang_thai, conversation_id "
+        "SELECT id, ma_don, tong_tien, phi_van_chuyen, so_tien_da_thu, trang_thai, "
+        "       conversation_id "
         "FROM orders WHERE id = $1", order_id)
     if r is None:
         raise HTTPException(404, "Không thấy đơn hàng.")
     if r["conversation_id"] is not None:
         await chan_neu_ngoai_kenh(r["conversation_id"], nguoi)
-    if r["trang_thai"] == "da_huy":
-        raise HTTPException(409, "Đơn đã huỷ — không tạo mã thanh toán.")
+    # CHỈ đơn đã chốt. Bản trước chỉ chặn đơn huỷ: đơn `cho_duyet` (vượt
+    # ngưỡng, người chưa duyệt) cũng nhận được mã — khách chuyển tiền cho
+    # một đơn có thể bị từ chối; đơn `da_giao` thì đã thu COD, chuyển nữa
+    # là trả hai lần (rà soát 11.2026).
+    if r["trang_thai"] != "da_chot":
+        raise HTTPException(
+            409, f"Đơn đang ở trạng thái '{r['trang_thai']}' — chỉ tạo mã thanh toán "
+                 "cho đơn đã chốt.")
     return dict(r)
 
 
 def _payload(don: dict, nh: dict) -> tuple[str, int]:
-    so_tien = int(don["tong_tien"] or 0) + int(don["phi_van_chuyen"] or 0)
+    # Trừ phần khách đã trả: gửi lại mã đủ tiền cho đơn đã trả một phần là
+    # mời khách trả dư.
+    so_tien = (int(don["tong_tien"] or 0) + int(don["phi_van_chuyen"] or 0)
+               - int(don.get("so_tien_da_thu") or 0))
+    if so_tien <= 0:
+        raise HTTPException(409, "Khách đã trả đủ đơn này — không cần mã thanh toán nữa.")
     try:
         return vietqr.tao_payload(bin_nh=nh["bin"], so_tk=nh["so_tk"],
                                   so_tien=so_tien, noi_dung=don["ma_don"]), so_tien

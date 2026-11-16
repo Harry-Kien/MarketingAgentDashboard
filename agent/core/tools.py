@@ -886,7 +886,7 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
         return await _tra_cuu_don_hang(args, conversation_id)
 
     if name == "tra_cuu_van_chuyen":
-        return await _tra_cuu_van_chuyen(args)
+        return await _tra_cuu_van_chuyen(args, conversation_id)
 
     if name == "xin_huy_don":
         return await _xin_huy_don(args, conversation_id)
@@ -1179,6 +1179,134 @@ async def _tao_video(args: dict, products: list[dict], conversation_id) -> dict:
     }
 
 
+# Bấm "ok" hai lần, hoặc model gọi lại công cụ ở lượt sau, thì đơn trùng
+# tới trong vòng vài giây tới vài phút. Quá cửa sổ này mà cùng hội thoại,
+# cùng hàng, là khách MUA LẠI — chặn nó là mất đơn thật.
+CUA_SO_CHONG_TRUNG_GIAY = 600
+
+# Không có 0/O/1/I/L: mã đơn là thứ khách đọc lại qua điện thoại.
+_KY_TU_MA_DON = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _sinh_ma_don() -> str:
+    """
+    "AS" + thời điểm tới giây + 3 ký tự ngẫu nhiên.
+
+    Bản trước chỉ có thời điểm tới giây: hai khách chốt cùng giây thì
+    `ma_don UNIQUE` hất một người ra, và nhánh `except` bắt "duplicate" báo
+    người đó "đơn đã ghi nhận" — khách mất đơn mà vẫn tin là có đơn.
+
+    Phần ngẫu nhiên toàn chữ in/số liền khối với phần đầu: bộ che số điện
+    thoại (`che_du_lieu`) bỏ qua chuỗi số dính vào chữ, nên mã đơn không bị
+    che nhầm thành [SĐT_n].
+    """
+    import secrets
+
+    duoi = "".join(secrets.choice(_KY_TU_MA_DON) for _ in range(3))
+    return "AS" + time.strftime("%y%m%d%H%M%S") + duoi
+
+
+async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
+                       khach_dia_chi: str, lines: list[dict], tong: int,
+                       trang_thai: str, ghi_chu) -> dict:
+    """
+    Chống trùng rồi INSERT, trong cùng một giao dịch. Trả {"row": ...} khi
+    lưu được, ngược lại trả thẳng kết quả công cụ để agent đọc.
+
+    VÌ SAO KHÔNG DÙNG CHỈ MỤC UNIQUE NỮA
+    -------------------------------------
+    `idx_order_dedupe` (conversation_id, md5(items)) không có giới hạn thời
+    gian: đơn cũ đã GIAO vẫn chặn khách mua lại đúng món ấy, mãi mãi, và
+    agent được dặn nói "đơn đã ghi nhận" cho một đơn không tồn tại
+    (migration 0041). Trùng thật chỉ là cùng hội thoại, cùng hàng, trong
+    vài phút — điều đó chỉ mã diễn đạt được.
+
+    Advisory lock theo (hội thoại, hàng): hai lời gọi đồng thời cùng kiểm
+    "đã có chưa" thì cả hai cùng thấy chưa. Khoá giữ tới khi giao dịch
+    commit, nên lời gọi thứ hai chắc chắn thấy đơn của lời gọi thứ nhất.
+
+    LỖI TÁCH THEO RÀNG BUỘC, KHÔNG THEO CHỮ "duplicate"
+    ---------------------------------------------------
+    Trùng `ma_don` thì sinh mã khác và thử lại. Lỗi khác là LỖI THẬT —
+    không bao giờ được thành câu "đơn đã ghi nhận".
+    """
+    import hashlib
+
+    import asyncpg
+
+    if conversation_id is not None:
+        van_tay = hashlib.md5(
+            json.dumps(lines, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        khoa = f"tao_don:{conversation_id}:{van_tay}"
+    else:
+        khoa = ""
+
+    try:
+        async with db.pool().acquire() as conn:
+            async with conn.transaction():
+                if khoa:
+                    await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", khoa)
+                    cu = await conn.fetchrow(
+                        "SELECT ma_don, trang_thai FROM orders "
+                        "WHERE conversation_id = $1 AND items = $2::jsonb "
+                        "  AND trang_thai <> 'da_huy' "
+                        "  AND created_at > now() - make_interval(secs => $3) "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        conversation_id, lines, float(CUA_SO_CHONG_TRUNG_GIAY),
+                    )
+                    if cu is not None:
+                        await db.log_event("order.trung_bo_qua", ma_don=cu["ma_don"])
+                        return {
+                            "tao_duoc": False,
+                            "trung_don": True,
+                            "ma_don": cu["ma_don"],
+                            "trang_thai": cu["trang_thai"],
+                            "ly_do": (
+                                f"Đơn {cu['ma_don']} với đúng các sản phẩm này vừa "
+                                "được tạo vài phút trước. Đọc lại MÃ ĐƠN này cho "
+                                "khách, KHÔNG tạo thêm. Nếu khách muốn mua thêm "
+                                "một đơn nữa thật, hỏi rõ rồi chuyển nhân viên."
+                            ),
+                        }
+                for _ in range(5):
+                    ma_don = _sinh_ma_don()
+                    try:
+                        # Savepoint: một lần trùng mã không được làm hỏng cả
+                        # giao dịch đang giữ khoá chống trùng.
+                        async with conn.transaction():
+                            row = await conn.fetchrow(
+                                """
+                                INSERT INTO orders (ma_don, conversation_id, khach_ten,
+                                                    khach_sdt, khach_dia_chi, items,
+                                                    tong_tien, trang_thai, ghi_chu)
+                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ma_don
+                                """,
+                                ma_don, conversation_id, khach_ten, khach_sdt,
+                                khach_dia_chi, lines, tong, trang_thai, ghi_chu,
+                            )
+                        return {"row": dict(row)}
+                    except asyncpg.UniqueViolationError as exc:
+                        if exc.constraint_name == "orders_ma_don_key":
+                            continue
+                        raise
+                raise RuntimeError("sinh 5 mã đơn liền đều trùng")
+    except Exception as exc:  # noqa: BLE001
+        await db.log_event(
+            "order.luu_that_bai",
+            loi=f"{type(exc).__name__}: {exc}"[:300],
+            rang_buoc=getattr(exc, "constraint_name", None),
+        )
+        return {
+            "tao_duoc": False,
+            "ly_do": (
+                f"Lỗi hệ thống khi lưu đơn ({type(exc).__name__}). Đơn CHƯA được "
+                "ghi nhận — TUYỆT ĐỐI không nói với khách là đã lên đơn. Xin "
+                "lỗi khách và chuyển nhân viên."
+            ),
+        }
+
+
 async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> dict:
     """
     Tool DUY NHẤT có hậu quả không đảo ngược. Mọi chốt chặn nằm ở đây, không
@@ -1278,37 +1406,29 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
     tu_chot = tong < settings.nguong_tu_chot_vnd
     trang_thai = "da_chot" if tu_chot else "cho_duyet"
 
-    ma_don = "AS" + __import__("time").strftime("%y%m%d%H%M%S")
-
-    # --- Chốt 6: chống tạo trùng (unique index trên conversation + items) ---
-    try:
-        row = await db.fetchrow_chac(
-            """
-            INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt,
-                                khach_dia_chi, items, tong_tien, trang_thai, ghi_chu)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ma_don
-            """,
-            ma_don, conversation_id,
-            str(args["khach_ten"]).strip(), sdt,
-            str(args["khach_dia_chi"]).strip(),
-            lines, tong, trang_thai, args.get("ghi_chu"),
-        )
-    except Exception as exc:  # noqa: BLE001
-        if "idx_order_dedupe" in str(exc) or "duplicate" in str(exc).lower():
-            return {
-                "tao_duoc": False,
-                "trung_don": True,
-                "ly_do": "Đơn với đúng các sản phẩm này đã được tạo trước đó. "
-                         "Hãy báo khách là đơn đã ghi nhận, đừng tạo thêm.",
-            }
-        return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
+    # --- Chốt 6: chống tạo trùng + lưu đơn, trong MỘT giao dịch có khoá ---
+    kq_luu = await _luu_don_moi(
+        conversation_id=conversation_id,
+        khach_ten=str(args["khach_ten"]).strip(), khach_sdt=sdt,
+        khach_dia_chi=str(args["khach_dia_chi"]).strip(),
+        lines=lines, tong=tong, trang_thai=trang_thai,
+        ghi_chu=args.get("ghi_chu"),
+    )
+    if "row" not in kq_luu:
+        return kq_luu
+    row = kq_luu["row"]
 
     # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
     # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
-    # khách khác có thể đã lấy mất món cuối. Chỉ khoá hàng lúc trừ mới
-    # chặn được, và nếu không đủ thì phải huỷ luôn đơn vừa tạo — thà không
-    # có đơn còn hơn có đơn cho hàng không tồn tại.
-    du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
+    # khách khác có thể đã lấy mất món cuối. Không đủ hàng, hoặc kho NÉM lỗi,
+    # đều phải xoá đơn vừa tạo: đơn nằm lại mà kho không trừ là bán hàng
+    # không tồn tại (rà soát 11.2026).
+    try:
+        du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
+    except Exception as exc:  # noqa: BLE001
+        du_hang, ly_do_kho = False, f"Lỗi hệ thống khi giữ hàng ({type(exc).__name__})."
+        await db.log_event("order.giu_hang_loi", ma_don=row["ma_don"],
+                           loi=f"{type(exc).__name__}: {exc}"[:300])
     if not du_hang:
         await db.execute("DELETE FROM orders WHERE id = $1", row["id"])
         return {"tao_duoc": False, "ly_do": ly_do_kho}
@@ -1484,7 +1604,9 @@ async def _danh_dau_xin_huy(ma_don: str, conversation_id, ly_do: str) -> bool:
     Chặn theo `conversation_id` vì mã đơn đoán được — không chặn thì bất kỳ
     ai cũng gắn cờ lên đơn của người lạ, tức phá hoại được từ xa.
 
-    Loại đơn `da_huy` để không dựng lại cờ trên đơn đã đóng.
+    Loại đơn `da_huy` để không dựng lại cờ trên đơn đã đóng, và đơn
+    `da_giao`: hàng đã ở nhà khách thì "huỷ" là ĐỔI TRẢ. Cờ xin huỷ trên đơn
+    đã giao làm người xử lý bấm Huỷ — cộng kho món đang nằm ở nhà khách.
     """
     row = await db.fetchrow(
         """
@@ -1495,6 +1617,7 @@ async def _danh_dau_xin_huy(ma_don: str, conversation_id, ly_do: str) -> bool:
          WHERE ma_don = $1
            AND conversation_id = $2
            AND trang_thai <> 'da_huy'
+           AND trang_thai <> 'da_giao'
         RETURNING ma_don
         """,
         ma_don, conversation_id, (ly_do or "")[:500],
@@ -1538,10 +1661,12 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
         )
     else:
         ghi_chu = (
-            "KHÔNG tìm thấy đơn này trong hội thoại. Không nói đơn 'đã huỷ' "
-            "và không đọc thông tin đơn nào ra. Xin lỗi khách, hỏi lại mã "
-            "đơn hoặc số điện thoại đã đặt, và cho biết nhân viên sẽ kiểm "
-            "tra giúp."
+            "KHÔNG ghi nhận được yêu cầu huỷ cho đơn này trong hội thoại "
+            "(không thấy đơn, hoặc đơn đã đóng). Không nói đơn 'đã huỷ' và "
+            "không đọc thông tin đơn nào ra. Nếu khách nói đã NHẬN hàng thì "
+            "đó là đổi/trả, dùng xin_doi_tra. Còn lại xin lỗi khách, hỏi lại "
+            "mã đơn hoặc số điện thoại đã đặt, và cho biết nhân viên sẽ "
+            "kiểm tra giúp."
         )
 
     return {
@@ -1658,7 +1783,7 @@ async def _xin_doi_tra(args: dict, conversation_id) -> dict:
     }
 
 
-async def _tra_cuu_van_chuyen(args: dict) -> dict:
+async def _tra_cuu_van_chuyen(args: dict, conversation_id=None) -> dict:
     """
     Tình trạng giao hàng của một đơn, đọc từ SỔ CỦA CỬA HÀNG.
 
@@ -1670,17 +1795,37 @@ async def _tra_cuu_van_chuyen(args: dict) -> dict:
 
     Đổi lại, số liệu có thể trễ vài phút — và đó là đánh đổi đúng: trả lời
     chậm vài phút tốt hơn không trả lời.
+
+    CHỈ ĐƠN CỦA HỘI THOẠI NÀY
+    --------------------------
+    Bản trước tra theo mã đơn mà không lọc hội thoại: người lạ đoán mã đơn
+    là đọc được mã vận đơn của khách khác — và mã vận đơn tra trên trang
+    hãng ra tên, số điện thoại, địa chỉ người nhận (rà soát 11.2026). Cùng
+    khuôn `_tra_cuu_don_hang`: mã của hội thoại khác, mã không tồn tại, hay
+    thiếu hội thoại đều nhận CÙNG một câu — khác câu là để lộ mã nào có thật.
     """
     ma = str(args.get("ma_don", "")).strip()
     if not ma:
         return {"tim_thay": False, "ghi_chu": "Chưa có mã đơn để tra."}
+    can_xac_minh = {
+        "tim_thay": False,
+        "can_xac_minh": True,
+        "ghi_chu": (
+            "Không tra được đơn này trong hội thoại đang nói chuyện. TUYỆT "
+            "ĐỐI không đọc thông tin vận chuyển nào ra. Xin lỗi khách, nói "
+            "cần xác minh và hỏi số điện thoại đã đặt đơn, rồi gọi "
+            "chuyen_nhan_vien để người thật kiểm tra."
+        ),
+    }
+    if conversation_id is None:
+        return can_xac_minh
     try:
         row = await db.fetchrow(
             "SELECT ma_don, trang_thai, trang_thai_giao_hang, ma_van_don, "
             "       don_vi_van_chuyen, ngay_du_kien_giao, "
             "       cap_nhat_van_chuyen_luc "
-            "FROM orders WHERE upper(ma_don) = upper($1)",
-            ma,
+            "FROM orders WHERE upper(ma_don) = upper($1) AND conversation_id = $2",
+            ma, conversation_id,
         )
     except Exception:  # noqa: BLE001 — CSDL chết thì agent vẫn phải nói được gì đó
         return {
@@ -1688,10 +1833,7 @@ async def _tra_cuu_van_chuyen(args: dict) -> dict:
             "ghi_chu": "Chưa tra được lúc này. Cần chuyển người hỗ trợ.",
         }
     if row is None:
-        return {
-            "tim_thay": False,
-            "ghi_chu": f"Không thấy đơn {ma} trong hệ thống.",
-        }
+        return can_xac_minh
 
     trang_thai_giao = row.get("trang_thai_giao_hang")
     if not trang_thai_giao:

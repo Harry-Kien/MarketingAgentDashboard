@@ -31,7 +31,7 @@ from agent import db
 
 TRANG_THAI = ("moi", "dang_lam", "xong", "huy")
 UU_TIEN = ("thap", "thuong", "cao", "gap")
-NGUON = ("nguoi", "agent", "tu_dong", "van_chuyen")
+NGUON = ("nguoi", "agent", "tu_dong", "van_chuyen", "don_hang")
 
 NHAN_TRANG_THAI = {
     "moi": "Mới",
@@ -205,15 +205,45 @@ async def tao_tu_van_chuyen(
     việc thứ hai (chỉ mục duy nhất ở CSDL, migration 0038). Không ném khi
     hỏng — webhook vẫn phải trả lời hãng — nhưng ghi nhật ký mức lỗi.
     """
+    return await _tao_viec_he_thong(
+        "van_chuyen", ma_don, tieu_de=tieu_de, mo_ta=mo_ta, khoa=khoa,
+        conversation_id=conversation_id, uu_tien=uu_tien,
+    )
+
+
+async def tao_tu_don_hang(
+    ma_don: str, *, tieu_de: str, mo_ta: str, khoa: str,
+    conversation_id=None, uu_tien: str = "cao",
+) -> str | None:
+    """
+    Chính ĐƠN HÀNG cần người làm tay: ERP nhận đơn trong lúc người huỷ (đơn
+    huỷ bên này, còn sống bên ERP), ERP giữ bản nháp chưa submit, hãng báo
+    đã giao một đơn đã huỷ. Trước bản này ba chuyện ấy hoặc không ai biết,
+    hoặc chỉ là một dòng nhật ký (rà soát 11.2026).
+
+    Cùng khuôn `tao_tu_van_chuyen`: `khoa` chống trùng ở CSDL, không ném.
+    """
+    return await _tao_viec_he_thong(
+        "don_hang", ma_don, tieu_de=tieu_de, mo_ta=mo_ta, khoa=khoa,
+        conversation_id=conversation_id, uu_tien=uu_tien,
+    )
+
+
+async def _tao_viec_he_thong(
+    nguon: str, ma_don: str, *, tieu_de: str, mo_ta: str, khoa: str,
+    conversation_id=None, uu_tien: str = "cao",
+) -> str | None:
+    if nguon not in NGUON:
+        raise CongViecHong(f"Nguồn việc lạ: {nguon!r}")
     try:
         dong = await db.fetchrow(
             "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, conversation_id, "
             "                       contact_id, khoa_chong_trung) "
-            "SELECT $1, $2, 'van_chuyen', $3, $4::uuid, c.contact_id, $5 "
+            "SELECT $1, $2, $6, $3, $4::uuid, c.contact_id, $5 "
             "FROM (SELECT 1) _ LEFT JOIN conversations c ON c.id = $4::uuid "
             "ON CONFLICT DO NOTHING RETURNING id",
             tieu_de[:200], mo_ta, kiem_uu_tien(uu_tien),
-            str(conversation_id) if conversation_id else None, khoa[:300],
+            str(conversation_id) if conversation_id else None, khoa[:300], nguon,
         )
         if dong is None:
             return None
@@ -226,7 +256,7 @@ async def tao_tu_van_chuyen(
         import logging
 
         logging.getLogger("agent.cong_viec").error(
-            "KHÔNG tạo được công việc vận chuyển (đơn %s): %s: %s",
-            ma_don, type(exc).__name__, exc,
+            "KHÔNG tạo được công việc nguồn %s (đơn %s): %s: %s",
+            nguon, ma_don, type(exc).__name__, exc,
         )
         return None

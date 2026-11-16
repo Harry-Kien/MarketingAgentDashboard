@@ -28,8 +28,9 @@ class KhoDonGia:
     async def don_cho_dong_bo(self, gioi_han: int = 20):
         return self.don
 
-    async def danh_dau_da_day(self, id_don, erp_ma_don):
+    async def danh_dau_da_day(self, id_don, erp_ma_don, ly_do=""):
         self.da_day.append((id_don, erp_ma_don))
+        return True
 
     async def danh_dau_that_bai(self, id_don, ly_do):
         self.that_bai.append((id_don, ly_do))

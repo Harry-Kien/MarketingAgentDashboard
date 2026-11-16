@@ -13,6 +13,7 @@ from agent import db
 from agent.core import kho
 
 from .phu_thuoc import (
+    _nguoi_id,
     bat_buoc_dang_nhap,
     can_quyen,
 )
@@ -85,6 +86,9 @@ _TRUONG_PHU_DON = (
     "yeu_cau_doi_tra_luc", "yeu_cau_doi_tra_loai", "yeu_cau_doi_tra_ly_do",
     "erp_ma_don", "erp_loi", "erp_so_lan_thu",
     "ma_van_don", "don_vi_van_chuyen", "trang_thai_giao_hang",
+    # Tiền khách đã trả trước (VietQR). Màn hình hiện "Đã thu Xđ" — thiếu ở
+    # đây là người đóng gói không biết đơn đã trả, và vận đơn thu hộ lần hai.
+    "so_tien_da_thu", "da_thu_luc", "phi_van_chuyen",
 )
 
 
@@ -126,9 +130,13 @@ async def approve_order(order_id: str, nguoi: dict = Depends(can_quyen("don.sua"
     from agent.erp import day_don
 
     oid = _uuid_don(order_id)
+    # Đặt lại `erp_so_lan_thu`: đơn về `cho_duyet` có thể vì vòng nền ERP đã
+    # BỎ CUỘC sau 8 lần. Không đặt lại thì duyệt xong, ERP chớp một lần là
+    # vòng nền thấy "đã thử 9 lần" và bỏ cuộc ngay — người sửa xong cấu hình
+    # rồi bấm Duyệt mà đơn không bao giờ được thử lại (rà soát 11.2026).
     don = await db.fetchrow(
-        "UPDATE orders SET trang_thai='da_chot', updated_at=now() "
-        "WHERE id=$1 AND trang_thai='cho_duyet' RETURNING *", oid,
+        "UPDATE orders SET trang_thai='da_chot', erp_so_lan_thu=0, erp_loi=NULL, "
+        "updated_at=now() WHERE id=$1 AND trang_thai='cho_duyet' RETURNING *", oid,
     )
     if don is None:
         hien = await db.fetchrow("SELECT trang_thai FROM orders WHERE id=$1", oid)
@@ -157,18 +165,35 @@ async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"
 
     Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
     huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
+
+    KHÔNG huỷ đơn ĐÃ GIAO: hàng đang ở nhà khách, huỷ là cộng kho một món
+    không có trên kệ (rà soát 11.2026). Khách trả lại hàng là ĐỔI TRẢ —
+    nhận hàng về rồi nhập kho bằng tay.
     """
     oid = _uuid_don(order_id)
-    don = await db.fetchrow(
-        "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
-        "WHERE id=$1 AND trang_thai <> 'da_huy' RETURNING ma_don, erp_ma_don, ma_van_don", oid,
-    )
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            hien = await conn.fetchrow(
+                "SELECT trang_thai FROM orders WHERE id=$1 FOR UPDATE", oid)
+            if hien is None:
+                raise HTTPException(404, "Không có đơn này")
+            cu = hien["trang_thai"]
+            if cu == "da_giao":
+                raise HTTPException(
+                    409, "Đơn đã giao — không huỷ được: hàng đang ở chỗ khách, huỷ là "
+                         "cộng kho một món không có trên kệ. Xử lý như đổi trả: nhận "
+                         "hàng về rồi nhập kho (Kho → Nhập).")
+            don = await conn.fetchrow(
+                "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
+                "WHERE id=$1 AND trang_thai <> 'da_huy' "
+                "RETURNING ma_don, erp_ma_don, ma_van_don, so_tien_da_thu", oid,
+            )
     if don is None:
         return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
 
     so_dong = await kho.tra_hang(don["ma_don"])
-    await db.log_event("order.cancel", actor="staff", ref_id=oid,
-                       ma_don=don["ma_don"], so_mat_hang_tra_kho=so_dong)
+    await db.log_event("order.cancel", actor="staff", ref_id=oid, ma_don=don["ma_don"],
+                       so_mat_hang_tra_kho=so_dong, trang_thai_cu=cu)
     kq: dict = {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
     # Huỷ ở đây KHÔNG huỷ bên ERP hay bên hãng vận chuyển. Nói thẳng lúc
     # bấm, để người huỷ tay bên đó — im là ERP vẫn xuất kho, hãng vẫn đi
@@ -176,13 +201,73 @@ async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"
     ben = []
     if don.get("erp_ma_don"):
         ben.append(f"ERP (đơn {don['erp_ma_don']})")
+    elif cu == "cho_dong_bo":
+        # Đang chờ đồng bộ = KHÔNG BIẾT ERP đã nhận chưa (lần đẩy trước có
+        # thể đã tới ERP rồi mới đứt mạng). Không có mã ERP để chỉ ra, nhưng
+        # im lặng là bỏ sót một đơn sống bên ERP.
+        ben.append(f"ERP (đơn đang chờ đồng bộ — tra ERP theo mã {don['ma_don']}, "
+                   "có thì huỷ)")
     if don.get("ma_van_don"):
         ben.append(f"hãng vận chuyển (vận đơn {don['ma_van_don']})")
     if ben:
         kq["can_huy_tay"] = ("Đơn đã có bên " + " và ".join(ben)
                              + ": vào đó huỷ tay, hệ thống không tự huỷ hộ.")
         await db.log_event("order.cancel_can_huy_tay", ref_id=oid, ma_don=don["ma_don"],
-                           erp_ma_don=don.get("erp_ma_don"), ma_van_don=don.get("ma_van_don"))
+                           erp_ma_don=don.get("erp_ma_don"), ma_van_don=don.get("ma_van_don"),
+                           trang_thai_cu=cu)
+    if int(don.get("so_tien_da_thu") or 0) > 0:
+        kq["can_hoan_tien"] = (f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ"
+                               .replace(",", ".") + " — nhớ hoàn tiền cho khách.")
+    return kq
+
+
+class DaThuTienIn(BaseModel):
+    # TỔNG đã thu của đơn tới giờ, không phải "thu thêm": bấm hai lần (mạng
+    # chậm, hai tab) mà cộng dồn là COD bị trừ đôi và shop mất tiền.
+    so_tien: int = Field(gt=0, le=1_000_000_000)
+    ghi_chu: str = Field("", max_length=300)
+
+
+@router.post("/orders/{order_id}/da-thu-tien")
+async def da_thu_tien(order_id: str, body: DaThuTienIn,
+                      nguoi: dict = Depends(can_quyen("don.sua"))) -> dict:
+    """
+    Ghi nhận khách ĐÃ TRẢ (chuyển khoản VietQR) — nút "Đã nhận tiền".
+
+    Trước bản này không có chỗ nào ghi, và vận đơn luôn thu hộ COD bằng tổng
+    tiền: khách đã chuyển khoản bị shipper thu lần nữa (rà soát 11.2026).
+    Nay vận đơn thu hộ `tong_tien - so_tien_da_thu`
+    (`shipping.service.tien_thu_ho`).
+
+    Người bấm phải đối chiếu sao kê ngân hàng — hệ thống KHÔNG đọc được tài
+    khoản ngân hàng. Ghi ai bấm, lúc nào, vào cả đơn lẫn nhật ký.
+    """
+    oid = _uuid_don(order_id)
+    don = await db.fetchrow(
+        "UPDATE orders SET so_tien_da_thu=$2, da_thu_luc=now(), da_thu_boi=$3, "
+        "updated_at=now() WHERE id=$1 AND trang_thai <> 'da_huy' "
+        "RETURNING ma_don, tong_tien, so_tien_da_thu, ma_van_don",
+        oid, body.so_tien, _nguoi_id(nguoi),
+    )
+    if don is None:
+        hien = await db.fetchrow("SELECT trang_thai FROM orders WHERE id=$1", oid)
+        if hien is None:
+            raise HTTPException(404, "Không có đơn này")
+        raise HTTPException(409, "Đơn đã huỷ — tiền khách đã trả là việc hoàn tiền, "
+                                 "không ghi vào đơn huỷ.")
+    from agent.shipping.service import tien_thu_ho
+
+    cod = tien_thu_ho(don)
+    await db.log_event("thanh_toan.da_thu_tien", actor=nguoi.get("ten_dang_nhap") or "?",
+                       ref_id=oid, ma_don=don["ma_don"], so_tien=body.so_tien,
+                       ghi_chu=body.ghi_chu[:200], cod_con_lai=cod)
+    kq: dict = {"ok": True, "ma_don": don["ma_don"],
+                "so_tien_da_thu": int(don["so_tien_da_thu"]), "thu_ho_cod": cod}
+    if don.get("ma_van_don"):
+        # Vận đơn đã tạo với COD cũ. Hệ thống không sửa hộ phía hãng — nói
+        # ra, kẻo shipper vẫn thu đủ tổng tiền.
+        kq["can_sua_cod"] = (f"Vận đơn {don['ma_van_don']} đã tạo trước đó với tiền thu hộ "
+                             f"cũ: vào trang hãng sửa COD thành {cod:,}đ.".replace(",", "."))
     return kq
 
 

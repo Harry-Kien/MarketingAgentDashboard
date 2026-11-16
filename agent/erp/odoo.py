@@ -360,7 +360,10 @@ class NguonOdoo:
         """
         rows = await self._doc(
             "stock.picking",
-            [["sale_id.client_order_ref", "=", erp_ma_don]],
+            # `sale_id.name`: `erp_ma_don` là TÊN sale.order (S00042). Bản
+            # trước lọc `client_order_ref` — trường ấy chứa mã đơn nội bộ,
+            # không bao giờ khớp (rà soát 11.2026).
+            [["sale_id.name", "=", erp_ma_don]],
             ["id", "state"],
         )
         if not rows:

@@ -228,7 +228,7 @@ erDiagram
         TEXT khach_sdt
         TEXT khach_dia_chi
         JSONB items
-        _ con_24_cot_nua
+        _ con_27_cot_nua
     }
     posts {
         UUID id
@@ -775,6 +775,7 @@ erDiagram
     nguoi_dung ||--o{ nguoi_dung_vai_tro : ""
     vai_tro ||--o{ nguoi_dung_vai_tro : ""
     conversations ||--o{ orders : ""
+    nguoi_dung ||--o{ orders : ""
     channel_accounts ||--o{ outbox_jobs : ""
     conversations ||--o{ outbox_jobs : ""
     messages ||--o{ outbox_jobs : ""

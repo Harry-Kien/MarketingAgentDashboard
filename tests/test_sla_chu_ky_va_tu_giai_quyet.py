@@ -371,7 +371,11 @@ def test_luc_gui_van_huy_tin_ai_khi_nguoi_da_tiep_quan():
     """Giai đoạn gửi thực tế: chốt có từ trước — ghim lại để không bị gỡ."""
     from agent.omnichannel.outbox import PostgresOutboxRepository
 
-    src = inspect.getsource(PostgresOutboxRepository.delivery_guard)
+    # Phần giữ giao dịch tách khỏi `delivery_guard` (16.11.2026) để guard
+    # kêu tin chết SAU commit; chốt nằm ở phần giao dịch, và guard phải dùng nó.
+    assert "_delivery_guard_giao_dich" in inspect.getsource(
+        PostgresOutboxRepository.delivery_guard)
+    src = inspect.getsource(PostgresOutboxRepository._delivery_guard_giao_dich)
     assert 'row["role"] == "agent"' in src and "human_takeover" in src
 
 

@@ -20,6 +20,7 @@ from agent.core.cham_mot_luot import tu_cam_hai_dang
 from agent.omnichannel.outbound_service import (
     ConversationNotFound,
     OutboundMessageNotFound,
+    OutboundNotDraft,
     OutboundService,
     PostgresOutboundRepository,
 )
@@ -369,6 +370,10 @@ async def approve_draft(
         )
     except OutboundMessageNotFound as exc:
         raise HTTPException(404, "Không thấy tin nhắn") from exc
+    except OutboundNotDraft as exc:
+        # 409: tin có thật, chỉ là không ở trạng thái duyệt được — thường là
+        # bấm "Duyệt" trên màn hình cũ sau khi tin đã được gửi đi.
+        raise HTTPException(409, "Chỉ duyệt được bản nháp AI chưa gửi.") from exc
     except LoiSuaNhap as exc:
         raise HTTPException(422, str(exc)) from exc
     except CanXacNhanQuangCao as exc:
@@ -549,11 +554,16 @@ async def attachment_file(
         raise HTTPException(404, "Không có tệp") from exc
 
     row = await db.fetchrow(
-        "SELECT storage_key, mime_type, metadata FROM attachments WHERE id = $1",
+        "SELECT a.storage_key, a.mime_type, a.metadata, m.conversation_id "
+        "FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id = $1",
         aid,
     )
     if row is None or not row["storage_key"]:
         raise HTTPException(404, "Không có tệp")
+    # Tệp khách gửi (ảnh vùng da, ảnh chuyển khoản) là nội dung hội thoại —
+    # cùng phạm vi kênh với chính hội thoại. Trước 16.11.2026 ai có
+    # `hoi_thoai.doc` cũng tải được tệp của mọi kênh, chỉ cần id.
+    await chan_neu_ngoai_kenh(row["conversation_id"], _quyen)
 
     duong = Path(str(row["storage_key"])).resolve()
     goc_du_lieu = (Path(__file__).resolve().parents[2] / "data").resolve()

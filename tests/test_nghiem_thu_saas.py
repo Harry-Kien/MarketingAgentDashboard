@@ -353,10 +353,11 @@ def test_07_cong_viec_tu_sinh_nhan_va_hoan_thanh(app_that):
 
     BƯỚC 1  Agent tắt -> khách nhắn -> việc tự sinh (nguồn agent, chưa ai nhận).
     BƯỚC 2  Ca trực đếm 1 việc chưa giao.
-    BƯỚC 3  "lan" (không có cong_viec.giao) tự nhận việc -> 200.
-    BƯỚC 4  "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
-    BƯỚC 5  Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
-    BƯỚC 6  Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
+    BƯỚC 3  "lan" chưa thuộc kênh -> không thấy việc, tự nhận -> 404.
+    BƯỚC 4  "lan" vào kênh (không có cong_viec.giao) tự nhận việc -> 200.
+    BƯỚC 5  "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
+    BƯỚC 6  Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
+    BƯỚC 7  Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
     """
     qt = _quan_tri_vao(app_that)
     tk = _kenh_webchat(qt)
@@ -369,6 +370,11 @@ def test_07_cong_viec_tu_sinh_nhan_va_hoan_thanh(app_that):
     vid = ds[0]["id"]
     assert qt.get("/api/overview").json()["cong_viec"]["chua_giao"] == 1
 
+    # Việc chuyển người mang tên khách và lý do (có khi là dữ liệu sức khoẻ):
+    # chỉ thành viên kênh của hội thoại thấy.
+    assert lan.get("/api/cong-viec").json()["cong_viec"] == []
+    assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": lan_id}).status_code == 404
+    _them_thanh_vien(app_that, tk, lan_id)
     assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": lan_id}).status_code == 200
     assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": minh_id}).status_code == 403
 

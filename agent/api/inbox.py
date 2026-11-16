@@ -25,7 +25,7 @@ from agent.omnichannel.routing import (
     RoutingError,
 )
 
-from .routes import can_quyen
+from .routes import can_quyen, chan_neu_ngoai_kenh
 
 
 router = APIRouter(prefix="/api/inbox", tags=["native-inbox"])
@@ -574,7 +574,11 @@ async def dat_che_do_conversation(
     ở đó vĩnh viễn: chỉ có nút đi xuống, không có nút đi lên. Người trực xử
     lý xong một ca khó rồi muốn trả lại cho agent — không có cách nào. Mọi
     hội thoại cũ dồn dần vào hàng chờ duyệt.
+
+    Phạm vi kênh chặn HAI lần: ở đây (404 trước khi đụng khoá hội thoại) và
+    trong `dat_che_do` (route khác gọi service cũng không lọt).
     """
+    await chan_neu_ngoai_kenh(conversation_id, user)
     actor_id, is_admin = _user_scope(user)
     try:
         state = await service.dat_che_do(

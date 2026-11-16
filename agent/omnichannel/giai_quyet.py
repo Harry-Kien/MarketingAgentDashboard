@@ -45,6 +45,7 @@ async def _sau_khi_giai_quyet(conn, cid: UUID, chu_ky: int, han_xong) -> None:
     await conn.execute(
         "UPDATE conversation_assignments SET ended_at = now() "
         "WHERE conversation_id = $1 AND ended_at IS NULL", cid)
+    await dong_viec_tu_sinh(conn, cid)
     # Ghi theo CHU KỲ SLA hiện tại — mỗi lượt phục vụ một dòng (migration 0039).
     await conn.execute(
         "INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at) "
@@ -52,6 +53,28 @@ async def _sau_khi_giai_quyet(conn, cid: UUID, chu_ky: int, han_xong) -> None:
         "WHERE $2::timestamptz IS NULL OR now() <= $2::timestamptz "
         "ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING",
         cid, han_xong, chu_ky)
+
+
+async def dong_viec_tu_sinh(conn, cid: UUID) -> None:
+    """
+    Đóng việc "Khách cần người trả lời" (nguon='agent') đang mở của hội thoại.
+
+    VÌ SAO PHẢI ĐÓNG Ở ĐÂY, TRONG CÙNG GIAO DỊCH
+    ---------------------------------------------
+    `idx_cong_viec_agent_mot_viec` cho mỗi hội thoại ĐÚNG MỘT việc tự sinh
+    đang mở. Việc ấy không tự đóng khi người giải quyết hay trả lại cho
+    agent, nên lần chuyển người SAU đụng chỉ mục, `ON CONFLICT DO NOTHING`
+    nuốt nó — không việc mới, KHÔNG báo nhân viên, khách ngồi chờ mà không
+    ai biết (rà soát 16.11.2026). Việc mở mãi cũng chặn luôn tự giải quyết
+    (`_DIEU_KIEN_TU_GIAI_QUYET` loại hội thoại còn việc mở).
+
+    Chỉ đóng việc nguon='agent': việc người giao tay ("gọi lại chị Hoa
+    trước 5 giờ") vẫn phải làm dù hội thoại đã xong.
+    """
+    await conn.execute(
+        "UPDATE cong_viec SET trang_thai = 'xong', xong_luc = now(), sua_luc = now() "
+        "WHERE conversation_id = $1 AND nguon = 'agent' "
+        "AND trang_thai IN ('moi', 'dang_lam')", cid)
 
 
 async def giai_quyet(cid: UUID, nguoi_id: UUID | None) -> dict[str, Any]:
@@ -283,11 +306,24 @@ async def ghi_diem_neu_la_csat(cid: UUID, text: str) -> bool:
     diem = doc_diem(text)
     if diem is None:
         return False
+    # Phiếu chỉ còn hiệu lực khi câu hỏi CSAT là điều CUỐI CÙNG shop nói với
+    # khách. Đo được 16.11.2026: hỏi CSAT → khách nhắn chuyện khác (mở lại)
+    # → AI hỏi "chị lấy mấy hộp ạ?" → tự giải quyết → khách trả lời "2" —
+    # và "2" thành điểm hài lòng 2/5 cho nhân viên, còn câu trả lời của
+    # khách thì mất. Có tin shop gửi SAU phiếu (agent, nhân viên, hay tin hệ
+    # thống khác) nghĩa là cuộc nói chuyện đã đi tiếp: con số khách nhắn
+    # đang trả lời câu khác, không phải câu hỏi CSAT.
     r = await db.fetchrow(
         f"UPDATE csat SET diem = $2, tra_loi_luc = now() WHERE id = ("
-        f"  SELECT id FROM csat WHERE conversation_id = $1 AND diem IS NULL "
-        f"  AND gui_luc > now() - interval '{GIO_CHO} hours' "
-        f"  ORDER BY gui_luc DESC LIMIT 1) RETURNING id", cid, diem)
+        f"  SELECT p.id FROM csat p WHERE p.conversation_id = $1 AND p.diem IS NULL "
+        f"  AND p.gui_luc > now() - interval '{GIO_CHO} hours' "
+        f"  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = $1 "
+        f"      AND m.role IN ('agent', 'staff', 'system') AND m.created_at > p.gui_luc "
+        f"      AND m.content IS DISTINCT FROM $3 "
+        # Bản nháp chưa duyệt / tin đã huỷ: khách chưa từng thấy, không
+        # làm cuộc nói chuyện đi tiếp.
+        f"      AND coalesce(m.delivery_status, '') NOT IN ('draft', 'cancelled')) "
+        f"  ORDER BY p.gui_luc DESC LIMIT 1) RETURNING id", cid, diem, CAU_HOI)
     if r is None:
         return False
     # Điểm không phải yêu cầu mới: hội thoại trở về trạng thái đã giải quyết.

@@ -45,6 +45,8 @@ class RoutingTransaction(Protocol):
 
     async def can_release(self, **kwargs) -> bool: ...
 
+    async def can_che_do(self, **kwargs) -> bool: ...
+
     async def apply_che_do(self, **kwargs): ...
 
     async def apply_release(self, **kwargs): ...
@@ -195,6 +197,17 @@ class ConversationRoutingService:
                 raise ConversationConflict(
                     "hội thoại đang có người tiếp quản — bấm "
                     "'Kết thúc tiếp quản' trước")
+            # Kiểm phạm vi kênh Ở ĐÂY, không chỉ ở route: trước 16.11.2026
+            # `actor_is_admin` được truyền vào rồi bỏ qua, nên nhân viên kênh
+            # A bật được `auto` — AI gửi thẳng không ai duyệt — cho hội thoại
+            # kênh B. NotFound chứ không Denied: cùng lý do với
+            # `chan_neu_ngoai_kenh` — 403 xác nhận hội thoại tồn tại.
+            if not await tx.can_che_do(
+                account_id=conversation["account_id"],
+                actor_id=actor_id,
+                is_admin=actor_is_admin,
+            ):
+                raise ConversationNotFound("không tìm thấy hội thoại")
             updated = await tx.apply_che_do(
                 conversation_id=conversation_id,
                 account_id=conversation["account_id"],
@@ -361,6 +374,25 @@ class PostgresRoutingTransaction:
             )
         )
 
+    async def can_che_do(
+        self,
+        *,
+        account_id: UUID,
+        actor_id: UUID,
+        is_admin: bool,
+    ) -> bool:
+        """Người thấy mọi kênh, hoặc thành viên của tài khoản kênh này."""
+        if is_admin:
+            return True
+        return bool(
+            await self._connection.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM account_memberships "
+                "WHERE account_id = $1 AND user_id = $2)",
+                account_id,
+                actor_id,
+            )
+        )
+
     async def apply_che_do(
         self,
         *,
@@ -414,6 +446,12 @@ class PostgresRoutingTransaction:
             "WHERE conversation_id = $1 AND ended_at IS NULL",
             conversation_id,
         )
+        # Người kết thúc tiếp quản = việc "Khách cần người trả lời" đã xong.
+        # Để mở là lần chuyển người sau không sinh việc, không báo ai — xem
+        # `giai_quyet.dong_viec_tu_sinh`.
+        from agent.omnichannel.giai_quyet import dong_viec_tu_sinh
+
+        await dong_viec_tu_sinh(self._connection, conversation_id)
         updated = await self._connection.fetchrow(
             """
             UPDATE conversations

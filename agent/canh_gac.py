@@ -127,7 +127,7 @@ async def _bao(muc_do: str, tieu_de: str, chi_tiet: str, kq: dict) -> None:
         return
     try:
         async with httpx.AsyncClient(timeout=15.0) as http:
-            await http.post(
+            r = await http.post(
                 settings.canh_gac_webhook,
                 json=dung_goi_bao_dong(
                     {
@@ -140,10 +140,19 @@ async def _bao(muc_do: str, tieu_de: str, chi_tiet: str, kq: dict) -> None:
                     mau=settings.canh_gac_goi_tin,
                 ),
             )
+            # Không kiểm mã trả về thì n8n tắt (502), Telegram sai chat_id
+            # (400), webhook bị xoá (404) đều được coi là ĐÃ GỬI — mọi báo
+            # động mất im lặng, đúng lúc hệ thống cần nói nhất (rà soát
+            # 16.11.2026).
+            r.raise_for_status()
     except httpx.HTTPError as exc:
         # Báo động gửi hỏng thì ghi lại, KHÔNG ném lên — vòng canh gác chết
         # là mất luôn khả năng biết mọi thứ khác đang hỏng.
-        await db.log_event("canh_gac.loi_gui", error=str(exc)[:200])
+        #
+        # KHÔNG ghi str(exc): lỗi HTTP của httpx chứa URL, mà URL Telegram
+        # chứa token bot — cùng lý do với `bao_nhan_vien` bên dưới.
+        ma = getattr(getattr(exc, "response", None), "status_code", None)
+        await db.log_event("canh_gac.loi_gui", loi=type(exc).__name__, ma_http=ma)
 
 
 def _muc_khach_cho(kq: dict) -> dict | None:

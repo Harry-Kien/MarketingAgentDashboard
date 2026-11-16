@@ -52,6 +52,13 @@ CUM_GAP_NGUOI = (
     "noi chuyen voi nhan vien", "noi chuyen voi nguoi", "noi chuyen truc tiep voi",
     "chuyen cho nhan vien", "chuyen sang nhan vien", "goi nhan vien",
     "khong muon noi chuyen voi bot", "khong muon chat voi bot",
+    # Rà soát 16.11.2026: ba cách nói thật này không khớp cụm nào ở trên —
+    # "chuyển nhân viên giúp em" (không có "cho"/"sang"), "gặp nv" (viết
+    # tắt), "gặp tư vấn viên". Vẫn giữ đủ động từ ý định: "nv" trần hay "tư
+    # vấn viên" trần thì "tư vấn viên bên shop nhiệt tình" bị chuyển nhầm.
+    "chuyen nhan vien", "chuyen nv", "chuyen cho nv", "chuyen sang nv",
+    "gap nv", "goi nv", "noi chuyen voi nv",
+    "gap tu van vien", "chuyen tu van vien", "noi chuyen voi tu van vien",
 )
 _KHONG_MUON_MAY = re.compile(
     r"(?i:không|ko|k|hông)\s+(?i:muốn|thích)\s+(?i:nói chuyện|chat|nhắn)\s+(?i:với|vs)\s+"

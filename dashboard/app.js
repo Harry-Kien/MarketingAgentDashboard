@@ -6502,6 +6502,7 @@ const NHAN_LUOI_MAU = {
   tran_hoi_thoai: "halt", tran_ngay: "halt", injection: "halt", tin_cay_thap: "assist",
   bat_buoc_chuyen: "halt", hua_khong_goi: "assist", chan_doan_y_te: "halt",
   cong_cu_chuyen_nguoi: "assist", cong_cu_yeu_cau: "assist", het_vong: "assist",
+  dung_bat_thuong: "halt",
 };
 
 async function loadPhongThu() {

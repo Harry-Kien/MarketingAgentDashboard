@@ -428,7 +428,13 @@ async def _complete_gemini(
 
     u = data.get("usageMetadata") or {}
     t_in = int(u.get("promptTokenCount") or 0)
-    t_out = int(u.get("candidatesTokenCount") or 0)
+    # Token SUY NGHĨ tính giá như token ĐẦU RA nhưng KHÔNG nằm trong
+    # `candidatesTokenCount` — Gemini báo riêng ở `thoughtsTokenCount`. Bỏ
+    # nó là đo thiếu: với effort "medium" mỗi vòng có thể suy nghĩ tới 1024
+    # token, gấp mấy lần câu trả lời. Trần chi phí hội thoại và trần ngày
+    # khi ấy đều chạy trên con số thấp hơn số tiền thật bị trừ — trần đặt
+    # 25 USD mà hoá đơn ra gấp đôi, và không có gì báo.
+    t_out = int(u.get("candidatesTokenCount") or 0) + int(u.get("thoughtsTokenCount") or 0)
     c_read = int(u.get("cachedContentTokenCount") or 0)
 
     return LLMResult(
@@ -551,7 +557,14 @@ async def _complete_claude(
         kwargs["tools"] = tools
 
     started = time.perf_counter()
-    resp = (client or _anthropic_client()).messages.create(**kwargs)
+    # `messages.create` của client ĐỒNG BỘ là lời gọi mạng chặn — vài giây
+    # tới vài chục giây. Gọi thẳng trong coroutine thì suốt thời gian đó cả
+    # tiến trình đứng im: poller ngừng lấy tin, dashboard ngừng trả lời, hàng
+    # đợi gửi ngừng chạy (cùng lý do `_token()` ở trên đẩy sang luồng khác).
+    # Dựng client lấy từ cấu hình ngay tại đây, NGOÀI luồng phụ: lỗi thiếu
+    # khoá vẫn nổ đúng chỗ như cũ.
+    khach = client or _anthropic_client()
+    resp = await asyncio.to_thread(khach.messages.create, **kwargs)
 
     text_parts: list[str] = []
     tool_calls: list[dict] = []

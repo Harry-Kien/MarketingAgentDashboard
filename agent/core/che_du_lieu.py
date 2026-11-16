@@ -39,6 +39,14 @@ _CCCD = re.compile(r"(?<![\w.,])0\d{11}(?![\w]|[.,]\d)")
 # ở regex: regex kiểu `(?:[ .-]?\d){9,10}` từng nuốt luôn số lượng đứng sau
 # ("0912345678 1 hộp" → "09123456781", đo được khi rà soát 28.10.2026).
 _UNG_VIEN_SDT = re.compile(r"(?<![\w.,+])\+?\d+(?:[ .\-]\d+)*(?![\w])")
+# Số dính liền NGAY SAU một từ chỉ số điện thoại: "sdt0912345678",
+# "zalo0912345678". Ranh giới `\w` ở `_UNG_VIEN_SDT` cố ý để nguyên chuỗi
+# chữ+số (mã đơn, SKU "SR0912345678", mã giảm "GIAM0912345678") — nên chỉ
+# MỞ đúng những tiền tố mà nghĩa của chúng LÀ "số điện thoại". Danh sách
+# đóng, không đoán: thêm tiền tố mơ hồ là che nhầm mã hàng.
+_TIEN_TO_SDT_SO = re.compile(
+    r"(?<!\w)(s[dđ]t|[dđ]t|zalo|tel|phone|hotline|số)(\+?\d+(?:[ .\-]\d+)*)(?![\w])",
+    re.IGNORECASE)
 _EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # Đọc lại mã — chịu được model viết lệch: "SĐT_1", "[SDT 1]", "[ sđt_1 ]".
 # Khoảng trắng chỉ được nuốt BÊN TRONG ngoặc: nuốt cả bên ngoài là "số SĐT_1
@@ -68,10 +76,14 @@ def _tach_sdt(ung_vien: str) -> tuple[int, str] | None:
     Đầu chuỗi `ung_vien` có phải một số điện thoại không. Trả (số ký tự thuộc
     số điện thoại, số chuẩn hoá) hoặc None.
 
-    Đi từng CỤM: cụm sau cụm đầu phải ≥ 3 chữ số (số viết "0912 345 678",
-    "028 3823 4567"); dừng ngay khi đủ một số hợp lệ, phần còn lại để nguyên.
-    Nhờ vậy "05.09.2026" (cụm 2 số) không phải số điện thoại, và "0912345678
-    1 hộp" chỉ che đúng mười số đầu.
+    Đi từng CỤM: cụm sau cụm đầu phải ≥ 2 chữ số (số viết "0912 345 678",
+    "028 3823 4567", "0912 34 56 78"); dừng ngay khi đủ một số hợp lệ, phần
+    còn lại để nguyên. Nhờ vậy "0912345678 1 hộp" chỉ che đúng mười số đầu.
+    "05.09.2026" vẫn không phải số điện thoại — chặn ở CỤM ĐẦU (2 chữ số).
+
+    Bản trước đòi cụm sau ≥ 3 chữ số, và "0912 34 56 78" — cách đọc số theo
+    cặp rất phổ biến — đi nguyên văn sang máy chủ model (rà soát 16.11.2026).
+    Cụm 1 chữ số vẫn bị từ chối: đó là chỗ số lượng đứng sau ("… 2 hộp").
     """
     co_cong = ung_vien.startswith("+")
     cum = list(re.finditer(r"\d+", ung_vien))
@@ -83,7 +95,7 @@ def _tach_sdt(ung_vien: str) -> tuple[int, str] | None:
     gom = ""
     for k, m in enumerate(cum):
         g = m.group(0)
-        if k > 0 and len(g) < 3:
+        if k > 0 and len(g) < 2:
             return None
         gom += g
         so = gom
@@ -137,7 +149,12 @@ class MatNa:
             return van_ban
         t = _EMAIL.sub(lambda m: self._ma("EMAIL", m.group(0).lower(), m.group(0)), van_ban)
         t = _CCCD.sub(lambda m: self._ma("CCCD", m.group(0), m.group(0)), t)
-        return _UNG_VIEN_SDT.sub(self._che_sdt, t)
+        t = _UNG_VIEN_SDT.sub(self._che_sdt, t)
+        # Lượt hai cho số dính tiền tố: tách tạm tiền tố ra, che phần số bằng
+        # đúng quy tắc trên, rồi ghép lại KHÔNG thêm khoảng trắng — model
+        # thấy "sdt[SĐT_1]", khách nhận lại đúng chữ họ đã viết.
+        return _TIEN_TO_SDT_SO.sub(
+            lambda m: m.group(1) + _UNG_VIEN_SDT.sub(self._che_sdt, m.group(2)), t)
 
     def mo(self, van_ban: str, *, cho_cong_cu: bool = False) -> str:
         """

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 
@@ -131,6 +132,7 @@ MA_CHUYEN_KHAC: dict[str, str] = {
     "het_vong": "Hết số vòng gọi công cụ cho phép",
     "cong_cu_chuyen_nguoi": "Agent chủ động gọi công cụ chuyển người",
     "cong_cu_yeu_cau": "Công cụ trả về yêu cầu cần người xử lý",
+    "dung_bat_thuong": "Model dừng bất thường (chặn an toàn, cắt vì hết token, gọi hàm hỏng)",
 }
 
 
@@ -245,14 +247,115 @@ _BUOC_CHUYEN = (
     "cam kết hết", "cam kết khỏi", "cam kết trị", "đảm bảo hết",
     "đảm bảo khỏi", "bao lâu thì hết", "bao lâu hết", "hết mụn hẳn",
     "hết hẳn", "khỏi hẳn", "hết nám hẳn",
+
+    # BỔ SUNG SAU RÀ SOÁT 16.11.2026 — mỗi từ dưới đây là một câu thật đã
+    # LỌT khi chạy hàm này: "em có thai 2 tháng", "đang trong thai kỳ", "da
+    # bị vảy nến" (danh sách chỉ có "vẩy nến"), "bác sỹ kê", "đang uống
+    # roaccutane", "da bị mề đay". Cùng một bệnh, hai cách viết chính tả đều
+    # đúng — thiếu một cách là lưới thủng đúng một nửa số khách.
+    "có thai", "thai kỳ", "thai kì", "vảy nến", "bác sỹ", "bà bầu",
+    "roaccutane", "acnotin", "mề đay",
 )
 
 
+# CỤM ĐƯỢC SO CẢ KHI KHÁCH GÕ KHÔNG DẤU.
+#
+# Khách Việt gõ không dấu rất nhiều: "em dang co bau dung retinol duoc
+# khong" đi lọt cả danh sách trên, vì "có bầu" và "co bau" là hai chuỗi khác
+# nhau. Đây là câu y tế nhạy cảm nhất mà lưới tồn tại để bắt.
+#
+# VÌ SAO KHÔNG BỎ DẤU CẢ DANH SÁCH CŨ
+# -----------------------------------
+# Bỏ dấu là gộp nhiều từ thành một: "nám" → "nam" khớp "nam giới", "chàm"
+# → "cham" khớp "chăm sóc". Chặn nhầm hàng loạt câu vô hại thì người trực
+# tắt lưới đi — và mất luôn cả phần nó bắt đúng. Nên chỉ những cụm NHIỀU ÂM
+# TIẾT, không mơ hồ khi bỏ dấu, mới vào đây. Mỗi cụm viết ở dạng CÓ DẤU
+# chuẩn để `_khop_bo_dau` kiểm được dấu nào khách CÓ gõ.
+#
+# Cố ý KHÔNG có: "đỏ rát" ("do rat" = "độ rất"), "hết hẳn" ("het han" =
+# "hết hạn"), "mề đay" trần ("me day" = "mẹ dạy").
+_BUOC_CHUYEN_BO_DAU = (
+    "có bầu", "mang bầu", "bà bầu", "mang thai", "có thai", "thai kỳ", "thai kì",
+    "cho con bú", "đang cho bú",
+    "bác sĩ", "bác sỹ", "da liễu", "theo toa", "đơn thuốc", "bôi thuốc",
+    "uống thuốc", "thuốc uống", "thuốc bôi", "thuốc trị", "đang điều trị",
+    "kháng sinh",
+    "viêm da", "mụn viêm", "mụn bọc", "mụn mủ", "vẩy nến", "vảy nến",
+    "dị ứng", "kích ứng nặng", "nổi mề đay", "bị mề đay", "ngứa rát",
+    "nổi sẩn", "bong tróc", "phồng rộp",
+    "trẻ em", "trẻ nhỏ",
+    "cam kết hết", "cam kết khỏi", "cam kết trị", "đảm bảo khỏi",
+    "bao lâu thì hết", "bao lâu hết", "hết mụn hẳn", "khỏi hẳn",
+)
+
+# Đuôi làm một cụm KHÔNG còn là cụm y tế: "co thai do" là "có thái độ",
+# "co thai doc" là "có thải độc" (mặt nạ thải độc) — câu hỏi mua hàng.
+_DUOI_LOAI_TRU = {"có thai": r"(?!\s+do)"}
+
+
+def _bo_dau_ky_tu(c: str) -> str:
+    """Bỏ dấu MỘT ký tự NFC. Tiếng Việt dựng sẵn luôn ra đúng một ký tự."""
+    if c in "đĐ":
+        return "d"
+    goc = "".join(x for x in unicodedata.normalize("NFD", c)
+                  if unicodedata.category(x) != "Mn")
+    # Giữ ĐÚNG MỘT ký tự ra cho một ký tự vào: bảng vị trí trong
+    # `_khop_bo_dau` dựa vào điều đó. Dấu tổ hợp lạc loài (ra rỗng) hay chữ
+    # Hàn (tách thành nhiều jamo) thì để nguyên.
+    return goc if len(goc) == 1 else c
+
+
+def _khop_bo_dau(low: str, cum: str) -> bool:
+    """
+    `cum` (viết có dấu) có xuất hiện trong `low` theo kiểu KHÔNG DẤU hoặc
+    THIẾU DẤU không.
+
+    So trên bản bỏ dấu để tìm vị trí, rồi soi lại CHỮ GỐC tại đó: mỗi ký tự
+    khách gõ phải hoặc không dấu, hoặc đúng dấu của cụm. Nhờ vậy "co bau",
+    "có bau" đều khớp "có bầu", nhưng "có thái độ" — gõ ĐỦ dấu, và dấu khác
+    — không khớp "có thai". So suông trên bản bỏ dấu thì không phân biệt
+    được hai câu ấy.
+    """
+    # Bản bỏ dấu dựng TỪNG KÝ TỰ, giữ bảng vị trí về chữ gốc. Ký tự định
+    # dạng vô hình (U+200B…) đã bị lọc trước khi tới đây.
+    gap = "".join(_bo_dau_ky_tu(c) for c in low)
+    mau = r"\b" + r"\s+".join(map(re.escape, _bo_dau_chuoi(cum).split())) + r"\b"
+    mau += _DUOI_LOAI_TRU.get(cum, "")
+    tu_cum = cum.split()
+    for m in re.finditer(mau, gap):
+        tu_goc = low[m.start():m.end()].split()
+        if len(tu_goc) != len(tu_cum):
+            continue
+        if all(len(a) == len(b) and all(x == y or x == _bo_dau_ky_tu(y) for x, y in zip(a, b, strict=True))
+               for a, b in zip(tu_goc, tu_cum, strict=True)):
+            return True
+    return False
+
+
+def _bo_dau_chuoi(s: str) -> str:
+    return "".join(_bo_dau_ky_tu(c) for c in s)
+
+
+def _chuan_cau(s: str) -> str:
+    """
+    NFC + chữ thường + bỏ ký tự định dạng vô hình.
+
+    NFC vì bàn phím macOS/iOS và vài ứng dụng chat gửi chữ ở dạng TỔ HỢP
+    (NFD): "bầu" thành "b" + "a" + dấu mũ + dấu huyền — bốn mã khác với một
+    mã "ầ" trong danh sách, so chuỗi con trượt mà nhìn bằng mắt y hệt nhau.
+    """
+    s = unicodedata.normalize("NFC", s or "").lower()
+    return "".join(c for c in s if unicodedata.category(c) != "Cf")
+
+
 def _bat_buoc_chuyen(question: str) -> str | None:
-    low = (question or "").lower()
+    low = _chuan_cau(question)
     for key in _BUOC_CHUYEN:
         if key in low:
             return f"Câu hỏi chạm vào tình huống bắt buộc chuyển người: '{key}'"
+    for cum in _BUOC_CHUYEN_BO_DAU:
+        if _khop_bo_dau(low, cum):
+            return f"Câu hỏi chạm vào tình huống bắt buộc chuyển người: '{cum}' (gõ không dấu)"
     return None
 
 
@@ -279,11 +382,25 @@ def _bat_buoc_chuyen(question: str) -> str | None:
 # NHÂN VIÊN, không phải khách: "bên em có chính sách...", "em gửi chị ảnh".
 # Đưa "em" vào thì câu chính sách "bên em đổi trả nếu khách bị dị ứng" bị
 # bắt nhầm — đo được ngay lần chạy thử đầu tiên.
+#
+# CÂU RÀO ĐÓN CŨNG LÀ CHẨN ĐOÁN (rà soát 16.11.2026). Năm câu này lọt bản
+# trước: "Đây có thể là mụn nội tiết ạ", "Đó là nám mạch máu chị nhé", "Mấy
+# nốt này là mụn viêm ạ", "Nhìn vậy thì nhiều khả năng là viêm da tiếp xúc
+# ạ", "Vết đỏ trên má là dấu hiệu của rosacea". Model hiếm khi khẳng định
+# trần — nó RÀO ("có thể là", "nhiều khả năng là"), và câu rào vẫn là gọi
+# tên bệnh cho một người cụ thể. Chủ ngữ cũng không chỉ là người: model tả
+# ẢNH bằng "nốt", "vết", "mảng", "đốm", "chỗ", "vùng".
+#
+# "dấu hiệu"/"biểu hiện" chỉ tính khi đứng sau "là": "Khi có dấu hiệu dị
+# ứng thì ngưng dùng" là lời dặn an toàn, phải đi qua.
 _CHAN_DOAN_RE = re.compile(
     r"("
-    r"(bạn|chị|anh|mình|da|vùng da|tình trạng|ảnh|hình)"
+    r"(bạn|chị|anh|mình|da|vùng da|tình trạng|ảnh|hình"
+    r"|nốt|vết|mảng|đốm|chỗ|vùng)"
     r"[^.!?]{0,45}?(bị|đang bị|mắc|là|cho thấy|trông giống)"
-    r"|(đây|cái này|kia) (là|có vẻ là|chính là)"
+    r"|(đây|đó|cái này|cái đó|kia) (là|có vẻ là|chính là|có thể là|có lẽ là)"
+    r"|(có thể|có lẽ|(nhiều |rất )?khả năng( cao)?) là"
+    r"|là (dấu hiệu|biểu hiện|triệu chứng)( của)?"
     r")"
     r"[^.!?]{0,25}?"
     r"(viêm da|viêm nang lông|mụn viêm|mụn bọc|mụn mủ|mụn nội tiết"
@@ -312,7 +429,9 @@ def _chan_doan_y_te(text: str) -> str | None:
 
     Trả lý do để ghi vào nhật ký, hoặc None nếu câu trả lời sạch.
     """
-    for m in _CHAN_DOAN_RE.finditer(text or ""):
+    # NFC cùng lý do với `_chuan_cau`: chữ tổ hợp làm regex có dấu trượt.
+    text = unicodedata.normalize("NFC", text or "")
+    for m in _CHAN_DOAN_RE.finditer(text):
         # Chỉ xét trong CÙNG MỘT CÂU: dấu chấm ở câu trước không liên quan.
         dau_cau = max(
             (text.rfind(d, 0, m.start()) for d in ".!?\n"), default=-1,
@@ -401,6 +520,62 @@ def _confidence(passages: list[rag.Passage], co_du_lieu: bool) -> float:
 _TOOL_TRA_TAI_LIEU = {"tim_kien_thuc"}
 
 
+def _la_tra_tai_lieu(ten: str) -> bool:
+    """
+    Công cụ `ten` trả TÀI LIỆU CỬA HÀNG — `tim_kien_thuc` hoặc plugin loại
+    `tra_tai_lieu`.
+
+    Plugin `tra_tai_lieu` là `tim_kien_thuc` giới hạn trong một nhóm tài liệu
+    (agent/ky_nang/chay.py) — cùng hình dạng kết quả, cùng đường đi. Trước
+    bản này chỉ so TÊN `tim_kien_thuc`, nên plugin bị đối xử như công cụ dữ
+    liệu ở cả ba chỗ, và hỏng cả ba im lặng:
+      · tham số được MỞ che → SĐT thật của khách đi vào API embedding;
+      · kết quả bị CHE → hotline của shop thành [SĐT_n] trong mắt model;
+      · đoạn tìm được không vào `sources` → câu trả lời mất trích dẫn.
+    """
+    if ten in _TOOL_TRA_TAI_LIEU:
+        return True
+    try:
+        return tools._loai_cua(ten) == "tra_tai_lieu"
+    except Exception:  # noqa: BLE001 — bộ đệm kỹ năng hỏng: coi như công cụ thường
+        return False
+
+
+def _co_du_lieu_that(out) -> bool:
+    """
+    Kết quả công cụ có mang DỮ LIỆU THẬT không — điều kiện để bật `co_du_lieu`.
+
+    Bản trước bật cờ theo TÊN công cụ: `tra_cuu_san_pham` trả `tim_thay:
+    False`, `goi_y_san_pham` trả `so_luong: 0`, công cụ trả `loi` — đều nâng
+    độ tin cậy lên 0,8 như thể đã tra ra số liệu. Lưới "tin cậy thấp" vì vậy
+    không bao giờ nổ ở đúng lượt agent tra hụt: xanh giả, cùng họ với lỗi đã
+    sửa cho `tim_kien_thuc` (xem chú thích `_confidence`).
+    """
+    if not isinstance(out, dict):
+        return bool(out)
+    if "loi" in out:
+        return False
+    if out.get("tim_thay") is False:
+        return False
+    if out.get("so_luong") == 0:
+        return False
+    return True
+
+
+# Lý do dừng BÌNH THƯỜNG của model (viết thường). Gemini: STOP; Claude:
+# end_turn / tool_use / stop_sequence. Rỗng = lớp giả trong test hoặc nhà
+# cung cấp không báo — không đủ căn cứ để chuyển người.
+_DUNG_BINH_THUONG = frozenset({"", "stop", "end_turn", "tool_use", "stop_sequence"})
+
+# Trần token ĐẦU RA mỗi vòng. Với Gemini 2.5, token SUY NGHĨ (effort
+# "medium" = 1024, xem llm.THINKING_BUDGET) đếm VÀO trần này. Bản trước đặt
+# 1500, tức phần trả lời + lời gọi công cụ chỉ còn ~470 token — một câu tư
+# vấn kèm danh sách sản phẩm là bị cắt giữa chừng, và khách nhận câu cụt.
+# Trần chỉ là chặn trên: lượt bình thường không tiêu tới, nên nâng không làm
+# tăng chi phí của lượt bình thường.
+MAX_TOKENS_LUOT = 1024 + 2048
+
+
 async def _ghi_ho_so(viec, conversation_id: uuid.UUID, buoc: str) -> None:
     """
     Cập nhật hồ sơ khách. Hỏng thì KHÔNG chặn câu trả lời, nhưng phải kêu.
@@ -428,6 +603,16 @@ async def _ghi_ho_so(viec, conversation_id: uuid.UUID, buoc: str) -> None:
                 "ho_so.loi", ref_id=conversation_id, buoc=buoc,
                 ly_do=f"{type(exc).__name__}: {exc}"[:200],
             )
+
+
+def _ghi_chi_phi(tong: float, dang_thu: bool) -> None:
+    """Phòng thử vào sổ riêng; còn lại vào ngân sách ngày. Gọi ĐÚNG MỘT LẦN mỗi lượt."""
+    from agent.core import thu_nghiem
+
+    if dang_thu:
+        thu_nghiem.ghi_nhan(tong)
+    else:
+        ngan_sach.ghi_nhan(tong)
 
 
 async def respond(
@@ -658,162 +843,201 @@ async def respond(
     # ĐỌC:
     # ĐỌC: Mô hình không bao giờ tự chạy được gì. Nó chỉ trả về một Ý ĐỊNH,
     # ĐỌC: và mã quyết định có làm hay không.
-    for _ in range(MAX_TOOL_ROUNDS):
-        result = await llm.complete(
-            # Phần ổn định mang cache_control; ngữ cảnh RAG biến động nằm SAU.
-            system=llm.cached_system(SYSTEM, context),
-            messages=messages,
-            model=settings.model_chat,
-            tools=cong_cu,
-            max_tokens=1500,
-            effort="medium",
-        )
-        total_cost += result.cost_usd
-        tok_in += result.tokens_in
-        tok_out += result.tokens_out
-        cache_read += result.cache_read
-        latency += result.latency_ms
-        cac_vong.append({
-            "cost_usd": result.cost_usd, "tokens_in": result.tokens_in,
-            "tokens_out": result.tokens_out, "latency_ms": result.latency_ms,
-            "so_cong_cu": len(result.tool_calls),
-        })
-
-        if not result.tool_calls:
-            final_text = result.text
-            # Hứa đi tra cứu mà chưa gọi công cụ lần nào -> ép thêm một vòng
-            # thay vì gửi lời hứa suông cho khách. Chỉ ép ĐÚNG MỘT LẦN, nếu
-            # không thì một model cứng đầu sẽ quay vòng tới hết trần chi phí.
-            if _stalls(final_text) and not used_tool and not da_thuc:
-                da_thuc = True
-                messages.append({"role": "assistant", "content": final_text})
-                messages.append({"role": "user", "content":
-                    "Đừng hứa rồi dừng. Gọi công cụ tra cứu NGAY bây giờ và "
-                    "trả lời khách bằng số liệu thật trong cùng lượt này."})
-                continue
-            break
-
-        used_tool = True
-        # Định dạng TRUNG LẬP — lớp llm dịch sang Gemini hay Claude tuỳ provider.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": result.text or "",
-                "tool_calls": result.tool_calls,
-            }
-        )
-
-        tool_results: list[dict] = []
-        for call in result.tool_calls:
-            bat_dau_tool = time.perf_counter()
-            # Model gọi công cụ bằng MÃ ([SĐT_1]); công cụ cần số THẬT (lên đơn
-            # kiểm 9–11 chữ số). Đổi lại ở đây, một chỗ, trước mọi nơi đọc tham số.
-            # Công cụ tra TÀI LIỆU giữ nguyên mã: tham số của nó (câu tìm) đi
-            # tiếp vào API embedding ở nước ngoài, và tài liệu cửa hàng không
-            # cần số của khách để tìm.
-            tham_so = (mat_na.mo_obj(call["input"])
-                       if mat_na and call["name"] not in _TOOL_TRA_TAI_LIEU else call["input"])
-            out = await tools.run_tool(call["name"], tham_so, conversation_id)
-            cong_cu_da_goi.append({
-                "ten": call["name"], "tham_so": tham_so,
-                "ket_qua": cat_ket_qua(out),
-                "ms": int((time.perf_counter() - bat_dau_tool) * 1000),
-                "vong": len(cac_vong),
-                "thu_nghiem": bool(dang_thu and isinstance(out, dict) and out.get("thu_nghiem")),
+    # Mọi đồng ĐÃ TIÊU phải vào sổ, kể cả khi lượt hỏng giữa chừng.
+    #
+    # Vòng 1 gọi model xong (đã mất tiền), vòng 2 công cụ ném hoặc model lỗi
+    # mạng → bản trước ném thẳng ra ngoài, `ngan_sach.ghi_nhan` ở cuối hàm
+    # không bao giờ chạy. Khoá API hỏng nửa chừng là mọi lượt rơi vào đây, và
+    # trần chi phí ngày đo thiếu đúng lúc hệ thống đang chạy bất thường.
+    # Số đã tiêu được gắn lên ngoại lệ để tầng kênh cộng vào chi phí HỘI
+    # THOẠI (agent/omnichannel/agent_loi.py) — trần 0,25 USD mỗi hội thoại
+    # cũng không được mù.
+    try:
+        for _ in range(MAX_TOOL_ROUNDS):
+            result = await llm.complete(
+                # Phần ổn định mang cache_control; ngữ cảnh RAG biến động nằm SAU.
+                system=llm.cached_system(SYSTEM, context),
+                messages=messages,
+                model=settings.model_chat,
+                tools=cong_cu,
+                max_tokens=MAX_TOKENS_LUOT,
+                effort="medium",
+            )
+            total_cost += result.cost_usd
+            tok_in += result.tokens_in
+            tok_out += result.tokens_out
+            cache_read += result.cache_read
+            latency += result.latency_ms
+            cac_vong.append({
+                "cost_usd": result.cost_usd, "tokens_in": result.tokens_in,
+                "tokens_out": result.tokens_out, "latency_ms": result.latency_ms,
+                "so_cong_cu": len(result.tool_calls),
             })
 
-            # Hồ sơ dựng từ việc ĐÃ XẢY RA, không từ một lượt model riêng đi
-            # "trích xuất thông tin khách hàng". Cách này không tốn thêm
-            # đồng nào và quan trọng hơn: không bịa nổi, vì agent chỉ gọi
-            # goi_y_san_pham(loai_da="da dầu") khi khách đã nói điều đó.
-            if customer_ref:
-                await _ghi_ho_so(
-                    ho_so_khach.tu_tool(
-                        customer_ref, channel, call["name"], tham_so
-                    ),
-                    conversation_id, "tu_tool",
-                )
-
-            # Đoạn agent TỰ tra được phải nhập vào cùng một rổ căn cứ với
-            # đoạn tra sẵn đầu lượt. Không nhập thì `sources` thiếu trích
-            # dẫn, `grounded` sai, và độ tin cậy không phản ánh việc agent
-            # vừa tìm ra đúng tài liệu cần — tức là nó tra xong rồi bị phạt.
-            if call["name"] == "tim_kien_thuc" and out.get("tim_thay"):
-                for d in out.get("doan") or []:
-                    passages.append(rag.Passage(
-                        doc_title=d.get("tai_lieu", ""),
-                        content=d.get("noi_dung", ""),
-                        score=float(d.get("diem") or 0.0),
-                    ))
-            # ĐỌC: MỘT CHỮ `elif` — và nó là bản vá cho lỗi XANH GIẢ.
-            # ĐỌC: Bản trước cộng thưởng độ tin cậy cho MỌI lời gọi công cụ,
-            # ĐỌC: kể cả lời gọi KHÔNG TÌM THẤY GÌ. Hậu quả: agent tra hụt lại
-            # ĐỌC: trông tự tin hơn agent không thèm tra, và lưới ③ ở chặng 5
-            # ĐỌC: không bao giờ nổ nữa.
-            # ĐỌC: Nay chỉ công cụ trả về DỮ LIỆU HỆ THỐNG (giá, tồn kho, đơn)
-            # ĐỌC: mới bật cờ. Công cụ trả TÀI LIỆU đã tự nâng điểm qua `score`
-            # ĐỌC: của chính nó ở nhánh `if` bên trên.
-            elif call["name"] not in _TOOL_TRA_TAI_LIEU:
-                co_du_lieu = True
-
-            if call["name"] == "chuyen_nhan_vien":
-                escalate = True
-                escalate_reason = tham_so.get("ly_do", "")
-                luoi_bat = luoi_bat or "cong_cu_chuyen_nguoi"
-
-            # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
-            # nhớ gọi thêm `chuyen_nhan_vien`.
+            # MODEL DỪNG BẤT THƯỜNG → CHUYỂN NGƯỜI, không gửi thứ nó để lại.
             #
-            # `xin_huy_don` và `xin_doi_tra` đều trả `can_chuyen_nhan_vien:
-            # True` rồi dặn model trong `ghi_chu`. Nhưng dặn là dặn, và model
-            # thì trượt — đó chính là lý do lưới thứ năm tồn tại.
-            #
-            # Ở đây tệ hơn một lời hứa suông: khách vừa xin huỷ hoặc xin đổi
-            # trả, cờ ĐÃ được ghi lên đơn, mà hội thoại không tới tay ai. Đơn
-            # nằm im mang một yêu cầu chưa ai nhận, và chính sách đổi trả thì
-            # có hạn số ngày.
-            elif out.get("can_chuyen_nhan_vien"):
+            # Gemini chặn vì SAFETY hay hỏng MALFORMED_FUNCTION_CALL thì trả câu
+            # RỖNG — bản trước rơi xuống câu chung chung "Em chưa rõ ý anh/chị…"
+            # cho đúng những câu nhạy cảm nhất. MAX_TOKENS thì trả câu CỤT, và
+            # câu cụt được gửi nguyên cho khách. Không cách nào trong hai cách ấy
+            # để lại dấu vết: nhìn từ dashboard, đó là một lượt trả lời bình thường.
+            ly_do_dung = (result.stop_reason or "").strip()
+            if ly_do_dung.lower() not in _DUNG_BINH_THUONG:
+                final_text = result.text or final_text
                 escalate = True
-                escalate_reason = escalate_reason or (
-                    f"Công cụ {call['name']} yêu cầu người xử lý"
-                )
-                luoi_bat = luoi_bat or "cong_cu_yeu_cau"
+                escalate_reason = escalate_reason or f"Model dừng bất thường ({ly_do_dung})"
+                luoi_bat = luoi_bat or "dung_bat_thuong"
+                if not dang_thu:
+                    with suppress(Exception):
+                        await db.log_event(
+                            "agent.dung_bat_thuong", ref_id=conversation_id,
+                            ly_do=ly_do_dung, vong=len(cac_vong),
+                            so_cong_cu=len(result.tool_calls),
+                        )
+                break
 
-            if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
-                anh_can_gui.append(
-                    {"duong_dan": out["duong_dan"], "ten": out["ten"]}
-                )
+            if not result.tool_calls:
+                final_text = result.text
+                # Hứa đi tra cứu mà chưa gọi công cụ lần nào -> ép thêm một vòng
+                # thay vì gửi lời hứa suông cho khách. Chỉ ép ĐÚNG MỘT LẦN, nếu
+                # không thì một model cứng đầu sẽ quay vòng tới hết trần chi phí.
+                if _stalls(final_text) and not used_tool and not da_thuc:
+                    da_thuc = True
+                    messages.append({"role": "assistant", "content": final_text})
+                    messages.append({"role": "user", "content":
+                        "Đừng hứa rồi dừng. Gọi công cụ tra cứu NGAY bây giờ và "
+                        "trả lời khách bằng số liệu thật trong cùng lượt này."})
+                    continue
+                break
 
-            # Trong phòng thử KHÔNG đặt video thật — tool đã mô phỏng, đây là lớp thứ hai.
-            if call["name"] == "tao_video" and out.get("da_nhan") and not dang_thu:
-                from agent.video import pipeline
-
-                video_id = await pipeline.request_video(
-                    title=tham_so.get("tieu_de", "Video"),
-                    brief=tham_so.get("yeu_cau", ""),
-                    kind=tham_so.get("loai", "explainer"),
-                    conversation_id=conversation_id,
-                )
-                out["video_id"] = video_id
-
-            # Kết quả công cụ đi NGƯỢC về model (tra đơn trả về SĐT, địa chỉ):
-            # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
-            tool_results.append(
-                {"id": call["id"], "name": call["name"],
-                 "output": (mat_na.che_obj(out)
-                            if mat_na and call["name"] not in _TOOL_TRA_TAI_LIEU else out)}
+            used_tool = True
+            # Định dạng TRUNG LẬP — lớp llm dịch sang Gemini hay Claude tuỳ provider.
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.text or "",
+                    "tool_calls": result.tool_calls,
+                }
             )
-        messages.append({"role": "tool", "results": tool_results})
-        final_text = result.text or final_text
-    else:
-        final_text = final_text or "Em cần kiểm tra thêm, chuyển anh/chị cho nhân viên nhé."
-        escalate = True
-        # `or` chứ không gán đè: `luoi_bat` ngay dưới giữ NGUYÊN NHÂN ĐẦU
-        # TIÊN, nên `escalate_reason` cũng phải giữ nguyên nhân đầu tiên —
-        # lệch nhau là dashboard hiện một mã lưới và một câu giải thích của
-        # hai sự việc khác nhau.
-        escalate_reason = escalate_reason or "Vượt số vòng gọi công cụ cho phép"
-        luoi_bat = luoi_bat or "het_vong"
+
+            tool_results: list[dict] = []
+            for call in result.tool_calls:
+                bat_dau_tool = time.perf_counter()
+                # Model gọi công cụ bằng MÃ ([SĐT_1]); công cụ cần số THẬT (lên đơn
+                # kiểm 9–11 chữ số). Đổi lại ở đây, một chỗ, trước mọi nơi đọc tham số.
+                # Công cụ tra TÀI LIỆU giữ nguyên mã: tham số của nó (câu tìm) đi
+                # tiếp vào API embedding ở nước ngoài, và tài liệu cửa hàng không
+                # cần số của khách để tìm.
+                la_tai_lieu = _la_tra_tai_lieu(call["name"])
+                tham_so = (mat_na.mo_obj(call["input"])
+                           if mat_na and not la_tai_lieu else call["input"])
+                out = await tools.run_tool(call["name"], tham_so, conversation_id)
+                cong_cu_da_goi.append({
+                    "ten": call["name"], "tham_so": tham_so,
+                    "ket_qua": cat_ket_qua(out),
+                    "ms": int((time.perf_counter() - bat_dau_tool) * 1000),
+                    "vong": len(cac_vong),
+                    "thu_nghiem": bool(dang_thu and isinstance(out, dict) and out.get("thu_nghiem")),
+                })
+
+                # Hồ sơ dựng từ việc ĐÃ XẢY RA, không từ một lượt model riêng đi
+                # "trích xuất thông tin khách hàng". Cách này không tốn thêm
+                # đồng nào và quan trọng hơn: không bịa nổi, vì agent chỉ gọi
+                # goi_y_san_pham(loai_da="da dầu") khi khách đã nói điều đó.
+                if customer_ref:
+                    await _ghi_ho_so(
+                        ho_so_khach.tu_tool(
+                            customer_ref, channel, call["name"], tham_so
+                        ),
+                        conversation_id, "tu_tool",
+                    )
+
+                # Đoạn agent TỰ tra được phải nhập vào cùng một rổ căn cứ với
+                # đoạn tra sẵn đầu lượt. Không nhập thì `sources` thiếu trích
+                # dẫn, `grounded` sai, và độ tin cậy không phản ánh việc agent
+                # vừa tìm ra đúng tài liệu cần — tức là nó tra xong rồi bị phạt.
+                if la_tai_lieu and out.get("tim_thay"):
+                    for d in out.get("doan") or []:
+                        passages.append(rag.Passage(
+                            doc_title=d.get("tai_lieu", ""),
+                            content=d.get("noi_dung", ""),
+                            score=float(d.get("diem") or 0.0),
+                        ))
+                # ĐỌC: MỘT CHỮ `elif` — và nó là bản vá cho lỗi XANH GIẢ.
+                # ĐỌC: Bản trước cộng thưởng độ tin cậy cho MỌI lời gọi công cụ,
+                # ĐỌC: kể cả lời gọi KHÔNG TÌM THẤY GÌ. Hậu quả: agent tra hụt lại
+                # ĐỌC: trông tự tin hơn agent không thèm tra, và lưới ③ ở chặng 5
+                # ĐỌC: không bao giờ nổ nữa.
+                # ĐỌC: Nay chỉ công cụ trả về DỮ LIỆU HỆ THỐNG (giá, tồn kho, đơn)
+                # ĐỌC: mới bật cờ. Công cụ trả TÀI LIỆU đã tự nâng điểm qua `score`
+                # ĐỌC: của chính nó ở nhánh `if` bên trên.
+                # ĐỌC: Và cờ chỉ bật khi kết quả CÓ dữ liệu — `_co_du_lieu_that`.
+                elif not la_tai_lieu and _co_du_lieu_that(out):
+                    co_du_lieu = True
+
+                if call["name"] == "chuyen_nhan_vien":
+                    escalate = True
+                    escalate_reason = tham_so.get("ly_do", "")
+                    luoi_bat = luoi_bat or "cong_cu_chuyen_nguoi"
+
+                # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
+                # nhớ gọi thêm `chuyen_nhan_vien`.
+                #
+                # `xin_huy_don` và `xin_doi_tra` đều trả `can_chuyen_nhan_vien:
+                # True` rồi dặn model trong `ghi_chu`. Nhưng dặn là dặn, và model
+                # thì trượt — đó chính là lý do lưới thứ năm tồn tại.
+                #
+                # Ở đây tệ hơn một lời hứa suông: khách vừa xin huỷ hoặc xin đổi
+                # trả, cờ ĐÃ được ghi lên đơn, mà hội thoại không tới tay ai. Đơn
+                # nằm im mang một yêu cầu chưa ai nhận, và chính sách đổi trả thì
+                # có hạn số ngày.
+                elif out.get("can_chuyen_nhan_vien"):
+                    escalate = True
+                    escalate_reason = escalate_reason or (
+                        f"Công cụ {call['name']} yêu cầu người xử lý"
+                    )
+                    luoi_bat = luoi_bat or "cong_cu_yeu_cau"
+
+                if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
+                    anh_can_gui.append(
+                        {"duong_dan": out["duong_dan"], "ten": out["ten"]}
+                    )
+
+                # Trong phòng thử KHÔNG đặt video thật — tool đã mô phỏng, đây là lớp thứ hai.
+                if call["name"] == "tao_video" and out.get("da_nhan") and not dang_thu:
+                    from agent.video import pipeline
+
+                    video_id = await pipeline.request_video(
+                        title=tham_so.get("tieu_de", "Video"),
+                        brief=tham_so.get("yeu_cau", ""),
+                        kind=tham_so.get("loai", "explainer"),
+                        conversation_id=conversation_id,
+                    )
+                    out["video_id"] = video_id
+
+                # Kết quả công cụ đi NGƯỢC về model (tra đơn trả về SĐT, địa chỉ):
+                # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
+                tool_results.append(
+                    {"id": call["id"], "name": call["name"],
+                     "output": (mat_na.che_obj(out)
+                                if mat_na and not la_tai_lieu else out)}
+                )
+            messages.append({"role": "tool", "results": tool_results})
+            final_text = result.text or final_text
+        else:
+            final_text = final_text or "Em cần kiểm tra thêm, chuyển anh/chị cho nhân viên nhé."
+            escalate = True
+            # `or` chứ không gán đè: `luoi_bat` ngay dưới giữ NGUYÊN NHÂN ĐẦU
+            # TIÊN, nên `escalate_reason` cũng phải giữ nguyên nhân đầu tiên —
+            # lệch nhau là dashboard hiện một mã lưới và một câu giải thích của
+            # hai sự việc khác nhau.
+            escalate_reason = escalate_reason or "Vượt số vòng gọi công cụ cho phép"
+            luoi_bat = luoi_bat or "het_vong"
+    except BaseException as exc:
+        _ghi_chi_phi(total_cost, dang_thu)
+        with suppress(Exception):
+            exc.chi_phi_da_tieu = total_cost  # type: ignore[attr-defined]
+        raise
 
     # ĐỌC: ══ CHẶNG 5 · BỐN LƯỚI CUỐI ═════════════════════════════════════
     # ĐỌC: Đây là hiện thực của nguyên tắc số một của dự án:
@@ -869,10 +1093,7 @@ async def respond(
     # mù là quãng nguy hiểm nhất.
     # Phòng thử tiêu tiền thật nhưng không phải tiền của khách: vào sổ riêng
     # để một buổi thử không đẩy hệ thống chạm trần và chuyển mọi khách sang người.
-    if dang_thu:
-        thu_nghiem.ghi_nhan(total_cost)
-    else:
-        ngan_sach.ghi_nhan(total_cost)
+    _ghi_chi_phi(total_cost, dang_thu)
 
     # Đổi mã về số thật TRƯỚC khi gửi khách. Mã model bịa (không có trong
     # bảng) thì để nguyên và ghi lại — khách thấy "[SĐT_3]" là lỗi lộ ra,

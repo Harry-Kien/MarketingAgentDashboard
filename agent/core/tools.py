@@ -1254,6 +1254,9 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
                 "tao_duoc": False,
                 "ly_do": f"Chưa tra được tồn kho của {sp['ten']}. "
                          "Hãy báo khách chờ một chút và chuyển cho nhân viên.",
+                # Dặn model chuyển người là chưa đủ — model trượt. Cờ này để
+                # agent.py chuyển người THẬT (xem nhánh `can_chuyen_nhan_vien`).
+                "can_chuyen_nhan_vien": True,
             }
         ton = ton_song.ban_duoc
         if ton <= 0:
@@ -1301,7 +1304,8 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
                 "ly_do": "Đơn với đúng các sản phẩm này đã được tạo trước đó. "
                          "Hãy báo khách là đơn đã ghi nhận, đừng tạo thêm.",
             }
-        return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}"}
+        return {"tao_duoc": False, "ly_do": f"Lỗi hệ thống khi lưu đơn: {type(exc).__name__}",
+                "can_chuyen_nhan_vien": True}
 
     # --- Chốt 7: TRỪ KHO thật, nguyên tử, có khoá hàng ---
     # Kiểm tồn ở chốt 4 chỉ là kiểm lúc đọc. Giữa lúc đọc và lúc ghi, một
@@ -1341,6 +1345,7 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
                 "tao_duoc": False,
                 "ly_do": f"Kho từ chối đơn: {kq_erp.ly_do}. Báo khách là chưa "
                          "lên đơn được và chuyển cho nhân viên.",
+                "can_chuyen_nhan_vien": True,
             }
         if kq_erp.ket_cuc == "cho_lai":
             trang_thai = "cho_dong_bo"
@@ -1453,6 +1458,7 @@ async def _tra_cuu_don_hang(args: dict, conversation_id) -> dict:
                     "xác minh và hỏi số điện thoại đã đặt đơn, rồi gọi "
                     "chuyen_nhan_vien để người thật kiểm tra."
                 ),
+                "can_chuyen_nhan_vien": True,
             }
 
     # Đường lui cho bản demo, TỰ TẮT khi shop thay bằng dữ liệu thật.
@@ -1686,6 +1692,7 @@ async def _tra_cuu_van_chuyen(args: dict) -> dict:
         return {
             "tim_thay": False,
             "ghi_chu": "Chưa tra được lúc này. Cần chuyển người hỗ trợ.",
+            "can_chuyen_nhan_vien": True,
         }
     if row is None:
         return {

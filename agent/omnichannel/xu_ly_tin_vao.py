@@ -351,13 +351,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
             anh=khoi_anh or None, ho_so=ho_so,
         )
     except Exception as exc:  # noqa: BLE001 — suy giảm êm, không bao giờ im lặng
-        await db.execute(
-            "UPDATE conversations SET status = 'escalated', mode = 'human', "
-            "version = version + 1, updated_at = now() "
-            "WHERE id = $1",
-            cid,
-        )
-        await db.log_event("agent.error", ref_id=cid, error=f"{type(exc).__name__}: {exc}")
+        # Chuyển người ĐỦ như mọi nhánh khác (công việc, báo nhân viên, báo
+        # khách, cộng chi phí) và báo động khi lỗi lặp — xem agent_loi.py.
+        # Bản trước chỉ đổi trạng thái + ghi `agent.error`: khoá API hỏng là
+        # mọi tin khách rơi vào đây, không ai được giao, không ai được báo.
+        from agent.omnichannel import agent_loi
+
+        await agent_loi.chuyen_nguoi_vi_agent_loi(msg, cid, adapter, exc)
         return
     finally:
         runtime.clear_busy(cid)

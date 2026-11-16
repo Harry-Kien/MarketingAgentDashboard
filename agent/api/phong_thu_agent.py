@@ -42,6 +42,7 @@ NHAN_LUOI = {
     "het_vong": "Vượt số vòng gọi công cụ",
     "cong_cu_chuyen_nguoi": "Agent chủ động chuyển người",
     "cong_cu_yeu_cau": "Công cụ yêu cầu người",
+    "dung_bat_thuong": "Model dừng bất thường",
 }
 
 

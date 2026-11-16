@@ -182,11 +182,20 @@ function drawDraft(d) {
 
   $("#draftsave").addEventListener("click", async () => {
     const when = $("#draftwhen").value;
-    await api("/posts", { method: "POST", body: JSON.stringify({
-      tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
-      kenh: [d.kenh], video_id: d.video_id || null,
-      lich_dang: when ? new Date(when).toISOString() : null,
-    })});
+    const nut = $("#draftsave");
+    nut.disabled = true;
+    try {
+      await api("/posts", { method: "POST", body: JSON.stringify({
+        tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
+        kenh: [d.kenh], video_id: d.video_id || null,
+        lich_dang: when ? new Date(when).toISOString() : null,
+      })});
+    } catch (e) {
+      // Giữ nguyên bản nháp: xoá nó khi chưa vào hàng đợi là mất bài vừa soạn.
+      toast(e.message, true);
+      nut.disabled = false;
+      return;
+    }
     $("#postdraft").innerHTML = "";
     toast("Đã vào hàng đợi. Bấm Duyệt thì bài mới đi.");
     loadPosts();
@@ -227,10 +236,17 @@ async function loadPosts() {
     const bulk = $("#bulkapprove");
     if (bulk) bulk.addEventListener("click", async () => {
       bulk.disabled = true;
-      const r = await api("/posts/approve-all", { method: "POST" });
-      toast(r.bi_chan
-        ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
-        : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
+      // Lỗi mà không bắt thì nút khoá mãi và không ai biết vì sao —
+      // bắt, báo, mở lại nút.
+      try {
+        const r = await api("/posts/approve-all", { method: "POST" });
+        toast(r.bi_chan
+          ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
+          : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
+      } catch (e) {
+        toast(e.message, true);
+        bulk.disabled = false;
+      }
       loadPosts();
     });
   }
@@ -277,8 +293,17 @@ async function loadPosts() {
   $$("[data-pkit]").forEach((b) => b.addEventListener("click", () =>
     moKit(b.dataset.pkit, b.closest(".row"))));
   $$("[data-pcancel]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
-    toast("Đã huỷ bài."); loadPosts();
+    // Nút Huỷ đứng sát nút Duyệt & đăng: bấm trượt là mất bài đã soạn.
+    if (!confirm("Huỷ bài này?\n\nBài chuyển sang Đã huỷ và không đăng nữa.")) return;
+    b.disabled = true;
+    try {
+      await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
+      toast("Đã huỷ bài.");
+    } catch (e) {
+      toast(e.message, true);
+      b.disabled = false;
+    }
+    loadPosts();
   }));
   // Chưa có quyền Insights API -> nhập tay. Cùng một bảng, cùng một biểu đồ.
   $$("[data-pmetric]").forEach((b) => b.addEventListener("click", async () => {

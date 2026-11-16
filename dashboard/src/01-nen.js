@@ -25,7 +25,14 @@ async function api(path, options = {}) {
    * đăng nhập lại — màn đăng nhập vẫn ẩn. Họ nhìn một dashboard chết trong
    * khi khách vẫn đang nhắn tới.
    */
-  if (res.status === 401) {
+  /* Riêng lời gọi ĐĂNG NHẬP: 401 ở đó không có nghĩa "phiên hết hạn" mà là
+   * "cần mã 2FA" / "mã sai" / "sai mật khẩu" — máy chủ trả cả ba bằng 401,
+   * kèm nội dung khác nhau. Đi nhánh hết phiên ở đây thì nội dung bị vứt
+   * trước khi đọc: ô mã 2FA không bao giờ hiện, ai bật 2FA là tự khoá mình
+   * ra ngoài, và người gõ sai mật khẩu được bảo "phiên đã hết hạn". Nên
+   * 401 của /dang-nhap rơi xuống nhánh lỗi thường bên dưới, nơi JSON lỗi
+   * được đọc và gắn vào `chi_tiet`. */
+  if (res.status === 401 && path !== "/dang-nhap") {
     $("#cong")?.classList.remove("is-off");
     // Dừng vòng làm mới: không dừng thì cứ 6 giây một toast lỗi, và mỗi
     // lần là một request vô ích tới máy chủ.
@@ -56,6 +63,25 @@ async function api(path, options = {}) {
     throw err;
   }
   return res.status === 204 ? null : res.json();
+}
+
+/* Gán lại danh sách <option> cho một <select> mà KHÔNG làm mất lựa chọn.
+ *
+ * Vòng làm mới 6 giây dựng lại option của các ô chọn (đội, nhân viên, kênh,
+ * khách để gộp). Gán `innerHTML` trần thì ô nhảy về option đầu: người vận
+ * hành chọn "Đội Zalo" + "Lan", đứng đọc lại vài giây, bấm Thêm — và người
+ * ĐẦU danh sách vào đội ĐẦU danh sách. Không lỗi, không toast, chỉ là dữ
+ * liệu sai lặng lẽ.
+ *
+ * Danh sách không đổi thì không đụng gì cả (ô đang mở dở không bị đóng);
+ * đổi thì gán lại rồi trả giá trị cũ nếu nó vẫn còn trong danh sách mới. */
+function ganLuaChon(sel, html) {
+  if (!sel) return;
+  if (sel._nguonLuaChon === html) return;
+  const cu = sel.value;
+  sel.innerHTML = html;
+  sel._nguonLuaChon = html;
+  if ([...sel.options].some((o) => o.value === cu)) sel.value = cu;
 }
 
 function hanDoc(iso) {

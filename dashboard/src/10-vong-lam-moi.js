@@ -143,6 +143,39 @@ const ACCOUNT_STATUS_LABEL = {
   reauth_required: "Cần đăng nhập lại", disabled: "Đã tạm ngắt",
 };
 
+function htmlToken(token) {
+  return `<code class="token-hien">${esc(token)}</code>`
+    + '<button type="button" class="btn btn--sm" data-copytoken>Chép</button>';
+}
+
+/* Verify token đã bấm xem của một kênh, nếu còn trong hạn một phút.
+ *
+ * Thẻ kênh dựng lại innerHTML mỗi 6 giây; trước đây chuỗi vừa hiện bị xoá
+ * trước khi người ta kịp chép sang Meta — bấm "Xem" mà không thấy gì lâu
+ * quá vài giây, tưởng nút hỏng. */
+function oTokenDaHien(kenh) {
+  const t = (state.tokenHien || {})[kenh];
+  if (!t) return "";
+  if (Date.now() > t.het) { delete state.tokenHien[kenh]; return ""; }
+  return htmlToken(t.token);
+}
+
+/* Uỷ quyền: nút Chép nằm trong ô bị dựng lại mỗi vòng, gắn trực tiếp là
+   mất listener sau 6 giây. */
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copytoken]");
+  if (!b) return;
+  const chuoi = b.closest(".token-slot")?.querySelector(".token-hien")?.textContent || "";
+  try {
+    await navigator.clipboard.writeText(chuoi);
+    toast("Đã chép. Dán vào ô \"Xác minh mã\" bên Meta.");
+  } catch {
+    // Trình duyệt chặn clipboard khi trang không chạy HTTPS —
+    // chuỗi vẫn hiện trên màn hình nên người dùng bôi đen chép tay.
+    toast("Không chép tự động được. Bôi đen chuỗi rồi chép tay.", true);
+  }
+});
+
 async function loadKetNoi() {
   const accounts = await api("/channel-accounts");
   const grouped = Object.fromEntries(Object.keys(CHANNEL_LABEL).map((key) => [key, []]));
@@ -174,7 +207,7 @@ async function loadKetNoi() {
             <button type="button" class="btn btn--sm" data-verifytoken-kenh="${items[0].id}">Xem verify token</button>
             ${cho_xac_minh ? `<button type="button" class="btn btn--sm btn--go" data-subwebhook-all="${channel}">Nhận tin cho tất cả (${cho_xac_minh})</button>` : ""}
           </span>
-          <div class="token-slot" data-tokenslot="${items[0].id}"></div>` : ""}
+          <div class="token-slot" data-tokenslot-kenh="${esc(channel)}">${oTokenDaHien(channel)}</div>` : ""}
       </div>` : "";
 
       return `<section class="channel-card">
@@ -458,23 +491,24 @@ function lyDoKetNoi(kq) {
     // Verify token dùng CHUNG cho mọi Trang của cùng một app — nên nút ở mức
     // kênh chỉ cần hỏi một tài khoản bất kỳ trong kênh đó.
     const id = button.dataset.verifytoken || button.dataset.verifytokenKenh;
-    const cho = document.querySelector(`[data-tokenslot="${id}"]`);
+    /* Ô của nút mức KÊNH là ô mức kênh, tìm theo thẻ chứa nút. Trước đây ô
+       này mang `data-tokenslot` TRÙNG id với ô Sức khoẻ của Trang đầu tiên,
+       nên hai thứ ghi đè lên nhau tuỳ cái nào đứng trước trong DOM. */
+    const cho = button.dataset.verifytokenKenh
+      ? button.closest(".channel-card")?.querySelector("[data-tokenslot-kenh]")
+      : document.querySelector(`[data-tokenslot="${id}"]`);
     button.disabled = true;
     try {
       const r = await api(`/channel-accounts/${id}/verify-token`);
-      if (cho) {
-        cho.innerHTML = `<code class="token-hien">${esc(r.verify_token)}</code>`
-          + '<button type="button" class="btn btn--sm" data-copytoken>Chép</button>';
-        cho.querySelector("[data-copytoken]").addEventListener("click", async () => {
-          try {
-            await navigator.clipboard.writeText(r.verify_token);
-            toast("Đã chép. Dán vào ô \"Xác minh mã\" bên Meta.");
-          } catch {
-            // Trình duyệt chặn clipboard khi trang không chạy HTTPS —
-            // chuỗi vẫn hiện trên màn hình nên người dùng bôi đen chép tay.
-            toast("Không chép tự động được. Bôi đen chuỗi rồi chép tay.", true);
-          }
-        });
+      const kenh = cho && cho.dataset.tokenslotKenh;
+      if (kenh) {
+        // Nhớ qua vòng làm mới 6 giây (thẻ dựng lại innerHTML) — nhưng chỉ
+        // một phút: chuỗi bí mật không được nằm sẵn trên màn hình mãi.
+        state.tokenHien = state.tokenHien || {};
+        state.tokenHien[kenh] = { token: r.verify_token, het: Date.now() + 60000 };
+        cho.innerHTML = oTokenDaHien(kenh);
+      } else if (cho) {
+        cho.innerHTML = htmlToken(r.verify_token);
       }
     } catch (e) {
       toast(e.message, true);
@@ -803,8 +837,14 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
     return;
   }
   try {
-    await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
-    toast("Đã lưu và xác minh xong với provider.");
+    /* `/verify` trả 200 kèm `{ok:false}` khi provider từ chối — không ném
+     * lỗi. Không đọc `ok` thì credential sai được báo XANH "xác minh xong":
+     * xanh giả, lộ ra nhiều ngày sau khi khách nhắn mà không ai nhận. Cùng
+     * cách đọc với nút "Xác minh provider" trên thẻ tài khoản. */
+    const kq = await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
+    toast(kq && kq.ok ? "Đã lưu và xác minh xong với provider."
+                      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
+          !(kq && kq.ok));
   } catch (e) {
     toast("Đã lưu, nhưng provider từ chối: " + e.message + " — kiểm lại credential.", true);
   }

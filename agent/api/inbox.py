@@ -521,12 +521,25 @@ async def takeover_conversation(
     return _routing_response(state)
 
 
+def get_buoc_gianh_quyen_meta() -> Callable[[UUID], Any]:
+    """
+    Bước Messenger sau release: đổi cờ trong CSDL chưa đủ, phải giành lại
+    thread control từ Meta — xem `hoi_thoai_cu.nhan_lai_quyen_sau_release`.
+    Là dependency để test router trần (không CSDL) thay được, giống
+    `get_routing_service`. Import muộn để tránh vòng import với route cũ.
+    """
+    from .hoi_thoai_cu import nhan_lai_quyen_sau_release
+
+    return nhan_lai_quyen_sau_release
+
+
 @router.post("/conversations/{conversation_id}/release")
 async def release_conversation(
     conversation_id: UUID,
     body: ReleaseIn,
     user: dict = Depends(can_quyen("hoi_thoai.nhan")),
     service: ConversationRoutingService = Depends(get_routing_service),
+    gianh_quyen: Callable[[UUID], Any] = Depends(get_buoc_gianh_quyen_meta),
 ) -> dict[str, Any]:
     actor_id, is_admin = _user_scope(user)
     try:
@@ -539,7 +552,12 @@ async def release_conversation(
         )
     except RoutingError as exc:
         _raise_routing(exc)
-    return _routing_response(state)
+    result = _routing_response(state)
+    # Chưa giành lại được quyền Meta thì nói ra (dashboard hiện thành lỗi):
+    # thiếu bước này agent "bật mà câm" với Messenger.
+    if ghi_chu := await gianh_quyen(conversation_id):
+        result["ghi_chu"] = ghi_chu
+    return result
 
 
 @router.post("/conversations/{conversation_id}/che-do")

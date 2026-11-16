@@ -62,8 +62,10 @@ function gopDoO(ds) {
   const html = (ds || []).map((c) =>
     `<option value="${esc(c.id)}">${esc(c.display_name || "Khách")}`
     + ` · ${c.contact_point_count || 0} danh tính</option>`).join("");
-  o.innerHTML = html;
-  $("#gopDich").innerHTML = html;
+  // loadContacts() gọi hàm này mỗi 6 giây: gán trần là hai ô nhảy về khách
+  // đầu danh sách giữa lúc người ta đang chọn — rồi gộp nhầm người.
+  ganLuaChon(o, html);
+  ganLuaChon($("#gopDich"), html);
 }
 
 $("#gopMo")?.addEventListener("click", () => {
@@ -136,9 +138,18 @@ $("#gopXem")?.addEventListener("click", async () => {
             expected_target_version: d.target.version,
           }),
         });
-        toast(`Đã gộp. Hoàn tác được bằng mã ${r.merge_id.slice(0, 8)}…`);
-        $("#gopKetQua").innerHTML = "";
-        $("#pnGop").classList.add("is-hidden");
+        /* Nút hoàn tác nằm NGAY trong kết quả, giữ đủ merge_id.
+         *
+         * Trước đây chỉ có toast "Hoàn tác được bằng mã 1a2b3c4d…": tám ký
+         * tự đầu không gọi được route nào, toast biến mất sau vài giây, và
+         * dashboard không có chỗ nào để dán mã. Lời hứa "hoàn tác được" là
+         * lời hứa không ai thực hiện nổi — đúng lúc vừa gộp nhầm hai khách. */
+        toast("Đã gộp hai khách.");
+        $("#gopKetQua").innerHTML = `<p class="panel__note">Đã gộp. Gộp nhầm thì
+             hoàn tác ngay ở đây — hội thoại và danh tính trả về khách cũ.</p>
+           <div class="row__nut">
+             <button type="button" class="btn btn--sm" data-merge-undo="${esc(r.merge_id)}">Hoàn tác</button>
+           </div>`;
         await loadContacts();
       } catch (e) {
         toast(e.ma === 409
@@ -148,6 +159,34 @@ $("#gopXem")?.addEventListener("click", async () => {
       }
     });
   } catch (e) { toast(e.message, true); }
+});
+
+/* Hoàn tác một lần gộp. Hỏi lý do = bước xác nhận: route bắt buộc `reason`
+ * (ghi vào lịch sử), và một hộp phải điền thì không ai bấm nhầm. */
+$("#gopKetQua")?.addEventListener("click", async (e) => {
+  const nut = e.target.closest("[data-merge-undo]");
+  if (!nut) return;
+  const hoi = await hoiHop({
+    tieu_de: "Hoàn tác lần gộp này?",
+    phu: "Hai khách tách lại như trước khi gộp. Lý do ghi vào lịch sử.",
+    truong: [{ name: "ly_do", label: "Vì sao hoàn tác", value: "Gộp nhầm",
+               required: true, maxlength: 500 }],
+    nut: "Hoàn tác", nguy_hiem: true,
+  });
+  if (!hoi || !hoi.ly_do) return;
+  nut.disabled = true;
+  try {
+    await api(`/contacts/merges/${encodeURIComponent(nut.dataset.mergeUndo)}/undo`, {
+      method: "POST", body: JSON.stringify({ reason: hoi.ly_do }),
+    });
+    toast("Đã hoàn tác — hai khách đã tách lại.");
+    $("#gopKetQua").innerHTML = "";
+    $("#pnGop").classList.add("is-hidden");
+    await loadContacts();
+  } catch (err) {
+    toast(err.message, true);
+    nut.disabled = false;
+  }
 });
 
 async function loadContacts() {
@@ -368,7 +407,12 @@ function oTruongKhach(contact) {
 function _khoaO(o) {
   if (o.dataset.tkNhieu) return `tkn:${o.dataset.tkNhieu}:${o.value}`;
   if (o.dataset.tk) return `tk:${o.dataset.tk}`;
+  // Màn Cấu hình: ô không nằm trong form, không có name — thiếu hai dòng
+  // này thì MỌI ô ở đó cùng khoá "khong-form:" và giá trị ô này đè sang ô kia.
+  if (o.dataset.ch) return `ch:${o.dataset.ch}`;
+  if (o.dataset.apiKhoa) return `api:${o.dataset.apiKhoa}`;
   const f = o.closest("form");
+  if (!f && !o.name && o.id) return `id:${o.id}`;
   return `${f ? f.id : "khong-form"}:${o.name || ""}`;
 }
 
@@ -549,6 +593,10 @@ async function loadContactDetail(id) {
     try {
       await api(`/contacts/${id}/tags`, { method: "POST", body: JSON.stringify({ tag }) });
       toast("Đã thêm nhãn khách hàng.");
+      /* reset() TRƯỚC khi nạp lại. loadContactDetail giữ mọi ô lệch
+         defaultValue (để không mất chữ đang gõ), nên không reset thì chữ
+         vừa lưu vẫn nằm trong ô — bấm thêm lần nữa là gửi trùng. */
+      form.reset();
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });
@@ -561,6 +609,7 @@ async function loadContactDetail(id) {
     try {
       await api(`/contacts/${id}/notes`, { method: "POST", body: JSON.stringify(values) });
       toast("Đã lưu ghi chú nội bộ.");
+      form.reset();   // xem chú thích ở form nhãn: không reset là gửi trùng
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });
@@ -576,6 +625,7 @@ async function loadContactDetail(id) {
         body: JSON.stringify({ status: values.status, source: String(values.source || "").trim(), evidence: { captured_via: "dashboard" } }),
       });
       toast("Đã cập nhật consent và nhật ký kiểm toán.");
+      form.reset();   // xem chú thích ở form nhãn: không reset là gửi trùng
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });

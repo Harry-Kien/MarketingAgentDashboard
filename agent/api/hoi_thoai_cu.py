@@ -425,6 +425,44 @@ async def takeover(
     return {"ok": True, "mode": state.mode, "version": state.version}
 
 
+async def nhan_lai_quyen_sau_release(cid: uuid.UUID, conv=None) -> str:
+    """
+    Bước Meta của "trả hội thoại cho agent": giành lại thread control.
+
+    Trả "" khi xong hoặc không cần; trả câu `ghi_chu` khi chưa giành được —
+    nơi gọi PHẢI đưa câu ấy vào phản hồi để dashboard hiện thành lỗi.
+
+    Tách thành hàm dùng chung vì có HAI đường release: route cũ dưới đây và
+    `POST /api/inbox/conversations/{id}/release` mà dashboard đang dùng.
+    Trước đây chỉ route cũ làm bước này — nút "Kết thúc tiếp quản" đi đường
+    mới, nên với Messenger agent bật trong CSDL mà tin khách vẫn chảy vào
+    `standby[]`: bật mà câm, và màn hình nói mọi thứ đang chạy.
+
+    Lỗi mạng/ngoại lệ từ adapter KHÔNG được làm hỏng cả lời gọi: CSDL đã
+    release xong rồi, trả 500 lúc này là nói dối theo chiều ngược lại.
+    """
+    if conv is None:
+        conv = await db.fetchrow(
+            "SELECT account_id, channel, external_id FROM conversations "
+            "WHERE id = $1", cid)
+    if not conv or conv["channel"] != "messenger":
+        return ""
+    ly_do = ""
+    try:
+        ad = await channels.get_for_account(conv["account_id"])
+        if (lay := getattr(ad, "nhan_lai_quyen", None)) is None:
+            return ""
+        kq = await lay(conv["external_id"])
+        if not getattr(kq, "ok", True):
+            ly_do = str(getattr(kq, "detail", "") or "Meta từ chối")
+    except Exception as exc:  # noqa: BLE001 — mọi lỗi đều phải thành ghi_chu
+        ly_do = f"{type(exc).__name__}: {exc}"
+    if not ly_do:
+        return ""
+    await db.log_event("banGiao.nhan_lai_that_bai", ref_id=cid, ly_do=ly_do[:200])
+    return f"đã bật agent, nhưng chưa giành lại được quyền từ Meta: {ly_do}"
+
+
 @router.post("/conversations/{conv_id}/release")
 async def release(
     conv_id: str,
@@ -467,15 +505,7 @@ async def release(
     except AssignmentDenied as exc:
         raise HTTPException(403, str(exc)) from exc
 
-    ghi_chu = ""
-    if conv and conv["channel"] == "messenger":
-        ad = await channels.get_for_account(conv["account_id"])
-        if (lay := getattr(ad, "nhan_lai_quyen", None)) is not None:
-            kq = await lay(conv["external_id"])
-            if not getattr(kq, "ok", True):
-                ghi_chu = f"đã bật agent, nhưng chưa giành lại được quyền từ Meta: {kq.detail}"
-                await db.log_event("banGiao.nhan_lai_that_bai", ref_id=cid,
-                                   ly_do=str(kq.detail)[:200])
+    ghi_chu = await nhan_lai_quyen_sau_release(cid, conv)
     result = {"ok": True, "mode": state.mode, "version": state.version}
     if ghi_chu:
         result["ghi_chu"] = ghi_chu

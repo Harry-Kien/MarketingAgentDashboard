@@ -163,7 +163,7 @@ erDiagram
         TEXT customer_ref
         TEXT status
         TEXT outcome
-        _ con_18_cot_nua
+        _ con_19_cot_nua
     }
     messages {
         UUID id

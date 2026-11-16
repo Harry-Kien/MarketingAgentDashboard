@@ -217,10 +217,36 @@ def test_webhook_xu_ly_ban_giao_TRUOC_tin_nhan():
     assert src.index("doc_ban_giao") < src.index("parse_nhieu")
 
 
-def test_nhan_lai_quyen_thi_mo_khoa_hoi_thoai():
+def test_nhan_lai_quyen_thi_mo_khoa_hoi_thoai(monkeypatch):
+    """
+    Bản cũ của test này chỉ soi chuỗi "'auto'" trong mã — xanh giả: mã đặt
+    `status='auto'` nhưng giữ `mode='human'`, agent vẫn đứng ngoài. Nay kiểm
+    câu UPDATE thật sự chạy (hành vi trên Postgres: tests/test_tin_vao_ro_ri.py
+    ::test_nhan_lai_quyen_thi_ca_mode_ve_auto).
+    """
+    import asyncio
+
+    from agent import db
     from agent import main as app_main
-    src = inspect.getsource(app_main._ban_giao_messenger)
-    assert "ve_tay_ta" in src and "'auto'" in src
+
+    chay: list[str] = []
+
+    async def fetchrow(sql, *a):
+        return {"id": "c1"}
+
+    async def execute(sql, *a):
+        chay.append(sql)
+
+    async def log_event(*a, **k):
+        return None
+    monkeypatch.setattr(db, "fetchrow", fetchrow)
+    monkeypatch.setattr(db, "execute", execute)
+    monkeypatch.setattr(db, "log_event", log_event)
+    asyncio.run(app_main._ban_giao_messenger(
+        {"khach": "u1", "loai": "pass_thread_control", "ve_tay_ta": True}, "acc-1"))
+    assert len(chay) == 1
+    assert "status = 'auto'" in chay[0] and "mode = 'auto'" in chay[0]
+    assert "version = version + 1" in chay[0]
 
 
 # =====================================================================

@@ -21,12 +21,22 @@ trả 200 rồi mất tin.
 
 CHẠY LẠI MỘT TIN ĐÃ XỬ LÝ DỞ CÓ AN TOÀN KHÔNG
 --------------------------------------------
-`handle_inbound` chống trùng theo `dedupe_key` ngay bước đầu (webhook_receipts):
-tin đã lưu vào hộp thư thì lần chạy lại dừng ở đó, không trả lời khách lần
-hai. Cái giá: nếu app chết SAU khi lưu tin mà TRƯỚC khi AI trả lời, lần chạy
-lại không trả lời nữa — nhưng tin đã nằm trong hộp thư, hiện trên dashboard,
-và canh gác "khách chờ người" sẽ báo. Mất câu trả lời tự động còn hơn trả lời
-hai lần; mất hẳn tin thì không chấp nhận được.
+`handle_inbound` chống trùng theo `dedupe_key` ngay bước đầu
+(`webhook_deliveries`): tin đã lưu vào hộp thư thì lần chạy lại dừng ở đó,
+không trả lời khách lần hai. Mất câu trả lời tự động còn hơn trả lời hai lần.
+
+NHƯNG lần chạy lại dừng ở đó thì KHÔNG AI trả lời khách nữa — nếu lần trước
+chết SAU khi lưu tin mà TRƯỚC khi có phản hồi (app bị dừng giữa lúc AI soạn
+→ CancelledError, dòng kẹt `dang_xu_ly`; hoặc `channels.get_for_account`
+ném). Bản trước tin rằng "canh gác khách chờ người sẽ báo" — sai: canh gác
+ấy chỉ đếm hội thoại `assist`/`escalated`, còn hội thoại này vẫn `auto`.
+Kết quả: dòng đánh `xong`, khách không được trả lời, không việc, không báo.
+
+Nay mỗi lần CHẠY LẠI (`so_lan_thu > 1`) xong, `_dam_bao_co_nguoi_lo` kiểm
+tin khách ấy đã có phản hồi chưa (tin agent/nhân viên — kể cả nháp — sau
+nó, hội thoại đã chuyển người, hoặc khách đã nhắn tin mới hơn mà dòng của
+tin ấy sẽ lo). Chưa có thì CHUYỂN NGƯỜI + tạo việc + ghi sự kiện: không trả
+lời tự động lần hai, nhưng cũng không để khách chờ trong im lặng.
 
 KHÔNG DÙNG THƯ VIỆN HÀNG ĐỢI
 ----------------------------
@@ -93,7 +103,9 @@ async def nhan(m: InboundMessage, tasks=None) -> UUID | None:
     """
     r = await db.fetchrow(
         "INSERT INTO tin_vao (dedupe_key, account_id, kenh, payload) VALUES ($1,$2,$3,$4) "
-        "ON CONFLICT (dedupe_key) WHERE dedupe_key <> '' DO NOTHING RETURNING id",
+        # Chống trùng THEO TÀI KHOẢN (migration 0042), cùng phạm vi với
+        # webhook_deliveries: hai nick cùng nhóm nhận cùng msgId là HAI tin.
+        "ON CONFLICT (account_id, dedupe_key) WHERE dedupe_key <> '' DO NOTHING RETURNING id",
         m.dedupe_key or "", m.account_id, m.channel, ra_json(m))
     if r is None:
         return None
@@ -119,7 +131,14 @@ async def xu_ly_mot(id_: UUID) -> str:
     dong = await _nhan_viec(id_)
     if dong is None:
         return "bo_qua"
+    # Chỉ lần CHẠY LẠI mới cần hỏi: lần trước đã lưu tin vào hộp thư chưa?
+    # Đã lưu thì lần này handle_inbound sẽ thoát sớm vì "trùng" — phải tự
+    # kiểm có ai lo cho tin ấy chưa. Chưa lưu thì lần này xử lý trọn như
+    # tin mới, không cần kiểm gì thêm.
+    da_luu_truoc = False
     try:
+        if dong["so_lan_thu"] > 1:
+            da_luu_truoc = await _da_luu_vao_hop_thu(tu_json(dong["payload"]))
         await xu_ly_tin_vao.handle_inbound(tu_json(dong["payload"]))
     except Exception as exc:  # noqa: BLE001 — một tin hỏng không được làm chết vòng
         loi = f"{type(exc).__name__}: {exc}"[:500]
@@ -142,10 +161,84 @@ async def xu_ly_mot(id_: UUID) -> str:
             id_, loi, tre_lan_sau(dong["so_lan_thu"]))
         log.warning("tin_vao %s hỏng lần %s: %s", id_, dong["so_lan_thu"], loi)
         return "cho"
+    if da_luu_truoc:
+        # Lần chạy lại của một tin ĐÃ lưu: handle_inbound vừa thoát sớm vì
+        # "trùng", trong khi lần trước có thể chết trước khi kịp phản hồi.
+        # Xem docstring mô-đun. Hỏng ở bước kiểm này thì để dòng thử lại
+        # như lỗi thường — không đánh `xong` khi chưa chắc có người lo.
+        try:
+            await _dam_bao_co_nguoi_lo(tu_json(dong["payload"]), id_)
+        except Exception as exc:  # noqa: BLE001
+            loi = f"kiểm phản hồi sau chạy lại hỏng: {type(exc).__name__}: {exc}"[:500]
+            await db.execute(
+                "UPDATE tin_vao SET trang_thai = 'cho', loi = $2, khoa_luc = NULL, "
+                "cho_den = now() + make_interval(secs => $3), updated_at = now() WHERE id = $1",
+                id_, loi, tre_lan_sau(dong["so_lan_thu"]))
+            log.warning("tin_vao %s: %s", id_, loi)
+            return "cho"
     await db.execute(
         "UPDATE tin_vao SET trang_thai = 'xong', khoa_luc = NULL, loi = NULL, "
         "updated_at = now() WHERE id = $1", id_)
     return "xong"
+
+
+LY_DO_CHAY_LAI = ("Tin khách được xử lý lại sau sự cố (app dừng hoặc lỗi giữa "
+                  "chừng) mà chưa có phản hồi nào — agent không trả lời tự động "
+                  "lần hai, cần người xem.")
+
+
+async def _da_luu_vao_hop_thu(m: InboundMessage) -> bool:
+    """Bước ingest của tin này đã COMMIT chưa (biên nhận `processed`)."""
+    r = await db.fetchrow(
+        "SELECT 1 FROM webhook_deliveries WHERE account_id = $1 AND dedupe_key = $2 "
+        "AND status = 'processed'", m.account_id, m.dedupe_key)
+    return r is not None
+
+
+async def _dam_bao_co_nguoi_lo(m: InboundMessage, id_: UUID) -> bool:
+    """
+    Sau một lần CHẠY LẠI: tin khách này đã có ai lo chưa? Chưa thì chuyển
+    người. Trả True nếu vừa chuyển.
+
+    "Có người lo" là một trong:
+      - tin agent/nhân viên (kể cả nháp chờ duyệt) lưu SAU tin khách;
+      - hội thoại đã `escalated` hoặc `mode='human'`;
+      - khách đã nhắn tin MỚI HƠN — dòng hộp thư của tin ấy sẽ lo, và trả
+        lời tin cũ lúc này là trả lời lạc nhịp (cùng lý do với DEV-03).
+
+    Không thấy tin khách trong `messages` (lần trước hỏng TRƯỚC khi lưu, và
+    lần này handle_inbound đã tự lo trọn) thì không làm gì.
+    """
+    r = await db.fetchrow(
+        """
+        SELECT c.id AS cid, c.status, c.mode,
+               EXISTS (
+                   SELECT 1 FROM messages p
+                   WHERE p.conversation_id = c.id
+                     AND p.created_at >= m.created_at AND p.id <> m.id
+                     AND (p.role IN ('agent', 'staff')
+                          OR (p.role = 'customer' AND p.created_at > m.created_at))
+               ) AS da_co_phan_hoi
+        FROM conversations c
+        JOIN messages m ON m.conversation_id = c.id
+        WHERE c.account_id = $1 AND c.external_id = $2
+          AND m.role = 'customer' AND m.provider_message_id = $3
+        ORDER BY m.created_at DESC LIMIT 1
+        """, m.account_id, m.conversation_ref, m.dedupe_key)
+    if r is None:
+        return False
+    if r["da_co_phan_hoi"] or r["status"] == "escalated" or r["mode"] == "human":
+        return False
+    await db.execute(
+        "UPDATE conversations SET status = 'escalated', mode = 'human', "
+        "version = version + 1, outcome = 'escalated', updated_at = now() "
+        "WHERE id = $1", r["cid"])
+    await db.log_event("tin_vao.chay_lai_chuyen_nguoi", ref_id=r["cid"],
+                       tin_vao_id=str(id_), kenh=m.channel)
+    from agent.core import cong_viec
+    await cong_viec.tao_tu_chuyen_nguoi(r["cid"], ly_do=LY_DO_CHAY_LAI)
+    log.warning("tin_vao %s: chạy lại không có phản hồi — đã chuyển người", id_)
+    return True
 
 
 async def quet_mot_luot(gioi_han: int = 20) -> dict[str, int]:

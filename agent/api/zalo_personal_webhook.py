@@ -11,8 +11,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
+from agent import db
 from agent.omnichannel import hop_thu_ben
-from agent.channels.zalo_personal import ZaloPersonalAdapter
+from agent.channels.zalo_personal import THREAD_NHOM, ZaloPersonalAdapter, ly_do_bo_qua
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
 from agent.omnichannel.accounts import AccountStatus, Channel
@@ -92,6 +93,38 @@ def verify_sidecar_callback(
     for key, seen_at in list(seen_nonces.items()):
         if current - seen_at > 120:
             seen_nonces.pop(key, None)
+    return True
+
+
+# Lần cuối đã ghi "bỏ tin nhóm" cho từng (tài khoản, nhóm) — theo monotonic.
+_DA_GHI_NHOM: dict[tuple[str, str], float] = {}
+GHI_BO_NHOM_MOI_GIAY = 3600
+
+
+async def _ghi_bo_tin_nhom(account_id: UUID, nhom: str, *,
+                           bay_gio: float | None = None) -> bool:
+    """
+    Ghi sự kiện bỏ tin nhóm — tối đa MỘT lần mỗi giờ mỗi nhóm.
+
+    VÌ SAO BỎ: nick bán hàng nằm sẵn trong nhóm bạn bè, nhóm lớp. Đo trên
+    CSDL thật: tin nhóm khoá luận vào thẳng hộp thư và AI soạn câu tư vấn
+    mỹ phẩm cho cả nhóm. Muốn nhận thì bật ZALO_NHAN_TIN_NHOM có chủ ý.
+
+    VÌ SAO THƯA: nhóm sôi nổi có hàng trăm tin một giờ; ghi từng tin là
+    nhấn chìm bảng sự kiện. Một dòng mỗi giờ đủ để ai thắc mắc "sao nhóm X
+    không vào" tìm được câu trả lời.
+    """
+    nay = time.monotonic() if bay_gio is None else bay_gio
+    khoa = (str(account_id), nhom)
+    truoc = _DA_GHI_NHOM.get(khoa)
+    if truoc is not None and nay - truoc < GHI_BO_NHOM_MOI_GIAY:
+        return False
+    _DA_GHI_NHOM[khoa] = nay
+    if len(_DA_GHI_NHOM) > 5000:        # không phình RAM vô hạn
+        _DA_GHI_NHOM.clear()
+        _DA_GHI_NHOM[khoa] = nay
+    await db.log_event("zalo_personal.bo_tin_nhom", ref_id=account_id,
+                       nhom=nhom[:64], cau_hinh="ZALO_NHAN_TIN_NHOM=false")
     return True
 
 
@@ -180,9 +213,19 @@ async def zalo_personal_callback(
         message = adapter.parse(payload)
         await adapter.aclose()
         if message is None:
+            # KHÔNG bỏ câm. Đây đúng là chỗ ảnh khách gửi từng biến mất
+            # (sidecar không đọc ảnh → tin rỗng → parse None → `skipped`):
+            # 80 tin, 0 tệp, không một dòng nhật ký. Trả 200 vẫn đúng — gửi
+            # lại cũng ra None — nhưng phải để lại dấu vết.
+            await db.log_event("zalo_personal.tin_bo_qua", ref_id=account_id,
+                               **ly_do_bo_qua(payload))
             return {"ok": True, "skipped": True}
         if la_tin_tu_chinh_minh(message.customer_ref, account.external_account_id):
             return {"ok": True, "skipped": "tin_tu_chinh_minh"}
+        if (int((message.meta or {}).get("thread_type") or 0) == THREAD_NHOM
+                and not settings.zalo_nhan_tin_nhom):
+            await _ghi_bo_tin_nhom(account_id, message.conversation_ref)
+            return {"ok": True, "skipped": "tin_nhom"}
         await hop_thu_ben.nhan(message, tasks)
         return {"ok": True, "queued": 1}
     raise HTTPException(422, "Loại callback sidecar không được hỗ trợ")

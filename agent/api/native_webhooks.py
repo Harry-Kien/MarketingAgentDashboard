@@ -69,6 +69,22 @@ class MetaWebhookDispatcher:
     def __init__(self, accounts: AccountLookup, factory: AdapterFactory) -> None:
         self._accounts = accounts
         self._factory = factory
+        # Sự kiện đổi quyền hội thoại (Handover Protocol) đọc được ở lần
+        # dispatch gần nhất: [(account_id, {"khach", "loai", "ve_tay_ta"})].
+        #
+        # VÌ SAO: đường native trước đây chỉ đọc TIN, bỏ qua sự kiện bàn
+        # giao — nhân viên bấm "Xong" trong Page Inbox, Meta trả quyền về,
+        # không ai nghe, hội thoại kẹt `human` vĩnh viễn. Trả kèm qua thuộc
+        # tính (dispatcher dựng mới mỗi request) để giữ nguyên chữ ký
+        # `dispatch() -> list[tin]` mà các chỗ gọi khác đang dùng.
+        self.ban_giao: list[tuple[Any, dict]] = []
+
+    def _gom_ban_giao(self, adapter, payload: dict) -> None:
+        doc = getattr(adapter, "doc_ban_giao", None)
+        if doc is None:
+            return              # Instagram/WhatsApp: không có Handover ở đây
+        for bg in doc(payload):
+            self.ban_giao.append((adapter.account_id, bg))
 
     async def dispatch(
         self,
@@ -96,7 +112,9 @@ class MetaWebhookDispatcher:
             raise HTTPException(401, "Chữ ký webhook Meta không hợp lệ")
 
         messages = []
+        self.ban_giao = []
         for adapter in adapters:
+            self._gom_ban_giao(adapter, payload)
             phan = adapter.parse_nhieu(payload)
             await self._lam_giau_ten(adapter, phan)
             messages.extend(phan)
@@ -169,6 +187,8 @@ class MetaWebhookDispatcher:
             raw_body, signature
         ):
             raise HTTPException(401, "Chữ ký webhook Meta không hợp lệ")
+        self.ban_giao = []
+        self._gom_ban_giao(adapter, payload)
         return adapter.parse_nhieu(payload)
 
 
@@ -220,14 +240,31 @@ async def native_meta_webhook(
         payload: dict[str, Any] = json.loads(raw_body)
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(400, "Payload Meta không phải JSON") from exc
-    messages = await _dispatcher().dispatch(
+    dispatcher = _dispatcher()
+    messages = await dispatcher.dispatch(
         raw_body=raw_body,
         signature=request.headers.get("x-hub-signature-256", ""),
         payload=payload,
     )
+    await _ap_ban_giao(dispatcher)
     for message in messages:
         await hop_thu_ben.nhan(message, tasks)
     return JSONResponse({"ok": True, "queued": len(messages)})
+
+
+async def _ap_ban_giao(dispatcher: MetaWebhookDispatcher) -> None:
+    """
+    Áp sự kiện bàn giao TRƯỚC khi xếp tin, và chờ nó xong ngay trong request.
+
+    Trước tin: lô vừa báo "quyền về tay ta" vừa mang tin mới thì tin ấy phải
+    được agent trả lời, không rơi vào nhánh `human` của trạng thái cũ.
+    Trong request (không BackgroundTasks): CSDL hỏng thì trả 5xx để Meta gửi
+    lại cả lô — tin trong lô chống trùng theo khoá, gửi lại vô hại.
+    """
+    from agent.omnichannel.ban_giao_meta import ap_dung_ban_giao
+
+    for account_id, bg in dispatcher.ban_giao:
+        await ap_dung_ban_giao(bg, account_id, boi="meta_native")
 
 
 @router.get("/meta")
@@ -274,12 +311,14 @@ async def native_meta_account_webhook(
         payload: dict[str, Any] = json.loads(raw_body)
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(400, "Payload Meta không phải JSON") from exc
-    messages = await _dispatcher().dispatch_account(
+    dispatcher = _dispatcher()
+    messages = await dispatcher.dispatch_account(
         account_id=account_id,
         raw_body=raw_body,
         signature=request.headers.get("x-hub-signature-256", ""),
         payload=payload,
     )
+    await _ap_ban_giao(dispatcher)
     for message in messages:
         await hop_thu_ben.nhan(message, tasks)
     return JSONResponse({"ok": True, "queued": len(messages)})

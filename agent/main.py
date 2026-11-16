@@ -318,11 +318,14 @@ async def giu_phien_zalo_loop() -> None:
 
     # Tài khoản đã báo "lệch bí mật" trong lần chạy này — xem bao_phien_hong.
     da_bao_lech: set = set()
+    # Lần cuối báo "sidecar không tới" của từng tài khoản — tối đa 1 lần/giờ.
+    da_bao_khong_toi: dict = {}
 
     async def _bao(account_id, ly_do) -> None:
         await bao_phien_hong(
             repository, account_id, ly_do, da_bao_lech=da_bao_lech,
-            bao_dong=canh_gac.bao_dong, ghi_nhat_ky=db.log_event)
+            bao_dong=canh_gac.bao_dong, ghi_nhat_ky=db.log_event,
+            da_bao_khong_toi=da_bao_khong_toi)
 
     # Dựng MỘT lần ngoài vòng lặp: repository không giữ trạng thái, nó chỉ
     # bọc pool dùng chung. Dựng lại mỗi nhịp còn khiến closure `_mo` bắt biến
@@ -997,29 +1000,14 @@ async def _ban_giao_messenger(bg: dict, account_id=None) -> None:
     `escalated` vĩnh viễn — khách nhắn tiếp không ai trả lời, vì nhân viên
     tưởng đã xong còn agent thì tưởng vẫn có người phụ trách. Cả hai bên đều
     tin là bên kia đang lo, và đó là cách khách bị bỏ rơi mà không ai sai.
+
+    Nhận lại đặt CẢ `status` lẫn `mode` về 'auto' — xem
+    agent/omnichannel/ban_giao_meta.py (dùng chung với đường native).
     """
-    conv = await db.fetchrow(
-        "SELECT id, status FROM conversations WHERE account_id = $1 "
-        "AND external_id = $2",
-        account_id or channels.get("messenger").account_id,
-        bg["khach"],
-    )
-    if conv is None:
-        return
-    if bg["ve_tay_ta"]:
-        await db.execute(
-            "UPDATE conversations SET status = 'auto', updated_at = now() "
-            "WHERE id = $1", conv["id"],
-        )
-        await db.log_event("banGiao.nhan_lai", ref_id=conv["id"], boi="messenger")
-    else:
-        await db.execute(
-            "UPDATE conversations SET status = 'escalated', mode = 'human', "
-            "version = version + 1, updated_at = now() "
-            "WHERE id = $1", conv["id"],
-        )
-        await db.log_event("banGiao.trao_di", ref_id=conv["id"],
-                           loai=bg["loai"])
+    from agent.omnichannel.ban_giao_meta import ap_dung_ban_giao
+
+    await ap_dung_ban_giao(
+        bg, account_id or channels.get("messenger").account_id, boi="messenger")
 
 
 @app.post("/webhook")

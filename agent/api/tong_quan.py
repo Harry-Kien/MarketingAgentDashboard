@@ -3,6 +3,7 @@ API tổng quan hệ thống: sức khoẻ, số liệu tổng, chi phí, công 
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import (APIRouter, Depends)
@@ -14,6 +15,7 @@ from agent.config import settings
 
 from .phu_thuoc import (
     _num,
+    _xem_tat_ca_kenh,
     can_quyen,
 )
 
@@ -58,30 +60,49 @@ async def suc_khoe() -> dict:
 async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
     since = datetime.now(timezone.utc) - timedelta(hours=24)
 
+    # PHẠM VI KÊNH — cùng mệnh đề với `GET /conversations` (hoi_thoai_cu.py)
+    # và `inbox.py`. Trước đây overview không lọc: nhân viên chỉ được giao
+    # kênh A vẫn thấy số chờ của mọi kênh, và băng ca trực (tooltip) hiện
+    # TÊN KHÁCH kênh B — đúng thứ màn inbox đã giấu. Một lớp lọc chỉ chặn ở
+    # danh sách mà rò ở ô tổng quan là lớp sơn.
+    #
+    # Hai tham số: xem mọi kênh, người hỏi. Dùng chung cho đếm hội thoại, đếm
+    # tin agent và băng ca trực.
+    xem_het = _xem_tat_ca_kenh(_quyen)
+    nguoi_id = uuid.UUID(str(_quyen["id"]))
+    pham_vi = (
+        "($%d OR EXISTS (SELECT 1 FROM account_memberships am "
+        "WHERE am.account_id = c.account_id AND am.user_id = $%d))"
+    )
+
     conv = await db.fetchrow(
-        """
+        f"""
         SELECT count(*)                                              AS total,
                count(*) FILTER (WHERE status = 'auto')               AS handled,
                count(*) FILTER (WHERE status = 'escalated')          AS escalated,
                count(*) FILTER (WHERE status = 'assist')             AS waiting,
                coalesce(sum(cost_usd), 0)                            AS cost
         -- hội thoại phòng thử không phải khách
-        FROM conversations WHERE updated_at >= $1 AND channel <> 'phong_thu'
+        FROM conversations c WHERE updated_at >= $1 AND channel <> 'phong_thu'
+          AND {pham_vi % (2, 3)}
         """,
-        since,
+        since, xem_het, nguoi_id,
     ) or {}
 
     msg = await db.fetchrow(
-        """
+        f"""
         SELECT count(*)                                           AS replies,
                count(*) FILTER (WHERE grounded IS TRUE)            AS grounded,
                coalesce(avg(latency_ms), 0)                        AS latency,
                coalesce(sum(tokens_in), 0)                         AS tin,
                coalesce(sum(tokens_out), 0)                        AS tout,
                coalesce(sum(cache_read), 0)                        AS cached
-        FROM messages WHERE role = 'agent' AND created_at >= $1
+        FROM messages m WHERE m.role = 'agent' AND m.created_at >= $1
+          AND ($2 OR EXISTS (SELECT 1 FROM conversations c
+                             WHERE c.id = m.conversation_id
+                               AND {pham_vi % (2, 3)}))
         """,
-        since,
+        since, xem_het, nguoi_id,
     ) or {}
 
     vid = await db.fetchrow(
@@ -98,14 +119,16 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
 
     # Băng ca trực — signature của dashboard.
     tape = await db.fetch(
-        """
+        f"""
         SELECT id, status, outcome, customer_name, updated_at, cost_usd, msg_count
-        FROM conversations
+        FROM conversations c
         -- hội thoại phòng thử không phải khách
         WHERE channel <> 'phong_thu'
+          AND {pham_vi % (1, 2)}
         ORDER BY updated_at DESC
         LIMIT 72
-        """
+        """,
+        xem_het, nguoi_id,
     )
 
     # TIN CHẾT — không giới hạn 24 giờ, có chủ ý.

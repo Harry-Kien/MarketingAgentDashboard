@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent.api.inbox import get_routing_service, router
+from agent.api.inbox import get_buoc_gianh_quyen_meta, get_routing_service, router
 from agent.api.routes import nguoi_da_dang_nhap
 from conftest import nguoi_thu
 from agent.omnichannel.routing import ConversationRoutingState
@@ -37,6 +37,11 @@ def _client():
     user = nguoi_thu("hoi_thoai.doc", "hoi_thoai.nhan", id=uuid4())
     app.dependency_overrides[nguoi_da_dang_nhap] = lambda: user
     app.dependency_overrides[get_routing_service] = lambda: service
+    # Router trần, không CSDL: bước giành quyền Meta có test riêng ở
+    # test_ban_giao_messenger.py.
+    async def _khong_gianh(_cid):
+        return ""
+    app.dependency_overrides[get_buoc_gianh_quyen_meta] = lambda: _khong_gianh
     return TestClient(app), service, user
 
 

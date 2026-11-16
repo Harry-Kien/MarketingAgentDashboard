@@ -97,11 +97,39 @@ def test_refresh_van_la_vong_sau_giay():
     )
 
 
+def _ham_phu_dung_o_nhap() -> set[str]:
+    """
+    Hàm phụ kiểu `oNhapApi`, `oNhapCauHinh`, `oTruongKhach`: trả chuỗi HTML
+    chứa ô nhập để hàm nạp nhúng vào.
+
+    ĐO ĐƯỢC 16.11.2026: bộ đo dưới chỉ tìm `<input` NGAY trong thân hàm nạp,
+    nên `loadCaiDatApi` và `loadCauHinh` — dựng ô qua hàm phụ — lọt qua: khoá
+    API đang dán bị xoá mỗi 6 giây rồi toast xanh "Đã lưu 0 khoá", mà test
+    này vẫn xanh. Quy ước đặt tên `o` + chữ hoa là của chính mã này.
+    """
+    ra = set()
+    for l in DONG:
+        m = re.match(r"function (o[A-Z][A-Za-z0-9_]*)\(", l)
+        if m and (than := _than_ham(m.group(1))) and O_NHAP.search(than):
+            ra.add(m.group(1))
+    return ra
+
+
+def test_bo_do_thay_ham_phu_dung_o_nhap():
+    """Đổi tên hàm phụ là bộ đo dưới mù lại — đỏ ở đây thay vì xanh giả."""
+    assert {"oNhapApi", "oNhapCauHinh"} <= _ham_phu_dung_o_nhap()
+
+
 def test_moi_ham_chay_dinh_ky_deu_giu_chu_dang_go():
+    phu = _ham_phu_dung_o_nhap()
     hong = []
     for ten in sorted(_ham_chay_dinh_ky()):
         than = _than_ham(ten)
-        if than is None or ".innerHTML" not in than or not O_NHAP.search(than):
+        if than is None or ".innerHTML" not in than:
+            continue
+        dung_o = O_NHAP.search(than) or any(
+            re.search(r"\b" + p + r"\(", than) for p in phu if p != ten)
+        if not dung_o:
             continue
         if ten in MIEN_TRU or any(d in than for d in DAU_HIEU_GIU):
             continue

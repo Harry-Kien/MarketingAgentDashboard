@@ -210,21 +210,24 @@ async function loadDinhTuyen() {
 
   const oDoi = dinhTuyen.doi
     .map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
-  $("#dtChonDoi").innerHTML = oDoi;
-  $("#dtLuatDoi").innerHTML = oDoi;
+  /* ganLuaChon, KHÔNG gán innerHTML trần: hàm này chạy lại mỗi 6 giây, và
+     gán trần là ô chọn nhảy về đầu giữa lúc người ta đang chọn — bấm Thêm
+     là thêm NHẦM người vào NHẦM đội, không lỗi nào hiện ra. */
+  ganLuaChon($("#dtChonDoi"), oDoi);
+  ganLuaChon($("#dtLuatDoi"), oDoi);
   const dtThieu = (ten) => dinhTuyen.loi.includes(ten)
     ? `<option value="">— không đọc được danh sách ${ten}, thiếu quyền? —</option>`
     : "";
-  $("#dtChonNguoi").innerHTML = dtThieu("nhân viên") + dinhTuyen.nguoi
+  ganLuaChon($("#dtChonNguoi"), dtThieu("nhân viên") + dinhTuyen.nguoi
     .filter((n) => !n.khoa)
     .map((n) => `<option value="${esc(n.id)}">${esc(n.ho_ten || n.ten_dang_nhap)}</option>`)
-    .join("");
+    .join(""));
   const oKenh = '<option value="">mọi kênh</option>' + dtThieu("kênh")
     + dinhTuyen.kenh
       .map((k) => `<option value="${esc(k.id)}">${esc(k.display_name || k.channel)}</option>`)
       .join("");
-  $("#dtChonKenh").innerHTML = oKenh;
-  $("#dtSlaKenh").innerHTML = oKenh;
+  ganLuaChon($("#dtChonKenh"), oKenh);
+  ganLuaChon($("#dtSlaKenh"), oKenh);
 }
 
 /* Gửi form rồi tải lại. Gom vào một hàm vì bốn form khác nhau đúng ở thân

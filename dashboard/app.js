@@ -27,7 +27,14 @@ async function api(path, options = {}) {
    * đăng nhập lại — màn đăng nhập vẫn ẩn. Họ nhìn một dashboard chết trong
    * khi khách vẫn đang nhắn tới.
    */
-  if (res.status === 401) {
+  /* Riêng lời gọi ĐĂNG NHẬP: 401 ở đó không có nghĩa "phiên hết hạn" mà là
+   * "cần mã 2FA" / "mã sai" / "sai mật khẩu" — máy chủ trả cả ba bằng 401,
+   * kèm nội dung khác nhau. Đi nhánh hết phiên ở đây thì nội dung bị vứt
+   * trước khi đọc: ô mã 2FA không bao giờ hiện, ai bật 2FA là tự khoá mình
+   * ra ngoài, và người gõ sai mật khẩu được bảo "phiên đã hết hạn". Nên
+   * 401 của /dang-nhap rơi xuống nhánh lỗi thường bên dưới, nơi JSON lỗi
+   * được đọc và gắn vào `chi_tiet`. */
+  if (res.status === 401 && path !== "/dang-nhap") {
     $("#cong")?.classList.remove("is-off");
     // Dừng vòng làm mới: không dừng thì cứ 6 giây một toast lỗi, và mỗi
     // lần là một request vô ích tới máy chủ.
@@ -58,6 +65,25 @@ async function api(path, options = {}) {
     throw err;
   }
   return res.status === 204 ? null : res.json();
+}
+
+/* Gán lại danh sách <option> cho một <select> mà KHÔNG làm mất lựa chọn.
+ *
+ * Vòng làm mới 6 giây dựng lại option của các ô chọn (đội, nhân viên, kênh,
+ * khách để gộp). Gán `innerHTML` trần thì ô nhảy về option đầu: người vận
+ * hành chọn "Đội Zalo" + "Lan", đứng đọc lại vài giây, bấm Thêm — và người
+ * ĐẦU danh sách vào đội ĐẦU danh sách. Không lỗi, không toast, chỉ là dữ
+ * liệu sai lặng lẽ.
+ *
+ * Danh sách không đổi thì không đụng gì cả (ô đang mở dở không bị đóng);
+ * đổi thì gán lại rồi trả giá trị cũ nếu nó vẫn còn trong danh sách mới. */
+function ganLuaChon(sel, html) {
+  if (!sel) return;
+  if (sel._nguonLuaChon === html) return;
+  const cu = sel.value;
+  sel.innerHTML = html;
+  sel._nguonLuaChon = html;
+  if ([...sel.options].some((o) => o.value === cu)) sel.value = cu;
 }
 
 function hanDoc(iso) {
@@ -432,21 +458,24 @@ async function loadDinhTuyen() {
 
   const oDoi = dinhTuyen.doi
     .map((d) => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
-  $("#dtChonDoi").innerHTML = oDoi;
-  $("#dtLuatDoi").innerHTML = oDoi;
+  /* ganLuaChon, KHÔNG gán innerHTML trần: hàm này chạy lại mỗi 6 giây, và
+     gán trần là ô chọn nhảy về đầu giữa lúc người ta đang chọn — bấm Thêm
+     là thêm NHẦM người vào NHẦM đội, không lỗi nào hiện ra. */
+  ganLuaChon($("#dtChonDoi"), oDoi);
+  ganLuaChon($("#dtLuatDoi"), oDoi);
   const dtThieu = (ten) => dinhTuyen.loi.includes(ten)
     ? `<option value="">— không đọc được danh sách ${ten}, thiếu quyền? —</option>`
     : "";
-  $("#dtChonNguoi").innerHTML = dtThieu("nhân viên") + dinhTuyen.nguoi
+  ganLuaChon($("#dtChonNguoi"), dtThieu("nhân viên") + dinhTuyen.nguoi
     .filter((n) => !n.khoa)
     .map((n) => `<option value="${esc(n.id)}">${esc(n.ho_ten || n.ten_dang_nhap)}</option>`)
-    .join("");
+    .join(""));
   const oKenh = '<option value="">mọi kênh</option>' + dtThieu("kênh")
     + dinhTuyen.kenh
       .map((k) => `<option value="${esc(k.id)}">${esc(k.display_name || k.channel)}</option>`)
       .join("");
-  $("#dtChonKenh").innerHTML = oKenh;
-  $("#dtSlaKenh").innerHTML = oKenh;
+  ganLuaChon($("#dtChonKenh"), oKenh);
+  ganLuaChon($("#dtSlaKenh"), oKenh);
 }
 
 /* Gửi form rồi tải lại. Gom vào một hàm vì bốn form khác nhau đúng ở thân
@@ -909,9 +938,54 @@ function wireConvRows(scope) {
   $$(`${scope} [data-conv]`).forEach((el) =>
     el.addEventListener("click", () => {
       state.openConv = el.dataset.conv;
+      // Đánh dấu do NGƯỜI bấm, không phải do vòng làm mới vẽ lại: chỉ cú
+      // bấm mới được kéo màn hình xuống khung chi tiết (xem loadThread).
+      state.cuonToiChiTiet = true;
       doiMan("hoithoai");
     })
   );
+}
+
+/* Khổ ≤1180px (`app.css`: `.split, .convo` thành MỘT cột) khung chi tiết
+ * nằm DƯỚI cả danh sách hội thoại. Bấm một dòng thì nội dung thay đổi ở
+ * tận cuối trang, ngoài tầm nhìn — người trực thấy "bấm mà không có gì" và
+ * tưởng nút hỏng. Chỉ cuộn khi bố cục đúng là một cột: ở khổ rộng hai khung
+ * nằm cạnh nhau, cuộn là giật màn hình vô cớ. */
+const KHO_HEP_HOI_THOAI = "(max-width: 1180px)";
+
+function cuonToiChiTietNeuHep() {
+  if (!state.cuonToiChiTiet) return;
+  state.cuonToiChiTiet = false;
+  if (!window.matchMedia || !window.matchMedia(KHO_HEP_HOI_THOAI).matches) return;
+  $("#convdetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* Báo máy chủ "người này đã đọc tới đây".
+ *
+ * Số "chưa đọc" trên mỗi dòng tính từ `conversation_reads`, và bảng ấy chỉ
+ * được ghi qua `POST /inbox/conversations/{id}/read`. Trước đây dashboard
+ * KHÔNG gọi route này ở đâu cả: con số chỉ tăng, không bao giờ giảm, và một
+ * huy hiệu luôn đỏ là huy hiệu người ta thôi nhìn — đúng lúc nó có ý nghĩa.
+ *
+ * Gọi lại khi tin KHÁCH mới nhất đổi (khách nhắn thêm trong hội thoại đang
+ * mở), không gọi mỗi 6 giây. Chỉ gọi khi tab đang hiện: tab nằm nền thì
+ * người trực chưa đọc gì cả, đánh dấu "đã đọc" lúc ấy là nói dối. Hỏng thì
+ * KHÔNG toast (vòng 6 giây sẽ bắn toast mãi) nhưng ghi console và không nhớ
+ * mốc, để lần vẽ sau thử lại. */
+function danhDauDaDoc(id, messages) {
+  const tinKhach = (messages || []).filter((m) => m.role === "customer");
+  if (!tinKhach.length) return;
+  const moc = String(tinKhach[tinKhach.length - 1].id);
+  state.docDenTin = state.docDenTin || {};
+  if (state.docDenTin[id] === moc) return;
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  state.docDenTin[id] = moc;
+  api(`/inbox/conversations/${id}/read`, { method: "POST" })
+    .then(() => $(`#convlist [data-conv="${id}"] .unread`)?.remove())
+    .catch((e) => {
+      delete state.docDenTin[id];
+      console.warn("Không đánh dấu đã đọc được hội thoại", id, e);
+    });
 }
 
 $$("#convfilter .chip").forEach((chip) =>
@@ -1052,6 +1126,28 @@ async function loadThread(id) {
 
   const taken = c.mode === "human" || c.status === "escalated";
 
+  /* AI giữ hay NGƯỜI giữ — và người nào.
+   *
+   * Trước đây chỉ có một nút lật theo `taken`: hội thoại agent tự chuyển
+   * người (mode human, CHƯA giao cho ai) hiện "Kết thúc tiếp quản". Nhân
+   * viên thường bấm thì 403 (máy chủ chỉ cho người đang giữ hoặc quản lý
+   * release); quản lý bấm thì hội thoại bị trả về AI — đúng ngược ý, vì
+   * agent chuyển người chính là vì nó không xử lý được. Không ai bấm được
+   * "Tôi tiếp quản", nên hội thoại cần người nhất lại là cái kẹt nhất.
+   *
+   * `assigned_to` so với `state.toiId` (nạp từ /toi lúc kiểm phiên). Quản
+   * lý = `hoi_thoai.xem_tat_ca`, cùng cờ máy chủ dùng làm `is_admin`. */
+  const nguoiGiu = c.mode === "human" ? (c.assigned_to ? String(c.assigned_to) : "") : "";
+  const laCuaToi = !!nguoiGiu && nguoiGiu === String(state.toiId || "");
+  const quanLy = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.xem_tat_ca"));
+  const nguoiKhacGiu = !!nguoiGiu && !laCuaToi;
+  const hienNhan = !laCuaToi && !nguoiKhacGiu;
+  const hienTra = c.mode === "human" && (laCuaToi || quanLy);
+  const nutGiu = `
+      ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
+      ${nguoiKhacGiu && !quanLy ? '<span class="tag tag--assist">Đồng nghiệp đang giữ</span>' : ""}
+      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}`;
+
   /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
    *
    * Panel này dựng lại bằng `innerHTML` mỗi lần refresh — SSE báo tin mới,
@@ -1094,9 +1190,7 @@ async function loadThread(id) {
       ${c.state !== "resolved" ? `<button type="button" class="btn btn--sm btn--go" id="btn-giai-quyet"
         title="Đóng vụ việc: SLA giải quyết được tính, khách nhắn tiếp thì tự mở lại">Đã giải quyết</button>`
         : '<span class="tag tag--auto">Đã giải quyết</span>'}
-      <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
-        ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
-      </button>
+      ${nutGiu}
     </div>
     <div class="nhanbar">
       ${(state.nhanTheoHoiThoai && state.nhanTheoHoiThoai[id] || []).map((n) =>
@@ -1129,6 +1223,8 @@ async function loadThread(id) {
 
   const thread = $("#thread");
   if (thread) thread.scrollTop = dang_o_day ? thread.scrollHeight : cuon_cu;
+  danhDauDaDoc(id, c.messages);
+  cuonToiChiTietNeuHep();
 
   /* Trả lại bản nháp.
    *
@@ -1307,13 +1403,28 @@ async function loadThread(id) {
     }
   });
 
-  $("#btn-take").addEventListener("click", async () => {
+  $("#btn-take")?.addEventListener("click", async () => {
     try {
-      await api(`/inbox/conversations/${id}/${taken ? "release" : "takeover"}`, {
+      await api(`/inbox/conversations/${id}/takeover`, {
         method: "POST",
-        body: JSON.stringify({ expected_version: c.version || 1, reason: taken ? "Nhân viên kết thúc tiếp quản" : "Nhân viên nhận xử lý" }),
+        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên nhận xử lý" }),
       });
-      toast(taken ? "Đã chuyển về chế độ gợi ý." : "Bạn đang giữ hội thoại này. AI đã dừng gửi.");
+      toast("Bạn đang giữ hội thoại này. AI đã dừng gửi.");
+      refresh();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $("#btn-release")?.addEventListener("click", async () => {
+    try {
+      const r = await api(`/inbox/conversations/${id}/release`, {
+        method: "POST",
+        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên kết thúc tiếp quản" }),
+      });
+      /* `ghi_chu` = đã bật agent trong CSDL nhưng CHƯA giành lại quyền từ
+       * Meta (Messenger) — agent bật mà câm. Phải hiện thành lỗi, không
+       * được nuốt sau một toast xanh. */
+      if (r && r.ghi_chu) toast(r.ghi_chu, true);
+      else toast("Đã chuyển về chế độ gợi ý.");
       refresh();
     } catch (e) { toast(e.message, true); }
   });
@@ -1453,8 +1564,10 @@ function gopDoO(ds) {
   const html = (ds || []).map((c) =>
     `<option value="${esc(c.id)}">${esc(c.display_name || "Khách")}`
     + ` · ${c.contact_point_count || 0} danh tính</option>`).join("");
-  o.innerHTML = html;
-  $("#gopDich").innerHTML = html;
+  // loadContacts() gọi hàm này mỗi 6 giây: gán trần là hai ô nhảy về khách
+  // đầu danh sách giữa lúc người ta đang chọn — rồi gộp nhầm người.
+  ganLuaChon(o, html);
+  ganLuaChon($("#gopDich"), html);
 }
 
 $("#gopMo")?.addEventListener("click", () => {
@@ -1527,9 +1640,18 @@ $("#gopXem")?.addEventListener("click", async () => {
             expected_target_version: d.target.version,
           }),
         });
-        toast(`Đã gộp. Hoàn tác được bằng mã ${r.merge_id.slice(0, 8)}…`);
-        $("#gopKetQua").innerHTML = "";
-        $("#pnGop").classList.add("is-hidden");
+        /* Nút hoàn tác nằm NGAY trong kết quả, giữ đủ merge_id.
+         *
+         * Trước đây chỉ có toast "Hoàn tác được bằng mã 1a2b3c4d…": tám ký
+         * tự đầu không gọi được route nào, toast biến mất sau vài giây, và
+         * dashboard không có chỗ nào để dán mã. Lời hứa "hoàn tác được" là
+         * lời hứa không ai thực hiện nổi — đúng lúc vừa gộp nhầm hai khách. */
+        toast("Đã gộp hai khách.");
+        $("#gopKetQua").innerHTML = `<p class="panel__note">Đã gộp. Gộp nhầm thì
+             hoàn tác ngay ở đây — hội thoại và danh tính trả về khách cũ.</p>
+           <div class="row__nut">
+             <button type="button" class="btn btn--sm" data-merge-undo="${esc(r.merge_id)}">Hoàn tác</button>
+           </div>`;
         await loadContacts();
       } catch (e) {
         toast(e.ma === 409
@@ -1539,6 +1661,34 @@ $("#gopXem")?.addEventListener("click", async () => {
       }
     });
   } catch (e) { toast(e.message, true); }
+});
+
+/* Hoàn tác một lần gộp. Hỏi lý do = bước xác nhận: route bắt buộc `reason`
+ * (ghi vào lịch sử), và một hộp phải điền thì không ai bấm nhầm. */
+$("#gopKetQua")?.addEventListener("click", async (e) => {
+  const nut = e.target.closest("[data-merge-undo]");
+  if (!nut) return;
+  const hoi = await hoiHop({
+    tieu_de: "Hoàn tác lần gộp này?",
+    phu: "Hai khách tách lại như trước khi gộp. Lý do ghi vào lịch sử.",
+    truong: [{ name: "ly_do", label: "Vì sao hoàn tác", value: "Gộp nhầm",
+               required: true, maxlength: 500 }],
+    nut: "Hoàn tác", nguy_hiem: true,
+  });
+  if (!hoi || !hoi.ly_do) return;
+  nut.disabled = true;
+  try {
+    await api(`/contacts/merges/${encodeURIComponent(nut.dataset.mergeUndo)}/undo`, {
+      method: "POST", body: JSON.stringify({ reason: hoi.ly_do }),
+    });
+    toast("Đã hoàn tác — hai khách đã tách lại.");
+    $("#gopKetQua").innerHTML = "";
+    $("#pnGop").classList.add("is-hidden");
+    await loadContacts();
+  } catch (err) {
+    toast(err.message, true);
+    nut.disabled = false;
+  }
 });
 
 async function loadContacts() {
@@ -1759,7 +1909,12 @@ function oTruongKhach(contact) {
 function _khoaO(o) {
   if (o.dataset.tkNhieu) return `tkn:${o.dataset.tkNhieu}:${o.value}`;
   if (o.dataset.tk) return `tk:${o.dataset.tk}`;
+  // Màn Cấu hình: ô không nằm trong form, không có name — thiếu hai dòng
+  // này thì MỌI ô ở đó cùng khoá "khong-form:" và giá trị ô này đè sang ô kia.
+  if (o.dataset.ch) return `ch:${o.dataset.ch}`;
+  if (o.dataset.apiKhoa) return `api:${o.dataset.apiKhoa}`;
   const f = o.closest("form");
+  if (!f && !o.name && o.id) return `id:${o.id}`;
   return `${f ? f.id : "khong-form"}:${o.name || ""}`;
 }
 
@@ -1940,6 +2095,10 @@ async function loadContactDetail(id) {
     try {
       await api(`/contacts/${id}/tags`, { method: "POST", body: JSON.stringify({ tag }) });
       toast("Đã thêm nhãn khách hàng.");
+      /* reset() TRƯỚC khi nạp lại. loadContactDetail giữ mọi ô lệch
+         defaultValue (để không mất chữ đang gõ), nên không reset thì chữ
+         vừa lưu vẫn nằm trong ô — bấm thêm lần nữa là gửi trùng. */
+      form.reset();
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });
@@ -1952,6 +2111,7 @@ async function loadContactDetail(id) {
     try {
       await api(`/contacts/${id}/notes`, { method: "POST", body: JSON.stringify(values) });
       toast("Đã lưu ghi chú nội bộ.");
+      form.reset();   // xem chú thích ở form nhãn: không reset là gửi trùng
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });
@@ -1967,6 +2127,7 @@ async function loadContactDetail(id) {
         body: JSON.stringify({ status: values.status, source: String(values.source || "").trim(), evidence: { captured_via: "dashboard" } }),
       });
       toast("Đã cập nhật consent và nhật ký kiểm toán.");
+      form.reset();   // xem chú thích ở form nhãn: không reset là gửi trùng
       await loadContactDetail(id);
     } catch (error) { toast(error.message, true); }
   });
@@ -2383,8 +2544,16 @@ async function loadVideos() {
 
   $$("[data-vapprove]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
-      toast("Đã duyệt video.");
+      // Không bắt lỗi thì lỗi thành "Uncaught (in promise)" ở console: người
+      // bấm không thấy gì, tưởng đã duyệt, và video nằm chờ mãi.
+      b.disabled = true;
+      try {
+        await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
+        toast("Đã duyệt video.");
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
       loadVideos();
     })
   );
@@ -2636,8 +2805,22 @@ async function loadDocs() {
 
   $$("[data-doc]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await api("/knowledge/" + b.dataset.doc, { method: "DELETE" });
-      toast("Đã xoá tài liệu.");
+      /* Hỏi trước khi xoá: tài liệu tri thức là CĂN CỨ agent dùng để trả
+       * lời. Bấm trượt một nút đỏ là agent mất căn cứ — nó không nói sai,
+       * nó chuyển người ở mọi câu lẽ ra tự trả lời được, và không ai nhìn
+       * ra vì sao. Không có thùng rác để lấy lại. */
+      const ten = b.closest(".row")?.querySelector(".row__title")?.textContent || "tài liệu này";
+      if (!confirm(`Xoá "${ten.trim()}" khỏi kho tri thức?\n\n`
+          + "Agent sẽ không còn dùng nó làm căn cứ trả lời. Không hoàn tác được — "
+          + "muốn có lại phải nạp lại tài liệu.")) return;
+      b.disabled = true;
+      try {
+        await api("/knowledge/" + b.dataset.doc, { method: "DELETE" });
+        toast("Đã xoá tài liệu.");
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
       loadDocs();
     })
   );
@@ -2861,11 +3044,20 @@ function drawDraft(d) {
 
   $("#draftsave").addEventListener("click", async () => {
     const when = $("#draftwhen").value;
-    await api("/posts", { method: "POST", body: JSON.stringify({
-      tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
-      kenh: [d.kenh], video_id: d.video_id || null,
-      lich_dang: when ? new Date(when).toISOString() : null,
-    })});
+    const nut = $("#draftsave");
+    nut.disabled = true;
+    try {
+      await api("/posts", { method: "POST", body: JSON.stringify({
+        tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
+        kenh: [d.kenh], video_id: d.video_id || null,
+        lich_dang: when ? new Date(when).toISOString() : null,
+      })});
+    } catch (e) {
+      // Giữ nguyên bản nháp: xoá nó khi chưa vào hàng đợi là mất bài vừa soạn.
+      toast(e.message, true);
+      nut.disabled = false;
+      return;
+    }
     $("#postdraft").innerHTML = "";
     toast("Đã vào hàng đợi. Bấm Duyệt thì bài mới đi.");
     loadPosts();
@@ -2906,10 +3098,17 @@ async function loadPosts() {
     const bulk = $("#bulkapprove");
     if (bulk) bulk.addEventListener("click", async () => {
       bulk.disabled = true;
-      const r = await api("/posts/approve-all", { method: "POST" });
-      toast(r.bi_chan
-        ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
-        : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
+      // Lỗi mà không bắt thì nút khoá mãi và không ai biết vì sao —
+      // bắt, báo, mở lại nút.
+      try {
+        const r = await api("/posts/approve-all", { method: "POST" });
+        toast(r.bi_chan
+          ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
+          : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
+      } catch (e) {
+        toast(e.message, true);
+        bulk.disabled = false;
+      }
       loadPosts();
     });
   }
@@ -2956,8 +3155,17 @@ async function loadPosts() {
   $$("[data-pkit]").forEach((b) => b.addEventListener("click", () =>
     moKit(b.dataset.pkit, b.closest(".row"))));
   $$("[data-pcancel]").forEach((b) => b.addEventListener("click", async () => {
-    await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
-    toast("Đã huỷ bài."); loadPosts();
+    // Nút Huỷ đứng sát nút Duyệt & đăng: bấm trượt là mất bài đã soạn.
+    if (!confirm("Huỷ bài này?\n\nBài chuyển sang Đã huỷ và không đăng nữa.")) return;
+    b.disabled = true;
+    try {
+      await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
+      toast("Đã huỷ bài.");
+    } catch (e) {
+      toast(e.message, true);
+      b.disabled = false;
+    }
+    loadPosts();
   }));
   // Chưa có quyền Insights API -> nhập tay. Cùng một bảng, cùng một biểu đồ.
   $$("[data-pmetric]").forEach((b) => b.addEventListener("click", async () => {
@@ -4486,6 +4694,39 @@ const ACCOUNT_STATUS_LABEL = {
   reauth_required: "Cần đăng nhập lại", disabled: "Đã tạm ngắt",
 };
 
+function htmlToken(token) {
+  return `<code class="token-hien">${esc(token)}</code>`
+    + '<button type="button" class="btn btn--sm" data-copytoken>Chép</button>';
+}
+
+/* Verify token đã bấm xem của một kênh, nếu còn trong hạn một phút.
+ *
+ * Thẻ kênh dựng lại innerHTML mỗi 6 giây; trước đây chuỗi vừa hiện bị xoá
+ * trước khi người ta kịp chép sang Meta — bấm "Xem" mà không thấy gì lâu
+ * quá vài giây, tưởng nút hỏng. */
+function oTokenDaHien(kenh) {
+  const t = (state.tokenHien || {})[kenh];
+  if (!t) return "";
+  if (Date.now() > t.het) { delete state.tokenHien[kenh]; return ""; }
+  return htmlToken(t.token);
+}
+
+/* Uỷ quyền: nút Chép nằm trong ô bị dựng lại mỗi vòng, gắn trực tiếp là
+   mất listener sau 6 giây. */
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copytoken]");
+  if (!b) return;
+  const chuoi = b.closest(".token-slot")?.querySelector(".token-hien")?.textContent || "";
+  try {
+    await navigator.clipboard.writeText(chuoi);
+    toast("Đã chép. Dán vào ô \"Xác minh mã\" bên Meta.");
+  } catch {
+    // Trình duyệt chặn clipboard khi trang không chạy HTTPS —
+    // chuỗi vẫn hiện trên màn hình nên người dùng bôi đen chép tay.
+    toast("Không chép tự động được. Bôi đen chuỗi rồi chép tay.", true);
+  }
+});
+
 async function loadKetNoi() {
   const accounts = await api("/channel-accounts");
   const grouped = Object.fromEntries(Object.keys(CHANNEL_LABEL).map((key) => [key, []]));
@@ -4517,7 +4758,7 @@ async function loadKetNoi() {
             <button type="button" class="btn btn--sm" data-verifytoken-kenh="${items[0].id}">Xem verify token</button>
             ${cho_xac_minh ? `<button type="button" class="btn btn--sm btn--go" data-subwebhook-all="${channel}">Nhận tin cho tất cả (${cho_xac_minh})</button>` : ""}
           </span>
-          <div class="token-slot" data-tokenslot="${items[0].id}"></div>` : ""}
+          <div class="token-slot" data-tokenslot-kenh="${esc(channel)}">${oTokenDaHien(channel)}</div>` : ""}
       </div>` : "";
 
       return `<section class="channel-card">
@@ -4801,23 +5042,24 @@ function lyDoKetNoi(kq) {
     // Verify token dùng CHUNG cho mọi Trang của cùng một app — nên nút ở mức
     // kênh chỉ cần hỏi một tài khoản bất kỳ trong kênh đó.
     const id = button.dataset.verifytoken || button.dataset.verifytokenKenh;
-    const cho = document.querySelector(`[data-tokenslot="${id}"]`);
+    /* Ô của nút mức KÊNH là ô mức kênh, tìm theo thẻ chứa nút. Trước đây ô
+       này mang `data-tokenslot` TRÙNG id với ô Sức khoẻ của Trang đầu tiên,
+       nên hai thứ ghi đè lên nhau tuỳ cái nào đứng trước trong DOM. */
+    const cho = button.dataset.verifytokenKenh
+      ? button.closest(".channel-card")?.querySelector("[data-tokenslot-kenh]")
+      : document.querySelector(`[data-tokenslot="${id}"]`);
     button.disabled = true;
     try {
       const r = await api(`/channel-accounts/${id}/verify-token`);
-      if (cho) {
-        cho.innerHTML = `<code class="token-hien">${esc(r.verify_token)}</code>`
-          + '<button type="button" class="btn btn--sm" data-copytoken>Chép</button>';
-        cho.querySelector("[data-copytoken]").addEventListener("click", async () => {
-          try {
-            await navigator.clipboard.writeText(r.verify_token);
-            toast("Đã chép. Dán vào ô \"Xác minh mã\" bên Meta.");
-          } catch {
-            // Trình duyệt chặn clipboard khi trang không chạy HTTPS —
-            // chuỗi vẫn hiện trên màn hình nên người dùng bôi đen chép tay.
-            toast("Không chép tự động được. Bôi đen chuỗi rồi chép tay.", true);
-          }
-        });
+      const kenh = cho && cho.dataset.tokenslotKenh;
+      if (kenh) {
+        // Nhớ qua vòng làm mới 6 giây (thẻ dựng lại innerHTML) — nhưng chỉ
+        // một phút: chuỗi bí mật không được nằm sẵn trên màn hình mãi.
+        state.tokenHien = state.tokenHien || {};
+        state.tokenHien[kenh] = { token: r.verify_token, het: Date.now() + 60000 };
+        cho.innerHTML = oTokenDaHien(kenh);
+      } else if (cho) {
+        cho.innerHTML = htmlToken(r.verify_token);
       }
     } catch (e) {
       toast(e.message, true);
@@ -5146,8 +5388,14 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
     return;
   }
   try {
-    await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
-    toast("Đã lưu và xác minh xong với provider.");
+    /* `/verify` trả 200 kèm `{ok:false}` khi provider từ chối — không ném
+     * lỗi. Không đọc `ok` thì credential sai được báo XANH "xác minh xong":
+     * xanh giả, lộ ra nhiều ngày sau khi khách nhắn mà không ai nhận. Cùng
+     * cách đọc với nút "Xác minh provider" trên thẻ tài khoản. */
+    const kq = await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
+    toast(kq && kq.ok ? "Đã lưu và xác minh xong với provider."
+                      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
+          !(kq && kq.ok));
   } catch (e) {
     toast("Đã lưu, nhưng provider từ chối: " + e.message + " — kiểm lại credential.", true);
   }
@@ -6396,12 +6644,21 @@ function oNhapCauHinh(m) {
     ${m.don_vi ? `<span class="row__sub">${esc(m.don_vi)}</span>` : ""}`;
 }
 
-async function loadCauHinh() {
+/* `giuDangGo`: vòng làm mới 6 giây gọi hàm này với mặc định (giữ). Ô số
+ * gửi đi ở sự kiện `change` — tức khi rời ô — nên giữa lúc gõ "0.7" và lúc
+ * rời ô, một nhịp làm mới trả ô về giá trị cũ: người ta gõ xong, bấm ra
+ * ngoài, và thứ được lưu là con số họ KHÔNG gõ.
+ *
+ * Sau khi lưu (hoặc lưu hỏng) thì gọi với `false`: lúc đó thứ phải hiện là
+ * thứ máy chủ đang chạy, không phải thứ người ta vừa gõ mà bị từ chối. */
+async function loadCauHinh(giuDangGo = true) {
   const d = await api("/cau-hinh");
   const lech = d.muc.filter((m) => m.lech_mac_dinh).length;
   $("#c-cauhinh").textContent = lech ? `${lech} lệch` : "";
 
-  $("#cauhinh-ds").innerHTML = d.muc.map((m) => `<div class="row">
+  const oGoc = $("#cauhinh-ds");
+  const dangGo = giuDangGo ? _luuDangGo(oGoc) : null;
+  oGoc.innerHTML = d.muc.map((m) => `<div class="row">
       <span class="row__flag ${m.lech_mac_dinh ? "row__flag--halt" : "row__flag--auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(m.nhan)}
@@ -6413,6 +6670,7 @@ async function loadCauHinh() {
       </span>
       <span class="row__side">${oNhapCauHinh(m)}</span>
     </div>`).join("");
+  if (dangGo) _traDangGo(oGoc, dangGo);
 
   await loadLichSuCauHinh();
 }
@@ -6472,10 +6730,10 @@ document.addEventListener("change", async (e) => {
       body: JSON.stringify({ [el.dataset.ch]: gt }),
     });
     toast("Đã lưu — có hiệu lực từ tin nhắn kế tiếp");
-    await loadCauHinh();
+    await loadCauHinh(false);
   } catch (err) {
     toast(err.message, true);
-    await loadCauHinh();
+    await loadCauHinh(false);
   }
 });
 
@@ -6485,7 +6743,7 @@ $("#cauhinh-macdinh")?.addEventListener("click", async () => {
   try {
     await api("/cau-hinh/mac-dinh", { method: "POST" });
     toast("Đã quay về mặc định");
-    await loadCauHinh();
+    await loadCauHinh(false);
   } catch (err) { toast(err.message, true); }
 });
 
@@ -6738,7 +6996,16 @@ async function loadCaiDatApi() {
   $("#api-vault").textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
   const nhom = {};
   for (const m of d.muc) (nhom[m.nhom] ||= []).push(m);
-  $("#api-nhom").innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
+  /* Giữ khoá đang dán dở qua mỗi lần dựng lại.
+   *
+   * Hàm này nằm trong vòng làm mới 6 giây. Trước đây khoá API dán vào ô
+   * password, URL, ô chọn LLM_PROVIDER đều bị xoá sau tối đa 6 giây; người
+   * ta bấm Lưu và nhận toast XANH "Đã lưu 0 khoá" — xanh giả, vì không có
+   * gì được lưu cả. Ô bí mật không có `value` từ máy chủ, nên bất kỳ chữ
+   * nào trong đó đều là người dùng gõ — `_oDaSua` bắt đúng điều đó. */
+  const oGoc = $("#api-nhom");
+  const dangGo = _luuDangGo(oGoc);
+  oGoc.innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
     <div class="row" data-api-nhom="${ma}">
       <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
       <span class="row__body">
@@ -6760,6 +7027,9 @@ async function loadCaiDatApi() {
         </div>
       </span>
     </div>`).join("");
+  // Trả TRƯỚC hienODungProvider(): ô provider người ta vừa đổi quyết định
+  // ô khoá nào hiện — làm ngược thì hiện ô khoá của provider cũ.
+  _traDangGo(oGoc, dangGo);
   hienODungProvider();
 }
 
@@ -6799,12 +7069,16 @@ document.addEventListener("change", (e) => {
 
 /* Gom giá trị đang gõ trong một nhóm; bỏ ô trống để không ghi đè khoá đã
  * lưu bằng chuỗi rỗng. */
-function giaTriApiDangGo(ma) {
+function giaTriApiDangGo(ma, chiDaSua = false) {
   const ra = {};
   document.querySelectorAll(`[data-api-nhom="${ma}"] [data-api-khoa]`).forEach((o) => {
     /* Một ô đã ẩn là một ô người dùng không còn nhìn thấy — gửi giá trị của nó
      * đi là lưu thầm, có thể là khoá cũ từ trước khi đổi provider. Bỏ qua ô ẩn. */
     if (o.closest("[data-api-row]")?.hidden) return;
+    /* Khi LƯU chỉ gửi ô người dùng đã đổi. Ô chọn provider và ô URL luôn có
+     * sẵn giá trị máy chủ, nên gửi hết thì toast đếm "Đã lưu 1 khoá" cả khi
+     * người ta chưa đổi gì — con số không nói thật điều gì đã được lưu. */
+    if (chiDaSua && !_oDaSua(o)) return;
     const v = (o.value || "").trim();
     if (v) ra[o.dataset.apiKhoa] = v;
   });
@@ -6826,7 +7100,14 @@ document.addEventListener("click", async (e) => {
       kq.textContent = (r.ok ? "✓ " : "✗ ") + r.chi_tiet;
       return;
     }
-    const gia_tri = giaTriApiDangGo(ma);
+    const gia_tri = giaTriApiDangGo(ma, true);
+    /* Không có gì để lưu thì NÓI RA, không toast xanh "Đã lưu 0 khoá" —
+     * câu ấy đọc như thành công, và người ta đóng tab tin rằng khoá đã vào. */
+    if (!Object.keys(gia_tri).length) {
+      kq.textContent = "";
+      toast("Chưa nhập khoá nào — dán khoá vào ô rồi bấm Lưu.", true);
+      return;
+    }
     const da_luu = [];
     const hong = [];
     // Lưu từng khoá riêng: một khoá hỏng không được che khoá đã lưu, và
@@ -6839,6 +7120,13 @@ document.addEventListener("click", async (e) => {
       } catch (err) {
         hong.push({ khoa, loi: err.message });
       }
+    }
+    // Ô bí mật của khoá ĐÃ lưu thì xoá chữ trước khi nạp lại: loadCaiDatApi
+    // giữ mọi chữ đang gõ, và khoá đã lưu mà còn nằm trong ô thì trông như
+    // chưa lưu. Khoá HỎNG thì để nguyên — người ta sửa tiếp chứ không dán lại.
+    for (const khoa of da_luu) {
+      const o = document.querySelector(`[data-api-nhom="${ma}"] input[type="password"][data-api-khoa="${khoa}"]`);
+      if (o) o.value = "";
     }
     // Nạp lại LUÔN, kể cả khi có khoá hỏng: khoá đã lưu phải hiện trạng thái
     // mới (nguồn = csdl, bốn ký tự cuối), không đứng khựng ở dữ liệu cũ.

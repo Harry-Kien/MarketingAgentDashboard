@@ -43,8 +43,16 @@ async function loadVideos() {
 
   $$("[data-vapprove]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
-      toast("Đã duyệt video.");
+      // Không bắt lỗi thì lỗi thành "Uncaught (in promise)" ở console: người
+      // bấm không thấy gì, tưởng đã duyệt, và video nằm chờ mãi.
+      b.disabled = true;
+      try {
+        await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
+        toast("Đã duyệt video.");
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
       loadVideos();
     })
   );
@@ -296,8 +304,22 @@ async function loadDocs() {
 
   $$("[data-doc]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await api("/knowledge/" + b.dataset.doc, { method: "DELETE" });
-      toast("Đã xoá tài liệu.");
+      /* Hỏi trước khi xoá: tài liệu tri thức là CĂN CỨ agent dùng để trả
+       * lời. Bấm trượt một nút đỏ là agent mất căn cứ — nó không nói sai,
+       * nó chuyển người ở mọi câu lẽ ra tự trả lời được, và không ai nhìn
+       * ra vì sao. Không có thùng rác để lấy lại. */
+      const ten = b.closest(".row")?.querySelector(".row__title")?.textContent || "tài liệu này";
+      if (!confirm(`Xoá "${ten.trim()}" khỏi kho tri thức?\n\n`
+          + "Agent sẽ không còn dùng nó làm căn cứ trả lời. Không hoàn tác được — "
+          + "muốn có lại phải nạp lại tài liệu.")) return;
+      b.disabled = true;
+      try {
+        await api("/knowledge/" + b.dataset.doc, { method: "DELETE" });
+        toast("Đã xoá tài liệu.");
+      } catch (e) {
+        toast(e.message, true);
+        b.disabled = false;
+      }
       loadDocs();
     })
   );

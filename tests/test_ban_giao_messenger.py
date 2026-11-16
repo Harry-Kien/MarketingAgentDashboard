@@ -234,18 +234,123 @@ def test_release_giu_lai_quyen_tu_meta_chu_khong_chi_doi_co():
     """
     from agent.api import routes
     src = inspect.getsource(routes.release)
-    assert "nhan_lai_quyen" in src
+    assert "nhan_lai_quyen_sau_release(" in src
+    assert "nhan_lai_quyen" in inspect.getsource(_buoc_meta())
+
+
+def _buoc_meta():
+    from agent.api import hoi_thoai_cu
+    return hoi_thoai_cu.nhan_lai_quyen_sau_release
 
 
 def test_release_hong_thi_noi_that_chu_khong_bao_ok_suong():
     from agent.api import routes
-    src = inspect.getsource(routes.release)
-    assert "ghi_chu" in src
-    assert "banGiao.nhan_lai_that_bai" in src
+    assert "ghi_chu" in inspect.getsource(routes.release)
+    assert "banGiao.nhan_lai_that_bai" in inspect.getsource(_buoc_meta())
 
 
 def test_release_khong_no_voi_kenh_khong_co_ban_giao():
     """ZaloCRM và Chatwoot không có `nhan_lai_quyen`. `getattr` phải đỡ."""
-    from agent.api import routes
-    src = inspect.getsource(routes.release)
-    assert "getattr(ad" in src
+    assert "getattr(ad" in inspect.getsource(_buoc_meta())
+
+
+# ---------------------------------------------------------------------
+#  Đường release MỚI (/api/inbox/.../release) — đường nút dashboard gọi
+# ---------------------------------------------------------------------
+#
+# ĐO ĐƯỢC 16.11.2026: chỉ route cũ làm bước giành quyền. Nút "Kết thúc tiếp
+# quản" đi đường inbox mới, nên với Messenger agent bật trong CSDL mà tin
+# khách vẫn vào `standby[]` — bật mà câm. Ba test trên chỉ soi route cũ nên
+# vẫn xanh suốt thời gian đó.
+
+class _KqMeta:
+    def __init__(self, ok, detail=""):
+        self.ok, self.detail = ok, detail
+
+
+def _gia_lap_meta(monkeypatch, *, kenh="messenger", kq=None, no=None):
+    from agent import db
+    from agent.api import hoi_thoai_cu
+
+    goi, nhat_ky = [], []
+
+    async def lay(external_id):
+        goi.append(external_id)
+        if no:
+            raise no
+        return kq
+
+    class Ad:
+        nhan_lai_quyen = staticmethod(lay)
+
+    async def get_for_account(_tk):
+        return Ad()
+
+    async def fetchrow(_sql, *_a):
+        return {"account_id": "tk", "channel": kenh, "external_id": "psid-1"}
+
+    async def log_event(ten, **k):
+        nhat_ky.append(ten)
+
+    monkeypatch.setattr(hoi_thoai_cu.channels, "get_for_account", get_for_account)
+    monkeypatch.setattr(db, "fetchrow", fetchrow)
+    monkeypatch.setattr(db, "log_event", log_event)
+    return goi, nhat_ky
+
+
+def _release_moi():
+    """Gọi thẳng hàm route inbox với dịch vụ định tuyến giả (release thành công)."""
+    import asyncio
+    from uuid import uuid4
+
+    from agent.api import inbox
+    from agent.omnichannel.routing import ConversationRoutingState
+
+    cid = uuid4()
+
+    class DichVu:
+        async def release(self, **_k):
+            return ConversationRoutingState(
+                conversation_id=cid, mode="assist", status="assist",
+                assigned_to=None, assigned_team_id=None, version=3)
+
+    return asyncio.run(inbox.release_conversation(
+        cid, inbox.ReleaseIn(expected_version=2, reason="Nhân viên kết thúc"),
+        user={"id": str(uuid4()), "quyen": ["hoi_thoai.nhan"]},
+        service=DichVu(),
+        # Đúng thứ dependency mặc định trả về — cái app thật dùng.
+        gianh_quyen=inbox.get_buoc_gianh_quyen_meta()))
+
+
+def test_release_moi_mac_dinh_dung_buoc_gianh_quyen_that():
+    """Dependency là chỗ test thay được; mặc định PHẢI là bước thật."""
+    from agent.api import inbox
+    assert inbox.get_buoc_gianh_quyen_meta() is _buoc_meta()
+
+
+def test_release_moi_gianh_lai_quyen_meta(monkeypatch):
+    goi, _ = _gia_lap_meta(monkeypatch, kq=_KqMeta(True))
+    kq = _release_moi()
+    assert goi == ["psid-1"], "đường release mới không xin lại thread control"
+    assert "ghi_chu" not in kq and kq["mode"] == "assist"
+
+
+def test_release_moi_meta_tu_choi_thi_tra_ghi_chu(monkeypatch):
+    _, nhat_ky = _gia_lap_meta(monkeypatch, kq=_KqMeta(False, "(#10) quyền bị thu"))
+    kq = _release_moi()
+    assert "chưa giành lại được quyền" in kq["ghi_chu"]
+    assert "(#10)" in kq["ghi_chu"]
+    assert nhat_ky == ["banGiao.nhan_lai_that_bai"]
+
+
+def test_release_moi_loi_mang_khong_thanh_500(monkeypatch):
+    """CSDL đã release xong; ngoại lệ từ Meta phải thành ghi_chu, không nổ."""
+    _gia_lap_meta(monkeypatch, no=TimeoutError("hết giờ"))
+    kq = _release_moi()
+    assert "TimeoutError" in kq["ghi_chu"]
+
+
+def test_release_moi_kenh_khac_khong_goi_meta(monkeypatch):
+    goi, _ = _gia_lap_meta(monkeypatch, kenh="zalo_personal", kq=_KqMeta(True))
+    kq = _release_moi()
+    assert goi == [] and "ghi_chu" not in kq

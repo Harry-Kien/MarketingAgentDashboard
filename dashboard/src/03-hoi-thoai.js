@@ -85,9 +85,54 @@ function wireConvRows(scope) {
   $$(`${scope} [data-conv]`).forEach((el) =>
     el.addEventListener("click", () => {
       state.openConv = el.dataset.conv;
+      // Đánh dấu do NGƯỜI bấm, không phải do vòng làm mới vẽ lại: chỉ cú
+      // bấm mới được kéo màn hình xuống khung chi tiết (xem loadThread).
+      state.cuonToiChiTiet = true;
       doiMan("hoithoai");
     })
   );
+}
+
+/* Khổ ≤1180px (`app.css`: `.split, .convo` thành MỘT cột) khung chi tiết
+ * nằm DƯỚI cả danh sách hội thoại. Bấm một dòng thì nội dung thay đổi ở
+ * tận cuối trang, ngoài tầm nhìn — người trực thấy "bấm mà không có gì" và
+ * tưởng nút hỏng. Chỉ cuộn khi bố cục đúng là một cột: ở khổ rộng hai khung
+ * nằm cạnh nhau, cuộn là giật màn hình vô cớ. */
+const KHO_HEP_HOI_THOAI = "(max-width: 1180px)";
+
+function cuonToiChiTietNeuHep() {
+  if (!state.cuonToiChiTiet) return;
+  state.cuonToiChiTiet = false;
+  if (!window.matchMedia || !window.matchMedia(KHO_HEP_HOI_THOAI).matches) return;
+  $("#convdetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* Báo máy chủ "người này đã đọc tới đây".
+ *
+ * Số "chưa đọc" trên mỗi dòng tính từ `conversation_reads`, và bảng ấy chỉ
+ * được ghi qua `POST /inbox/conversations/{id}/read`. Trước đây dashboard
+ * KHÔNG gọi route này ở đâu cả: con số chỉ tăng, không bao giờ giảm, và một
+ * huy hiệu luôn đỏ là huy hiệu người ta thôi nhìn — đúng lúc nó có ý nghĩa.
+ *
+ * Gọi lại khi tin KHÁCH mới nhất đổi (khách nhắn thêm trong hội thoại đang
+ * mở), không gọi mỗi 6 giây. Chỉ gọi khi tab đang hiện: tab nằm nền thì
+ * người trực chưa đọc gì cả, đánh dấu "đã đọc" lúc ấy là nói dối. Hỏng thì
+ * KHÔNG toast (vòng 6 giây sẽ bắn toast mãi) nhưng ghi console và không nhớ
+ * mốc, để lần vẽ sau thử lại. */
+function danhDauDaDoc(id, messages) {
+  const tinKhach = (messages || []).filter((m) => m.role === "customer");
+  if (!tinKhach.length) return;
+  const moc = String(tinKhach[tinKhach.length - 1].id);
+  state.docDenTin = state.docDenTin || {};
+  if (state.docDenTin[id] === moc) return;
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  state.docDenTin[id] = moc;
+  api(`/inbox/conversations/${id}/read`, { method: "POST" })
+    .then(() => $(`#convlist [data-conv="${id}"] .unread`)?.remove())
+    .catch((e) => {
+      delete state.docDenTin[id];
+      console.warn("Không đánh dấu đã đọc được hội thoại", id, e);
+    });
 }
 
 $$("#convfilter .chip").forEach((chip) =>
@@ -228,6 +273,28 @@ async function loadThread(id) {
 
   const taken = c.mode === "human" || c.status === "escalated";
 
+  /* AI giữ hay NGƯỜI giữ — và người nào.
+   *
+   * Trước đây chỉ có một nút lật theo `taken`: hội thoại agent tự chuyển
+   * người (mode human, CHƯA giao cho ai) hiện "Kết thúc tiếp quản". Nhân
+   * viên thường bấm thì 403 (máy chủ chỉ cho người đang giữ hoặc quản lý
+   * release); quản lý bấm thì hội thoại bị trả về AI — đúng ngược ý, vì
+   * agent chuyển người chính là vì nó không xử lý được. Không ai bấm được
+   * "Tôi tiếp quản", nên hội thoại cần người nhất lại là cái kẹt nhất.
+   *
+   * `assigned_to` so với `state.toiId` (nạp từ /toi lúc kiểm phiên). Quản
+   * lý = `hoi_thoai.xem_tat_ca`, cùng cờ máy chủ dùng làm `is_admin`. */
+  const nguoiGiu = c.mode === "human" ? (c.assigned_to ? String(c.assigned_to) : "") : "";
+  const laCuaToi = !!nguoiGiu && nguoiGiu === String(state.toiId || "");
+  const quanLy = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.xem_tat_ca"));
+  const nguoiKhacGiu = !!nguoiGiu && !laCuaToi;
+  const hienNhan = !laCuaToi && !nguoiKhacGiu;
+  const hienTra = c.mode === "human" && (laCuaToi || quanLy);
+  const nutGiu = `
+      ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
+      ${nguoiKhacGiu && !quanLy ? '<span class="tag tag--assist">Đồng nghiệp đang giữ</span>' : ""}
+      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}`;
+
   /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
    *
    * Panel này dựng lại bằng `innerHTML` mỗi lần refresh — SSE báo tin mới,
@@ -270,9 +337,7 @@ async function loadThread(id) {
       ${c.state !== "resolved" ? `<button type="button" class="btn btn--sm btn--go" id="btn-giai-quyet"
         title="Đóng vụ việc: SLA giải quyết được tính, khách nhắn tiếp thì tự mở lại">Đã giải quyết</button>`
         : '<span class="tag tag--auto">Đã giải quyết</span>'}
-      <button type="button" class="btn btn--sm ${taken ? "" : "btn--halt"}" id="btn-take">
-        ${taken ? "Kết thúc tiếp quản" : "Tôi tiếp quản"}
-      </button>
+      ${nutGiu}
     </div>
     <div class="nhanbar">
       ${(state.nhanTheoHoiThoai && state.nhanTheoHoiThoai[id] || []).map((n) =>
@@ -305,6 +370,8 @@ async function loadThread(id) {
 
   const thread = $("#thread");
   if (thread) thread.scrollTop = dang_o_day ? thread.scrollHeight : cuon_cu;
+  danhDauDaDoc(id, c.messages);
+  cuonToiChiTietNeuHep();
 
   /* Trả lại bản nháp.
    *
@@ -483,13 +550,28 @@ async function loadThread(id) {
     }
   });
 
-  $("#btn-take").addEventListener("click", async () => {
+  $("#btn-take")?.addEventListener("click", async () => {
     try {
-      await api(`/inbox/conversations/${id}/${taken ? "release" : "takeover"}`, {
+      await api(`/inbox/conversations/${id}/takeover`, {
         method: "POST",
-        body: JSON.stringify({ expected_version: c.version || 1, reason: taken ? "Nhân viên kết thúc tiếp quản" : "Nhân viên nhận xử lý" }),
+        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên nhận xử lý" }),
       });
-      toast(taken ? "Đã chuyển về chế độ gợi ý." : "Bạn đang giữ hội thoại này. AI đã dừng gửi.");
+      toast("Bạn đang giữ hội thoại này. AI đã dừng gửi.");
+      refresh();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  $("#btn-release")?.addEventListener("click", async () => {
+    try {
+      const r = await api(`/inbox/conversations/${id}/release`, {
+        method: "POST",
+        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên kết thúc tiếp quản" }),
+      });
+      /* `ghi_chu` = đã bật agent trong CSDL nhưng CHƯA giành lại quyền từ
+       * Meta (Messenger) — agent bật mà câm. Phải hiện thành lỗi, không
+       * được nuốt sau một toast xanh. */
+      if (r && r.ghi_chu) toast(r.ghi_chu, true);
+      else toast("Đã chuyển về chế độ gợi ý.");
       refresh();
     } catch (e) { toast(e.message, true); }
   });

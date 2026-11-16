@@ -23,12 +23,21 @@ function oNhapCauHinh(m) {
     ${m.don_vi ? `<span class="row__sub">${esc(m.don_vi)}</span>` : ""}`;
 }
 
-async function loadCauHinh() {
+/* `giuDangGo`: vòng làm mới 6 giây gọi hàm này với mặc định (giữ). Ô số
+ * gửi đi ở sự kiện `change` — tức khi rời ô — nên giữa lúc gõ "0.7" và lúc
+ * rời ô, một nhịp làm mới trả ô về giá trị cũ: người ta gõ xong, bấm ra
+ * ngoài, và thứ được lưu là con số họ KHÔNG gõ.
+ *
+ * Sau khi lưu (hoặc lưu hỏng) thì gọi với `false`: lúc đó thứ phải hiện là
+ * thứ máy chủ đang chạy, không phải thứ người ta vừa gõ mà bị từ chối. */
+async function loadCauHinh(giuDangGo = true) {
   const d = await api("/cau-hinh");
   const lech = d.muc.filter((m) => m.lech_mac_dinh).length;
   $("#c-cauhinh").textContent = lech ? `${lech} lệch` : "";
 
-  $("#cauhinh-ds").innerHTML = d.muc.map((m) => `<div class="row">
+  const oGoc = $("#cauhinh-ds");
+  const dangGo = giuDangGo ? _luuDangGo(oGoc) : null;
+  oGoc.innerHTML = d.muc.map((m) => `<div class="row">
       <span class="row__flag ${m.lech_mac_dinh ? "row__flag--halt" : "row__flag--auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(m.nhan)}
@@ -40,6 +49,7 @@ async function loadCauHinh() {
       </span>
       <span class="row__side">${oNhapCauHinh(m)}</span>
     </div>`).join("");
+  if (dangGo) _traDangGo(oGoc, dangGo);
 
   await loadLichSuCauHinh();
 }
@@ -99,10 +109,10 @@ document.addEventListener("change", async (e) => {
       body: JSON.stringify({ [el.dataset.ch]: gt }),
     });
     toast("Đã lưu — có hiệu lực từ tin nhắn kế tiếp");
-    await loadCauHinh();
+    await loadCauHinh(false);
   } catch (err) {
     toast(err.message, true);
-    await loadCauHinh();
+    await loadCauHinh(false);
   }
 });
 
@@ -112,7 +122,7 @@ $("#cauhinh-macdinh")?.addEventListener("click", async () => {
   try {
     await api("/cau-hinh/mac-dinh", { method: "POST" });
     toast("Đã quay về mặc định");
-    await loadCauHinh();
+    await loadCauHinh(false);
   } catch (err) { toast(err.message, true); }
 });
 
@@ -365,7 +375,16 @@ async function loadCaiDatApi() {
   $("#api-vault").textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
   const nhom = {};
   for (const m of d.muc) (nhom[m.nhom] ||= []).push(m);
-  $("#api-nhom").innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
+  /* Giữ khoá đang dán dở qua mỗi lần dựng lại.
+   *
+   * Hàm này nằm trong vòng làm mới 6 giây. Trước đây khoá API dán vào ô
+   * password, URL, ô chọn LLM_PROVIDER đều bị xoá sau tối đa 6 giây; người
+   * ta bấm Lưu và nhận toast XANH "Đã lưu 0 khoá" — xanh giả, vì không có
+   * gì được lưu cả. Ô bí mật không có `value` từ máy chủ, nên bất kỳ chữ
+   * nào trong đó đều là người dùng gõ — `_oDaSua` bắt đúng điều đó. */
+  const oGoc = $("#api-nhom");
+  const dangGo = _luuDangGo(oGoc);
+  oGoc.innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
     <div class="row" data-api-nhom="${ma}">
       <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
       <span class="row__body">
@@ -387,6 +406,9 @@ async function loadCaiDatApi() {
         </div>
       </span>
     </div>`).join("");
+  // Trả TRƯỚC hienODungProvider(): ô provider người ta vừa đổi quyết định
+  // ô khoá nào hiện — làm ngược thì hiện ô khoá của provider cũ.
+  _traDangGo(oGoc, dangGo);
   hienODungProvider();
 }
 
@@ -426,12 +448,16 @@ document.addEventListener("change", (e) => {
 
 /* Gom giá trị đang gõ trong một nhóm; bỏ ô trống để không ghi đè khoá đã
  * lưu bằng chuỗi rỗng. */
-function giaTriApiDangGo(ma) {
+function giaTriApiDangGo(ma, chiDaSua = false) {
   const ra = {};
   document.querySelectorAll(`[data-api-nhom="${ma}"] [data-api-khoa]`).forEach((o) => {
     /* Một ô đã ẩn là một ô người dùng không còn nhìn thấy — gửi giá trị của nó
      * đi là lưu thầm, có thể là khoá cũ từ trước khi đổi provider. Bỏ qua ô ẩn. */
     if (o.closest("[data-api-row]")?.hidden) return;
+    /* Khi LƯU chỉ gửi ô người dùng đã đổi. Ô chọn provider và ô URL luôn có
+     * sẵn giá trị máy chủ, nên gửi hết thì toast đếm "Đã lưu 1 khoá" cả khi
+     * người ta chưa đổi gì — con số không nói thật điều gì đã được lưu. */
+    if (chiDaSua && !_oDaSua(o)) return;
     const v = (o.value || "").trim();
     if (v) ra[o.dataset.apiKhoa] = v;
   });
@@ -453,7 +479,14 @@ document.addEventListener("click", async (e) => {
       kq.textContent = (r.ok ? "✓ " : "✗ ") + r.chi_tiet;
       return;
     }
-    const gia_tri = giaTriApiDangGo(ma);
+    const gia_tri = giaTriApiDangGo(ma, true);
+    /* Không có gì để lưu thì NÓI RA, không toast xanh "Đã lưu 0 khoá" —
+     * câu ấy đọc như thành công, và người ta đóng tab tin rằng khoá đã vào. */
+    if (!Object.keys(gia_tri).length) {
+      kq.textContent = "";
+      toast("Chưa nhập khoá nào — dán khoá vào ô rồi bấm Lưu.", true);
+      return;
+    }
     const da_luu = [];
     const hong = [];
     // Lưu từng khoá riêng: một khoá hỏng không được che khoá đã lưu, và
@@ -466,6 +499,13 @@ document.addEventListener("click", async (e) => {
       } catch (err) {
         hong.push({ khoa, loi: err.message });
       }
+    }
+    // Ô bí mật của khoá ĐÃ lưu thì xoá chữ trước khi nạp lại: loadCaiDatApi
+    // giữ mọi chữ đang gõ, và khoá đã lưu mà còn nằm trong ô thì trông như
+    // chưa lưu. Khoá HỎNG thì để nguyên — người ta sửa tiếp chứ không dán lại.
+    for (const khoa of da_luu) {
+      const o = document.querySelector(`[data-api-nhom="${ma}"] input[type="password"][data-api-khoa="${khoa}"]`);
+      if (o) o.value = "";
     }
     // Nạp lại LUÔN, kể cả khi có khoá hỏng: khoá đã lưu phải hiện trạng thái
     // mới (nguồn = csdl, bốn ký tự cuối), không đứng khựng ở dữ liệu cũ.

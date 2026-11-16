@@ -270,6 +270,9 @@ def test_queue_existing_draft_khong_tao_message_thu_hai():
     store.existing_messages[message_id] = {
         "id": message_id,
         "conversation_id": conversation_id,
+        # Chỉ bản nháp AI mới duyệt được (rà soát 16.11.2026).
+        "role": "agent",
+        "delivery_status": "draft",
         "content": "Bản nháp đã duyệt",
     }
 

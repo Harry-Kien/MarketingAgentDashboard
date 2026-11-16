@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-13 02:20 UTC trên commit `879bd74`. **18/18 kịch bản đạt.**
+Chạy lúc 2026-11-16 03:50 UTC trên commit `ac9b9bc`. **18/18 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -93,10 +93,11 @@ Kết quả: **đạt** · `test_07_cong_viec_tu_sinh_nhan_va_hoan_thanh`
 
 1. Agent tắt -> khách nhắn -> việc tự sinh (nguồn agent, chưa ai nhận).
 2. Ca trực đếm 1 việc chưa giao.
-3. "lan" (không có cong_viec.giao) tự nhận việc -> 200.
-4. "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
-5. Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
-6. Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
+3. "lan" chưa thuộc kênh -> không thấy việc, tự nhận -> 404.
+4. "lan" vào kênh (không có cong_viec.giao) tự nhận việc -> 200.
+5. "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
+6. Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
+7. Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
 
 ## 8. Tin KHÔNG gửi được
 

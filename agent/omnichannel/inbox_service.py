@@ -23,6 +23,10 @@ class InboxIngestResult:
     duplicate: bool
     should_reply: bool
     conversation_mode: str | None = None
+    # `state` chứ không chỉ `status`: hội thoại có thể `resolved` mà
+    # `status` lại không phải `closed` (dữ liệu cũ kẹt `escalated`). Đường
+    # mở lại hội thoại phải xét `state` — xem `xu_ly_tin_vao.handle_inbound`.
+    conversation_state: str | None = None
 
 
 class InboxTransaction(Protocol):
@@ -104,6 +108,7 @@ class InboxService:
                     duplicate=True,
                     should_reply=False,
                     conversation_mode=existing.get("mode") if existing else None,
+                    conversation_state=existing.get("state") if existing else None,
                 )
 
             identity = await tx.resolve_contact_point(message)
@@ -128,6 +133,7 @@ class InboxService:
                 duplicate=False,
                 should_reply=not bool((message.meta or {}).get("standby")),
                 conversation_mode=conversation.get("mode"),
+                conversation_state=conversation.get("state"),
             )
 
 
@@ -192,7 +198,7 @@ class PostgresInboxTransaction:
     async def find_conversation(self, account_id: UUID, external_id: str):
         return await self._connection.fetchrow(
             """
-            SELECT id, status, mode FROM conversations
+            SELECT id, status, mode, state FROM conversations
             WHERE account_id = $1 AND external_id = $2
             """,
             account_id,
@@ -246,7 +252,7 @@ class PostgresInboxTransaction:
                 contact_id = EXCLUDED.contact_id,
                 contact_point_id = EXCLUDED.contact_point_id,
                 updated_at = now()
-            RETURNING id, status, mode
+            RETURNING id, status, mode, state
             """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9, 10))
                .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 9, 10)),
             message.account_id,

@@ -26,6 +26,7 @@ from agent.core import agent_bat, agent_ho_so, anh_khach, cong_viec, gio_lam_vie
 from agent.omnichannel import giai_quyet, thong_bao_ai, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
 from agent.omnichannel.outbound_service import (
+    OutboundBlocked,
     OutboundService,
     PostgresOutboundRepository,
     QueuedOutbound,
@@ -189,11 +190,17 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Đặt cờ `escalated` luôn: nếu hội thoại chưa được đánh dấu (ví dụ quyền
     # bị app khác giành, không đi qua đường chuyển người của ta) thì đây là
     # lần duy nhất hệ thống biết được điều đó.
+    #
+    # KHÔNG đụng hội thoại đã giải quyết: ghi `status='escalated'` lên một
+    # hội thoại `state='resolved'` là trạng thái lai — hộp thư coi nó đã
+    # xong, còn hàng chờ người coi nó đang chờ, và không đường nào dọn nó
+    # (rà soát 16.11.2026). Đã `human` thì cũng không cần ghi lại.
     if (msg.meta or {}).get("standby"):
         await db.execute(
             "UPDATE conversations SET status = 'escalated', mode = 'human', "
             "version = version + 1, updated_at = now() "
-            "WHERE id = $1", cid,
+            "WHERE id = $1 AND mode <> 'human' "
+            "AND state NOT IN ('resolved', 'closed')", cid,
         )
         return
 
@@ -211,7 +218,14 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # lại, trả cho agent). Xem agent/omnichannel/giai_quyet.py.
     # Chỉ hội thoại đang ĐÓNG mới cần xét: không thêm truy vấn nào vào
     # đường đi của tin thường.
-    if conv["status"] == "closed":
+    #
+    # Xét `state`, không chỉ `status`: trước 16.11.2026 hội thoại được giải
+    # quyết đúng lúc AI đang soạn một câu chuyển người bị ghi thành
+    # `state='resolved'` + `status='escalated'` — không `closed` nên không
+    # bao giờ mở lại, khách nhắn bao nhiêu cũng rơi vào một hội thoại đã
+    # đóng. Dữ liệu kẹt như thế vẫn còn, nên đường mở lại phải nhận ra nó.
+    if (conv["status"] == "closed"
+            or getattr(ingested, "conversation_state", None) == "resolved"):
         if await giai_quyet.ghi_diem_neu_la_csat(cid, msg.text or ""):
             return
         if await giai_quyet.mo_lai_neu_da_giai_quyet(cid):
@@ -404,6 +418,18 @@ async def handle_inbound(msg: InboundMessage) -> None:
             queued_parts = await _gui_nhu_nguoi(
                 adapter, msg, cid, reply.text, metadata
             )
+        except OutboundBlocked as exc:
+            # Nhân viên tiếp quản hoặc giải quyết SAU bước kiểm lỗi thời mà
+            # TRƯỚC lúc xếp hàng. Rơi xuống nhánh dưới là lưu nháp rồi ghi
+            # `mode='assist'` đè lên lựa chọn của nhân viên — kéo hội thoại
+            # về tay AI. Dừng ở đây, chỉ ghi chi phí và lý do.
+            await db.execute(
+                "UPDATE conversations SET cost_usd = cost_usd + $2 WHERE id = $1",
+                cid, reply.cost_usd)
+            await db.log_event("agent.superseded", ref_id=cid,
+                               ly_do=f"chặn lúc xếp hàng: {exc}"[:200],
+                               cost_usd=reply.cost_usd, do_dai=len(reply.text or ""))
+            return
         except Exception as exc:  # noqa: BLE001 — giữ draft để người gửi tay
             await db.log_event(
                 "outbox.enqueue_error",
@@ -473,19 +499,33 @@ async def handle_inbound(msg: InboundMessage) -> None:
     status = (
         "escalated" if reply.escalate else ("auto" if queued_parts else "assist")
     )
+    # Trạng thái chỉ ghi khi hội thoại VẪN là của AI: chưa ai tiếp quản, chưa
+    # ai giải quyết. Model chạy vài chục giây; trong lúc ấy nhân viên có thể
+    # bấm "Nhận" (ghi đè `human` bằng `assist` là kéo hội thoại về tay AI)
+    # hoặc "Giải quyết" (ghi `escalated` lên `resolved` là trạng thái lai kẹt
+    # mãi — rà soát 16.11.2026). Chi phí và số tin thì luôn ghi: tiền đã tốn.
+    # `version` chỉ tăng khi trạng thái đổi, kẻo màn hình người đang cầm
+    # hội thoại nhận 409 "đã thay đổi" vì một lần cộng chi phí.
     await db.execute(
         """
         UPDATE conversations
         SET cost_usd = cost_usd + $2,
             msg_count = msg_count + $4,
-            status = $3,
+            status = CASE WHEN mode <> 'human' AND state NOT IN ('resolved', 'closed')
+                          THEN $3 ELSE status END,
             mode = CASE
+                WHEN mode = 'human' OR state IN ('resolved', 'closed') THEN mode
                 WHEN $3 = 'escalated' THEN 'human'
                 WHEN $3 = 'assist' THEN 'assist'
                 ELSE mode
             END,
-            version = version + 1,
-            outcome = CASE WHEN $3 = 'escalated' THEN 'escalated' ELSE outcome END,
+            version = version + CASE
+                WHEN mode <> 'human' AND state NOT IN ('resolved', 'closed') THEN 1
+                ELSE 0 END,
+            outcome = CASE
+                WHEN $3 = 'escalated' AND mode <> 'human'
+                     AND state NOT IN ('resolved', 'closed') THEN 'escalated'
+                ELSE outcome END,
             updated_at = now()
         WHERE id = $1
         """,

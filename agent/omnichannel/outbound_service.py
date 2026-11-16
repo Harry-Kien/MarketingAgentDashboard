@@ -23,6 +23,10 @@ class OutboundBlocked(RuntimeError):
     """Policy hội thoại chặn loại outbound này."""
 
 
+class OutboundNotDraft(RuntimeError):
+    """Tin được đem đi duyệt không phải bản nháp AI chưa gửi."""
+
+
 # Mục đích của một tin đi ra. Quyết định nó có phải hỏi đồng ý hay không.
 #
 # Mặc định là `transactional` CÓ CHỦ Ý: tuyệt đại đa số tin trong hệ thống
@@ -289,6 +293,17 @@ class OutboundService:
             message = await tx.get_message(message_id, conversation_id)
             if message is None:
                 raise OutboundMessageNotFound("không tìm thấy bản nháp")
+            # Chỉ BẢN NHÁP AI mới duyệt được. Kiểm ở đây, sau `FOR UPDATE`
+            # của `get_message`, chứ không chỉ ở route: trước 16.11.2026 duyệt
+            # một tin AI đang `queued` đẻ job THỨ HAI (khoá idempotency khác
+            # nhau — khách nhận hai lần), còn duyệt tin KHÁCH thì
+            # `mark_message_queued` đổi nó thành tin nhân viên và gửi ngược
+            # lại cho chính khách.
+            if (message.get("role") != "agent"
+                    or message.get("delivery_status") != "draft"):
+                raise OutboundNotDraft(
+                    "chỉ duyệt được bản nháp AI chưa gửi "
+                    f"(tin này: {message.get('role')}/{message.get('delivery_status')})")
 
             payload = {
                 "conversation_ref": conversation["external_id"],
@@ -446,7 +461,7 @@ class PostgresOutboundTransaction:
     async def get_message(self, message_id: UUID, conversation_id: UUID):
         return await self._connection.fetchrow(
             """
-            SELECT id, conversation_id, content, delivery_status
+            SELECT id, conversation_id, role, content, delivery_status
             FROM messages
             WHERE id = $1 AND conversation_id = $2
             FOR UPDATE

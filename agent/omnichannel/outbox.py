@@ -181,6 +181,10 @@ class PostgresOutboxRepository:
         self._guarded_connection: ContextVar[Any | None] = ContextVar(
             f"outbox_guarded_connection_{id(self)}", default=None
         )
+        # Tin chết chờ kêu sau khi `delivery_guard` commit — xem guard.
+        self._tin_chet_cho_keu: ContextVar[list[tuple[OutboxJob, str]] | None] = (
+            ContextVar(f"outbox_tin_chet_cho_keu_{id(self)}", default=None)
+        )
 
     async def claim(
         self,
@@ -196,12 +200,27 @@ class PostgresOutboxRepository:
                     WITH picked AS (
                         SELECT id
                         FROM outbox_jobs
-                        WHERE (
+                        WHERE ((
                             status IN ('pending', 'retry')
                             AND available_at <= now()
                         ) OR (
                             status = 'processing'
                             AND locked_at < now() - ($2 * interval '1 second')
+                        ))
+                        -- GIỮ THỨ TỰ TRONG MỘT HỘI THOẠI. Phần 1 của câu trả
+                        -- lời gửi hỏng, chờ retry vài phút; không có vế này
+                        -- thì phần 2, 3 vẫn đi ngay — khách đọc đoạn giữa
+                        -- trước đoạn đầu (rà soát 16.11.2026). Job còn dở
+                        -- (`pending`/`retry`/`processing`) cũ hơn cùng hội
+                        -- thoại thì job này chờ. Job `dead`/`cancelled`
+                        -- không chặn: chờ chúng là chặn vĩnh viễn.
+                        AND NOT EXISTS (
+                            SELECT 1 FROM outbox_jobs older
+                            WHERE older.conversation_id = outbox_jobs.conversation_id
+                              AND older.id <> outbox_jobs.id
+                              AND older.status IN ('pending', 'retry', 'processing')
+                              AND (older.created_at, older.id)
+                                  < (outbox_jobs.created_at, outbox_jobs.id)
                         )
                         ORDER BY available_at, created_at
                         FOR UPDATE SKIP LOCKED
@@ -241,6 +260,28 @@ class PostgresOutboxRepository:
     @asynccontextmanager
     async def delivery_guard(self, job: OutboxJob):
         """Giữ fence conversation xuyên suốt provider call để đóng takeover race."""
+        # Tin chết phát hiện TRONG guard (mark_failed gọi bên trong) không
+        # được kêu ngay: `_keu_tin_chet` là một lời gọi webhook tới 15 giây,
+        # và lúc ấy ta đang giữ advisory lock của hội thoại + khoá dòng job —
+        # nhân viên bấm "Nhận" phải chờ webhook cảnh báo phản hồi. Gom lại,
+        # kêu sau khi giao dịch đã COMMIT. Giao dịch rollback thì job chưa
+        # hề chết — bỏ danh sách, không kêu sai.
+        cho_keu: list[tuple[OutboxJob, str]] = []
+        token_keu = self._tin_chet_cho_keu.set(cho_keu)
+        try:
+            async with self._delivery_guard_giao_dich(job) as duoc_phep:
+                yield duoc_phep
+        except BaseException:
+            cho_keu.clear()
+            raise
+        finally:
+            self._tin_chet_cho_keu.reset(token_keu)
+            for job_chet, loi in cho_keu:
+                await _keu_tin_chet(job_chet, loi)
+
+    @asynccontextmanager
+    async def _delivery_guard_giao_dich(self, job: OutboxJob):
+        """Phần giữ giao dịch của `delivery_guard`."""
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 if job.conversation_id is not None:
@@ -439,8 +480,15 @@ class PostgresOutboxRepository:
         # Cảnh báo là một lời gọi HTTP ra ngoài. Gọi nó khi đang giữ giao
         # dịch là giữ khoá hàng trên `outbox_jobs` suốt thời gian webhook
         # cảnh báo phản hồi — và nếu webhook treo, cả worker treo theo.
+        #
+        # Bên trong `delivery_guard` thì "giao dịch xong" là lúc GUARD thoát,
+        # không phải lúc hàm này trả về: gửi danh sách để guard kêu sau commit.
         if decision.status is OutboxStatus.DEAD:
-            await _keu_tin_chet(job, error)
+            cho_keu = self._tin_chet_cho_keu.get()
+            if guarded is not None and cho_keu is not None:
+                cho_keu.append((job, error))
+            else:
+                await _keu_tin_chet(job, error)
 
     @staticmethod
     async def _mark_failed_on_connection(

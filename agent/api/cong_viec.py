@@ -5,7 +5,9 @@ Phạm vi giống họ với khách: ai có `cong_viec.xem_tat_ca` thấy hết,
 chỉ thấy việc mình nhận, việc mình giao, và việc CHƯA GIAO cho ai.
 
 Vế cuối là cố ý. Việc do agent đẩy sang luôn ra đời ở trạng thái chưa giao
-— nếu người trực không thấy nó thì cả khối này vô nghĩa.
+— nếu người trực không thấy nó thì cả khối này vô nghĩa. Nhưng việc chưa
+giao gắn hội thoại chỉ thành viên kênh ấy thấy — xem `dieu_kien_pham_vi`.
+Sửa và xoá chịu cùng phạm vi KÊNH với xem.
 """
 from __future__ import annotations
 
@@ -180,11 +182,18 @@ async def sua(
         if not tu_nhan:
             raise HTTPException(403, "Thiếu quyền: cong_viec.giao")
 
+    # Sửa chịu cùng phạm vi KÊNH với xem. Trước 16.11.2026 PUT không lọc gì
+    # — ai có `cong_viec.sua` cũng tự nhận được việc của kênh mình không
+    # thuộc, chỉ cần đoán id. 404 chứ không 403. Việc đã giao cho người khác
+    # cùng kênh thì không chặn ở đây: luật giành việc ngay dưới trả 403 có
+    # lý do — xem `dieu_kien_pham_vi(chi_loc_kenh=True)`.
+    loc, ts = cv.dieu_kien_pham_vi(nguoi=nguoi, so_tham_so=1, chi_loc_kenh=True)
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             cu = await conn.fetchrow(
-                "SELECT trang_thai, nguoi_nhan FROM cong_viec WHERE id = $1 "
-                "FOR UPDATE", cong_viec_id)
+                "SELECT trang_thai, nguoi_nhan FROM cong_viec "
+                f"WHERE id = $1 AND {loc} FOR UPDATE",  # noqa: S608
+                cong_viec_id, *ts)
             if cu is None:
                 raise HTTPException(404, "Không tìm thấy công việc")
 
@@ -236,7 +245,10 @@ async def xoa(
     tác hằng ngày và để lại dấu vết; xoá hẳn thì không, nên nó phải ở cùng
     bậc quyền với việc điều phối.
     """
-    r = await db.execute("DELETE FROM cong_viec WHERE id = $1", cong_viec_id)
+    loc, ts = cv.dieu_kien_pham_vi(nguoi=nguoi, so_tham_so=1, chi_loc_kenh=True)
+    r = await db.execute(
+        f"DELETE FROM cong_viec WHERE id = $1 AND {loc}",  # noqa: S608
+        cong_viec_id, *ts)
     if r.endswith(" 0"):
         raise HTTPException(404, "Không tìm thấy công việc")
     await db.log_event("cong_viec.xoa", actor=nguoi.get("ten_dang_nhap", "?"),

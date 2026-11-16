@@ -20,12 +20,18 @@ class PostgresOutboxAdminRepository:
     def __init__(self, pool_provider: Callable[[], Any] = db.pool):
         self._pool_provider = pool_provider
 
+    @staticmethod
+    def _trong_pham_vi(account_id: Any, kenh_duoc_xem: set[UUID] | None) -> bool:
+        """None = thấy mọi kênh (`hoi_thoai.xem_tat_ca`)."""
+        return kenh_duoc_xem is None or account_id in kenh_duoc_xem
+
     async def list_jobs(
         self,
         *,
         status: str = "dead",
         account_id: UUID | None = None,
         limit: int = 100,
+        kenh_duoc_xem: set[UUID] | None = None,
     ) -> list[dict[str, Any]]:
         if status not in ALLOWED_STATUSES:
             raise HTTPException(422, "Trạng thái outbox không hợp lệ")
@@ -34,6 +40,9 @@ class PostgresOutboxAdminRepository:
         if account_id is not None:
             args.append(account_id)
             clauses.append(f"job.account_id = ${len(args)}")
+        if kenh_duoc_xem is not None:
+            args.append(list(kenh_duoc_xem))
+            clauses.append(f"job.account_id = ANY(${len(args)}::uuid[])")
         args.append(max(1, min(limit, 200)))
         sql = f"""
             SELECT job.id, job.account_id, account.display_name AS account_name,
@@ -51,7 +60,9 @@ class PostgresOutboxAdminRepository:
             rows = await connection.fetch(sql, *args)
         return [dict(row) for row in rows]
 
-    async def retry(self, job_id: UUID, *, actor: str) -> dict[str, Any]:
+    async def retry(
+        self, job_id: UUID, *, actor: str, kenh_duoc_xem: set[UUID] | None = None,
+    ) -> dict[str, Any]:
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 # Job chết TRƯỚC khi người thật tiếp quản thì bản thân nó
@@ -60,18 +71,28 @@ class PostgresOutboxAdminRepository:
                 # vào giữa lúc kiểm và lúc ghi.
                 hien_trang = await connection.fetchrow(
                     """
-                    SELECT job.id, job.conversation_id,
-                           conv.mode, conv.status
+                    SELECT job.id, job.conversation_id, job.account_id,
+                           conv.mode, conv.status, message.role
                     FROM outbox_jobs job
                     LEFT JOIN conversations conv ON conv.id = job.conversation_id
+                    LEFT JOIN messages message ON message.id = job.message_id
                     WHERE job.id = $1
                     FOR UPDATE OF job
                     """,
                     job_id,
                 )
-                if hien_trang is None:
+                if hien_trang is None or not self._trong_pham_vi(
+                    hien_trang.get("account_id"), kenh_duoc_xem
+                ):
                     raise HTTPException(404, "Không tìm thấy job")
-                if (
+                # Chỉ chặn tin của AI. Tin NHÂN VIÊN chết thì người tiếp quản
+                # chính là người cần gửi lại nó — chặn luôn tin ấy (409 sai)
+                # là để tin nhân viên chết hẳn, khách chờ mãi (rà soát
+                # 16.11.2026). Job không gắn tin nhắn thì không biết của ai,
+                # nên vẫn chặn: gửi trùng một câu AI lên câu của nhân viên tệ
+                # hơn bắt người gõ lại.
+                tin_ai = hien_trang.get("role") in (None, "agent")
+                if tin_ai and (
                     hien_trang["mode"] == "human"
                     or hien_trang["status"] == "escalated"
                 ):
@@ -123,7 +144,9 @@ class PostgresOutboxAdminRepository:
                 )
         return dict(link)
 
-    async def cancel(self, job_id: UUID, *, actor: str) -> dict[str, Any]:
+    async def cancel(
+        self, job_id: UUID, *, actor: str, kenh_duoc_xem: set[UUID] | None = None,
+    ) -> dict[str, Any]:
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 link = await connection.fetchrow(
@@ -132,9 +155,11 @@ class PostgresOutboxAdminRepository:
                     SET status = 'cancelled', locked_at = NULL, locked_by = NULL,
                         updated_at = now()
                     WHERE id = $1 AND status IN ('pending', 'retry', 'dead')
+                      AND ($2::uuid[] IS NULL OR account_id = ANY($2::uuid[]))
                     RETURNING id, account_id, conversation_id, message_id
                     """,
                     job_id,
+                    list(kenh_duoc_xem) if kenh_duoc_xem is not None else None,
                 )
                 if link is None:
                     raise HTTPException(
@@ -176,12 +201,28 @@ def get_outbox_admin_repository() -> PostgresOutboxAdminRepository:
     return PostgresOutboxAdminRepository()
 
 
+async def _kenh_duoc_xem(nguoi: dict) -> set[UUID] | None:
+    """
+    Tài khoản kênh người này là thành viên; None = thấy mọi kênh.
+
+    Danh sách tin chết chứa mã hội thoại và lỗi cuối của MỌI kênh — trước
+    16.11.2026 không lọc, trong khi hộp thư đã lọc theo `account_memberships`
+    từ lâu. Cùng ngữ nghĩa với `chan_neu_ngoai_kenh`.
+    """
+    if "hoi_thoai.xem_tat_ca" in (nguoi.get("quyen") or ()):
+        return None
+    rows = await db.fetch(
+        "SELECT account_id FROM account_memberships WHERE user_id = $1",
+        UUID(str(nguoi["id"])))
+    return {r["account_id"] for r in rows}
+
+
 @router.get("/jobs")
 async def list_outbox_jobs(
     status: str = "dead",
     account_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=200),
-    _: dict = Depends(can_quyen("outbox.doc")),
+    user: dict = Depends(can_quyen("outbox.doc")),
     repository: PostgresOutboxAdminRepository = Depends(
         get_outbox_admin_repository
     ),
@@ -191,6 +232,7 @@ async def list_outbox_jobs(
             status=status,
             account_id=account_id,
             limit=limit,
+            kenh_duoc_xem=await _kenh_duoc_xem(user),
         )
     }
 
@@ -203,7 +245,8 @@ async def retry_outbox_job(
         get_outbox_admin_repository
     ),
 ) -> dict[str, Any]:
-    job = await repository.retry(job_id, actor=user["ten_dang_nhap"])
+    job = await repository.retry(job_id, actor=user["ten_dang_nhap"],
+                                 kenh_duoc_xem=await _kenh_duoc_xem(user))
     return {"ok": True, "job": job}
 
 
@@ -215,5 +258,6 @@ async def cancel_outbox_job(
         get_outbox_admin_repository
     ),
 ) -> dict[str, Any]:
-    job = await repository.cancel(job_id, actor=user["ten_dang_nhap"])
+    job = await repository.cancel(job_id, actor=user["ten_dang_nhap"],
+                                  kenh_duoc_xem=await _kenh_duoc_xem(user))
     return {"ok": True, "job": job}

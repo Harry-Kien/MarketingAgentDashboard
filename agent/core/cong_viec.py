@@ -86,7 +86,8 @@ def qua_han(viec: dict, bay_gio: datetime | None = None) -> bool:
 
 
 def dieu_kien_pham_vi(*, nguoi: dict, so_tham_so: int,
-                      bi_danh: str = "cong_viec") -> tuple[str, list[Any]]:
+                      bi_danh: str = "cong_viec",
+                      chi_loc_kenh: bool = False) -> tuple[str, list[Any]]:
     """
     Mệnh đề WHERE lọc công việc theo phạm vi của người này.
 
@@ -96,13 +97,45 @@ def dieu_kien_pham_vi(*, nguoi: dict, so_tham_so: int,
     Vế "chưa giao cho ai" là cố ý, cùng lý lẽ với khách vô chủ: việc chưa
     giao mà không ai thấy thì nó không tồn tại — và việc do agent đẩy sang
     luôn ra đời ở trạng thái chưa giao.
+
+    NHƯNG việc chưa giao gắn hội thoại thì chỉ THÀNH VIÊN KÊNH của hội
+    thoại ấy thấy. Trước 16.11.2026 vế này không xét kênh: nhân viên kênh A
+    đọc được tên khách và lý do chuyển người của kênh B — mà lý do là "mang
+    thai", "bệnh da", dữ liệu sức khoẻ theo Luật 91/2025 — trong khi hộp
+    thư thì đã lọc theo `account_memberships` từ lâu. Ai thấy mọi kênh
+    (`hoi_thoai.xem_tat_ca`) thì không bị lọc kênh.
+
+    Việc mình NHẬN hay mình GIAO thì luôn thấy, dù không thuộc kênh: người
+    điều phối đã chủ ý giao, giấu nó đi là giao một việc vô hình.
+
+    `chi_loc_kenh=True` (dùng cho SỬA/XOÁ): chỉ chặn việc thuộc kênh khác,
+    không chặn việc đã giao cho người khác cùng kênh. Chặn cả vế ấy thì
+    người bấm "Nhận" chậm một nhịp nhận 404 thay vì 403 "việc này đã có
+    người nhận" — một câu trả lời sai về chuyện vừa xảy ra; luật giành việc
+    đã có ở `api/cong_viec.py::sua`.
     """
-    if "cong_viec.xem_tat_ca" in (nguoi.get("quyen") or ()):
+    quyen = nguoi.get("quyen") or ()
+    if "cong_viec.xem_tat_ca" in quyen:
         return "TRUE", []
     n = so_tham_so + 1
+    if "hoi_thoai.xem_tat_ca" in quyen:
+        cung_kenh = "TRUE"
+    else:
+        cung_kenh = (
+            f"({bi_danh}.conversation_id IS NULL OR EXISTS ("
+            f"SELECT 1 FROM conversations pv_c JOIN account_memberships pv_m "
+            f"ON pv_m.account_id = pv_c.account_id "
+            f"WHERE pv_c.id = {bi_danh}.conversation_id AND pv_m.user_id = ${n}))"
+        )
+    if chi_loc_kenh:
+        return (
+            f"({bi_danh}.nguoi_nhan = ${n} OR {bi_danh}.nguoi_giao = ${n} "
+            f"OR {cung_kenh})",
+            [str(nguoi["id"])],
+        )
     return (
         f"({bi_danh}.nguoi_nhan = ${n} OR {bi_danh}.nguoi_giao = ${n} "
-        f"OR {bi_danh}.nguoi_nhan IS NULL)",
+        f"OR ({bi_danh}.nguoi_nhan IS NULL AND {cung_kenh}))",
         [str(nguoi["id"])],
     )
 

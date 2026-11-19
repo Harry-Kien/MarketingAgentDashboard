@@ -146,14 +146,22 @@ def test_ket_thuc_tiep_quan_dong_viec_tu_sinh(app_that, monkeypatch):
 
 
 def test_viec_nguoi_giao_tay_khong_bi_dong_khi_giai_quyet(app_that):
-    """Chỉ việc nguon='agent' đóng theo hội thoại — "gọi lại chị Hoa" vẫn phải làm."""
+    """
+    Chỉ việc nguon='agent' đóng theo hội thoại — "gọi lại chị Hoa" vẫn phải làm.
+
+    Từ khi ghép Resolve Guard (DEV-04, Release 1), việc người giao tay còn mở
+    thì CHẶN giải quyết (409 kèm danh sách việc) thay vì để hội thoại đóng với
+    việc treo. Bất biến cần canh vẫn thế: việc ấy KHÔNG bị đóng hộ.
+    """
     qt = _quan_tri_vao(app_that)
     tk = _kenh_webchat(qt)
     _khach_nhan(app_that, tk, "Chị Hoa", "cần tư vấn")
     cid = _hoi_thoai_cua(app_that, tk)
     r = qt.post("/api/cong-viec", json={"tieu_de": "Gọi lại chị Hoa", "conversation_id": cid})
     assert r.status_code == 201
-    assert qt.post(f"/api/inbox/conversations/{cid}/giai-quyet").status_code == 200
+    chan = qt.post(f"/api/inbox/conversations/{cid}/giai-quyet")
+    assert chan.status_code == 409
+    assert [t["id"] for t in chan.json()["detail"]["pending_tasks"]] == [r.json()["id"]]
     assert _mot(app_that, "SELECT trang_thai FROM cong_viec WHERE id = $1::uuid",
                 r.json()["id"])["trang_thai"] == "moi"
 

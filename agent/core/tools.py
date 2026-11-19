@@ -1656,7 +1656,7 @@ async def _danh_dau_xin_huy(
     # Mock cũ trong unit test trả dict tối giản không có `id` (chỉ có `ma_don`).
     # Trả `True` để không gãy `KeyError`, còn dòng 1558 chỉ nối Pending Action
     # khi kết quả là UUID thật từ PostgreSQL.
-    return (row.get("id") or True) if row is not None else None
+    return (row.get("id") or True) if row is not None else False
 
 
 async def _xin_huy_don(args: dict, conversation_id) -> dict:

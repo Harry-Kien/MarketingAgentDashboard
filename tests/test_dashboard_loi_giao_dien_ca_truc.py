@@ -337,7 +337,7 @@ def test_form_khach_reset_truoc_khi_nap_lai(form):
 
 @pytest.mark.parametrize("dau", [
     '$$("[data-vapprove]")',
-    '$$("[data-doc]")',
+    '$$(\'[data-doc-archive]\')',
     '$("#draftsave").addEventListener',
     'if (bulk) bulk.addEventListener',
     '$$("[data-pcancel]")',
@@ -347,7 +347,7 @@ def test_nut_co_bat_loi(dau):
     assert "try {" in doan and "toast(e.message, true)" in doan, f"{dau}: lỗi bị nuốt"
 
 
-@pytest.mark.parametrize("dau", ['$$("[data-doc]")', '$$("[data-pcancel]")'])
+@pytest.mark.parametrize("dau", ['$$(\'[data-doc-archive]\')', '$$("[data-pcancel]")'])
 def test_xoa_tai_lieu_va_huy_bai_phai_hoi(dau):
     doan = _khoi_handler(dau)
     assert "confirm(" in doan and doan.index("confirm(") < doan.index("await api("), f"{dau}: phải hỏi TRƯỚC khi gọi"

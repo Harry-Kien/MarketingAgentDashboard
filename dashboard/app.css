@@ -2015,3 +2015,30 @@ svg { flex: none; }
    người trực biết vì sao không được chia hội thoại mới. */
 .ca-cua-toi { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid hsl(var(--border)); }
 .ca-cua-toi.is-ngoai { border-left-color: hsl(var(--warning)); }
+
+/* ---------- Kết nối kênh: điều kiện, nối mới, sức khoẻ ---------- */
+.kn-dieukien { display: grid; gap: 8px; }
+.kn-dk { display: flex; gap: 10px; align-items: flex-start; }
+.kn-dk b { min-width: 220px; }
+.kn-o { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.kn-the { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px;
+  border: 1px solid var(--line, #dce3f0); border-radius: 12px; background: var(--card, #fff);
+  cursor: pointer; font: inherit; color: inherit; }
+.kn-the:hover:not(:disabled) { border-color: var(--accent, #4361ee); }
+.kn-the:disabled { opacity: .55; cursor: not-allowed; }
+.kn-the span { font-size: 13px; color: var(--muted, #5c6882); }
+.kn-the--phu { border-style: dashed; }
+.kn-dong { display: grid; grid-template-columns: 14px minmax(140px, 1.2fr) minmax(180px, 2.5fr) auto; gap: 10px;
+  align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line, #eef2f8); }
+.kn-cham { width: 12px; height: 12px; border-radius: 50%; }
+.kn-cham--xanh { background: #2f9e44; } .kn-cham--vang { background: #f08c00; }
+.kn-cham--do { background: #e03131; } .kn-cham--tat { background: #adb5bd; }
+.kn-dong small { display: block; color: var(--muted, #5c6882); }
+.kn-ma { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
+.kn-ma code { flex: 1; white-space: pre-wrap; word-break: break-all; padding: 8px; border-radius: 8px;
+  background: var(--soft, #eef2f8); }
+@media (max-width: 720px) {
+  .kn-dong { grid-template-columns: 14px 1fr; }
+  .kn-dong > :nth-child(n+3) { grid-column: 2; }
+  .kn-dk { flex-direction: column; } .kn-dk b { min-width: 0; }
+}

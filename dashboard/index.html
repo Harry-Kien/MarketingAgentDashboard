@@ -1175,6 +1175,37 @@
           <p>Mỗi tài khoản có credential, sức khỏe và luồng gửi riêng. Secret chỉ được nhập, không hiển thị lại.</p></div>
         <button type="button" class="btn btn--primary" id="connection-add-toggle">Thêm tài khoản</button>
       </div>
+      <!-- KẾT NỐI KÊNH: điều kiện chung → nối kênh mới → sức khoẻ từng kênh.
+           Thứ tự ấy là thứ tự người vận hành cần: thiếu địa chỉ công khai thì
+           nối gì cũng vô ích; nối xong thì câu duy nhất còn lại là "tin có về
+           không". Xem agent/omnichannel/suc_khoe_kenh.py. -->
+      <section class="panel kn-dieukien" id="kn-dieukien" aria-live="polite">
+        <p class="empty">Đang kiểm điều kiện chung…</p></section>
+      <section class="panel kn-moi">
+        <h2 class="panel__head">Nối kênh mới <span class="panel__note">mỗi nền tảng một nút — không phải dán token</span></h2>
+        <div class="kn-o">
+          <button type="button" class="kn-the" data-noi="meta">
+            <b>Facebook + Instagram</b>
+            <span>Đăng nhập Facebook, chọn Trang. Instagram Business đã liên kết Trang được nối cùng lúc.</span></button>
+          <button type="button" class="kn-the" data-noi="zalo_oa">
+            <b>Zalo OA</b>
+            <span>Đăng nhập Zalo, chọn OA. Kênh chính thức, bền lâu dài.</span></button>
+          <button type="button" class="kn-the" data-noi="zalo_personal">
+            <b>Zalo cá nhân</b>
+            <span>Đặt tên rồi quét mã QR bằng app Zalo. Không chính thức — Zalo có thể khoá nick.</span></button>
+          <button type="button" class="kn-the" data-noi="webchat">
+            <b>Chat trên website</b>
+            <span>Nhập địa chỉ website, nhận một đoạn mã dán vào website là xong.</span></button>
+          <button type="button" class="kn-the kn-the--phu" data-noi="whatsapp">
+            <b>WhatsApp</b>
+            <span>Hiện còn nhập tay từ Meta (Phone number ID, token). Nối bằng đăng nhập: sắp có.</span></button>
+        </div>
+        <div id="kn-ketqua"></div>
+      </section>
+      <section class="panel kn-suckhoe">
+        <h2 class="panel__head">Sức khoẻ kênh <span class="panel__note" id="kn-dem"></span></h2>
+        <div id="kn-suckhoe" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
       <section class="panel connection-create is-hidden" id="connection-create">
         <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
         <div class="oauth-row">

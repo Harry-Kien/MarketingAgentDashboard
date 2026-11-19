@@ -9,7 +9,7 @@ async function refresh() {
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
     if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") { await loadHoSoAgent(); await loadKetNoi(); await loadTichHop(); }
+    if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
       if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
       await loadAnalyticsKhach(); await loadCost();
@@ -796,6 +796,14 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
     return;
   }
 
+  if (form.channel === "webchat") {
+    /* Kênh web cần ĐỊA CHỈ WEBSITE được phép mở khung chat; form này không
+     * có ô ấy, và kênh lưu thiếu nó bị máy chủ từ chối mọi phiên (403) —
+     * khung chat hiện ra mà khách gõ gì cũng không vào (đo 19.11.2026). */
+    toast('Kênh website nối bằng nút "Chat trên website" ở mục Nối kênh mới.', true);
+    return;
+  }
+
   const credentials = {};
   for (const key of ["app_id", "access_token", "verify_token"]) {
     if (form[key]) credentials[key] = form[key];
@@ -900,4 +908,3 @@ $("#btn-oauth-zalo-oa")?.addEventListener("click", async () => {
     nut.disabled = false;
   }
 });
-

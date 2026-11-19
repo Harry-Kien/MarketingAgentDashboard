@@ -185,3 +185,73 @@ def test_vong_canh_token_sinh_viec():
     khoi = src[src.index('"meta.token_sap_het" if kq["muc"] == "sap_het"'):][:2500]
     assert "account_id=str(acc.id)" in khoi
     assert "tao_tu_kenh(" in khoi
+
+
+# ------------------------------------------------------------------ kênh website
+def _js(ten: str) -> str:
+    return (ROOT / "dashboard" / "src" / ten).read_text(encoding="utf-8")
+
+
+def test_noi_website_luu_dia_chi_website_duoc_phep():
+    """
+    Kênh web thiếu `allowed_origins` bị máy chủ từ chối MỌI phiên (403): khung
+    chat hiện ra mà khách gõ gì cũng không vào. Form cũ không có ô ấy — nút
+    "Chat trên website" phải gửi nó, và form cũ phải chặn kênh web.
+    """
+    khoi = _js("18-ket-noi-kenh.js")
+    khoi = khoi[khoi.index("async function knNoiWebsite"):][:2500]
+    src = _js("10-vong-lam-moi.js")
+    assert "allowed_origins: [goc]" in khoi
+    assert "widget_secret: knBiMat()" in khoi
+    assert "/enable" in khoi
+    form = src[src.index("const credentials = {};") - 700:src.index("const credentials = {};")]
+    assert 'form.channel === "webchat"' in form and "return;" in form
+
+
+def test_goc_website_chi_lay_scheme_ten_mien_cong():
+    """Origin của trình duyệt không mang đường dẫn — lưu cả đường dẫn là không phiên nào khớp."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("máy không có node")
+    src = _js("18-ket-noi-kenh.js")
+    bat_dau = src.index("function knGocWebsite")
+    ham = src[bat_dau:src.index("\n}\n", bat_dau) + 2]
+    ca = ["blanica.vn/san-pham/kem", "https://shop.vn:8443/a?b=1", "http://localhost:3000/x", "", "a b c"]
+    out = subprocess.run(
+        [node, "-e", ham + f"\nconsole.log(JSON.stringify({json.dumps(ca)}.map(knGocWebsite)))"],
+        capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == ["https://blanica.vn", "https://shop.vn:8443",
+                               "http://localhost:3000", "", ""]
+
+
+def test_kenh_web_chi_mo_tren_dung_website(app_that):
+    from tests.test_nghiem_thu_saas import _quan_tri_vao
+
+    qt = _quan_tri_vao(app_that)
+    r = qt.post("/api/channel-accounts", json={
+        "channel": "webchat", "display_name": "Website BLANICA",
+        "capabilities": {"send_text": True, "receive_message": True}, "metadata": {},
+        "credentials": {"widget_secret": "x" * 43, "allowed_origins": ["https://blanica.vn"]},
+    })
+    assert r.status_code == 201, r.text
+    tk = r.json()["id"]
+    assert qt.post(f"/api/channel-accounts/{tk}/enable").status_code == 200
+    app_that.cookies.clear()
+    dung = app_that.post(f"/webchat/{tk}/session", json={}, headers={"Origin": "https://blanica.vn"})
+    la = app_that.post(f"/webchat/{tk}/session", json={}, headers={"Origin": "https://khac.vn"})
+    assert dung.status_code == 200 and dung.json().get("token")
+    assert la.status_code == 403
+
+
+def test_man_ket_noi_tai_suc_khoe_kenh_moi_vong():
+    src = _js("10-vong-lam-moi.js")
+    dong = next(d for d in src.splitlines() if 'state.view === "ketnoi"' in d)
+    assert "loadSucKhoeKenh()" in dong
+    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    for o in ('id="kn-dieukien"', 'id="kn-suckhoe"', 'data-noi="meta"', 'data-noi="zalo_oa"',
+              'data-noi="zalo_personal"', 'data-noi="webchat"', 'data-noi="whatsapp"'):
+        assert o in html, o

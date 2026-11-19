@@ -106,7 +106,7 @@ mới khởi động lại các cửa hàng còn lại.
 
 ## 7. Giới hạn đã biết
 
-- **Một bản app mỗi cửa hàng.** Vòng nền (outbox, lịch đăng bài, giữ phiên
+- **Một bản app mỗi cửa hàng.** Vòng nền (outbox, hộp thư bền, giữ phiên
   Zalo) không chịu được hai bản cùng chạy. Muốn chịu tải hơn: tăng CPU/RAM
   cho container, không tăng số bản.
 - **Zalo cá nhân** dùng API không chính thức (zca-js) — có thể bị Zalo khoá

@@ -21,7 +21,7 @@
 13. [Kênh Tiếp Nhận & Đa Kênh (`agent/channels/`, `agent/omnichannel/`)](#13-kênh-tiếp-nhận--đa-kênh-agentchannels-agentomnichannel)
 14. [Canh Gác & Sức Khoẻ Hệ Thống (`agent/canh_gac.py`, `agent/suc_khoe.py`)](#14-canh-gác--sức-khoẻ-hệ-thống-agentcanh_gacpy-agentsuc_khoepy)
 15. [Lược Đồ Cơ Sở Dữ Liệu PostgreSQL (`agent/schema.sql`)](#15-lược-đồ-cơ-sở-dữ-liệu-postgresql-agentschemasql)
-16. [Sản Xuất Video & Đăng Bài Tự Động (`agent/video/`, `agent/publish/`)](#16-sản-xuất-video--đăng-bài-tự-động-agentvideo-agentpublish)
+16. [Video & Đăng Bài — ĐÃ GỠ](#16-video--đăng-bài--đã-gỡ)
 
 ---
 
@@ -45,7 +45,6 @@ Dự án tuân theo các quy tắc nhất quán phản ánh kiến trúc và mi�
 | `ton_kho` | `ban_duoc` | `ton_kho` là tổng số lượng vật lý còn trong kho.<br>`ban_duoc` (`free_qty`) = `ton_kho` - số lượng đã bị đơn hàng khác giữ chỗ. Agent **chỉ được phép bán theo `ban_duoc`**. |
 | `da_chot` | `cho_duyet` | `da_chot`: Agent tự chốt đơn thành công vì tổng tiền < `nguong_tu_chot_vnd`.<br>`cho_duyet`: Đơn hàng vượt hạn mức tiền hoặc cần người thật vào bấm xác nhận. |
 | `cho_dong_bo` | `da_giao` | `cho_dong_bo`: Đơn đã chốt nội bộ nhưng chưa đẩy được sang phần mềm ERP/kho bên ngoài (đang thử lại).<br>`da_giao`: Đơn hàng đã được đơn vị vận chuyển giao tận tay khách. |
-| `tu_chot` | `tu_dong_dang_khong_can_duyet` | `tu_chot`: Cho phép agent tự xác nhận đơn hàng nhỏ lẻ.<br>`tu_dong_dang_khong_can_duyet`: Cờ nguy hiểm cho phép tự đăng bài lên Fanpage/TikTok không cần con người duyệt trước (mặc định luôn `False`). |
 | `external_id` | `conversation_id` | `external_id` là mã hội thoại phía Zalo/Chatwoot.<br>`conversation_id` là mã UUID nội bộ trong CSDL PostgreSQL của Marketing Agent. |
 | `ma_don` | `ma_van_don` | `ma_don` là mã đơn hàng nội bộ (ví dụ `AS260904120000`).<br>`ma_van_don` là mã theo dõi của hãng vận chuyển (ví dụ `GHN12345678`). |
 | `Gia.gia_ban` | `sp["gia"]` | `Gia.gia_ban` là đối tượng chứa giá kèm xuất xứ pricelist từ ERP thật.<br>`sp["gia"]` là giá niêm yết trong file tĩnh `catalog.json`. |
@@ -66,7 +65,7 @@ Mọi thiết lập tập trung trong class `Settings(BaseSettings)`. Không har
 * **`gcp_region`** (`str`, mặc định `"global"`): Vùng chạy mô hình Claude trên Vertex AI.
 * **`gemini_region`** (`str`, mặc định `"us-central1"`): Vùng chạy mô hình Gemini và Text Embedding trên Vertex AI.
 * **`model_chat`** (`str`, mặc định `"gemini-2.5-flash"`): Tên mô hình đảm nhiệm việc trò chuyện, gọi công cụ tư vấn khách hàng.
-* **`model_hard`** (`str`, mặc định `"gemini-2.5-pro"`): Mô hình mạnh, thông minh hơn để xử lý tác vụ phức tạp (soạn bài viết dài, lập luận kịch bản video).
+* **`model_hard`** (`str`, mặc định `"gemini-2.5-pro"`): Mô hình mạnh, thông minh hơn để xử lý tác vụ phức tạp (lập luận nhiều bước).
 * **`model_cheap`** (`str`, mặc định `"gemini-2.5-flash-lite"`): Mô hình siêu nhẹ và rẻ để chạy kiểm tra sức khoẻ (health check) hoặc phân loại tin nhắn nhanh.
 * **`confidence_floor`** (`float`, mặc định `0.55`): Ngưỡng độ tin cậy tối thiểu. Nếu điểm khớp RAG dưới mức này và không có dữ liệu từ tool, agent buộc phải chuyển cho nhân viên thật xử lý.
 * **`max_cost_per_conversation`** (`float`, mặc định `0.25` USD): Trần chi phí gọi API tối đa cho một hội thoại. Vượt quá trần này, agent tự động chuyển người trực để chống bùng nổ ngân sách.
@@ -76,7 +75,7 @@ Mọi thiết lập tập trung trong class `Settings(BaseSettings)`. Không har
 * **`vai_tro_tien_trinh`** (`str`, mặc định `"tat_ca"`): Phân chia vai trò khi chạy scale cụm máy chủ:
   * `"tat_ca"`: Chạy cả Web API và tất cả các worker nền (thích hợp cho máy đơn).
   * `"api"`: Chỉ xử lý HTTP request/webhook, không chạy worker nền.
-  * `"worker"`: Chỉ chạy các tác vụ nền (outbox worker, video worker, canh gác, sao lưu, auto-routing).
+  * `"worker"`: Chỉ chạy các tác vụ nền (outbox worker, canh gác, sao lưu, auto-routing).
 * **`agent_enabled`** (`bool`, mặc định `True`): Công tắc bật/tắt toàn bộ AI agent. Nếu `False`, mọi tin nhắn đến sẽ đứng chờ người trực.
 * **`agent_mode`** (`str`, mặc định `"assist"`):
   * `"assist"`: Agent soạn sẵn câu trả lời vào dashboard nhưng **chưa gửi**, nhân viên phải bấm nút duyệt gửi.
@@ -139,19 +138,13 @@ Mọi thiết lập tập trung trong class `Settings(BaseSettings)`. Không har
 * **`cookie_bao_mat`** (`bool`, mặc định `False` trên dev, bật `True` trên production): Chỉ gửi cookie phiên qua kết nối bảo mật HTTPS.
 * **`sse_poll_seconds`** (`float`, mặc định `0.25` giây): Nhịp quét CSDL của Server-Sent Events trên Dashboard trực tin.
 
-### 3.8. Sản Xuất Video & Đăng Bài
+### 3.8. Video & Đăng Bài — đã gỡ
 
-* **`video_studio_dir`** (`str`, mặc định `"./video-studio"`): Thư mục chứa dự án HyperFrames / Remotion.
-* **`video_output_dir`** (`str`, mặc định `"./data/videos"`): Thư mục lưu file video MP4 đã xuất.
-* **`ffprobe_bin`** (`str`, mặc định `"ffprobe"`): Đường dẫn thực thi binary ffprobe.
-* **`veo_model`** (`str`): Tên mô hình Google Veo (ví dụ `"veo-3.1-generate-preview"`). Nếu để trống là tắt dựng video AI bằng Veo.
-* **`hyperframes_bat`** (`bool`, mặc định `False`): Bật/tắt renderer HyperFrames.
-* **`video_workers`** (`int`, mặc định `1`): Số lượng luồng render video đồng thời.
-* **`tts_provider`** (`str`, mặc định `"auto"`): Nhà cung cấp đọc giọng Text-to-Speech (`"viettts"` hoặc `"google"`).
-* **`tts_voice`** (`str`, mặc định `"nu-nhe-nhang"`): Giọng đọc tiếng Việt của VietTTS.
-* **`google_tts_voice`** (`str`, mặc định `"vi-VN-Neural2-A"`): Giọng đọc Neural của Google Cloud TTS.
-* **`n8n_webhook_url`**, **`n8n_auth_header`** (`str`): Cấu hình gửi bài đăng sang n8n tự động đăng lên MXH.
-* **`tu_dong_dang_khong_can_duyet`** (`bool`, mặc định `False`): Cho phép tự động đăng bài lên mạng xã hội không cần con người duyệt qua dashboard.
+Các khoá `video_*`, `tts_*`, `veo_model`, `hyperframes_bat`, `ffprobe_bin`,
+`n8n_webhook_url`, `n8n_auth_header`, `fb_page_*`, `ig_user_id`, `tiktok_*`,
+`tu_dong_dang_khong_can_duyet` đã bỏ khỏi `agent/config.py` ngày 19.11.2026
+cùng tính năng dựng video và đăng bài. `.env` cũ còn chúng thì vô hại —
+`Settings` bỏ qua khoá lạ.
 
 ---
 
@@ -173,7 +166,6 @@ Khi hàm `respond()` hoàn tất, nó trả về một instance của `Reply` v�
 * **`cache_read`** (`int`): Số token đọc từ Prompt Cache (tiết kiệm chi phí đáng kể).
 * **`latency_ms`** (`int`): Tổng độ trễ tính bằng mili-giây từ lúc gửi request đến khi nhận câu trả lời.
 * **`model`** (`str`): Tên định danh mô hình AI đã phục vụ lượt chat này.
-* **`video_id`** (`str | None`): ID của video marketing vừa được khởi tạo nếu lượt chat có gọi công cụ `tao_video`.
 * **`anh_can_gui`** (`list[dict]`): Danh sách ảnh sản phẩm agent quyết định gửi kèm cho khách (mỗi phần tử gồm `duong_dan` và `ten`).
 
 ### 4.2. Tham Số Đầu Vào Của Hàm `respond()`
@@ -272,15 +264,7 @@ Mọi thông tin về giá bán, tồn kho, thành phần sản phẩm và đơn
 * **`loai`** (`str`): `"doi"` (đổi mẫu/size khác) hoặc `"tra"` (trả hàng hoàn tiền).
 * **`ly_do`** (`str`): Lý do đổi trả khách cung cấp.
 
-#### 9. `tao_video`
-* Đặt hàng hệ thống tạo video marketing cho sản phẩm.
-* **`tieu_de`** (`str`): Tiêu đề ngắn gọn cho video.
-* **`yeu_cau`** (`str`): Mô tả kịch bản nội dung cần làm.
-* **`loai`** (`str`): `"explainer"` (giải thích chuyên sâu) hoặc `"product"` (giới thiệu sản phẩm).
-* **`thoi_luong_giay`** (`int`, tuỳ chọn): Độ dài video mong muốn.
-* **`ma_san_pham`** (`str`, tuỳ chọn): Mã sản phẩm để hệ thống tự lấy ảnh trong kho.
-
-#### 10. `tao_don_hang`
+#### 9. `tao_don_hang`
 * Lên đơn hàng mới cho khách (công cụ duy nhất có hiệu ứng không thể đảo ngược).
 * **`items`** (`list[dict]`): Danh sách sản phẩm, mỗi phần tử gồm:
   * `ten_san_pham` (`str`): Tên hoặc mã hàng.
@@ -291,7 +275,7 @@ Mọi thông tin về giá bán, tồn kho, thành phần sản phẩm và đơn
 * **`khach_da_xac_nhan`** (`bool`): Chỉ được đặt `True` khi khách đã nói rõ lời xác nhận đồng ý đặt mua đơn hàng.
 * **`ghi_chu`** (`str`, tuỳ chọn): Ghi chú dặn dò khi đóng gói hoặc giao hàng.
 
-#### 11. `chuyen_nhan_vien`
+#### 10. `chuyen_nhan_vien`
 * Chủ động bàn giao cuộc trò chuyện cho nhân viên chăm sóc khách hàng trực tiếp.
 * **`ly_do`** (`str`): Lý do chi tiết cần người hỗ trợ.
 * **`muc_do`** (`str`, `"thuong"` hoặc `"gap"`): Mức độ khẩn cấp của yêu cầu.
@@ -445,7 +429,7 @@ Mọi thông tin về giá bán, tồn kho, thành phần sản phẩm và đơn
 
 ## 14. Canh Gác & Sức Khoẻ Hệ Thống (`agent/canh_gac.py`, `agent/suc_khoe.py`)
 
-* **`TOT`** (`"tot"`), **`CANH_BAO`** (`"canh_bao"`), **`HONG`** (`"hong"`): Ba mức đánh giá sức khoẻ cho từng thành phần (CSDL, LLM, kênh nhắn tin, giọng đọc, sao lưu, ERP, vận chuyển).
+* **`TOT`** (`"tot"`), **`CANH_BAO`** (`"canh_bao"`), **`HONG`** (`"hong"`): Ba mức đánh giá sức khoẻ cho từng thành phần (CSDL, LLM, kênh nhắn tin, sao lưu, ERP, vận chuyển).
 * **`_truoc`** (`str | None`): Trạng thái sức khoẻ của toàn hệ thống ở lần kiểm tra trước đó (chỉ phát chuông báo động khi trạng thái chuyển từ `tot` sang `hong`, hoặc phục hồi từ `hong` về `tot`).
 * **`_cho_truoc`** (`bool`): Cờ riêng theo dõi trạng thái "có khách đang bị bỏ quên" (chờ nhân viên quá `cho_nguoi_toi_da_phut`).
 * **`MUC_KHACH_CHO`** (`str`, `"Khách chờ người"`): Tên chỉ mục kiểm tra thời gian chờ của khách hàng.
@@ -511,13 +495,12 @@ Dưới đây là các cột quan trọng nhất trong các bảng CSDL cốt l�
 
 ---
 
-## 16. Sản Xuất Video & Đăng Bài Tự Động (`agent/video/`, `agent/publish/`)
+## 16. Video & Đăng Bài — ĐÃ GỠ
 
-* **`videos.status`**: Vòng đời của video marketing trong pipeline:
-  * `"queued"` -> `"claimed"` -> `"looking"` (phân tích ảnh sản phẩm) -> `"scripting"` (soạn kịch bản) -> `"voicing"` (thu âm giọng đọc TTS) -> `"rendering"` (dựng khung hình) -> `"pending_review"` (chờ người duyệt) -> `"ready"` (sẵn sàng đăng).
-* **`posts.trang_thai`**: Vòng đời của bài đăng mạng xã hội:
-  * `"nhap"` -> `"cho_duyet"` -> `"da_len_lich"` -> `"dang_dang"` -> `"da_dang"` -> `"loi"` / `"da_huy"`.
-* **`post_metrics`**: Bảng thống kê hiệu quả của bài đăng phục vụ vòng lặp phản hồi cải thiện nội dung (`luot_xem`, `luot_thich`, `binh_luan`, `chia_se`, `luot_click`).
+`agent/video/` và `agent/publish/` đã gỡ khỏi mã ngày 19.11.2026: hệ thống
+chỉ còn làm chăm sóc khách. Bảng `videos`, `video_assets`, `posts`,
+`post_metrics` vẫn nằm trong CSDL (còn dữ liệu cũ, migration đã chốt
+checksum) nhưng không mã nào đọc hay ghi nữa.
 
 ---
 

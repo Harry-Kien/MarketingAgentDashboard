@@ -16,7 +16,7 @@ Khác `docs/dua-vao-doanh-nghiep.md` — ở đó là cách đưa hệ thống v
 | PostgreSQL (Docker) | 127.0.0.1:5433 | **Mất tất cả** — không nhận, không trả lời, dashboard trắng |
 | App (uvicorn) | 127.0.0.1:8000 | Mất tất cả trừ dữ liệu đã lưu |
 | Sidecar Zalo (Node) | 127.0.0.1:3210 | Chỉ mất kênh Zalo cá nhân |
-| n8n (Docker) | 127.0.0.1:5678 | Mất đường đăng bài tự động |
+| n8n (Docker) | 127.0.0.1:5678 | Mất đường định tuyến báo động (nếu `CANH_GAC_WEBHOOK` trỏ vào n8n) |
 | **Kho / ERP** (Odoo hoặc ERPNext) | máy khác | Agent **không nói được giá và tồn kho** — nó chuyển hết cho người thay vì đoán bừa |
 
 Dòng cuối khác ba dòng trên ở một chỗ quan trọng: ERP **không phải tiến
@@ -202,8 +202,8 @@ diễn tập đầu tiên trong dự án này cho 41/42 bảng — thiếu đún
 tức toàn bộ kho tri thức RAG. Không đếm thì không ai biết.
 
 `scripts/sao_luu.py` **không** sao lưu volume Docker. Volume `n8n_data` giữ
-OAuth Facebook/Instagram/TikTok — mất là phải xin duyệt lại 1–4 tuần. Sao
-lưu riêng nếu đã nối OAuth thật.
+workflow định tuyến báo động và credential đã nối trong n8n. Sao lưu riêng
+nếu đã dựng workflow thật trong đó.
 
 ---
 
@@ -381,8 +381,8 @@ Dashboard → **Phòng thử**. Nhắn như khách, nhiều lượt. Bên phải
 gọi với tham số gì và trả gì, trích tài liệu nào, tốn bao nhiêu.
 
 **"ĐANG THỬ" cạnh tên công cụ** nghĩa là công cụ đó chỉ được mô phỏng:
-`tao_don_hang`, `tao_video`, `xin_huy_don`, `xin_doi_tra` không ghi gì
-vào Postgres, ERP hay hàng đợi. Các công cụ tra cứu chạy thật với dữ liệu
+`tao_don_hang`, `xin_huy_don`, `xin_doi_tra` không ghi gì
+vào Postgres hay ERP. Các công cụ tra cứu chạy thật với dữ liệu
 thật. Không có gì được gửi ra kênh nào, và hồ sơ khách không bị đụng.
 
 **Mô phỏng tái hiện được gì.** Đơn thử vẫn đi qua đúng những chốt của bản
@@ -1320,7 +1320,7 @@ mới khởi động lại các cửa hàng còn lại.
 
 ## 7. Giới hạn đã biết
 
-- **Một bản app mỗi cửa hàng.** Vòng nền (outbox, lịch đăng bài, giữ phiên
+- **Một bản app mỗi cửa hàng.** Vòng nền (outbox, hộp thư bền, giữ phiên
   Zalo) không chịu được hai bản cùng chạy. Muốn chịu tải hơn: tăng CPU/RAM
   cho container, không tăng số bản.
 - **Zalo cá nhân** dùng API không chính thức (zca-js) — có thể bị Zalo khoá

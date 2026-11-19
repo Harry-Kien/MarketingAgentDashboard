@@ -141,13 +141,7 @@ phép điều này. Rủi ro thật là **khoá nick**, và nick khoá thì mấ
 sử hội thoại với khách.
 
 Đường đúng cho production: **Zalo OA**. Nhờ lớp `ChannelAdapter`, đổi sang
-OA không đụng agent, RAG, video hay dashboard — chỉ thêm một lớp con.
-
-### Đăng Facebook/Instagram/TikTok chờ nền tảng duyệt
-
-Business Verification + App Review, 1–4 tuần, có thể bị từ chối. Trong lúc
-chờ, bài đăng đi qua hàng đợi thủ công — không phải giải pháp tạm bợ mà là
-con đường thật, và nó đã được làm cho nhanh.
+OA không đụng agent, RAG hay dashboard — chỉ thêm một lớp con.
 
 ### Chưa có chăm sóc chủ động
 

@@ -15,7 +15,7 @@
 | **1. Hội thoại** | `conversations`, `messages`, `ho_so_khach`, `processed_webhooks` | Lưu trữ phiên chat đa kênh, lịch sử tin nhắn, trí nhớ khách hàng và chống trùng lặp tin nhắn |
 | **2. Bán hàng & Kho** | `orders`, `ton_kho`, `kho_bien_dong` | Quản lý đơn hàng, số lượng tồn kho thực tế/bán được và nhật ký xuất nhập kho |
 | **3. Tri thức (RAG)** | `documents`, `chunks` | Quản lý tài liệu tri thức, cắt đoạn văn bản và lưu trữ vector nhúng (`pgvector`) |
-| **4. Nội dung & Video** | `videos`, `video_assets`, `posts`, `post_metrics` | Quản lý kết xuất video sản phẩm tự động, bài đăng đa kênh và chỉ số tương tác |
+| **4. Nội dung & Video (KHÔNG CÒN DÙNG)** | `videos`, `video_assets`, `posts`, `post_metrics` | Tính năng dựng video và đăng bài đã gỡ khỏi mã ngày 19.11.2026. Bảng giữ lại vì còn dữ liệu cũ và migration đã chốt checksum; không mã nào đọc/ghi nữa |
 | **5. Phân quyền (RBAC)** | `vai_tro`, `vai_tro_quyen`, `nguoi_dung_vai_tro` | Kiểm soát quyền truy cập chi tiết theo vai trò quản trị, trưởng ca, nhân viên trực chat |
 | **6. Quản lý công việc** | `cong_viec` | Giao việc nội bộ phát sinh từ hội thoại hoặc chăm sóc khách hàng |
 | **7. Hồ sơ AI Agent** | `agent_ho_so` | Cấu hình prompt, tone giọng, ngưỡng tự tin và trần chi phí cho từng agent |

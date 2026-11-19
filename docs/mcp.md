@@ -8,41 +8,40 @@ Từ trước tới giờ luồng đi một chiều: agent gọi công cụ nghi
 Nghĩa là Claude Desktop, Claude Code, hay bất cứ ứng dụng nào nói được
 Model Context Protocol đều hỏi được:
 
-> *"Aurora Skin còn bao nhiêu sữa rửa mặt cho da dầu?"*
-> *"Tuần này bài nào chạy tốt nhất?"*
-> *"Soạn giúp tôi một bài TikTok về serum niacinamide."*
+> *"Còn bao nhiêu sữa rửa mặt cho da dầu?"*
+> *"Đơn AS20260818 đang tới đâu rồi?"*
+> *"Câu trả lời này có dính cụm cấm quảng cáo mỹ phẩm không?"*
 
 mà không cần biết gì về FastAPI, Postgres hay Vertex bên trong.
 
 Với doanh nghiệp, đây là khác biệt giữa **một công cụ** và **một nền tảng**:
-phòng marketing dùng dashboard, phòng kinh doanh hỏi qua Claude Desktop,
+nhân viên chăm sóc khách dùng dashboard, quản lý hỏi qua Claude Desktop,
 mà cả hai nhìn cùng một kho dữ liệu và cùng một luật tuân thủ.
+
+Công cụ soạn bài, xếp hàng bài đăng và xem hiệu quả bài đã **gỡ ngày
+19.11.2026** cùng tính năng đăng bài — hệ thống chỉ còn làm chăm sóc khách.
 
 ---
 
 ## Ranh giới an toàn — phần quan trọng nhất
 
-Công cụ chia hai loại và **không được lẫn**:
+Mọi công cụ ở đây chỉ **đọc**: tra sản phẩm, tra đơn, tra tồn kho, tìm
+tài liệu, soi cụm cấm quảng cáo.
 
-| Loại | Có gì | Vì sao |
-|---|---|---|
-| **Đọc** | tra sản phẩm, tra đơn, tìm tài liệu, xem số liệu | An toàn, cho gọi thoải mái |
-| **Ghi** | soạn bài, đưa bài vào hàng đợi | Luôn dừng ở `cho_duyet` |
-
-Máy chủ MCP **không có** công cụ nào đăng bài, chốt đơn, hay nhắn tin cho
-khách. Lý do:
+Máy chủ MCP **không có** công cụ nào chốt đơn hay nhắn tin cho khách. Lý
+do:
 
 > MCP client là **một model khác**, chạy ngoài tầm kiểm soát của hệ thống
 > này. Nó không đi qua chốt tuân thủ trong `agent/core/agent.py`, không có
 > trần chi phí, không có lưới an toàn chuyển người. Cho nó quyền nhắn tin
-> cho khách hay đăng bài lên fanpage là giao chìa khoá cho một người lạ.
+> cho khách hay chốt đơn là giao chìa khoá cho một người lạ.
 
 Ràng buộc này được canh bằng test (`tests/test_mcp.py`), không phải bằng
 lời hứa: bất cứ ai thêm một công cụ có hậu quả ra ngoài sẽ làm đỏ CI.
 
 ---
 
-## Chín công cụ
+## Bảy công cụ
 
 | Công cụ | Việc | Loại |
 |---|---|---|
@@ -50,14 +49,12 @@ lời hứa: bất cứ ai thêm một công cụ có hậu quả ra ngoài sẽ
 | `goi_y_san_pham` | lọc theo loại da, nhu cầu, nhóm hàng, ngân sách | đọc |
 | `tra_cuu_don_hang` | tình trạng đơn theo mã | đọc |
 | `tim_trong_kho_tri_thuc` | tìm trong tài liệu nội bộ, có điểm khớp và nguồn | đọc |
-| `hieu_qua_bai_dang` | số liệu mạng xã hội, bài chạy tốt nhất | đọc |
-| `danh_sach_bai_dang` | hàng đợi bài đăng | đọc |
-| `soan_bai_dang` | agent viết nội dung, tự kiểm tuân thủ | ghi (không lưu) |
-| `dua_bai_vao_hang_doi` | lưu bài ở trạng thái chờ duyệt | ghi |
-| `kiem_tra_tuan_thu_quang_cao` | soi nội dung theo TT 06/2011 và NĐ 181/2013 | đọc |
+| `ton_kho_realtime` | số bán được của một mã, hỏi thẳng kho/ERP | đọc |
+| `suc_khoe_erp` | kho/ERP đang nối có sống không, mạch có mở không | đọc |
+| `kiem_tra_tuan_thu_quang_cao` | soi câu chữ theo TT 06/2011 và NĐ 181/2013 — cùng bộ soi với mẫu trả lời nhanh | đọc |
 
 Và hai tài nguyên: `aurora://danh-muc` (toàn bộ danh mục sản phẩm),
-`aurora://huong-dan-viet` (giới hạn pháp lý khi viết quảng cáo mỹ phẩm).
+`aurora://huong-dan-viet` (giới hạn pháp lý khi nói về mỹ phẩm).
 
 ---
 

@@ -20,7 +20,8 @@ toán trong cùng một mã nguồn.
 - Credential của từng tài khoản được mã hóa AES-256-GCM; secret chỉ được nhập,
   không trả lại qua API hoặc DOM.
 - AI trả lời có căn cứ, assist/auto/human mode, approval cho hành động có hậu
-  quả, đồng thời hỗ trợ RAG, đơn hàng, nội dung và video marketing.
+  quả, đồng thời hỗ trợ RAG và đơn hàng. Hệ thống chỉ làm chăm sóc khách:
+  dựng video và đăng bài mạng xã hội đã gỡ ngày 19.11.2026.
 
 ## Kiến trúc
 
@@ -53,7 +54,7 @@ Tài liệu chi tiết: `docs/kien-truc.md` và
 
 ## Chạy local
 
-Yêu cầu: Python 3.12, Node.js 22+, Docker Desktop và FFmpeg.
+Yêu cầu: Python 3.12, Node.js 22+ và Docker Desktop.
 
 ```powershell
 Copy-Item .env.example .env

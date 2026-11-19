@@ -2018,6 +2018,7 @@ svg { flex: none; }
 
 /* ---------- Kết nối kênh: điều kiện, nối mới, sức khoẻ ---------- */
 .kn-dieukien { display: grid; gap: 8px; }
+.kn-moi, .kn-suckhoe { display: grid; gap: 12px; }
 .kn-dk { display: flex; gap: 10px; align-items: flex-start; }
 .kn-dk b { min-width: 220px; }
 .kn-o { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }

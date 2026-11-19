@@ -37,6 +37,7 @@ CHI_DE_DOC = {
     "contact",    # id khách trên dòng — nút hàng là chính dòng
     "nguoi",      # id nhân viên trên dòng — nút nằm trong dòng
     "chuloc", "kieu", "ma", "truong", "so",
+    "account-id",  # trong ĐOẠN MÃ NHÚNG widget website — widget.js đọc, không phải nút
 }
 
 

@@ -241,3 +241,35 @@ def test_canh_bao_sla_theo_cung_cong_tac_24_7(monkeypatch, theo_gio, mong):
         assert da_tieu == timedelta(hours=9)
     else:
         assert da_tieu == mong, "SLA tính 24/7 mà cảnh báo vẫn đếm theo giờ làm việc"
+
+
+# ------------------------------------------------------------------ 5.
+def test_dong_bo_van_don_erp_bo_cuoc_thi_sinh_viec(monkeypatch):
+    """Bỏ cuộc ('dead') mà không ai biết là ERPNext mãi thiếu mã vận đơn."""
+    from agent import db
+    from agent.core import cong_viec
+    from agent.erp import dong_bo_van_don
+
+    async def _khong(*_a, **_k):
+        return "UPDATE 1"
+
+    da_tao: list[dict] = []
+
+    async def _tao(ma_don, **kw):
+        da_tao.append({"ma_don": ma_don, **kw})
+        return "id"
+
+    monkeypatch.setattr(db, "execute", _khong)
+    monkeypatch.setattr(cong_viec, "tao_tu_don_hang", _tao)
+    viec = {"id": "x", "ma_don": "GHEP-06", "ma_van_don": "GHN-06",
+            "erp_van_chuyen_so_lan_thu": dong_bo_van_don.SO_LAN_TOI_DA,
+            "erp_van_chuyen_khoa_boi": "k"}
+    st = asyncio.run(dong_bo_van_don._that_bai(viec, ConnectionError("mất mạng"), False))
+    assert st == "dead"
+    assert len(da_tao) == 1 and da_tao[0]["ma_don"] == "GHEP-06"
+    assert da_tao[0]["khoa"] == "erp_van_don:dead:GHEP-06:GHN-06"
+
+    da_tao.clear()
+    viec["erp_van_chuyen_so_lan_thu"] = 1
+    assert asyncio.run(dong_bo_van_don._that_bai(viec, ConnectionError("x"), False)) == "retry"
+    assert da_tao == [], "còn thử lại thì chưa được làm phiền nhân viên"

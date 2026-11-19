@@ -113,6 +113,19 @@ async def _that_bai(viec: dict[str, Any], exc: Exception, vinh_vien: bool) -> st
         f"{type(exc).__name__}: {exc}"[:500], cho_phut,
         viec["erp_van_chuyen_khoa_boi"],
     )
+    if trang_thai == "dead":
+        # Bỏ cuộc mà không ai biết là ERPNext mãi thiếu mã vận đơn của đơn
+        # này — kế toán đối soát cuối tháng mới thấy. Việc hệ thống tự báo
+        # nhân viên; khoá theo (đơn, vận đơn) để không sinh việc thứ hai.
+        from agent.core import cong_viec
+
+        await cong_viec.tao_tu_don_hang(
+            str(viec["ma_don"]),
+            tieu_de=f"Ghi tay mã vận đơn {viec['ma_van_don']} vào ERP cho đơn {viec['ma_don']}",
+            mo_ta=(f"Đồng bộ vận đơn sang ERPNext đã bỏ cuộc: {type(exc).__name__}: "
+                   f"{exc}"[:400]),
+            khoa=f"erp_van_don:dead:{viec['ma_don']}:{viec['ma_van_don']}",
+        )
     return trang_thai
 
 

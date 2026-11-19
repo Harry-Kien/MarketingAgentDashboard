@@ -480,6 +480,17 @@ async def doi_soat_mot_yeu_cau(
             so_lan_doi_soat=so_lan,
             loi=(lookup.loi or "")[:300],
         )
+        # Chuyển tay mà không ai được báo là đơn nằm im với cờ đỏ trên một
+        # màn hình không ai đang mở. Việc hệ thống tự báo nhân viên; khoá
+        # chống trùng theo mã tham chiếu để vòng sau không sinh việc thứ hai.
+        from agent.core import cong_viec
+
+        await cong_viec.tao_tu_van_chuyen(
+            ma_don,
+            tieu_de=f"Đối soát tay vận đơn đơn {ma_don}",
+            mo_ta=ly_do,
+            khoa=f"van_chuyen:doi_soat_tay:{client_order_code}",
+        )
         return {
             "ok": False,
             "trang_thai": "manual_required",

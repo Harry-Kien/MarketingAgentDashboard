@@ -356,6 +356,11 @@ def test_tc04_lookup_500_va_da_van_don_trung_la_indeterminate_va_escalate(csdl_k
             )
             assert row_cuoi["trang_thai"] == "manual_required"
             assert row_cuoi["so_lan_doi_soat"] == doi_soat.SO_LAN_DOI_SOAT_TOI_DA
+            # Chuyển tay phải có NGƯỜI được báo: sinh đúng một việc hệ thống.
+            so_viec = await pool.fetchval(
+                "SELECT count(*) FROM cong_viec WHERE khoa_chong_trung LIKE 'van_chuyen:doi_soat_tay:%'"
+            )
+            assert so_viec == 1, "đối soát chuyển tay mà không ai được báo"
 
     asyncio.run(run())
 

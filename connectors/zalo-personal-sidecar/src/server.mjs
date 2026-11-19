@@ -28,13 +28,6 @@ process.on('unhandledRejection', (reason) => {
 // Tin khách, phiên, sức khoẻ đi qua hàng đợi thử lại — xem callback.mjs.
 const hangDoi = new HangDoiCallback({ baseUrl: callbackUrl, secret });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Rejection in Zalo sidecar:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception in Zalo sidecar:', err);
-});
-
 const manager = new SessionManager({
   zaloFactory: () => new Zalo({
     logging: false,

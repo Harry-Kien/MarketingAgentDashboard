@@ -9,6 +9,7 @@ from typing import Any
 
 from .base import BaseShippingProvider
 from .models import (
+    ClientCodeLookupResult,
     CreateWaybillRequest,
     CreateWaybillResult,
     InternalShippingStatus,
@@ -23,6 +24,7 @@ class MockShippingProvider(BaseShippingProvider):
         self._code = code
         self._name = name
         self._storage: dict[str, dict[str, Any]] = {}
+        self._by_client_code: dict[str, str] = {}
 
     @property
     def code(self) -> str:
@@ -60,7 +62,10 @@ class MockShippingProvider(BaseShippingProvider):
                 }
             ],
         }
+        client_code = str(req.client_order_code or req.ma_don).strip()
         self._storage[tracking_code] = data
+        if client_code:
+            self._by_client_code[client_code] = tracking_code
 
         return CreateWaybillResult(
             ok=True,
@@ -70,6 +75,32 @@ class MockShippingProvider(BaseShippingProvider):
             ngay_du_kien_giao=eta,
             trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
             thong_tin_them={"note": "Đơn thử nghiệm Mock Carrier"},
+            client_order_code=client_code,
+        )
+
+    async def tra_cuu_theo_ma_tham_chieu(
+        self, client_order_code: str
+    ) -> ClientCodeLookupResult:
+        client_code = str(client_order_code or "").strip()
+        tracking_code = self._by_client_code.get(client_code, "")
+        if not tracking_code or tracking_code not in self._storage:
+            return ClientCodeLookupResult(
+                trang_thai="not_found",
+                client_order_code=client_code,
+                don_vi=self._code,
+                loi="Không tìm thấy vận đơn mock cho mã tham chiếu này.",
+            )
+        data = self._storage[tracking_code]
+        return ClientCodeLookupResult(
+            trang_thai="found",
+            ma_van_don=tracking_code,
+            client_order_code=client_code,
+            don_vi=self._code,
+            phi_van_chuyen=int(data.get("phi_van_chuyen") or 0),
+            ngay_du_kien_giao=data.get("ngay_du_kien_giao"),
+            trang_thai_noi_bo=data.get("trang_thai_noi_bo"),
+            trang_thai_goc=str(data.get("trang_thai_goc") or ""),
+            du_lieu_goc=data,
         )
 
     async def tra_cuu(self, ma_van_don: str) -> TrackingResult:

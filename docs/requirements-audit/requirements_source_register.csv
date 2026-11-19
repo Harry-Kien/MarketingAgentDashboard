@@ -1,0 +1,252 @@
+Category,Requirement_ID,Parent_ID,Given_or_Title,When,Then,PDF_Page,Status,Description_or_Notes
+BO,BO-01,"BP-01, BP-02",Giảm hội thoại bị bỏ sót,,,4,Baseline Draft,Giảm tỷ lệ hội thoại không được tiếp nhận hoặc xử lý trong thời hạn quy định.
+BO,BO-02,BP-04,Cải thiện tốc độ phản hồi,,,4,Baseline Draft,Rút ngắn thời gian khách hàng chờ phản hồi đầu tiên có ý nghĩa.
+BO,BO-03,BP-03,Giảm xử lý trùng lặp,,,4,Baseline Draft,Giảm trường hợp nhiều bên xử lý hoặc phản hồi trùng không cần thiết trong cùng một hội thoại.
+BO,BO-04,"BP-01, BP-04",Nâng cao hiệu quả xử lý của nhân viên,,,4,Baseline Draft,"Giảm thời gian và thao tác thủ công cần thiết để theo dõi, tra cứu và xử lý hội thoại."
+BO,BO-05,BP-05,Tăng khả năng hỗ trợ ngoài giờ,,,4,Baseline Draft,Tăng tỷ lệ hội thoại ngoài giờ được tiếp nhận và hỗ trợ phù hợp mà không phụ thuộc hoàn toàn vào nhân viên trực.
+FR,FR-01,CAP-01,Tiếp nhận tin nhắn đa kênh,,,135,Baseline Draft,"Hệ thống phải tiếp nhận và chuẩn hóa tin nhắn hợp lệ từ các kênh đã tích hợp, liên kết với đúng Channel Account, Contact Point và Conversation. Nếu Conversation đã Resolved, hệ thống phải thực hiện Reopen theo quy tắc vòng đời hội thoại."
+FR,FR-02,CAP-01,Hiển thị hội thoại tập trung,,,136,Baseline Draft,"Hệ thống phải cung cấp Unified Inbox để nhân viên CSKH xem và lọc những hội thoại thuộc phạm vi quyền của mình theo trạng thái, mức ưu tiên, người phụ trách và kênh giao tiếp."
+FR,FR-03,CAP-01,Gửi và theo dõi phản hồi,,,136,Baseline Draft,"Hệ thống phải gửi các phản hồi hợp lệ qua đúng tài khoản kênh giao tiếp, ghi nhận trạng thái gửi theo kết quả thực tế và xử lý trường hợp thất bại hoặc chưa rõ kết quả."
+FR,FR-04,CAP-01,Kiểm soát tin nhắn trùng lặp,,,137,Baseline Draft,Hệ thống phải sử dụng định danh kết hợp channel:account_id:external_message_id để nhận diện Webhook trùng và ngăn một thông điệp kích hoạt nghiệp vụ nhiều lần.
+FR,FR-05,CAP-02,Tự động xử lý hội thoại bằng AI,,,137,Baseline Draft,"Hệ thống phải cho phép AI xử lý tin nhắn khi Conversation đang ở Auto Mode, sử dụng ngữ cảnh phù hợp và chỉ tạo phản hồi trong phạm vi được phép. Hệ thống phải ghi nhận thông tin mô hình, Token Usage và Estimated AI Cost theo từng AI Interaction khi có đủ dữ liệu hợp lệ, nhằm hỗ trợ đánh giá và theo dõi chi phí AI trong Release 1."
+FR,FR-06,CAP-02,Sử dụng công cụ nghiệp vụ có kiểm soát,,,138,Baseline Draft,
+FR,FR-07,CAP-02,Kiểm soát quyền gửi phản hồi AI,,,139,Baseline Draft,"Hệ thống phải kiểm tra Handling Mode, hiệu lực Batch và ngữ cảnh hội thoại ngay trước khi gửi phản hồi tự động. Phản hồi AI đã lỗi thời hoặc trái quyền phải bị ngăn gửi."
+FR,FR-08,CAP-02,Xử lý yêu cầu ngoài khả năng hoặc thẩm quyền,,,140,Baseline Draft,"Khi AI thiếu dữ liệu, gặp yêu cầu nhạy cảm hoặc yêu cầu vượt quyền, hệ thống phải cho phép AI hỏi làm rõ, từ chối kết luận hoặc chuyển nhân viên tùy trường hợp và ghi nhận lý do xử lý. Đối với các yêu cầu liên quan đến chẩn đoán bệnh lý, phác đồ điều trị y tế/da liễu hoặc các tuyên bố quảng cáo bị cấm theo chính sách áp dụng, hệ thống phải ngăn AI tạo ra kết luận, cam kết hoặc thao tác trái phạm vi. Những trường hợp bắt buộc xử lý bởi con người phải được Handover. Các cơ chế kiểm soát được thực thi bằng chính sách và kiểm tra nghiệp vụ phù hợp; không giới hạn vào một phương pháp kỹ thuật cụ thể như Regex hoặc bộ lọc từ khóa."
+FR,FR-09,CAP-03,Khởi tạo Handover,,,141,Baseline Draft,"Hệ thống phải hỗ trợ Handover do khách hàng yêu cầu hoặc do AI/hệ thống xác định cần nhân viên, chuyển Conversation sang Manual Mode ngay và ghi nhận bối cảnh bàn giao."
+FR,FR-10,CAP-03,Nhân viên tiếp quản hội thoại,,,141,Baseline Draft,"Hệ thống phải cho phép nhân viên có quyền Claim Conversation đã Handover, bảo đảm tối đa một Assignee chính có hiệu lực và ghi nhận lịch sử tiếp quản."
+FR,FR-11,CAP-03,Phản hồi thủ công và kết thúc phiên hỗ trợ,,,141,Baseline Draft,
+FR,FR-12,CAP-03,Bàn giao thông tin giao dịch chưa hoàn tất,,,142,Baseline Draft,"Hệ thống phải cung cấp Pending Actions, trạng thái Order Actions và kết quả đối soát liên quan cho nhân viên có quyền, kể cả khi kết quả ERPNext xuất hiện sau thời điểm Handover."
+FR,FR-13,CAP-04,Quản lý nguồn tri thức,,,143,Baseline Draft,Hệ thống phải hỗ trợ quản lý tài liệu tri thức theo quyền: nhân viên có quyền được tạo hoặc cập nhật Draft; quản lý có quyền Publish; hệ thống quản lý phiên bản và Rollback kèm Audit.
+FR,FR-14,CAP-04,Truy xuất tri thức phục vụ phản hồi,,,143,Baseline Draft,"Hệ thống phải cho phép AI truy xuất Knowledge Base Published còn hiệu lực, sử dụng kết quả đúng phạm vi và không thay thế dữ liệu ERPNext đối với giá, tồn kho hoặc trạng thái đơn hàng."
+FR,FR-15,CAP-04,Truy vết nguồn tri thức,,,144,Baseline Draft,"Hệ thống phải duy trì liên kết giữa Knowledge Chunk, Knowledge Document và phiên bản được sử dụng, giúp xác minh căn cứ của phản hồi AI."
+FR,FR-16,CAP-05,Tra cứu đơn hàng,,,144,Baseline Draft,"Hệ thống phải cho phép tra cứu thông tin đơn hàng từ ERPNext theo mức xác minh, liên kết danh tính và quyền được phép. Dữ liệu nhạy cảm phải được giới hạn hoặc che trước khi trả lời khách."
+FR,FR-17,CAP-05,Chuẩn bị yêu cầu tạo đơn,,,145,Baseline Draft,"Hệ thống phải thu thập sản phẩm, số lượng, địa chỉ và thông tin cần thiết; tra cứu dữ liệu có thẩm quyền từ ERPNext rồi lập bản tóm tắt giao dịch cụ thể để khách kiểm tra và xác nhận."
+FR,FR-18,CAP-05,Tạo đơn hàng có kiểm soát,,,145,Baseline Draft,"Hệ thống chỉ được gửi yêu cầu tạo Sales Order khi khách đã xác nhận hợp lệ bản tóm tắt hiện hành và Backend kiểm tra đầy đủ điều kiện. Giao dịch phải sử dụng định danh ổn định, lưu kết quả và thực hiện đối soát khi cần."
+FR,FR-19,CAP-05,Tiếp nhận yêu cầu chỉnh sửa đơn hàng,,,146,Baseline Draft,"Hệ thống phải ghi nhận nội dung khách muốn thay đổi, tạo Pending Action liên kết Conversation và Order khi xác định được, sau đó chuyển Manual Mode để nhân viên có thẩm quyền xử lý. AI không được trực tiếp sửa Sales Order."
+FR,FR-20,CAP-05,Tiếp nhận yêu cầu hủy đơn hàng,,,146,Baseline Draft,
+FR,FR-21,CAP-05,Kiểm soát xác nhận tạo đơn,,,147,Baseline Draft,Hệ thống phải lưu bằng chứng khách xác nhận gắn với phiên bản bản tóm tắt đơn hàng cụ thể. Xác nhận cũ không được dùng cho nội dung giao dịch đã thay đổi.
+FR,FR-22,CAP-05,Quản lý kết quả và đối soát ERPNext,,,148,Baseline Draft,"Hệ thống phải ghi kết quả giao dịch thành công, thất bại hoặc chưa xác định; sử dụng định danh nghiệp vụ ổn định để tra cứu trước Retry và chuyển nhân viên khi không thể xác định kết quả một cách an toàn."
+FR,FR-23,CAP-06,Quản lý Conversation Lifecycle,,,148,Baseline Draft,
+FR,FR-24,CAP-06,Phân công và chuyển giao nhân viên,,,149,Baseline Draft,"Hệ thống phải hỗ trợ phân công theo chính sách nhân viên Online, cho phép Claim và Reassign theo quyền, duy trì tối đa một Assignee chính đang hiệu lực và lưu lịch sử thay đổi."
+FR,FR-25,CAP-06,Kiểm soát quyền người dùng nội bộ,,,150,Baseline Draft,"Hệ thống phải quản lý vai trò và quyền truy cập, kiểm tra quyền tại các thao tác tiếp quản, phân công, xem PII, cấu hình, quản lý tri thức và xử lý giao dịch liên quan ERPNext."
+FR,FR-26,CAP-06,Truy vết thao tác quan trọng,,,151,Baseline Draft,"Hệ thống phải ghi nhận các hành động quan trọng liên quan đến Handover, Claim/Reassign, Resolve, xem PII, thay đổi quyền, Publish Knowledge Base và giao dịch ERPNext nhằm phục vụ kiểm tra, truy vết và xử lý sự cố."
+FR,FR-27,CAP-07,Tạo vận đơn có phân quyền qua Shipping API,,,152,Baseline Draft,"Hệ thống phải cho phép nhân viên CSKH được cấp quyền yêu cầu tạo vận đơn cho đơn hàng ERPNext hợp lệ thông qua Backend CSKH. Trước khi thực hiện, Backend phải kiểm tra quyền hiện hành, điều kiện đơn hàng, tính đầy đủ của dữ liệu giao hàng và khả năng trùng giao dịch. Sau khi Shipping API xác nhận kết quả, Backend ghi nhận mã vận đơn và trạng thái giao dịch, đồng thời thực hiện đồng bộ thông tin liên quan về ERPNext. Hệ thống phải phân biệt kết quả tạo vận đơn với kết quả đồng bộ ERPNext. AI Agent không được tự kích hoạt thao tác tạo, sửa hoặc hủy vận đơn."
+FR,FR-28,CAP-07,Theo dõi trạng thái giao hàng và đồng bộ ERPNext,,,152,Baseline Draft,
+FR,FR-29,CAP-07,"Kiểm soát, đối soát và phục hồi giao dịch vận chuyển",,,153,Baseline Draft,
+AC,AC-01.1,FR-01,Kênh đã kết nối hợp lệ,Khách gửi tin nhắn mới,Tin được ghi nhận vào đúng Conversation và chuyển xử lý một lần.,135,Baseline Draft,
+AC,AC-01.2,FR-01,Thông điệp thiếu dữ liệu bắt buộc,Hệ thống kiểm tra dữ liệu,Không tạo bản ghi sai lệch và ghi nhận lỗi.,135,Baseline Draft,
+AC,AC-01.3,FR-01,Conversation đã Resolved,Nhận tin mới hợp lệ,Conversation được Reopen và Handling Mode được đánh giá lại.,136,Baseline Draft,
+AC,AC-02.1,FR-02,Nhân viên có quyền truy cập Inbox,Nhân viên mở danh sách hội thoại,Chỉ hiển thị các Conversation được phép truy cập.,136,Baseline Draft,
+AC,AC-02.2,FR-02,Nhân viên chọn Conversation hợp lệ,Mở chi tiết hội thoại,"Hiển thị lịch sử, kênh, trạng thái, Assignee và ngữ cảnh liên quan theo quyền.",136,Baseline Draft,
+AC,AC-02.3,FR-02,Có nhiều hội thoại ở các mức ưu tiên,Nhân viên áp dụng bộ lọc,Danh sách phản ánh đúng điều kiện lọc đã chọn.,136,Baseline Draft,
+AC,AC-03.1,FR-03,Có phản hồi hợp lệ và được phép gửi,Hệ thống gửi đến API kênh,Lưu yêu cầu gửi và kết quả tiếp nhận của API.,136,Baseline Draft,
+AC,AC-03.2,FR-03,API kênh trả về lỗi,Hệ thống nhận kết quả,"Đánh dấu gửi thất bại, không ghi nhận thành công.",136,Baseline Draft,
+AC,AC-03.3,FR-03,Kết quả gửi chưa rõ,Hệ thống xem xét Retry,"Phải đối soát hoặc chuyển Delivery Review theo chính sách, tránh gửi trùng thiếu kiểm soát.",137,Baseline Draft,
+AC,AC-04.1,FR-04,Một Webhook đã được ghi nhận,Nhận lại cùng định danh,Không phát sinh xử lý nghiệp vụ trùng.,137,Baseline Draft,
+AC,AC-04.2,FR-04,Có tin nhắn mới,Hệ thống xác nhận tiếp nhận thành công,Dữ liệu tiếp nhận và công việc cần xử lý đã được ghi nhận bền vững.,137,Baseline Draft,
+AC,AC-04.3,FR-04,Worker khởi động lại sau lỗi,Công việc được phục hồi,Không tạo lần xử lý nghiệp vụ thứ hai cho cùng thông điệp.,137,Baseline Draft,
+AC,AC-05.1,FR-05,Conversation ở Auto Mode,Nhận yêu cầu hợp lệ,Hệ thống đưa yêu cầu cùng ngữ cảnh phù hợp vào quy trình xử lý AI.,138,Baseline Draft,
+AC,AC-05.2,FR-05,Conversation ở Manual Mode,Khách gửi tin mới trong phiên hỗ trợ thủ công đang mở,Hệ thống không tự kích hoạt AI Auto-Reply.,138,Baseline Draft,
+AC,AC-05.3,FR-05,AI không đủ căn cứ trả lời,Hệ thống xử lý yêu cầu,Không tạo kết luận thiếu căn cứ; thực hiện Fallback hoặc Handover thích hợp.,138,Baseline Draft,
+AC,AC-05.4,FR-05,"AI Provider trả về Model ID, Input Tokens và Output Tokens",AI Interaction hoàn tất xử lý,Hệ thống ghi nhận đúng Model ID và Token Usage vào lượt xử lý tương ứng.,138,Baseline Draft,
+AC,AC-05.5,FR-05,"Có đủ Token Usage, đơn giá tham chiếu và đơn vị tiền tệ",Hệ thống tính Estimated Cost,"Chi phí được lưu với giá trị không âm, truy vết được cách tính và có thể tổng hợp theo Conversation.",138,Baseline Draft,
+AC,AC-05.6,FR-05,Thiếu Token Usage hoặc đơn giá tham chiếu,Hệ thống ghi nhận kết quả xử lý,Giá trị chi phí chưa xác định được để trống hoặc đánh dấu thiếu dữ liệu; không tự gán bằng 0 và không ngắt hội thoại chỉ vì thiếu thông tin tính giá.,138,Baseline Draft,
+AC,AC-05.7,FR-05,Một AI Interaction được xử lý và có các mốc thời gian đo hợp lệ.,Hệ thống hoàn tất hoặc kết thúc lượt xử lý AI.,"Hệ thống ghi nhận các mốc cần thiết để tính AI Processing Latency và End-to-End Latency; phân biệt thời gian xử lý AI với thời gian chờ Queue, truy xuất dữ liệu và gửi tin qua API kênh.",138,Baseline Draft,
+AC,AC-06.1,FR-06,Công cụ được cấp phép và điều kiện thực thi hợp lệ,AI yêu cầu sử dụng công cụ,Backend cho phép thực thi và ghi nhận kết quả.,139,Baseline Draft,
+AC,AC-06.2,FR-06,AI yêu cầu trực tiếp sửa hoặc hủy đơn,Backend kiểm tra quyền,Từ chối trước khi gọi ERP Write.,139,Baseline Draft,
+AC,AC-06.3,FR-06,Công cụ trả về lỗi hoặc dữ liệu không đủ căn cứ,AI tiếp tục xử lý,Không suy đoán kết quả nghiệp vụ.,139,Baseline Draft,
+AC,AC-07.1,FR-07,AI đã tạo phản hồi,Conversation chuyển Manual Mode trước Dispatch,Phản hồi AI không được gửi.,139,Baseline Draft,
+AC,AC-07.2,FR-07,Khách gửi tin mới sau khi Batch cũ được niêm phong,Phản hồi Batch cũ chuẩn bị gửi,Đánh dấu SUPERSEDED và không gửi.,139,Baseline Draft,
+AC,AC-07.3,FR-07,"Conversation vẫn Auto Mode, phản hồi còn hiệu lực",Kiểm tra trước Dispatch đạt,Cho phép gửi một lượt phản hồi tương ứng theo cơ chế chống trùng.,139,Baseline Draft,
+AC,AC-08.1,FR-08,Nguồn dữ liệu không đủ căn cứ,AI xử lý yêu cầu,"Chỉ trả lời phần có căn cứ, hỏi bổ sung hoặc Handover phù hợp.",140,Baseline Draft,
+AC,AC-08.2,FR-08,Yêu cầu vượt quyền AI,Hệ thống kiểm tra chính sách,Chặn thao tác và Handover khi cần.,140,Baseline Draft,
+AC,AC-08.3,FR-08,Handover được kích hoạt,Hệ thống chuyển giao hội thoại,Lưu lý do và ngữ cảnh phục vụ nhân viên.,140,Baseline Draft,
+AC,AC-08.4,FR-08,Khách yêu cầu AI chẩn đoán bệnh lý da hoặc đưa phác đồ điều trị cá nhân,Hệ thống xác định yêu cầu vượt phạm vi tư vấn sản phẩm,AI không chẩn đoán hoặc kê phác đồ; Conversation được Handover.,140,Baseline Draft,
+AC,AC-08.5,FR-08,Phản hồi dự kiến chứa tuyên bố quảng cáo thuộc danh mục bị cấm theo chính sách đã cấu hình,Hệ thống kiểm tra phản hồi trước Dispatch,"Chặn phản hồi, ghi nhận lý do và Handover.",140,Baseline Draft,
+AC,AC-09.1,FR-09,Conversation đang Auto Mode,Khách yêu cầu gặp nhân viên,Chuyển Manual Mode ngay và ghi lý do.,141,Baseline Draft,
+AC,AC-09.2,FR-09,AI xác định yêu cầu vượt khả năng hoặc quyền hạn,Handover được kích hoạt,Hội thoại chuyển Manual Mode và được phân công hoặc đưa vào hàng đợi.,141,Baseline Draft,
+AC,AC-09.3,FR-09,Không có nhân viên Online,Handover diễn ra,Conversation tiếp tục chờ trong Manual Mode.,141,Baseline Draft,
+AC,AC-10.1,FR-10,Conversation ở Manual Mode và đang chờ nhân viên,Nhân viên có quyền Claim,Hệ thống ghi nhận Assignee và hiển thị bối cảnh hội thoại.,141,Baseline Draft,
+AC,AC-10.2,FR-10,Hai nhân viên đồng thời Claim một Conversation,Hệ thống xử lý các yêu cầu,Chỉ một nhân viên trở thành Assignee chính hợp lệ.,141,Baseline Draft,
+AC,AC-10.3,FR-10,Nhân viên không có quyền,Nhân viên yêu cầu Claim,Từ chối thao tác.,141,Baseline Draft,
+AC,AC-11.1,FR-11,Conversation ở Manual Mode,Nhân viên có quyền gửi phản hồi,Hệ thống gửi tin và ghi nhận lịch sử.,142,Baseline Draft,
+AC,AC-11.2,FR-11,Còn Pending Action chưa hoàn tất,Nhân viên yêu cầu Resolve,Từ chối Resolve theo luồng thông thường.,142,Baseline Draft,
+AC,AC-11.3,FR-11,Conversation được Resolve hợp lệ,Khách gửi tin nhắn mới,Hệ thống Reopen và kiểm tra điều kiện Auto Mode.,142,Baseline Draft,
+AC,AC-11.4,FR-11,Nhân viên vừa Resolve,Chưa có tin nhắn mới từ khách,AI không tự phát sinh phản hồi.,142,Baseline Draft,
+AC,AC-12.1,FR-12,Conversation có tác vụ chưa hoàn tất,Nhân viên tiếp quản,Nhân viên xem được công việc và trạng thái trong phạm vi quyền.,142,Baseline Draft,
+AC,AC-12.2,FR-12,ERP Write đã được gửi trước Handover,ERPNext trả kết quả sau Handover,"Hệ thống lưu kết quả và thông báo nội bộ cho nhân viên, không để AI tự phản hồi khách.",143,Baseline Draft,
+AC,AC-12.3,FR-12,Giao dịch đang Pending Reconciliation,Nhân viên mở Conversation,"Hiển thị rõ trạng thái chưa xác định, không coi là thành công.",143,Baseline Draft,
+AC,AC-13.1,FR-13,Nhân viên có quyền tạo Draft,Nhân viên lưu tài liệu,"Tài liệu có trạng thái Draft, chưa được AI sử dụng như nguồn Published.",143,Baseline Draft,
+AC,AC-13.2,FR-13,Quản lý có quyền Publish,Phê duyệt phiên bản hợp lệ,Phiên bản đó trở thành nguồn Published có hiệu lực.,143,Baseline Draft,
+AC,AC-13.3,FR-13,Một phiên bản tri thức được Rollback,Quá trình hoàn tất,AI chỉ sử dụng phiên bản hợp lệ đang có hiệu lực và lịch sử thay đổi được lưu.,143,Baseline Draft,
+AC,AC-14.1,FR-14,Có tri thức Published phù hợp,AI thực hiện truy xuất,Trả về nội dung liên quan kèm thông tin nguồn.,144,Baseline Draft,
+AC,AC-14.2,FR-14,Chỉ có tài liệu Draft,AI truy xuất tri thức phục vụ phản hồi,Không sử dụng Draft làm nguồn trả lời.,144,Baseline Draft,
+AC,AC-14.3,FR-14,Không có nguồn đủ căn cứ,AI xử lý yêu cầu,Fallback hoặc Handover thay vì tự bịa thông tin.,144,Baseline Draft,
+AC,AC-15.1,FR-15,AI sử dụng Knowledge Chunk,Hệ thống ghi nhận lượt xử lý,Truy vết được Document và Version nguồn.,144,Baseline Draft,
+AC,AC-15.2,FR-15,Phiên bản tri thức thay đổi sau khi AI đã trả lời,Kiểm tra lịch sử phản hồi,Vẫn xác định được phiên bản nguồn đã dùng tại thời điểm đó.,144,Baseline Draft,
+AC,AC-16.1,FR-16,Khách có đủ căn cứ truy cập đơn,ERPNext trả dữ liệu,Chỉ cung cấp những trường thông tin được phép.,145,Baseline Draft,
+AC,AC-16.2,FR-16,Khách chỉ cung cấp mã đơn và số điện thoại chưa xác minh,Khách yêu cầu thông tin nhạy cảm,Không tiết lộ; yêu cầu xác minh bổ sung hoặc Handover.,145,Baseline Draft,
+AC,AC-16.3,FR-16,ERPNext lỗi hoặc Timeout,AI xử lý kết quả,Không suy đoán trạng thái đơn hàng.,145,Baseline Draft,
+AC,AC-17.1,FR-17,Thông tin đặt hàng đã đủ và hợp lệ,AI chuẩn bị đơn,"Hiển thị sản phẩm, số lượng, giá, tổng tiền và thông tin giao hàng để xác nhận.",145,Baseline Draft,
+AC,AC-17.2,FR-17,Thiếu dữ liệu cần thiết,AI chuẩn bị đơn,"Yêu cầu bổ sung, không tự tạo giao dịch.",145,Baseline Draft,
+AC,AC-17.3,FR-17,Giá hoặc tồn kho thay đổi,Hệ thống kiểm tra lại trước thực thi,Cập nhật nội dung và yêu cầu xác nhận mới nếu thông tin giao dịch bị ảnh hưởng.,145,Baseline Draft,
+AC,AC-18.1,FR-18,Có xác nhận hợp lệ cho bản tóm tắt hiện hành,Backend kiểm tra điều kiện đạt,Gửi yêu cầu Create đến ERPNext bằng định danh giao dịch ổn định.,146,Baseline Draft,
+AC,AC-18.2,FR-18,Thiếu hoặc sai xác nhận,AI yêu cầu tạo đơn,Backend từ chối ERP Write.,146,Baseline Draft,
+AC,AC-18.3,FR-18,ERPNext chưa xác nhận thành công,Hệ thống chuẩn bị thông báo,Không tuyên bố đơn đã được tạo.,146,Baseline Draft,
+AC,AC-18.4,FR-18,ERPNext đã nhận giao dịch nhưng khách thay đổi ý định,Hệ thống tiếp nhận yêu cầu thay đổi,Đối soát giao dịch gốc và chuyển yêu cầu sửa/hủy cho nhân viên; không tự tạo giao dịch thay thế.,146,Baseline Draft,
+AC,AC-19.1,FR-19,Khách yêu cầu sửa đơn,Hệ thống tiếp nhận yêu cầu,"Tạo Pending Action, ghi nội dung sửa và Handover.",146,Baseline Draft,
+AC,AC-19.2,FR-19,AI cố gọi công cụ cập nhật Sales Order,Backend kiểm tra quyền,Từ chối thao tác.,146,Baseline Draft,
+AC,AC-19.3,FR-19,Nhân viên hoàn tất sửa đơn trên ERPNext,Nhân viên ghi kết quả,Cập nhật Pending Action theo bằng chứng thực tế và phản hồi khách.,146,Baseline Draft,
+AC,AC-19.4,FR-19,ERPNext chưa có kết quả xác định,Hệ thống cập nhật trạng thái,Không ghi nhận đã sửa thành công.,146,Baseline Draft,
+AC,AC-20.1,FR-20,Khách yêu cầu hủy đơn,Hệ thống tiếp nhận,Ghi Pending Action và chuyển Manual Mode.,147,Baseline Draft,
+AC,AC-20.2,FR-20,Chưa đủ căn cứ xác minh chủ đơn,Hệ thống xem xét Auto Hold,Không kích hoạt Hold.,147,Baseline Draft,
+AC,AC-20.3,FR-20,"Mới có trạng thái Hold local, chưa có xác nhận ERP/Kho",Hệ thống phản hồi,Không khẳng định đã chặn xuất hàng.,147,Baseline Draft,
+AC,AC-20.4,FR-20,Nhân viên xử lý hủy và ERPNext xác nhận kết quả,Hoàn tất công việc,Cập nhật Pending Action và nhân viên thông báo kết quả thực tế cho khách.,147,Baseline Draft,
+AC,AC-21.1,FR-21,Có bản tóm tắt hiện hành,Khách xác nhận đúng bản tóm tắt,Lưu bằng chứng và cho phép tiếp tục kiểm tra ERP Create.,147,Baseline Draft,
+AC,AC-21.2,FR-21,Không có bản tóm tắt hợp lệ đang chờ,Khách trả lời “OK”,Không sử dụng câu đó để tự tạo đơn.,148,Baseline Draft,
+AC,AC-21.3,FR-21,"Sản phẩm, giá, số lượng hoặc địa chỉ thay đổi",Hệ thống kiểm tra xác nhận trước đó,Xác nhận cũ không còn hiệu lực.,148,Baseline Draft,
+AC,AC-21.4,FR-21,Khách xác nhận ngắn trong ngữ cảnh hợp lệ,Hệ thống đối chiếu bản tóm tắt đang chờ,"Chỉ chấp nhận xác nhận cho giao dịch tương ứng, không áp dụng sang giao dịch khác.",148,Baseline Draft,
+AC,AC-22.1,FR-22,ERPNext xác nhận thành công,Hệ thống nhận kết quả,Lưu mã đơn và trạng thái thành công; cho phép thông báo theo Handling Mode hợp lệ.,148,Baseline Draft,
+AC,AC-22.2,FR-22,ERPNext từ chối giao dịch một cách xác định,Hệ thống nhận kết quả,"Lưu trạng thái thất bại, không thông báo thành công.",148,Baseline Draft,
+AC,AC-22.3,FR-22,ERPNext Timeout,Hệ thống chuẩn bị xử lý lại,Chuyển Pending Reconciliation và tra cứu theo định danh trước Retry.,148,Baseline Draft,
+AC,AC-22.4,FR-22,Giao dịch đã tạo đơn thành công,Worker Retry cùng định danh,Không tạo thêm Sales Order trùng.,148,Baseline Draft,
+AC,AC-22.5,FR-22,Kết quả vẫn chưa rõ sau các bước đối soát,Vượt giới hạn xử lý tự động,Tạo công việc cho nhân viên và không kết luận giao dịch thành công.,148,Baseline Draft,
+AC,AC-23.1,FR-23,Conversation đang Open–Auto,Handover xảy ra,Chuyển sang Manual Mode nhưng không tự Resolve.,149,Baseline Draft,
+AC,AC-23.2,FR-23,Còn Pending Action chưa hoàn tất hoặc câu hỏi khách chưa được trả lời,Hệ thống xử lý Idle Timeout,Không tự Resolve.,149,Baseline Draft,
+AC,AC-23.3,FR-23,Conversation đủ điều kiện và đã hết thời gian chờ cấu hình,Hệ thống thực hiện Auto Resolve,"Lưu trạng thái Resolved, lý do và thời điểm.",149,Baseline Draft,
+AC,AC-23.4,FR-23,Conversation đã Resolved,Khách gửi tin nhắn mới,Reopen và kiểm tra lại quyền Auto-Reply.,149,Baseline Draft,
+AC,AC-23.5,FR-23,Conversation đang Open–Manual,Nhân viên có quyền yêu cầu gia hạn với lý do hợp lệ,"Hệ thống cập nhật thời hạn xử lý, ghi Audit Log và không thay đổi SLA gốc.",149,Pending CR-002,
+AC,AC-24.1,FR-24,Có nhân viên Online phù hợp,Hội thoại được Handover,Phân công theo chính sách được cấu hình.,150,Baseline Draft,
+AC,AC-24.2,FR-24,Không có nhân viên Online,Handover xảy ra,Hội thoại chờ trong hàng đợi ưu tiên.,150,Baseline Draft,
+AC,AC-24.3,FR-24,Quản lý có quyền,Yêu cầu Reassign,Cập nhật một Assignee chính và lưu lịch sử.,150,Baseline Draft,
+AC,AC-24.4,FR-24,Người dùng không có quyền,Yêu cầu Reassign,Từ chối và giữ nguyên người phụ trách.,150,Baseline Draft,
+AC,AC-24.5,FR-24,"Conversation có Priority High, đang chờ First Response của nhân viên.",Thời gian SLA tích lũy trong giờ làm việc đạt 5 phút hoặc 10 phút.,Hệ thống tạo cảnh báo Warning tại 5 phút và ghi nhận SLA Breach tại 10 phút.,150,Baseline Draft,
+AC,AC-24.6,FR-24,"Conversation có Priority Normal, đang chờ First Response của nhân viên.",Thời gian SLA tích lũy trong giờ làm việc đạt 15 phút hoặc 30 phút.,Hệ thống tạo cảnh báo Warning tại 15 phút và ghi nhận SLA Breach tại 30 phút.,150,Baseline Draft,
+AC,AC-24.7,FR-24,Conversation đang chờ First Response; giờ tính SLA là 08:00–21:00.,Thời gian chờ kéo dài qua khoảng ngoài giờ làm việc.,"Hệ thống tạm dừng đồng hồ SLA ngoài giờ, giữ số phút đã tích lũy và tiếp tục tính từ 08:00 của ngày làm việc tiếp theo.",150,Baseline Draft,
+AC,AC-25.1,FR-25,Người dùng có quyền phù hợp,Thực hiện thao tác hợp lệ,Hệ thống cho phép.,151,Baseline Draft,
+AC,AC-25.2,FR-25,Người dùng không đủ quyền,Yêu cầu thao tác,Từ chối trước khi thay đổi dữ liệu.,151,Baseline Draft,
+AC,AC-25.3,FR-25,Người dùng không có quyền xem PII,Mở hồ sơ hoặc hội thoại,Dữ liệu nhạy cảm được che theo chính sách.,151,Baseline Draft,
+AC,AC-25.4,FR-25,Quyền nhân viên đã bị thu hồi,Nhân viên thực hiện thao tác mới,"Hệ thống kiểm tra quyền hiện hành, không dùng quyền đã hết hiệu lực.",151,Baseline Draft,
+AC,AC-26.1,FR-26,Một thao tác nghiệp vụ quan trọng,Thao tác hoàn tất xử lý,"Ghi Actor, đối tượng, hành động, thời điểm và kết quả.",151,Baseline Draft,
+AC,AC-26.2,FR-26,Giao dịch ERPNext Timeout hoặc cần đối soát,Người có quyền xem lịch sử,Xác định được giao dịch và các lần xử lý liên quan.,151,Baseline Draft,
+AC,AC-26.3,FR-26,Người dùng không có quyền truy cập Audit,Yêu cầu xem dữ liệu nhạy cảm,Từ chối truy cập.,151,Baseline Draft,
+AC,AC-26.4,FR-26,Hệ thống ghi Log nghiệp vụ,Lưu nội dung,Không ghi bí mật hoặc PII vượt mức cần thiết.,151,Baseline Draft,
+AC,AC-27.1,FR-27,"Nhân viên có quyền, đơn hàng hợp lệ và dữ liệu giao hàng đầy đủ",Nhân viên xác nhận tạo vận đơn,Backend kiểm tra điều kiện và gửi yêu cầu hợp lệ đến Shipping API.,152,Baseline Draft,
+AC,AC-27.2,FR-27,Nhân viên không có quyền hoặc đơn hàng không đủ điều kiện,Nhân viên yêu cầu tạo vận đơn,Hệ thống từ chối trước khi gọi Shipping API và ghi nhận lý do.,152,Baseline Draft,
+AC,AC-27.3,FR-27,Shipping API xác nhận tạo vận đơn thành công,Backend xử lý kết quả,"Hệ thống lưu mã vận đơn, kết quả giao dịch và bắt đầu đồng bộ về ERPNext.",152,Baseline Draft,
+AC,AC-27.4,FR-27,Vận đơn đã được tạo nhưng ERPNext chưa cập nhật thành công,Nhân viên xem kết quả,Hệ thống hiển thị đúng trạng thái tạo vận đơn và trạng thái đồng bộ riêng biệt.,152,Baseline Draft,
+AC,AC-27.5,FR-27,"AI Agent nhận yêu cầu tạo, sửa hoặc hủy vận đơn",AI xử lý yêu cầu của khách,AI không gọi công cụ thực hiện thay đổi vận chuyển; yêu cầu được Handover cho nhân viên.,152,Baseline Draft,
+AC,AC-28.1,FR-28,Vận đơn tồn tại và Shipping API cung cấp trạng thái hợp lệ,Hệ thống nhận hoặc tra cứu cập nhật,Backend liên kết với đúng vận đơn và ghi nhận trạng thái giao hàng.,153,Baseline Draft,
+AC,AC-28.2,FR-28,Có trạng thái vận chuyển mới cần đồng bộ,Backend thực hiện cập nhật ERPNext,Hệ thống ghi nhận kết quả đồng bộ hoặc trạng thái chờ xử lý nếu thất bại.,153,Baseline Draft,
+AC,AC-28.3,FR-28,"Hệ thống nhận dữ liệu trùng, không hợp lệ hoặc cũ hơn trạng thái đã xác nhận",Backend xử lý cập nhật,Không ghi đè dữ liệu hợp lệ bằng trạng thái sai; ghi nhận sự kiện cần thiết để truy vết.,153,Baseline Draft,
+AC,AC-28.4,FR-28,Nhân viên có quyền xem đơn hàng,Nhân viên mở thông tin vận chuyển,"Hệ thống hiển thị mã vận đơn, trạng thái giao hàng, thời điểm cập nhật và tình trạng đồng bộ tương ứng.",153,Baseline Draft,
+AC,AC-28.5,FR-28,AI Agent được phép tra cứu và đã xác minh quyền truy cập,Khách hỏi trạng thái giao hàng,AI sử dụng dữ liệu thực tế; nếu không có thông tin đáng tin cậy thì không suy đoán và Handover khi cần.,153,Baseline Draft,
+AC,AC-29.1,FR-29,Một yêu cầu tạo vận đơn đã được ghi nhận,Hệ thống nhận lại yêu cầu tương đương,Không phát sinh thêm vận đơn ngoài ý muốn; xử lý theo định danh giao dịch hiện có.,154,Baseline Draft,
+AC,AC-29.2,FR-29,Shipping API timeout hoặc kết quả chưa xác định,Backend xử lý timeout,"Giao dịch được đánh dấu cần đối soát, không khẳng định thành công hay thất bại khi thiếu bằng chứng.",154,Baseline Draft,
+AC,AC-29.3,FR-29,Giao dịch tạo vận đơn chưa rõ kết quả,Có yêu cầu thực hiện lại,Hệ thống đối soát hoặc sử dụng cơ chế chống trùng được Shipping API hỗ trợ trước khi cho phép tạo mới.,154,Baseline Draft,
+AC,AC-29.4,FR-29,Vận đơn đã tạo thành công nhưng đồng bộ ERPNext thất bại,Backend thực hiện đồng bộ lại,"Hệ thống sử dụng mã vận đơn hiện có, không gọi lại API tạo vận đơn.",154,Baseline Draft,
+AC,AC-29.5,FR-29,"Có thao tác tạo vận đơn, đối soát hoặc đồng bộ",Hệ thống ghi nhận kết quả xử lý,"Audit có định danh giao dịch, tác nhân hoặc tiến trình thực hiện, thời điểm, hành động và kết quả.",154,Baseline Draft,
+QR,QR-01,,Safety – Auto-Reply,,,116,Baseline Draft,"Hệ thống phải ngăn AI tự gửi phản hồi khi Conversation đang ở Manual Mode hoặc phản hồi đã lỗi thời do tin mới. [Metric/Test: 0 phản hồi AI trái quyền trong bộ kiểm thử Handover, Stale Batch và Concurrent Dispatch.]"
+QR,QR-02,,Safety – ERP Access,,,117,Baseline Draft,"AI chỉ được sử dụng ERP Read và ERP Create trong phạm vi cho phép. AI không được trực tiếp sửa, hủy hoặc hoàn trả đơn. [Metric/Test: 0 thao tác ERP Write trái quyền trong bộ kiểm thử nghiệp vụ.]"
+QR,QR-03,,Security – Order Authorization,,,117,Baseline Draft,"Hệ thống phải kiểm tra quyền truy cập và mức xác minh trước khi cung cấp thông tin đơn nhạy cảm hoặc xem xét thao tác Hold. [Metric/Test: 0 trường hợp tiết lộ PII hoặc Auto Hold trái quyền trong bộ kiểm thử đúng chủ đơn, sai chủ đơn, giả mạo và thiếu xác minh.]"
+QR,QR-04,,Security – RBAC,,,117,Baseline Draft,Người dùng nội bộ chỉ được xem và thực hiện thao tác theo quyền được cấp. [Metric/Test: 100% trường hợp thao tác vượt quyền trong bộ kiểm thử phải bị từ chối.]
+QR,QR-05,,Security – PII Protection,,,117,Baseline Draft,"Hệ thống phải che hoặc hạn chế dữ liệu nhạy cảm trong phản hồi AI, giao [Metric/Test: 0 trường hợp lộ PII ngoài quyền trong bộ kiểm thử rò rỉ dữ liệu đã xác định.]"
+QR,QR-06,,Reliability – Assignment,,,118,Baseline Draft,Mỗi Conversation chỉ được có tối đa một nhân viên phụ trách chính đang hiệu lực tại một thời điểm. [Metric/Test: Không có hai Assignment chính cùng hiệu lực trong bộ kiểm thử Claim/Reassign đồng thời.]
+QR,QR-07,,Reliability – Message Deduplication,,,118,Baseline Draft,"Webhook trùng hoặc Retry không được tạo ra nhiều lần xử lý nghiệp vụ cho cùng một sự kiện. [Metric/Test: 0 xử lý nghiệp vụ trùng trong bộ kiểm thử Duplicate Webhook, Worker Retry và Restart.]"
+QR,QR-08,,Reliability – Message Delivery,,,118,Baseline Draft,"Hệ thống phải ghi chính xác kết quả gửi tin, hỗ trợ Retry hoặc Delivery Review khi kết quả chưa rõ. [Metric/Test: Trong bộ kiểm thử, mọi lỗi gửi phải được ghi nhận; không trường hợp lỗi nào được đánh dấu là gửi thành công khi thiếu bằng chứng.]"
+QR,QR-09,,AI Answer Quality – Groundedness,,,119,Baseline Draft,AI phải trả lời các thông tin nghiệp vụ bằng tri thức Published hoặc dữ liệu ERPNext hợp lệ; không tự tạo ra sự thật không có căn cứ. [Metric/Test: 0 thông tin nghiệp vụ bị bịa trong bộ kiểm thử Groundedness đã xác định. Tỷ lệ chất lượng tổng hợp sẽ đo bằng Rubric riêng.]
+QR,QR-10,,AI Answer Quality – Safe Fallback,,,119,Baseline Draft,"Khi thiếu thông tin, dữ liệu không đáng tin cậy hoặc vượt phạm vi, AI phải hỏi làm rõ, từ chối kết luận hoặc Handover phù hợp. [Metric/Test: 100% tình huống Safety/Fallback bắt buộc trong bộ kiểm thử được xử lý đúng theo Expected Outcome.]"
+QR,QR-11,,Performance – AI Response,,,119,Baseline Draft,"Hệ thống phải hướng tới phản hồi đầu tiên có ý nghĩa trong khoảng thời gian phù hợp với vận hành CSKH. [Metric/Test: Mục tiêu E2E Gateway Inbound → Outbound API HTTP 200 là 3–5 giây; mục tiêu hàm respond() dưới 2,5 giây. Ngưỡng P95 chính thức: TBD.]"
+QR,QR-12,,Performance – Staff Inbox,,,120,Baseline Draft,"Các tác vụ chính trên Inbox phải có thời gian phản hồi đủ nhanh để nhân viên tiếp nhận và xử lý hội thoại. [Metric/Test: Đo thời gian mở hàng đợi, mở hội thoại, Claim và gửi phản hồi. Ngưỡng nghiệm thu định lượng: TBD.]"
+QR,QR-13,,Usability – Conversation Visibility,,,120,Baseline Draft,"Nhân viên phải nhận biết được trạng thái hội thoại, nhân viên phụ trách, mức ưu tiên và lý do Handover. [Metric/Test: Các thông tin bắt buộc phải truy cập được trong 100% tình huống kiểm thử giao diện tương ứng.]"
+QR,QR-14,,Usability – Human Workflow,,,120,Baseline Draft,"Nhân viên có quyền phải thực hiện được Claim, phản hồi và Resolve theo quy trình hợp lệ; thao tác không hợp lệ phải có thông báo rõ ràng. [Metric/Test: Các tác vụ chuẩn có thể hoàn thành trong bộ kiểm thử; tỷ lệ hoàn thành độc lập của người dùng và ngưỡng thời gian: TBD.]"
+QR,QR-15,,Availability,,,121,Baseline Draft,"Hệ thống phải hỗ trợ tiếp nhận và phục hồi công việc khi các thành phần như AI Worker hoặc ERPNext tạm thời không khả dụng. [Metric/Test: Kiểm tra được khả năng ghi nhận, Retry, Recovery và chuyển xử lý lỗi. Mục tiêu uptime định lượng: TBD.]"
+QR,QR-16,,Scalability,,,121,Baseline Draft,"Hệ thống phải xử lý được khối lượng hội thoại đồng thời mục tiêu mà không phá vỡ kiểm soát trạng thái, chống trùng hoặc an toàn giao dịch. [Metric/Test: Chạy thử với các mức tải và ghi P95, lỗi, tác vụ tồn. Quy mô tải mục tiêu: TBD.]"
+QR,QR-17,,Interoperability,,,121,Baseline Draft,"Hệ thống phải xử lý đúng định dạng dữ liệu, định danh, trạng thái gửi tin và kết quả giao dịch từ các nền tảng và ERPNext được tích hợp. [Metric/Test: Các kịch bản thành công, lỗi, Timeout, Retry và dữ liệu không hợp lệ thuộc phạm vi tích hợp phải đạt Expected Outcome.]"
+QR,QR-18,,Maintainability,,,121,Baseline Draft,"Cấu hình AI và phiên bản tri thức được cập nhật phải có khả năng kiểm tra hồi quy và khôi phục phiên bản hợp lệ khi cần. [Metric/Test: Kiểm thử Publish, Rollback và Regression trên Knowledge Base; không sử dụng phiên bản Draft cho RAG công khai.]"
+QR,QR-19,,Verifiability & Observability,,,121,Baseline Draft,"Hệ thống phải hỗ trợ truy vết xử lý hội thoại, quyết định AI, Handover, ERP Write và trạng thái gửi tin mà không làm lộ dữ liệu nhạy cảm. [Metric/Test: Truy vết được các bước chính và mã tương quan trong bộ kiểm thử End-to-End; không lộ PII vượt quyền trong log.]"
+QR,QR-20,,Safety – Transaction Confirmation,,,117,Baseline Draft,"Hệ thống chỉ được tạo đơn khi khách đã xác nhận bản tóm tắt giao dịch cụ thể, còn hiệu lực. [Metric/Test: 0 đơn được tạo trong các kịch bản không có xác nhận, xác nhận sai bản tóm tắt hoặc xác nhận đã hết hiệu lực.]"
+QR,QR-21,,Reliability – ERP Write,,,118,Baseline Draft,"Hệ thống phải kiểm soát việc thực thi lại giao dịch tạo đơn để tránh tác động trùng. [Metric/Test: 0 đơn được tạo trùng ngoài ý muốn trong bộ kiểm thử Timeout, Retry và Worker Restart.]"
+QR,QR-22,,Reliability – ERP Reconciliation,,,118,Baseline Draft,"Hệ thống phải phân biệt kết quả giao dịch thành công, thất bại và chưa xác định; phải đối soát trước Retry khi kết quả chưa rõ. [Metric/Test: Không có giao dịch chưa rõ kết quả bị tự đánh dấu thành công; mọi lần Retry thuộc bộ kiểm thử phải qua kiểm tra đối soát.]"
+QR,QR-23,,AI Answer Quality – Truthful Transaction Status,,,119,Baseline Draft,"AI không được khẳng định đã tạo, sửa hoặc hủy đơn khi ERPNext chưa xác nhận kết quả tương ứng. [Metric/Test: 0 thông báo giao dịch thành công không có bằng chứng xác nhận trong bộ kiểm thử.]"
+QR,QR-24,,Verifiability & Observability – AI Usage and Cost,,,121,Baseline Draft,"Hệ thống phải ghi nhận mô hình sử dụng, Input Tokens, Output Tokens và Estimated Cost cho mỗi AI Interaction khi có dữ liệu hợp lệ. [Metric/Test: 100% lượt AI trong bộ kiểm thử có Usage được nhà cung cấp trả về phải ghi đúng dữ liệu. Lượt đủ thông tin giá phải tính được chi phí theo]"
+QR,QR-25,,Reliability – Shipping API Idempotency & RBAC,,,158,Baseline Draft,"Kiểm soát quyền, chống yêu cầu tạo vận đơn trùng, xử lý timeout và đối soát trước khi thực hiện lại."
+QR,QR-26,,Reliability – Shipment Status Validity & Sync,,,159,Baseline Draft,"Kiểm tra tính hợp lệ trạng thái vận chuyển, đồng bộ ERPNext, lưu lỗi và phục hồi an toàn."
+DFR,DFR-01,"QRs: QR-02, QR-10 | FRs: FR-06, FR-08","Phát hiện và xử lý yêu cầu AI vượt phạm vi, Prompt Injection hoặc nội dung trái chính sách; Fallback/Handover khi cần.",,,127,Baseline Draft,
+DFR,DFR-02,"QRs: QR-03 | FRs: FR-16, FR-20, FR-25",Xác minh liên kết khách hàng–đơn hàng và quyền truy cập trước khi cung cấp dữ liệu nhạy cảm hoặc xem xét Auto Hold.,,,128,Baseline Draft,
+DFR,DFR-03,"QRs: QR-01 | FRs: FR-07, FR-11, FR-23",Kiểm tra Handling Mode và hiệu lực Batch trước khi gửi; chặn phản hồi AI lỗi thời hoặc trái quyền.,,,128,Baseline Draft,
+DFR,DFR-04,"QRs: QR-01, QR-13, QR-19 | FRs: FR-09, FR-10, FR-12","Ghi thời điểm, lý do, bối cảnh và kết quả Handover để nhân viên có thể tiếp tục xử lý.",,,128,Baseline Draft,
+DFR,DFR-05,"QRs: QR-07 | FRs: FR-01, FR-04",Ghi nhận và kiểm tra định danh Webhook để ngăn xử lý trùng khi có Retry hoặc gửi lại.,,,128,Baseline Draft,
+DFR,DFR-06,QRs: QR-08 | FRs: FR-03,"Lưu kết quả gửi tin; phân biệt thành công, thất bại và chưa rõ; hỗ trợ đối soát trước khi gửi lại.",,,128,Baseline Draft,
+DFR,DFR-07,"QRs: QR-13, QR-14 | FRs: FR-02, FR-10, FR-24","Hiển thị trạng thái hội thoại, Handling Mode, Assignee, Priority và lý do Handover theo quyền.",,,128,Baseline Draft,
+DFR,DFR-08,"QRs: QR-02 | FRs: FR-06, FR-18, FR-19, FR-20","Giới hạn công cụ ERP của AI: Read theo quyền, Create có xác nhận; không cho AI trực tiếp sửa/hủy/hoàn trả đơn.",,,128,Baseline Draft,
+DFR,DFR-09,"QRs: QR-20 | FRs: FR-17, FR-18, FR-21",Lưu và kiểm tra xác nhận của khách gắn với bản tóm tắt đơn hiện hành trước ERP Write.,,,128,Baseline Draft,
+DFR,DFR-10,"QRs: QR-21, QR-22 | FRs: FR-18, FR-22","Sử dụng định danh giao dịch ổn định, lưu trạng thái chưa rõ và đối soát ERPNext trước Retry.",,,128,Baseline Draft,
+DFR,DFR-11,"QRs: QR-02, QR-22, QR-23 | FRs: FR-19, FR-20",Tạo Pending Action và Handover cho yêu cầu sửa/hủy; không tự đánh dấu hoàn tất khi chưa có kết quả nghiệp vụ.,,,128,Baseline Draft,
+DFR,DFR-12,"QRs: QR-04, QR-05 | FRs: FR-16, FR-25, FR-26","Kiểm tra quyền nội bộ, che PII và ghi Audit cho các thao tác nhạy cảm.",,,128,Baseline Draft,
+DFR,DFR-13,"QRs: QR-09, QR-10 | FRs: FR-05, FR-13, FR-14, FR-15",Chỉ truy xuất tri thức Published hợp lệ; xử lý Fallback/Handover khi thiếu căn cứ.,,,129,Baseline Draft,
+DFR,DFR-14,"QRs: QR-11, QR-19 | FRs: FR-05, FR-26",Ghi thời gian theo từng giai đoạn xử lý để tính E2E Latency và respond() Latency.,,,129,Baseline Draft,
+DFR,DFR-15,"QRs: QR-19 | FRs: FR-12, FR-22, FR-26","Ghi mã tương quan và lịch sử AI Interaction, Handover, ERP Calls, Outbound Delivery phục vụ truy vết.",,,129,Baseline Draft,
+DFR,DFR-16,"QRs: QR-06 | FRs: FR-10, FR-24","Bảo đảm Claim/Reassign nhất quán khi có thao tác đồng thời, chỉ một Assignee chính có hiệu lực.",,,129,Baseline Draft,
+DFR,DFR-17,QRs: QR-24 | FRs: FR-05,"Ghi Token Usage, mô hình AI và Estimated Cost theo lượt xử lý; hỗ trợ tổng hợp chi phí theo Conversation.",,,129,Baseline Draft,
+DFR,DFR-18,"QRs: QR-25, QR-26 | FRs: FR-27, FR-28, FR-29",Backend CSKH phải sử dụng định danh yêu cầu ổn định để kiểm soát việc tạo vận đơn trùng; ghi nhận kết quả Shipping API; đối soát giao dịch chưa rõ; đồng bộ và Retry dữ liệu vận chuyển về ERPNext mà không tạo lại vận đơn đã xác nhận.,,,129,Baseline Draft,
+UC,UC-01,"Actor: Khách hàng | BOs: BO-01, BO-02",Gửi yêu cầu hỗ trợ,,,37,Baseline Draft,
+UC,UC-02,"Actor: Khách hàng | BOs: BO-02, BO-04, BO-05",Tiếp nhận và xử lý hội thoại bằng AI,,,37,Baseline Draft,
+UC,UC-03,"Actor: Khách hàng | BOs: BO-01, BO-02",Yêu cầu hỗ trợ từ nhân viên,,,37,Baseline Draft,
+UC,UC-04,"Actor: Nhân viên CSKH | BOs: BO-01, BO-04",Xem hàng đợi hội thoại,,,37,Baseline Draft,
+UC,UC-05,"Actor: Nhân viên CSKH | BOs: BO-01, BO-03",Tiếp quản hội thoại từ AI,,,37,Baseline Draft,
+UC,UC-06,"Actor: Nhân viên CSKH | BOs: BO-02, BO-04",Xem lịch sử và bối cảnh hội thoại,,,37,Baseline Draft,
+UC,UC-07,"Actor: Nhân viên CSKH | BOs: BO-02, BO-03",Phản hồi hội thoại thủ công,,,37,Baseline Draft,
+UC,UC-08,"Actor: Nhân viên CSKH | BOs: BO-02, BO-04",Kết thúc phiên hỗ trợ thủ công,,,37,Baseline Draft,
+UC,UC-09,"Actor: Quản lý CSKH | BOs: BO-01, BO-03, BO-04",Theo dõi và điều phối hội thoại,,,37,Baseline Draft,
+UC,UC-10,"Actor: System Administrator | BOs: BO-03, BO-04",Quản lý tài khoản và phân quyền,,,37,Baseline Draft,
+UC,UC-11,Actor: System Administrator | BOs: BO-01,Cấu hình kênh giao tiếp,,,37,Baseline Draft,
+UC,UC-12,"Actor: System Administrator | BOs: BO-02, BO-03, BO-05",Cấu hình chính sách AI,,,37,Baseline Draft,
+UC,UC-13,"Actor: Khách hàng | BOs: BO-02, BO-04",Tra cứu thông tin đơn hàng,,,38,Baseline Draft,
+UC,UC-14,"Actor: Khách hàng | BOs: BO-02, BO-04, BO-05",Tạo đơn hàng thông qua AI,,,38,Baseline Draft,
+UC,UC-15,"Actor: Khách hàng | BOs: BO-02, BO-04",Yêu cầu chỉnh sửa đơn hàng,,,38,Baseline Draft,
+UC,UC-16,"Actor: Khách hàng | BOs: BO-02, BO-04",Yêu cầu hủy đơn hàng,,,38,Baseline Draft,
+UC,UC-17,"Actor: Nhân viên CSKH | BOs: BO-02, BO-04",Tạo vận đơn và đồng bộ ERPNext,,,38,Baseline Draft,
+UC,UC-18,"Actor: Nhân viên CSKH | BOs: BO-02, BO-04",Tra cứu và theo dõi trạng thái vận chuyển,,,38,Baseline Draft,
+DEC-MVP,DEC-MVP-01,,"MVP hướng đến sáu kênh: Zalo OA, Zalo cá nhân, Facebook Messenger, Instagram Direct, WhatsApp và Web Chat",,,30,Confirmed – Internal Project Decision,Lý do: Đáp ứng mục tiêu quản lý CSKH đa kênh
+DEC-MVP,DEC-MVP-02,,"AI được trực tiếp tạo đơn sau xác nhận hợp lệ; sửa, hủy, đổi trả do AI tiếp nhận và chuyển nhân viên quyết định",,,30,Confirmed – Internal Project Decision,Lý do: Giảm rủi ro tác động sai dữ liệu ERP
+DEC-MVP,DEC-MVP-03,,"Xác minh quyền đơn hàng theo mức nhạy cảm; đơn ngoài phiên chat chuyển nhân viên xác minh, chưa triển khai OTP tự động",,,30,Confirmed – Internal Project Decision,Lý do: Cân bằng bảo mật và trải nghiệm khách
+DEC-MVP,DEC-MVP-04,,"Bắt buộc khách xác nhận trước khi tạo đơn; dùng Quick Reply trên kênh hỗ trợ, fallback sang văn bản",,,30,Confirmed – Internal Project Decision,Lý do: Hạn chế tạo đơn sai hoặc ngoài ý muốn
+DEC-MVP,DEC-MVP-05,,"Khi Handover, chuyển Manual Mode ngay; AI dừng hành động mới, giao dịch ERP đã gửi tiếp tục được theo dõi và thông báo nội bộ",,,30,Confirmed – Internal Project Decision,Lý do: Không làm gián đoạn giao dịch và tránh AI giành quyền nhân viên
+DEC-MVP,DEC-MVP-06,,Conversation có thể tự Resolve khi đủ điều kiện sau thời gian không tương tác; khách nhắn lại được Reopen,,,30,Confirmed – Internal Project Decision,Lý do: Quản lý vòng đời hội thoại linh hoạt
+DEC-MVP,DEC-MVP-07,,Nhóm dự án quyết định chính sách và phạm vi mô phỏng; giảng viên tư vấn,,,31,Confirmed – Internal Project Decision,Lý do: Phù hợp tổ chức khóa luận
+DEC-MVP,DEC-MVP-08,,Conversation là đối tượng chính; yêu cầu chưa hoàn tất được ghi dưới dạng Pending Action,,,31,Confirmed – Internal Project Decision,Lý do: Tránh xây dựng Request Lifecycle quá phức tạp
+DEC-MVP,DEC-MVP-09,,"Sau khi nhân viên hoàn tất Pending Actions và Resolve, tin nhắn tiếp theo mới đưa hội thoại về Auto Mode",,,31,Confirmed – Internal Project Decision,Lý do: Tránh AI giành quyền xử lý khi nhân viên chưa kết thúc
+DEC-MVP,DEC-MVP-10,,"Manual Conversation được tự Resolve khi quá thời gian cấu hình, không còn Pending Action và không còn câu hỏi mở cần phản hồi",,,31,Confirmed – Internal Project Decision,Lý do: Tránh đóng nhầm hội thoại chưa giải quyết
+DEC-MVP,DEC-MVP-11,,"Auto-assignment theo Round-Robin/tải công việc, hỗ trợ Manual Claim và Reassign; không có nhân viên Online thì đưa vào Priority Queue",,,31,Confirmed – Internal Project Decision,Lý do: Có người chịu trách nhiệm và giảm bỏ sót
+DEC-MVP,DEC-MVP-12,,"Ngoài giờ, AI tiếp nhận yêu cầu cần người, tạo Pending Action, yêu cầu Order Hold khi phù hợp và đưa hội thoại ưu tiên cao vào hàng đợi",,,31,Confirmed – Internal Project Decision,Lý do: Giảm nguy cơ đơn bị xuất kho trước khi nhân viên xử lý
+DEC-MVP,DEC-MVP-13,,"Order Hold theo Local-first; đồng bộ cờ sang ERPNext, retry và cảnh báo nếu thất bại",,,31,Confirmed – Internal Project Decision,Lý do: Ghi nhận yêu cầu ngay cả khi ERP không khả dụng
+DEC-MVP,DEC-MVP-14,,"Nhân viên có quyền được gỡ Hold sau kiểm tra, ghi Audit Trail và xác nhận ERP cập nhật thành công",,,31,Confirmed – Internal Project Decision,Lý do: Kiểm soát trách nhiệm và trạng thái thực tế
+DEC-MVP,DEC-MVP-15,,"Knowledge Base áp dụng Maker–Checker, Draft–Publish, Vector Ingestion, Version History và Rollback",,,31,Confirmed – Internal Project Decision,Lý do: Tránh AI sử dụng tri thức chưa được phê duyệt
+DEC-MVP,DEC-MVP-16,,Gợi ý gộp Customer khi khớp SĐT chuẩn hóa hoặc Email; nhân viên có quyền xem trước và xác nhận Merge,,,32,Confirmed – Internal Project Decision,Lý do: Giảm nguy cơ gộp nhầm hồ sơ
+DEC-MVP,DEC-MVP-17,,"Unmerge có kiểm soát bằng Snapshot; ghi Audit Trail, không tự sửa dữ liệu đơn ERPNext",,,32,Confirmed – Internal Project Decision,Lý do: Bảo toàn dữ liệu và khả năng truy cứu
+DEC-MVP,DEC-MVP-18,,"Áp dụng RBAC, PII Masking theo vai trò, Audit Trail và Retention Policy",,,32,Confirmed – Internal Project Decision,Lý do: Bảo vệ dữ liệu cá nhân
+DEC-MVP,DEC-MVP-19,,"ERPNext là nguồn có thẩm quyền về giá, khuyến mãi, tồn kho và đơn; RAG cung cấp tri thức miền; lịch sử hội thoại cung cấp ngữ cảnh",,,32,Confirmed – Internal Project Decision,Lý do: Giảm thông tin thiếu chính xác và nhầm nguồn
+DEC-MVP,DEC-MVP-20,,"Đánh giá AI bằng Rubric gồm Groundedness, Business Compliance, Conversation Flow, Handover Efficiency và Response Latency",,,32,Confirmed – Internal Project Decision,Lý do: Đánh giá AI trên nhiều chiều chất lượng
+DEC-MVP,DEC-MVP-21,,"Đo End-to-End Latency mục tiêu 3–5 giây và AI Processing Latency dưới 2,5 giây; phân loại ảnh hưởng của bên thứ ba",,,32,Confirmed – Internal Project Decision,Lý do: Đánh giá hiệu năng toàn hệ thống và xử lý AI riêng biệt
+DEC-MVP,DEC-MVP-22,,"ERPNext áp dụng po_no = ma_don, đối soát trước retry, tối đa 3 lần và cảnh báo khi kết quả không rõ",,,32,Confirmed – Internal Project Decision,Lý do: Tránh tạo đơn trùng
+DEC-MVP,DEC-MVP-23,,"SLA FRT theo Priority trong giờ 08:00–21:00; High cảnh báo 5 phút/breach 10 phút, Normal 15/30 phút",,,32,Confirmed – Internal Project Decision,Lý do: Ưu tiên hội thoại quan trọng
+DEC-MVP,DEC-MVP-24,,Tạm dừng đồng hồ SLA ngoài giờ và tiếp tục theo Priority từ 08:00 ca sau; thay thế hạn chót 08:15 chung,,,32,Confirmed – Internal Project Decision,Lý do: Giữ công thức SLA nhất quán
+DEC-MVP,DEC-MVP-25,,"AI chỉ khẳng định dữ liệu có căn cứ, trả lời phần hợp lệ và tự Handover khi thiếu dữ liệu thiết yếu hoặc vượt thẩm quyền",,,33,Confirmed – Internal Project Decision,Lý do: Tránh suy đoán và xử lý thiếu an toàn
+DEC-MVP,DEC-MVP-26,,"Gom tin bằng Debounce 2,5 giây; xử lý tuần tự với Conversation Mutex",,,33,Confirmed – Internal Project Decision,Lý do: Giảm phản hồi trùng và tránh xung đột
+DEC-MVP,DEC-MVP-27,,"Chống trùng Inbound bằng khóa channel:account_id:external_message_id, PostgreSQL Transactional Inbox và lưu khóa 7 ngày",,,33,Confirmed – Internal Project Decision,"Lý do: Hạn chế xử lý lặp, mất tin nhắn"
+DEC-MVP,DEC-MVP-28,,"Persistent Job Queue; lease/heartbeat 2 phút, retry tối đa 3 lần, DLQ và cảnh báo nhân viên",,,33,Confirmed – Internal Project Decision,Lý do: Phục hồi khi Worker gặp lỗi
+DEC-MVP,DEC-MVP-29,,"Outbound Outbox, đối soát trước resend; nếu chưa xác định sau 3 lần thì chuyển Pending Delivery Review",,,33,Confirmed – Internal Project Decision,Lý do: Hạn chế gửi phản hồi trùng
+DEC-MVP,DEC-MVP-30,,Tạo batch_id UUIDv4 bền vững; liên kết tin thành phần và dùng khóa Outbound theo Batch,,,33,Confirmed – Internal Project Decision,Lý do: Giữ định danh ổn định cho một lượt AI
+DEC-MVP,DEC-MVP-31,,Kiểm tra phản hồi lỗi thời trước dispatch; đánh dấu SUPERSEDED nếu có tin mới hoặc Manual Mode,,,33,Confirmed – Internal Project Decision,Lý do: Tránh phản hồi sai ngữ cảnh
+DEC-MVP,DEC-MVP-32,,"Khi khách sửa đơn đã gửi ERP, bảo toàn giao dịch, tạo Pending Action, yêu cầu Hold và chuyển nhân viên",,,33,Confirmed – Internal Project Decision,Lý do: Tránh sửa ngang giao dịch hoặc tạo đơn trùng
+DEC-MVP,DEC-MVP-33,,Cho phép Auto Hold trước bàn giao vận chuyển nếu ERP/Kho xác nhận chặn thành công; không Auto Hold đơn đã in_transit,,,34,Confirmed – Internal Project Decision,Lý do: Tránh thao tác sai khi đơn đã rời kho
+DEC-MVP,DEC-MVP-34,,Chỉ Auto Hold khi Conversation/Contact Point đã liên kết xác thực với đơn; kênh lạ phải được nhân viên xác minh,,,34,Confirmed – Internal Project Decision,Lý do: Ngăn người không có quyền làm gián đoạn đơn
+DEC-MVP,DEC-MVP-35,,"CSKH kiểm tra kết quả sửa đơn và kiện hàng, chủ động Release Hold, ghi Audit và thông báo khách",,,34,Confirmed – Internal Project Decision,Lý do: Không tự giải phóng Hold khi nghiệp vụ chưa hoàn tất
+DEC-MVP,DEC-MVP-36,,Kho xác nhận đóng gói lại (package_repacked = True); CSKH chỉ được Release khi điều kiện xác nhận hợp lệ,,,34,Confirmed – Internal Project Decision,Lý do: Phân định trách nhiệm Kho và CSKH
+DEC-MVP,DEC-MVP-37,,"Shipping Integration thuộc Release 1: tạo vận đơn, tra cứu/tiếp nhận trạng thái giao hàng và đồng bộ kết quả về ERPNext",,,34,Confirmed – Internal Project Decision,Lý do: Giảm thao tác thủ công và hỗ trợ CSKH theo dõi giao hàng
+DEC-MVP,DEC-MVP-38,,Backend CSKH trực tiếp gọi Shipping API và cập nhật kết quả về ERPNext; ERPNext không trực tiếp gọi Shipping API,,,34,Confirmed – Internal Project Decision,"Lý do: Tập trung điều phối tích hợp, tránh trùng trách nhiệm"
+DEC-MVP,DEC-MVP-39,,"Chỉ nhân viên CSKH được cấp quyền được yêu cầu tạo vận đơn; AI chỉ tra cứu thông tin vận chuyển và Handover, không tự tạo/sửa/hủy vận đơn",,,34,Confirmed – Internal Project Decision,Lý do: Kiểm soát quyền nghiệp vụ và giảm rủi ro tự động hóa
+DEC-MVP,DEC-MVP-40,,"Giám sát hội thoại Manual Mode; cảnh báo khi nhân viên chậm phản hồi, tự Resolve khi đủ điều kiện và cho phép gia hạn thời gian xử lý có ghi nhận lịch sử, không xóa vi phạm SLA.",,,33,Pending CR-002,Lý do: Tránh bỏ sót khách hàng khi nhân viên quên phản hồi hoặc kết thúc Handover.
+CR,CR-001,"FR-01–04, FR-07, FR-09–12, FR-23–26",Chuẩn hóa kiến trúc Native Inbox/Chatwoot,,,199,Proposed – Under Impact Analysis,Xác định vai trò chính thức của Native Inbox và Chatwoot; cập nhật các mô hình liên quan mà không tự thay đổi phạm vi nghiệp vụ.
+CR,CR-002,"DEC-MVP-40, EVT-29, UC-08, FR-23/AC-23.5, FR-24",Gia hạn thời gian xử lý hội thoại Manual Mode,,,199,Proposed – Pending Internal Confirmation,Cho phép nhân viên có quyền gia hạn thời gian xử lý kèm lý do và Audit Log; không thay đổi SLA gốc.

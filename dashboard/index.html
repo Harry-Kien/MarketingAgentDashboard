@@ -242,6 +242,46 @@
     </form>
   </div>
 
+  <!-- Chi tiết và xác nhận Pending Action sửa/hủy đơn. Bằng chứng ERP chỉ
+       đọc từ Backend; không có ô cho người dùng tự gõ timestamp. -->
+  <div class="cong is-off" id="congCvKetQua" role="dialog"
+       aria-modal="true" aria-labelledby="cvkTen">
+    <form class="cong__form cvketqua" id="cvkForm">
+      <h1 class="cong__ten" id="cvkTen">Chi tiết công việc</h1>
+      <p class="cong__phu" id="cvkPhu"></p>
+      <div class="cvk__detail" id="cvkChiTiet"></div>
+      <div class="cvk__evidence" id="cvkBangChung" aria-live="polite"></div>
+      <div class="cong__truong" id="cvkThaoTac">
+        <label class="field">
+          <span>Kết quả xử lý</span>
+          <select id="cvkKetQua" name="ket_qua">
+            <option value="thanh_cong">Đã xử lý thành công</option>
+            <option value="khong_the">Không thể thực hiện</option>
+            <option value="cho_doi_soat">Chờ đối soát</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Lý do hoặc ghi chú</span>
+          <textarea id="cvkLyDo" name="ly_do" rows="4" maxlength="1000"
+                    placeholder="Ghi căn cứ xử lý để ca sau tiếp tục được"></textarea>
+        </label>
+      </div>
+      <p class="cong__loi" id="cvkLoi" aria-live="polite"></p>
+      <div class="cvk__actions">
+        <button type="button" class="btn btn--sm btn--ghost" id="cvkHoiThoai">
+          Mở hội thoại
+        </button>
+        <button type="button" class="btn btn--sm" id="cvkDocLai">
+          Đọc lại ERPNext
+        </button>
+        <button type="submit" class="btn btn--sm btn--primary" id="cvkGui">
+          Xác nhận kết quả
+        </button>
+      </div>
+      <p class="cong__note"><a href="#" id="cvkDong">Đóng, giữ nguyên bản nhập</a></p>
+    </form>
+  </div>
+
   <main class="stage" id="stage">
 
     <!-- ============ CA TRỰC ============ -->
@@ -569,6 +609,11 @@
         <section class="panel">
           <h2 class="panel__head">Nạp tài liệu</h2>
           <form id="docform" class="form">
+            <input type="hidden" name="document_id">
+            <label class="field field--wide">
+              <span>Kho tri thức của tài khoản</span>
+              <select name="account_id" id="knowledge-account" required></select>
+            </label>
             <label class="field field--wide">
               <span>Tên tài liệu</span>
               <input name="title" required maxlength="200" placeholder="Chính sách bảo hành 2026">
@@ -578,13 +623,17 @@
               <textarea name="text" required rows="8" minlength="20"
                 placeholder="Dán nội dung tài liệu vào đây. Cách nhau một dòng trống giữa các đoạn để hệ thống cắt đúng ngữ nghĩa."></textarea>
             </label>
-            <button type="submit" class="btn btn--primary">Nạp vào cơ sở tri thức</button>
+            <div class="rowbtns">
+              <button type="submit" class="btn btn--primary" id="docsave">Lưu Draft</button>
+              <button type="button" class="btn btn--sm" id="docnew">Draft mới</button>
+            </div>
           </form>
         </section>
         <section class="panel">
           <h2 class="panel__head">Thử truy vấn</h2>
           <p class="panel__note">Kiểm tra agent tìm được gì, không tốn lượt gọi model.</p>
           <form id="probeform" class="form">
+            <input type="hidden" name="account_id">
             <label class="field field--wide">
               <span>Câu hỏi của khách</span>
               <input name="question" required placeholder="Sản phẩm này dùng được cho da nhạy cảm không?">
@@ -595,8 +644,9 @@
         </section>
       </div>
       <section class="panel">
-        <h2 class="panel__head">Tài liệu đã nạp</h2>
+        <h2 class="panel__head">Tài liệu và phiên bản</h2>
         <div id="docs" class="rows"></div>
+        <div id="docversions" class="rows"></div>
       </section>
     </section>
 

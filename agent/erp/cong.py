@@ -122,6 +122,21 @@ class Cong:
             "ton_kho", self._ttl_ton, ma, bo_qua_cache, self._nguon.ton_kho
         )
 
+    async def doc_don(self, erp_ma_don: str) -> dict | None:
+        """Đọc Sales Order sống để đối soát kết quả do nhân viên ghi nhận.
+
+        Không cache: đây là bằng chứng cho một thao tác kết thúc Pending
+        Action, nên dữ liệu cũ dù chỉ một phút cũng có thể đóng nhầm việc.
+        Adapter không có năng lực này phải nổ rõ, không suy từ dữ liệu cục bộ.
+        """
+        ham = getattr(self._nguon, "doc_don", None)
+        if ham is None:
+            raise LoiERP(
+                f"Nguồn ERP {getattr(self._nguon, 'ten', '?')!r} "
+                "không hỗ trợ đối soát Sales Order"
+            )
+        return await self._goi_co_thu_lai(ham, erp_ma_don)
+
     async def lo_hang(self, ma: str, bo_qua_cache: bool = False) -> list[Lo] | None:
         """
         Các lô còn hiệu lực của một mã. `None` = không biết.

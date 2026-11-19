@@ -15,6 +15,7 @@ import httpx
 from agent.config import settings
 from .base import BaseShippingProvider
 from .models import (
+    ClientCodeLookupResult,
     CreateWaybillRequest,
     CreateWaybillResult,
     InternalShippingStatus,
@@ -58,9 +59,9 @@ class GHNShippingProvider(BaseShippingProvider):
     ) -> None:
         from agent import cau_hinh_dong
 
-        self._api_url = (api_url or settings.ghn_api_url).rstrip("/")
-        self._token = token or cau_hinh_dong.lay("GHN_TOKEN")
-        self._shop_id = shop_id or cau_hinh_dong.lay("GHN_SHOP_ID")
+        self._api_url = (api_url if api_url is not None else settings.ghn_api_url).rstrip("/")
+        self._token = token if token is not None else cau_hinh_dong.lay("GHN_TOKEN")
+        self._shop_id = shop_id if shop_id is not None else cau_hinh_dong.lay("GHN_SHOP_ID")
 
     @property
     def code(self) -> str:
@@ -173,6 +174,7 @@ class GHNShippingProvider(BaseShippingProvider):
             return None, None
 
     async def tao_van_don(self, req: CreateWaybillRequest) -> CreateWaybillResult:
+        client_code = str(req.client_order_code or req.ma_don).strip()
         thieu = [ten for ten, gia_tri in (
             ("GHN_TOKEN", self._token), ("GHN_SHOP_ID", self._shop_id),
         ) if not str(gia_tri or "").strip()]
@@ -180,6 +182,8 @@ class GHNShippingProvider(BaseShippingProvider):
             return CreateWaybillResult(
                 ok=False,
                 can_nguoi_xac_nhan=True,
+                client_order_code=client_code,
+                don_vi="ghn",
                 loi=(
                     "Chưa cấu hình " + " và ".join(thieu) + " trong .env. "
                     "Lấy ở GHN → Quản lý cửa hàng: Token nằm ở mục API, "
@@ -206,6 +210,8 @@ class GHNShippingProvider(BaseShippingProvider):
             return CreateWaybillResult(
                 ok=False,
                 can_nguoi_xac_nhan=True,
+                client_order_code=client_code,
+                don_vi="ghn",
                 loi=(
                     "Không xác định được quận/huyện và phường/xã từ địa chỉ: "
                     f"'{req.khach_dia_chi}'. KHÔNG tạo vận đơn để tránh gửi "
@@ -219,7 +225,7 @@ class GHNShippingProvider(BaseShippingProvider):
             "payment_type_id": 2,
             "note": req.ghi_chu or "Mỹ phẩm, xin nhẹ tay",
             "required_note": req.yeu_cau_giao or "KHONGCHOXEMHANG",
-            "client_order_code": req.ma_don,
+            "client_order_code": client_code,
             "to_name": req.khach_ten,
             "to_phone": req.khach_sdt,
             "to_address": req.khach_dia_chi,
@@ -234,39 +240,279 @@ class GHNShippingProvider(BaseShippingProvider):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(url, headers=self._headers(), json=payload)
-                data = resp.json()
+        except Exception as exc:
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=(
+                    "Chưa rõ GHN đã tạo vận đơn hay chưa (timeout/lỗi kết nối): "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
 
-            if resp.status_code != 200 or data.get("code") != 200:
-                msg = data.get("message") or data.get("code_message_value") or resp.text
-                if "FROM_ADDRESS_CONVERT_FAIL" in str(msg) or "SHOP_INFO_ERROR" in str(msg):
-                    msg += " (Vui lòng cập nhật đầy đủ Địa chỉ kho lấy hàng của shop trên trang quản lý GHN)"
-                return CreateWaybillResult(ok=False, loi=f"GHN từ chối tạo đơn: {msg}")
+        try:
+            data = resp.json()
+        except Exception as exc:
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=(
+                    f"GHN phản hồi HTTP {resp.status_code} không đọc được JSON "
+                    f"(chưa rõ kết quả): {type(exc).__name__}: {exc}"
+                ),
+            )
 
-            res_data = data.get("data", {})
-            tracking_code = str(res_data.get("order_code", ""))
-            total_fee = int(res_data.get("total_fee", 0))
-            expected_delivery = None
-            if res_data.get("expected_delivery_time"):
-                try:
-                    expected_delivery = datetime.fromisoformat(
-                        res_data["expected_delivery_time"].replace("Z", "+00:00")
+        if not isinstance(data, dict):
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN phản hồi cấu trúc không hợp lệ (HTTP {resp.status_code}, cần đối soát)",
+            )
+
+        if resp.status_code == 408 or resp.status_code >= 500:
+            msg = data.get("message") or data.get("code_message_value") or resp.text
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN trả HTTP {resp.status_code} (chưa rõ kết quả, cần đối soát): {msg}",
+            )
+
+        if resp.status_code != 200 or data.get("code") != 200:
+            msg = data.get("message") or data.get("code_message_value") or resp.text
+            if "FROM_ADDRESS_CONVERT_FAIL" in str(msg) or "SHOP_INFO_ERROR" in str(msg):
+                msg += " (Vui lòng cập nhật đầy đủ Địa chỉ kho lấy hàng của shop trên trang quản lý GHN)"
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=False,
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN từ chối tạo đơn: {msg}",
+            )
+
+        res_data = data.get("data") or {}
+        if not isinstance(res_data, dict):
+            res_data = {}
+        tracking_code = str(res_data.get("order_code") or "").strip()
+        if not tracking_code:
+            return CreateWaybillResult(
+                ok=False,
+                khong_ro_ket_qua=True,
+                client_order_code=client_code,
+                don_vi="ghn",
+                thong_tin_them=data,
+                loi="GHN trả 200 nhưng thiếu order_code trong phản hồi (cần đối soát)",
+            )
+
+        total_fee = int(res_data.get("total_fee") or 0)
+        expected_delivery = None
+        if res_data.get("expected_delivery_time"):
+            try:
+                expected_delivery = datetime.fromisoformat(
+                    str(res_data["expected_delivery_time"]).replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+
+        return CreateWaybillResult(
+            ok=True,
+            ma_van_don=tracking_code,
+            don_vi="ghn",
+            phi_van_chuyen=total_fee,
+            ngay_du_kien_giao=expected_delivery,
+            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            thong_tin_them=res_data,
+            client_order_code=client_code,
+        )
+
+    async def tra_cuu_theo_ma_tham_chieu(
+        self, client_order_code: str
+    ) -> ClientCodeLookupResult:
+        """
+        Tra cứu đơn GHN theo `client_order_code` qua API chính thức v2:
+        `GET /shiip/public-api/v2/shipping-order/detail-by-client-code`.
+
+        Chính sách an toàn:
+        - Lỗi mạng, timeout, HTTP >= 500, JSON lỗi, mismatch client_order_code,
+          hoặc nhiều vận đơn trùng một client_order_code => `indeterminate`.
+        - Chỉ trả `not_found` khi GHN xác nhận rõ đơn không tồn tại.
+        """
+        client_code = str(client_order_code or "").strip()
+        if not client_code or not str(self._token or "").strip() or not str(self._shop_id or "").strip():
+            return ClientCodeLookupResult(
+                trang_thai="indeterminate",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi="Thiếu GHN_TOKEN, GHN_SHOP_ID hoặc client_order_code để đối soát.",
+            )
+
+        url = f"{self._api_url}/shipping-order/detail-by-client-code"
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(
+                    url,
+                    headers=self._headers(),
+                    params={"client_order_code": client_code},
+                )
+        except Exception as exc:
+            return ClientCodeLookupResult(
+                trang_thai="indeterminate",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"Lỗi mạng/timeout khi đối soát GHN: {type(exc).__name__}: {exc}",
+            )
+
+        try:
+            data = resp.json()
+        except Exception as exc:
+            return ClientCodeLookupResult(
+                trang_thai="indeterminate",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN đối soát HTTP {resp.status_code} JSON không hợp lệ: {exc}",
+            )
+
+        if not isinstance(data, dict):
+            return ClientCodeLookupResult(
+                trang_thai="indeterminate",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN đối soát phản hồi không đúng dạng JSON object (HTTP {resp.status_code}).",
+            )
+
+        if resp.status_code >= 500 or resp.status_code in (401, 403, 408, 429):
+            msg = str(data.get("message") or data.get("code_message_value") or resp.text)
+            return ClientCodeLookupResult(
+                trang_thai="indeterminate",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=f"GHN chưa kết luận được khi đối soát (HTTP {resp.status_code}): {msg}",
+                du_lieu_goc=data,
+            )
+
+        if resp.status_code == 200 and data.get("code") == 200:
+            raw = data.get("data")
+            if isinstance(raw, list):
+                matches = [
+                    it for it in raw
+                    if isinstance(it, dict)
+                    and str(it.get("order_code") or "").strip()
+                    and (
+                        not str(it.get("client_order_code") or "").strip()
+                        or str(it.get("client_order_code")).strip() == client_code
                     )
+                ]
+                distinct_codes = {str(it.get("order_code")).strip() for it in matches}
+                if len(distinct_codes) > 1:
+                    return ClientCodeLookupResult(
+                        trang_thai="indeterminate",
+                        client_order_code=client_code,
+                        don_vi="ghn",
+                        loi="GHN có nhiều hơn một vận đơn trùng client_order_code; cần nhân viên đối soát thủ công.",
+                        du_lieu_goc={"matches": matches},
+                    )
+                if len(matches) == 1:
+                    raw = matches[0]
+                elif len(raw) == 0:
+                    return ClientCodeLookupResult(
+                        trang_thai="not_found",
+                        client_order_code=client_code,
+                        don_vi="ghn",
+                        loi="GHN trả danh sách rỗng cho client_order_code.",
+                        du_lieu_goc=data,
+                    )
+                else:
+                    return ClientCodeLookupResult(
+                        trang_thai="indeterminate",
+                        client_order_code=client_code,
+                        don_vi="ghn",
+                        loi="Phản hồi GHN không khớp client_order_code.",
+                        du_lieu_goc=data,
+                    )
+
+            if not isinstance(raw, dict):
+                return ClientCodeLookupResult(
+                    trang_thai="indeterminate",
+                    client_order_code=client_code,
+                    don_vi="ghn",
+                    loi="GHN trả 200 nhưng data không chứa thông tin vận đơn.",
+                    du_lieu_goc=data,
+                )
+
+            ret_client = str(raw.get("client_order_code") or "").strip()
+            if ret_client and ret_client != client_code:
+                return ClientCodeLookupResult(
+                    trang_thai="indeterminate",
+                    client_order_code=client_code,
+                    don_vi="ghn",
+                    loi=f"GHN trả client_order_code lệch ({ret_client} != {client_code}).",
+                    du_lieu_goc=raw,
+                )
+
+            order_code = str(raw.get("order_code") or "").strip()
+            if not order_code:
+                return ClientCodeLookupResult(
+                    trang_thai="indeterminate",
+                    client_order_code=client_code,
+                    don_vi="ghn",
+                    loi="GHN trả 200 nhưng thiếu order_code.",
+                    du_lieu_goc=raw,
+                )
+
+            status_raw = str(raw.get("status") or "").strip()
+            internal_status = self.map_status(status_raw) if status_raw else None
+            total_fee = int(raw.get("total_fee") or raw.get("cod_fee") or 0)
+            expected_delivery = None
+            if raw.get("expected_delivery_time") or raw.get("leadtime"):
+                ts = raw.get("expected_delivery_time") or raw.get("leadtime")
+                try:
+                    expected_delivery = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
                 except Exception:
                     pass
-
-            return CreateWaybillResult(
-                ok=True,
-                ma_van_don=tracking_code,
+            return ClientCodeLookupResult(
+                trang_thai="found",
+                ma_van_don=order_code,
+                client_order_code=client_code,
                 don_vi="ghn",
                 phi_van_chuyen=total_fee,
                 ngay_du_kien_giao=expected_delivery,
-                trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
-                thong_tin_them=res_data,
+                trang_thai_noi_bo=internal_status,
+                trang_thai_goc=status_raw,
+                du_lieu_goc=raw,
             )
-        except Exception as exc:
-            return CreateWaybillResult(
-                ok=False, loi=f"Lỗi mạng khi kết nối GHN API: {type(exc).__name__}: {exc}"
+
+        msg = str(data.get("message") or data.get("code_message_value") or "").strip()
+        code_val = str(data.get("code_message_value") or "").upper()
+        lower_msg = msg.lower()
+        not_found_markers = ("ORDER_NOT_FOUND", "NOT_FOUND", "NOT FOUND")
+        if (
+            any(m in code_val or m in msg.upper() for m in not_found_markers)
+            or "không tìm thấy" in lower_msg
+            or "không tồn tại" in lower_msg
+            or resp.status_code == 404
+        ):
+            return ClientCodeLookupResult(
+                trang_thai="not_found",
+                client_order_code=client_code,
+                don_vi="ghn",
+                loi=msg or "GHN xác nhận không tìm thấy vận đơn theo client_order_code.",
+                du_lieu_goc=data,
             )
+
+        return ClientCodeLookupResult(
+            trang_thai="indeterminate",
+            client_order_code=client_code,
+            don_vi="ghn",
+            loi=f"GHN đối soát phản hồi không rõ: {msg or resp.text[:160]}",
+            du_lieu_goc=data,
+        )
 
     async def tra_cuu(self, ma_van_don: str) -> TrackingResult:
         if not self._token:
@@ -383,6 +629,18 @@ class GHNShippingProvider(BaseShippingProvider):
         client_code = str(body.get("ClientOrderCode") or body.get("client_order_code") or "")
         status = str(body.get("Status") or body.get("status") or "")
         desc = str(body.get("Description") or body.get("description") or "")
+        thoi_gian = datetime.now(timezone.utc)
+        raw_time = body.get("Time") or body.get("time")
+        if raw_time:
+            try:
+                parsed = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                thoi_gian = parsed
+            except (TypeError, ValueError):
+                # Thời gian lỗi không được làm mất cả webhook; dùng lúc nhận
+                # nhưng vẫn giữ payload gốc trong event để đối soát.
+                pass
 
         return WebhookEventResult(
             hop_le=True,
@@ -392,7 +650,7 @@ class GHNShippingProvider(BaseShippingProvider):
             trang_thai_goc=status,
             trang_thai_noi_bo=self.map_status(status),
             mo_ta=desc,
-            thoi_gian=datetime.now(timezone.utc),
+            thoi_gian=thoi_gian,
             du_lieu_goc=body,
         )
 

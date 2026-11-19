@@ -414,7 +414,7 @@ async function loadCaiDatApi() {
 
 /* Provider nào cần khoá nào. gemini/vertex xác thực qua gcloud trên máy,
  * không có khoá nào để nhập — nên không có mục nào trong bảng này. */
-const API_KHOA_THEO_PROVIDER = { gemini_api: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY" };
+const API_KHOA_THEO_PROVIDER = { gemini_api: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
 
 /* Chỉ hiện ô khoá của provider đang chọn.
  *

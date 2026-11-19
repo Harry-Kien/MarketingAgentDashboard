@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
 from .models import (
+    ClientCodeLookupResult,
     CreateWaybillRequest,
     CreateWaybillResult,
     InternalShippingStatus,
@@ -174,3 +175,19 @@ class BaseShippingProvider(ABC):
     async def san_sang(self) -> tuple[bool, str]:
         """Dùng được chưa? Trả (được/không, lý do) — dashboard hiện lý do."""
         return True, ""
+
+    async def tra_cuu_theo_ma_tham_chieu(
+        self, client_order_code: str
+    ) -> ClientCodeLookupResult:
+        """
+        Đối soát xem hãng đã tạo vận đơn cho `client_order_code` này hay chưa.
+
+        Mặc định trả `unsupported`; hãng hỗ trợ (như GHN `detail-by-client-code`)
+        ghi đè để phục vụ đối soát sau timeout/rớt mạng.
+        """
+        return ClientCodeLookupResult(
+            trang_thai="unsupported",
+            client_order_code=str(client_order_code or "").strip(),
+            don_vi=self.code,
+            loi=f"Hãng '{self.code}' chưa hỗ trợ tra cứu theo mã tham chiếu.",
+        )

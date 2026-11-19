@@ -126,14 +126,14 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-66 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+68 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
 |---|---|
 | **Hội thoại** | `conversations` · `messages` · `ho_so_khach` · `processed_webhooks` · `hoi_thoai_nhan` · `hoi_thoai_ghi_chu` · `tra_loi_nhanh` · `csat` · `quy_tac_tu_dong` · `quy_tac_lan_chay` |
-| **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` |
-| **Tri thức (RAG)** | `documents` · `chunks` |
+| **Bán hàng** | `orders` · `ton_kho` · `kho_bien_dong` · `shipping_waybill_requests` |
+| **Tri thức (RAG)** | `documents` · `document_versions` · `chunks` |
 | **Nội dung** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
 | **Công việc** | `cong_viec` |
@@ -181,12 +181,14 @@ erDiagram
         TEXT title
         TEXT source
         INT chunk_count
+        UUID account_id
     }
     chunks {
         UUID id
         UUID document_id
         INT ord
         TEXT content
+        UUID document_version_id
     }
     videos {
         UUID id
@@ -228,7 +230,7 @@ erDiagram
         TEXT khach_sdt
         TEXT khach_dia_chi
         JSONB items
-        _ con_27_cot_nua
+        _ con_34_cot_nua
     }
     posts {
         UUID id
@@ -623,7 +625,7 @@ erDiagram
         TEXT trang_thai
         TEXT uu_tien
         TIMESTAMPTZ han
-        _ con_7_cot_nua
+        _ con_8_cot_nua
     }
     agent_ho_so {
         UUID id
@@ -724,6 +726,28 @@ erDiagram
         TIMESTAMPTZ cho_den
         _ con_2_cot_nua
     }
+    document_versions {
+        UUID id
+        UUID document_id
+        INT version
+        TEXT status
+        TEXT content
+        TEXT index_status
+        TEXT index_error
+        INT chunk_count
+        _ con_4_cot_nua
+    }
+    shipping_waybill_requests {
+        UUID id
+        UUID order_id
+        TEXT ma_don
+        TEXT provider
+        TEXT client_order_code
+        TEXT trang_thai
+        TEXT ma_van_don
+        BIGINT phi_van_chuyen
+        _ con_13_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -731,10 +755,12 @@ erDiagram
     nguoi_dung ||--o{ ca_nghi : ""
     nguoi_dung ||--o{ ca_truc : ""
     agent_ho_so ||--o{ channel_accounts : ""
+    document_versions ||--o{ chunks : ""
     documents ||--o{ chunks : ""
     contacts ||--o{ cong_viec : ""
     conversations ||--o{ cong_viec : ""
     nguoi_dung ||--o{ cong_viec : ""
+    orders ||--o{ cong_viec : ""
     channel_accounts ||--o{ contact_consents : ""
     contacts ||--o{ contact_consents : ""
     nguoi_dung ||--o{ contact_consents : ""
@@ -765,6 +791,10 @@ erDiagram
     nguoi_dung ||--o{ csat : ""
     contacts ||--o{ data_retention_jobs : ""
     nguoi_dung ||--o{ data_retention_jobs : ""
+    documents ||--o{ document_versions : ""
+    nguoi_dung ||--o{ document_versions : ""
+    channel_accounts ||--o{ documents : ""
+    document_versions ||--o{ documents : ""
     conversations ||--o{ hoi_thoai_ghi_chu : ""
     nguoi_dung ||--o{ hoi_thoai_ghi_chu : ""
     conversations ||--o{ hoi_thoai_nhan : ""
@@ -789,6 +819,7 @@ erDiagram
     routing_rules ||--o{ routing_cursors : ""
     channel_accounts ||--o{ routing_rules : ""
     teams ||--o{ routing_rules : ""
+    orders ||--o{ shipping_waybill_requests : ""
     conversations ||--o{ sla_events : ""
     channel_accounts ||--o{ sla_policies : ""
     nguoi_dung ||--o{ team_members : ""

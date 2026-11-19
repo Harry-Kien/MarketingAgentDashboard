@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 
 class InternalShippingStatus(str, Enum):
@@ -44,6 +44,7 @@ class CreateWaybillRequest:
     tong_khoi_luong_gram: int = 500
     ghi_chu: str = ""
     yeu_cau_giao: str = "KHONGCHOXEMHANG"  # CHOXEMHANGKHONGTHU | CHOTHUHANG | KHONGCHOXEMHANG
+    client_order_code: str = ""
 
 
 @dataclass(slots=True)
@@ -59,6 +60,25 @@ class CreateWaybillResult:
     # Không phải lỗi hệ thống — là việc cần người quyết. Ví dụ: địa chỉ khách
     # cho không đủ để xác định quận/phường. Agent phải HỎI LẠI, không thử lại.
     can_nguoi_xac_nhan: bool = False
+    # True khi không xác định được hãng đã tạo đơn hay chưa (timeout, rớt mạng,
+    # HTTP 5xx, phản hồi thiếu mã vận đơn). CẤM tự kết luận thất bại và tạo lại.
+    khong_ro_ket_qua: bool = False
+    client_order_code: str = ""
+
+
+@dataclass(slots=True)
+class ClientCodeLookupResult:
+    """Kết quả đối soát vận đơn với hãng qua `client_order_code`."""
+    trang_thai: Literal["found", "not_found", "indeterminate", "unsupported"]
+    ma_van_don: str = ""
+    client_order_code: str = ""
+    don_vi: str = ""
+    phi_van_chuyen: int = 0
+    ngay_du_kien_giao: datetime | None = None
+    trang_thai_noi_bo: InternalShippingStatus | None = None
+    trang_thai_goc: str = ""
+    du_lieu_goc: dict[str, Any] = field(default_factory=dict)
+    loi: str = ""
 
 
 @dataclass(slots=True)

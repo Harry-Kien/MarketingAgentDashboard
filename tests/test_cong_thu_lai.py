@@ -222,9 +222,10 @@ def test_cong_khong_boc_thao_tac_ghi_nao():
     # Danh sách này KHÔNG được nới ra cho một thao tác ghi. Thêm tên vào đây
     # là một quyết định có ý thức, và lý do phải viết ra ngay tại chỗ:
     #
+    #   doc_don    đọc một Sales Order sống phục vụ đối soát DEV-09 (chỉ đọc)
     #   lo_hang    đọc DocType `Batch` — lấy hạn dùng
     #   han_dung   thuần tính toán trên kết quả `lo_hang`, không gọi ERP
     assert cong_khai == {
         "gia", "ton_kho", "suc_khoe", "danh_muc", "trang_thai",
-        "lo_hang", "han_dung",
+        "doc_don", "lo_hang", "han_dung",
     }

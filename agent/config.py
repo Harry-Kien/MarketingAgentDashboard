@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Gemini qua Google AI Studio (provider gemini_api). Nhập được trên
     # dashboard; ở đây chỉ là đường lui — xem agent/cau_hinh_dong.py.
     gemini_api_key: str = ""
+    # OpenAI API
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
 
     # --- Vertex AI ---
     gcp_project_id: str = ""

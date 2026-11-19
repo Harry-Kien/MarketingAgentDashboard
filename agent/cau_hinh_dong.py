@@ -38,7 +38,7 @@ from agent.security.credential_vault import (
 )
 
 PHAM_VI = "cau-hinh"
-PROVIDER_HOP_LE = ("gemini_api", "gemini", "anthropic", "vertex")
+PROVIDER_HOP_LE = ("gemini_api", "gemini", "anthropic", "vertex", "openai")
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +57,15 @@ class MoTa:
 DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
     MoTa("LLM_PROVIDER", "model", "Nhà cung cấp model", False, PROVIDER_HOP_LE,
          "gemini_api: chỉ cần API key từ Google AI Studio. gemini / vertex: cần "
-         "dự án GCP và gcloud trên máy. anthropic: Claude trực tiếp."),
+         "dự án GCP và gcloud trên máy. anthropic: Claude trực tiếp. openai: OpenAI API."),
     MoTa("GEMINI_API_KEY", "model", "Gemini API key", True,
          y_nghia="Google AI Studio → Get API key. Dùng khi provider là gemini_api."),
     MoTa("ANTHROPIC_API_KEY", "model", "Anthropic API key", True,
          y_nghia="Dùng khi provider là anthropic."),
+    MoTa("OPENAI_API_KEY", "model", "OpenAI API key", True,
+         y_nghia="Dùng khi provider là openai."),
+    MoTa("OPENAI_BASE_URL", "model", "OpenAI base URL", False,
+         y_nghia="Mặc định https://api.openai.com/v1."),
     MoTa("MODEL_CHAT", "model", "Model trả lời khách", False),
     MoTa("MODEL_HARD", "model", "Model việc khó", False),
     MoTa("MODEL_CHEAP", "model", "Model việc rẻ", False),
@@ -163,6 +167,8 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "LLM_PROVIDER": lambda: settings.llm_provider,
     "GEMINI_API_KEY": lambda: settings.gemini_api_key,
     "ANTHROPIC_API_KEY": lambda: settings.anthropic_api_key,
+    "OPENAI_API_KEY": lambda: settings.openai_api_key,
+    "OPENAI_BASE_URL": lambda: settings.openai_base_url,
     "MODEL_CHAT": lambda: settings.model_chat,
     "MODEL_HARD": lambda: settings.model_hard,
     "MODEL_CHEAP": lambda: settings.model_cheap,

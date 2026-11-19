@@ -49,7 +49,7 @@ from agent.ky_nang.ban_mo_ta import BanMoTa, bo_dau, tach_bi_danh
 from agent.ky_nang.mang import LoiMang, lay
 
 
-async def chay_plugin(bm: BanMoTa, args: dict) -> dict:
+async def chay_plugin(bm: BanMoTa, args: dict, *, account_id=None) -> dict:
     """
     Chạy một plugin và trả về dict cho agent đọc.
 
@@ -58,7 +58,7 @@ async def chay_plugin(bm: BanMoTa, args: dict) -> dict:
     hay chọn là đoán bừa. Đây là bài học từ `tim_kien_thuc`.
     """
     if bm.loai == "tra_tai_lieu":
-        return await _tra_tai_lieu(bm, args)
+        return await _tra_tai_lieu(bm, args, account_id=account_id)
     if bm.loai == "tra_bang":
         return _tra_bang(bm, args)
     if bm.loai == "chuyen_chuyen_biet":
@@ -95,7 +95,7 @@ def _tham_so_dau(bm: BanMoTa, args: dict) -> str:
     return str(args.get(bm.tham_so[0].ten, "") or "").strip()
 
 
-async def _tra_tai_lieu(bm: BanMoTa, args: dict) -> dict:
+async def _tra_tai_lieu(bm: BanMoTa, args: dict, *, account_id=None) -> dict:
     # Nhập khẩu tại chỗ: `rag` kéo theo thư viện Vertex, và các loại plugin
     # khác không cần tới nó.
     from agent.core import rag
@@ -113,7 +113,11 @@ async def _tra_tai_lieu(bm: BanMoTa, args: dict) -> dict:
     # được tính trên tập đã cắt, nên điểm RRF lệch so với `tim_kien_thuc`
     # — cùng một câu hỏi, hai công cụ, hai thứ tự khác nhau. Lấy dư rồi cắt
     # thì thứ tự giữ nguyên. Đổi lại là tốn hơn một chút, chấp nhận được.
-    doan = await rag.retrieve(cau_hoi, k=k * 3)
+    doan = (
+        await rag.retrieve(cau_hoi, k=k * 3, account_id=account_id)
+        if account_id is not None
+        else await rag.retrieve(cau_hoi, k=k * 3)
+    )
     hop = [p for p in doan if nhom in bo_dau(p.doc_title)][:k]
 
     if not hop:
@@ -129,7 +133,9 @@ async def _tra_tai_lieu(bm: BanMoTa, args: dict) -> dict:
         "tim_thay": True,
         "doan": [
             {"tai_lieu": p.doc_title, "noi_dung": p.content.strip()[:700],
-             "diem": round(p.score, 3)}
+             "diem": round(p.score, 3), "phien_ban": p.version,
+             "version_id": str(p.version_id) if p.version_id else None,
+             "chunk_id": str(p.chunk_id) if p.chunk_id else None}
             for p in hop
         ],
         "ghi_chu": "Chỉ trả lời dựa trên các đoạn trên. Nêu tên tài liệu khi trích.",

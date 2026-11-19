@@ -83,3 +83,13 @@ def test_quet_qr_zalo_ca_nhan_hien_duoc_anh_va_hoi_lai_trang_thai():
     assert "zalo-personal/status" in js, "phải hỏi lại trạng thái để lấy QR"
     assert "qr_image" in js, "phải đọc ảnh QR sidecar trả về"
     assert "<img" in js, "phải dựng thẻ ảnh để quét được bằng điện thoại"
+
+
+def test_inbox_hien_canh_bao_sla_va_lang_nghe_sse_warning():
+    js = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
+    assert "slaBadge" in js
+    assert "c.sla_warning" in js
+    assert "Sắp hết SLA" in js
+    assert "tag--assist" in js
+    assert "sla.first_response_warning" in js
+    assert "sla.first_response_breached" in js

@@ -42,7 +42,7 @@ function startInboxStream() {
       } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
     }, 120);
   };
-  ["message.created", "message.sent", "conversation.updated", "conversation.takeover", "conversation.released"]
+  ["message.created", "message.sent", "conversation.updated", "conversation.takeover", "conversation.released", "sla.first_response_warning", "sla.first_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
   window.addEventListener("beforeunload", () => stream.close(), { once: true });
 }

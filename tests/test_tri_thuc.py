@@ -280,7 +280,8 @@ def test_khong_tai_lieu_that_nao_bi_chan_oan():
 def test_ingest_co_go_tai_lieu_mo_coi():
     src = (ROOT / "scripts" / "ingest.py").read_text(encoding="utf-8")
     assert "mo_coi" in src
-    assert "DELETE FROM documents WHERE source = ANY" in src
+    assert "UPDATE documents SET lifecycle_status='archived'" in src
+    assert "WHERE source = ANY" in src
 
 
 def test_ingest_KHONG_dung_LIKE_tren_duong_dan():
@@ -325,19 +326,9 @@ def test_gitignore_chan_thu_muc_luu_tru_nhung_giu_ban_example():
 
 def test_moi_tai_lieu_dashboard_co_source_rieng():
     """
-    rag.ingest xoá bản cũ THEO source trước khi ghi — đúng, vì nạp lại
-    cùng một tệp không được tạo bản thứ hai.
-
-    Nhưng bản trước truyền cứng `"dashboard"` cho MỌI tài liệu, nên quy tắc
-    ấy thành: nạp tài liệu thứ hai XOÁ MẤT tài liệu thứ nhất. Nhân viên dán
-    năm chính sách vào ô "Nạp tài liệu", bấm năm lần, kho còn đúng một cái.
-
-    Không lỗi, không nhật ký. Chỉ là agent trả lời "chưa có thông tin" cho
-    bốn chính sách mà người ta tin là đã nạp. Đo được bằng hai lời gọi liên
-    tiếp.
-
-    ĐỌC BẰNG AST: chú thích trong `routes.py` có nhắc chuỗi dashboard để
-    giải thích lỗi cũ.
+    Mỗi logical document cần source riêng; sửa Draft dùng lại source của
+    đúng document, còn tạo mới sinh UUID. Không được quay lại hằng
+    `"dashboard"` khiến tài liệu sau đè tài liệu trước.
     """
     import ast
 
@@ -345,15 +336,15 @@ def test_moi_tai_lieu_dashboard_co_source_rieng():
     cay = ast.parse(src)
     ham = next(
         n for n in ast.walk(cay)
-        if isinstance(n, ast.AsyncFunctionDef) and n.name == "add_document"
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "_save"
     )
     goi = [
         n for n in ast.walk(ham)
-        if isinstance(n, ast.Call) and ast.unparse(n.func) == "rag.ingest"
+        if isinstance(n, ast.Call) and ast.unparse(n.func) == "rag.save_draft"
     ]
-    assert goi, "add_document không còn gọi rag.ingest"
-    nguon = ast.unparse(goi[0].args[1])
-    assert nguon != '"dashboard"' and nguon != "'dashboard'", (
-        "mọi tài liệu dùng chung một source — tài liệu sau xoá tài liệu trước"
+    assert goi, "API không còn lưu qua vòng đời Draft"
+    nguon = next(
+        kw.value for kw in goi[0].keywords if kw.arg == "source"
     )
-    assert "title" in nguon, f"source phải phân biệt theo tiêu đề, đang là {nguon}"
+    assert ast.unparse(nguon) == "source"
+    assert "uuid4()" in ast.unparse(ham), "tài liệu mới không có source riêng"

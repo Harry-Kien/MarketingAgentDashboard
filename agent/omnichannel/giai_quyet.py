@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID
 
 from agent import cau_hinh_dong, db
+from agent.core import cong_viec
 from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
 
 CAU_HOI = ("Dạ shop cảm ơn anh/chị đã nhắn ạ. Anh/chị chấm giúp shop mức hài lòng "
@@ -29,6 +30,62 @@ CAU_HOI = ("Dạ shop cảm ơn anh/chị đã nhắn ạ. Anh/chị chấm giú
 CAM_ON = "Dạ shop cảm ơn anh/chị đã đánh giá ạ!"
 GIO_CHO = 24
 _DIEM = re.compile(r"^\s*([1-5])\s*(sao|⭐)?\s*[.!]?\s*$", re.IGNORECASE)
+
+
+class ConversationHasPendingTasksError(RuntimeError):
+    """Conversation còn công việc phải đóng trước khi Resolve."""
+
+    def __init__(self, tasks: list[dict[str, Any]]) -> None:
+        self.tasks = tasks
+        super().__init__("Không thể Resolve: còn công việc chưa hoàn tất.")
+
+    def api_detail(self) -> dict[str, Any]:
+        return {
+            "code": "conversation_has_pending_tasks",
+            "message": str(self),
+            "pending_tasks": [
+                {
+                    "id": str(task["id"]),
+                    "title": task["tieu_de"],
+                    "state": task["trang_thai"],
+                }
+                for task in self.tasks
+            ],
+        }
+
+
+async def kiem_tra_dieu_kien_resolve(conn: Any, cid: UUID) -> bool:
+    """Khoá Conversation và xác nhận không còn Pending Action đang mở.
+
+    Hàm nhận connection đang nằm trong transaction để cả manual Resolve và
+    Auto Resolve dùng chung một chốt. Trả ``False`` nếu Conversation không
+    tồn tại hoặc đã resolved; trả ``True`` nếu có thể tiếp tục Resolve.
+    """
+    conversation = await conn.fetchrow(
+        "SELECT state FROM conversations WHERE id = $1 FOR UPDATE", cid
+    )
+    if conversation is None or conversation["state"] == "resolved":
+        return False
+
+    rows = await conn.fetch(
+        """
+        SELECT id, tieu_de, trang_thai
+        FROM cong_viec
+        WHERE conversation_id = $1
+          AND trang_thai = ANY($2::text[])
+          -- Việc tự sinh "khách cần người trả lời" KHÔNG chặn: nó chỉ để
+          -- nhắc trả lời khách, và Resolve đóng nó ngay trong cùng giao dịch
+          -- (`dong_viec_tu_sinh`). Việc xử lý ĐƠN (huỷ/đổi trả) cũng mang
+          -- nguon='agent' nhưng có `loai_xu_ly_don` — việc đó PHẢI chặn.
+          AND NOT (nguon = 'agent' AND loai_xu_ly_don IS NULL)
+        ORDER BY tao_luc, id
+        """,
+        cid,
+        list(cong_viec.CHUA_XONG),
+    )
+    if rows:
+        raise ConversationHasPendingTasksError([dict(row) for row in rows])
+    return True
 
 
 def doc_diem(text: str) -> int | None:
@@ -70,10 +127,15 @@ async def dong_viec_tu_sinh(conn, cid: UUID) -> None:
 
     Chỉ đóng việc nguon='agent': việc người giao tay ("gọi lại chị Hoa
     trước 5 giờ") vẫn phải làm dù hội thoại đã xong.
+
+    KHÔNG đóng việc xử lý ĐƠN (`loai_xu_ly_don` khác NULL — khách xin huỷ,
+    xin đổi/trả). Chúng cũng mang nguon='agent', nhưng phải được xác nhận
+    kết quả và đối soát ERP (`cong_viec.xac_nhan_ket_qua_don`); đóng hộ ở
+    đây là yêu cầu huỷ đơn của khách biến mất khi nhân viên trả lại cho agent.
     """
     await conn.execute(
         "UPDATE cong_viec SET trang_thai = 'xong', xong_luc = now(), sua_luc = now() "
-        "WHERE conversation_id = $1 AND nguon = 'agent' "
+        "WHERE conversation_id = $1 AND nguon = 'agent' AND loai_xu_ly_don IS NULL "
         "AND trang_thai IN ('moi', 'dang_lam')", cid)
 
 
@@ -81,6 +143,8 @@ async def giai_quyet(cid: UUID, nguoi_id: UUID | None) -> dict[str, Any]:
     """Đánh dấu đã giải quyết. Trả `{da_truoc, csat}`; 404 do chỗ gọi lo."""
     async with db.pool().acquire() as conn:
         async with conn.transaction():
+            if not await kiem_tra_dieu_kien_resolve(conn, cid):
+                return {"da_truoc": True, "csat": None}
             r = await conn.fetchrow(
                 "UPDATE conversations SET state = 'resolved', status = 'closed', "
                 "outcome = 'resolved', resolved_at = now(), version = version + 1, "

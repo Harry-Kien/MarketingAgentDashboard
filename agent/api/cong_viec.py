@@ -12,9 +12,10 @@ Sửa và xoá chịu cùng phạm vi KÊNH với xem.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -29,14 +30,22 @@ _CHON = (
     "cong_viec.id, cong_viec.tieu_de, cong_viec.mo_ta, cong_viec.trang_thai, "
     "cong_viec.uu_tien, cong_viec.han, cong_viec.nguon, "
     "cong_viec.nguoi_nhan, cong_viec.nguoi_giao, cong_viec.contact_id, "
-    "cong_viec.conversation_id, cong_viec.tao_luc, cong_viec.xong_luc, "
+    "cong_viec.conversation_id, cong_viec.order_id, cong_viec.loai_xu_ly_don, "
+    "cong_viec.ket_qua_xu_ly_don, cong_viec.ly_do_ket_qua, "
+    "cong_viec.erp_tham_chieu, cong_viec.erp_trang_thai, "
+    "cong_viec.erp_sua_luc, cong_viec.xu_ly_boi, cong_viec.xu_ly_luc, "
+    "cong_viec.tao_luc, cong_viec.xong_luc, don.ma_don, "
+    "don.trang_thai AS order_trang_thai, "
+    "don.erp_ma_don AS order_erp_ma_don, "
     "nhan.ho_ten AS nguoi_nhan_ten, giao.ho_ten AS nguoi_giao_ten, "
-    "khach.display_name AS khach_ten"
+    "xu_ly.ho_ten AS xu_ly_boi_ten, khach.display_name AS khach_ten"
 )
 _JOIN = (
     "FROM cong_viec "
     "LEFT JOIN nguoi_dung nhan ON nhan.id = cong_viec.nguoi_nhan "
     "LEFT JOIN nguoi_dung giao ON giao.id = cong_viec.nguoi_giao "
+    "LEFT JOIN nguoi_dung xu_ly ON xu_ly.id = cong_viec.xu_ly_boi "
+    "LEFT JOIN orders don ON don.id = cong_viec.order_id "
     "LEFT JOIN contacts khach ON khach.id = cong_viec.contact_id"
 )
 
@@ -49,6 +58,8 @@ class TaoIn(BaseModel):
     han: datetime | None = None
     contact_id: UUID | None = None
     conversation_id: UUID | None = None
+    order_id: UUID | None = None
+    loai_xu_ly_don: Literal["sua", "huy"] | None = None
 
 
 class SuaIn(BaseModel):
@@ -65,10 +76,13 @@ class SuaIn(BaseModel):
 
 
 def _sach(d: dict) -> dict:
-    for k in ("id", "nguoi_nhan", "nguoi_giao", "contact_id", "conversation_id"):
+    for k in (
+        "id", "nguoi_nhan", "nguoi_giao", "contact_id", "conversation_id",
+        "order_id", "xu_ly_boi",
+    ):
         if d.get(k) is not None:
             d[k] = str(d[k])
-    for k in ("han", "tao_luc", "xong_luc"):
+    for k in ("han", "tao_luc", "xong_luc", "xu_ly_luc"):
         if d.get(k) is not None:
             d[k] = d[k].isoformat()
     d["qua_han"] = cv.qua_han(d)
@@ -113,6 +127,16 @@ async def liet_ke(
     }
 
 
+def _kiem_loi_check_cong_viec(exc: asyncpg.CheckViolationError) -> None:
+    """Chuyển lỗi trigger 0040 (tạo/mở task trên hội thoại đã đóng) thành HTTP 409."""
+    if getattr(exc, "constraint_name", None) == "cong_viec_open_requires_active_conversation" or "kết thúc" in str(exc).lower():
+        raise HTTPException(
+            409,
+            "Hội thoại đã kết thúc; hãy mở lại hội thoại trước khi tạo hoặc mở lại công việc.",
+        ) from exc
+    raise exc
+
+
 @router.post("", status_code=201)
 async def tao(
     body: TaoIn,
@@ -122,6 +146,22 @@ async def tao(
         cv.kiem_uu_tien(body.uu_tien)
     except cv.CongViecHong as exc:
         raise HTTPException(422, str(exc)) from exc
+
+    if (body.order_id is None) != (body.loai_xu_ly_don is None):
+        raise HTTPException(
+            422, "Công việc xử lý đơn phải có đồng thời order_id và loai_xu_ly_don"
+        )
+    if body.order_id is not None:
+        order = await db.fetchrow(
+            "SELECT conversation_id FROM orders WHERE id = $1", body.order_id
+        )
+        if order is None:
+            raise HTTPException(422, "Đơn hàng liên kết không tồn tại")
+        if (
+            body.conversation_id is not None
+            and order["conversation_id"] != body.conversation_id
+        ):
+            raise HTTPException(422, "Đơn hàng không thuộc Conversation đã chọn")
 
     # Giao cho NGƯỜI KHÁC cần quyền riêng. Không tách thì bất kỳ ai tạo
     # được việc cũng đẩy được việc sang đầu người khác, và màn Công việc
@@ -136,13 +176,18 @@ async def tao(
         if not co:
             raise HTTPException(422, "Người nhận không tồn tại hoặc đã bị khoá.")
 
-    d = await db.fetchrow_chac(
-        "INSERT INTO cong_viec (tieu_de, mo_ta, nguoi_nhan, nguoi_giao, "
-        "uu_tien, han, contact_id, conversation_id, nguon) "
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'nguoi') RETURNING id",
-        body.tieu_de.strip(), body.mo_ta.strip(), body.nguoi_nhan,
-        UUID(str(nguoi["id"])) if nguoi.get("id") else None,
-        body.uu_tien, body.han, body.contact_id, body.conversation_id)
+    try:
+        d = await db.fetchrow_chac(
+            "INSERT INTO cong_viec (tieu_de, mo_ta, nguoi_nhan, nguoi_giao, "
+            "uu_tien, han, contact_id, conversation_id, order_id, "
+            "loai_xu_ly_don, nguon) "
+            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'nguoi') RETURNING id",
+            body.tieu_de.strip(), body.mo_ta.strip(), body.nguoi_nhan,
+            UUID(str(nguoi["id"])) if nguoi.get("id") else None,
+            body.uu_tien, body.han, body.contact_id, body.conversation_id,
+            body.order_id, body.loai_xu_ly_don)
+    except asyncpg.CheckViolationError as exc:
+        _kiem_loi_check_cong_viec(exc)
 
     await db.log_event("cong_viec.tao", actor=nguoi.get("ten_dang_nhap", "?"),
                        ref_id=d["id"], tieu_de=body.tieu_de.strip())
@@ -191,11 +236,23 @@ async def sua(
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             cu = await conn.fetchrow(
-                "SELECT trang_thai, nguoi_nhan FROM cong_viec "
+                "SELECT trang_thai, nguoi_nhan, order_id, loai_xu_ly_don, "
+                "       ket_qua_xu_ly_don FROM cong_viec "
                 f"WHERE id = $1 AND {loc} FOR UPDATE",  # noqa: S608
                 cong_viec_id, *ts)
             if cu is None:
                 raise HTTPException(404, "Không tìm thấy công việc")
+
+            if (
+                body.trang_thai == "xong"
+                and cu["order_id"] is not None
+                and cu["loai_xu_ly_don"] in cv.LOAI_XU_LY_DON
+                and cu["ket_qua_xu_ly_don"] not in ("thanh_cong", "khong_the")
+            ):
+                raise HTTPException(409, (
+                    "Công việc sửa/hủy đơn phải xác nhận kết quả và đối soát "
+                    "ERPNext; không thể đánh dấu Xong trực tiếp."
+                ))
 
             if (body.nguoi_nhan is not None
                     and str(body.nguoi_nhan) == str(nguoi["id"])
@@ -207,26 +264,29 @@ async def sua(
                     "cần quyền cong_viec.giao."))
 
             moi_tt = body.trang_thai or cu["trang_thai"]
-            await conn.execute(
-                "UPDATE cong_viec SET "
-                "  tieu_de = COALESCE($2, tieu_de), "
-                "  mo_ta = COALESCE($3, mo_ta), "
-                "  trang_thai = $4, "
-                "  uu_tien = COALESCE($5, uu_tien), "
-                "  han = CASE WHEN $6 THEN NULL ELSE COALESCE($7, han) END, "
-                "  nguoi_nhan = CASE WHEN $8 THEN NULL "
-                "                    ELSE COALESCE($9, nguoi_nhan) END, "
-                "  xong_luc = CASE WHEN $4 = 'xong' "
-                "                  THEN COALESCE(xong_luc, now()) ELSE NULL END, "
-                "  sua_luc = now() "
-                "WHERE id = $1",
-                cong_viec_id,
-                body.tieu_de.strip() if body.tieu_de else None,
-                body.mo_ta.strip() if body.mo_ta is not None else None,
-                moi_tt,
-                body.uu_tien,
-                body.xoa_han, body.han,
-                body.xoa_nguoi_nhan, body.nguoi_nhan)
+            try:
+                await conn.execute(
+                    "UPDATE cong_viec SET "
+                    "  tieu_de = COALESCE($2, tieu_de), "
+                    "  mo_ta = COALESCE($3, mo_ta), "
+                    "  trang_thai = $4, "
+                    "  uu_tien = COALESCE($5, uu_tien), "
+                    "  han = CASE WHEN $6 THEN NULL ELSE COALESCE($7, han) END, "
+                    "  nguoi_nhan = CASE WHEN $8 THEN NULL "
+                    "                    ELSE COALESCE($9, nguoi_nhan) END, "
+                    "  xong_luc = CASE WHEN $4 = 'xong' "
+                    "                  THEN COALESCE(xong_luc, now()) ELSE NULL END, "
+                    "  sua_luc = now() "
+                    "WHERE id = $1",
+                    cong_viec_id,
+                    body.tieu_de.strip() if body.tieu_de else None,
+                    body.mo_ta.strip() if body.mo_ta is not None else None,
+                    moi_tt,
+                    body.uu_tien,
+                    body.xoa_han, body.han,
+                    body.xoa_nguoi_nhan, body.nguoi_nhan)
+            except asyncpg.CheckViolationError as exc:
+                _kiem_loi_check_cong_viec(exc)
 
     await db.log_event("cong_viec.sua", actor=nguoi.get("ten_dang_nhap", "?"),
                        ref_id=cong_viec_id, trang_thai=moi_tt)

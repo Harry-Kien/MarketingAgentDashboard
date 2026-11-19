@@ -52,13 +52,14 @@ def python_that(python_venv: Path) -> tuple[str, dict[str, str]]:
     Không phải venv (không có `pyvenv.cfg`) hoặc không phải Windows: trả
     nguyên đường dẫn, không thêm biến nào.
     """
-    cfg = python_venv.parent.parent / "pyvenv.cfg"
+    pv = python_venv if isinstance(python_venv, Path) else Path(python_venv)
+    cfg = pv.parent.parent / "pyvenv.cfg"
     if os.name != "nt" or not cfg.exists():
         return str(python_venv), {}
     for dong in cfg.read_text(encoding="utf-8").splitlines():
         khoa, _, gia_tri = dong.partition("=")
         if khoa.strip() == "home":
-            goc = Path(gia_tri.strip()) / "python.exe"
+            goc = type(pv)(gia_tri.strip()) / "python.exe"
             if goc.exists():
                 return str(goc), {"__PYVENV_LAUNCHER__": str(python_venv)}
     return str(python_venv), {}

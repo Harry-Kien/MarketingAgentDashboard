@@ -147,7 +147,14 @@ async def tim_trong_kho_tri_thuc(cau_hoi: str, so_doan: int = 4) -> dict:
     return {
         "so_doan": len(passages),
         "doan": [
-            {"tai_lieu": p.doc_title, "diem": round(p.score, 3), "noi_dung": p.content}
+            {
+                "tai_lieu": p.doc_title,
+                "diem": round(p.score, 3),
+                "noi_dung": p.content,
+                "phien_ban": p.version,
+                "version_id": str(p.version_id) if p.version_id else None,
+                "chunk_id": str(p.chunk_id) if p.chunk_id else None,
+            }
             for p in passages
         ],
     }

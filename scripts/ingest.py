@@ -105,8 +105,11 @@ async def main(folder: str) -> None:
     ]
     mo_coi = {r["title"] for r in can_go}
     if can_go:
+        # Không xoá lịch sử/version. Tệp đã rời corpus chỉ bị archive nên
+        # Published-only retrieval ngừng dùng ngay, nhưng vẫn audit/khôi phục được.
         await db.execute(
-            "DELETE FROM documents WHERE source = ANY($1)",
+            "UPDATE documents SET lifecycle_status='archived', updated_at=now() "
+            "WHERE source = ANY($1)",
             [r["source"] for r in can_go],
         )
 

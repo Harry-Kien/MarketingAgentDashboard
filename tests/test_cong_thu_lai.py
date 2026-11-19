@@ -112,7 +112,10 @@ def test_mot_chuoi_thu_hong_chi_tinh_LA_MOT_lan_hong():
     số người vận hành đặt trong `.env`. Họ viết 5 và nghĩ là 5 sự cố.
     """
     n = NguonDoiTinh(so_lan_hong=99)
-    cong = Cong(n, so_lan_thu=3, ngat_mach_so_lan=2)
+    # Đồng hồ đứng yên: test này đếm lần hỏng, không đo thời gian. Đồng hồ
+    # thật từng làm nó đỏ khi máy ngủ giữa lượt chạy — quá 30 giây ngắt
+    # mạch là mạch tự đóng trước khi kịp hỏi trạng thái.
+    cong = Cong(n, so_lan_thu=3, ngat_mach_so_lan=2, dong_ho=lambda: 1000.0)
 
     chay(cong.gia("A"))
     assert cong.trang_thai()["hong_lien_tiep"] == 1
@@ -126,7 +129,7 @@ def test_mot_chuoi_thu_hong_chi_tinh_LA_MOT_lan_hong():
 def test_mach_mo_thi_khong_goi_ERP_lan_nao_nua():
     """Gọi tiếp là bắt mỗi khách đang chờ ăn trọn thời gian timeout."""
     n = NguonDoiTinh(so_lan_hong=99)
-    cong = Cong(n, so_lan_thu=2, ngat_mach_so_lan=1)
+    cong = Cong(n, so_lan_thu=2, ngat_mach_so_lan=1, dong_ho=lambda: 1000.0)
 
     chay(cong.gia("A"))
     da_goi = n.so_lan_goi

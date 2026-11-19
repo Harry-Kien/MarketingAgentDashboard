@@ -9,30 +9,32 @@ Từ trước tới giờ, luồng đi một chiều: agent gọi công cụ ngh
 Nghĩa là Claude Desktop, Claude Code, hay bất cứ ứng dụng nào nói được
 Model Context Protocol đều có thể:
 
-    "Aurora Skin còn bao nhiêu sữa rửa mặt cho da dầu?"
-    "Tuần này bài nào chạy tốt nhất?"
-    "Soạn cho tôi một bài TikTok về serum niacinamide."
+    "Còn bao nhiêu sữa rửa mặt cho da dầu?"
+    "Đơn AS20260818 đang tới đâu rồi?"
+    "Câu trả lời này có dính cụm cấm quảng cáo mỹ phẩm không?"
 
 mà không cần biết gì về FastAPI, Postgres hay Vertex bên trong.
 
 Với doanh nghiệp, đây là điểm khác biệt giữa MỘT CÔNG CỤ và MỘT NỀN TẢNG:
-phòng marketing dùng dashboard, phòng kinh doanh hỏi qua Claude Desktop,
+nhân viên chăm sóc khách dùng dashboard, quản lý hỏi qua Claude Desktop,
 mà cả hai nhìn cùng một kho dữ liệu, cùng một luật tuân thủ.
+
+Công cụ soạn bài, xếp hàng bài đăng và xem hiệu quả bài đã GỠ ngày
+19.11.2026 cùng tính năng đăng bài — hệ thống chỉ còn làm chăm sóc khách.
 
 RANH GIỚI AN TOÀN
 -----------------
 Công cụ ở đây chia hai loại và KHÔNG được lẫn:
 
-  ĐỌC   — tra sản phẩm, tra đơn, xem số liệu, tìm trong kho tri thức.
-          An toàn, cho gọi thoải mái.
-  GHI   — soạn bài, tạo bài nháp.
-          Luôn dừng ở trạng thái `cho_duyet`. Máy chủ MCP KHÔNG có công cụ
-          nào đăng bài, chốt đơn hay gửi tin cho khách.
+  ĐỌC   — tra sản phẩm, tra đơn, tra tồn kho, tìm trong kho tri thức,
+          soi cụm cấm quảng cáo. An toàn, cho gọi thoải mái.
+  GHI   — KHÔNG CÓ. Máy chủ MCP không có công cụ nào chốt đơn hay gửi
+          tin cho khách.
 
 Lý do: MCP client là một model khác, chạy ngoài tầm kiểm soát của hệ thống
 này. Nó không đi qua chốt tuân thủ trong `agent/core/agent.py`, không có
 trần chi phí, không có lưới an toàn chuyển người. Cho nó quyền nhắn tin
-cho khách hay đăng bài lên fanpage là giao chìa khoá cho một người lạ.
+cho khách hay chốt đơn là giao chìa khoá cho một người lạ.
 
 CHẠY
 ----
@@ -45,15 +47,13 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
 from agent import db
 from agent.config import ROOT
 from agent.core import rag, tools
-from agent.publish import analytics, copywriter
-from agent.publish import service as post_service
+from agent.core.cham_mot_luot import tu_cam_hai_dang
 
 mcp = MCPServer(
     name="aurora-marketing-agent",
@@ -65,12 +65,11 @@ mcp = MCPServer(
         "QUAN TRỌNG: giá, tồn kho, thành phần và tình trạng đơn hàng CHỈ "
         "được nói theo đúng thứ công cụ trả về. Không suy đoán, không ước "
         "lượng.\n\n"
-        "Khi viết nội dung quảng cáo, tuyệt đối không dùng cách nói mang "
+        "Khi soạn câu trả lời cho khách, tuyệt đối không dùng cách nói mang "
         "tính điều trị (trị mụn, đặc trị, chữa, trị nám, xoá nhăn, hết mụn, "
         "cam kết khỏi) — mỹ phẩm không phải thuốc, theo Thông tư "
         "06/2011/TT-BYT và Nghị định 181/2013.\n\n"
-        "Công cụ ở đây không đăng bài và không nhắn tin cho khách. Bài soạn "
-        "ra luôn nằm ở hàng chờ duyệt."
+        "Công cụ ở đây chỉ ĐỌC: không chốt đơn, không nhắn tin cho khách."
     ),
 )
 
@@ -161,46 +160,6 @@ async def tim_trong_kho_tri_thuc(cau_hoi: str, so_doan: int = 4) -> dict:
 
 
 @mcp.tool()
-async def hieu_qua_bai_dang(so_ngay: int = 30) -> dict:
-    """
-    Số liệu bài đăng mạng xã hội: lượt xem, tương tác theo từng nền tảng,
-    và các bài chạy tốt nhất.
-
-    Tỷ lệ tương tác là chỉ số so sánh được giữa các bài; lượt xem tuyệt đối
-    thì không, vì phụ thuộc nền tảng và thời điểm.
-    """
-    await _bao_dam_db()
-    tq = await analytics.tong_quan(so_ngay)
-    tq["bai_tot_nhat"] = await analytics.bai_tot_nhat()
-    return tq
-
-
-@mcp.tool()
-async def danh_sach_bai_dang(trang_thai: str = "", so_luong: int = 20) -> dict:
-    """
-    Liệt kê bài đăng trong hàng đợi.
-
-    trang_thai: cho_duyet / da_len_lich / dang_dang / da_dang / loi / da_huy
-                (để trống là lấy tất cả)
-    """
-    await _bao_dam_db()
-    sql = "SELECT id, tieu_de, noi_dung, kenh, trang_thai, lich_dang, created_at FROM posts "
-    args: list[Any] = []
-    if trang_thai:
-        sql += "WHERE trang_thai = $1 "
-        args.append(trang_thai)
-    sql += f"ORDER BY created_at DESC LIMIT ${len(args) + 1}"
-    args.append(max(1, min(so_luong, 100)))
-    rows = await db.fetch(sql, *args)
-    for r in rows:
-        r["id"] = str(r["id"])
-        for k in ("lich_dang", "created_at"):
-            if r.get(k):
-                r[k] = r[k].isoformat()
-    return {"so_bai": len(rows), "bai": rows}
-
-
-@mcp.tool()
 async def ton_kho_realtime(ma_san_pham: str) -> dict:
     """
     Số lượng BÁN ĐƯỢC của một mã sản phẩm, hỏi thẳng kho/ERP ngay lúc này.
@@ -251,61 +210,20 @@ async def suc_khoe_erp() -> dict:
     return {**cong.trang_thai(), "song": await cong.suc_khoe()}
 
 
-# =====================================================================
-#  GHI — chỉ tới mức bản nháp chờ duyệt
-# =====================================================================
-
-@mcp.tool()
-async def soan_bai_dang(
-    kenh: str = "facebook", san_pham: str = "", y_tuong: str = ""
-) -> dict:
-    """
-    Soạn nội dung bài đăng cho một nền tảng. KHÔNG lưu, KHÔNG đăng.
-
-    Nội dung bám vào dữ liệu sản phẩm thật trong danh mục và tự động kiểm
-    tuân thủ quảng cáo mỹ phẩm — vi phạm thì viết lại, tối đa 3 lần.
-
-    kenh: facebook / instagram / tiktok / youtube
-    san_pham: mã hoặc tên sản phẩm, để trống nếu viết chung
-    """
-    await _bao_dam_db()
-    return await copywriter.soan(kenh=kenh, san_pham=san_pham, y_tuong=y_tuong)
-
-
-@mcp.tool()
-async def dua_bai_vao_hang_doi(
-    tieu_de: str, noi_dung: str, kenh: list[str], hashtags: list[str] | None = None
-) -> dict:
-    """
-    Lưu một bài vào hàng đợi ở trạng thái CHỜ DUYỆT.
-
-    Bài KHÔNG được đăng từ đây. Phải có người vào dashboard bấm duyệt thì
-    nội dung mới ra công chúng — đây là chốt an toàn, không phải bước thừa:
-    theo Nghị định 181/2013, doanh nghiệp chịu trách nhiệm về nội dung
-    quảng cáo, không phải công cụ tạo ra nó.
-    """
-    await _bao_dam_db()
-    row = await post_service.tao_bai(
-        tieu_de=tieu_de, noi_dung=noi_dung, kenh=kenh,
-        hashtags=hashtags, tao_boi="mcp",
-    )
-    row["id"] = str(row["id"])
-    for k in ("lich_dang", "created_at", "updated_at"):
-        if row.get(k):
-            row[k] = row[k].isoformat()
-    row["ghi_chu"] = "Đã vào hàng đợi, trạng thái chờ duyệt. Vào dashboard mục Đăng bài để duyệt."
-    return row
-
-
 @mcp.tool()
 async def kiem_tra_tuan_thu_quang_cao(noi_dung: str) -> dict:
     """
     Soi một đoạn nội dung xem có vi phạm quy định quảng cáo mỹ phẩm không.
 
-    Dùng được cho nội dung do người viết tay, không chỉ nội dung máy soạn.
+    Dùng được cho câu trả lời do người viết tay, không chỉ câu agent soạn.
     Trả về danh sách cụm vi phạm; rỗng nghĩa là sạch.
+
+    Đi qua ĐÚNG bộ soi mà mẫu trả lời nhanh và bản nháp người sửa dùng
+    (`cham_mot_luot.tu_cam_hai_dang`). Trước 19.11.2026 công cụ này mượn bộ
+    soi của tính năng đăng bài; gỡ tính năng ấy thì quy về một bộ soi, vì
+    hai danh sách cụm cấm sớm muộn lệch — một đường chặn, đường kia lọt.
     """
-    vi_pham = post_service.kiem_tra_tuan_thu(noi_dung)
+    vi_pham = tu_cam_hai_dang(noi_dung)
     return {
         "hop_le": not vi_pham,
         "cum_vi_pham": vi_pham,

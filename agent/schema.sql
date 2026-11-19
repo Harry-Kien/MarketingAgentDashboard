@@ -121,7 +121,11 @@ CREATE INDEX IF NOT EXISTS idx_chunk_tim_kiem ON chunks USING GIN (tim_kiem);
 -- ivfflat cần dữ liệu trước khi build; tạo sau khi nạp corpus:
 --   CREATE INDEX ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists=100);
 
--- --- Video --------------------------------------------------
+-- --- Video (KHÔNG CÒN DÙNG) ---------------------------------
+-- KHÔNG CÒN DÙNG: tính năng video và đăng bài đã gỡ khỏi mã ngày 19.11.2026
+-- (hệ thống chỉ làm chăm sóc khách). Bảng vẫn dựng ở đây vì CSDL đang chạy
+-- còn dữ liệu cũ, và migration cũ (0025...) ALTER bảng này — thiếu nó thì
+-- CSDL mới dựng không qua được migration. ĐỪNG xoá; mã chỉ ngừng đọc/ghi.
 CREATE TABLE IF NOT EXISTS videos (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
@@ -130,7 +134,7 @@ CREATE TABLE IF NOT EXISTS videos (
     kind            TEXT NOT NULL DEFAULT 'explainer',   -- explainer | product
     -- Vòng đời: queued -> claimed -> looking -> scripting -> voicing
     --           -> rendering -> pending_review -> ready
-    -- Nhánh chết: failed. Thợ nền (agent/video/worker.py) nhận việc bằng
+    -- Nhánh chết: failed. Thợ nền (agent/video/worker.py, đã gỡ) nhận việc bằng
     -- `claimed`, và mọi trạng thái giữa chừng đều được nhặt lại khi app
     -- khởi động lại — không có video nào kẹt vĩnh viễn.
     status          TEXT NOT NULL DEFAULT 'queued',
@@ -146,7 +150,7 @@ CREATE TABLE IF NOT EXISTS videos (
 CREATE INDEX IF NOT EXISTS idx_video_created ON videos (created_at DESC);
 
 -- --- Ảnh sản phẩm của video --------------------------------
--- `analysis` là kết quả bước NHÌN ẢNH (agent/video/vision.py): mô tả, màu
+-- `analysis` là kết quả bước NHÌN ẢNH (agent/video/vision.py, đã gỡ): mô tả, màu
 -- chủ đạo, độ sáng, và vùng trống để đặt chữ. Đây là tầng dữ liệu kiểm
 -- chứng được nằm giữa ảnh và khâu dựng — mở ra xem được khi video xấu.
 CREATE TABLE IF NOT EXISTS video_assets (
@@ -233,9 +237,11 @@ CREATE INDEX IF NOT EXISTS idx_order_status  ON orders (trang_thai);
 -- thêm lại nó vào file này — schema.sql chạy mỗi lần khởi động, trước mọi
 -- migration, nên nó sẽ được dựng lại ngay sau khi 0041 xoá.
 
--- --- Bài đăng mạng xã hội ------------------------------------
--- Agent soạn nội dung + gắn video, người duyệt, rồi PublishAdapter
--- đẩy đi. KHÔNG BAO GIỜ tự đăng khi chưa duyệt.
+-- --- Bài đăng mạng xã hội (KHÔNG CÒN DÙNG) ---------------------
+-- KHÔNG CÒN DÙNG: tính năng video và đăng bài đã gỡ khỏi mã ngày 19.11.2026
+-- (hệ thống chỉ làm chăm sóc khách). Bảng vẫn dựng ở đây vì CSDL đang chạy
+-- còn dữ liệu cũ, và migration cũ (0025...) ALTER bảng này — thiếu nó thì
+-- CSDL mới dựng không qua được migration. ĐỪNG xoá; mã chỉ ngừng đọc/ghi.
 CREATE TABLE IF NOT EXISTS posts (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     video_id    UUID REFERENCES videos(id) ON DELETE SET NULL,

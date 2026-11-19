@@ -183,7 +183,7 @@ async def _token() -> str:
 
     `_creds.refresh()` của google-auth là lời gọi mạng ĐỒNG BỘ. Gọi thẳng
     nó trong coroutine thì trong lúc chờ, toàn bộ tiến trình đứng im: poller
-    ngừng lấy tin Zalo, API dashboard ngừng trả lời, hàng đợi bài đăng ngừng
+    ngừng lấy tin Zalo, API dashboard ngừng trả lời, hàng đợi gửi tin ngừng
     chạy. Token hết hạn mỗi giờ nên chuyện này xảy ra đều đặn, và khi mạng
     tới GCP chậm thì cả hệ thống treo theo mà không có dấu vết gì trong log.
 

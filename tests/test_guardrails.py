@@ -30,7 +30,6 @@ from agent.core.agent import (  # noqa: E402
     _stalls,
 )
 from agent.core.tools import _norm, _score  # noqa: E402
-from agent.publish.service import kiem_tra_tuan_thu  # noqa: E402
 from scripts.eval import _pham, fold  # noqa: E402
 
 
@@ -130,34 +129,6 @@ def test_bat_duoc_hua_suong(tra_loi):
 ])
 def test_khong_bao_dong_gia_hua_suong(tra_loi):
     assert not _stalls(tra_loi)
-
-
-# =====================================================================
-#  Tuân thủ quảng cáo mỹ phẩm (Thông tư 06/2011/TT-BYT, NĐ 181/2013)
-#
-#  Kiểm ở tầng nội dung bài đăng — nơi sai một chữ là đăng lên trang công
-#  khai, không sửa lại được ấn tượng.
-# =====================================================================
-
-@pytest.mark.parametrize("noi_dung", [
-    "Kem đặc trị mụn Aurora, hết mụn sau 7 ngày!",
-    "Sản phẩm trị nám hiệu quả 100%",
-    "Serum tái tạo da, xoá nhăn chỉ sau 2 tuần",
-    "Trắng da cấp tốc, cam kết khỏi",
-    "Mỹ phẩm số 1 Việt Nam",
-])
-def test_chan_quang_cao_sai_luat(noi_dung):
-    assert kiem_tra_tuan_thu(noi_dung), f"PHẢI chặn: {noi_dung!r}"
-
-
-@pytest.mark.parametrize("noi_dung", [
-    "Gel rửa mặt hỗ trợ giảm dầu thừa, giúp da thông thoáng hơn.",
-    "Serum cấp ẩm sâu với Ceramide NP, giúp da mềm mại hơn.",
-    "Kem chống nắng SPF50+ bảo vệ da khỏi tia UV.",
-    "Toner làm dịu da, hỗ trợ cải thiện kết cấu da.",
-])
-def test_cho_qua_cach_noi_hop_le(noi_dung):
-    assert not kiem_tra_tuan_thu(noi_dung), f"KHÔNG được chặn: {noi_dung!r}"
 
 
 # =====================================================================

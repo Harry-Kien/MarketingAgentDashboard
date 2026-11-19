@@ -50,7 +50,6 @@ DICH_NHOM = {
     "tu_van": "Tư vấn",
     "don_hang": "Đơn hàng",
     "sau_ban": "Sau bán",
-    "marketing": "Marketing",
     "con_nguoi": "Con người",
 }
 DICH_RUI_RO = {

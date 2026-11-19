@@ -1,5 +1,5 @@
 """
-Canh những đường mà HỆ THỐNG NGOÀI gọi vào: OAuth callback, callback n8n.
+Canh những đường mà HỆ THỐNG NGOÀI gọi vào: OAuth callback.
 
 VÌ SAO NHÓM TEST NÀY TỒN TẠI
 -----------------------------
@@ -62,37 +62,15 @@ def test_he_thong_ngoai_khong_bi_chot_dang_nhap_chan(khach, pt, duong, tham_so):
         "trong agent/main.py")
 
 
-def test_callback_n8n_khong_bi_chot_dang_nhap_chan(khach):
+def test_callback_bai_dang_da_go_khong_con_mo(khach):
     """
-    Đường này có tham số trong path nên `_MO` (so bằng ==) không phủ được;
-    nó đi qua `_MO_MAU`. Sai regex là im lặng quay về 401.
-    """
-    tra = khach.post(
-        "/api/posts/11111111-2222-3333-4444-555555555555/callback",
-        json={"kenh": "facebook", "ok": True})
-    assert tra.status_code != 401 or "Vé" in tra.text, (
-        "callback n8n bị chốt đăng nhập chặn — kiểm `_MO_MAU`")
-
-
-def test_ve_thieu_tra_401_va_KHONG_cham_csdl(khach):
-    """
-    Không vé thì từ chối ngay, không hỏi CSDL.
-
-    Hai lý do. 404 nói cho người dò biết bài nào có thật, nên phải là 401.
-    Và đường này mở cho cả internet: mỗi lần gọi không vé mà vẫn truy vấn
-    là biến nó thành một cần gạt đơn giản để làm mệt CSDL.
-
-    Test này chạy KHÔNG có pool — chạm CSDL là 500, nên 401 ở đây chính là
-    bằng chứng nó không chạm.
+    Callback n8n báo kết quả đăng bài đã gỡ cùng tính năng đăng bài
+    (19.11.2026). Đường mở cho cả internet mà còn sót lại sau khi tính năng
+    đi rồi là cửa không ai canh — nên nó phải về đúng chốt đăng nhập: 401.
     """
     tra = khach.post(
         "/api/posts/11111111-2222-3333-4444-555555555555/callback",
         json={"kenh": "facebook", "ok": True})
-    assert tra.status_code == 401
-
-    tra = khach.post(
-        "/api/posts/11111111-2222-3333-4444-555555555555/callback",
-        json={"kenh": "facebook", "ok": True}, params={"token": ""})
     assert tra.status_code == 401
 
 
@@ -113,10 +91,14 @@ def test_mo_dang_nhap_thi_phai_mo_ca_phan_quyen():
         f"chúng trả 403 thay vì chạy: {thieu}")
 
 
-def test_mau_mo_cung_phai_co_trong_mien_tru():
-    """Cùng bất biến trên, cho các đường khai bằng regex."""
+def test_mien_tru_khong_con_duong_bai_dang():
+    """
+    Miễn trừ phân quyền cho một đường đã gỡ là rác trong danh sách bảo vệ —
+    người đọc sau tưởng nó vẫn có ý nghĩa, và người thêm lại một route cùng
+    tên sẽ được miễn quyền mà không biết.
+    """
     duong_mien_tru = {d for _, d in MIEN_TRU}
-    assert "/api/posts/{post_id}/callback" in duong_mien_tru
+    assert not any(d.startswith("/api/posts") for d in duong_mien_tru)
 
 
 def test_start_cua_moi_luong_oauth_van_doi_dang_nhap(khach):

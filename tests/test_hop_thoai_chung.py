@@ -77,8 +77,7 @@ def test_hop_thoai_chung_ton_tai_va_dong_duoc_bang_esc():
 
 def test_tam_cho_hoi_deu_di_qua_hop_chung():
     for dau in ('$("#cv-them")', '$$("[data-knhap]")', '$$("[data-kkiemke]")',
-                '$("#gopLam")', "async function rtYeuCauDem", '$$("[data-pmetric]")',
-                'box.querySelector("[data-posted]")', "$$('[data-agentbat]')"):
+                '$("#gopLam")', "async function rtYeuCauDem", "$$('[data-agentbat]')"):
         assert "hoiHop(" in _khoi(dau), f"{dau} chưa dùng hoiHop"
 
 

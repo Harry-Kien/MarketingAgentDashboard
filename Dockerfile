@@ -2,14 +2,15 @@
 # hàng một container từ image này, một CSDL riêng). Xem
 # docs/superpowers/plans/2026-10-15-giai-doan-2-nen-saas-silo.md.
 #
-# Không chạy bằng root: app nhận tệp khách gửi và gọi ffmpeg — một lỗ trong
-# đường xử lý tệp mà chạy root là chiếm được cả container.
+# Không chạy bằng root: app nhận tệp khách gửi — một lỗ trong đường xử lý
+# tệp mà chạy root là chiếm được cả container.
 FROM python:3.12-slim
 
-# ffmpeg cho dựng video; fonts cho phụ đề tiếng Việt; curl cho HEALTHCHECK.
-# Gỡ danh sách apt để image nhỏ — mỗi cửa hàng kéo image này một lần.
+# curl cho HEALTHCHECK. ffmpeg và phông phụ đề đã bỏ cùng tính năng dựng
+# video (gỡ 19.11.2026). Gỡ danh sách apt để image nhỏ — mỗi cửa hàng kéo
+# image này một lần.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core curl \
+ && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -42,7 +43,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8000/healthz || exit 1
 
 # MỖI CỬA HÀNG ĐÚNG MỘT TIẾN TRÌNH (VAI_TRO_TIEN_TRINH=tat_ca, không
-# --workers): outbox, lịch đăng bài, sao lưu không chịu được hai bản chạy.
+# --workers): outbox, hộp thư bền, sao lưu không chịu được hai bản chạy.
 # --proxy-headers: đứng sau Caddy, IP thật của khách nằm trong
 # X-Forwarded-For — bộ đếm chống dò mật khẩu theo IP cần nó.
 #

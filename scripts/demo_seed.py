@@ -55,10 +55,6 @@ SCRIPTS = [
         ("customer", "Đèn Lumen dùng được cho trẻ học bài không?", None, None),
         ("agent", "Dạ đèn Aurora Lumen chống chói RG0 và chỉnh được 5 mức nhiệt màu 2700–6500K nên phù hợp bàn học ạ. Giá 890.000đ, còn 47 cái.", True, 0.81),
     ], "assist"),
-    ("Hoàng Nam Phong", [
-        ("customer", "Cho anh xin video giới thiệu con ghế Aurora M1 với", None, None),
-        ("agent", "Dạ em đang dựng video giới thiệu ghế Aurora M1, xong em gửi anh ngay ạ.", True, 0.86),
-    ], "assist"),
     ("Bùi Thanh Trúc", [
         ("customer", "Bên mình có xuất hoá đơn đỏ không?", None, None),
         ("agent", "Dạ em chưa có thông tin này trong tài liệu, để em hỏi lại rồi báo chị nhé.", False, 0.38),
@@ -82,7 +78,6 @@ async def clear() -> None:
     await db.execute(
         "DELETE FROM conversations WHERE external_id LIKE $1", MARK + "%"
     )
-    await db.execute("DELETE FROM videos WHERE brief LIKE $1", MARK + "%")
     await db.execute("DELETE FROM documents WHERE source = 'demo'")
     print("Đã xoá dữ liệu trình diễn.")
 
@@ -142,35 +137,6 @@ async def seed() -> None:
             "UPDATE conversations SET cost_usd = $2 WHERE id = $1", cid, total
         )
 
-    # Một video ở trạng thái chờ duyệt để thấy hàng đợi hoạt động.
-    await db.execute(
-        """
-        INSERT INTO videos (title, brief, kind, status, renderer, duration_s,
-                            scenes, cost_usd, created_at, updated_at)
-        VALUES ($1,$2,'product','pending_review','ffmpeg',28.4,$3,0.0184,
-                now() - interval '22 minutes', now() - interval '18 minutes')
-        """,
-        "Giới thiệu ghế Aurora M1",
-        MARK + " Ghế công thái học Aurora M1, lưng lưới thoáng khí, bảo hành 24 tháng.",
-        json.dumps([
-            {"loi_thoai": "Ngồi tám tiếng mà lưng vẫn không mỏi.",
-             "text_man_hinh": "Tám tiếng, không mỏi",
-             "duration": 4.6, "timing_source": "ffprobe", "start": 0},
-            {"loi_thoai": "Lưng lưới thoáng khí, tựa đầu chỉnh được ba hướng.",
-             "text_man_hinh": "Tựa đầu chỉnh 3 hướng",
-             "duration": 5.2, "timing_source": "ffprobe", "start": 4.6},
-            {"loi_thoai": "Ngả một trăm ba mươi lăm độ, có khoá ở mọi vị trí.",
-             "text_man_hinh": "Ngả 135 độ", "nhan_manh": True,
-             "duration": 5.9, "timing_source": "ffprobe", "start": 9.8},
-            {"loi_thoai": "Aurora M1, bốn triệu hai chín, bảo hành hai năm.",
-             "text_man_hinh": "4.290.000đ", "nhan_manh": True,
-             "duration": 6.1, "timing_source": "ffprobe", "start": 15.7},
-            {"loi_thoai": "Nhắn tin ngay để giữ hàng hôm nay.",
-             "text_man_hinh": "Nhắn để giữ hàng",
-             "duration": 6.6, "timing_source": "ffprobe", "start": 21.8},
-        ], ensure_ascii=False),
-    )
-
     exists = await db.fetchrow("SELECT id FROM documents WHERE source = 'demo'")
     if not exists:
         doc = await db.fetchrow(
@@ -184,7 +150,7 @@ async def seed() -> None:
         )
 
     await db.log_event("demo.seed", actor="script", conversations=len(SCRIPTS))
-    print(f"Đã nạp {len(SCRIPTS)} hội thoại, 1 video, 1 tài liệu.")
+    print(f"Đã nạp {len(SCRIPTS)} hội thoại, 1 tài liệu.")
     print("Mở http://localhost:8000 để xem.")
     print("\nLưu ý: tài liệu mẫu chưa có embedding (cần Vertex). Nạp thật bằng:")
     print("  python -m scripts.ingest data/knowledge")

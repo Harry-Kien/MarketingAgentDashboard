@@ -5,7 +5,7 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
+const state = { view: "ca", convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
 let inboxRefreshTimer = null;
 
 /* ---------------- tiện ích ---------------- */
@@ -756,7 +756,6 @@ async function loadOverview() {
   baoKhachCanNguoi(o.conversations.escalated || 0,
     (o.conversations.waiting || 0) + (o.conversations.escalated || 0));
   $("#c-hoithoai").textContent = o.conversations.total || 0;
-  $("#c-video").textContent = o.video.review || 0;
   $("#rail-cost").textContent = usd(o.cost.total_usd);
 
   $("#readout").innerHTML = [
@@ -810,8 +809,6 @@ async function loadOverview() {
     cell("Token đọc từ cache", o.cost.cache_read.toLocaleString("vi-VN"), "token",
          o.cost.tokens_in + o.cost.cache_read
            ? o.cost.cache_read / (o.cost.tokens_in + o.cost.cache_read) : 0, "spend"),
-    cell("Video sản xuất", o.video.total, `${o.video.seconds}s · ${o.video.failed} lỗi`,
-         null, "auto"),
   ].join("");
 
   /* limit=200, không phải 12. Khung này là HÀNG ĐỢI, không phải bản tin:
@@ -819,13 +816,13 @@ async function loadOverview() {
      hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
      lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
      API đã xếp sẵn ai chờ lâu nhất lên đầu. */
-  /* Hai khối dưới đây (`#queue` và `#videoqueue`) chỉ tồn tại trong màn
-     Ca trực. Nạp chúng khi đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
+  /* Khối dưới đây (`#queue`) chỉ tồn tại trong màn Ca trực. Nạp nó khi
+     đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
      ĐO ĐƯỢC 22.09.2026 trên dashboard đang chạy: `loadOverview()` phát BA
-     request, và `refresh()` gọi nó mỗi 6 giây bất kể màn nào đang mở —
-     tức 30 request/phút mỗi tab, trong đó hai phần ba kéo tới 200 hội
-     thoại và 30 video mà không ai nhìn. Nhân với số người trực thì đó là
-     tải thật trên máy chủ, đổi lấy không gì cả.
+     request (hồi còn hàng chờ video), và `refresh()` gọi nó mỗi 6 giây bất
+     kể màn nào đang mở — tức 30 request/phút mỗi tab, trong đó hai phần ba
+     kéo tới 200 hội thoại và 30 video mà không ai nhìn. Nhân với số người
+     trực thì đó là tải thật trên máy chủ, đổi lấy không gì cả.
 
      Vẫn giữ `/overview` chạy mọi lúc: nó nuôi các con số trên thanh điều
      hướng, và người trực cần thấy "Ca trực" nhảy số kể cả khi đang đứng ở
@@ -837,18 +834,6 @@ async function loadOverview() {
     ? waiting.map((c) => convRow(c, true)).join("")
     : '<p class="empty">Không có hội thoại nào đang chờ. Ca trực êm.</p>';
   wireConvRows("#queue");
-
-  const vids = (await api("/videos?limit=30")).filter((v) => v.status === "pending_review");
-  $("#videoqueue").innerHTML = vids.length
-    ? vids.map((v) => `<div class="row">
-        <span class="row__flag row__flag--assist"></span>
-        <span class="row__body">
-          <span class="row__title">${esc(v.title)}</span>
-          <span class="row__sub">${v.duration_s ? v.duration_s.toFixed(1) + "s" : "—"} · ${esc(v.renderer || "")}</span>
-        </span>
-        <span class="row__side"><span class="row__time">${clock(v.created_at)}</span></span>
-      </div>`).join("")
-    : '<p class="empty">Không có video nào chờ duyệt.</p>';
 }
 
 /* ---------------- hội thoại ---------------- */
@@ -2624,138 +2609,6 @@ async function loadKho() {
     </div>`).join("") : '<p class="empty">Chưa có biến động nào.</p>';
 }
 
-/* ---------------- video ---------------- */
-
-const VIDEO_STATUS = {
-  queued: "Đang xếp hàng", claimed: "Đã nhận việc",
-  looking: "Đang xem ảnh sản phẩm",
-  scripting: "Đang viết kịch bản", voicing: "Đang thu giọng",
-  rendering: "Đang dựng hình", pending_review: "Chờ duyệt", ready: "Đã duyệt", failed: "Lỗi",
-};
-
-async function loadVideos() {
-  const list = await api("/videos");
-  $("#videos").innerHTML = list.length ? list.map((v) => {
-    const done = v.has_file;
-    const tone = v.status === "failed" ? "halt" : v.status === "ready" ? "auto" : "assist";
-    const scenes = Array.isArray(v.scenes) ? v.scenes.length : 0;
-    const measured = Array.isArray(v.scenes)
-      && v.scenes.some((s) => s.timing_source === "ffprobe");
-    return `<article class="card">
-      <div class="card__media">
-        ${done
-          ? `<video controls preload="metadata" src="/api/videos/${v.id}/file"></video>`
-          : `<div class="card__pending">${esc(VIDEO_STATUS[v.status] || v.status)}${
-              v.error ? "<br><br>" + esc(v.error.slice(0, 160)) : ""}</div>`}
-      </div>
-      <div class="card__body">
-        <span class="card__title">${esc(v.title)}</span>
-        <span class="gallery__meta">
-          <span class="tag tag--${tone}">${esc(VIDEO_STATUS[v.status] || v.status)}</span>
-          <span>${v.duration_s ? v.duration_s.toFixed(1) + "s" : "—"}</span>
-          <span>${scenes} cảnh</span>
-          <span>${esc(v.renderer || "—")}</span>
-          <span>${measured ? "khớp giọng đọc" : "thời lượng ước lượng"}</span>
-          <span>${usd(v.cost)}</span>
-        </span>
-      </div>
-      ${v.status === "pending_review"
-        ? `<div class="card__actions"><button type="button" class="btn btn--sm btn--go" data-vapprove="${v.id}">Duyệt</button></div>`
-        : v.status === "failed"
-        ? `<div class="card__actions"><button type="button" class="btn btn--sm" data-vretry="${v.id}">Chạy lại</button></div>`
-        : ""}
-    </article>`;
-  }).join("") : '<p class="empty">Chưa có video nào. Đặt một cái ở khung phía trên.</p>';
-
-  $$("[data-vapprove]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      // Không bắt lỗi thì lỗi thành "Uncaught (in promise)" ở console: người
-      // bấm không thấy gì, tưởng đã duyệt, và video nằm chờ mãi.
-      b.disabled = true;
-      try {
-        await api("/videos/" + b.dataset.vapprove + "/approve", { method: "POST" });
-        toast("Đã duyệt video.");
-      } catch (e) {
-        toast(e.message, true);
-        b.disabled = false;
-      }
-      loadVideos();
-    })
-  );
-
-  $$("[data-vretry]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      try {
-        await api("/videos/" + b.dataset.vretry + "/retry", { method: "POST" });
-        toast("Đã đưa lại vào hàng đợi. Ảnh sản phẩm giữ nguyên, không cần tải lại.");
-        loadVideos();
-      } catch (e) { toast(e.message, true); }
-    })
-  );
-}
-
-/* Nạp danh mục vào ô chọn sản phẩm. Ghi rõ sản phẩm nào có ảnh trong kho —
-   chọn phải mã không có ảnh thì video ra thẻ chữ, biết trước vẫn hơn. */
-async function fillProductPicker() {
-  const sel = $("#videoproduct");
-  if (!sel || sel.dataset.loaded) return;
-  try {
-    const { san_pham } = await api("/catalog/products");
-    sel.insertAdjacentHTML("beforeend", san_pham.map((p) =>
-      `<option value="${esc(p.ma)}">${esc(p.ma)} — ${esc(p.ten)}` +
-      `${p.so_anh ? ` (${p.so_anh} ảnh)` : " (chưa có ảnh)"}</option>`
-    ).join(""));
-    sel.dataset.loaded = "1";
-  } catch { /* không có danh mục thì để ô rỗng, form vẫn dùng được */ }
-}
-
-/* Xem trước ảnh trước khi gửi — thấy mình chọn nhầm ảnh nào thì đổi ngay,
-   thay vì phát hiện sau khi đã dựng xong mất mấy phút. */
-$("#videoimages")?.addEventListener("change", (ev) => {
-  const files = [...(ev.target.files || [])].slice(0, 8);
-  $("#imgpreview").innerHTML = files
-    .map((f) => `<img class="thumb" alt="${f.name}" src="${URL.createObjectURL(f)}">`)
-    .join("");
-  if ((ev.target.files || []).length > 8) toast("Chỉ nhận 8 ảnh đầu tiên.");
-});
-
-$("#videoform").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const f = new FormData(ev.target);
-  const files = [...($("#videoimages")?.files || [])].slice(0, 8);
-
-  try {
-    if (files.length) {
-      /* Có ảnh -> đường multipart. Không dùng api() vì hàm đó đặt sẵn
-         Content-Type JSON; multipart phải để trình duyệt tự đặt boundary. */
-      const body = new FormData();
-      body.append("title", f.get("title"));
-      body.append("brief", f.get("brief"));
-      body.append("kind", f.get("kind"));
-      files.forEach((file) => body.append("images", file));
-
-      const r = await fetch("/api/videos/upload", { method: "POST", body });
-      if (!r.ok) throw new Error((await r.text()).slice(0, 200));
-      const out = await r.json();
-      toast(`Đã nhận ${out.so_anh_nhan} ảnh. Agent đang xem ảnh trước khi viết kịch bản.`);
-    } else {
-      const out = await api("/videos", {
-        method: "POST",
-        body: JSON.stringify({
-          title: f.get("title"), brief: f.get("brief"), kind: f.get("kind"),
-          ma_san_pham: f.get("ma_san_pham") || "",
-        }),
-      });
-      toast(out.so_anh_kho
-        ? `Đã nhận, dùng ${out.so_anh_kho} ảnh trong kho. Agent đang xem ảnh trước khi viết kịch bản.`
-        : "Đã nhận. Không gắn sản phẩm nên video sẽ là thẻ chữ, không có ảnh.");
-    }
-    ev.target.reset();
-    $("#imgpreview").innerHTML = "";
-    loadVideos();
-  } catch (e) { toast(e.message, true); }
-});
-
 /* ---------------- khách đến từ đâu ---------------- */
 
 /* Câu hỏi cơ bản nhất của người vận hành mà bảng cũ không trả lời được:
@@ -3175,365 +3028,8 @@ async function loadEvents() {
 }
 
 
-/* ---------------- đăng bài ---------------- */
-
-const POST_LABEL = {
-  cho_duyet: "Chờ duyệt", da_len_lich: "Đã hẹn giờ", dang_dang: "Đang đăng",
-  da_dang: "Đã đăng", loi: "Lỗi", da_huy: "Đã huỷ", nhap: "Nháp",
-};
-const POST_TONE = {
-  cho_duyet: "duyet", da_len_lich: "duyet", dang_dang: "duyet",
-  da_dang: "chot", loi: "huy", da_huy: "huy",
-};
-const KENH_LABEL = {
-  facebook: "Facebook", instagram: "Instagram",
-  tiktok: "TikTok", youtube: "YouTube",
-};
+/* Định dạng số kiểu Việt Nam — màn Kho và Chi phí dùng chung. */
 const num = (n) => Number(n || 0).toLocaleString("vi-VN");
-
-$$("#postfilter .chip").forEach((chip) =>
-  chip.addEventListener("click", () => {
-    state.postFilter = chip.dataset.pstatus;
-    $$("#postfilter .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
-    loadPosts();
-  })
-);
-
-async function loadPubChannels() {
-  const { kenh } = await api("/publish/channels");
-  $("#pubchannels").innerHTML = kenh.map((k) => {
-    const steps = k.duong_di.map((d) =>
-      `<span class="lane__step lane__step--${d.san_sang ? "on" : "off"}">${esc(d.adapter)}</span>`
-    ).join('<span class="lane__step" style="border:0;padding:0">&rarr;</span>');
-    const chan = k.duong_di.filter((d) => !d.san_sang && d.ly_do);
-    return `<div class="row">
-      <span class="row__flag row__flag--${k.dang_dung === "manual" ? "assist" : "auto"}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(KENH_LABEL[k.kenh] || k.kenh)}</span>
-        <span class="lane">${steps}</span>
-        ${chan.map((d) => `<span class="lane__why">${esc(d.adapter)}: ${esc(d.ly_do)}</span>`).join("")}
-      </span>
-      <span class="row__side"><span class="row__num">${esc(k.dang_dung || "—")}</span></span>
-    </div>`;
-  }).join("");
-}
-
-async function fillPostPickers() {
-  if (fillPostPickers.done) return;
-  fillPostPickers.done = true;
-  const [{ san_pham }, videos] = await Promise.all([
-    api("/catalog/products"), api("/videos"),
-  ]);
-  $("#sanphamlist").innerHTML = san_pham
-    .map((p) => `<option value="${esc(p.ma)}">${esc(p.ten)}</option>`).join("");
-  const dung_duoc = videos.filter((v) => v.status === "ready" || v.status === "pending_review");
-  const opts = '<option value="">— không gắn video —</option>'
-    + dung_duoc.map((v) => `<option value="${esc(v.id)}">${esc(v.title)}</option>`).join("");
-  $("#postvideo").innerHTML = opts;
-  const cv = $("#campaignvideo");
-  if (cv) cv.innerHTML = opts;
-}
-
-function drawDraft(d) {
-  const tags = (d.hashtags || []).join(" ");
-  const canhbao = d.so_lan_thu > 1
-    ? `<span class="tag tag--duyet">Đã sửa ${d.so_lan_thu - 1} lần cho đúng luật quảng cáo</span>` : "";
-  $("#postdraft").innerHTML = `<div class="draft__box">
-    <div class="draft__title">${esc(d.tieu_de || "(không tiêu đề)")} ${canhbao}</div>
-    <div class="draft__text">${esc(d.noi_dung)}</div>
-    <div class="draft__tags">${esc(tags)}</div>
-    <div class="draft__foot">
-      <button type="button" class="btn btn--primary btn--sm" id="draftsave">Đưa vào hàng đợi</button>
-      <input type="datetime-local" id="draftwhen" class="draft__sched" title="Để trống là đăng ngay sau khi duyệt">
-      <button type="button" class="btn btn--sm" id="draftredo">Soạn lại</button>
-      <span class="draft__meta">${esc(KENH_LABEL[d.kenh] || d.kenh)} · ${usd(d.chi_phi_usd)}</span>
-    </div>
-  </div>`;
-
-  $("#draftsave").addEventListener("click", async () => {
-    const when = $("#draftwhen").value;
-    const nut = $("#draftsave");
-    nut.disabled = true;
-    try {
-      await api("/posts", { method: "POST", body: JSON.stringify({
-        tieu_de: d.tieu_de, noi_dung: d.noi_dung, hashtags: d.hashtags,
-        kenh: [d.kenh], video_id: d.video_id || null,
-        lich_dang: when ? new Date(when).toISOString() : null,
-      })});
-    } catch (e) {
-      // Giữ nguyên bản nháp: xoá nó khi chưa vào hàng đợi là mất bài vừa soạn.
-      toast(e.message, true);
-      nut.disabled = false;
-      return;
-    }
-    $("#postdraft").innerHTML = "";
-    toast("Đã vào hàng đợi. Bấm Duyệt thì bài mới đi.");
-    loadPosts();
-  });
-  $("#draftredo").addEventListener("click", () => $("#postform").requestSubmit());
-}
-
-$("#postform").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const btn = e.target.querySelector('button[type="submit"]');
-  const f = Object.fromEntries(new FormData(e.target));
-  btn.disabled = true; btn.textContent = "Agent đang viết…";
-  try {
-    drawDraft(await api("/posts/draft", { method: "POST", body: JSON.stringify({
-      kenh: f.kenh, san_pham: f.san_pham || "", y_tuong: f.y_tuong || "",
-      video_id: f.video_id || null,
-    })}));
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    btn.disabled = false; btn.textContent = "Agent soạn bài";
-  }
-});
-
-async function loadPosts() {
-  const q = state.postFilter && state.postFilter !== "all"
-    ? "?trang_thai=" + state.postFilter : "";
-  const { posts } = await api("/posts" + q);
-  const cho = posts.filter((p) => p.trang_thai === "cho_duyet").length;
-  $("#c-dangbai").textContent = cho || "";
-
-  const cho_duyet_n = posts.filter((p) => p.trang_thai === "cho_duyet").length;
-  const thanh = $("#postbulk");
-  if (thanh) {
-    thanh.innerHTML = cho_duyet_n > 1
-      ? `<button type="button" class="btn btn--sm btn--go" id="bulkapprove">Duyệt cả ${cho_duyet_n} bài</button>`
-      : "";
-    const bulk = $("#bulkapprove");
-    if (bulk) bulk.addEventListener("click", async () => {
-      bulk.disabled = true;
-      // Lỗi mà không bắt thì nút khoá mãi và không ai biết vì sao —
-      // bắt, báo, mở lại nút.
-      try {
-        const r = await api("/posts/approve-all", { method: "POST" });
-        toast(r.bi_chan
-          ? `Duyệt ${r.da_duyet} bài, ${r.bi_chan} bài bị chặn vì vi phạm quảng cáo.`
-          : `Đã duyệt ${r.da_duyet} bài.`, !!r.bi_chan);
-      } catch (e) {
-        toast(e.message, true);
-        bulk.disabled = false;
-      }
-      loadPosts();
-    });
-  }
-
-  $("#posts").innerHTML = posts.length ? posts.map((p) => {
-    const kenhs = (p.kenh || []).map((k) =>
-      `<span class="tag tag--plain">${esc(KENH_LABEL[k] || k)}</span>`).join(" ");
-    const kq = p.ket_qua || {};
-    const links = Object.entries(kq).map(([k, v]) => v.url
-      ? `<a class="post__link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(k)} &#8599;</a>`
-      : v.detail ? `<span class="post__link" style="color:hsl(var(--muted-foreground))">${esc(k)}: ${esc(v.detail)}</span>` : ""
-    ).join("");
-    const cho_duyet = p.trang_thai === "cho_duyet";
-    const dang_roi = p.trang_thai === "da_dang" || p.trang_thai === "dang_dang";
-    return `<div class="row">
-      <span class="row__flag row__flag--${cho_duyet ? "assist" : p.trang_thai === "loi" ? "halt" : "auto"}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(p.tieu_de || "(không tiêu đề)")}
-          <span class="tag tag--${POST_TONE[p.trang_thai] || "plain"}">${POST_LABEL[p.trang_thai] || p.trang_thai}</span>
-          ${kenhs}${p.co_video ? '<span class="tag tag--plain">có video</span>' : ""}</span>
-        <span class="post__body">${esc(p.noi_dung)}</span>
-        <span class="post__links">${links}</span>
-      </span>
-      <span class="row__side">
-        <span class="row__time">${p.lich_dang ? "hẹn " + clock(p.lich_dang) : clock(p.created_at)}</span>
-        <span style="display:flex;gap:6px;margin-top:4px">
-          ${cho_duyet ? `<button type="button" class="btn btn--sm btn--go" data-papprove="${p.id}">Duyệt &amp; đăng</button>` : ""}
-          ${!dang_roi && p.trang_thai !== "da_huy" ? `<button type="button" class="btn btn--sm btn--halt" data-pcancel="${p.id}">Huỷ</button>` : ""}
-          <button type="button" class="btn btn--sm" data-pkit="${p.id}">Bộ đăng tay</button>
-          ${dang_roi ? `<button type="button" class="btn btn--sm" data-pmetric="${p.id}" data-pkenh="${esc((p.kenh || [])[0] || "")}">Nhập số liệu</button>` : ""}
-        </span>
-      </span>
-    </div>`;
-  }).join("") : '<p class="empty">Chưa có bài đăng nào.</p>';
-
-  $$("[data-papprove]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    try {
-      const r = await api("/posts/" + b.dataset.papprove + "/approve", { method: "POST" });
-      toast(r.trang_thai === "da_len_lich" ? "Đã xếp lịch." : "Đã gửi đi.");
-    } catch (e) { toast(e.message, true); }
-    loadPosts();
-  }));
-  $$("[data-pkit]").forEach((b) => b.addEventListener("click", () =>
-    moKit(b.dataset.pkit, b.closest(".row"))));
-  $$("[data-pcancel]").forEach((b) => b.addEventListener("click", async () => {
-    // Nút Huỷ đứng sát nút Duyệt & đăng: bấm trượt là mất bài đã soạn.
-    if (!confirm("Huỷ bài này?\n\nBài chuyển sang Đã huỷ và không đăng nữa.")) return;
-    b.disabled = true;
-    try {
-      await api("/posts/" + b.dataset.pcancel + "/cancel", { method: "POST" });
-      toast("Đã huỷ bài.");
-    } catch (e) {
-      toast(e.message, true);
-      b.disabled = false;
-    }
-    loadPosts();
-  }));
-  // Chưa có quyền Insights API -> nhập tay. Cùng một bảng, cùng một biểu đồ.
-  $$("[data-pmetric]").forEach((b) => b.addEventListener("click", async () => {
-    const so = (name, label) => ({ name, label, type: "number", value: 0, min: 0, step: 1 });
-    const d = await hoiHop({
-      tieu_de: "Ghi số liệu bài đăng",
-      phu: "Chép từ trang quản lý của nền tảng. Cùng một bảng, cùng một biểu đồ với số liệu tự lấy.",
-      truong: [so("luot_xem", "Lượt xem"), so("luot_thich", "Lượt thích"),
-               so("binh_luan", "Bình luận"), so("chia_se", "Chia sẻ")],
-      nut: "Ghi số liệu",
-    });
-    if (!d) return;
-    const n = (v) => parseInt(v, 10) || 0;
-    try {
-      await api("/posts/" + b.dataset.pmetric + "/metrics", { method: "POST", body: JSON.stringify({
-        kenh: b.dataset.pkenh, luot_xem: n(d.luot_xem), luot_thich: n(d.luot_thich),
-        binh_luan: n(d.binh_luan), chia_se: n(d.chia_se),
-      })});
-      toast("Đã ghi số liệu."); loadAnalytics();
-    } catch (e) { toast(e.message, true); }
-  }));
-}
-
-/* ---------------- chiến dịch đa nền tảng ---------------- */
-
-// Không copy-paste một caption ra bốn chỗ: mỗi nền tảng được soạn riêng.
-// Xem agent/publish/chien_dich.py để biết vì sao.
-$("#campaignform").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.target;
-  const btn = form.querySelector('button[type="submit"]');
-  const kenh = $$('#campaignkenh input:checked').map((i) => i.value);
-  if (!kenh.length) { toast("Chọn ít nhất một nền tảng.", true); return; }
-
-  const f = Object.fromEntries(new FormData(form));
-  btn.disabled = true; btn.textContent = `Đang soạn ${kenh.length} bài…`;
-  $("#campaignout").innerHTML = "";
-  try {
-    const r = await api("/campaigns", { method: "POST", body: JSON.stringify({
-      ten: f.ten, kenh, san_pham: f.san_pham || "", y_tuong: f.y_tuong || "",
-      video_id: f.video_id || null,
-      gian_cach_phut: parseInt(f.gian_cach_phut, 10) || 0,
-    })});
-    drawCampaign(r);
-    toast(`${r.so_bai} bài đã vào hàng chờ duyệt.`);
-    loadPosts();
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    btn.disabled = false; btn.textContent = "Agent soạn cả chiến dịch";
-  }
-});
-
-function drawCampaign(r) {
-  const bai = r.bai.map((b) => `
-    <div class="draft__box" style="margin-bottom:10px">
-      <div class="draft__title">${esc(KENH_LABEL[b.kenh[0]] || b.kenh[0])}
-        <span class="tag tag--duyet">Chờ duyệt</span>
-        ${b.so_lan_thu > 1 ? `<span class="tag tag--plain">sửa ${b.so_lan_thu - 1} lần cho đúng luật</span>` : ""}
-      </div>
-      <div class="draft__text">${esc(b.noi_dung)}</div>
-      <div class="draft__tags">${esc((b.hashtags || []).join(" "))}</div>
-    </div>`).join("");
-  const hong = r.kenh_hong.length
-    ? `<p class="lane__why">Soạn hỏng: ${r.kenh_hong.map((h) => `${esc(h.kenh)} — ${esc(h.ly_do)}`).join("; ")}</p>`
-    : "";
-  $("#campaignout").innerHTML =
-    `<p class="kit__note">${esc(r.ghi_chu)} · ${usd(r.chi_phi_usd)}</p>${bai}${hong}`;
-}
-
-/* ---------------- bộ đăng thủ công ---------------- */
-
-// Chừng nào Facebook và TikTok chưa duyệt quyền, đây là con đường DUY NHẤT
-// nội dung ra được cả bốn nền tảng. Làm cho nó nhanh còn hơn ngồi chờ.
-async function moKit(id, o) {
-  const cu = document.getElementById("kit-" + id);
-  if (cu) { cu.remove(); return; }
-  const k = await api(`/posts/${id}/kit`);
-  const luuy = Object.entries(k.luu_y || {})
-    .map(([kenh, t]) => `<div>${esc(KENH_LABEL[kenh] || kenh)}: ${esc(t)}</div>`).join("");
-  const box = document.createElement("div");
-  box.id = "kit-" + id;
-  box.className = "kit";
-  box.innerHTML = `
-    <div class="kit__cap" id="cap-${id}">${esc(k.caption)}</div>
-    <div class="kit__note">${luuy}</div>
-    <div class="kit__row">
-      <button type="button" class="btn btn--sm" data-copy="${id}">Chép caption</button>
-      ${k.co_video ? `<a class="btn btn--sm" href="/api${k.video_url.replace('/api','')}" download>Tải video</a>` : ""}
-      <button type="button" class="btn btn--sm btn--go" data-posted="${id}"
-        data-kenh="${esc((k.kenh || [])[0] || "")}">Đã đăng xong</button>
-    </div>`;
-  o.after(box);
-
-  box.querySelector("[data-copy]").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(k.caption);
-      toast("Đã chép caption.");
-    } catch { toast("Trình duyệt chặn chép tự động — bôi đen rồi Ctrl+C.", true); }
-  });
-  box.querySelector("[data-posted]").addEventListener("click", async () => {
-    const d = await hoiHop({
-      tieu_de: "Đã đăng bài này",
-      phu: "Dán link bài vừa đăng để về sau đo hiệu quả. Để trống vẫn ghi nhận được.",
-      truong: [{ name: "url", label: "Link bài đăng", type: "url", placeholder: "https://…" }],
-      nut: "Ghi nhận",
-    });
-    if (!d) return;
-    try {
-      await api(`/posts/${id}/mark-posted`, { method: "POST", body: JSON.stringify({
-        kenh: box.querySelector("[data-posted]").dataset.kenh, ok: true, url: d.url || "",
-      })});
-      toast("Đã ghi nhận."); loadPosts();
-    } catch (e) { toast(e.message, true); }
-  });
-}
-
-/* ---------------- số hiệu ---------------- */
-
-async function loadAnalytics() {
-  const a = await api("/analytics");
-  const t = a.tong;
-  const maxView = Math.max(1, ...a.theo_kenh.map((k) => Number(k.luot_xem || 0)));
-
-  $("#anaCards").innerHTML =
-      cell("Lượt xem", num(t.luot_xem), "", 1, "spend")
-    + cell("Tương tác", num(t.luot_thich + t.binh_luan + t.chia_se), "", null, "auto")
-    + cell("Tỷ lệ tương tác", t.ty_le_tuong_tac, "%", Math.min(1, t.ty_le_tuong_tac / 10), "auto")
-    + cell("Đã đăng", num(a.theo_trang_thai.da_dang || 0), "bài", null, "auto")
-    + cell("Chờ duyệt", num(a.theo_trang_thai.cho_duyet || 0), "bài", null, "assist");
-
-  $("#anaChannels").innerHTML = a.theo_kenh.length ? a.theo_kenh.map((k) => {
-    const tt = k.luot_xem > 0
-      ? ((Number(k.luot_thich) + Number(k.binh_luan) + Number(k.chia_se)) / k.luot_xem * 100).toFixed(2)
-      : "0.00";
-    return `<div class="row">
-      <span class="row__flag row__flag--spend" style="width:3px"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(KENH_LABEL[k.kenh] || k.kenh)}
-          <span class="tag tag--plain">${k.so_bai} bài</span></span>
-        <span class="row__sub">${num(k.luot_thich)} thích · ${num(k.binh_luan)} bình luận · ${num(k.chia_se)} chia sẻ · tương tác ${tt}%</span>
-        <span class="readout__bar" style="margin-top:5px"><span class="readout__fill readout__fill--spend" style="width:${Math.max(2, k.luot_xem / maxView * 100)}%"></span></span>
-      </span>
-      <span class="row__side"><span class="row__num">${num(k.luot_xem)}</span>
-        <span class="row__time">lượt xem</span></span>
-    </div>`;
-  }).join("") : '<p class="empty">Chưa có số liệu. Đăng bài rồi nhập số liệu ở màn Đăng bài.</p>';
-
-  $("#anaTop").innerHTML = a.bai_tot_nhat.length ? a.bai_tot_nhat.map((b) => `
-    <div class="row">
-      <span class="row__flag row__flag--auto"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(b.tieu_de)}
-          <span class="tag tag--plain">${esc(KENH_LABEL[b.kenh] || b.kenh)}</span></span>
-        <span class="row__sub">${num(b.luot_thich)} thích · ${num(b.binh_luan)} bình luận · tương tác ${b.ty_le_tuong_tac}%</span>
-      </span>
-      <span class="row__side"><span class="row__num">${num(b.luot_xem)}</span>
-        <span class="row__time">lượt xem</span></span>
-    </div>`).join("") : '<p class="empty">Chưa đủ dữ liệu để xếp hạng.</p>';
-}
 
 
 /* ---------------- chi phí và hiệu năng ---------------- */
@@ -5000,13 +4496,11 @@ async function refresh() {
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
-    if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
-    if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
       if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
-      await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
+      await loadAnalyticsKhach(); await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
@@ -5900,7 +5394,7 @@ $("#btn-oauth-zalo-oa")?.addEventListener("click", async () => {
 const RUI_RO_NHAN = { doc: "đọc", ghi_nhan: "ghi nhận", hanh_dong: "HÀNH ĐỘNG" };
 const NHOM_NHAN = {
   tu_van: "Tư vấn", don_hang: "Đơn hàng", sau_ban: "Sau bán",
-  marketing: "Marketing", con_nguoi: "Con người",
+  con_nguoi: "Con người",
 };
 
 /* Bốn loại plugin, nói bằng tiếng Việt. Máy chủ chỉ biết mã (`tra_bang`…);

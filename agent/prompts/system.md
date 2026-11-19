@@ -146,7 +146,6 @@ Hỏi giá, dung tích, còn hàng, thành phần của một sản phẩm cụ 
 Chưa biết mua gì, "da dầu dùng gì", "có gì cho da nhạy cảm" → `goi_y_san_pham`.
 Hỏi đơn tới đâu → `tra_cuu_don_hang`.
 Khách chốt mua và đã xác nhận → `tao_don_hang`.
-Yêu cầu làm video → `tao_video`.
 Khách muốn xem sản phẩm trông thế nào, hoặc đang phân vân giữa mấy món →
 `gui_anh_san_pham`. Gọi CÙNG LÚC với câu trả lời, không thay cho nó: khách
 cần cả ảnh lẫn lời, đừng chỉ nói "em gửi ảnh nhé" rồi dừng.

@@ -1,5 +1,5 @@
 """
-API tổng quan hệ thống: sức khoẻ, số liệu tổng, chi phí, công tắc runtime, nhật ký.
+API tổng quan hệ thống: sức khoẻ, số liệu tổng, chi phí, khách theo kênh, công tắc runtime, nhật ký.
 """
 from __future__ import annotations
 
@@ -105,18 +105,6 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
         since, xem_het, nguoi_id,
     ) or {}
 
-    vid = await db.fetchrow(
-        """
-        SELECT count(*)                                              AS total,
-               count(*) FILTER (WHERE status = 'pending_review')      AS review,
-               count(*) FILTER (WHERE status = 'failed')              AS failed,
-               coalesce(sum(cost_usd), 0)                             AS cost,
-               coalesce(sum(duration_s), 0)                           AS seconds
-        FROM videos WHERE created_at >= $1
-        """,
-        since,
-    ) or {}
-
     # Băng ca trực — signature của dashboard.
     tape = await db.fetch(
         f"""
@@ -196,19 +184,12 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
             "latency_ms": int(_num(msg.get("latency"))),
         },
         "cost": {
-            "total_usd": round(_num(conv.get("cost")) + _num(vid.get("cost")), 6),
+            "total_usd": round(_num(conv.get("cost")), 6),
             "chat_usd": round(_num(conv.get("cost")), 6),
-            "video_usd": round(_num(vid.get("cost")), 6),
             "per_conversation": round(_num(conv.get("cost")) / total, 6) if total else None,
             "tokens_in": int(msg.get("tin") or 0),
             "tokens_out": int(msg.get("tout") or 0),
             "cache_read": int(msg.get("cached") or 0),
-        },
-        "video": {
-            "total": int(vid.get("total") or 0),
-            "review": int(vid.get("review") or 0),
-            "failed": int(vid.get("failed") or 0),
-            "seconds": round(_num(vid.get("seconds")), 1),
         },
         "tin_chet": {
             "so": int(chet.get("n") or 0),
@@ -400,5 +381,101 @@ async def cost_report(ngay: int = 7, _quyen: dict = Depends(can_quyen("bao_cao.d
             # cache_control lên khối ổn định — con số này cho biết việc đó
             # có thật sự ăn thua không.
             "ty_le_cache": round(t_cache / t_vao * 100, 1) if t_vao else 0.0,
+        },
+    }
+
+
+@router.get("/analytics/khach")
+async def analytics_khach(ngay: int = 30, _quyen: dict = Depends(can_quyen("bao_cao.doc"))) -> dict:
+    """
+    Khách đến từ đâu, và mỗi kênh chạy tốt tới mức nào.
+
+    Trả lời câu hỏi cơ bản nhất của người vận hành: khách của mình đến từ
+    kênh nào, kênh nào agent tự lo được, kênh nào phải gọi người liên tục.
+    (Từng nằm trong `noi_dung_api.py` cạnh số liệu bài đăng; chuyển sang
+    đây khi gỡ tính năng đăng bài ngày 19.11.2026.)
+
+    Mỗi kênh một dòng, kèm hai tỷ lệ đáng nhìn nhất:
+      tu_xu_ly   agent xử lý trọn, không cần người
+      chuyen_nguoi  agent tự nhận không đủ thẩm quyền
+
+    Kênh có tỷ lệ chuyển người cao bất thường không phải là kênh tệ — thường
+    là kênh có loại câu hỏi khác hẳn, và đó là tín hiệu để bổ sung tài liệu
+    cho đúng chỗ.
+    """
+    tu = datetime.now(timezone.utc) - timedelta(days=max(1, min(ngay, 365)))
+
+    rows = await db.fetch(
+        """
+        SELECT c.channel,
+               -- Gộp theo NỀN TẢNG GỐC khi có. Chatwoot mà không tách thì
+               -- Facebook, Instagram, WhatsApp bị nhập làm một dòng, và
+               -- bảng này mất đúng thứ nó sinh ra để trả lời.
+               coalesce(c.nen_tang, c.channel)                      AS nen_tang,
+               count(*)                                            AS hoi_thoai,
+               count(DISTINCT c.customer_ref)                      AS khach,
+               coalesce(sum(c.msg_count), 0)                       AS tin,
+               count(*) FILTER (WHERE c.status = 'auto')           AS tu_xu_ly,
+               count(*) FILTER (WHERE c.status = 'escalated')      AS chuyen_nguoi,
+               count(*) FILTER (WHERE c.status = 'assist')         AS cho_duyet,
+               coalesce(sum(c.cost_usd), 0)                        AS chi_phi,
+               max(c.updated_at)                                   AS gan_nhat
+        FROM conversations c
+        WHERE c.updated_at >= $1
+        GROUP BY c.channel, coalesce(c.nen_tang, c.channel)
+        ORDER BY count(*) DESC
+        """,
+        tu,
+    )
+
+    # Chất lượng trả lời đo ở bảng `messages`, không gộp chung được vào câu
+    # trên vì join sẽ nhân bản dòng và làm sai mọi phép đếm hội thoại.
+    chat_luong = {
+        r["nen_tang"]: r
+        for r in await db.fetch(
+            """
+            SELECT coalesce(c.nen_tang, c.channel)         AS nen_tang,
+                   count(*)                                    AS luot_tra_loi,
+                   count(*) FILTER (WHERE m.grounded IS TRUE)  AS co_can_cu,
+                   coalesce(avg(m.latency_ms), 0)              AS tre_tb
+            FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            WHERE m.role = 'agent' AND m.created_at >= $1
+            GROUP BY coalesce(c.nen_tang, c.channel)
+            """,
+            tu,
+        )
+    }
+
+    kenh = []
+    for r in rows:
+        tong = int(r["hoi_thoai"]) or 1
+        q = chat_luong.get(r["nen_tang"], {})
+        tra_loi = int(q.get("luot_tra_loi") or 0)
+        kenh.append({
+            "kenh": r["channel"],
+            "nen_tang": r["nen_tang"],
+            "hoi_thoai": int(r["hoi_thoai"]),
+            "khach": int(r["khach"] or 0),
+            "tin": int(r["tin"] or 0),
+            "tu_xu_ly": int(r["tu_xu_ly"]),
+            "chuyen_nguoi": int(r["chuyen_nguoi"]),
+            "cho_duyet": int(r["cho_duyet"]),
+            "ty_le_tu_xu_ly": round(int(r["tu_xu_ly"]) / tong, 4),
+            "ty_le_chuyen_nguoi": round(int(r["chuyen_nguoi"]) / tong, 4),
+            "co_can_cu": round(int(q.get("co_can_cu") or 0) / tra_loi, 4) if tra_loi else None,
+            "tre_tb_ms": int(_num(q.get("tre_tb"))),
+            "chi_phi": round(_num(r["chi_phi"]), 6),
+            "chi_phi_moi_hoi_thoai": round(_num(r["chi_phi"]) / tong, 6),
+            "gan_nhat": r["gan_nhat"].isoformat() if r["gan_nhat"] else None,
+        })
+
+    return {
+        "ngay": ngay,
+        "kenh": kenh,
+        "tong": {
+            "hoi_thoai": sum(k["hoi_thoai"] for k in kenh),
+            "khach": sum(k["khach"] for k in kenh),
+            "chi_phi": round(sum(k["chi_phi"] for k in kenh), 6),
+            "so_kenh": len(kenh),
         },
     }

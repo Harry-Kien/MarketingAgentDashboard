@@ -55,6 +55,7 @@ from .tong_quan import (  # noqa: F401
     recent_events,
     list_channels,
     cost_report,
+    analytics_khach,
 )
 from . import hoi_thoai_cu as _hoi_thoai_cu
 from .hoi_thoai_cu import (  # noqa: F401
@@ -84,18 +85,6 @@ from .hoi_thoai_cu import (  # noqa: F401
     _ten_file_an_toan,
     staff_send_file,
 )
-from . import video_api as _video_api
-from .video_api import (  # noqa: F401
-    list_videos,
-    VideoBody,
-    create_video,
-    create_video_with_images,
-    list_video_assets,
-    video_asset_file,
-    video_file,
-    retry_video,
-    approve_video,
-)
 from . import don_kho as _don_kho
 from .don_kho import (  # noqa: F401
     anh_san_pham_file,
@@ -108,7 +97,6 @@ from .don_kho import (  # noqa: F401
     kho_bien_dong,
     kho_nhap,
     kho_kiem_ke,
-    catalog_products,
 )
 from . import tri_thuc_api as _tri_thuc_api
 from .tri_thuc_api import (  # noqa: F401
@@ -146,30 +134,6 @@ from .cau_hinh_api import (  # noqa: F401
     ghi_xac_nhan_bang_gia,
     go_xac_nhan_bang_gia,
 )
-from . import noi_dung_api as _noi_dung_api
-from .noi_dung_api import (  # noqa: F401
-    SoanBaiIn,
-    TaoBaiIn,
-    SoLieuIn,
-    CallbackIn,
-    publish_channels,
-    draft_post,
-    list_posts,
-    create_post,
-    approve_post,
-    cancel_post,
-    post_callback,
-    add_metrics,
-    get_metrics,
-    analytics_khach,
-    get_analytics,
-    ChienDichIn,
-    create_campaign,
-    approve_all,
-    post_kit,
-    post_video,
-    mark_posted,
-)
 from . import pdpd_api as _pdpd_api
 from .pdpd_api import (  # noqa: F401
     XoaDuLieuIn,
@@ -188,10 +152,8 @@ router = APIRouter()
 router.include_router(_tai_khoan.router)
 router.include_router(_tong_quan.router)
 router.include_router(_hoi_thoai_cu.router)
-router.include_router(_video_api.router)
 router.include_router(_don_kho.router)
 router.include_router(_tri_thuc_api.router)
 router.include_router(_ky_nang_api.router)
 router.include_router(_cau_hinh_api.router)
-router.include_router(_noi_dung_api.router)
 router.include_router(_pdpd_api.router)

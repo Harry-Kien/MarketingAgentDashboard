@@ -7,11 +7,16 @@ không phải nhớ gõ prompt mở đầu — chỉ cần nói việc cần là
 
 ## Dự án này là gì
 
-Nhân sự số cho một cửa hàng mỹ phẩm: nhận tin Zalo (và Facebook /
-Instagram / WhatsApp / web qua Chatwoot), tra tài liệu công ty để trả lời
-**có căn cứ**, gọi công cụ khi cần số liệu thật, tự lên đơn, **chuyển cho
-người khi vượt thẩm quyền** — rồi dựng video và soạn bài đăng, luôn sau khi
-có người duyệt.
+Hệ thống **chăm sóc khách hàng (CSKH)** cho cửa hàng mỹ phẩm BLANICA: nhận
+tin Zalo (và Facebook / Instagram / WhatsApp / web qua Chatwoot), tra tài
+liệu công ty để trả lời **có căn cứ**, gọi công cụ khi cần số liệu thật, tự
+lên đơn, **chuyển cho người khi vượt thẩm quyền**.
+
+Chỉ CSKH. Dựng video và soạn/đăng bài lên mạng xã hội đã **gỡ khỏi mã** ngày
+19.11.2026 theo quyết định của chủ dự án. Bảng cũ (`videos`, `posts`,
+`post_metrics`...) vẫn nằm trong CSDL vì có dữ liệu thật và migration đã
+chốt checksum — mã chỉ ngừng dùng chúng, không xoá. Đừng dựng lại hai tính
+năng ấy mà không hỏi chủ dự án.
 
 Toàn bộ mã, chú thích và tài liệu viết bằng **tiếng Việt**. Giữ nguyên như
 vậy.
@@ -258,7 +263,7 @@ python -m scripts.sinh_token MCP_TOKEN
 Không dùng `python -c "...print(token)"` — nó để lại bí mật trong lịch sử
 terminal và trong ảnh chụp màn hình.
 
-**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 42 quyền,
+**Route mới PHẢI khai quyền.** `agent/core/quyen.py` giữ danh mục 40 quyền,
 và `kiem_moi_route_co_quyen(app)` chạy lúc khởi động: route nào dưới `/api`
 hay `/tich-hop` chưa có `Depends(can_quyen("..."))` và cũng không nằm trong
 `MIEN_TRU` thì **máy chủ không lên**.
@@ -274,6 +279,10 @@ tính hỏng-đóng mà vẫn để quyền nằm ngay cạnh endpoint.
 
 Tên quyền lạ thì `KeyError` ngay lúc import, cũng không khởi động được.
 Thêm quyền mới vào `QUYEN` rồi mới dùng được.
+
+Gỡ quyền thì chuyển tên sang `QUYEN_DA_GO`, đừng chỉ xoá: dòng cũ trong
+`vai_tro_quyen` không cần xoá (mọi chỗ đọc đều lọc theo `QUYEN`), nhưng tên
+ấy **không bao giờ được dùng lại** — có test canh cả hai.
 
 **Lỡ tự khoá mình ra ngoài thì vào lại thế nào.** API chặn ba ngả dẫn tới
 chỗ "không còn ai có `nguoi_dung.sua`", nhưng nếu bằng cách nào đó vẫn xảy
@@ -298,7 +307,7 @@ tiếp chỉ qua HTTP API. Xem `docs/co-so-ly-thuyet.md` mục 10.
 
 ## Thứ KHÔNG đi theo repo
 
-Chạy `python -m scripts.san_sang` để biết còn thiếu gì. Bốn thứ này cố ý
+Chạy `python -m scripts.san_sang` để biết còn thiếu gì. Ba thứ này cố ý
 không lên GitHub:
 
 | | Lấy lại thế nào |
@@ -306,7 +315,6 @@ không lên GitHub:
 | `.env` | `cp .env.example .env` rồi điền `GCP_PROJECT_ID` |
 | `data/catalog.json`, `data/knowledge/` | có bản `.example`, dùng ngay được |
 | Dữ liệu Postgres | `scripts/sao_luu.py` |
-| `video-studio/` | `npx hyperframes init video-studio` |
 
 **Khi viết mã đọc các file này, LUÔN có đường lui sang bản `.example`.**
 Đã có hai lỗi vì quên điều đó — xem bảng "hỏng im lặng" ở trên.

@@ -7,7 +7,7 @@
 
 ## Kỹ năng viết sẵn
 
-11 công cụ, viết bằng Python trong `agent/core/tools.py`.
+10 công cụ, viết bằng Python trong `agent/core/tools.py`.
 Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 
 
@@ -22,7 +22,6 @@ Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 | `xin_huy_don` | Sau bán | ghi nhận | Ghi nhận yêu cầu huỷ — KHÔNG huỷ đơn. | — |
 | `xin_doi_tra` | Sau bán | ghi nhận | Ghi nhận yêu cầu đổi hoặc trả sau khi đã giao. | — |
 | `tao_don_hang` | Đơn hàng | **hành động** | Lên đơn. Công cụ duy nhất có hậu quả không đảo ngược. | ERP |
-| `tao_video` | Marketing | ghi nhận | Đặt hàng dựng video marketing. Luôn dừng ở chờ duyệt. | — |
 | `chuyen_nhan_vien` 🔒 | Con người | ghi nhận | Giao hội thoại cho người thật. | — |
 
 🔒 = không tắt được.
@@ -56,9 +55,6 @@ Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 
 
 **`tao_don_hang`** — Agent không tự chốt đơn nữa — mọi đơn do người lên. Đây là cách chạy an toàn nhất trong tuần đầu vận hành thật.
-
-
-**`tao_video`** — Không đặt được video từ hội thoại. Dashboard vẫn đặt được.
 
 
 **`chuyen_nhan_vien`** — KHÔNG TẮT ĐƯỢC. Bốn trong sáu lớp lưới an toàn kết thúc bằng 'chuyển cho người'. Không có công cụ này thì các lớp ấy vẫn phán đúng nhưng không còn chỗ giao việc.

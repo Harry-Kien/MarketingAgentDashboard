@@ -53,7 +53,12 @@ NHOM = {
                   "quy_tac_tu_dong", "quy_tac_lan_chay"],
     "Bán hàng": ["orders", "ton_kho", "kho_bien_dong", "shipping_waybill_requests"],
     "Tri thức (RAG)": ["documents", "document_versions", "chunks"],
-    "Nội dung": ["videos", "video_assets", "posts", "post_metrics"],
+    # Video và đăng bài đã gỡ khỏi mã ngày 19.11.2026. Bảng còn trong CSDL
+    # (có dữ liệu cũ, migration đã chốt checksum) nên vẫn phải có nhóm —
+    # nhãn nói rõ để người đọc sơ đồ không tưởng đó là tính năng đang chạy.
+    "Không còn dùng (video, bài đăng — gỡ 19.11.2026)": [
+        "videos", "video_assets", "posts", "post_metrics",
+    ],
     "Quyền và vai trò": [
         "vai_tro", "vai_tro_quyen", "nguoi_dung_vai_tro",
     ],
@@ -190,22 +195,19 @@ flowchart TB
         gac["Chốt vào<br/>trần chi phí · quét injection"]
         rag[("RAG<br/>pgvector")]
         hs[("Hồ sơ khách")]
-        llm["Vòng gọi model<br/>+ 7 công cụ"]
+        llm["Vòng gọi model<br/>+ công cụ nghiệp vụ"]
         luoi["«SO_LUOI_HOA» lớp lưới<br/>tuân thủ · thẩm quyền · hứa suông"]
     end
 
     subgraph ra["Đầu ra"]
         khach["Khách"]
         nguoi["Hàng đợi trực<br/>chờ-lâu-nhất-trước"]
-        video["Hàng đợi video"]
-        bai["Đăng bài<br/>n8n → API → thủ công"]
     end
 
     zalo & cw --> gac
     gac --> rag & hs --> llm --> luoi
     luoi -->|đủ thẩm quyền| khach
     luoi -->|vượt khả năng| nguoi
-    llm -.-> video & bai
 
     canh["Canh gác<br/>9 phép kiểm"] -.->|báo khi ĐỔI trạng thái| nguoi
 ```"""
@@ -266,7 +268,6 @@ flowchart LR
 
     nv --- u5["Nhận hội thoại chuyển người"]
     nv --- u6["Duyệt câu trả lời (chế độ assist)"]
-    nv --- u7["Duyệt bài đăng"]
     nv --- u8["Nhập kho, xử lý đơn"]
 
     qt --- u9["Xoá dữ liệu khách (Luật BVDLCN)"]
@@ -309,9 +310,10 @@ def dung_tai_lieu() -> str:
 
 ## 1. Sơ đồ khối
 
-Hai ranh giới quyết định toàn bộ hình dạng hệ thống: `ChannelAdapter` ở đầu
-vào và `PublishAdapter` ở đầu ra. Đổi Zalo cá nhân sang Zalo OA là viết
-thêm một lớp con — không đụng agent, RAG, video hay dashboard.
+Ranh giới quyết định hình dạng hệ thống là `ChannelAdapter`: mọi kênh vào
+và ra đều đi qua nó. Đổi Zalo cá nhân sang Zalo OA là viết thêm một lớp con
+— không đụng agent, RAG hay dashboard. Hệ thống chỉ làm chăm sóc khách:
+dựng video và đăng bài đã gỡ khỏi mã ngày 19.11.2026.
 
 {kien_truc()}
 
@@ -355,13 +357,11 @@ Sơ đồ lược bớt các cột đo lường (`tokens_in`, `latency_ms`, `cre
 
 ---
 
-## 5. Bảy nguyên tắc
+## 5. Năm nguyên tắc
 
 | Nguyên tắc | Nằm ở đâu |
 |---|---|
 | Không phát ngôn không căn cứ — giá, tồn kho, đơn chỉ đến từ công cụ | `agent/core/tools.py` |
-| Nội dung ra công chúng luôn phải có người duyệt — ràng buộc trong MÃ, không trong prompt | `agent/publish/service.py` |
-| Âm thanh trước, hình sau — thời lượng đo bằng `ffprobe`, không để model đoán | `agent/video/timing.py` |
 | Biết dừng đúng lúc — «SO_LUOI_CHU» lớp lưới độc lập, mỗi lớp canh một cách trượt | `agent/core/agent.py` |
 | Reply đúng tài khoản nguồn — không fallback khi `account_id` sai | `agent/channels/factory.py`, `agent/api/hoi_thoai_cu.py` |
 | Bí mật từng account chỉ tồn tại dưới dạng AES-GCM ciphertext | `agent/security/credential_vault.py` |

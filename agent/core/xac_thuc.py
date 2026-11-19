@@ -5,7 +5,7 @@ VÌ SAO PHẢI CÓ TRƯỚC KHI ĐƯA VÀO DOANH NGHIỆP
 ---------------------------------------------
 Dashboard cho phép: đọc tên, số điện thoại và địa chỉ khách hàng; đọc toàn
 bộ nội dung hội thoại; gửi tin nhắn nhân danh doanh nghiệp; XOÁ VĨNH VIỄN
-dữ liệu khách; sửa tồn kho; duyệt bài đăng lên fanpage.
+dữ liệu khách; sửa tồn kho; duyệt và huỷ đơn hàng.
 
 Trước lớp này, bất kỳ ai chạm tới cổng 8000 đều làm được tất cả. Nó chỉ an
 toàn nhờ nghe ở 127.0.0.1 — nghĩa là an toàn cho tới đúng ngày ai đó đưa

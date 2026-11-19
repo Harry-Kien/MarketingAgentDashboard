@@ -508,7 +508,6 @@ async function loadOverview() {
   baoKhachCanNguoi(o.conversations.escalated || 0,
     (o.conversations.waiting || 0) + (o.conversations.escalated || 0));
   $("#c-hoithoai").textContent = o.conversations.total || 0;
-  $("#c-video").textContent = o.video.review || 0;
   $("#rail-cost").textContent = usd(o.cost.total_usd);
 
   $("#readout").innerHTML = [
@@ -562,8 +561,6 @@ async function loadOverview() {
     cell("Token đọc từ cache", o.cost.cache_read.toLocaleString("vi-VN"), "token",
          o.cost.tokens_in + o.cost.cache_read
            ? o.cost.cache_read / (o.cost.tokens_in + o.cost.cache_read) : 0, "spend"),
-    cell("Video sản xuất", o.video.total, `${o.video.seconds}s · ${o.video.failed} lỗi`,
-         null, "auto"),
   ].join("");
 
   /* limit=200, không phải 12. Khung này là HÀNG ĐỢI, không phải bản tin:
@@ -571,13 +568,13 @@ async function loadOverview() {
      hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
      lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
      API đã xếp sẵn ai chờ lâu nhất lên đầu. */
-  /* Hai khối dưới đây (`#queue` và `#videoqueue`) chỉ tồn tại trong màn
-     Ca trực. Nạp chúng khi đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
+  /* Khối dưới đây (`#queue`) chỉ tồn tại trong màn Ca trực. Nạp nó khi
+     đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
      ĐO ĐƯỢC 22.09.2026 trên dashboard đang chạy: `loadOverview()` phát BA
-     request, và `refresh()` gọi nó mỗi 6 giây bất kể màn nào đang mở —
-     tức 30 request/phút mỗi tab, trong đó hai phần ba kéo tới 200 hội
-     thoại và 30 video mà không ai nhìn. Nhân với số người trực thì đó là
-     tải thật trên máy chủ, đổi lấy không gì cả.
+     request (hồi còn hàng chờ video), và `refresh()` gọi nó mỗi 6 giây bất
+     kể màn nào đang mở — tức 30 request/phút mỗi tab, trong đó hai phần ba
+     kéo tới 200 hội thoại và 30 video mà không ai nhìn. Nhân với số người
+     trực thì đó là tải thật trên máy chủ, đổi lấy không gì cả.
 
      Vẫn giữ `/overview` chạy mọi lúc: nó nuôi các con số trên thanh điều
      hướng, và người trực cần thấy "Ca trực" nhảy số kể cả khi đang đứng ở
@@ -589,17 +586,5 @@ async function loadOverview() {
     ? waiting.map((c) => convRow(c, true)).join("")
     : '<p class="empty">Không có hội thoại nào đang chờ. Ca trực êm.</p>';
   wireConvRows("#queue");
-
-  const vids = (await api("/videos?limit=30")).filter((v) => v.status === "pending_review");
-  $("#videoqueue").innerHTML = vids.length
-    ? vids.map((v) => `<div class="row">
-        <span class="row__flag row__flag--assist"></span>
-        <span class="row__body">
-          <span class="row__title">${esc(v.title)}</span>
-          <span class="row__sub">${v.duration_s ? v.duration_s.toFixed(1) + "s" : "—"} · ${esc(v.renderer || "")}</span>
-        </span>
-        <span class="row__side"><span class="row__time">${clock(v.created_at)}</span></span>
-      </div>`).join("")
-    : '<p class="empty">Không có video nào chờ duyệt.</p>';
 }
 

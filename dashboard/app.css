@@ -95,7 +95,7 @@ svg { flex: none; }
 }
 
 .mono, .rail__count, .rail__footvalue, .readout__value, .tape__now,
-.msg__meta, .row__num, .gallery__meta, .probe__score, .row__time {
+.msg__meta, .row__num, .probe__score, .row__time {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
@@ -832,27 +832,13 @@ svg { flex: none; }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field--wide { grid-column: 1 / -1; }
 
-/* --- Ảnh sản phẩm cho video --- */
+/* --- Gợi ý nhỏ cạnh nhãn ô nhập --- */
 .hint {
   font-style: normal;
   font-weight: 400;
   opacity: .6;
   font-size: .82em;
   margin-left: .5em;
-}
-.thumbs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-}
-.thumbs:empty { margin-top: 0; }
-.thumb {
-  width: 76px;
-  height: 76px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, .14);
 }
 
 .field > span {
@@ -881,14 +867,8 @@ svg { flex: none; }
 .form > .btn { grid-column: 1 / -1; justify-self: start; }
 
 /* ============================================================
-   Thư viện video
+   Thẻ
    ============================================================ */
-
-.gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 18px;
-}
 
 .card {
   border: 1px solid hsl(var(--border));
@@ -903,32 +883,7 @@ svg { flex: none; }
 
 .card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
-.card__media { background: hsl(222 47% 11%); aspect-ratio: 9 / 16; max-height: 400px; }
-.card__media video { width: 100%; height: 100%; display: block; object-fit: contain; }
-
-.card__pending {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: hsl(210 40% 80%);
-  font-size: 12.5px;
-  text-align: center;
-  padding: 18px;
-  line-height: 1.6;
-}
-
 .card__body { padding: 13px 15px; display: flex; flex-direction: column; gap: 8px; }
-.card__title { font-weight: 600; font-size: 14px; }
-
-.gallery__meta {
-  font-size: 11.5px;
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
 
 .card__actions { display: flex; gap: 8px; padding: 0 15px 15px; }
 
@@ -1082,68 +1037,6 @@ svg { flex: none; }
 .tag--duyet  { color: hsl(var(--warning));     background: hsl(var(--warning) / .14); }
 .tag--huy    { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .12); }
 
-/* ---------- bản nháp bài đăng ---------- */
-
-.draft { margin-top: 16px; }
-.draft:empty { margin: 0; }
-
-.draft__box {
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: hsl(var(--muted) / .5);
-  padding: 14px 16px;
-}
-.draft__title {
-  font-weight: 600; font-size: 14px; margin-bottom: 6px;
-  color: hsl(var(--foreground));
-}
-.draft__text {
-  white-space: pre-wrap; font-size: 13px; line-height: 1.6;
-  color: hsl(var(--foreground));
-}
-.draft__tags {
-  margin-top: 8px; font-size: 12px; color: hsl(var(--primary));
-  word-break: break-word;
-}
-.draft__foot {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-top: 12px; padding-top: 12px;
-  border-top: 1px solid hsl(var(--border));
-}
-.draft__meta {
-  margin-left: auto; font-size: 11px;
-  color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums;
-}
-.draft__sched {
-  font-size: 12px; padding: 5px 8px;
-  border: 1px solid hsl(var(--border)); border-radius: 6px;
-  background: hsl(var(--background)); color: hsl(var(--foreground));
-}
-
-/* Đường phân phối — bậc nào đang chạy, bậc nào bị chặn và vì sao. */
-.lane { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.lane__step {
-  font-size: 11px; padding: 2px 7px; border-radius: 999px;
-  border: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
-}
-.lane__step--on {
-  border-color: hsl(var(--success)); color: hsl(var(--success));
-  font-weight: 600;
-}
-.lane__step--off { opacity: .55; text-decoration: line-through; }
-.lane__why {
-  font-size: 11px; color: hsl(var(--muted-foreground));
-  margin-top: 3px; line-height: 1.5;
-}
-
-.post__body {
-  font-size: 12px; color: hsl(var(--muted-foreground));
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.post__links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
-.post__link { font-size: 11px; color: hsl(var(--primary)); }
-
 /* ---------- chọn nick Zalo ---------- */
 
 .nickbar {
@@ -1176,28 +1069,12 @@ svg { flex: none; }
 .src--chatwoot { color:#1F93FF; background:#1F93FF14; border-color:#1F93FF33; }
 .src--chatwoot::before { background:#1F93FF; }
 
-/* ---------- chọn nhiều nền tảng ---------- */
+/* ---------- ghi chú nhỏ dưới khung ---------- */
 
-.checks { display: flex; gap: 14px; flex-wrap: wrap; padding-top: 4px; }
-.checks label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 13px; color: hsl(var(--foreground)); cursor: pointer;
-}
-.checks input { accent-color: hsl(var(--primary)); }
-
-/* ---------- bộ đăng thủ công ---------- */
-
-.kit { margin-top: 10px; }
-.kit__cap {
-  white-space: pre-wrap; font-size: 12px; line-height: 1.6;
-  background: hsl(var(--muted) / .6); border: 1px solid hsl(var(--border));
-  border-radius: 6px; padding: 10px 12px; max-height: 190px; overflow: auto;
-}
 .kit__note {
   font-size: 11px; color: hsl(var(--muted-foreground));
   margin-top: 6px; line-height: 1.55;
 }
-.kit__row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 
 /* Ghi chú mang tin xấu: cùng cỡ chữ, khác màu và có viền trái, để nó không
    trôi lẫn vào những dòng chú thích bình thường ngay cạnh. */

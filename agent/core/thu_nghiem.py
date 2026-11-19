@@ -4,8 +4,8 @@ Chế độ THỬ: chạy agent thật, chặn tác dụng phụ thật.
 VÌ SAO LÀ CỜ NGỮ CẢNH, KHÔNG PHẢI THAM SỐ
 ----------------------------------------
 Phòng thử gọi `respond()`, `respond()` gọi `tools.run_tool()`, và
-`run_tool()` gọi bốn hàm ghi với bốn chữ ký khác nhau. Luồn một tham số
-`sandbox=` qua từng tầng là sửa năm chữ ký và mời gọi một chỗ quên. Một
+`run_tool()` gọi ba hàm ghi với ba chữ ký khác nhau. Luồn một tham số
+`sandbox=` qua từng tầng là sửa bốn chữ ký và mời gọi một chỗ quên. Một
 `ContextVar` chặn đúng MỘT chỗ — trong `run_tool` — và test AST canh được
 rằng mọi công cụ ghi đều đi qua chỗ đó.
 
@@ -34,9 +34,9 @@ from agent.config import settings
 
 dang_thu: ContextVar[bool] = ContextVar("dang_thu", default=False)
 
-# Bốn công cụ ghi CSDL/ERP/hàng đợi. Thêm công cụ ghi mới là phải thêm vào
+# Ba công cụ ghi CSDL/ERP. Thêm công cụ ghi mới là phải thêm vào
 # đây — tests/test_thu_nghiem.py đọc AST của `run_tool` để bắt chỗ quên.
-CO_TAC_DUNG_PHU = frozenset({"tao_don_hang", "tao_video", "xin_huy_don", "xin_doi_tra"})
+CO_TAC_DUNG_PHU = frozenset({"tao_don_hang", "xin_huy_don", "xin_doi_tra"})
 
 _VN = timezone(timedelta(hours=7))
 _da_tieu = 0.0
@@ -66,12 +66,6 @@ async def mo_phong(ten: str, args: dict, products: list[dict]) -> dict:
     """
     if ten == "tao_don_hang":
         return _mo_phong_don_hang(args, products)
-    if ten == "tao_video":
-        return {
-            "thu_nghiem": True, "dat_duoc": True, "video_id": "thu-" + secrets.token_hex(3),
-            "ghi_chu": "ĐANG THỬ: video KHÔNG được đặt vào hàng đợi. Trả lời khách "
-                       "như đã ghi nhận yêu cầu và sẽ có người duyệt.",
-        }
     if ten in ("xin_huy_don", "xin_doi_tra"):
         return {
             "thu_nghiem": True, "da_ghi_nhan": True, "ma_don": str(args.get("ma_don") or ""),

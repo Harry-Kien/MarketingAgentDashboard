@@ -167,7 +167,7 @@ def test_vong_canh_gac_duoc_tat_khi_dung_app():
 def test_bao_dong_di_qua_webhook_khong_gan_cung_zalo():
     """
     Nơi nhận báo động là việc của doanh nghiệp. Nhốt nó vào mã là buộc mọi
-    người dùng chung một cách nhận — cùng lý do với PublishAdapter.
+    người dùng chung một cách nhận — cùng lý do với lớp kênh.
     """
     src = inspect.getsource(canh_gac._bao)
     assert "canh_gac_webhook" in src

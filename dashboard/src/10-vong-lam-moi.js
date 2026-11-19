@@ -8,13 +8,11 @@ async function refresh() {
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
-    if (state.view === "video") { await fillProductPicker(); await loadVideos(); }
-    if (state.view === "dangbai") { await fillPostPickers(); await loadPosts(); await loadPubChannels(); }
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {
       if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
-      await loadAnalyticsKhach(); await loadAnalytics(); await loadCost();
+      await loadAnalyticsKhach(); await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();

@@ -7,7 +7,7 @@ Sao lưu cơ sở dữ liệu và tài liệu công ty.
 
 VÌ SAO CẦN
 ----------
-Toàn bộ đơn hàng, hội thoại, video và bài đăng nằm trong MỘT container
+Toàn bộ đơn hàng, hội thoại, khách hàng và tri thức nằm trong MỘT container
 Postgres. Không có bản sao nào. Volume hỏng, hoặc ai đó gõ nhầm
 `docker compose down -v`, là mất sạch — và đây là loại mất mát KHÔNG SỬA
 ĐƯỢC SAU. Mọi lỗi khác trong hệ thống này đều còn cứu vãn; lỗi này thì không.

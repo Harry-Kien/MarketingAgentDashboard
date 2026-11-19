@@ -113,23 +113,6 @@ async def _kiem_embedding_khop() -> dict:
     return _muc("Embedding kho tri thức", TOT, hien)
 
 
-async def _kiem_giong_doc() -> dict:
-    from agent.video import tts
-
-    try:
-        ch = await asyncio.wait_for(tts.chan_doan(), timeout=60)
-    except Exception as exc:  # noqa: BLE001
-        return _muc("Giọng đọc", CANH_BAO, f"không dò được: {type(exc).__name__}")
-
-    if ch.get("viettts"):
-        return _muc("Giọng đọc", TOT, "viet-tts")
-    if ch.get("google"):
-        return _muc("Giọng đọc", TOT, "Google Cloud TTS")
-    return _muc("Giọng đọc", CANH_BAO,
-                "không có nhà cung cấp nào — video sẽ CÂM và thời lượng chỉ "
-                "là ước lượng. " + (ch.get("ly_do_google") or ""))
-
-
 async def _tai_khoan_active_thieu_credential() -> list[str]:
     """
     Tài khoản mang nhãn `active` mà KHÔNG nạp nổi credential.
@@ -261,27 +244,6 @@ async def _kiem_kenh() -> dict:
                     f"{', '.join(bat)}: {type(exc).__name__}: {exc}"[:140])
 
 
-async def _kiem_hang_doi_video() -> dict:
-    try:
-        row = await db.fetchrow(
-            "SELECT count(*) FILTER (WHERE status = 'queued')                AS cho, "
-            "       count(*) FILTER (WHERE status IN "
-            "         ('claimed','looking','scripting','voicing','rendering')) AS dang, "
-            "       count(*) FILTER (WHERE status = 'failed' "
-            "         AND updated_at > now() - interval '24 hours')            AS hong "
-            "FROM videos"
-        ) or {}
-    except Exception as exc:  # noqa: BLE001
-        return _muc("Hàng đợi video", HONG, f"{type(exc).__name__}"[:100])
-
-    cho, dang, hong = int(row.get("cho") or 0), int(row.get("dang") or 0), int(row.get("hong") or 0)
-    ghi = f"{cho} chờ · {dang} đang dựng · {hong} lỗi trong 24h"
-    # Nhiều video xếp hàng mà không cái nào đang chạy = thợ nền đã chết.
-    if cho > 3 and dang == 0:
-        return _muc("Hàng đợi video", CANH_BAO, ghi + " — hàng đợi ứ, thợ nền có thể đã dừng")
-    return _muc("Hàng đợi video", TOT, ghi)
-
-
 # Dấu mốc mặt phẳng điều khiển (`scripts/cua_hang.py`) ghi vào volume dữ
 # liệu của cửa hàng sau MỖI lần làm THÀNH CÔNG. Cùng tên với `san_sang` và
 # `cua_hang` — tests/test_sao_luu_silo.py canh ba nơi không lệch nhau.
@@ -397,16 +359,19 @@ async def _kiem_sao_luu() -> dict:
 
 
 async def _kiem_kho_anh() -> dict:
-    from agent.core.tools import _catalog
-    from agent.video import catalog_images
+    # Đếm bằng ĐÚNG hàm `gui_anh_san_pham` dùng để chọn ảnh gửi khách. Đếm
+    # bằng một hàm khác (như bản cũ mượn của bộ dựng video) là con số nói
+    # "có ảnh" trong khi công cụ gửi ảnh không thấy tấm nào.
+    from agent.core.tools import _anh_san_pham, _catalog
 
     sp = _catalog().get("san_pham", [])
     if not sp:
         return _muc("Kho ảnh sản phẩm", CANH_BAO, "danh mục trống")
-    co = sum(1 for p in sp if catalog_images.anh_cua(p.get("ma", "")))
+    co = sum(1 for p in sp if _anh_san_pham(str(p.get("ma", ""))))
     ghi = f"{co}/{len(sp)} sản phẩm có ảnh"
     if co == 0:
-        return _muc("Kho ảnh sản phẩm", CANH_BAO, ghi + " — video sẽ chỉ là thẻ chữ")
+        return _muc("Kho ảnh sản phẩm", CANH_BAO,
+                    ghi + " — khách xin xem ảnh thì agent chỉ tả được bằng lời")
     return _muc("Kho ảnh sản phẩm", TOT, ghi)
 
 
@@ -632,9 +597,9 @@ async def tong_kiem() -> dict:
     """
     t0 = time.perf_counter()
     muc = await asyncio.gather(
-        _kiem_db(), _kiem_model(), _kiem_embedding_khop(), _kiem_giong_doc(), _kiem_kenh(),
+        _kiem_db(), _kiem_model(), _kiem_embedding_khop(), _kiem_kenh(),
         _kiem_cong_cong_khai(),
-        _kiem_hang_doi_video(), _kiem_sao_luu(), _kiem_kho_anh(),
+        _kiem_sao_luu(), _kiem_kho_anh(),
         _kiem_khach_gan_nhat(), _kiem_khach_cho_lau(),
         _kiem_erp(), _kiem_don_ket_erp(),
         return_exceptions=True,

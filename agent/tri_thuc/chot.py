@@ -21,7 +21,8 @@ không nổ nữa.
 
 KHÔNG chạy `kiem_tra_tuan_thu` lên tài liệu tri thức
 ----------------------------------------------------
-Cám dỗ là dùng lại bộ lọc cụm cấm của `agent/publish/service.py`. Sai:
+Cám dỗ là dùng lại một bộ lọc cụm cấm quảng cáo (bộ của tính năng đăng
+bài cũ — gỡ 19.11.2026 — hay `cham_mot_luot.tu_cam`). Sai:
 tài liệu "an toàn và chống chỉ định" BẮT BUỘC phải nhắc tới "trị mụn",
 "cam kết khỏi" — vì nhiệm vụ của nó là liệt kê những cụm bị cấm.
 

@@ -105,7 +105,10 @@ def test_nhan_vien_nhan_dung_tap_cua_vai_tro(csdl_kiem_thu):
 
     nguoi = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
     assert nguoi is not None
-    assert len(nguoi["quyen"]) == 19
+    # 19 dòng migration 0019 nạp cho Nhân viên, trừ `noi_dung.doc` đã gỡ
+    # khỏi danh mục ngày 19.11.2026 — dòng ấy còn trong CSDL nhưng bị lọc.
+    assert len(nguoi["quyen"]) == 18
+    assert "noi_dung.doc" not in nguoi["quyen"]
     assert "hoi_thoai.tra_loi" in nguoi["quyen"]
     assert "khach.xoa" not in nguoi["quyen"]
     assert "don.sua" not in nguoi["quyen"]
@@ -157,7 +160,7 @@ def test_thu_quyen_co_hieu_luc_o_request_ke_tiep(csdl_kiem_thu):
         return truoc, sau
 
     truoc, sau = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
-    assert len(truoc["quyen"]) == 19
+    assert len(truoc["quyen"]) == 18
     assert sau["quyen"] == frozenset(), "thu quyền rồi mà request sau vẫn có"
 
 
@@ -181,4 +184,4 @@ def test_quyen_mo_coi_trong_csdl_bi_loc_bo(csdl_kiem_thu):
 
     nguoi = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
     assert "quyen_cu.da_xoa" not in nguoi["quyen"]
-    assert len(nguoi["quyen"]) == 19
+    assert len(nguoi["quyen"]) == 18

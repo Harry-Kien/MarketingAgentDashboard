@@ -19,7 +19,7 @@ class KyNang:
     """Một kỹ năng có sẵn, mô tả bằng ngôn ngữ người vận hành hiểu."""
 
     ten: str
-    nhom: str            # tu_van | don_hang | sau_ban | marketing | con_nguoi
+    nhom: str            # tu_van | don_hang | sau_ban | con_nguoi
     muc_rui_ro: str      # doc | ghi_nhan | hanh_dong
     tom_tat: str         # một câu, hiện trên dashboard
     tat_thi_mat_gi: str  # hậu quả khi tắt — người vận hành phải đọc trước khi tắt
@@ -35,7 +35,9 @@ class KyNang:
 #   hanh_dong  có hậu quả thật, ra ngoài hệ thống — sai thì phải đi gỡ
 MUC_RUI_RO = ("doc", "ghi_nhan", "hanh_dong")
 
-NHOM = ("tu_van", "don_hang", "sau_ban", "marketing", "con_nguoi")
+# Nhóm `marketing` từng chứa `tao_video`; gỡ cùng tính năng video ngày
+# 19.11.2026 vì hệ thống chỉ còn làm chăm sóc khách hàng.
+NHOM = ("tu_van", "don_hang", "sau_ban", "con_nguoi")
 
 
 # KỸ NĂNG KHÔNG BAO GIỜ ĐƯỢC TẮT.
@@ -150,13 +152,6 @@ SO_DANG_KY: tuple[KyNang, ...] = (
             "chạy an toàn nhất trong tuần đầu vận hành thật."
         ),
         can_erp=True,
-    ),
-    KyNang(
-        ten="tao_video",
-        nhom="marketing",
-        muc_rui_ro="ghi_nhan",
-        tom_tat="Đặt hàng dựng video marketing. Luôn dừng ở chờ duyệt.",
-        tat_thi_mat_gi="Không đặt được video từ hội thoại. Dashboard vẫn đặt được.",
     ),
     KyNang(
         ten="chuyen_nhan_vien",

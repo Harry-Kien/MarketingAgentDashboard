@@ -219,31 +219,9 @@ class Settings(BaseSettings):
     credential_master_keys: str = ""
     credential_active_key_version: int = 1
 
-    # --- TTS ---
-    # auto = thử viet-tts trước, không có thì dùng Google Cloud TTS.
-    # viettts | google = ép dùng đúng một nhà cung cấp.
-    tts_provider: str = "auto"
-    tts_base_url: str = "http://localhost:8298/v1"
-    tts_voice: str = "nu-nhe-nhang"
-    # Giọng Google Cloud TTS. Cần bật API trước (tính tiền theo ký tự):
-    #   gcloud services enable texttospeech.googleapis.com
-    google_tts_voice: str = "vi-VN-Neural2-A"
-
-    # --- Video ---
-    video_studio_dir: str = "./video-studio"
-    video_output_dir: str = "./data/videos"
-    ffprobe_bin: str = "ffprobe"
-    # Bậc Veo TẮT theo mặc định. Veo tính tiền theo giây video sinh ra, nên
-    # không được phép tự chạy chỉ vì có ảnh trong tay. Điền tên model (ví dụ
-    # `veo-3.1-generate-preview`) mới bật.
-    veo_model: str = ""
-    # Bậc HyperFrames cũng TẮT theo mặc định, nhưng vì lý do khác Veo: nó
-    # chưa dựng được lớp giọng đọc trong composition. Bật khi hình đẹp quan
-    # trọng hơn tiếng, hoặc sau khi đã làm xong phần âm thanh cho nó.
-    hyperframes_bat: bool = False
-    # Số video dựng cùng lúc. Để 1: ffmpeg ăn CPU nặng, mà nó chạy chung
-    # tiến trình với việc trả lời khách — việc trước mặt khách ưu tiên hơn.
-    video_workers: int = 1
+    # Giọng đọc (TTS) và dựng video đã GỠ ngày 19.11.2026 — hệ thống chỉ còn
+    # làm chăm sóc khách. `.env` cũ còn TTS_*/VIDEO_*/VEO_* thì vô hại:
+    # `extra="ignore"` ở trên bỏ qua khoá lạ.
 
     # --- Sao lưu ---
     # Mất dữ liệu là loại hỏng DUY NHẤT trong hệ thống này không sửa được
@@ -261,28 +239,12 @@ class Settings(BaseSettings):
     # ổ cứng hỏng hay máy mất là mất cả dữ liệu lẫn bản sao.
     sao_luu_thu_muc_ngoai: str = ""
 
-    # --- Phân phối nội dung lên mạng xã hội ---
-    # Đường đi ưu tiên: n8n -> API chính thức -> hàng đợi thủ công.
-    # n8n giữ OAuth của Facebook/TikTok, hệ thống này không giữ token dài hạn.
-    n8n_webhook_url: str = ""
-    n8n_auth_header: str = ""
-    # URL mà n8n / Instagram gọi ngược lại được. Trong Docker Desktop phải
-    # là host.docker.internal, không phải localhost.
+    # --- Địa chỉ công khai ---
+    # URL mà Zalo OA / Meta gọi ngược lại được (webhook, OAuth callback).
+    # Trong Docker Desktop phải là host.docker.internal, không phải localhost.
+    # Phân phối bài lên mạng xã hội (n8n, Meta Page, TikTok) đã GỠ ngày
+    # 19.11.2026 cùng các khoá N8N_*/FB_PAGE_*/IG_USER_ID/TIKTOK_*.
     public_base_url: str = "http://host.docker.internal:8000"
-
-    # Meta — để rỗng là tắt. Cần Business Verification + App Review.
-    fb_page_id: str = ""
-    fb_page_token: str = ""
-    ig_user_id: str = ""
-
-    # TikTok — để rỗng là tắt. Cần audit Content Posting API.
-    # Chưa audit thì BẮT BUỘC để SELF_ONLY, đăng public sẽ bị từ chối.
-    tiktok_access_token: str = ""
-    tiktok_privacy: str = "SELF_ONLY"
-
-    # Bài đăng KHÔNG BAO GIỜ tự đi khi chưa có người duyệt. Đổi thành true
-    # là chấp nhận rủi ro đăng nội dung sai lên trang thật.
-    tu_dong_dang_khong_can_duyet: bool = False
 
     # --- Langfuse ---
     langfuse_public_key: str = ""
@@ -532,18 +494,6 @@ class Settings(BaseSettings):
     odoo_db: str = ""
     odoo_dang_nhap: str = ""
     odoo_api_key: str = ""
-
-    @property
-    def studio_path(self) -> Path:
-        p = Path(self.video_studio_dir)
-        return p if p.is_absolute() else ROOT / p
-
-    @property
-    def video_out_path(self) -> Path:
-        p = Path(self.video_output_dir)
-        p = p if p.is_absolute() else ROOT / p
-        p.mkdir(parents=True, exist_ok=True)
-        return p
 
     @property
     def langfuse_on(self) -> bool:

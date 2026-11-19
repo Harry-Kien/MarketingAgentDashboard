@@ -71,7 +71,7 @@ def dung_goi_bao_dong(truong: dict, mau: str = "") -> dict:
     --------------
     Mỗi nơi nhận đòi một dạng khác: chỗ này cần `text`, chỗ kia cần
     `content`, chỗ khác cần thêm định danh phòng chat. Gắn cứng một hãng vào
-    đây là nhốt quyết định VẬN HÀNH vào mã — cùng lý do với PublishAdapter,
+    đây là nhốt quyết định VẬN HÀNH vào mã — cùng lý do với lớp kênh,
     và có test canh đúng điều đó.
 
     Bắt người dùng dựng thêm một dịch vụ trung gian chỉ để đổi tên ba trường
@@ -116,7 +116,7 @@ async def _bao(muc_do: str, tieu_de: str, chi_tiet: str, kq: dict) -> None:
 
     Đi qua một webhook chứ không gửi thẳng Zalo hay email: nơi nhận là việc
     của doanh nghiệp, và n8n đã chạy sẵn để định tuyến đi đâu tuỳ ý. Cùng
-    lý do với PublishAdapter — không nhốt một quyết định vận hành vào mã.
+    lý do với lớp kênh — không nhốt một quyết định vận hành vào mã.
     """
     await db.log_event(
         "canh_gac", actor="he_thong",

@@ -7,7 +7,7 @@ Bốn chỗ tự khai phiên bản, và chúng LỆCH NHAU:
 
     agent/channels/meta_channels.py   v23.0   <- adapter gửi/nhận tin
     agent/config.py                   v21.0
-    agent/publish/meta.py             v21.0
+    agent/publish/meta.py             v21.0   (đã gỡ 19.11.2026 cùng đăng bài)
     agent/api/oauth_meta.py           v21.0   <- OAuth và đăng ký webhook
 
 Nghĩa là một nửa hệ thống nói chuyện với Meta bằng một hợp đồng, nửa kia
@@ -96,18 +96,16 @@ def test_moi_noi_deu_lay_cung_mot_gia_tri():
     from agent.api.oauth_meta import GRAPH_VERSION
     from agent.channels.dang_ky_webhook_meta import GRAPH_BASE
     from agent.config import settings
-    from agent.publish.meta import GRAPH
 
     assert GRAPH_VERSION == settings.graph_version
     assert GRAPH_BASE == settings.graph_base
-    assert GRAPH == settings.graph_base
 
 
 def test_doi_mot_dong_la_doi_toan_he_thong(monkeypatch):
     """
     Phép thử thật của "một nguồn": đổi cấu hình thì mọi chỗ đi theo.
 
-    `GRAPH_VERSION` và `GRAPH` đọc giá trị lúc nạp module nên không đổi theo
+    `GRAPH_VERSION` đọc giá trị lúc nạp module nên không đổi theo
     — nhưng `graph_base` là property, và đó là thứ các adapter dựng URL từ đó
     tại thời điểm gọi.
     """

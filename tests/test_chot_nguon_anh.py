@@ -49,7 +49,7 @@ def test_anh_sinh_gui_duoc_khi_con_du_lieu_mau():
 
 def test_anh_sinh_BI_CHAN_khi_danh_muc_da_la_hang_that():
     """
-    `agent/video/catalog_images.py` nói rõ: khi bán hàng thật, ảnh chụp
+    Ảnh sinh chỉ là hình minh hoạ cho bộ mẫu: khi bán hàng thật, ảnh chụp
     thật phải thay vào, vì "khách nhận hàng khác với hình đã xem là chuyện
     không sửa được bằng lời xin lỗi".
 

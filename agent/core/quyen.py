@@ -104,14 +104,29 @@ QUYEN: dict[str, str] = {
     "don.doc": "Xem đơn hàng và tồn kho",
     "don.sua": "Duyệt, huỷ đơn; nhập kho, kiểm kê",
 
-    "noi_dung.doc": "Xem và soạn video, bài đăng",
-    "noi_dung.duyet": "Duyệt đăng nội dung công khai",
-
     "bao_cao.doc": "Xem báo cáo, số đo và chi phí",
 
     "nguoi_dung.doc": "Xem danh sách nhân viên",
     "nguoi_dung.sua": "Tạo, khoá nhân viên; sửa vai trò và quyền",
 }
+
+# Quyền ĐÃ GỠ khỏi danh mục. Không bao giờ được dùng lại tên này.
+#
+# `noi_dung.*` canh màn video và đăng bài — gỡ ngày 19.11.2026 khi chủ dự án
+# chốt hệ thống chỉ làm chăm sóc khách hàng.
+#
+# VÌ SAO KHÔNG XOÁ DÒNG TRONG CSDL MÀ GIỮ DANH SÁCH NÀY
+# ----------------------------------------------------
+# `vai_tro_quyen` của cửa hàng đang chạy vẫn còn dòng `noi_dung.doc` (migration
+# 0019 nạp nó cho vai trò Nhân viên), và migration thì đã chốt checksum —
+# không sửa được. Không cần xoá: mọi chỗ đọc quyền (`xac_thuc.doc_phien`,
+# màn vai trò, màn giải thích quyền) đã lọc theo `QUYEN`, nên dòng mồ côi
+# không cấp gì; lưu lại vai trò thì nó tự rơi khỏi CSDL.
+#
+# Danh sách này để hai việc: test cho phép migration cũ nhắc các tên ấy, và
+# test cấm đặt lại đúng tên ấy cho một quyền MỚI — dùng lại tên là mọi vai
+# trò còn dòng cũ bỗng có quyền mới mà không ai cấp.
+QUYEN_DA_GO: frozenset[str] = frozenset({"noi_dung.doc", "noi_dung.duyet"})
 
 # Route không cần quyền. Khai TỪNG CÁI, không dùng mẫu tiền tố.
 #
@@ -136,7 +151,6 @@ MIEN_TRU: frozenset[tuple[str, str]] = frozenset({
     ("GET", "/api/he-thong"),
     ("GET", "/api/connect/meta/callback"),   # xác thực bằng state token
     ("GET", "/api/connect/zalo-oa/callback"),  # xác thực bằng state + PKCE
-    ("POST", "/api/posts/{post_id}/callback"),  # xác thực bằng vé một lần
 })
 
 def moi_route(gom) -> Iterator:

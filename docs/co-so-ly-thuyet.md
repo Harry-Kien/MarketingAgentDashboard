@@ -76,7 +76,7 @@ tham số mô hình, và cũng không nên nằm trong kho tri thức tĩnh.
 dữ liệu, nó phát ra lời gọi hàm thay vì tự trả lời, hệ thống thực thi rồi
 trả kết quả vào vòng hội thoại (Schick và cộng sự, 2023).
 
-**Trong hệ thống này.** 11 công cụ trong
+**Trong hệ thống này.** 10 công cụ trong
 [`agent/core/tools.py`](../agent/core/tools.py). Nguyên tắc kiến trúc: *giá,
 tồn kho, tình trạng đơn CHỈ đến từ công cụ* — thiếu căn cứ thì chuyển
 người, không suy đoán.

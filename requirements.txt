@@ -21,8 +21,9 @@ uvicorn[standard]==0.52.4
 pydantic==2.13.4
 pydantic-settings==2.15.0
 httpx==0.28.1
-# FastAPI cần cái này để nhận file tải lên (ảnh sản phẩm). Không import
-# trực tiếp ở đâu, nhưng thiếu là endpoint upload trả 500.
+# FastAPI cần cái này để nhận file tải lên (tệp nhân viên gửi khách, gói
+# kỹ năng). Không import trực tiếp ở đâu, nhưng thiếu là endpoint upload
+# trả 500.
 python-multipart==0.0.32
 python-dotenv==1.2.4
 
@@ -73,11 +74,6 @@ mcp[cli]==2.3.0
 # thì import này gãy mà không ai ngờ. Cái gì mình import thì mình khai.
 httpx2==2.12.0
 
-# --- Video ----------------------------------------------------
-# Chuẩn hoá ảnh sản phẩm (xoay theo EXIF, xoá EXIF, hạ kích thước) và vẽ
-# toàn bộ bố cục chữ — xem agent/video/renderers/layout.py.
-pillow==13.0.0
-
 # --- Dữ liệu doanh nghiệp -------------------------------------
 # Đọc/ghi Excel cho ba script nạp danh mục và bổ sung tư vấn
 # (`nap_catalog_tu_excel`, `sinh_mau_bo_sung`, `nap_bo_sung_tu_van`).
@@ -96,6 +92,8 @@ pyyaml==6.0.3
 # langfuse: từng có trong danh sách nhưng KHÔNG được import ở bất kỳ đâu.
 # Quan sát chi phí giờ dựng từ bảng `messages` — xem GET /api/cost. Container
 # Langfuse cũng đã chuyển vào profile "trace" nên không tự chạy nữa.
+# pillow: chỉ bộ dựng video và kho ảnh sinh dùng (chuẩn hoá ảnh, vẽ chữ lên
+# khung hình). Gỡ cùng tính năng video ngày 19.11.2026.
 
 # Vẽ mã VietQR (SVG/PNG) cho đơn hàng. Thuần Python, BSD-3 — không kéo
 # theo Pillow. Tự vẽ thay vì gọi dịch vụ ảnh QR ngoài: xem

@@ -1,6 +1,6 @@
 # tests/test_thu_nghiem.py
 """
-Chế độ thử: bốn công cụ có tác dụng phụ phải bị mô phỏng, không chạm gì.
+Chế độ thử: ba công cụ có tác dụng phụ phải bị mô phỏng, không chạm gì.
 
 Phòng thử gọi thẳng `respond()`; nếu `tao_don_hang` trong đó chạy thật thì
 mỗi câu thử là một đơn thật nằm trong Postgres và ERP. Chốt nằm ở `run_tool`
@@ -60,7 +60,6 @@ def test_trong_sandbox_khong_cham_csdl(monkeypatch, ten):
             "khach_dia_chi": "12 Nguyễn Trãi, Thanh Xuân, Hà Nội",
             "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 2}],
         },
-        "tao_video": {"tieu_de": "Thử", "yeu_cau": "giới thiệu", "loai": "explainer"},
         "xin_huy_don": {"ma_don": "DH-1", "ly_do": "đổi ý"},
         "xin_doi_tra": {"ma_don": "DH-1", "ly_do": "lỗi", "loai": "doi"},
     }[ten]
@@ -97,18 +96,18 @@ def test_mo_phong_don_hang_van_bat_xac_nhan_va_ma_hang():
 
 
 def test_ngoai_sandbox_run_tool_khong_re_nhanh(monkeypatch):
-    # Chữ ký khớp `_tao_video(args, products, conversation_id)` thật —
+    # Chữ ký khớp `_xin_huy_don(args, conversation_id)` thật —
     # ghi tên qua closure vì tham số không mang tên công cụ.
     goi = []
 
-    async def gia(args, products, conversation_id):
-        goi.append("tao_video")
-        return {"dat_duoc": True}
+    async def gia(args, conversation_id):
+        goi.append("xin_huy_don")
+        return {"da_ghi_nhan": True}
 
     monkeypatch.setattr(tools, "_catalog_song", lambda: _catalog_gia())
-    monkeypatch.setattr(tools, "_tao_video", gia)
-    kq = chay(tools.run_tool("tao_video", {"tieu_de": "x"}, conversation_id=None))
-    assert goi == ["tao_video"] and "thu_nghiem" not in kq
+    monkeypatch.setattr(tools, "_xin_huy_don", gia)
+    kq = chay(tools.run_tool("xin_huy_don", {"ma_don": "DH-1"}, conversation_id=None))
+    assert goi == ["xin_huy_don"] and "thu_nghiem" not in kq
 
 
 def test_so_chi_phi_thu_cong_don_va_tran(monkeypatch):
@@ -188,10 +187,10 @@ def test_mo_phong_bat_sdt_va_dia_chi_nhu_that():
 # Nay tập công cụ ghi được DẪN RA từ `tools.py`: nhánh nào của `_run_tool_that`
 # (thân sandbox thật sự — `run_tool` chỉ còn là lớp bọc ghi số đo) gọi một
 # hàm mà thân hàm ấy (hoặc thân hàm `_` nó gọi tiếp) có chạm `db.execute`,
-# có chuỗi SQL ghi, có `giu_hang` hay `request_video` thì tên công cụ của
+# có chuỗi SQL ghi, hay có `giu_hang` thì tên công cụ của
 # nhánh đó PHẢI nằm trong `CO_TAC_DUNG_PHU`.
 _SQL_GHI = ("INSERT INTO", "UPDATE ", "DELETE FROM")
-_HAM_GHI = ("giu_hang", "request_video")
+_HAM_GHI = ("giu_hang",)
 
 
 def _ten_ham_duoc_goi(nut: ast.AST) -> str | None:

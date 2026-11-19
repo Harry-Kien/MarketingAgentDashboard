@@ -5,7 +5,7 @@ Mỗi ràng buộc ở đây là một cách hỏng IM LẶNG khi host:
 - image lọt .env → mọi cửa hàng mang khoá của máy phát triển;
 - chạy root → một lỗ ở đường xử lý tệp khách gửi là chiếm cả container;
 - shell script CRLF → container chết với "not found", trỏ sai hướng;
-- hai tiến trình app một cửa hàng → outbox và lịch đăng bài chạy đôi.
+- hai tiến trình app một cửa hàng → outbox và hộp thư bền chạy đôi.
 """
 from __future__ import annotations
 

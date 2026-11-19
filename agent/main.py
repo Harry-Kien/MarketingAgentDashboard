@@ -62,8 +62,6 @@ from agent.config import ROOT, settings
 from agent import canh_gac
 from agent import quan_sat
 from agent.core import (du_lieu_ca_nhan, quyen, xac_thuc)
-from agent.publish import registry as pub_registry
-from agent.publish import service as post_service
 from agent.omnichannel.outbox import PostgresOutboxRepository
 from agent.omnichannel.sla import PostgresSlaRepository, SlaMonitor, sla_loop
 from agent.omnichannel.auto_routing import (
@@ -72,7 +70,6 @@ from agent.omnichannel.auto_routing import (
     PostgresAutoRoutingRepository,
     auto_routing_loop,
 )
-from agent.video import worker as video_worker
 from agent.workers.outbox_worker import OutboxProcessor, outbox_loop
 
 DASHBOARD_DIR = ROOT / "dashboard"
@@ -368,26 +365,6 @@ async def giu_phien_zalo_loop() -> None:
         await asyncio.sleep(GIU_PHIEN_ZALO_MOI_GIAY)
 
 
-async def schedule_loop() -> None:
-    """
-    Đăng những bài ĐÃ DUYỆT và đã tới giờ hẹn.
-
-    Chỉ đụng tới trạng thái `da_len_lich` — bài chưa duyệt không bao giờ
-    lọt vào đây, dù có lịch hẹn hay không. Hẹn giờ là tiện lợi, không phải
-    đường vòng qua khâu duyệt.
-    """
-    while True:
-        try:
-            for row in await post_service.den_gio_dang():
-                await post_service.dang_bai(str(row["id"]), boi="lich_hen")
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            await db.log_event("schedule.error",
-                               error=f"{type(exc).__name__}: {exc}"[:200])
-        await asyncio.sleep(30)
-
-
 async def backup_loop() -> None:
     """
     Sao lưu CSDL mỗi ngày một lần.
@@ -522,7 +499,7 @@ async def lifespan(app: FastAPI):
     # ĐỌC: và thứ ba được khởi động:
     # ĐỌC:
     # ĐỌC:   nhịp 1 · đồng bộ, trước mặt khách  → agent/omnichannel/xu_ly_tin_vao.py:handle_inbound
-    # ĐỌC:   nhịp 2 · hàng đợi bền vững         → outbox_loop, video_worker
+    # ĐỌC:   nhịp 2 · hàng đợi bền vững         → outbox_loop, hop_thu_ben
     # ĐỌC:   nhịp 3 · định kỳ, quan sát         → canh_gac, backup, don_du_lieu
     # ĐỌC:
     # ĐỌC: `chay_nen` là lý do quan trọng: chạy nhiều bản app sau bộ cân bằng
@@ -608,7 +585,6 @@ async def lifespan(app: FastAPI):
                      "connector native — chỉ nên bật khi đang migration",
         )
         poller = _nen(poll_loop())
-    _nen(schedule_loop())
     _nen(don_du_lieu_loop())
     # Canh gác: phát hiện SUY GIẢM (model chết, kênh mất kết nối, sao
     # lưu cũ). KHÔNG phát hiện được chính tiến trình này chết — lúc đó
@@ -626,11 +602,6 @@ async def lifespan(app: FastAPI):
 
     _nen(vong_dong_bo_loop())
     _nen(vong_doi_soat_loop())
-    # Thợ dựng video: nhặt lại việc dở dang của lần chạy trước rồi chạy tiếp.
-    # Không có bước này thì app tắt giữa chừng là video chết cứng ở trạng
-    # thái dở, không ai nhặt lại và không dòng lỗi nào.
-    video_workers = await video_worker.start() if chay_nen else []
-    tasks_nen.extend(video_workers)
     _nen(backup_loop())
 
     # Vòng đời của MCP phải chạy TRONG vòng đời app, không tự chạy được.
@@ -663,7 +634,6 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await task
 
-    await pub_registry.dong_tat_ca()
     await zalo_acc.aclose()
     await channels.dong_tat_ca()
     await db.close_db()
@@ -697,15 +667,12 @@ _MO = (
     "/api/connect/zalo-oa/callback",
 )
 
-# n8n gọi về báo kết quả đăng bài. Đường có THAM SỐ trong path nên không so
-# bằng `in _MO` được — phải khớp mẫu.
-#
-# Bên gọi là một tiến trình, không phải người, nên nó không có cookie phiên.
-# Chốt thay thế là vé một lần kiểm NGAY TRONG endpoint — xem
-# `agent/publish/service.py::kiem_ve_callback`.
-_MO_MAU = (
-    re.compile(r"^/api/posts/[0-9a-fA-F-]{36}/callback$"),
-)
+# Đường mở có THAM SỐ trong path — không so bằng `in _MO` được, phải khớp
+# mẫu. Hiện RỖNG: mẫu duy nhất từng có là callback n8n báo kết quả đăng
+# bài, gỡ cùng tính năng đăng bài ngày 19.11.2026. Giữ cơ chế (và các test
+# canh mẫu phải neo hai đầu) để lần sau ai cần mở một đường có tham số thì
+# đi đúng lối có canh, không chế lối riêng.
+_MO_MAU: tuple[re.Pattern[str], ...] = ()
 
 
 HANG_VAN_CHUYEN = ("ghn", "ghtk", "mock")
@@ -1213,13 +1180,6 @@ async def _xu_ly_su_kien_chatwoot(payload: dict, account_id=None) -> None:
 #  Giao diện
 # ---------------------------------------------------------------
 
-# Video tĩnh — n8n và Instagram Graph API cần TẢI ĐƯỢC file qua HTTP,
-# không nhận đường dẫn ổ đĩa. Phải mount TRƯỚC "/" vì mount "/" nuốt hết.
-_VIDEO_DIR = settings.video_out_path
-if _VIDEO_DIR.exists():
-    app.mount("/media/videos",
-              StaticFiles(directory=str(_VIDEO_DIR)), name="media-videos")
-
 @app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
 async def _mcp_them_gach_cheo(request: Request):
     """
@@ -1320,10 +1280,6 @@ class _GiaoDienLuonHoiLai(StaticFiles):
     `no-cache` KHÔNG phải "đừng lưu đệm". Nó là "lưu được, nhưng phải hỏi lại
     trước khi dùng". ETag vẫn còn nên lần hỏi lại trả 304 rỗng — gần như
     miễn phí, và luôn đúng bản.
-
-    Video KHÔNG đi qua lớp này: chúng bất biến sau khi dựng và nặng hàng
-    megabyte, bắt hỏi lại mỗi lần là đốt băng thông cho một câu trả lời luôn
-    giống nhau.
     """
 
     def file_response(self, *args, **kwargs):  # noqa: D102

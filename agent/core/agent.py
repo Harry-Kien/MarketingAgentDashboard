@@ -80,10 +80,9 @@ class Reply:
     cache_read: int = 0
     latency_ms: int = 0
     model: str = ""
-    video_id: str | None = None
     # Ảnh agent muốn gửi kèm. Tool chỉ BÁO, lớp kênh trong main.py mới gửi
     # — tool không biết mình đang chạy trên Zalo hay Chatwoot, và không nên
-    # biết. Cùng cách `video_id` được xử lý.
+    # biết.
     anh_can_gui: list[dict] = field(default_factory=list)
     # Dấu vết cho phòng thử và bộ đo: agent ĐÃ LÀM GÌ, không chỉ nói gì.
     # Mặc định rỗng để mọi chỗ dựng Reply hiện có không phải đổi.
@@ -855,7 +854,6 @@ async def respond(
     da_thuc = False   # đã nhắc model gọi công cụ chưa (chỉ nhắc một lần)
     escalate = False
     escalate_reason = ""
-    video_id: str | None = None
     anh_can_gui: list[dict] = []
     final_text = ""
     luoi_bat: str | None = None
@@ -1056,18 +1054,6 @@ async def respond(
                     # tự chèn link ảnh markdown trỏ vào ổ đĩa của máy chủ.
                     out = {k: v for k, v in out.items() if k != "duong_dan"}
 
-                # Trong phòng thử KHÔNG đặt video thật — tool đã mô phỏng, đây là lớp thứ hai.
-                if call["name"] == "tao_video" and out.get("da_nhan") and not dang_thu:
-                    from agent.video import pipeline
-
-                    video_id = await pipeline.request_video(
-                        title=tham_so.get("tieu_de", "Video"),
-                        brief=tham_so.get("yeu_cau", ""),
-                        kind=tham_so.get("loai", "explainer"),
-                        conversation_id=conversation_id,
-                    )
-                    out["video_id"] = video_id
-
                 # Kết quả công cụ đi NGƯỢC về model (tra đơn trả về SĐT, địa chỉ):
                 # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
                 tool_results.append(
@@ -1186,7 +1172,6 @@ async def respond(
         cache_read=cache_read,
         latency_ms=latency,
         model=settings.model_chat,
-        video_id=video_id,
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
         goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
     )

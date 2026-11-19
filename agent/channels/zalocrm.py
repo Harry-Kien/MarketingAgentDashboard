@@ -221,7 +221,7 @@ class ZaloCRMAdapter(ChannelAdapter):
         """
         if not os.path.exists(path):
             return Delivery(False, f"không thấy file: {path}")
-        note = f"{caption}\n[Video đã dựng xong: {os.path.basename(path)}]".strip()
+        note = f"{caption}\n[Tệp đính kèm: {os.path.basename(path)}]".strip()
         result = await self.send_text(conversation_ref, note)
         if result.ok:
             return Delivery(True, "đã gửi thông báo (API chưa hỗ trợ đính kèm file)")

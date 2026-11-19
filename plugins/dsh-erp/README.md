@@ -122,7 +122,7 @@ Gemini/Vertex mà agent chăm sóc khách đang dùng.
 
 ## Nối được thì thấy gì
 
-11 công cụ. Danh sách nguồn sự thật là `agent/mcp_server.py`; bảng dưới chỉ
+7 công cụ, đều chỉ ĐỌC. Danh sách nguồn sự thật là `agent/mcp_server.py`; bảng dưới chỉ
 để đọc, và `tests/test_plugin_dsh_erp.py` canh hai bên không trôi.
 
 | Nhóm | Công cụ |
@@ -130,7 +130,7 @@ Gemini/Vertex mà agent chăm sóc khách đang dùng.
 | Kho / sản phẩm | `tra_cuu_san_pham` · `goi_y_san_pham` · `ton_kho_realtime` · `suc_khoe_erp` |
 | Đơn hàng | `tra_cuu_don_hang` |
 | Tri thức | `tim_trong_kho_tri_thuc` |
-| Nội dung | `hieu_qua_bai_dang` · `danh_sach_bai_dang` · `soan_bai_dang` · `dua_bai_vao_hang_doi` · `kiem_tra_tuan_thu_quang_cao` |
+| Tuân thủ | `kiem_tra_tuan_thu_quang_cao` |
 
 ### Không có công cụ nào chốt đơn, và đó là ràng buộc
 
@@ -139,7 +139,8 @@ trong `agent/core/agent.py`, không có trần chi phí, không có lưới an t
 chuyển người.
 
 Cho nó quyền chốt đơn hay nhắn tin cho khách là giao chìa khoá cho một người
-lạ. `soan_bai_dang` có ghi, nhưng bài luôn dừng ở `cho_duyet` — người duyệt.
+lạ. Công cụ bài đăng (soạn, xếp hàng, xem hiệu quả) đã gỡ ngày 19.11.2026
+cùng tính năng đăng bài.
 
 Muốn lên đơn thì đi qua agent, hoặc qua dashboard nơi có người thật bấm nút.
 

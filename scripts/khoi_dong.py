@@ -13,13 +13,13 @@ Cái vẫn chạy đầy đủ:
 
     Zalo cá nhân   sidecar gọi thẳng 127.0.0.1:8000, không đi qua tunnel.
                    Đo được: 34/39 tin khách vào bằng đúng đường này.
-    Dashboard, agent tự trả lời, ERP, sao lưu, hàng đợi video
+    Dashboard, agent tự trả lời, ERP, sao lưu
 
 Cái mất — và chỉ mất CHIỀU NHẬN:
 
     Zalo OA, Facebook   máy chủ của họ gọi vào ta, nên cần địa chỉ công
                         khai. Chiều GỬI vẫn chạy, vì nó đi ra bằng API.
-    Callback OAuth Meta, link media khi đăng bài
+    Callback OAuth Meta
 
 VÌ SAO CẦN LỆNH NÀY
 -------------------
@@ -325,8 +325,8 @@ def buoc_bo_tunnel() -> tuple[bool, str, bool]:
     này: 34/39 tin khách vào qua đúng đường ấy.
 
     Mất là mất chiều NHẬN của Zalo OA và Facebook (Meta gọi từ máy chủ của
-    họ nên bắt buộc cần địa chỉ công khai), cùng callback OAuth Meta và link
-    media khi đăng bài. Chiều GỬI của cả hai vẫn chạy — nó đi ra bằng API,
+    họ nên bắt buộc cần địa chỉ công khai), cùng callback OAuth Meta.
+    Chiều GỬI của cả hai vẫn chạy — nó đi ra bằng API,
     không cần ai gọi vào.
     """
     truoc = _doc_env("PUBLIC_BASE_URL")

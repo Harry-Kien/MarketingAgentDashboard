@@ -155,7 +155,7 @@ def test_chi_agent_gui_chu_khach_sang_model():
     goc = Path(__file__).resolve().parent.parent / "agent"
     goi = sorted(str(p.relative_to(goc)).replace("\\", "/") for p in goc.rglob("*.py")
                  if p.name != "llm.py" and re.search(r"llm\.complete\(", p.read_text(encoding="utf-8")))
-    assert goi == ["core/agent.py", "publish/copywriter.py", "video/pipeline.py", "video/vision.py"], goi
+    assert goi == ["core/agent.py"], goi
 
 
 

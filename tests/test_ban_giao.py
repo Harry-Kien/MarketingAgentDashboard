@@ -237,8 +237,10 @@ def test_bao_nhan_vien_hong_cung_phai_keu(monkeypatch):
 
 
 def test_cau_bao_khong_hua_hen_gi():
-    from agent.publish.service import kiem_tra_tuan_thu
-    assert not kiem_tra_tuan_thu(settings.tin_chuyen_nguoi)
+    # Câu này đi thẳng tới khách — soi bằng đúng bộ soi cụm cấm của mọi
+    # đường chữ tới khách (mẫu trả lời nhanh, bản nháp người sửa).
+    from agent.core.cham_mot_luot import tu_cam_hai_dang
+    assert not tu_cam_hai_dang(settings.tin_chuyen_nguoi)
     thap = settings.tin_chuyen_nguoi.lower()
     for cam in ("phút", "giờ", "ngay lập tức", "chắc chắn"):
         assert cam not in thap, f"câu báo đang hứa {cam!r} — không giữ được"

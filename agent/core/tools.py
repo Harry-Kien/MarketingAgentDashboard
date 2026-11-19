@@ -250,37 +250,6 @@ TOOLS: list[dict] = [
         },
     },
     {
-        "name": "tao_video",
-        "description": (
-            "Đặt hàng sản xuất một video marketing. Gọi khi khách hoặc nhân "
-            "viên yêu cầu làm video giới thiệu sản phẩm."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "tieu_de": {"type": "string", "description": "Tiêu đề ngắn"},
-                "yeu_cau": {
-                    "type": "string",
-                    "description": "Mô tả đầy đủ nội dung video cần làm",
-                },
-                "loai": {
-                    "type": "string",
-                    "enum": ["explainer", "product"],
-                },
-                "thoi_luong_giay": {"type": "integer"},
-                "ma_san_pham": {
-                    "type": "string",
-                    "description": (
-                        "Mã sản phẩm (ví dụ AS-SR01) nếu video nói về một sản "
-                        "phẩm cụ thể. Có mã thì hệ thống tự lấy ảnh sản phẩm "
-                        "trong kho để dựng hình."
-                    ),
-                },
-            },
-            "required": ["tieu_de", "yeu_cau"],
-        },
-    },
-    {
         "name": "tao_don_hang",
         "description": (
             "Lên đơn hàng cho khách. CHỈ gọi sau khi đã (1) tóm tắt đầy đủ đơn "
@@ -496,10 +465,11 @@ def _duoc_gui_anh(nguon: str, du_lieu_mau: bool) -> tuple[bool, str]:
 
     VÌ SAO ẢNH `sinh` PHỤ THUỘC `du_lieu_mau`, KHÔNG CẤM THẲNG
     ----------------------------------------------------------
-    `agent/video/catalog_images.py` nói rõ: ảnh model sinh dùng cho bản
-    nháp thì được, nhưng "khi bán hàng thật, ảnh chụp sản phẩm thật vẫn
+    Ảnh `sinh` là ảnh model vẽ cho bộ dữ liệu mẫu (bộ sinh ảnh đã gỡ cùng
+    tính năng video ngày 19.11.2026, ảnh cũ vẫn còn trong kho). Dùng cho
+    bản nháp thì được, nhưng khi bán hàng thật, ảnh chụp sản phẩm thật
     phải thay vào — khách nhận hàng khác với hình đã xem là chuyện không
-    sửa được bằng lời xin lỗi".
+    sửa được bằng lời xin lỗi.
 
     Dùng lại chính cờ `du_lieu_mau` mà `scripts/san_sang.py` dùng thay vì
     thêm một biến cấu hình mới: khi danh mục còn là dữ liệu mẫu thì đây là
@@ -909,9 +879,6 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
             "muc_do": args.get("muc_do", "thuong"),
         }
 
-    if name == "tao_video":
-        return await _tao_video(args, products, conversation_id)
-
     return {"loi": f"Không có công cụ tên {name}"}
 
 
@@ -1128,7 +1095,7 @@ async def _gui_anh_san_pham(args: dict, products: list[dict], catalog: dict) -> 
         return {"gui_duoc": False, "ly_do": vi_sao}
 
     # Tool KHÔNG tự gửi. Nó báo "gửi được" kèm đường dẫn; việc gửi do
-    # lớp kênh làm trong main.py — cùng cách `tao_video` báo `da_nhan`.
+    # lớp kênh làm trong main.py.
     # Tool không biết mình đang chạy trên Zalo hay Chatwoot, và không
     # nên biết.
     return {
@@ -1147,59 +1114,6 @@ async def _gui_anh_san_pham(args: dict, products: list[dict], catalog: dict) -> 
 # ===============================================================
 #  Lên đơn hàng — sáu chốt chặn
 # ===============================================================
-
-async def _tao_video(args: dict, products: list[dict], conversation_id) -> dict:
-    """
-    Đặt video THẬT vào hàng đợi.
-
-    Trước đây hàm này chỉ trả `{"da_nhan": True}` — agent nói với khách là đã
-    đặt video xong, nhưng không có video nào được tạo. Đó là kiểu hỏng tệ
-    nhất: hệ thống im lặng nói dối thay mặt doanh nghiệp.
-
-    Video luôn dừng ở trạng thái CHỜ DUYỆT, không bao giờ tự gửi cho khách.
-    """
-    from agent.video import catalog_images, pipeline
-
-    tieu_de = str(args.get("tieu_de", "")).strip()
-    yeu_cau = str(args.get("yeu_cau", "")).strip()
-    if not tieu_de or len(yeu_cau) < 10:
-        return {"dat_duoc": False, "ly_do": "Thiếu tiêu đề hoặc mô tả quá ngắn."}
-
-    # Mã sản phẩm phải có thật trong catalog. Model bịa mã thì dựng ra video
-    # không có ảnh, im lặng — thà báo lại để nó tra cứu trước.
-    ma = str(args.get("ma_san_pham", "")).strip().upper()
-    if ma:
-        biet = {str(p.get("ma", "")).upper() for p in products}
-        if ma not in biet:
-            return {
-                "dat_duoc": False,
-                "ly_do": f"Không có sản phẩm mã {ma}. Tra cứu sản phẩm trước.",
-            }
-
-    so_anh = len(catalog_images.anh_cua(ma)) if ma else 0
-
-    video_id = await pipeline.request_video(
-        title=tieu_de[:200],
-        brief=yeu_cau[:4000],
-        kind=str(args.get("loai") or ("product" if ma else "explainer")),
-        conversation_id=conversation_id,
-        ma_san_pham=ma or None,
-    )
-
-    return {
-        "dat_duoc": True,
-        "video_id": video_id,
-        "so_anh_san_pham": so_anh,
-        "trang_thai": "Đã vào hàng đợi sản xuất.",
-        "nhac_agent": (
-            "Nói với khách là video đang được làm và sẽ có sau vài phút. "
-            "KHÔNG hứa thời điểm cụ thể. Video phải qua người duyệt trước "
-            "khi gửi đi, nên đừng nói là sẽ gửi ngay."
-            + ("" if so_anh else
-               " Sản phẩm này chưa có ảnh trong kho nên video sẽ là thẻ chữ.")
-        ),
-    }
-
 
 # Bấm "ok" hai lần, hoặc model gọi lại công cụ ở lượt sau, thì đơn trùng
 # tới trong vòng vài giây tới vài phút. Quá cửa sổ này mà cùng hội thoại,

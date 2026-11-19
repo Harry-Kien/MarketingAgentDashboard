@@ -1,7 +1,7 @@
 """
 Ranh giới kênh — mảnh kiến trúc quan trọng nhất của hệ thống.
 
-Mọi thứ phía trên lớp này (agent, RAG, video, dashboard) KHÔNG được biết
+Mọi thứ phía trên lớp này (agent, RAG, dashboard) KHÔNG được biết
 mình đang chạy trên Zalo cá nhân hay Zalo OA. Chuyển giai đoạn 1 -> 2
 chỉ là viết thêm một lớp con, không đụng phần còn lại.
 """

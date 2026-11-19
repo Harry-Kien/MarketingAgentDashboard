@@ -56,10 +56,12 @@ def test_moi_quyen_nhac_trong_migration_co_that_trong_danh_muc():
     quyền không tồn tại — im lặng, và nhân viên mất đúng màn đó mà không ai
     hiểu vì sao: ô tick trên dashboard vẫn hiện đã bật.
     """
-    from agent.core.quyen import QUYEN
+    from agent.core.quyen import QUYEN, QUYEN_DA_GO
 
     ma = set(re.findall(r"'([a-z_]+\.[a-z_]+)'", _sql()))
-    la = ma - set(QUYEN)
+    # Migration đã chốt checksum, không sửa được — nên tên quyền đã gỡ (có
+    # khai trong `QUYEN_DA_GO`) được phép còn nằm trong nó.
+    la = ma - set(QUYEN) - QUYEN_DA_GO
     assert not la, f"Migration nhắc quyền không có trong danh mục: {sorted(la)}"
 
 
@@ -79,7 +81,6 @@ def test_tap_quyen_nhan_vien_khong_nhieu_hon_hom_nay():
         "khach.xoa",            # xoá vĩnh viễn dữ liệu cá nhân
         "nguoi_dung.sua",       # tạo/khoá nhân viên
         "agent.dieu_khien",     # bật tắt agent, đổi ngưỡng
-        "noi_dung.duyet",       # đăng ra ngoài công ty
         "don.sua",              # duyệt/huỷ đơn, sửa tồn kho
         "cau_hinh.sua",
         "ky_nang.sua",

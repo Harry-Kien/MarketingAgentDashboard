@@ -229,4 +229,17 @@ def test_migration_khong_nhac_quyen_da_bien_mat():
         if "vai_tro_quyen" not in noi_dung:
             continue
         for ma in re.findall(r"'([a-z_]+\.[a-z_]+)'", noi_dung):
-            assert ma in quyen.QUYEN, f"{sql.name} nhắc quyền đã biến mất: {ma}"
+            # Tên đã gỡ CÓ KHAI trong `QUYEN_DA_GO` thì được còn trong
+            # migration cũ (đã chốt checksum). Biến mất mà không khai mới là lỗi.
+            assert ma in quyen.QUYEN or ma in quyen.QUYEN_DA_GO, (
+                f"{sql.name} nhắc quyền đã biến mất: {ma}")
+
+
+def test_quyen_da_go_khong_bao_gio_dung_lai_ten():
+    """
+    `vai_tro_quyen` của cửa hàng đang chạy còn dòng mang tên quyền đã gỡ.
+    Đặt lại đúng tên ấy cho một quyền MỚI là mọi vai trò còn dòng cũ bỗng
+    có quyền mới mà không ai cấp — im lặng.
+    """
+    assert not (set(quyen.QUYEN) & quyen.QUYEN_DA_GO)
+    assert {"noi_dung.doc", "noi_dung.duyet"} <= quyen.QUYEN_DA_GO

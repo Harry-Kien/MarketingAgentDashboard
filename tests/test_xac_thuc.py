@@ -110,10 +110,11 @@ _DUONG_MO_DUOC_PHEP = {
 }
 
 # Đường mở khai bằng MẪU, vì có tham số trong path nên không so bằng `==`.
-_MAU_MO_DUOC_PHEP = {
-    r"^/api/posts/[0-9a-fA-F-]{36}/callback$":
-        "vé một lần cấp lúc đẩy bài sang n8n, so bằng compare_digest",
-}
+#
+# Hiện RỖNG: mẫu duy nhất từng có là callback n8n báo kết quả đăng bài, gỡ
+# cùng tính năng đăng bài ngày 19.11.2026. Bảng vẫn giữ để mẫu mới nào cũng
+# phải ghi lý do vào đây trước khi được mở.
+_MAU_MO_DUOC_PHEP: dict[str, str] = {}
 
 
 def test_danh_sach_duong_mo_ngan_va_co_chu_dich():

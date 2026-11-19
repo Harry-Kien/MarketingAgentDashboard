@@ -49,14 +49,31 @@ def test_mcp_khong_co_quyen_dang_bai_hay_nhan_khach():
     )
 
 
-def test_bai_soan_qua_mcp_luon_dung_o_cho_duyet():
-    src = inspect.getsource(mcp_server.dua_bai_vao_hang_doi)
-    assert 'tao_boi="mcp"' in src
-    # tao_bai() luôn đặt trang_thai='cho_duyet'; ở đây canh không ai lén
-    # truyền trạng thái khác vào.
-    assert "trang_thai" not in src, (
-        "Không được cho phép đặt trạng thái bài từ MCP — mọi bài phải chờ duyệt."
-    )
+def test_mcp_khong_con_cong_cu_bai_dang():
+    """
+    Tính năng đăng bài đã gỡ ngày 19.11.2026. Công cụ soạn/xếp hàng/xem bài
+    mà còn khai ở đây là client MCP gọi vào một bảng không ai còn đọc.
+    """
+    con = _ten_cong_cu() & {"soan_bai_dang", "dua_bai_vao_hang_doi",
+                            "hieu_qua_bai_dang", "danh_sach_bai_dang"}
+    assert not con, f"MCP còn công cụ bài đăng: {sorted(con)}"
+
+
+def test_soi_quang_cao_qua_mcp_dung_chung_bo_soi_tra_loi():
+    """
+    Một danh sách cụm cấm cho mọi đường chữ đi tới khách. Hai danh sách thì
+    sớm muộn lệch: một đường chặn, đường kia lọt — và không ai biết.
+    """
+    import asyncio
+
+    src = inspect.getsource(mcp_server.kiem_tra_tuan_thu_quang_cao)
+    assert "tu_cam_hai_dang(" in src
+    kq = asyncio.run(mcp_server.kiem_tra_tuan_thu_quang_cao(
+        "Kem đặc trị, khỏi hẳn sau 7 ngày!"))
+    assert not kq["hop_le"] and kq["cum_vi_pham"]
+    sach = asyncio.run(mcp_server.kiem_tra_tuan_thu_quang_cao(
+        "Gel rửa mặt hỗ trợ giảm dầu thừa, giúp da thông thoáng hơn."))
+    assert sach["hop_le"] and not sach["cum_vi_pham"]
 
 
 # =====================================================================

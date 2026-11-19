@@ -12,7 +12,7 @@ Khác biệt kỹ thuật đáng chú ý so với ZaloCRM: Chatwoot KHÔNG có c
 SSRF, nên webhook về `http://host.docker.internal:8000` chạy được thật.
 Nghĩa là kênh này đi bằng WEBHOOK (đẩy, tức thì) trong khi ZaloCRM phải đi
 bằng POLLING (kéo, trễ vài giây). Hai cơ chế trái ngược nhau, mà phần trên
-— agent, RAG, video, dashboard — không biết và không cần biết. Đó chính là
+— agent, RAG, dashboard — không biết và không cần biết. Đó chính là
 điều lớp ChannelAdapter được dựng ra để làm.
 
 Lưu ý thực tế: Chatwoot kết nối Facebook/Instagram vẫn cần Meta App Review

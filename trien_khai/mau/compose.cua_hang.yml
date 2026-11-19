@@ -1,6 +1,6 @@
 # Cửa hàng «MA» — SINH bởi `python -m scripts.cua_hang tao`. Không sửa tay.
 #
-# ĐÚNG MỘT bản app: outbox, lịch đăng bài và vòng giữ phiên Zalo không chịu
+# ĐÚNG MỘT bản app: outbox, hộp thư bền và vòng giữ phiên Zalo không chịu
 # được hai bản cùng chạy (tin gửi đôi cho khách). Không `scale`, không
 # `replicas` > 1. tests/test_cua_hang_cli.py canh.
 name: cskh-«MA»

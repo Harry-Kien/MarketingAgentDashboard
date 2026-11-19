@@ -64,17 +64,3 @@ def test_hoi_lai_dung_etag_thi_tra_304(client):
         "Hỏi lại phải trả 304 rỗng. Trả 200 kèm nguyên file là mỗi lần vào "
         "trang tải lại toàn bộ giao diện."
     )
-
-
-def test_video_van_duoc_dem_lau(client):
-    """Video KHÔNG đi theo quy tắc này.
-
-    Chúng bất biến sau khi dựng xong và nặng hàng megabyte. Bắt hỏi lại mỗi
-    lần là đốt băng thông cho một câu trả lời luôn giống nhau.
-    """
-    from agent.main import app
-
-    duong = {r.path for r in app.routes if hasattr(r, "path")}
-    assert any("/media/videos" in d for d in duong), (
-        "mount video biến mất — test này cần nó để canh ranh giới"
-    )

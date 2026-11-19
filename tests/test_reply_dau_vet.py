@@ -29,7 +29,6 @@ def san(monkeypatch):
         "goi_tool": [],
         "ngan_sach": [],
         "thu": [],
-        "video": [],
         "events": [],
     }
 
@@ -279,21 +278,3 @@ def test_sandbox_khong_ghi_nhat_ky_injection(san, monkeypatch):
     r2 = chay(brain.respond(conversation_id=uuid.uuid4(), history=[], question=cau))
     assert r2.luoi_bat == "injection"
     assert "bao_mat.injection" in su_kien
-
-
-def test_sandbox_khong_dat_video_that(san, monkeypatch):
-    async def run_tool(name, args, conversation_id=None):
-        return {"da_nhan": True}
-
-    from agent.video import pipeline
-
-    async def request_video(**kw):
-        san["video"].append(kw)
-        return "v1"
-
-    monkeypatch.setattr(brain.tools, "run_tool", run_tool)
-    monkeypatch.setattr(pipeline, "request_video", request_video)
-    san["kich_ban"] = [_goi_tool("tao_video", {"tieu_de": "x"}), _chot("Dạ đã ghi nhận ạ.")]
-    with thu_nghiem.bat_thu():
-        chay(brain.respond(conversation_id=uuid.uuid4(), history=[], question="làm video"))
-    assert san["video"] == []

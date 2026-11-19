@@ -16,7 +16,7 @@ CHỈ CANH MỘT CHIỀU
 ------------------
 Chiều ngược lại — "endpoint nào không màn hình nào gọi" — KHÔNG làm chốt.
 Nhiều endpoint có người gọi hợp lệ mà không phải dashboard: OAuth callback
-do Meta/Zalo gọi, `/api/posts/{id}/callback` do n8n gọi, `/api/erp/*` do
+do Meta/Zalo gọi, webhook vận chuyển do GHN/GHTK gọi, `/api/erp/*` do
 công cụ của agent gọi. Biến nó thành chốt là tạo ra một test đỏ vì những lý
 do không sai, và test đỏ vặt là test người ta tắt.
 

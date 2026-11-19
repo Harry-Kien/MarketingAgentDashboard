@@ -3,7 +3,7 @@
 const RUI_RO_NHAN = { doc: "đọc", ghi_nhan: "ghi nhận", hanh_dong: "HÀNH ĐỘNG" };
 const NHOM_NHAN = {
   tu_van: "Tư vấn", don_hang: "Đơn hàng", sau_ban: "Sau bán",
-  marketing: "Marketing", con_nguoi: "Con người",
+  con_nguoi: "Con người",
 };
 
 /* Bốn loại plugin, nói bằng tiếng Việt. Máy chủ chỉ biết mã (`tra_bang`…);

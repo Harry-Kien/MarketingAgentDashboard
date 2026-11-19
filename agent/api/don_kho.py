@@ -720,29 +720,3 @@ async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen(
         raise HTTPException(422, str(exc)) from exc
     await db.log_event("kho.kiem_ke", actor="nguoi", **r, ly_do=body.ly_do)
     return r
-
-
-@router.get("/catalog/products")
-async def catalog_products(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
-    """
-    Danh sách gọn cho ô gợi ý sản phẩm khi soạn bài hoặc đặt video.
-
-    Đọc qua `tools._catalog()` chứ không mở thẳng `catalog.json`: máy vừa
-    clone repo về chưa có file đó, mở thẳng là ném FileNotFoundError và cả
-    trang trắng. Hàm kia tự rơi về bản mẫu đi kèm repo.
-
-    `so_anh` cho biết sản phẩm nào dựng video có hình được, sản phẩm nào chỉ
-    ra thẻ chữ — biết trước vẫn hơn nhận về rồi mới thấy.
-    """
-    from agent.core.tools import _catalog
-    from agent.video import catalog_images
-
-    return {"san_pham": [
-        {
-            "ma": p["ma"],
-            "ten": p["ten"],
-            "loai": p.get("loai", ""),
-            "so_anh": len(catalog_images.anh_cua(p["ma"])),
-        }
-        for p in _catalog().get("san_pham", [])
-    ]}

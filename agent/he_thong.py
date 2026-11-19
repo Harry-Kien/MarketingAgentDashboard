@@ -49,7 +49,7 @@ DICH_VU = [
     {
         "ma": "dashboard",
         "ten": "Trạm điều độ",
-        "mo_ta": "Hội thoại, đơn hàng, video, bài đăng, sức khoẻ hệ thống",
+        "mo_ta": "Hội thoại, khách hàng, đơn hàng, sức khoẻ hệ thống",
         "url": "http://localhost:8000",
         "kiem": "http://127.0.0.1:8000/healthz",
         "chinh": True,
@@ -76,7 +76,7 @@ DICH_VU = [
     {
         "ma": "n8n",
         "ten": "n8n",
-        "mo_ta": "Định tuyến đăng bài và cảnh báo ra ngoài",
+        "mo_ta": "Định tuyến cảnh báo ra ngoài (Zalo, Telegram, Slack...)",
         "url": "http://localhost:5678",
         "kiem": "http://localhost:5678/",
         "can_dang_nhap": True,

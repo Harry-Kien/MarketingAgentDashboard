@@ -11,6 +11,8 @@ Hai khối chúng nuôi — `#queue` và `#videoqueue` — nằm TRONG màn Ca t
 nên lúc ấy dữ liệu đổ vào DOM bị ẩn. Mỗi tab là 30 request/phút, hai phần
 ba trong đó kéo tới 200 hội thoại và 30 video mà không ai nhìn. Nhân với
 số người trực thì đó là tải thật trên máy chủ, đổi lấy không gì cả.
+(Hàng chờ video đã gỡ ngày 19.11.2026 cùng tính năng video; `#queue` còn
+lại vẫn chịu đúng chốt ấy.)
 
 Đây không phải lỗi gây sai kết quả, nên không test chức năng nào bắt được —
 và cũng vì thế nó sống lâu. Với một SaaS, chi phí mỗi tab mỗi phút là con
@@ -60,7 +62,6 @@ def test_hai_khoi_nang_van_thuoc_man_ca_truc():
     không phải sửa cho xanh.
     """
     assert _man_chua("queue") == "ca"
-    assert _man_chua("videoqueue") == "ca"
 
 
 def test_load_overview_dung_som_khi_khong_o_man_ca_truc():
@@ -69,10 +70,10 @@ def test_load_overview_dung_som_khi_khong_o_man_ca_truc():
     i_chot = than.find('state.view !== "ca"')
     assert i_chot != -1, (
         "loadOverview() không còn chốt `state.view !== \"ca\"` — nó sẽ lại "
-        "kéo 200 hội thoại và 30 video mỗi 6 giây ở cả 16 màn còn lại"
+        "kéo 200 hội thoại mỗi 6 giây ở mọi màn còn lại"
     )
 
-    for duong in ("/conversations?status=can_nguoi", "/videos?limit=30"):
+    for duong in ("/conversations?status=can_nguoi",):
         i = than.find(duong)
         assert i != -1, f"không còn gọi {duong} — đọc lại test này"
         assert i > i_chot, (

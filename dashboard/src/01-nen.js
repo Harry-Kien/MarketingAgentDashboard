@@ -3,7 +3,7 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", postFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
+const state = { view: "ca", convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
 let inboxRefreshTimer = null;
 
 /* ---------------- tiện ích ---------------- */

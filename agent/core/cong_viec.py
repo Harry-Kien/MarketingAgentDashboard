@@ -649,6 +649,34 @@ async def tao_tu_don_hang(
     )
 
 
+async def tao_tu_kenh(*, tieu_de: str, mo_ta: str, khoa: str) -> str | None:
+    """
+    Việc về KÊNH (token sắp hết hạn, phiên mất…), nguồn `tu_dong`.
+
+    Không gắn hội thoại hay đơn: việc là của cả kênh. Khoá chống trùng để vòng
+    canh chạy mỗi ngày không sinh mỗi ngày một việc. Không bao giờ ném — vòng
+    canh gọi tới không được chết vì bảng công việc nấc.
+    """
+    try:
+        dong = await db.fetchrow(
+            "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, khoa_chong_trung) "
+            "VALUES ($1, $2, 'tu_dong', 'cao', $3) "
+            "ON CONFLICT DO NOTHING RETURNING id",
+            tieu_de[:200], mo_ta, khoa[:300])
+        if dong is None:
+            return None
+        from agent import canh_gac
+
+        canh_gac.bao_nhan_vien_nen(tieu_de, "Mở dashboard → Kết nối.")
+        return str(dong["id"])
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("agent.cong_viec").error(
+            "KHÔNG tạo được việc kênh %s: %s: %s", khoa, type(exc).__name__, exc)
+        return None
+
+
 async def _tao_viec_he_thong(
     nguon: str, ma_don: str, *, tieu_de: str, mo_ta: str, khoa: str,
     conversation_id=None, uu_tien: str = "cao",

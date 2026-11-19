@@ -255,6 +255,109 @@ async def create_account(
     return account.to_public(has_credentials=bool(credentials))
 
 
+@router.get("/suc-khoe-tong")
+async def suc_khoe_tong(
+    user: dict = Depends(can_quyen("kenh.doc")),
+    repository: PostgresAccountRepository = Depends(get_account_repository),
+) -> dict[str, Any]:
+    """
+    Màn "Kết nối kênh": điều kiện chung + mỗi kênh một dòng xanh/vàng/đỏ.
+
+    ĐẶT TRƯỚC `/{account_id}`: FastAPI khớp route theo thứ tự khai báo, và
+    "suc-khoe-tong" lọt vào `/{account_id}` thì thành 422 "không phải UUID".
+
+    Không gọi mạng: luật nằm ở `agent/omnichannel/suc_khoe_kenh.py`, số ngày
+    còn lại của token lấy từ sự kiện vòng canh token đã ghi. Ba truy vấn cho
+    MỌI tài khoản, không phải ba truy vấn mỗi thẻ.
+    """
+    from agent.omnichannel import suc_khoe_kenh as skk
+
+    accounts = await repository.list_for_user(
+        UUID(str(user["id"])),
+        is_admin="kenh.sua" in user.get("quyen", ()),
+    )
+    ids = [a.id for a in accounts]
+    ly_do: dict[str, str] = {}
+    tin_vao: dict[str, Any] = {}
+    token: dict[str, dict[str, Any]] = {}
+    if ids:
+        for r in await db.fetch(
+            """
+            SELECT DISTINCT ON (account_id) account_id, code, detail
+            FROM account_health_events
+            WHERE account_id = ANY($1) AND status <> 'active'
+            ORDER BY account_id, observed_at DESC
+            """, ids):
+            ct = r["detail"] if isinstance(r["detail"], dict) else {}
+            ly_do[str(r["account_id"])] = str(ct.get("ly_do") or r["code"] or "")[:200]
+        for r in await db.fetch(
+            """
+            SELECT c.account_id, max(m.created_at) AS luc
+            FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.account_id = ANY($1) AND m.role = 'customer'
+            GROUP BY c.account_id
+            """, ids):
+            tin_vao[str(r["account_id"])] = r["luc"]
+        # Sự kiện của vòng canh token Meta. Bản cũ chỉ ghi TÊN tài khoản; bản
+        # mới ghi thêm account_id — khớp được cả hai.
+        theo_ten = {a.display_name[:80]: str(a.id) for a in accounts}
+        for r in await db.fetch(
+            """
+            SELECT kind, created_at, detail FROM events
+            WHERE kind IN ('meta.token_sap_het', 'meta.token_chet')
+              AND created_at > now() - interval '2 days'
+            ORDER BY created_at
+            """):
+            ct = r["detail"] if isinstance(r["detail"], dict) else {}
+            aid = str(ct.get("account_id") or theo_ten.get(str(ct.get("tai_khoan") or ""), ""))
+            if aid:
+                token[aid] = {"kind": r["kind"], "luc": r["created_at"],
+                              "ngay_con_lai": ct.get("ngay_con_lai")}
+
+    kenh = []
+    for a in accounts:
+        aid = str(a.id)
+        d = skk.danh_gia(
+            channel=a.channel.value, status=a.status.value,
+            ly_do_hong=ly_do.get(aid), tin_vao_gan_nhat=tin_vao.get(aid),
+            token=token.get(aid))
+        ngay = (token.get(aid) or {}).get("ngay_con_lai")
+        kenh.append({
+            "id": aid, "channel": a.channel.value, "display_name": a.display_name,
+            "status": a.status.value, "muc": d.muc, "viec": d.viec,
+            "hanh_dong": d.hanh_dong,
+            "tin_vao_gan_nhat": tin_vao[aid].isoformat() if tin_vao.get(aid) else None,
+            "token_con_ngay": round(float(ngay), 1) if ngay is not None else None,
+        })
+    thu_tu = {skk.DO: 0, skk.VANG: 1, skk.XANH: 2, skk.TAT: 3}
+    kenh.sort(key=lambda k: (thu_tu.get(str(k["muc"]), 9), str(k["channel"]),
+                             str(k["display_name"])))
+
+    dc = skk.danh_gia_dia_chi_cong_khai(settings.public_base_url)
+    co_meta = bool((settings.meta_app_id or settings.messenger_app_id) and settings.meta_app_secret)
+    co_zalo = bool(settings.zalo_oa_app_id and settings.zalo_oa_secret_key)
+    dieu_kien = [
+        {"ten": "Địa chỉ công khai", "muc": dc.muc, "viec": dc.viec},
+        {"ten": "Ứng dụng Meta (Facebook, Instagram)",
+         "muc": skk.XANH if co_meta else skk.VANG,
+         "viec": ("Đã khai — nối Trang bằng nút đăng nhập." if co_meta else
+                  "Chưa khai META_APP_ID / META_APP_SECRET trong .env — nút đăng nhập "
+                  "Facebook chưa dùng được.")},
+        {"ten": "Ứng dụng Zalo OA",
+         "muc": skk.XANH if co_zalo else skk.VANG,
+         "viec": ("Đã khai — nối OA bằng nút đăng nhập Zalo." if co_zalo else
+                  "Chưa khai ZALO_OA_APP_ID / ZALO_OA_SECRET_KEY trong .env — nút đăng "
+                  "nhập Zalo chưa dùng được.")},
+    ]
+    return {
+        "dieu_kien": dieu_kien,
+        "kenh": kenh,
+        "dang_nhap": {"meta": co_meta, "zalo_oa": co_zalo},
+        "dem": {m: sum(1 for k in kenh if k["muc"] == m)
+                for m in (skk.DO, skk.VANG, skk.XANH, skk.TAT)},
+    }
+
+
 @router.get("/{account_id}")
 async def get_account(
     account_id: UUID,

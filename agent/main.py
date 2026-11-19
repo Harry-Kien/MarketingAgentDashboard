@@ -246,9 +246,31 @@ async def canh_han_token_meta_loop() -> None:
                         "meta.token_sap_het" if kq["muc"] == "sap_het"
                         else "meta.token_chet",
                         actor="system",
+                        # account_id để màn Sức khoẻ kênh khớp đúng tài khoản
+                        # (tên Trang có thể trùng hoặc đổi).
+                        account_id=str(acc.id),
                         tai_khoan=acc.display_name[:80],
                         kenh=kenh.value,
                         ngay_con_lai=round(con, 1) if con is not None else None,
+                    )
+                    # Báo động đi vào webhook — chỗ chủ cửa hàng không mở
+                    # (19.11.2026: cảnh báo từ hôm trước mà không ai biết).
+                    # Thêm một CÔNG VIỆC: hiện trên dashboard và tự báo nhân
+                    # viên. Khoá theo ngày hết hạn: mỗi đợt hết hạn một việc.
+                    from datetime import datetime, timedelta, timezone
+
+                    from agent.core import cong_viec as _cv
+
+                    han = (datetime.now(timezone.utc)
+                           + timedelta(days=max(0.0, float(con or 0)))).date()
+                    await _cv.tao_tu_kenh(
+                        tieu_de=(f"Đăng nhập Facebook lại cho '{acc.display_name[:60]}'"
+                                 + (f" — còn {max(0, int(con or 0))} ngày"
+                                    if kq["muc"] == "sap_het" else " — ĐÃ HẾT HẠN")),
+                        mo_ta=("Quyền dữ liệu Meta của kênh này sắp hết/đã hết: hết là "
+                               "tin khách không về nữa. Vào Kết nối → Kết nối Facebook "
+                               "bằng đăng nhập, chọn lại đúng Trang để gia hạn 90 ngày."),
+                        khoa=f"kenh:token_meta:{acc.id}:{han.isoformat()}",
                     )
                     await canh_gac.bao_dong(
                         tieu_de="Token Meta sắp hết hạn",

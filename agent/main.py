@@ -416,6 +416,8 @@ async def backup_loop() -> None:
                 )
                 await asyncio.to_thread(bk.sao_luu_tai_lieu,
                                         bk.KHO / f"knowledge-{dau}.tar.gz")
+                await asyncio.to_thread(bk.sao_luu_tep,
+                                        bk.KHO / f"tep-{dau}.tar.gz")
                 await asyncio.to_thread(bk.don_ban_cu, settings.sao_luu_giu_lai)
                 await db.log_event(
                     "backup.done" if ok else "backup.failed", ghi_chu=ghi_chu[:200]

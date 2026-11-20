@@ -578,7 +578,9 @@ async def attachment_file(
     # `hoi_thoai.doc` cũng tải được tệp của mọi kênh, chỉ cần id.
     await chan_neu_ngoai_kenh(row["conversation_id"], _quyen)
 
-    duong = Path(str(row["storage_key"])).resolve()
+    from agent.duong_dan_du_lieu import mo_khoa
+
+    duong = (mo_khoa(str(row["storage_key"])) or Path("")).resolve()
     goc_du_lieu = (Path(__file__).resolve().parents[2] / "data").resolve()
     if goc_du_lieu not in duong.parents:
         await db.log_event("attachment.ngoai_thu_muc_du_lieu",

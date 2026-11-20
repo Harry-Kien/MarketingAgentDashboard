@@ -202,8 +202,12 @@ def test_worker_gui_file_qua_exact_account_adapter():
 
     asyncio.run(OutboxProcessor(repository, resolver).process_once("worker-1"))
 
+    # Worker giải khoá `data/...` ra đường dẫn THẬT trên máy đang chạy
+    # (agent/duong_dan_du_lieu.py) — adapter cần mở được tệp.
+    from agent.duong_dan_du_lieu import GOC_DU_LIEU
+
     assert adapter.calls == [
-        ("customer-1", "data/products/p1.jpg", "Sản phẩm P1")
+        ("customer-1", str(GOC_DU_LIEU / "products" / "p1.jpg"), "Sản phẩm P1")
     ]
     assert repository.sent[0][0] == job.id
 

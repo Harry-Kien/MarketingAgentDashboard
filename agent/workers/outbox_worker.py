@@ -106,9 +106,13 @@ class OutboxProcessor:
                 **them,
             )
         if job.kind == "send_file":
+            # Khoá đã lưu (mới: `data/...`; cũ: tuyệt đối, có khi của máy
+            # khác) → đường dẫn thật trên máy đang chạy.
+            from agent.duong_dan_du_lieu import mo_khoa
+
             return await adapter.send_file(
                 str(job.payload["conversation_ref"]),
-                str(job.payload["path"]),
+                str(mo_khoa(str(job.payload["path"]))),
                 caption=str(job.payload.get("caption", "")),
                 **them,
             )

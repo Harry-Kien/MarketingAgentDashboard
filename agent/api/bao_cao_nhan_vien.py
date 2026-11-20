@@ -51,7 +51,7 @@ WITH khoang AS (
            ($2::date + 1)::timestamp AT TIME ZONE '{MUI_GIO}' AS den
 ),
 giao AS (
-    SELECT ca.assigned_user_id AS uid, ca.conversation_id, ca.started_at
+    SELECT ca.assigned_user_id AS uid, ca.conversation_id, ca.started_at, ca.ended_at
     FROM conversation_assignments ca, khoang
     WHERE ca.assigned_user_id IS NOT NULL
       AND ca.started_at >= khoang.tu AND ca.started_at < khoang.den
@@ -86,10 +86,19 @@ diem AS (
       AND c.tra_loi_luc >= khoang.tu AND c.tra_loi_luc < khoang.den
     GROUP BY 1
 ),
+-- Trễ SLA tính cho người ĐANG CẦM hội thoại lúc vi phạm xảy ra, trong
+-- khoảng ngày của báo cáo. Bản trước nối mọi vi phạm của hội thoại với mọi
+-- lượt giao: vi phạm xảy ra trước khi người ấy nhận bị tính cho họ, và hội
+-- thoại giao ba lần thì một vi phạm thành ba (rà soát 20.11.2026).
 tre AS (
-    SELECT g.uid, count(*) AS so
+    SELECT g.uid, count(DISTINCT s.id) AS so
     FROM giao g JOIN sla_events s
-      ON s.conversation_id = g.conversation_id AND s.kind IN ('first_response_breached', 'resolution_breached')
+      ON s.conversation_id = g.conversation_id
+     AND s.kind IN ('first_response_breached', 'resolution_breached')
+     AND s.created_at >= g.started_at
+     AND (g.ended_at IS NULL OR s.created_at < g.ended_at)
+    , khoang
+    WHERE s.created_at >= khoang.tu AND s.created_at < khoang.den
     GROUP BY 1
 ),
 tong AS (

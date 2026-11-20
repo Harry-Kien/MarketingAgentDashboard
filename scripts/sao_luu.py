@@ -240,12 +240,48 @@ def sao_luu_tai_lieu(dich: Path) -> tuple[bool, str]:
     return True, f"{dich.stat().st_size / 1024:.0f} KB"
 
 
+# Tệp không nằm trong CSDL mà mất là mất hẳn (rà soát 20.11.2026): ảnh sản
+# phẩm (`data/products`, gửi cho khách bằng `gui_anh_san_pham`) và tệp nhân
+# viên đã gửi (`data/uploads`). Bản trước chỉ gói `data/knowledge`.
+THU_MUC_TEP = ("products", "uploads")
+
+
+def sao_luu_tep(dich: Path) -> tuple[bool, str]:
+    """
+    Gói `data/products` + `data/uploads`. Có `SAO_LUU_MAT_KHAU` thì mã hoá
+    (`dich` + `.cskh`) — `uploads` là tệp trong hội thoại khách, cùng mức
+    nhạy cảm với bản CSDL nên theo đúng luật của bản CSDL.
+    """
+    import io
+
+    co = [ROOT / "data" / t for t in THU_MUC_TEP
+          if (ROOT / "data" / t).is_dir() and any((ROOT / "data" / t).iterdir())]
+    if not co:
+        return False, "chưa có tệp nào trong data/products, data/uploads"
+    dich.parent.mkdir(parents=True, exist_ok=True)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for t in co:
+            tar.add(t, arcname=t.name)
+    if settings.sao_luu_mat_khau:
+        from scripts import goi_ma_hoa
+
+        dich = dich.with_name(dich.name + DUOI_MA_HOA)
+        buf.seek(0)
+        with dich.open("wb") as f:
+            goi_ma_hoa.ma_hoa(buf, f, settings.sao_luu_mat_khau)
+    else:
+        dich.write_bytes(buf.getvalue())
+    return True, f"{dich.stat().st_size / 1024:.0f} KB ({', '.join(t.name for t in co)})"
+
+
 def don_ban_cu(giu: int) -> int:
     """Xoá bản cũ, giữ lại `giu` bản gần nhất của mỗi loại."""
     da_xoa = 0
     # Bản CSDL thường và mã hoá đếm CHUNG một hàng: giữ 14 bản gần nhất là
     # 14 bản, không phải 14 bản mỗi loại.
-    for ban in (ban_db(), sorted(KHO.glob("knowledge-*.tar.gz"), key=lambda p: p.name)):
+    for ban in (ban_db(), sorted(KHO.glob("knowledge-*.tar.gz"), key=lambda p: p.name),
+                sorted(KHO.glob("tep-*.tar.gz*"), key=lambda p: p.name)):
         for cu in (ban[:-giu] if giu > 0 else ban):
             cu.unlink(missing_ok=True)
             da_xoa += 1
@@ -365,6 +401,8 @@ def main() -> int:
 
     ok_tl, tl = sao_luu_tai_lieu(KHO / f"knowledge-{dau}.tar.gz")
     print(f"  tài liệu      : {'OK  ' + tl if ok_tl else 'bỏ qua — ' + tl}")
+    ok_tep, tep = sao_luu_tep(KHO / f"tep-{dau}.tar.gz")
+    print(f"  ảnh và tệp    : {'OK  ' + tep if ok_tep else 'bỏ qua — ' + tep}")
 
     xoa = don_ban_cu(args.giu)
     if xoa:

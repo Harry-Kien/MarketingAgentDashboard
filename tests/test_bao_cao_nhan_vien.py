@@ -194,3 +194,40 @@ def test_tin_nhan_vien_ghi_nguoi_gui(csdl_kiem_thu):
             db._pool = cu
             await pool.close()
     assert asyncio.run(chay()) == A
+
+
+def test_tre_sla_chi_tinh_luc_dang_cam_va_khong_nhan_theo_so_lan_giao(csdl_kiem_thu):
+    """
+    Rà soát 20.11.2026: vi phạm xảy ra TRƯỚC khi A nhận bị tính cho A, và hội
+    thoại giao ba lần thì một vi phạm thành ba. Nay: một vi phạm tính một lần,
+    cho người đang cầm lúc vi phạm xảy ra.
+    """
+    async def chay():
+        conn = await asyncpg.connect(csdl_kiem_thu)
+        try:
+            await conn.execute("INSERT INTO nguoi_dung (id, ten_dang_nhap, mat_khau_bam, ho_ten) "
+                               "VALUES ($1,'a','x','A'), ($2,'b','x','B')", A, B)
+            t0 = datetime.now(timezone.utc) - timedelta(hours=3)
+            h = await _hoi_thoai(conn, "hx")
+            # B cầm từ t0 tới t0+1h; A nhận sau đó, ba lượt giao liên tiếp.
+            await conn.execute(
+                "INSERT INTO conversation_assignments (conversation_id, assigned_user_id, source, "
+                "reason, started_at, ended_at) VALUES ($1,$2,'manual','kt',$3,$4)",
+                h, B, t0, t0 + timedelta(hours=1))
+            for i in range(3):
+                await conn.execute(
+                    "INSERT INTO conversation_assignments (conversation_id, assigned_user_id, source, "
+                    "reason, started_at, ended_at) VALUES ($1,$2,'manual','kt',$3,$4)",
+                    h, A, t0 + timedelta(hours=1, minutes=10 * i),
+                    t0 + timedelta(hours=1, minutes=10 * i + 9) if i < 2 else None)
+            # Vi phạm lúc B đang cầm.
+            await conn.execute("INSERT INTO sla_events (conversation_id, kind, created_at) "
+                               "VALUES ($1,'first_response_breached',$2)", h, t0 + timedelta(minutes=30))
+        finally:
+            await conn.close()
+
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu("bao_cao.doc"))) as k:
+        asyncio.run(chay())
+        ds = _theo_ten(k.get("/api/bao-cao/nhan-vien").json()["nhan_vien"])
+        assert ds["b"]["tre_sla"] == 1
+        assert ds["a"]["tre_sla"] == 0, "vi phạm trước khi A nhận bị tính cho A"

@@ -369,6 +369,11 @@ class OutboundService:
                 return _queued_from_existing(existing)
 
             visible_text = caption.strip() or "[Tệp đính kèm]"
+            # Lưu khoá TƯƠNG ĐỐI `data/...`: đường dẫn tuyệt đối của máy này
+            # vô nghĩa trên VPS — xem agent/duong_dan_du_lieu.py.
+            from agent.duong_dan_du_lieu import khoa_luu
+
+            path = khoa_luu(path)
             payload = {
                 "conversation_ref": conversation["external_id"],
                 "path": path,

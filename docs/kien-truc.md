@@ -160,7 +160,7 @@ erDiagram
         TEXT customer_ref
         TEXT status
         TEXT outcome
-        _ con_19_cot_nua
+        _ con_20_cot_nua
     }
     messages {
         UUID id
@@ -171,7 +171,7 @@ erDiagram
         NUMERIC cost_usd
         JSONB attachments
         TEXT direction
-        _ con_7_cot_nua
+        _ con_10_cot_nua
     }
     documents {
         UUID id

@@ -401,8 +401,8 @@ def main() -> int:
 
     ok_tl, tl = sao_luu_tai_lieu(KHO / f"knowledge-{dau}.tar.gz")
     print(f"  tài liệu      : {'OK  ' + tl if ok_tl else 'bỏ qua — ' + tl}")
-    ok_tep, tep = sao_luu_tep(KHO / f"tep-{dau}.tar.gz")
-    print(f"  ảnh và tệp    : {'OK  ' + tep if ok_tep else 'bỏ qua — ' + tep}")
+    ok_tep, ghi_tep = sao_luu_tep(KHO / f"tep-{dau}.tar.gz")
+    print(f"  ảnh và tệp    : {'OK  ' + ghi_tep if ok_tep else 'bỏ qua — ' + ghi_tep}")
 
     xoa = don_ban_cu(args.giu)
     if xoa:

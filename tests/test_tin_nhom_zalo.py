@@ -275,7 +275,7 @@ def test_handle_inbound_chan_nhom_TRUOC_moi_nhanh_khac():
     chan = src.index("await _giao_nguoi_tin_nhom(")
     # So với MÃ, không so với chú thích ĐỌC ở đầu hàm (nó nhắc "standby" sớm hơn).
     for sau in ('(msg.meta or {}).get("standby")', "tu_dong.chay_tin_khach(",
-                "ghi_diem_neu_la_csat(", "thong_bao_ai.gui_neu_chua(", "brain.respond("):
+                "ghi_diem_neu_la_csat(", "thong_bao_ai.gui_neu_chua(", "await brain.respond("):
         assert chan < src.index(sau), sau
 
 
@@ -352,10 +352,15 @@ async def _hoi_thoai_tho(acc, kenh: str, ext: str, ref: str | None, *,
     from agent import db
     kh = await db.fetchrow("INSERT INTO contacts (display_name) VALUES ($1) RETURNING id",
                            ten or "Khách")
+    # `contact_point_id` cũng NOT NULL — dòng cũ luôn có điểm liên hệ.
+    diem = await db.fetchrow(
+        "INSERT INTO contact_points (contact_id, channel_account_id, external_user_id) "
+        "VALUES ($1, $2, $3) RETURNING id", kh["id"], acc, ref or ext)
     await db.execute(
         "INSERT INTO conversations (account_id, channel, external_id, customer_ref, "
-        "customer_name, thread_type, contact_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        acc, kenh, ext, ref, ten, loai, kh["id"])
+        "customer_name, thread_type, contact_id, contact_point_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        acc, kenh, ext, ref, ten, loai, kh["id"], diem["id"])
 
 
 def test_ingest_nhom_hai_nguoi_gui_khong_doi_danh_tinh(csdl):
@@ -384,7 +389,7 @@ def test_ingest_nhom_hai_nguoi_gui_khong_doi_danh_tinh(csdl):
                                    nhom["contact_id"])
         ten_rieng = await db.fetchrow("SELECT display_name FROM contacts WHERE id = $1",
                                       rieng["contact_id"])
-        return kq1, kq2, dict(nhom), dict(rieng), [tuple(t) for t in tin], ten_hs, ten_rieng
+        return kq1, kq2, dict(nhom), dict(rieng), [(t["sender_ref"], t["sender_name"]) for t in tin], ten_hs, ten_rieng
 
     kq1, kq2, nhom, rieng, tin, ten_hs, ten_rieng = _chay(csdl, chay)
     assert kq1.conversation_id == kq2.conversation_id

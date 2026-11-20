@@ -93,6 +93,10 @@ class Reply:
     luoi_bat: str | None = None
     # Tên các gói kỹ năng đã kích hoạt hướng dẫn ở lượt này (phòng thử hiện).
     goi_ky_nang: list[str] = field(default_factory=list)
+    # Đúng phiên bản/đoạn tri thức đã đưa cho model (`_knowledge_refs`).
+    # Trước đây chỉ vào sự kiện `knowledge.retrieved` theo HỘI THOẠI; mang
+    # theo Reply để tầng kênh ghi được vào dấu vết của TỪNG tin (0053).
+    tri_thuc: list[dict] = field(default_factory=list)
 
 
 # ══ DANH MỤC LỚP LƯỚI — NGUỒN SỰ THẬT DUY NHẤT ═══════════════════════════
@@ -1174,4 +1178,5 @@ async def respond(
         model=settings.model_chat,
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
         goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
+        tri_thuc=knowledge_refs,
     )

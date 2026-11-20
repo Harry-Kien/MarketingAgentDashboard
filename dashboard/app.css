@@ -1991,6 +1991,34 @@ svg { flex: none; }
 .ghichu__dong { padding-top: 6px; }
 .ghichu__dong p { margin: 2px 0 0; white-space: pre-wrap; }
 
+/* ---------------- Trách nhiệm trong hội thoại ---------------- */
+/* Bộ lọc dạng ô chọn: xuống dòng ở 375px thay vì đẩy trang tràn ngang. */
+.filterbar--loc { flex-wrap: wrap; gap: 6px; }
+.filterbar--loc select {
+  flex: 1 1 120px; min-width: 0; padding: 4px 8px; font: inherit; font-size: 12.5px;
+  border: 1px solid hsl(var(--input)); border-radius: var(--radius); background: hsl(var(--card));
+}
+.msg__meta .tag { margin-left: 4px; }
+/* "Vì sao?" — dấu vết AI của một tin. Nền nhạt, viền trái như ghi chú nội
+ * bộ: đây là chữ cho người trực, khách không thấy. */
+.visao {
+  margin: 6px 0 2px; padding: 6px 10px; border-left: 3px solid hsl(var(--primary));
+  background: hsl(var(--primary) / .05); border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 12.5px; max-width: 100%; overflow-wrap: anywhere;
+}
+.visao .pre { max-height: 220px; overflow: auto; white-space: pre-wrap; }
+.visao__dau { margin: 8px 0 2px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.visao__ds { margin: 2px 0; padding-left: 18px; }
+.lichsu {
+  margin: 8px 16px; padding: 8px 12px; border-left: 3px solid hsl(var(--muted-foreground) / .5);
+  background: hsl(var(--muted) / .4); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;
+}
+.lichsu summary { cursor: pointer; font-weight: 600; }
+.lichsu__dong { padding: 6px 0 0; }
+.lichsu__dong p { margin: 2px 0 0; white-space: pre-wrap; color: hsl(var(--muted-foreground)); }
+.lichsu__dong--chuyen_nguoi b, .lichsu__dong--khach_doi_nguoi b { color: hsl(var(--warning)); }
+.lichsu__dong--giai_quyet b { color: hsl(var(--success)); }
+
 /* ---------------- Bảng báo cáo ---------------- */
 /* Bảng rộng cuộn NGANG trong khung của nó, không đẩy cả trang tràn ở 375px. */
 .bang-cuon { overflow-x: auto; margin-top: 8px; }

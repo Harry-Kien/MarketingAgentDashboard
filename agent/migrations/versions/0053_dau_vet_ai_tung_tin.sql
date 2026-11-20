@@ -1,0 +1,21 @@
+-- Dấu vết AI của TỪNG tin: vì sao AI nói câu này.
+--
+-- Trước bản này `messages` chỉ giữ kết quả (có căn cứ, độ tin cậy, tên tài
+-- liệu, chi phí). Không lưu: hồ sơ agent nào trả lời, chế độ và ngưỡng đang
+-- áp, lưới nào đã bắt, công cụ nào được gọi với tham số gì, đoạn tri thức
+-- (phiên bản, đoạn) nào đã đi vào mô hình. Dấu vết đầy đủ chỉ có trong Phòng
+-- thử — tức là có cho câu hỏi THỬ, không có cho câu đã gửi KHÁCH THẬT, đúng
+-- chỗ cần truy khi có khiếu nại (rà soát 20.11.2026). Sự kiện
+-- `knowledge.retrieved` ghi theo hội thoại, không theo tin: hai lượt sát nhau
+-- là không còn biết đoạn nào đi với câu nào.
+--
+-- VÌ SAO MỘT CỘT JSONB, KHÔNG PHẢI BẢNG RIÊNG
+-- Dấu vết sống và chết CÙNG tin nhắn: được đọc đúng lúc đọc tin, và phải
+-- bị xoá đúng lúc tin bị xoá (yêu cầu xoá dữ liệu của khách, hạn lưu trữ —
+-- `du_lieu_ca_nhan` xoá hội thoại, CASCADE xuống `messages`). Bảng riêng là
+-- thêm một chỗ để đường xoá, sao lưu, xuất dữ liệu phải nhớ tới; quên một
+-- chỗ là dữ liệu sống quá hạn mà không ai biết. Kích thước được chặn trong
+-- MÃ (`agent/core/dau_vet_ai.py`), không phải ở đây.
+--
+-- NULL = tin không do AI viết, hoặc tin AI cũ trước bản này.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS dau_vet_ai JSONB;

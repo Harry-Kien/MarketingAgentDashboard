@@ -22,7 +22,9 @@ from agent.channels import registry as channels
 from agent.channels.base import InboundMessage
 from agent.config import settings
 from agent.core import agent as brain
-from agent.core import agent_bat, agent_ho_so, anh_khach, cong_viec, gio_lam_viec, tu_nhien
+from agent.core import (
+    agent_bat, agent_ho_so, anh_khach, cong_viec, dau_vet_ai, gio_lam_viec, tu_nhien,
+)
 from agent.omnichannel import giai_quyet, thong_bao_ai, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
 from agent.omnichannel.outbound_service import (
@@ -418,10 +420,25 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # viên có thể bấm trong vài giây model đang soạn.
     duyet_rieng = await db.fetchrow(
         "SELECT duyet_truoc_khi_gui FROM conversations WHERE id = $1", cid)
-    auto_send = (runtime.mode() == "auto" and not reply.escalate
-                 and not (duyet_rieng and duyet_rieng.get("duyet_truoc_khi_gui")))
+    co_duyet_rieng = bool(duyet_rieng and duyet_rieng.get("duyet_truoc_khi_gui"))
+    che_do_chung = runtime.mode()
+    auto_send = (che_do_chung == "auto" and not reply.escalate
+                 and not co_duyet_rieng)
+    gui_thang = auto_send and await adapter.can_send_now(msg.conversation_ref)
+    # Dấu vết "vì sao AI nói câu này" của TỪNG tin (migration 0053). Dựng ở
+    # đây chứ không trong `respond()`: hồ sơ kênh, chế độ chung và cờ duyệt
+    # riêng chỉ tầng này biết. Hỏng thì tin vẫn đi, nhưng phải để lại dấu:
+    # một dấu vết thiếu lặng lẽ là đúng thứ tính năng này sinh ra để chống.
+    try:
+        dau_vet: dict | None = dau_vet_ai.dung(
+            reply, ho_so=ho_so, che_do_chung=che_do_chung,
+            duyet_rieng=co_duyet_rieng, tu_gui=gui_thang)
+    except Exception as exc:  # noqa: BLE001 — dấu vết không được chặn câu trả lời
+        dau_vet = None
+        await db.log_event("dau_vet_ai.loi", ref_id=cid,
+                           ly_do=f"{type(exc).__name__}: {exc}"[:200])
     queued_parts: list[QueuedOutbound] = []
-    if auto_send and await adapter.can_send_now(msg.conversation_ref):
+    if gui_thang:
         metadata = {
             "grounded": reply.grounded,
             "confidence": reply.confidence,
@@ -432,6 +449,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
             "cache_read": reply.cache_read,
             "cost_usd": reply.cost_usd,
             "latency_ms": reply.latency_ms,
+            "dau_vet_ai": dau_vet,
         }
         try:
             queued_parts = await _gui_nhu_nguoi(
@@ -492,14 +510,19 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Chỉ lưu bản nháp ở đây cho assist/escalate hoặc khi enqueue hỏng.
     stored_draft = not queued_parts
     if stored_draft:
+        # Rơi xuống nháp dù đã định tự gửi (xếp hàng hỏng): dấu vết phải nói
+        # đúng điều đã xảy ra, không phải điều đã định.
+        if dau_vet is not None and dau_vet.get("che_do", {}).get("tu_gui"):
+            dau_vet = {**dau_vet, "che_do": {**dau_vet["che_do"], "tu_gui": False}}
         await db.execute(
             """
             INSERT INTO messages
                 (conversation_id, role, content, delivered, direction,
                  delivery_status, grounded, confidence, sources, model,
-                 tokens_in, tokens_out, cache_read, cost_usd, latency_ms)
+                 tokens_in, tokens_out, cache_read, cost_usd, latency_ms,
+                 dau_vet_ai)
             VALUES (
-                $1,'agent',$2,false,'outbound','draft',$3,$4,$5,$6,$7,$8,$9,$10,$11
+                $1,'agent',$2,false,'outbound','draft',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
             )
             """,
             cid,
@@ -513,6 +536,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
             reply.cache_read,
             reply.cost_usd,
             reply.latency_ms,
+            dau_vet,
         )
 
     status = (

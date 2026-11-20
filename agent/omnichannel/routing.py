@@ -56,6 +56,20 @@ class RoutingRepository(Protocol):
     def transaction(self): ...
 
 
+def nguoi_dang_giu(conversation: Mapping[str, Any]) -> UUID | None:
+    """
+    Người ĐANG GIỮ hội thoại: được giao VÀ hội thoại đang ở tay người.
+
+    `assigned_to` của hội thoại AI (`auto`/`assist`) là người bộ định tuyến
+    gán theo dõi, không phải người đang nói với khách — đồng nghiệp nhận
+    tiếp quản lúc khách bực là việc nên làm, không phải giành việc. Cùng định
+    nghĩa với dashboard (`03-hoi-thoai.js`: "Đồng nghiệp đang giữ").
+    """
+    if conversation.get("mode") != "human" or not conversation.get("assigned_to"):
+        return None
+    return UUID(str(conversation["assigned_to"]))
+
+
 def _state(row: Mapping[str, Any]) -> ConversationRoutingState:
     return ConversationRoutingState(
         conversation_id=UUID(str(row["id"])),
@@ -103,8 +117,12 @@ class ConversationRoutingService:
                 assignee_id=assignee_id,
                 team_id=team_id,
                 is_admin=actor_is_admin,
+                current_holder_id=nguoi_dang_giu(conversation),
             ):
-                raise AssignmentDenied("người gán hoặc người nhận không có quyền account")
+                raise AssignmentDenied(
+                    "không có quyền giao hội thoại này: người nhận phải là thành "
+                    "viên kênh (và của nhóm nếu chọn nhóm); giao cho người khác "
+                    "hoặc lấy hội thoại đồng nghiệp đang giữ cần quyền quản lý kênh")
             updated = await tx.apply_takeover(
                 conversation_id=conversation_id,
                 account_id=conversation["account_id"],
@@ -242,6 +260,7 @@ class PostgresRoutingTransaction:
         assignee_id: UUID,
         team_id: UUID | None,
         is_admin: bool,
+        current_holder_id: UUID | None = None,
     ) -> bool:
         if is_admin:
             assignee_ok = await self._connection.fetchval(
@@ -250,12 +269,14 @@ class PostgresRoutingTransaction:
                 account_id,
                 assignee_id,
             )
-            return bool(assignee_ok)
+            if not assignee_ok:
+                return False
+            return await self._team_ok(team_id, assignee_id)
         row = await self._connection.fetchrow(
             """
             SELECT actor.role AS actor_role,
                    assignee.user_id IS NOT NULL AS assignee_ok,
-                   ($2 = $3 OR actor.role IN ('owner', 'manager')) AS actor_ok
+                   actor.role IN ('owner', 'manager') AS quan_ly
             FROM account_memberships actor
             LEFT JOIN account_memberships assignee
               ON assignee.account_id = actor.account_id AND assignee.user_id = $3
@@ -265,8 +286,31 @@ class PostgresRoutingTransaction:
             actor_id,
             assignee_id,
         )
-        if row is None or not row["assignee_ok"] or not row["actor_ok"]:
+        if row is None or not row["assignee_ok"]:
             return False
+        quan_ly = bool(row["quan_ly"])
+        if assignee_id != actor_id and not quan_ly:
+            return False
+        # LẤY HỘI THOẠI ĐỒNG NGHIỆP ĐANG GIỮ cần quyền quản lý — cả khi giao
+        # cho CHÍNH MÌNH. Trước 20.11.2026 vế "tự nhận" (`$2 = $3`) đủ cho
+        # mọi thành viên kênh, nên nhân viên B lặng lẽ giành hội thoại A
+        # đang nói dở: bản ghi phân công của A bị đóng, A không được báo, và
+        # khách thấy hai người trả lời. Dashboard đã ẩn nút "Tôi tiếp quản"
+        # khi đồng nghiệp đang giữ — nhưng chặn ở giao diện là chặn hỏng-mở:
+        # gọi thẳng API là qua.
+        if (current_holder_id is not None and current_holder_id != actor_id
+                and not quan_ly):
+            return False
+        return await self._team_ok(team_id, assignee_id)
+
+    async def _team_ok(self, team_id: UUID | None, assignee_id: UUID) -> bool:
+        """
+        Người nhận phải THUỘC nhóm được chọn.
+
+        Trước bản này nhánh `is_admin` bỏ qua phép kiểm này — quản trị giao
+        được "nhóm Kho" cho người không ở nhóm Kho, và báo cáo theo nhóm đếm
+        sai mà không ai biết vì sao.
+        """
         if team_id is None:
             return True
         return bool(

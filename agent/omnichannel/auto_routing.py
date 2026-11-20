@@ -21,6 +21,7 @@ class AutoRoutingState:
 
 class AutoRoutingTransaction(Protocol):
     async def lock_conversation(self, conversation_id: UUID): ...
+    async def da_co_nguoi_vao(self, conversation_id: UUID) -> bool: ...
     async def matching_rule(self, **kwargs): ...
     async def candidates(self, **kwargs): ...
     async def routing_cursor(self, rule_id: UUID): ...
@@ -53,6 +54,28 @@ def _choose_candidate(rows: list[Mapping[str, Any]], cursor: UUID | None):
     return low[0]
 
 
+# NGƯỜI ĐÃ VÀO hội thoại `human` chưa ai được giao: có tin nhân viên gõ (hoặc
+# bản nháp AI nhân viên duyệt) SAU lần chuyển người gần nhất. Hội thoại như
+# thế đã có người cầm trên thực tế — chỉ là họ trả lời mà không bấm "Tôi
+# tiếp quản". Giao nó cho người khác là hai người cùng nói với một khách.
+#
+# Không có sự kiện chuyển người nào (dữ liệu cũ, đường `standby`) thì mốc
+# là -infinity: MỌI tin nhân viên từng gõ đều tính — sai về phía không giao,
+# đúng chiều an toàn. Dùng chỉ mục `idx_event_kind_ref` (0037).
+_DA_CO_NGUOI_VAO_SQL = """
+    EXISTS (
+        SELECT 1 FROM messages tin_nv
+        WHERE tin_nv.conversation_id = {c}.id
+          AND (tin_nv.role = 'staff' OR tin_nv.duyet_boi IS NOT NULL)
+          AND tin_nv.created_at > coalesce((
+              SELECT max(su_kien.created_at) FROM events su_kien
+              WHERE su_kien.kind = 'conversation.escalated'
+                AND su_kien.ref_id = {c}.id
+          ), '-infinity'::timestamptz)
+    )
+"""
+
+
 class AutoRoutingService:
     def __init__(self, repository: AutoRoutingRepository) -> None:
         self._repository = repository
@@ -63,9 +86,17 @@ class AutoRoutingService:
             if (
                 conversation is None
                 or conversation.get("assigned_to") is not None
-                or conversation.get("mode") == "human"
                 or conversation.get("state") in {"resolved", "closed"}
             ):
+                return None
+            # HỘI THOẠI AI CHUYỂN NGƯỜI (mode human, chưa ai giữ) CŨNG ĐƯỢC
+            # GIAO. Trước 20.11.2026 bộ định tuyến bỏ qua mọi `mode='human'`,
+            # nên đúng những khách CẦN người nhất — AI đã tự nhận không đủ
+            # thẩm quyền — chỉ sinh một công việc không ai nhận, nằm chờ ai
+            # đó tình cờ mở. Người đã cầm (`assigned_to`, chặn ngay trên)
+            # hoặc đã vào trả lời thì KHÔNG giao lại.
+            if (conversation.get("mode") == "human"
+                    and await tx.da_co_nguoi_vao(conversation_id)):
                 return None
             rule = await tx.matching_rule(
                 account_id=conversation["account_id"],
@@ -111,6 +142,13 @@ class PostgresAutoRoutingTransaction:
             "SELECT * FROM conversations WHERE id = $1 FOR UPDATE",
             conversation_id,
         )
+
+    async def da_co_nguoi_vao(self, conversation_id: UUID) -> bool:
+        return bool(await self._connection.fetchval(
+            "SELECT " + _DA_CO_NGUOI_VAO_SQL.format(c="hoi_thoai")
+            + " FROM conversations hoi_thoai WHERE hoi_thoai.id = $1",
+            conversation_id,
+        ))
 
     async def matching_rule(self, *, account_id: UUID, priority: str):
         return await self._connection.fetchrow(
@@ -182,24 +220,37 @@ class PostgresAutoRoutingTransaction:
         assignee_id: UUID,
         source: str,
     ):
+        # Dòng phân công còn mở mà `assigned_to` đã NULL (người nhận bị xoá
+        # — khoá ngoại SET NULL) thì đóng lại trước: chỉ mục "một phân công
+        # đang mở mỗi hội thoại" sẽ làm lệnh INSERT dưới nổ ở MỌI lượt quét,
+        # và hội thoại ấy kẹt ngoài định tuyến mãi mãi.
+        await self._connection.execute(
+            "UPDATE conversation_assignments SET ended_at = now() "
+            "WHERE conversation_id = $1 AND ended_at IS NULL",
+            conversation_id,
+        )
         await self._connection.execute(
             """
             INSERT INTO conversation_assignments (
                 conversation_id, assigned_user_id, assigned_team_id,
                 source, reason
-            ) VALUES ($1,$2,$3,$4,'matched routing rule')
+            ) VALUES ($1,$2,$3,$4,'Tự giao theo quy tắc định tuyến')
             """,
             conversation_id,
             assignee_id,
             team_id,
             source,
         )
+        # Chỉ chốt `assigned_to IS NULL`: dòng đã khoá FOR UPDATE + khoá
+        # advisory ở `lock_conversation`, và `route()` đã loại hội thoại
+        # người đang giữ hoặc đã vào trả lời. `mode` giữ NGUYÊN — giao người
+        # không phải là tắt hay bật AI.
         updated = await self._connection.fetchrow(
             """
             UPDATE conversations
             SET assigned_to = $2, assigned_team_id = $3,
                 assigned_at = now(), version = version + 1, updated_at = now()
-            WHERE id = $1 AND assigned_to IS NULL AND mode <> 'human'
+            WHERE id = $1 AND assigned_to IS NULL
             RETURNING *
             """,
             conversation_id,
@@ -208,6 +259,19 @@ class PostgresAutoRoutingTransaction:
         )
         if updated is None:
             raise RuntimeError("conversation changed during auto routing")
+        # Việc "Khách cần người trả lời" do agent tự sinh đi THEO hội thoại:
+        # hội thoại đã có người mà việc vẫn "chưa giao" là hai nơi nói hai
+        # điều khác nhau, và danh sách việc chung đầy những việc đã có chủ.
+        # Chỉ việc CHƯA ai nhận — không giật việc người ta đã nhận tay.
+        await self._connection.execute(
+            """
+            UPDATE cong_viec SET nguoi_nhan = $2, sua_luc = now()
+            WHERE conversation_id = $1 AND nguon = 'agent'
+              AND trang_thai IN ('moi', 'dang_lam') AND nguoi_nhan IS NULL
+            """,
+            conversation_id,
+            assignee_id,
+        )
         await self._connection.execute(
             """
             INSERT INTO routing_cursors (rule_id, last_user_id, updated_at)
@@ -246,16 +310,21 @@ class PostgresAutoRoutingRepository:
 
     async def pending_conversation_ids(self, limit: int = 50) -> list[UUID]:
         async with self._pool_provider().acquire() as connection:
+            # Hội thoại CHỜ NGƯỜI xếp TRƯỚC: lượt quét chỉ lấy `limit` dòng,
+            # và hàng trăm hội thoại AI cũ không khớp quy tắc nào sẽ chiếm hết
+            # chỗ mỗi lượt — hội thoại vừa chuyển người không bao giờ tới lượt.
+            # Khách đang chờ người cũng là khách gấp nhất.
             rows = await connection.fetch(
                 """
-                SELECT id FROM conversations
-                WHERE assigned_to IS NULL
-                  AND mode <> 'human'
-                  AND state IN ('open', 'pending')
-                ORDER BY CASE priority
+                SELECT id FROM conversations c
+                WHERE c.assigned_to IS NULL
+                  AND c.state IN ('open', 'pending')
+                  AND (c.mode <> 'human' OR NOT """ + _DA_CO_NGUOI_VAO_SQL.format(c="c") + """)
+                ORDER BY (c.mode = 'human') DESC,
+                         CASE c.priority
                            WHEN 'urgent' THEN 4 WHEN 'high' THEN 3
                            WHEN 'normal' THEN 2 ELSE 1 END DESC,
-                         resolution_due_at NULLS LAST, updated_at
+                         c.resolution_due_at NULLS LAST, c.updated_at
                 LIMIT $1
                 """,
                 limit,

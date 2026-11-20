@@ -265,6 +265,7 @@ def kiem_sua_nhap(hang, noi_dung: str) -> str:
 async def _queue_approved_draft(
     mid: uuid.UUID, noi_dung: str | None = None, *,
     boi: str = "", xac_nhan: bool = False, the: str | None = None,
+    nguoi_duyet_id: str | None = None,
 ):
     """
     Duyệt một bản nháp, có thể kèm nội dung đã sửa.
@@ -322,13 +323,24 @@ async def _queue_approved_draft(
         "read",
     }:
         return None
-    return await OutboundService(PostgresOutboundRepository()).queue_existing_text(
+    queued = await OutboundService(PostgresOutboundRepository()).queue_existing_text(
         conversation_id=message["conversation_id"],
         message_id=message["id"],
         text=van_ban,
         idempotency_key=f"approve:{message['id']}",
         the=the,
     )
+    # NGƯỜI DUYỆT phải để lại dấu vết, kể cả khi không sửa chữ nào: trước
+    # 20.11.2026 "Duyệt và gửi" không ghi ai bấm — AI soạn, khách nhận, và
+    # không truy được ai đã cho phép câu ấy đi. `duyet_boi IS NULL`: bấm hai
+    # lần không đè người duyệt đầu tiên.
+    await db.execute(
+        "UPDATE messages SET duyet_boi = $2::uuid, duyet_luc = now() "
+        "WHERE id = $1 AND duyet_boi IS NULL",
+        mid, nguoi_duyet_id)
+    await db.log_event("tin_nhan.duyet", actor=boi, ref_id=mid,
+                       co_sua=noi_dung is not None)
+    return queued
 
 
 class DuyetBody(BaseModel):
@@ -367,6 +379,7 @@ async def approve_draft(
             boi=nguoi.get("ten_dang_nhap", ""),
             xac_nhan=bool(body and body.xac_nhan),
             the=the,
+            nguoi_duyet_id=str(nguoi["id"]) if nguoi.get("id") else None,
         )
     except OutboundMessageNotFound as exc:
         raise HTTPException(404, "Không thấy tin nhắn") from exc

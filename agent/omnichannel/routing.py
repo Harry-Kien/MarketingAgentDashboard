@@ -413,7 +413,11 @@ class PostgresRoutingTransaction:
         updated = await self._connection.fetchrow(
             """
             UPDATE conversations
-            SET mode = $2, status = $2, version = version + 1, updated_at = now()
+            SET mode = $2, status = $2,
+                -- Lựa chọn của NHÂN VIÊN, khác `mode='assist'` máy tự đặt
+                -- sau mỗi bản nháp — xem migration 0052.
+                duyet_truoc_khi_gui = ($2 = 'assist'),
+                version = version + 1, updated_at = now()
             WHERE id = $1
             RETURNING *
             """,
@@ -456,8 +460,8 @@ class PostgresRoutingTransaction:
             """
             UPDATE conversations
             SET mode = 'assist', status = 'assist', assigned_to = NULL,
-                assigned_team_id = NULL, version = version + 1,
-                updated_at = now()
+                assigned_team_id = NULL, duyet_truoc_khi_gui = false,
+                version = version + 1, updated_at = now()
             WHERE id = $1
             RETURNING *
             """,

@@ -399,8 +399,14 @@ async def handle_inbound(msg: InboundMessage) -> None:
                                cost_usd=reply.cost_usd, do_dai=len(reply.text or ""))
             return
 
-    # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt.
-    auto_send = runtime.mode() == "auto" and not reply.escalate
+    # Chế độ assist: soạn nhưng KHÔNG gửi, chờ người duyệt — theo chế độ
+    # CHUNG, và theo cờ "Duyệt trước khi gửi" nhân viên đặt cho RIÊNG hội
+    # thoại này (migration 0052). Đọc lúc gửi, không đọc lúc nhận tin: nhân
+    # viên có thể bấm trong vài giây model đang soạn.
+    duyet_rieng = await db.fetchrow(
+        "SELECT duyet_truoc_khi_gui FROM conversations WHERE id = $1", cid)
+    auto_send = (runtime.mode() == "auto" and not reply.escalate
+                 and not (duyet_rieng and duyet_rieng.get("duyet_truoc_khi_gui")))
     queued_parts: list[QueuedOutbound] = []
     if auto_send and await adapter.can_send_now(msg.conversation_ref):
         metadata = {

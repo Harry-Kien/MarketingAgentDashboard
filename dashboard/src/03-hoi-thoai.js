@@ -385,7 +385,7 @@ async function loadThread(id) {
         <span class="msg__meta">${clock(g.tao_luc)}</span><p>${esc(g.noi_dung)}</p></div>`).join("")}
     </details>` : ""}
     <div class="opsbar">
-      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
+      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</b>${c.state !== "resolved" ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}" data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : ""}</span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
       ${c.sla_warning ? `<span>Cảnh báo SLA <b>50%${c.first_response_warning_at ? ` (${clock(c.first_response_warning_at)})` : ""}</b></span>` : ""}
       ${c.sla_breached ? `<span>Trạng thái SLA <b>Quá hạn${c.first_response_breached_at ? ` (${clock(c.first_response_breached_at)})` : ""}</b></span>` : ""}

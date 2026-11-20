@@ -81,6 +81,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       <span>Số hiệu</span><b class="rail__count"></b>
     </button>
+    <button type="button" class="rail__item" data-view="phantich">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>
+      <span>Phân tích</span><b id="c-phantich" class="rail__count"></b>
+    </button>
     <button type="button" class="rail__item" data-view="trithuc">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
       <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
@@ -445,6 +449,65 @@
       </section>
     </section>
 
+    <!-- ============ PHÂN TÍCH ============
+         Định nghĩa từng con số ở agent/api/phan_tich.py và docs/phan-tich.md.
+         Mọi số đếm theo SỰ KIỆN trong khoảng ngày; ô nào là ảnh chụp "bây
+         giờ" thì nhãn nói vậy. Không nạp theo vòng 6 giây: đổi bộ lọc hoặc
+         có sự kiện SLA mới thì mới tính lại. -->
+    <section class="view" data-view="phantich">
+      <section class="panel">
+        <h2 class="panel__head">Phân tích
+          <span class="panel__note">giờ Việt Nam · đếm theo sự kiện trong khoảng ngày</span></h2>
+        <form id="ptForm" class="form">
+          <div class="form__row">
+            <label class="field"><span>Từ ngày</span><input type="date" name="tu" required></label>
+            <label class="field"><span>Đến ngày</span><input type="date" name="den" required></label>
+            <label class="field"><span>Nền tảng</span><select name="kenh"></select></label>
+            <label class="field"><span>Tài khoản kênh</span><select name="account_id"></select></label>
+            <label class="field"><span>Nhân viên</span><select name="nhan_vien"></select></label>
+            <label class="field"><span>Hồ sơ AI</span><select name="ho_so"></select></label>
+          </div>
+          <div class="row__nut">
+            <button type="submit" class="btn btn--sm btn--primary">Xem</button>
+          </div>
+        </form>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Hội thoại
+          <span class="panel__note">giải quyết = số lượt · "đang mở" là ảnh chụp bây giờ</span></h2>
+        <div id="ptHoiThoai" class="readout"></div>
+        <h3 class="subhead">Theo ngày — tỉ lệ cần người trên hội thoại có AI</h3>
+        <div class="bang-cuon"><table class="bang" id="ptNgay"></table></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Khách
+          <span class="panel__note">khách có nhắn trong khoảng · mới = thấy lần đầu trong khoảng</span></h2>
+        <div id="ptKhach" class="readout"></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">AI theo hồ sơ
+          <span class="panel__note">thành công = giải quyết mà không người can thiệp (kể cả duyệt nháp), trên số đã có kết cục</span></h2>
+        <div class="bang-cuon"><table class="bang" id="ptAi"></table></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">SLA
+          <span class="panel__note">đúng hạn tính trên mục tiêu có hạn · "quá hạn" là ảnh chụp bây giờ</span></h2>
+        <div id="ptSla" class="readout"></div>
+        <h3 class="subhead">Phản hồi đầu — AI và nhân viên tách riêng</h3>
+        <div class="bang-cuon"><table class="bang" id="ptPhanHoi"></table></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Nhân viên
+          <span class="panel__note">cùng định nghĩa với Hiệu suất nhân viên ở Số hiệu, trong phạm vi bộ lọc</span></h2>
+        <div class="bang-cuon"><table class="bang" id="ptNhanVien"></table></div>
+      </section>
+      <section class="panel">
+        <h2 class="panel__head">Tin nhắn gửi và nhận
+          <span class="panel__note">theo nền tảng và vai · nháp được duyệt sau vẫn tính ngày tạo nháp</span></h2>
+        <div class="bang-cuon"><table class="bang" id="ptTin"></table></div>
+      </section>
+    </section>
+
     <!-- ============ TRI THỨC ============ -->
     <section class="view" data-view="trithuc">
       <div class="split">
@@ -713,6 +776,12 @@
               <input name="first_response_minutes" type="number" min="1" max="43200" value="15" required></label>
             <label class="field"><span>Xử lý xong trong (phút)</span>
               <input name="resolution_minutes" type="number" min="1" max="525600" value="1440" required></label>
+            <!-- Giờ riêng của chính sách (business_hours). Chỉ có tác dụng khi
+                 bật SLA_THEO_GIO_LAM_VIEC; để trống = dùng giờ chung. -->
+            <label class="field"><span>Giờ mở riêng <em class="hint">trống = giờ chung</em></span>
+              <input name="bat_dau" type="number" min="0" max="23" placeholder="vd 8"></label>
+            <label class="field"><span>Giờ đóng riêng</span>
+              <input name="ket_thuc" type="number" min="1" max="24" placeholder="vd 21"></label>
           </div>
           <div class="row__nut">
             <button type="submit" class="btn btn--sm">Lưu SLA</button>

@@ -203,7 +203,9 @@ async function loadDinhTuyen() {
         <span class="row__flag row__flag--${s2.active ? "auto" : "halt"}"></span>
         <div class="row__main">
           <b>${esc(dtTenKenh(s2.account_id))} · mức ${esc(DT_MUC[s2.priority] || s2.priority)}</b>
-          <span class="row__sub">trả lời đầu ${s2.first_response_minutes} phút · xong ${s2.resolution_minutes} phút</span>
+          <span class="row__sub">trả lời đầu ${s2.first_response_minutes} phút · xong ${s2.resolution_minutes} phút${
+            s2.business_hours && s2.business_hours.bat_dau != null
+              ? ` · giờ riêng ${s2.business_hours.bat_dau}h–${s2.business_hours.ket_thuc}h` : ""}</span>
         </div>
       </div>`).join("")
     : '<p class="empty">Chưa đặt hạn nào.</p>';
@@ -285,7 +287,12 @@ $("#dtFormSla")?.addEventListener("submit", (e) => {
     priority: d.priority,
     first_response_minutes: Number(d.first_response_minutes),
     resolution_minutes: Number(d.resolution_minutes),
-    business_hours: {},
+    /* Hai ô trống = {} (giờ chung). Điền một ô mà bỏ ô kia thì gửi nguyên
+       để máy chủ trả 422 có câu chữ — đoán hộ ô còn lại là đặt một giờ làm
+       việc người quản trị chưa từng chọn. */
+    business_hours: (d.bat_dau === "" && d.ket_thuc === "") ? {}
+      : { bat_dau: d.bat_dau === "" ? null : Number(d.bat_dau),
+          ket_thuc: d.ket_thuc === "" ? null : Number(d.ket_thuc) },
     active: true,
   }));
 });
@@ -512,8 +519,12 @@ async function loadOverview() {
 
   $("#readout").innerHTML = [
     cell("Hội thoại 24 giờ", o.conversations.total, "cuộc", null, "auto"),
-    cell("Agent tự xử lý", pct(o.conversations.containment),
-         `${o.conversations.handled}/${o.conversations.total}`,
+    /* "AI tự lo" đếm theo sự kiện: hội thoại có tin AI trong 24 giờ mà
+       không ai can thiệp (chuyển người, tiếp quản, nhân viên nhắn, DUYỆT
+       NHÁP). Ô cũ chia `status = auto` cho tổng — duyệt nháp lật assist
+       thành auto, nên hội thoại người duyệt từng câu cũng thành "tự xử lý". */
+    cell("AI tự lo (không người can thiệp)", pct(o.conversations.containment),
+         `${o.conversations.ai_tu_lo}/${o.conversations.ai} có AI`,
          o.conversations.containment, "auto"),
     cell("Chờ người", o.conversations.waiting, "cuộc",
          o.conversations.total ? o.conversations.waiting / o.conversations.total : 0, "assist"),

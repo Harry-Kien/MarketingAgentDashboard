@@ -45,16 +45,18 @@ router = APIRouter(prefix="/api/bao-cao", tags=["bao-cao"])
 MUI_GIO = "Asia/Ho_Chi_Minh"
 TOI_DA_NGAY = 366
 
-_SQL = f"""
+_SQL_MAU = f"""
 WITH khoang AS (
     SELECT ($1::date)::timestamp AT TIME ZONE '{MUI_GIO}' AS tu,
            ($2::date + 1)::timestamp AT TIME ZONE '{MUI_GIO}' AS den
 ),
+/*PHAM_VI*/
 giao AS (
     SELECT ca.assigned_user_id AS uid, ca.conversation_id, ca.started_at, ca.ended_at
     FROM conversation_assignments ca, khoang
     WHERE ca.assigned_user_id IS NOT NULL
       AND ca.started_at >= khoang.tu AND ca.started_at < khoang.den
+      /*LOC_GIAO*/
 ),
 phan_hoi AS (
     SELECT g.uid,
@@ -70,6 +72,7 @@ tin AS (
     FROM messages m, khoang
     WHERE m.gui_boi IS NOT NULL
       AND m.created_at >= khoang.tu AND m.created_at < khoang.den
+      /*LOC_TIN*/
     GROUP BY 1
 ),
 don AS (
@@ -84,6 +87,7 @@ diem AS (
     FROM csat c, khoang
     WHERE c.diem IS NOT NULL
       AND c.tra_loi_luc >= khoang.tu AND c.tra_loi_luc < khoang.den
+      /*LOC_DIEM*/
     GROUP BY 1
 ),
 -- Trễ SLA tính cho người ĐANG CẦM hội thoại lúc vi phạm xảy ra, trong
@@ -122,10 +126,36 @@ tong AS (
 SELECT * FROM tong
 -- Người bị khoá vẫn hiện nếu CÓ số liệu trong khoảng: nghỉ việc giữa tháng
 -- không xoá được công của nửa tháng đầu.
-WHERE hoi_thoai > 0 OR tin_gui > 0
-   OR id IN (SELECT id FROM nguoi_dung WHERE NOT khoa)
+WHERE (hoi_thoai > 0 OR tin_gui > 0
+   OR id IN (SELECT id FROM nguoi_dung WHERE NOT khoa))
+   /*LOC_NGUOI*/
 ORDER BY tin_gui DESC, hoi_thoai DESC, ho_ten
 """
+
+
+def sql_hieu_suat(pham_vi: str = "", loc_nguoi: str = "") -> str:
+    """
+    Câu báo cáo, tuỳ chọn thu hẹp theo một tập hội thoại.
+
+    `pham_vi`: thân một CTE trả cột `id` — những hội thoại được tính (màn
+    Phân tích lọc theo kênh, phạm vi tầm nhìn, hồ sơ AI). `loc_nguoi`: một
+    vế `AND ...` trên cột `id` của nhân viên. Bỏ trống cả hai = đúng báo cáo
+    gốc. MỘT câu cho hai màn: hai bản chép là hai định nghĩa "trễ SLA" sẽ
+    lệch nhau ở lần sửa sau — đúng chuyện vừa xảy ra với vế trễ.
+
+    Vế `tre` không cần lọc riêng: nó nối qua `giao`, đã lọc.
+    """
+    sql = _SQL_MAU
+    if pham_vi:
+        loc = "AND {cot} IN (SELECT id FROM pham_vi)"
+        sql = (sql.replace("/*PHAM_VI*/", f"pham_vi AS ({pham_vi}),")
+               .replace("/*LOC_GIAO*/", loc.format(cot="ca.conversation_id"))
+               .replace("/*LOC_TIN*/", loc.format(cot="m.conversation_id"))
+               .replace("/*LOC_DIEM*/", loc.format(cot="c.conversation_id")))
+    return sql.replace("/*LOC_NGUOI*/", loc_nguoi)
+
+
+_SQL = sql_hieu_suat()
 
 
 def _khoang(tu: date | None, den: date | None) -> tuple[date, date]:
@@ -142,8 +172,7 @@ def _so(x) -> float | None:
     return None if x is None else round(float(x), 1)
 
 
-async def _lay(tu: date, den: date) -> list[dict[str, Any]]:
-    rows = await db.fetch(_SQL, tu, den)
+def dong_hieu_suat(rows) -> list[dict[str, Any]]:
     return [{
         "id": str(r["id"]), "ho_ten": r["ho_ten"] or r["ten_dang_nhap"],
         "ten_dang_nhap": r["ten_dang_nhap"], "hoi_thoai": r["hoi_thoai"],
@@ -153,6 +182,10 @@ async def _lay(tu: date, den: date) -> list[dict[str, Any]]:
         "csat_tb": None if r["csat_tb"] is None else round(float(r["csat_tb"]), 2),
         "csat_so": r["csat_so"],
     } for r in rows]
+
+
+async def _lay(tu: date, den: date) -> list[dict[str, Any]]:
+    return dong_hieu_suat(await db.fetch(_SQL, tu, den))
 
 
 @router.get("/nhan-vien")

@@ -237,6 +237,10 @@ def test_reopen_does_not_create_immediate_false_breach(reopen_case: ReopenCase):
         "first_response": 0,
         "resolution": 0,
         "warning": 0,
+        # Thêm 20.11.2026: cảnh báo hạn giải quyết và leo thang khi trễ —
+        # hội thoại vừa mở lại cũng không được kích hoạt hai thứ ấy.
+        "resolution_warning": 0,
+        "leo_thang": 0,
     }
     breach_count = asyncio.run(
         _fetchrow(

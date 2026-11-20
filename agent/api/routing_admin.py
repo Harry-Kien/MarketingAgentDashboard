@@ -5,7 +5,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agent import db
 
@@ -43,6 +43,30 @@ class SlaPolicyIn(BaseModel):
     resolution_minutes: int = Field(ge=1, le=525600)
     business_hours: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
+
+    @field_validator("business_hours")
+    @classmethod
+    def _gio_hop_le(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """
+        Giờ riêng của chính sách: `{}` (dùng giờ chung) hoặc đủ hai khoá
+        `bat_dau` < `ket_thuc`, số giờ 0–24.
+
+        CSDL đọc ô này bằng `sla_gio()`, hàm nuốt mọi giá trị hỏng và lui về
+        giờ chung (0039) — đúng, vì một ô gõ sai không được làm hỏng việc tạo
+        hội thoại. Nhưng nuốt im là người quản trị tin rằng giờ 9–18 đã có
+        hiệu lực trong khi hạn vẫn chạy theo giờ chung. Chặn ngay lúc lưu.
+        """
+        if not v:
+            return {}
+        if set(v) != {"bat_dau", "ket_thuc"}:
+            raise ValueError("Giờ làm việc riêng cần đúng hai ô: bat_dau và ket_thuc.")
+        try:
+            mo, dong = int(v["bat_dau"]), int(v["ket_thuc"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Giờ mở/đóng phải là số giờ nguyên.") from exc
+        if not (0 <= mo < dong <= 24):
+            raise ValueError("Giờ mở phải trước giờ đóng, trong khoảng 0–24.")
+        return {"bat_dau": mo, "ket_thuc": dong}
 
 
 def canh_bao_thanh_vien(

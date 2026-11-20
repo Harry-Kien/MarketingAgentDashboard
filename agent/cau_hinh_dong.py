@@ -101,6 +101,11 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
          "\"gặp nhân viên\" để gặp người, ảnh da là dữ liệu nhạy cảm. Nghĩa vụ "
          "theo Nghị định 356/2025 Điều 10 khoản 3 và Điều 6 khoản 4 — tắt thì "
          "bảng kiểm sẵn sàng sẽ cảnh báo."),
+    MoTa("SLA_KHI_TRE", "sla", "Khi hội thoại trễ hạn SLA", False,
+         ("bao", "bao_va_nang_uu_tien"),
+         "bao: tạo một việc gấp và báo nhân viên (mặc định). "
+         "bao_va_nang_uu_tien: thêm nâng ưu tiên hội thoại một bậc để nó lên "
+         "đầu hàng chờ — hạn SLA không bị rút thêm."),
     MoTa("VIETQR_BIN", "thanh_toan", "Mã BIN ngân hàng nhận tiền", False,
          y_nghia="6 chữ số theo NAPAS, ví dụ Vietcombank 970436, Techcombank "
                  "970407, MB 970422, ACB 970416, VPBank 970432."),
@@ -189,6 +194,7 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "AN_BINH_LUAN_CO_SDT": lambda: settings.an_binh_luan_co_sdt,
     "CSAT_BAT": lambda: settings.csat_bat,
     "THONG_BAO_AI": lambda: settings.thong_bao_ai,
+    "SLA_KHI_TRE": lambda: settings.sla_khi_tre,
     "VIETQR_BIN": lambda: settings.vietqr_bin,
     "VIETQR_SO_TK": lambda: settings.vietqr_so_tk,
     "VIETQR_TEN_TK": lambda: settings.vietqr_ten_tk,

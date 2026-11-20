@@ -145,12 +145,16 @@ class Settings(BaseSettings):
     # Xem agent/omnichannel/bi_mat_may_chu.py
     zalo_sidecar_secret: str = ""
     zalo_sidecar_url: str = "http://127.0.0.1:3210"
-    # Nhận tin NHÓM Zalo (thread_type=1) vào hệ thống hay không. Mặc định
-    # TẮT: nick bán hàng hay nằm trong nhóm bạn bè, nhóm lớp, nhóm khoá
-    # luận — bật mà không chủ ý là AI soạn câu tư vấn mỹ phẩm gửi cho cả
-    # nhóm (đã xảy ra thật trên CSDL production). Tắt thì tin nhóm bị bỏ có
-    # ghi sự kiện `zalo_personal.bo_tin_nhom`, không lưu hội thoại.
-    zalo_nhan_tin_nhom: bool = False
+    # Nhận tin NHÓM Zalo (thread_type=1) VÀO HỘP THƯ hay không. Mặc định
+    # BẬT: tin nhóm hiện trên dashboard, đánh dấu "Nhóm", mang tên nhóm và
+    # tên người gửi từng tin — để NHÂN VIÊN đọc và trả lời.
+    #
+    # Công tắc này KHÔNG điều khiển AI. AI không bao giờ nói trong nhóm, bật
+    # hay tắt cũng vậy (xu_ly_tin_vao + chốt outbox). Trước 20.11.2026 nó
+    # mặc định TẮT vì AI từng soạn câu tư vấn cho cả nhóm khoá luận; chặn
+    # AI ở đúng chỗ rồi thì bỏ tin nhóm chỉ còn là bỏ khách hỏi hàng trong
+    # nhóm. Tắt thì tin nhóm bị bỏ, có ghi `zalo_personal.bo_tin_nhom`.
+    zalo_nhan_tin_nhom: bool = True
 
     # --- Vận chuyển ---
     # `mock` là mặc định CÓ CHỦ Ý: nó không gọi mạng, không tốn phí, không

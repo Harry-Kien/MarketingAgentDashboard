@@ -78,6 +78,10 @@ def ra_json(m: InboundMessage) -> dict[str, Any]:
         "customer_name": m.customer_name, "text": m.text, "dedupe_key": m.dedupe_key,
         "received_at": m.received_at.isoformat(),
         "attachments": list(m.attachments or []), "meta": dict(m.meta or {}),
+        # Ba trường dưới PHẢI đi qua hộp thư bền. Rơi `la_nhom` ở đây là tin
+        # nhóm chạy lại sau sự cố được xử lý như tin riêng — AI nói vào nhóm.
+        "la_nhom": bool(m.la_nhom), "sender_ref": m.sender_ref,
+        "sender_name": m.sender_name,
     }
 
 
@@ -91,6 +95,10 @@ def tu_json(d: dict[str, Any]) -> InboundMessage:
         customer_name=d["customer_name"], text=d["text"], dedupe_key=d["dedupe_key"],
         received_at=datetime.fromisoformat(d["received_at"]),
         attachments=list(d.get("attachments") or []), meta=dict(d.get("meta") or {}),
+        # Dòng ghi trước bản này không có ba khoá ấy: mặc định như tin cũ.
+        la_nhom=bool(d.get("la_nhom", False)),
+        sender_ref=str(d.get("sender_ref") or ""),
+        sender_name=str(d.get("sender_name") or ""),
     )
 
 

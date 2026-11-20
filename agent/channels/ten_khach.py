@@ -22,10 +22,30 @@ from collections.abc import Mapping
 # Những giá trị các adapter đặt khi chưa biết tên. Khớp bằng danh sách chứ
 # không đoán theo tiền tố "Khách": khách tên thật là "Khách" (hiếm nhưng có)
 # thì cũng chỉ tốn một lượt gọi thừa, không sai gì.
+#
+# MỘT danh sách cho cả hệ thống. Trước đây `identity.py` giữ bản riêng viết
+# tay trong SQL, thiếu "Khách Facebook" — nên khách Messenger mà Graph hỏng
+# một lần là tên thật trong hồ sơ bị "Khách Facebook" đè mất. Thêm adapter
+# mới có tên mặc định mới thì thêm ĐÚNG MỘT chỗ ở đây (có test canh).
 TEN_MAC_DINH = frozenset({
     "", "Khách", "Khách Zalo", "Khách Instagram", "Khách WhatsApp",
-    "Khách Facebook",
+    "Khách Facebook", "Khách website",
 })
+
+# Tên dự phòng của nhóm Zalo khi sidecar không lấy được tên thật. Dấu "…"
+# làm nó khác hẳn mọi tên nhóm người ta đặt, để `la_ten_mac_dinh` nhận ra và
+# không để nó đè tên thật đã biết.
+TIEN_TO_NHOM_DU_PHONG = "Nhóm Zalo …"
+
+
+def ten_nhom_du_phong(thread_id: str) -> str:
+    return f"{TIEN_TO_NHOM_DU_PHONG}{str(thread_id)[-6:]}"
+
+
+def la_ten_mac_dinh(ten: str | None) -> bool:
+    """Tên này chỉ là chỗ giữ chỗ, không được đè lên một tên thật đã biết."""
+    gon = str(ten or "").strip()
+    return gon in TEN_MAC_DINH or gon.startswith(TIEN_TO_NHOM_DU_PHONG)
 
 
 def can_lay_ten(ten_hien_tai: str) -> bool:

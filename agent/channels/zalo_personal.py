@@ -14,13 +14,24 @@ from uuid import UUID
 
 import httpx
 
-from agent.channels.base import ChannelAdapter, ConnectionCheck, Delivery, InboundMessage
+from agent.channels.base import (THREAD_NHOM, THREAD_RIENG, ChannelAdapter,
+                                 ConnectionCheck, Delivery, InboundMessage,
+                                 la_ref_nhom, ref_nhom)
+from agent.channels.ten_khach import ten_nhom_du_phong
 from .ly_do_loi import chi_tiet_loi
 
 log = logging.getLogger("agent.zalo_personal")
 
-# Loại thread phía Zalo: 0 nhắn riêng một người, 1 nhóm.
-THREAD_NHOM = 1
+# Loại thread phía Zalo: 0 nhắn riêng một người, 1 nhóm. Hằng số nằm ở
+# `base` (lớp trên cũng cần nhận ra nhóm); `THREAD_NHOM` vẫn import được từ
+# đây cho chỗ gọi cũ.
+
+
+def _so_nguyen(gia_tri: Any) -> int:
+    try:
+        return int(gia_tri or 0)
+    except (TypeError, ValueError):
+        return THREAD_RIENG
 
 
 def ly_do_bo_qua(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -150,24 +161,51 @@ class ZaloPersonalAdapter(ChannelAdapter):
         text = str(message.get("text") or "").strip()
         if not text and not attachments:
             return None
+        loai = _so_nguyen(message.get("thread_type"))
+        # Sidecar mới khai `is_group`; sidecar cũ chỉ có `thread_type` — nhận
+        # cả hai, vì sidecar là tiến trình riêng và có thể chạy bản cũ hơn app.
+        la_nhom = bool(message.get("is_group")) or loai == THREAD_NHOM
+        if la_nhom:
+            loai = THREAD_NHOM
+        ten_nguoi_gui = str(message.get("sender_name") or "").strip()
+        if la_nhom:
+            # Danh tính của hội thoại nhóm là NHÓM, không phải người vừa gõ.
+            #
+            # Bản trước lấy người gửi: hội thoại nhóm mang tên người nói sau
+            # cùng, bị gắn vào contact của cuộc nhắn riêng với người đó, và
+            # trí nhớ agent về khách ấy (khoá theo `customer_ref`) bị đọc vào
+            # câu trả lời trong nhóm — lộ chuyện riêng của một người ra cả
+            # nhóm — rồi chuyện phiếm trong nhóm lại ghi vào hồ sơ của họ.
+            customer_ref = ref_nhom(thread_id)
+            customer_name = (str(message.get("group_name") or "").strip()
+                             or ten_nhom_du_phong(thread_id))
+            # Tin nhóm không có người gửi thì để trống, KHÔNG lấy id nhóm làm
+            # người gửi như tin riêng — nhóm không gõ được tin.
+            sender_id = str(message.get("sender_id") or "")
+        else:
+            customer_ref = sender_id
+            customer_name = ten_nguoi_gui or "Khách Zalo"
         # Nhớ loại thread NGAY khi đọc tin đến, để câu trả lời đi ra đúng
         # loại. Ghi ở đây chứ không ghi ở tầng trên vì đây là chỗ duy nhất
         # còn nhìn thấy payload gốc của sidecar.
-        self._loai_thread[thread_id] = int(message.get("thread_type") or 0)
+        self._loai_thread[thread_id] = loai
         return InboundMessage(
             account_id=self.account_id,
             channel=self.name,
             conversation_ref=thread_id,
-            customer_ref=sender_id,
-            customer_name=str(message.get("sender_name") or "Khách Zalo"),
+            customer_ref=customer_ref,
+            customer_name=customer_name,
             text=text,
             dedupe_key=f"{self.name}:{msg_id}",
             received_at=_received_at(message.get("timestamp")),
             attachments=attachments,
             meta={
                 "nen_tang_goc": "zalo_personal",
-                "thread_type": int(message.get("thread_type") or 0),
+                "thread_type": loai,
             },
+            la_nhom=la_nhom,
+            sender_ref=sender_id,
+            sender_name=ten_nguoi_gui,
         )
 
     async def _request(self, action: str, payload: Mapping[str, Any]) -> tuple[Delivery, dict]:
@@ -219,6 +257,13 @@ class ZaloPersonalAdapter(ChannelAdapter):
         Đọc CSDL hỏng thì lùi về 0 NHƯNG ghi log: gửi sai loại vào nhóm thì
         Zalo từ chối "Tham số không hợp lệ" — job hỏng có dấu vết, còn lỗi
         đọc này phải để lại dấu vết riêng để không ai phải đoán.
+
+        `thread_type` rỗng (hội thoại có trước migration 0042 mà backfill
+        không với tới — nó dựa vào `tin_vao`, chỉ giữ 3 ngày) thì suy từ
+        danh tính: hội thoại nhóm có `customer_ref` dạng `group:` (hoặc, ở
+        dữ liệu cũ, là id NGƯỜI GỬI — khác id thread; nhắn riêng thì thread
+        chính là người kia). Bản trước mặc định 0 ở đây, và câu trả lời của
+        nhân viên vào nhóm chết trong outbox với "Tham số không hợp lệ".
         """
         if conversation_ref in self._loai_thread:
             return self._loai_thread[conversation_ref]
@@ -226,14 +271,23 @@ class ZaloPersonalAdapter(ChannelAdapter):
             from agent import db
 
             r = await db.fetchrow(
-                "SELECT thread_type FROM conversations "
+                "SELECT thread_type, customer_ref FROM conversations "
                 "WHERE account_id = $1 AND external_id = $2",
                 self.account_id, conversation_ref)
         except Exception:  # noqa: BLE001 — gửi vẫn phải đi, nhưng không câm
             log.warning("zalo_personal: không đọc được thread_type của %s",
                         conversation_ref, exc_info=True)
-            return 0
-        loai = int(r["thread_type"]) if r and r["thread_type"] is not None else 0
+            return THREAD_RIENG
+        if r is None:
+            return THREAD_RIENG
+        if r["thread_type"] is not None:
+            loai = int(r["thread_type"])
+        else:
+            ref = str(r["customer_ref"] or "")
+            loai = (THREAD_NHOM if la_ref_nhom(ref) or (ref and ref != conversation_ref)
+                    else THREAD_RIENG)
+            log.warning("zalo_personal: %s thiếu thread_type, suy ra %s từ customer_ref",
+                        conversation_ref, loai)
         self._loai_thread[conversation_ref] = loai
         return loai
 

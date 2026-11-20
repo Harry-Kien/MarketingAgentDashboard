@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from agent import db
+from agent.channels.ten_khach import la_ten_mac_dinh
 
 
 class IdentityError(RuntimeError):
@@ -211,10 +212,15 @@ class PostgresIdentityTransaction:
                 dict(metadata),
             )
         else:
+            # Tên giữ chỗ ("Khách Zalo", "Nhóm Zalo …ab12") KHÔNG đè tên đã
+            # biết — ở cả handle lẫn hồ sơ. Danh sách lấy từ `ten_khach`, một
+            # chỗ cho cả hệ thống: bản viết tay trong SQL trước đây thiếu
+            # "Khách Facebook", và handle thì bị đè bởi bất cứ chuỗi khác rỗng.
+            co_ten_that = not la_ten_mac_dinh(display_name)
             await self._connection.execute(
                 """
                 UPDATE contact_points
-                SET handle = CASE WHEN $3 <> '' THEN $3 ELSE handle END,
+                SET handle = CASE WHEN $5 THEN $3 ELSE handle END,
                     metadata = metadata || $4::jsonb,
                     last_seen = now(), updated_at = now()
                 WHERE id = $1 AND channel_account_id = $2
@@ -223,20 +229,18 @@ class PostgresIdentityTransaction:
                 account_id,
                 display_name,
                 dict(metadata),
+                co_ten_that,
             )
             await self._connection.execute(
                 """
                 UPDATE contacts
-                SET display_name = CASE
-                        WHEN $2 <> '' AND $2 NOT IN (
-                            'Khách', 'Khách website', 'Khách Instagram',
-                            'Khách WhatsApp', 'Khách Zalo'
-                        ) THEN $2 ELSE display_name END,
+                SET display_name = CASE WHEN $3 THEN $2 ELSE display_name END,
                     last_seen = now(), updated_at = now(), version = version + 1
                 WHERE id = $1
                 """,
                 row["contact_id"],
                 display_name,
+                co_ten_that,
             )
         return row
 

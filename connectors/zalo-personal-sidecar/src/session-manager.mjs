@@ -57,6 +57,38 @@ function tepTuNoiDung(msgType, content) {
   return tep;
 }
 
+// Loại thread của zca-js (`ThreadType`): 0 nhắn riêng, 1 nhóm.
+export const THREAD_NHOM = 1;
+
+// Bộ đệm tên nhóm.
+//
+// VÌ SAO CẦN TÊN NHÓM: tin nhóm của zca-js chỉ mang `uidFrom`/`dName` của
+// NGƯỜI GỬI, không mang tên nhóm. Bản trước đẩy đúng hai trường ấy lên, nên
+// hội thoại nhóm trên dashboard mang tên người nói sau cùng — và phía Python
+// gắn cả nhóm vào hồ sơ riêng của người đó (trí nhớ riêng của họ lọt vào
+// câu trả lời trong nhóm).
+//
+// VÌ SAO ĐỆM: `getGroupInfo` là một lượt gọi mạng tới Zalo. Nhóm sôi nổi có
+// hàng trăm tin một giờ; hỏi mỗi tin là tự chuốc bị Zalo chặn. Tên nhóm hiếm
+// khi đổi — đổi thì trễ nửa giờ mới thấy là chấp nhận được.
+//
+// Hỏng thì đệm NGẮN: để lần sau thử lại sớm, nhưng không hỏi lại ở từng tin
+// của cùng một đợt hỏng.
+export const TEN_NHOM_SONG_MS = 30 * 60 * 1000;
+export const TEN_NHOM_LOI_MS = 2 * 60 * 1000;
+// Tin khách không được chờ Zalo trả tên nhóm mãi: quá hạn thì đi tiếp với
+// tên rỗng (Python tự đặt tên dự phòng).
+export const TEN_NHOM_CHO_MS = 5000;
+const TEN_NHOM_TOI_DA = 2000;
+
+function coHan(promise, ms) {
+  let hen;
+  const het = new Promise((_, reject) => {
+    hen = setTimeout(() => reject(new Error(`quá ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, het]).finally(() => clearTimeout(hen));
+}
+
 export function normalizeMessage(raw) {
   const data = raw?.data ?? raw ?? {};
   const content = data.content ?? {};
@@ -84,10 +116,18 @@ export function normalizeMessage(raw) {
   } else {
     text = String(content?.title ?? content?.msg ?? data?.msg ?? '');
   }
+  const threadType = Number(raw?.type ?? data.type ?? 0);
   return {
     msg_id: String(data.msgId ?? data.msg_id ?? data.cliMsgId ?? ''),
     thread_id: String(raw?.threadId ?? data.threadId ?? ''),
-    thread_type: Number(raw?.type ?? data.type ?? 0),
+    thread_type: threadType,
+    // Khai TƯỜNG MINH là nhóm, không bắt phía Python tự hiểu con số 1:
+    // nhầm nhóm thành nhắn riêng là AI nói chen vào nhóm của khách.
+    is_group: threadType === THREAD_NHOM,
+    // Điền sau, trong listener — cần gọi API Zalo (xem `layTenNhom`).
+    group_name: '',
+    // Với tin nhóm, hai trường dưới là NGƯỜI GỬI trong nhóm, không phải
+    // danh tính của hội thoại.
     sender_id: String(data.uidFrom ?? data.senderId ?? ''),
     sender_name: String(data.dName ?? data.senderName ?? ''),
     // Gửi kèm để phía Python ghi được VÌ SAO một tin bị bỏ (sticker, loại
@@ -100,12 +140,50 @@ export function normalizeMessage(raw) {
 }
 
 export class SessionManager {
-  constructor({ zaloFactory, onEvent = async () => {}, log = console }) {
+  constructor({ zaloFactory, onEvent = async () => {}, log = console, now = () => Date.now() }) {
     this.zaloFactory = zaloFactory;
     this.onEvent = onEvent;
     this.log = log;
+    this.now = now;
     this.sessions = new Map();
     this.epochs = new Map();
+    this.tenNhom = new Map();
+  }
+
+  /**
+   * Tên nhóm Zalo, có đệm. KHÔNG BAO GIỜ ném và không bao giờ làm rơi tin:
+   * hỏng thì trả tên cũ đã biết, hoặc chuỗi rỗng — phía Python đặt tên dự
+   * phòng "Nhóm Zalo …" và tin vẫn vào hộp thư. Mất tên nhóm là chuyện hiển
+   * thị; mất tin khách là chuyện không ai biết.
+   */
+  async layTenNhom(accountId, api, groupId) {
+    const khoa = `${accountId}:${groupId}`;
+    const co = this.tenNhom.get(khoa);
+    if (co && co.hetHan > this.now()) return co.ten;
+    // Nhiều tin cùng nhóm tới dồn dập: chung một lượt hỏi, không mỗi tin một.
+    if (co?.dangHoi) return co.dangHoi;
+    const hoi = (async () => {
+      let ten = '';
+      let song = TEN_NHOM_LOI_MS;
+      try {
+        if (typeof api?.getGroupInfo !== 'function') {
+          throw new Error('phiên Zalo không có getGroupInfo');
+        }
+        const kq = await coHan(api.getGroupInfo(String(groupId)), TEN_NHOM_CHO_MS);
+        ten = String(kq?.gridInfoMap?.[groupId]?.name ?? '').trim();
+        if (ten) song = TEN_NHOM_SONG_MS;
+        else this.log.warn?.(`[sidecar] getGroupInfo không trả tên nhóm ${groupId} (${accountId})`);
+      } catch (loi) {
+        this.log.warn?.(`[sidecar] không lấy được tên nhóm ${groupId} (${accountId}): ${loi?.message ?? loi}`);
+      }
+      // Lần này hỏng mà lần trước đã biết tên: tên cũ đúng hơn tên dự phòng.
+      if (!ten && co?.ten) ten = co.ten;
+      if (this.tenNhom.size > TEN_NHOM_TOI_DA) this.tenNhom.clear();
+      this.tenNhom.set(khoa, { ten, hetHan: this.now() + song });
+      return ten;
+    })();
+    this.tenNhom.set(khoa, { ten: co?.ten ?? '', hetHan: 0, dangHoi: hoi });
+    return hoi;
   }
 
   teardown(accountId) {
@@ -211,6 +289,16 @@ export class SessionManager {
         // Đã xảy ra thật: ba tin của chính hệ thống quay về cùng lúc và agent
         // bắt đầu soạn trả lời cho chính nó.
         if (state.ownId && message.sender_id === state.ownId) return;
+        if (message.is_group) {
+          // `layTenNhom` không ném, nhưng bọc thêm: một lỗi ở đây rơi xuống
+          // `catch` ngoài là cả tin nhóm biến mất chỉ vì thiếu cái tên.
+          try {
+            message.group_name = await this.layTenNhom(accountId, api, message.thread_id);
+          } catch (loi) {
+            this.log.warn?.(`[sidecar] tên nhóm hỏng (${accountId}): ${loi?.message ?? loi}`);
+            message.group_name = '';
+          }
+        }
         await this.onEvent(accountId, 'message', message);
       } catch (error) {
         this.log.error?.(`[sidecar] xử lý tin đến hỏng (${accountId}): ${error?.stack ?? error}`);

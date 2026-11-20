@@ -38,6 +38,40 @@ class InboundMessage:
     # dùng để hiển thị. Ví dụ Chatwoot cho biết tin tới từ Facebook hay
     # Instagram; agent trả lời y hệt nhau, chỉ dashboard gắn huy hiệu khác.
     meta: dict = field(default_factory=dict)
+    # Hội thoại NHIỀU NGƯỜI (nhóm Zalo). Lớp trên ĐƯỢC phụ thuộc vào cờ này,
+    # khác `meta`: nó quyết định agent có được nói hay không. Trong nhóm,
+    # `customer_ref`/`customer_name` là danh tính CỦA NHÓM (xem `ref_nhom`),
+    # còn người gõ tin nằm ở `sender_ref`/`sender_name`.
+    la_nhom: bool = False
+    # Người gõ tin này. Tin nhắn riêng thì trùng khách; tin nhóm thì là
+    # một thành viên — chỉ để hiển thị "ai nói câu nào", KHÔNG phải danh
+    # tính để gắn hồ sơ hay trí nhớ.
+    sender_ref: str = ""
+    sender_name: str = ""
+
+
+# Loại thread "nhóm" — cùng con số Zalo dùng (0 riêng, 1 nhóm), lưu ở
+# `conversations.thread_type`. Đặt ở ranh giới kênh vì lớp trên (outbox,
+# hộp thư) cũng phải nhận ra hội thoại nhóm để không để máy nói vào đó.
+THREAD_NHOM = 1
+THREAD_RIENG = 0
+
+# Tiền tố `customer_ref` của hội thoại nhóm.
+#
+# VÌ SAO CÓ TIỀN TỐ thay vì dùng thẳng id nhóm: `customer_ref` là khoá của
+# danh tính (contact_points) và trí nhớ agent (ho_so_khach). Id nhóm và id
+# người cùng một không gian số của Zalo; không tách bằng tiền tố thì về lý
+# thuyết hai thứ khác nhau có thể đụng khoá — và cái giá của đụng khoá ở đây
+# là đọc nhầm hồ sơ riêng của một người vào nhóm.
+TIEN_TO_NHOM = "group:"
+
+
+def ref_nhom(thread_id: str) -> str:
+    return f"{TIEN_TO_NHOM}{thread_id}"
+
+
+def la_ref_nhom(customer_ref: str | None) -> bool:
+    return str(customer_ref or "").startswith(TIEN_TO_NHOM)
 
 
 @dataclass(slots=True)

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from agent import db
+from agent.channels.base import THREAD_NHOM
 
 
 class ConversationNotFound(RuntimeError):
@@ -153,6 +154,14 @@ class OutboundService:
         # và lượt mới tự có câu trả lời của nó.
         if role == "agent" and conversation.get("state") in ("resolved", "closed"):
             raise OutboundBlocked("AI không gửi vào hội thoại đã giải quyết")
+        # NHÓM ZALO: chỉ NGƯỜI được nói. Chặn cả `system` — câu "em là trợ lý
+        # AI", câu báo chuyển người, câu hỏi CSAT, mẫu tự động, báo vận đơn
+        # đều là máy tự nói, và gửi vào nhóm là gửi cho cả chục người không
+        # hỏi gì. Đây là lưới THỨ HAI: `handle_inbound` đã không cho agent
+        # chạy với tin nhóm; chốt ở đây bắt mọi đường gửi tự động còn lại,
+        # kể cả đường mai sau ai đó thêm vào mà quên nhóm.
+        if role in ("agent", "system") and conversation.get("thread_type") == THREAD_NHOM:
+            raise OutboundBlocked("Hội thoại nhóm: chỉ nhân viên được gửi, máy không nói vào nhóm")
 
     @staticmethod
     async def _ensure_consent_allowed(
@@ -421,7 +430,8 @@ class PostgresOutboundTransaction:
     async def get_conversation(self, conversation_id: UUID):
         return await self._connection.fetchrow(
             """
-            SELECT id, account_id, external_id, status, mode, state, contact_id
+            SELECT id, account_id, external_id, status, mode, state, contact_id,
+                   thread_type
             FROM conversations WHERE id = $1
             FOR SHARE
             """,

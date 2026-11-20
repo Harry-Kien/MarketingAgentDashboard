@@ -161,6 +161,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # ĐỌC:
     # ĐỌC: Thứ tự sáu việc, và thứ tự này quan trọng:
     # ĐỌC:   1. _ingest_inbound  → chống trùng, lưu tin, COMMIT
+    # ĐỌC:      tin NHÓM Zalo     → giao người, AI KHÔNG BAO GIỜ nói trong nhóm
     # ĐỌC:   2. kiểm standby / mode=human → người thật đang phụ trách thì đứng ngoài
     # ĐỌC:   3. ảnh KHÔNG kèm chữ → chuyển người NGAY, mô hình không được nhìn
     # ĐỌC:   4. _history(cid)    → lấy lượt trước, BỎ tin vừa lưu
@@ -180,6 +181,18 @@ async def handle_inbound(msg: InboundMessage) -> None:
         "status": ingested.conversation_status or "auto",
         "mode": ingested.conversation_mode or "auto",
     }
+
+    # TIN NHÓM ZALO -> CHỈ NGƯỜI. Quyết định của chủ dự án (20.11.2026).
+    #
+    # Đặt TRƯỚC mọi nhánh khác, kể cả quy tắc tự động và CSAT: trong nhóm,
+    # mọi câu máy tự nói — trả lời AI, "em là trợ lý AI", câu báo chuyển
+    # người, mẫu tự động, câu hỏi chấm điểm — đều gửi cho CẢ NHÓM, những
+    # người không hỏi gì. Đã xảy ra thật: AI soạn câu tư vấn mỹ phẩm vào
+    # nhóm khoá luận, và trí nhớ riêng về một thành viên bị đọc vào câu trả
+    # lời trong nhóm. Lưới thứ hai nằm ở outbox (`_ensure_role_allowed`).
+    if msg.la_nhom or getattr(ingested, "la_nhom", False):
+        await _giao_nguoi_tin_nhom(cid, conv, getattr(ingested, "conversation_state", None))
+        return
 
     # TIN VỀ QUA `standby` — người thật đang phụ trách hội thoại này.
     #
@@ -546,6 +559,43 @@ async def handle_inbound(msg: InboundMessage) -> None:
             reply.escalate_reason or "agent không xử lý được",
             tom_tat=msg.text[:200],
         )
+
+
+LY_DO_TIN_NHOM = "Tin trong nhóm Zalo — AI không trả lời trong nhóm, cần nhân viên xem."
+
+
+async def _giao_nguoi_tin_nhom(cid: uuid.UUID, conv: dict, state: str | None) -> None:
+    """
+    Tin nhóm: lưu rồi (bước ingest), giao cho người, AI đứng ngoài hẳn.
+
+    Cùng khuôn với đường "agent bị tắt cho kênh này": đổi sang người và
+    sinh MỘT việc (`tao_tu_chuyen_nguoi` tự chặn việc thứ hai khi việc cũ
+    còn mở, và việc mới thì báo nhân viên). Không giao thì tin nhóm vào hộp
+    thư rồi nằm đó — "AI không trả lời" biến thành "không ai trả lời".
+
+    KHÔNG gửi gì vào nhóm: không câu báo chuyển người, không "em là trợ lý
+    AI". Đó là khác biệt duy nhất với đường chuyển người thường, và là cả
+    lý do của hàm này.
+
+    Hội thoại nhóm ĐÃ GIẢI QUYẾT mà có tin mới thì mở một lượt mới (chu kỳ
+    SLA mới — `mo_lai_neu_da_giai_quyet`) rồi giao người, đúng như hội thoại
+    riêng được mở lại; chỉ khác là trả cho người chứ không trả cho AI. Để
+    nguyên "đã giải quyết" thì tin mới chỉ là một con số chưa đọc trên một
+    hội thoại đã đóng, và hàng chờ người không bao giờ thấy nó.
+    """
+    if conv.get("status") == "closed" or state == "resolved":
+        await giai_quyet.mo_lai_neu_da_giai_quyet(cid)
+    doi = await db.fetchrow(
+        "UPDATE conversations SET status = 'escalated', mode = 'human', "
+        "version = version + 1, updated_at = now() "
+        "WHERE id = $1 AND mode <> 'human' AND state NOT IN ('resolved', 'closed') "
+        "RETURNING id", cid)
+    # Người đã cầm rồi thì không sinh việc mới — họ đang làm (giống nhánh
+    # `agent_duoc_tra_loi` bên dưới).
+    if doi is None:
+        return
+    await db.log_event("conversation.escalated", ref_id=cid, reason=LY_DO_TIN_NHOM)
+    await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=LY_DO_TIN_NHOM)
 
 
 async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:

@@ -750,6 +750,14 @@ svg { flex: none; }
   flex-wrap: wrap;
 }
 
+/* Tên người gửi trong hội thoại NHÓM — trên bong bóng, như Zalo vẫn hiện. */
+.msg__nguoi {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+
 .convo__bar {
   border-top: 1px solid hsl(var(--border));
   padding: 12px 14px;

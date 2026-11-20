@@ -43,6 +43,7 @@ import re
 from datetime import datetime, timezone
 
 from .. import db
+from ..channels.base import la_ref_nhom
 
 # Bao nhiêu mẩu ghi nhớ được nhét vào ngữ cảnh. Quá nhiều thì loãng và tốn
 # token; quá ít thì quên mất điều khách vừa nói tuần trước.
@@ -119,7 +120,12 @@ _LUU_Y_LAU_DAI = (
 
 async def lay(customer_ref: str, channel: str) -> dict | None:
     """Hồ sơ của một khách, hoặc None nếu chưa từng gặp."""
-    if not customer_ref:
+    # Hội thoại NHÓM không có "trí nhớ về khách": nhóm không phải một
+    # người. Bản trước khoá hồ sơ theo người gửi tin nhóm — hồ sơ riêng của
+    # một thành viên bị đọc vào câu trả lời trong nhóm (lộ cho cả nhóm), và
+    # chuyện trong nhóm bị ghi vào hồ sơ riêng của họ. AI đã không chạy với
+    # tin nhóm (xu_ly_tin_vao); đây là lưới thứ hai ở chính chỗ đọc/ghi.
+    if not customer_ref or la_ref_nhom(customer_ref):
         return None
     return await db.fetchrow(
         "SELECT * FROM ho_so_khach WHERE customer_ref = $1 AND channel = $2",
@@ -156,7 +162,7 @@ async def ghi(
     "da dầu" mười lần thì hồ sơ vẫn chỉ có một dòng.
     """
     noi_dung = (noi_dung or "").strip()
-    if not noi_dung or not customer_ref:
+    if not noi_dung or not customer_ref or la_ref_nhom(customer_ref):
         return
     if nguon not in NGUON:
         nguon = "agent_ghi"
@@ -199,7 +205,7 @@ async def tu_tool(customer_ref: str, channel: str, ten_tool: str, args: dict) ->
     Đây là nguồn dữ liệu chính, và là lý do hồ sơ không thể bịa: agent chỉ
     gọi `goi_y_san_pham(loai_da="da dầu")` khi khách đã nói điều đó.
     """
-    if not customer_ref:
+    if not customer_ref or la_ref_nhom(customer_ref):
         return
 
     if ten_tool == "goi_y_san_pham":
@@ -235,7 +241,7 @@ async def tu_tin_nhan(customer_ref: str, channel: str, tin: str) -> None:
     Cố ý KHÔNG bắt những thứ nhất thời ("hôm nay da em hơi khô") — hồ sơ để
     nhớ điều bền, không phải nhật ký tâm trạng.
     """
-    if not customer_ref or not tin:
+    if not customer_ref or not tin or la_ref_nhom(customer_ref):
         return
     low = _go_dai_tu(tin.lower())
 

@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from agent import db
 from agent.omnichannel import hop_thu_ben
-from agent.channels.zalo_personal import THREAD_NHOM, ZaloPersonalAdapter, ly_do_bo_qua
+from agent.channels.zalo_personal import ZaloPersonalAdapter, ly_do_bo_qua
 from agent.config import settings
 from agent.omnichannel.account_repository import PostgresAccountRepository
 from agent.omnichannel.accounts import AccountStatus, Channel
@@ -106,9 +106,11 @@ async def _ghi_bo_tin_nhom(account_id: UUID, nhom: str, *,
     """
     Ghi sự kiện bỏ tin nhóm — tối đa MỘT lần mỗi giờ mỗi nhóm.
 
-    VÌ SAO BỎ: nick bán hàng nằm sẵn trong nhóm bạn bè, nhóm lớp. Đo trên
-    CSDL thật: tin nhóm khoá luận vào thẳng hộp thư và AI soạn câu tư vấn
-    mỹ phẩm cho cả nhóm. Muốn nhận thì bật ZALO_NHAN_TIN_NHOM có chủ ý.
+    Chỉ chạy khi người vận hành TẮT ZALO_NHAN_TIN_NHOM. Mặc định tin nhóm
+    vào hộp thư cho nhân viên đọc; AI thì không bao giờ nói trong nhóm —
+    chốt ấy nằm ở `xu_ly_tin_vao` và outbox, không nằm ở việc bỏ tin. Bản
+    trước bỏ tin nhóm theo mặc định vì AI từng soạn câu tư vấn mỹ phẩm cho
+    cả nhóm khoá luận; bỏ tin thì cũng bỏ luôn khách hỏi hàng trong nhóm.
 
     VÌ SAO THƯA: nhóm sôi nổi có hàng trăm tin một giờ; ghi từng tin là
     nhấn chìm bảng sự kiện. Một dòng mỗi giờ đủ để ai thắc mắc "sao nhóm X
@@ -220,10 +222,13 @@ async def zalo_personal_callback(
             await db.log_event("zalo_personal.tin_bo_qua", ref_id=account_id,
                                **ly_do_bo_qua(payload))
             return {"ok": True, "skipped": True}
-        if la_tin_tu_chinh_minh(message.customer_ref, account.external_account_id):
+        # So NGƯỜI GỬI, không so danh tính hội thoại: trong nhóm,
+        # `customer_ref` là `group:<id>` và không bao giờ trùng own_id — so
+        # nó thì tin nhân viên gửi vào nhóm vọng về lọt qua như tin khách.
+        if la_tin_tu_chinh_minh(message.sender_ref or message.customer_ref,
+                                account.external_account_id):
             return {"ok": True, "skipped": "tin_tu_chinh_minh"}
-        if (int((message.meta or {}).get("thread_type") or 0) == THREAD_NHOM
-                and not settings.zalo_nhan_tin_nhom):
+        if message.la_nhom and not settings.zalo_nhan_tin_nhom:
             await _ghi_bo_tin_nhom(account_id, message.conversation_ref)
             return {"ok": True, "skipped": "tin_nhom"}
         await hop_thu_ben.nhan(message, tasks)

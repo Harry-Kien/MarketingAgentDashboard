@@ -185,6 +185,9 @@ class PostgresInboxQueryRepository:
                    account.channel, account.display_name AS account_name,
                    conversation.nen_tang, conversation.customer_name,
                    conversation.customer_ref, conversation.status,
+                   -- Nhóm Zalo (1): dashboard gắn nhãn "Nhóm" — người trực
+                   -- phải biết trước khi mở là mình sắp nói với cả nhóm.
+                   conversation.thread_type,
                    conversation.outcome, conversation.mode, conversation.state,
                    conversation.priority, conversation.assigned_to,
                    conversation.assigned_team_id, conversation.version,

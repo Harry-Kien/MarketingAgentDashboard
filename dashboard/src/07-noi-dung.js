@@ -83,6 +83,12 @@ function moTaChiTiet(d) {
 }
 
 async function loadEvents() {
+  /* Nhật ký kiểm toán cần quyền riêng `nhat_ky.doc`. Không có quyền thì nói
+     rõ ngay trên ô — để lỗi 403 nổ lên thì cả vòng làm mới màn Nhật ký dừng. */
+  if (state.toiQuyen && !state.toiQuyen.has("nhat_ky.doc")) {
+    $("#events").innerHTML = '<p class="empty">Cần quyền "Xem nhật ký kiểm toán" để xem mục này.</p>';
+    return;
+  }
   const evs = await api("/events");
   $("#events").innerHTML = evs.length ? evs.map((e) => {
     const tone = e.kind.includes("error") || e.kind.includes("failed") ? "halt"

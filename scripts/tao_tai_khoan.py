@@ -70,7 +70,8 @@ async def main(argv: list[str]) -> int:
             # người dùng mà không ai tạo được người dùng tiếp theo.
             vai_tro = "quan_tri"
             print("Tài khoản đầu tiên -> đặt thành quản trị.")
-        nd = await xac_thuc.tao_nguoi_dung(ten, mat_khau, vai_tro=vai_tro)
+        nd = await xac_thuc.tao_nguoi_dung(ten, mat_khau, vai_tro=vai_tro,
+                                           gan_vai_tro_dung_san=True)
     except ValueError as exc:
         print(f"Không tạo được: {exc}")
         if "tồn tại" in str(exc):

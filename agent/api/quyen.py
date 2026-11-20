@@ -34,6 +34,51 @@ router = APIRouter(prefix="/api", tags=["quyen"])
 QUYEN_SONG_CON = "nguoi_dung.sua"
 
 
+# ---------------------------------------------------------------------
+#  KHÔNG CẤP ĐƯỢC THỨ MÌNH KHÔNG CÓ (rà soát 20.11.2026)
+# ---------------------------------------------------------------------
+# Trước bản này `nguoi_dung.sua` là chìa khoá vạn năng: ai được giao quản
+# lý nhân sự tự gán được vai trò "Quản trị" cho mình, hoặc tạo một vai trò
+# tick đủ 40 quyền rồi gán cho mình — một bước là chiếm toàn hệ thống, và
+# nhật ký chỉ ghi "nguoi_dung.vai_tro" như mọi lần gán bình thường.
+#
+# Luật: người thao tác chỉ được tạo/sửa/xoá/gán vai trò mà TẬP QUYỀN nằm
+# trọn trong tập quyền của chính mình, và chỉ được đụng tới người có tập
+# quyền nằm trọn trong tập quyền của mình (không hạ được cấp trên). Quản trị
+# có đủ quyền nên không bị ảnh hưởng.
+
+
+async def quyen_cua_vai_tro(conn, ids) -> set[str]:
+    """Tập quyền HIỆU LỰC của các vai trò — "Quản trị" dựng sẵn = toàn bộ."""
+    ids = list(ids)
+    if not ids:
+        return set()
+    if await conn.fetchval(
+        "SELECT bool_or(he_thong AND ten = 'Quản trị') FROM vai_tro "
+        "WHERE id = ANY($1::uuid[])", ids):
+        return set(QUYEN)
+    rows = await conn.fetch(
+        "SELECT DISTINCT quyen FROM vai_tro_quyen WHERE vai_tro_id = ANY($1::uuid[])", ids)
+    return {r["quyen"] for r in rows} & set(QUYEN)
+
+
+async def quyen_cua_nguoi(conn, nguoi_dung_id) -> set[str]:
+    ids = [r["vai_tro_id"] for r in await conn.fetch(
+        "SELECT vai_tro_id FROM nguoi_dung_vai_tro WHERE nguoi_dung_id = $1",
+        nguoi_dung_id)]
+    return await quyen_cua_vai_tro(conn, ids)
+
+
+def chan_cap_vuot(nguoi: dict, can: set[str], viec: str) -> None:
+    """403 nếu `can` có quyền người thao tác không có."""
+    thieu = sorted(set(can) - set(nguoi.get("quyen") or ()))
+    if thieu:
+        raise HTTPException(403, (
+            f"Không {viec} được: thao tác này liên quan tới quyền bạn không có "
+            f"({', '.join(thieu[:6])}{'…' if len(thieu) > 6 else ''}). "
+            "Chỉ người có đủ các quyền ấy mới làm được."))
+
+
 class VaiTroIn(BaseModel):
     ten: str = Field(min_length=1, max_length=80)
     mo_ta: str = Field("", max_length=500)
@@ -178,6 +223,7 @@ async def tao_vai_tro(
     nguoi: dict = Depends(can_quyen("nguoi_dung.sua")),
 ) -> dict[str, Any]:
     _kiem_ma_quyen(body.quyen)
+    chan_cap_vuot(nguoi, set(body.quyen), "tạo vai trò")
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             try:
@@ -213,6 +259,10 @@ async def sua_vai_tro(
             )
             if cu is None:
                 raise HTTPException(404, "Không tìm thấy vai trò")
+            # Cả quyền CŨ lẫn MỚI: sửa một vai trò mạnh hơn mình (kể cả chỉ
+            # để bớt quyền của nó) là đụng tới cấp trên.
+            quyen_cu = await quyen_cua_vai_tro(conn, [vai_tro_id])
+            chan_cap_vuot(nguoi, quyen_cu | set(body.quyen), "sửa vai trò này")
 
             # Vai trò `Quản trị` lấy quyền TỪ MÃ, không từ `vai_tro_quyen` —
             # xem `xac_thuc.doc_phien`. Cho sửa tập quyền của nó là để người
@@ -269,6 +319,8 @@ async def xoa_vai_tro(
             )
             if cu is None:
                 raise HTTPException(404, "Không tìm thấy vai trò")
+            chan_cap_vuot(nguoi, await quyen_cua_vai_tro(conn, [vai_tro_id]),
+                          "xoá vai trò này")
             if cu["he_thong"]:
                 raise HTTPException(409, (
                     f"“{cu['ten']}” là vai trò dựng sẵn, không xoá được. "
@@ -301,6 +353,12 @@ async def gan_vai_tro(
                     list(body.vai_tro))
                 if so != len(set(body.vai_tro)):
                     raise HTTPException(422, "Có vai trò không tồn tại")
+            # Không hạ được người có quyền mình không có, không trao được
+            # vai trò có quyền mình không có.
+            chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, nguoi_dung_id),
+                          "đổi vai trò của người này")
+            chan_cap_vuot(nguoi, await quyen_cua_vai_tro(conn, body.vai_tro),
+                          "gán các vai trò này")
 
             await conn.execute(
                 "DELETE FROM nguoi_dung_vai_tro WHERE nguoi_dung_id = $1",

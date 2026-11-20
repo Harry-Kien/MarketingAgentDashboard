@@ -791,7 +791,7 @@ async def zalo_personal_status(
 @router.get("/{account_id}/verify-token")
 async def doc_verify_token(
     account_id: UUID,
-    _: dict = Depends(can_quyen("kenh.doc")),
+    _: dict = Depends(can_quyen("kenh.sua")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
     """

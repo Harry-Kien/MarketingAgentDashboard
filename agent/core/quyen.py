@@ -108,6 +108,11 @@ QUYEN: dict[str, str] = {
 
     "nguoi_dung.doc": "Xem danh sách nhân viên",
     "nguoi_dung.sua": "Tạo, khoá nhân viên; sửa vai trò và quyền",
+
+    # Tách khỏi `hoi_thoai.doc` (20.11.2026): nhật ký kiểm toán ghi cả đổi
+    # quyền, khoá tài khoản, xoá dữ liệu khách — không phải thứ mọi nhân
+    # viên đọc hội thoại cần thấy.
+    "nhat_ky.doc": "Xem nhật ký kiểm toán",
 }
 
 # Quyền ĐÃ GỠ khỏi danh mục. Không bao giờ được dùng lại tên này.

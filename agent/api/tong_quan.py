@@ -254,7 +254,7 @@ async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(can_quyen("agent.
 
 
 @router.get("/events")
-async def recent_events(limit: int = 50, _quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> list[dict]:
+async def recent_events(limit: int = 50, _quyen: dict = Depends(can_quyen("nhat_ky.doc"))) -> list[dict]:
     rows = await db.fetch(
         f"SELECT kind, actor, ref_id, detail, created_at FROM events "
         f"ORDER BY created_at DESC LIMIT {int(limit)}"

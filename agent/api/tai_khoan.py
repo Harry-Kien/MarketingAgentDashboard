@@ -286,6 +286,14 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True,
     """
     if ten.strip().lower() == nguoi["ten_dang_nhap"]:
         raise HTTPException(422, "Không tự khoá tài khoản của mình được")
+    from agent.api.quyen import chan_cap_vuot, quyen_cua_nguoi
+
+    async with db.pool().acquire() as conn:
+        uid = await conn.fetchval(
+            "SELECT id FROM nguoi_dung WHERE ten_dang_nhap = $1", ten.strip().lower())
+        if uid is not None:
+            # Khoá cấp trên = đá cấp trên ra khỏi hệ thống: cùng luật với gán vai trò.
+            chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, uid), "khoá người này")
     r = await db.fetchrow(
         "UPDATE nguoi_dung SET khoa = $2 WHERE ten_dang_nhap = $1 RETURNING id",
         ten.strip().lower(), khoa,

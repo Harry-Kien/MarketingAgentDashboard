@@ -99,10 +99,24 @@ def kiem_mat_khau(mat_khau: str, bam: str) -> bool:
 #  Tài khoản
 # ---------------------------------------------------------------
 
+# Cột `nguoi_dung.vai_tro` là DI SẢN, không còn cấp quyền gì: quyền nằm ở
+# `nguoi_dung_vai_tro`. Migration 0019 chỉ chuyển người ĐÃ CÓ lúc nó chạy; trên
+# máy cài mới (VPS) quản trị đầu tiên tạo bằng `scripts.tao_tai_khoan` SAU đó
+# — đăng nhập được mà không dùng được chức năng nào, và không còn ai gán
+# quyền cho ai được nữa (phát hiện 20.11.2026).
+VAI_TRO_DUNG_SAN = {"quan_tri": "Quản trị", "nhan_vien": "Nhân viên"}
+
+
 async def tao_nguoi_dung(
     ten_dang_nhap: str, mat_khau: str, ho_ten: str = "",
-    vai_tro: str = "nhan_vien",
+    vai_tro: str = "nhan_vien", *, gan_vai_tro_dung_san: bool = False,
 ) -> dict:
+    """
+    `gan_vai_tro_dung_san`: gán luôn vai trò dựng sẵn tương ứng. Script dòng
+    lệnh bật cờ này. Dashboard KHÔNG bật: ở đó tạo xong người quản lý gán vai
+    trò bằng màn Nhân viên, và tài khoản chưa gán gì thì không có quyền gì
+    (hỏng-đóng) — đúng ý.
+    """
     ten_dang_nhap = ten_dang_nhap.strip().lower()
     if len(ten_dang_nhap) < 3:
         raise ValueError("Tên đăng nhập phải từ 3 ký tự")
@@ -122,6 +136,11 @@ async def tao_nguoi_dung(
     )
     if row is None:
         raise ValueError(f"Tên đăng nhập {ten_dang_nhap!r} đã tồn tại")
+    if gan_vai_tro_dung_san:
+        await db.execute(
+            "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id) "
+            "SELECT $1, id FROM vai_tro WHERE he_thong AND ten = $2 "
+            "ON CONFLICT DO NOTHING", row["id"], VAI_TRO_DUNG_SAN[vai_tro])
     row["id"] = str(row["id"])
     await db.log_event("auth.tao_nguoi_dung", actor="he_thong",
                        ten_dang_nhap=ten_dang_nhap, vai_tro=vai_tro)

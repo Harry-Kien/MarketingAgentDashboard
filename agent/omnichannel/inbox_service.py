@@ -10,7 +10,8 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from agent import db
-from agent.channels.base import InboundMessage
+from agent.channels.base import THREAD_NHOM, InboundMessage
+from agent.channels.ten_khach import la_ten_mac_dinh
 from agent.omnichannel.identity import PostgresIdentityTransaction
 from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
 
@@ -27,6 +28,10 @@ class InboxIngestResult:
     # `status` lại không phải `closed` (dữ liệu cũ kẹt `escalated`). Đường
     # mở lại hội thoại phải xét `state` — xem `xu_ly_tin_vao.handle_inbound`.
     conversation_state: str | None = None
+    # Hội thoại NHÓM — theo tin VÀ theo CSDL. Lấy cả hai: tin chạy lại từ
+    # hộp thư bền ghi trước bản có `la_nhom` không mang cờ, nhưng hội thoại
+    # đã được đánh dấu nhóm (migration 0051) thì vẫn nhận ra.
+    la_nhom: bool = False
 
 
 class InboxTransaction(Protocol):
@@ -126,14 +131,18 @@ class InboxService:
                 message_id,
                 message.account_id,
             )
+            la_nhom = (bool(message.la_nhom)
+                       or conversation.get("thread_type") == THREAD_NHOM)
             return InboxIngestResult(
                 conversation_id=conversation["id"],
                 conversation_status=conversation["status"],
                 message_id=message_id,
                 duplicate=False,
-                should_reply=not bool((message.meta or {}).get("standby")),
+                should_reply=(not bool((message.meta or {}).get("standby"))
+                              and not la_nhom),
                 conversation_mode=conversation.get("mode"),
                 conversation_state=conversation.get("state"),
+                la_nhom=la_nhom,
             )
 
 
@@ -144,6 +153,8 @@ def _thread_type(message: InboundMessage) -> int | None:
     Lưu BỀN vào hội thoại vì adapter GỬI không phải adapter đã ĐỌC tin —
     xem migration 0042 và ZaloPersonalAdapter._loai.
     """
+    if message.la_nhom:
+        return THREAD_NHOM
     gia_tri = (message.meta or {}).get("thread_type")
     try:
         return int(gia_tri) if gia_tri is not None else None
@@ -220,13 +231,24 @@ class PostgresInboxTransaction:
         )
 
     async def resolve_contact_point(self, message: InboundMessage):
+        # Hội thoại nhóm gắn vào một contact CỦA NHÓM (khoá `group:<id>`),
+        # không gắn contact của người vừa gõ — xem `ref_nhom` ở channels/base.
+        #
+        # VÌ SAO VẪN CÓ CONTACT thay vì để trống: `contact_id` của hội thoại
+        # được đọc ở việc tự sinh, Customer 360, phân quyền nhìn thấy, gộp
+        # khách… Để trống là đổi hợp đồng của cả chục câu truy vấn; một
+        # contact riêng cho nhóm giữ nguyên mọi đường đọc, mà điều cần chặn
+        # — dính vào hồ sơ riêng của một thành viên — vẫn bị chặn.
+        metadata: dict[str, Any] = {"channel": message.channel}
+        if message.la_nhom:
+            metadata["loai"] = "nhom"
         return await PostgresIdentityTransaction(
             self._connection
         ).resolve_contact_point(
             account_id=message.account_id,
             external_user_id=message.customer_ref,
             display_name=message.customer_name,
-            metadata={"channel": message.channel},
+            metadata=metadata,
         )
 
     async def upsert_conversation(
@@ -234,6 +256,12 @@ class PostgresInboxTransaction:
         message: InboundMessage,
         identity: Mapping[str, Any],
     ):
+        # `customer_name` chỉ bị THAY khi tin mang tên thật, hoặc khi danh
+        # tính của hội thoại đổi (hội thoại nhóm cũ từng mang id người gửi —
+        # tên người gửi ấy là tên SAI, tên dự phòng còn đúng hơn). Tên giữ
+        # chỗ ("Khách Zalo", "Nhóm Zalo …ab12") không đè tên đã biết của
+        # cùng danh tính: sidecar hụt tên nhóm một lần thì hội thoại không
+        # được đổi tên thành dãy số.
         return await self._connection.fetchrow(
             """
             INSERT INTO conversations (
@@ -260,14 +288,18 @@ class PostgresInboxTransaction:
                 )
             )
             ON CONFLICT (account_id, external_id) DO UPDATE
-            SET customer_name = EXCLUDED.customer_name,
+            SET customer_name = CASE
+                    WHEN $12 AND conversations.customer_ref
+                                 IS NOT DISTINCT FROM EXCLUDED.customer_ref
+                    THEN conversations.customer_name
+                    ELSE EXCLUDED.customer_name END,
                 customer_ref = EXCLUDED.customer_ref,
                 nen_tang = coalesce(EXCLUDED.nen_tang, conversations.nen_tang),
                 contact_id = EXCLUDED.contact_id,
                 contact_point_id = EXCLUDED.contact_point_id,
                 thread_type = coalesce(EXCLUDED.thread_type, conversations.thread_type),
                 updated_at = now()
-            RETURNING id, status, mode, state
+            RETURNING id, status, mode, state, thread_type
             """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9, 10))
                .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 9, 10)),
             message.account_id,
@@ -280,6 +312,7 @@ class PostgresInboxTransaction:
             identity["id"],
             *gio_sla(),
             _thread_type(message),
+            la_ten_mac_dinh(message.customer_name),
         )
 
     async def insert_message(
@@ -287,18 +320,23 @@ class PostgresInboxTransaction:
         conversation_id: UUID,
         message: InboundMessage,
     ) -> UUID:
+        # Người gửi của TỪNG tin (migration 0051). Trong nhóm, hội thoại là
+        # của nhóm nên `conversations.customer_name` không nói được ai gõ câu
+        # nào — thiếu hai cột này thì mọi thành viên hiện thành một "Khách".
         row = await self._connection.fetchrow(
             """
             INSERT INTO messages (
                 conversation_id, role, content, attachments, direction,
-                delivery_status, provider_message_id
-            ) VALUES ($1,'customer',$2,$3,'inbound','received',$4)
+                delivery_status, provider_message_id, sender_ref, sender_name
+            ) VALUES ($1,'customer',$2,$3,'inbound','received',$4,$5,$6)
             RETURNING id
             """,
             conversation_id,
             message.text,
             message.attachments,
             message.dedupe_key,
+            (message.sender_ref or "").strip()[:200] or None,
+            (message.sender_name or "").strip()[:200] or None,
         )
         return row["id"]
 

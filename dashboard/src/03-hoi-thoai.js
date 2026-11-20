@@ -62,6 +62,19 @@ function slaBadge(c) {
   return "";
 }
 
+/* Hội thoại NHÓM Zalo (thread_type 1). Người trực phải thấy ngay từ danh
+ * sách: gõ vào đây là gửi cho CẢ NHÓM, và AI không bao giờ trả lời ở đây —
+ * hội thoại nằm trong hàng chờ người là vì vậy, không phải vì AI hỏng. */
+function laNhom(c) {
+  return Number(c && c.thread_type) === 1;
+}
+
+function nhomBadge(c) {
+  return laNhom(c)
+    ? `<span class="tag tag--plain" title="Nhóm Zalo — chỉ nhân viên trả lời, AI không nói trong nhóm">Nhóm</span>`
+    : "";
+}
+
 function convRow(c, hangDoi) {
   // Nhãn của hội thoại đang mở lấy từ DÒNG danh sách (đã có sẵn trong phản
   // hồi), khỏi thêm một request nữa mỗi 6 giây.
@@ -79,7 +92,7 @@ function convRow(c, hangDoi) {
   return `<button type="button" class="row ${state.openConv === c.id ? "is-on" : ""}" data-conv="${c.id}">
     <span class="row__flag row__flag--${sig}"></span>
     <span class="row__body">
-      <span class="row__title">${esc(customer)} ${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
+      <span class="row__title">${esc(customer)} ${nhomBadge(c)}${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
       <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
       ${sub}
       ${(c.nhan || []).length ? `<span class="row__nhan">${c.nhan.map((n) =>
@@ -184,9 +197,14 @@ async function loadThread(id) {
   }
   catch { $("#convdetail").innerHTML = '<p class="empty">Không tìm thấy hội thoại.</p>'; return; }
 
+  const nhom = laNhom(c);
   const msgs = c.messages.map((m) => {
     const draft = m.role === "agent" && m.delivery_status === "draft";
-    const who = { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
+    /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
+     * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
+    const nguoiGui = nhom && m.role === "customer" ? (m.sender_name || "Thành viên nhóm") : "";
+    const who = nguoiGui
+      || { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
     const meta = [
       hhmm(m.created_at), who, m.delivery_status || "",
       m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
@@ -269,6 +287,7 @@ async function loadThread(id) {
       : "";
 
     return `<div class="msg msg--${m.role} ${draft ? "msg--draft" : ""} ${dangSua ? "msg--dangsua" : ""}">
+      ${nguoiGui ? `<div class="msg__nguoi">${esc(nguoiGui)}</div>` : ""}
       ${anh}
       ${than}
       ${m.noi_dung_goc && state.xemGoc === m.id
@@ -338,12 +357,13 @@ async function loadThread(id) {
   $("#convdetail").innerHTML = `
     <div class="convo__title">
       <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
+      ${nhomBadge(c)}
       <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
       ${slaBadge(c)}
       <span class="convo__spacer"></span>
       ${srcBadge(c.account_channel, c.nen_tang)}<span class="msg__meta">${esc(c.account_name || "")}</span>
       ${c.contact_id ? `<button type="button" class="btn btn--sm" id="open-contact" data-contact="${c.contact_id}">Customer 360</button>` : ""}
-      ${!taken ? `<button type="button" class="btn btn--sm ${c.mode === "auto" ? "" : "btn--go"}" id="btn-chedo"
+      ${!taken && !nhom ? `<button type="button" class="btn btn--sm ${c.mode === "auto" ? "" : "btn--go"}" id="btn-chedo"
         data-chedo="${c.mode === "auto" ? "assist" : "auto"}">
         ${c.mode === "auto" ? "Duyệt trước khi gửi" : "Để agent tự trả lời"}
       </button>` : ""}

@@ -141,11 +141,14 @@ def test_ly_do_bo_khong_chua_loi_khach():
     assert "0912345678" not in json.dumps(kq, ensure_ascii=False)
 
 
-def test_tin_nhom_mac_dinh_BI_BO_co_ghi_su_kien(webhook_zalo):
-    """Nhóm khoá luận từng vào thẳng hộp thư và AI soạn trả lời cho cả nhóm."""
+def test_tat_nhan_tin_nhom_thi_BI_BO_co_ghi_su_kien(webhook_zalo, monkeypatch):
+    """
+    Từ 20.11.2026 mặc định NHẬN tin nhóm (AI bị chặn ở chỗ khác — xem
+    tests/test_tin_nhom_zalo.py). Người vận hành tắt thì vẫn bỏ có ghi.
+    """
     from agent.config import settings
 
-    assert settings.zalo_nhan_tin_nhom is False, "mặc định phải TẮT"
+    monkeypatch.setattr(settings, "zalo_nhan_tin_nhom", False)
     khach, tk, su_kien, vao = webhook_zalo
     for i in range(3):          # nhóm sôi nổi: ba tin liền
         r = khach.post(f"/webhook/native/zalo-personal/{tk.id}", json=_tin(
@@ -188,7 +191,7 @@ def test_ghi_bo_tin_nhom_moi_gio_mot_lan(monkeypatch):
 
 def test_env_example_khai_cong_tac_nhom():
     src = (ROOT / ".env.example").read_text(encoding="utf-8")
-    assert "\nZALO_NHAN_TIN_NHOM=false" in src
+    assert "\nZALO_NHAN_TIN_NHOM=true" in src
 
 
 # ====================================================================

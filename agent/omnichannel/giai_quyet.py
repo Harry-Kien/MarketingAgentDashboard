@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID
 
 from agent import cau_hinh_dong, db
+from agent.channels.base import THREAD_NHOM
 from agent.core import cong_viec
 from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
 
@@ -149,22 +150,30 @@ async def giai_quyet(cid: UUID, nguoi_id: UUID | None) -> dict[str, Any]:
                 "UPDATE conversations SET state = 'resolved', status = 'closed', "
                 "outcome = 'resolved', resolved_at = now(), version = version + 1, "
                 "updated_at = now() WHERE id = $1 AND state <> 'resolved' "
-                "RETURNING id, assigned_to, resolution_due_at, external_id, sla_chu_ky", cid)
+                "RETURNING id, assigned_to, resolution_due_at, external_id, sla_chu_ky, "
+                "thread_type", cid)
             if r is None:
                 return {"da_truoc": True, "csat": None}
             await _sau_khi_giai_quyet(conn, cid, r["sla_chu_ky"], r["resolution_due_at"])
     await db.log_event("conversation.resolved", ref_id=cid,
                        boi=str(nguoi_id) if nguoi_id else None, ly_do="nhân viên bấm")
-    csat = await _hoi_csat(cid, str(r["external_id"]), r["assigned_to"] or nguoi_id)
+    csat = await _hoi_csat(cid, str(r["external_id"]), r["assigned_to"] or nguoi_id,
+                           la_nhom=r.get("thread_type") == THREAD_NHOM)
     return {"da_truoc": False, "csat": csat}
 
 
-async def _hoi_csat(cid: UUID, external_id: str, nguoi_xu_ly: UUID | None) -> str:
+async def _hoi_csat(cid: UUID, external_id: str, nguoi_xu_ly: UUID | None,
+                    *, la_nhom: bool = False) -> str:
     """Gửi câu hỏi CSAT nếu bật. Trả lý do bằng chữ — kể cả khi KHÔNG gửi."""
     if cau_hinh_dong.lay("CSAT_BAT") != "bat":
         return "tắt"
     if external_id.startswith("cmt:"):
         return "bình luận — không hỏi"
+    # Nhóm Zalo: hỏi "anh/chị chấm mấy điểm" là hỏi cả nhóm, và câu "5" của
+    # một thành viên bất kỳ sẽ thành điểm. Outbox cũng chặn tin máy vào nhóm
+    # — kiểm ở đây trước để nút "Đã giải quyết" không nổ OutboundBlocked.
+    if la_nhom:
+        return "nhóm — không hỏi"
     from agent.omnichannel.cua_so_gui import xet_tin_nhan_vien
     from agent.omnichannel.outbound_service import OutboundService, PostgresOutboundRepository
 

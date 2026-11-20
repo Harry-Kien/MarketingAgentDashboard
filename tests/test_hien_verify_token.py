@@ -37,7 +37,9 @@ def test_endpoint_doi_quyen_quan_tri():
     from agent.api import channel_accounts
 
     nguon = inspect.getsource(channel_accounts.doc_verify_token)
-    assert 'can_quyen("kenh.doc")' in nguon
+    # Siết từ `kenh.doc` lên `kenh.sua` (rà soát bảo mật 20.11.2026): verify
+    # token là bí mật kênh, quyền chỉ-đọc của nhân viên thường không đủ.
+    assert 'can_quyen("kenh.sua")' in nguon
 
 
 def _bo_chu_thich(src: str) -> str:

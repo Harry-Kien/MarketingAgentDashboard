@@ -293,12 +293,14 @@ def test_chuyen_nguoi_o_kenh_web_bao_nhan_vien_mot_lan(app_that, monkeypatch):
     assert all("Chat web" in c for _, c in bao)
     # Hai tin của CÙNG một khách (cùng phiên) chỉ một tin báo; webchat mở
     # phiên mới mỗi lần `_khach_nhan` nên có thể là hai hội thoại — đếm theo
-    # số việc tự sinh, không theo số tin.
+    # số hội thoại đã có thông báo chuyển giao, không theo số tin. (Chuyển
+    # người không còn sinh việc — mục 14.2.)
     from agent import db
 
     async def dem():
         return (await db.fetchrow(
-            "SELECT count(*) n FROM cong_viec WHERE nguon = 'agent'"))["n"]
+            "SELECT count(DISTINCT conversation_id) n FROM thong_bao "
+            "WHERE loai = 'ai_chuyen_giao'"))["n"]
     assert len(bao) == _sql(app_that, dem)
 
 
@@ -306,11 +308,13 @@ def test_tin_bao_nhan_vien_khong_mang_ly_do_hay_loi_khach():
     """Lý do chuyển người có thể là 'mang thai', 'bệnh da' — dữ liệu sức khoẻ."""
     import inspect
 
-    from agent.core import cong_viec
+    from agent.core import thong_bao_noi_bo
 
-    src = inspect.getsource(cong_viec._bao_viec_moi_cho_nhan_vien)
+    src = inspect.getsource(thong_bao_noi_bo._bao_ngoai)
     assert "ly_do" not in src.split('"""')[2]
-    assert "customer_name" not in src
+    assert "customer_name" not in src and "ten_khach" not in src
+    # Nơi gọi chỉ truyền KÊNH vào — không truyền lý do hay hội thoại.
+    assert "_bao_ngoai(kenh" in inspect.getsource(thong_bao_noi_bo.bao_ai_chuyen_giao)
 
 
 def test_bao_nhan_vien_dung_mau_va_khong_ghi_url_khi_loi(monkeypatch):
@@ -372,9 +376,9 @@ def test_bao_nhan_vien_dung_mau_va_khong_ghi_url_khi_loi(monkeypatch):
 def test_bao_nhan_vien_chay_nen_khong_chan_luong_tin():
     import inspect
 
-    from agent.core import cong_viec
+    from agent.core import cong_viec, thong_bao_noi_bo
 
-    assert "bao_nhan_vien_nen(" in inspect.getsource(cong_viec._bao_viec_moi_cho_nhan_vien)
+    assert "bao_nhan_vien_nen(" in inspect.getsource(thong_bao_noi_bo._bao_ngoai)
     # Việc vận chuyển và việc đơn hàng đi chung một đường tạo việc hệ thống;
     # canh cả đường chung lẫn việc hai hàm công khai thật sự đi qua nó.
     assert "bao_nhan_vien_nen(" in inspect.getsource(cong_viec._tao_viec_he_thong)

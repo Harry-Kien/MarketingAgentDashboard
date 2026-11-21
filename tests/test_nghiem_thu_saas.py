@@ -235,7 +235,7 @@ def test_04_noi_kenh_va_tat_agent_theo_kenh(app_that):
     BƯỚC 1  Quản trị tạo kênh webchat, credential vào vault, bật kênh.
     BƯỚC 2  Kênh hiện trong danh sách.
     BƯỚC 3  Tắt agent cho kênh, có lý do -> agent_bat=false.
-    BƯỚC 4  Khách nhắn -> hội thoại chuyển người, sinh việc, KHÔNG gọi model.
+    BƯỚC 4  Khách nhắn -> hội thoại chuyển người, chuông báo quản trị (không sinh việc), KHÔNG gọi model.
     BƯỚC 5  Bật lại agent -> agent_bat=true.
     """
     from agent import db
@@ -257,7 +257,8 @@ def test_04_noi_kenh_va_tat_agent_theo_kenh(app_that):
         return c, v["n"], m["n"]
     c, so_viec, goi_model = _sql(app_that, doc)
     assert c["status"] == "escalated" and c["mode"] == "human"
-    assert so_viec == 1 and goi_model == 0
+    assert so_viec == 0 and goi_model == 0
+    assert qt.get("/api/toi/thong-bao/so-chua-doc").json()["chua_doc"] == 1
 
     assert qt.post(f"/api/channel-accounts/{tk}/agent",
                    json={"bat": True}).json()["agent_bat"] is True
@@ -347,39 +348,58 @@ def test_06_truong_thong_tin_khach_them_tren_dashboard(app_that):
 
 # ------------------------------------------------------------------ 7. công việc
 
-def test_07_cong_viec_tu_sinh_nhan_va_hoan_thanh(app_that):
+def test_07_chuyen_giao_bao_nguoi_va_giao_viec(app_that):
     """
-    Phân task và quản lý task.
+    Phân task, quản lý task và thông báo nội bộ.
 
-    BƯỚC 1  Agent tắt -> khách nhắn -> việc tự sinh (nguồn agent, chưa ai nhận).
-    BƯỚC 2  Ca trực đếm 1 việc chưa giao.
-    BƯỚC 3  "lan" chưa thuộc kênh -> không thấy việc, tự nhận -> 404.
-    BƯỚC 4  "lan" vào kênh (không có cong_viec.giao) tự nhận việc -> 200.
-    BƯỚC 5  "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
-    BƯỚC 6  Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
-    BƯỚC 7  Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
+    BƯỚC 1  Agent tắt -> khách nhắn -> KHÔNG sinh công việc (mục 14.2); Ca trực đếm 0 việc chưa giao.
+    BƯỚC 2  "lan" chưa thuộc kênh -> chuông không có gì (không lộ khách kênh khác).
+    BƯỚC 3  "lan" vào kênh, khách khác nhắn -> chuông "AI chuyển giao" trỏ tới hội thoại.
+    BƯỚC 4  "lan" bấm đã đọc -> hội thoại KHÔNG đổi (đọc không phải là nhận).
+    BƯỚC 5  Quản trị tạo việc giao cho "minh" -> chuông của minh có "Được giao việc".
+    BƯỚC 6  "lan" (không có cong_viec.giao) đẩy việc sang mình -> 403.
+    BƯỚC 7  Quản trị đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
+    BƯỚC 8  Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
     """
     qt = _quan_tri_vao(app_that)
     tk = _kenh_webchat(qt)
     lan_id, lan = _nhan_vien_moi(qt, "lan")
-    minh_id, _ = _nhan_vien_moi(qt, "minh")
+    minh_id, minh = _nhan_vien_moi(qt, "minh")
     _khach_nhan(app_that, tk, "Chị Hoa", "cần tư vấn")
 
-    ds = qt.get("/api/cong-viec").json()["cong_viec"]
-    assert len(ds) == 1 and ds[0]["nguon"] == "agent" and ds[0]["nguoi_nhan"] is None
-    vid = ds[0]["id"]
-    assert qt.get("/api/overview").json()["cong_viec"]["chua_giao"] == 1
+    assert qt.get("/api/cong-viec").json()["cong_viec"] == []
+    assert qt.get("/api/overview").json()["cong_viec"]["chua_giao"] == 0
+    assert lan.get("/api/toi/thong-bao").json()["thong_bao"] == []
 
-    # Việc chuyển người mang tên khách và lý do (có khi là dữ liệu sức khoẻ):
-    # chỉ thành viên kênh của hội thoại thấy.
-    assert lan.get("/api/cong-viec").json()["cong_viec"] == []
-    assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": lan_id}).status_code == 404
     _them_thanh_vien(app_that, tk, lan_id)
-    assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": lan_id}).status_code == 200
-    assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": minh_id}).status_code == 403
+    _khach_nhan(app_that, tk, "Chị Mai", "shop ơi")
+    tb = lan.get("/api/toi/thong-bao").json()
+    assert tb["chua_doc"] == 1
+    t = tb["thong_bao"][0]
+    assert t["loai"] == "ai_chuyen_giao" and t["ten_khach"] == "Chị Mai"
+    assert t["lien_ket"]["loai"] == "hoi_thoai"
+    cid = t["lien_ket"]["id"]
+    assert lan.post(f"/api/toi/thong-bao/{t['id']}/da-doc").status_code == 200
+    assert lan.get("/api/toi/thong-bao/so-chua-doc").json()["chua_doc"] == 0
+    from agent import db
+
+    async def doc_hk(c):
+        return await db.fetchrow(
+            "SELECT assigned_to, mode FROM conversations WHERE id = $1::uuid", c)
+    hk = _sql(app_that, doc_hk, cid)
+    assert hk["assigned_to"] is None and hk["mode"] == "human", (
+        "đọc thông báo không được tự nhận hội thoại")
+
+    r = qt.post("/api/cong-viec", json={"tieu_de": "Gọi lại chị Hoa", "nguoi_nhan": minh_id})
+    assert r.status_code == 201, r.text
+    vid = r.json()["id"]
+    tm = minh.get("/api/toi/thong-bao").json()["thong_bao"]
+    assert [x["loai"] for x in tm] == ["duoc_giao_viec"]
+    assert tm[0]["lien_ket"] == {"loai": "cong_viec", "id": vid}
+    assert lan.put(f"/api/cong-viec/{vid}", json={"nguoi_nhan": lan_id}).status_code in (403, 404)
 
     r = qt.put(f"/api/cong-viec/{vid}", json={
-        "nguoi_nhan": minh_id, "han": "2099-01-01T00:00:00+00:00", "trang_thai": "xong"})
+        "han": "2099-01-01T00:00:00+00:00", "trang_thai": "xong"})
     assert r.status_code == 200, r.text
     v = next(x for x in qt.get("/api/cong-viec").json()["cong_viec"] if x["id"] == vid)
     assert v["trang_thai"] == "xong" and v["xong_luc"] and v["qua_han"] is False
@@ -613,7 +633,7 @@ def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
     BƯỚC 1  Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
     BƯỚC 2  Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
     BƯỚC 3  Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
-    BƯỚC 4  Hội thoại chuyển người, có nhãn "đổi trả", có MỘT việc, mẫu đã vào hàng gửi.
+    BƯỚC 4  Hội thoại chuyển người, có nhãn "đổi trả", MỘT thông báo chuyển giao (không sinh việc), mẫu đã vào hàng gửi.
     BƯỚC 5  Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
     BƯỚC 6  Nhân viên XEM được quy tắc nhưng không sửa được — thiếu quyền sửa định tuyến (403).
     """
@@ -643,10 +663,12 @@ def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
                 "SELECT nhan FROM hoi_thoai_nhan WHERE conversation_id = $1", cid)],
             "viec": (await db.fetchrow("SELECT count(*) n FROM cong_viec WHERE conversation_id = $1",
                                        cid))["n"],
+            "bao": (await db.fetchrow("SELECT count(*) n FROM thong_bao WHERE conversation_id = $1 "
+                                      "AND loai = 'ai_chuyen_giao'", cid))["n"],
             "mau": (await db.fetchrow("SELECT count(*) n FROM messages WHERE conversation_id = $1 "
                                       "AND content LIKE 'Dạ shop hỗ trợ đổi trả%'", cid))["n"],
         }
-    assert _sql(app_that, dem, c["id"]) == {"nhan": ["đổi trả"], "viec": 1, "mau": 1}
+    assert _sql(app_that, dem, c["id"]) == {"nhan": ["đổi trả"], "viec": 0, "bao": 1, "mau": 1}
 
     lc = qt.get("/api/tu-dong/lan-chay").json()["lan_chay"]
     assert lc and lc[0]["ket_qua"] == "da_lam" and "chuyển người" in lc[0]["chi_tiet"]["lam"]
@@ -759,7 +781,7 @@ def test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that(app_that):
     "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã.
 
     BƯỚC 1  Kênh BẬT agent; khách nhắn "cho em gặp nhân viên!" → chuyển người NGAY, agent không chạy.
-    BƯỚC 2  Hội thoại ở chế độ người, có MỘT việc "Khách đòi gặp nhân viên".
+    BƯỚC 2  Hội thoại ở chế độ người, KHÔNG sinh việc, có MỘT thông báo "Khách đòi gặp nhân viên".
     BƯỚC 3  Khách KHÔNG nhận câu "em là trợ lý AI" — người đang tiếp, không phải máy.
     BƯỚC 4  Công tắc thông báo AI có trên Cấu hình (nhóm Bảo vệ dữ liệu cá nhân).
     """
@@ -772,8 +794,12 @@ def test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that(app_that):
     assert (c["status"], c["mode"]) == ("escalated", "human")
 
     async def doc(cid):
-        viec = [r["mo_ta"] for r in await db.fetch(
-            "SELECT mo_ta FROM cong_viec WHERE conversation_id = $1", cid)]
+        viec = [r["noi_dung"] for r in await db.fetch(
+            "SELECT noi_dung FROM thong_bao WHERE conversation_id = $1 "
+            "AND loai = 'ai_chuyen_giao'", cid)]
+        viec_that = (await db.fetchrow(
+            "SELECT count(*) n FROM cong_viec WHERE conversation_id = $1", cid))["n"]
+        assert viec_that == 0, "đòi gặp nhân viên vẫn sinh công việc (mục 14.2)"
         tin = [r["content"] for r in await db.fetch(
             "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'system'", cid)]
         return viec, tin

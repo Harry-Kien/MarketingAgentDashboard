@@ -1378,6 +1378,13 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
         tong_tien=tong, trang_thai=trang_thai,
     )
+    if trang_thai == "cho_duyet":
+        # Đơn vượt ngưỡng nằm chờ người duyệt. Không báo thì nó chỉ được
+        # thấy khi có ai mở màn Đơn hàng — còn khách tưởng đã đặt xong.
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.bao_can_duyet_don(
+            row["id"], conversation_id=conversation_id, ma_don=row["ma_don"])
 
     # --- Chốt 8: đẩy sang ERP (chỉ khi ERP_GHI_DON bật) ---
     # Đặt SAU chốt 7 có chủ ý: hàng phải được giữ trước đã. Đẩy sang ERP

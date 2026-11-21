@@ -286,8 +286,16 @@ class AutoRoutingWorker:
         ids = await self._repository.pending_conversation_ids()
         assigned = 0
         for conversation_id in ids:
-            if await self._service.route(conversation_id) is not None:
+            state = await self._service.route(conversation_id)
+            if state is not None:
                 assigned += 1
+                # Báo người vừa được máy giao — SAU khi giao dịch giao đã
+                # chốt. Không báo thì hội thoại vào "của tôi" lặng lẽ, và
+                # người ấy chỉ thấy nếu tình cờ mở đúng bộ lọc.
+                from agent.core import thong_bao_noi_bo
+
+                await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
+                    state.conversation_id, state.assigned_to, tu_dong=True)
         await self._repository.heartbeat(worker_id)
         return {"examined": len(ids), "assigned": assigned}
 

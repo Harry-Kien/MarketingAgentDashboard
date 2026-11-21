@@ -23,7 +23,7 @@ from uuid import UUID
 
 from agent import cau_hinh_dong, db
 from agent.channels.base import THREAD_NHOM
-from agent.core import cong_viec
+from agent.core import cong_viec, thong_bao_noi_bo
 from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
 
 CAU_HOI = ("Dạ shop cảm ơn anh/chị đã nhắn ạ. Anh/chị chấm giúp shop mức hài lòng "
@@ -74,8 +74,9 @@ async def kiem_tra_dieu_kien_resolve(conn: Any, cid: UUID) -> bool:
         FROM cong_viec
         WHERE conversation_id = $1
           AND trang_thai = ANY($2::text[])
-          -- Việc tự sinh "khách cần người trả lời" KHÔNG chặn: nó chỉ để
-          -- nhắc trả lời khách, và Resolve đóng nó ngay trong cùng giao dịch
+          -- Việc tự sinh CŨ "khách cần người trả lời" (trước mục 14.2 —
+          -- nay chuyển người chỉ sinh thông báo) KHÔNG chặn: nó chỉ để nhắc
+          -- trả lời khách, và Resolve đóng nó ngay trong cùng giao dịch
           -- (`dong_viec_tu_sinh`). Việc xử lý ĐƠN (huỷ/đổi trả) cũng mang
           -- nguon='agent' nhưng có `loai_xu_ly_don` — việc đó PHẢI chặn.
           AND NOT (nguon = 'agent' AND loai_xu_ly_don IS NULL)
@@ -104,6 +105,7 @@ async def _sau_khi_giai_quyet(conn, cid: UUID, chu_ky: int, han_xong) -> None:
         "UPDATE conversation_assignments SET ended_at = now() "
         "WHERE conversation_id = $1 AND ended_at IS NULL", cid)
     await dong_viec_tu_sinh(conn, cid)
+    await thong_bao_noi_bo.ket_thuc_luot_chuyen_giao(conn, cid)
     # Ghi theo CHU KỲ SLA hiện tại — mỗi lượt phục vụ một dòng (migration 0039).
     await conn.execute(
         "INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at) "
@@ -116,6 +118,10 @@ async def _sau_khi_giai_quyet(conn, cid: UUID, chu_ky: int, han_xong) -> None:
 async def dong_viec_tu_sinh(conn, cid: UUID) -> None:
     """
     Đóng việc "Khách cần người trả lời" (nguon='agent') đang mở của hội thoại.
+
+    Từ mục 14.2 (21.11.2026) chuyển người KHÔNG sinh việc này nữa — chỉ sinh
+    thông báo. Hàm còn lại để dọn việc cũ còn mở trong CSDL đang chạy: không
+    có nó, việc cũ nằm mở mãi và chặn tự giải quyết.
 
     VÌ SAO PHẢI ĐÓNG Ở ĐÂY, TRONG CÙNG GIAO DỊCH
     ---------------------------------------------

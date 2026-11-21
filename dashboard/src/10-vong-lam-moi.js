@@ -1,6 +1,9 @@
 /* ---------------- vòng làm mới ---------------- */
 
 async function refresh() {
+  // Chuông chạy RIÊNG, không await: nó tự nuốt lỗi của mình, và một màn
+  // hỏng ở dưới không được làm chuông đứng (19-thong-bao.js).
+  taiSoThongBao();
   try {
     await loadOverview();
     if (state.view === "ca") { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); }
@@ -33,6 +36,7 @@ function startInboxStream() {
   const schedule = () => {
     clearTimeout(inboxRefreshTimer);
     inboxRefreshTimer = setTimeout(async () => {
+      taiSoThongBao();
       try {
         await loadOverview();
         if (state.view === "hoithoai") await loadConversations();

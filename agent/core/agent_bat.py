@@ -22,8 +22,8 @@ khẩn cấp, không cần hỏi CSDL thêm lần nào.
 VÀ ĐIỀU QUAN TRỌNG NHẤT: TẮT KHÔNG PHẢI LÀ IM
 ----------------------------------------------
 Hàm này chỉ nói agent có được trả lời không. Nó KHÔNG nói tin nhắn được
-phép biến mất. Nơi gọi có nghĩa vụ chuyển hội thoại sang người và sinh một
-công việc — xem `agent/main.py`.
+phép biến mất. Nơi gọi có nghĩa vụ chuyển hội thoại sang người và báo nhân
+viên (thông báo nội bộ) — xem `agent/omnichannel/xu_ly_tin_vao.py`.
 
 Bỏ vế ấy thì "agent là tuỳ chọn" biến thành "kênh chết im lặng": tin vào,
 không ai trả lời, và dashboard vẫn xanh vì không có gì hỏng cả.

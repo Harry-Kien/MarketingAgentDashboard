@@ -243,8 +243,8 @@ async def _dam_bao_co_nguoi_lo(m: InboundMessage, id_: UUID) -> bool:
         "WHERE id = $1", r["cid"])
     await db.log_event("tin_vao.chay_lai_chuyen_nguoi", ref_id=r["cid"],
                        tin_vao_id=str(id_), kenh=m.channel)
-    from agent.core import cong_viec
-    await cong_viec.tao_tu_chuyen_nguoi(r["cid"], ly_do=LY_DO_CHAY_LAI)
+    from agent.core import thong_bao_noi_bo
+    await thong_bao_noi_bo.bao_ai_chuyen_giao(r["cid"], ly_do=LY_DO_CHAY_LAI)
     log.warning("tin_vao %s: chạy lại không có phản hồi — đã chuyển người", id_)
     return True
 

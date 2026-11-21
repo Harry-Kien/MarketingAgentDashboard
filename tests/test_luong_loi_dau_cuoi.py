@@ -6,7 +6,7 @@ Luồng lõi đầu-cuối trên APP ĐẦY ĐỦ và Postgres THẬT:
       -> handle_inbound
       -> tạo khách + hội thoại
       -> chốt agent theo kênh (TẮT)
-      -> hội thoại chuyển người + sinh CÔNG VIỆC
+      -> hội thoại chuyển người + THÔNG BÁO nội bộ (không sinh việc — mục 14.2)
       -> KHÔNG gọi model, KHÔNG tốn tiền
 
 VÌ SAO TEST NÀY KHÁC MỌI TEST KHÁC
@@ -22,7 +22,7 @@ Test này dựng `agent.main.app` với lifespan thật — cùng thứ uvicorn 
 VÌ SAO AGENT TẮT
 ----------------
 "Agent là tuỳ chọn" là yêu cầu số 3 của chủ dự án. Đường agent tắt phải
-KHÔNG IM: tin vào, hội thoại chuyển người, sinh việc. Đó là đường ta kiểm —
+KHÔNG IM: tin vào, hội thoại chuyển người, chuông reo. Đó là đường ta kiểm —
 và tiện thể nó không gọi model, nên chạy được trong CI mà không tốn tiền.
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ os.environ.setdefault("GCP_PROJECT_ID", "test")
 from conftest import GOC_WEB, _quan_tri  # noqa: E402,F401
 
 
-def test_khach_nhan_webchat_agent_tat_thi_chuyen_nguoi_va_sinh_viec(app_that):
+def test_khach_nhan_webchat_agent_tat_thi_chuyen_nguoi_va_bao_nhan_vien(app_that):
     from agent import db
 
     khach = app_that
@@ -108,10 +108,15 @@ def test_khach_nhan_webchat_agent_tat_thi_chuyen_nguoi_va_sinh_viec(app_that):
         "agent tắt mà hội thoại không chuyển người")
     assert tin >= 1, "tin khách không được lưu"
 
-    # TẮT KHÔNG PHẢI LÀ IM: phải có việc cho người.
-    assert viec, "agent tắt mà không sinh công việc — kênh chết im lặng"
-    assert viec[0]["nguon"] == "agent"
-    assert viec[0]["trang_thai"] == "moi"
+    # TẮT KHÔNG PHẢI LÀ IM: người phải được báo — qua chuông, không qua một
+    # công việc trùng với chính hội thoại đang chờ (mục 14.2).
+    assert viec == [], "chuyển người vẫn sinh công việc"
+    r = khach.get("/api/toi/thong-bao")
+    assert r.status_code == 200, r.text
+    chuong = r.json()
+    assert chuong["chua_doc"] == 1, "agent tắt mà không ai được báo — kênh chết im lặng"
+    assert chuong["thong_bao"][0]["loai"] == "ai_chuyen_giao"
+    assert chuong["thong_bao"][0]["lien_ket"] == {"loai": "hoi_thoai", "id": str(conv["id"])}
 
     # Không tốn một đồng.
     assert goi_model == 0, "agent tắt mà vẫn gọi model"

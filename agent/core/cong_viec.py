@@ -3,23 +3,26 @@ Công việc: giao việc cho nhân viên và theo dõi tới khi xong.
 
 VÌ SAO KHỐI NÀY TỒN TẠI
 ------------------------
-Trước bản này, agent chuyển người xong thì để lại một dòng nhật ký và một
-hội thoại đổi màu. Không ai được GIAO gì cả.
+Việc THẬT cần người làm phải có người chịu trách nhiệm: khách xin huỷ/sửa
+đơn (`loai_xu_ly_don`), hãng vận chuyển báo giao hỏng, ERP giữ đơn nháp,
+token kênh sắp hết hạn, quy tắc tự động "tạo việc", và việc người giao tay.
 
-Nếu người trực đang bận lúc ấy, việc không nằm ở đâu. Nó chỉ được nhớ tới
-nếu tình cờ có người mở đúng hội thoại — và "tình cờ" không phải một cơ chế.
-Đây đúng loại hỏng mà `CLAUDE.md` liệt kê: không nổ, không ghi nhật ký báo
-động, và triệu chứng duy nhất là một khách hàng thôi nhắn lại.
+AI CHUYỂN NGƯỜI KHÔNG CÒN SINH VIỆC (mục 14.2, 21.11.2026)
+---------------------------------------------------------
+Trước bản này mỗi lần AI chuyển giao đẻ một việc "Khách cần người trả lời".
+Việc ấy trùng nghiệp vụ với chính hội thoại đang chờ trong hàng chờ người:
+nhân viên trả lời khách xong vẫn phải đi đóng thêm một việc, màn Công việc
+đầy dòng không phải việc, và việc thật nằm lẫn trong đó. Nay chuyển giao là
+THÔNG BÁO (`agent/core/thong_bao_noi_bo.py::bao_ai_chuyen_giao`) — nhắc và
+dẫn đường, không phải hạng mục phải đóng.
 
-VÌ SAO TASK TỰ SINH CHỈ MỘT LẦN MỖI HỘI THOẠI
-----------------------------------------------
-Không chặn thì mỗi tin khách nhắn thêm vào một hội thoại đã chuyển người
-lại đẻ một việc mới. Cuối ngày màn Công việc có bốn mươi dòng cho cùng một
-chuyện, không ai đọc nữa, và việc thật nằm lẫn trong đó.
+Việc tự sinh cũ (nguon='agent', `loai_xu_ly_don` NULL) còn mở trong CSDL
+đang chạy vẫn được `giai_quyet.dong_viec_tu_sinh` đóng khi giải quyết hay
+trả hội thoại cho agent — không ai phải dọn tay.
 
-Ràng buộc nằm ở CSDL (`idx_cong_viec_agent_mot_viec`) chứ không chỉ ở đây:
-hai tin khách về cùng lúc thì hai tiến trình cùng kiểm "đã có việc chưa",
-cùng thấy chưa, và cùng chèn.
+`idx_cong_viec_agent_mot_viec` (một việc nguon='agent' đang mở mỗi hội
+thoại) vẫn giữ: nay nó canh việc xử lý ĐƠN — khách nhắn "huỷ đơn" ba lần
+không thành ba việc huỷ (`tao_tu_yeu_cau_xu_ly_don`).
 """
 from __future__ import annotations
 
@@ -465,60 +468,6 @@ def dieu_kien_pham_vi(*, nguoi: dict, so_tham_so: int,
     )
 
 
-async def tao_tu_chuyen_nguoi(
-    conversation_id: UUID | str, *, ly_do: str, contact_id=None,
-    ten_khach: str = "",
-) -> str | None:
-    """
-    Agent vừa chuyển người -> tạo một việc để có ai đó chịu trách nhiệm.
-
-    Trả id việc vừa tạo, hoặc None nếu hội thoại này đã có một việc tự động
-    đang mở.
-
-    KHÔNG ném khi hỏng. Hàm này chạy trên đường xử lý tin khách, và một
-    ngoại lệ ở đây làm chết cả lượt trả lời — tức là để cứu một việc bị
-    thiếu, ta đánh mất luôn câu trả lời cho khách.
-
-    Nhưng cũng KHÔNG im lặng: hỏng thì ghi nhật ký ở mức lỗi. Nuốt không
-    dấu vết là cách khối này trở nên vô dụng mà không ai biết.
-    """
-    try:
-        # Tên và khách lấy từ CHÍNH hội thoại khi người gọi không có trong
-        # tay — `handle_inbound` chỉ cầm id. Trước 23.10.2026 nó truyền tên
-        # từ một dict không có khoá ấy, nên mọi việc tự sinh đều vô danh và
-        # không gắn khách. Gộp vào một câu SQL: không thêm lượt khứ hồi nào
-        # trên đường xử lý tin khách.
-        dong = await db.fetchrow(
-            "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, "
-            "                       conversation_id, contact_id) "
-            "SELECT 'Khách cần người trả lời' || coalesce(': ' || coalesce("
-            "           nullif($1, ''), nullif(c.customer_name, '')), ''), "
-            "       $2, 'agent', 'cao', $3::uuid, coalesce($4::uuid, c.contact_id) "
-            "FROM (SELECT 1) _ LEFT JOIN conversations c ON c.id = $3::uuid "
-            # Đụng `idx_cong_viec_agent_mot_viec` thì bỏ qua — hội thoại này
-            # đã có việc đang mở, không cần việc thứ hai.
-            "ON CONFLICT DO NOTHING RETURNING id",
-            (ten_khach or "").strip(), ly_do, str(conversation_id),
-            str(contact_id) if contact_id else None,
-        )
-        if dong is None:
-            return None
-        # Việc MỚI thì báo nhân viên ra ngoài dashboard — ở MỌI kênh. Chỉ
-        # khi việc mới: khách nhắn thêm mười tin vào hội thoại đã chuyển
-        # người không được thành mười tin báo (chốt một-việc-mỗi-hội-thoại
-        # ở trên làm luôn việc chống trùng cho đường báo này).
-        await _bao_viec_moi_cho_nhan_vien(conversation_id)
-        return str(dong["id"])
-    except Exception as exc:  # noqa: BLE001
-        import logging
-
-        logging.getLogger("agent.cong_viec").error(
-            "KHÔNG tạo được công việc từ chuyển người (hội thoại %s): %s: %s",
-            conversation_id, type(exc).__name__, exc,
-        )
-        return None
-
-
 async def tao_tu_yeu_cau_xu_ly_don(
     *,
     order_id: UUID,
@@ -527,11 +476,13 @@ async def tao_tu_yeu_cau_xu_ly_don(
     tieu_de: str,
     mo_ta: str,
 ) -> str | None:
-    """Tạo hoặc bổ sung liên kết đơn cho việc Handover do agent sinh ra.
+    """Tạo hoặc bổ sung liên kết đơn cho việc xử lý đơn do agent ghi nhận.
 
-    Yêu cầu hủy được ghi nhận trước khi Handover chung tạo công việc. Nếu
-    việc chung đã tồn tại do hai luồng chạy sát nhau, câu UPSERT chỉ bổ sung
-    liên kết khi việc đó chưa gắn với đơn khác; không bao giờ ghi đè nhầm.
+    Chuyển người không còn sinh việc (mục 14.2), nhưng CSDL đang chạy có thể
+    còn việc tự sinh cũ đang mở trên cùng hội thoại — chiếm chỗ của
+    `idx_cong_viec_agent_mot_viec`. Câu UPSERT khi ấy biến chính việc cũ
+    thành việc xử lý đơn (chỉ khi nó chưa gắn với đơn khác; không bao giờ
+    ghi đè nhầm), thay vì im lặng không tạo được việc huỷ đơn nào.
     """
     if loai not in LOAI_XU_LY_DON:
         raise CongViecHong(f"Loại xử lý đơn không hợp lệ: {loai!r}")
@@ -579,34 +530,6 @@ async def tao_tu_yeu_cau_xu_ly_don(
             exc,
         )
         return None
-
-
-TEN_KENH = {
-    "zalo_personal": "Zalo cá nhân", "zalo_oa": "Zalo OA",
-    "facebook": "Facebook", "instagram": "Instagram",
-    "whatsapp": "WhatsApp", "webchat": "Chat web",
-}
-
-
-async def _bao_viec_moi_cho_nhan_vien(conversation_id: UUID | str) -> None:
-    """
-    Gửi một tin ngắn tới nhóm nhân viên (xem `canh_gac.bao_nhan_vien`).
-
-    Chỉ nói KÊNH, không nói lý do hay lời khách: lý do chuyển người có thể
-    là "mang thai", "bệnh da" — dữ liệu sức khoẻ, thuộc loại nhạy cảm theo
-    Luật 91/2025, không được đi sang Telegram chỉ để báo "có việc".
-    """
-    from agent import canh_gac
-
-    dong = await db.fetchrow(
-        "SELECT ca.channel FROM conversations c "
-        "LEFT JOIN channel_accounts ca ON ca.id = c.account_id WHERE c.id = $1::uuid",
-        str(conversation_id))
-    kenh = (dong or {}).get("channel") or ""
-    canh_gac.bao_nhan_vien_nen(
-        "Khách cần người trả lời",
-        f"Kênh {TEN_KENH.get(kenh, kenh or 'không rõ')}: agent đã chuyển hội thoại "
-        "cho người. Mở dashboard → Ca trực để nhận.")
 
 
 async def tao_tu_van_chuyen(

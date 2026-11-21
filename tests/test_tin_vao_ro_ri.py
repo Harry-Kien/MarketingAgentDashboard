@@ -432,8 +432,11 @@ def test_chay_lai_sau_ingest_ma_chua_ai_tra_loi_thi_CHUYEN_NGUOI(app_that, monke
                                "WHERE kind = 'tin_vao.chay_lai_chuyen_nguoi'")
         viec = await db.fetchrow("SELECT count(*) AS n FROM cong_viec "
                                  "WHERE conversation_id = $1", c["id"])
-        return su["n"], viec["n"]
-    assert goi(app_that, bang_chung) == (1, 1)
+        bao = await db.fetchrow("SELECT count(*) AS n FROM thong_bao "
+                                "WHERE conversation_id = $1 AND loai = 'ai_chuyen_giao'", c["id"])
+        return su["n"], viec["n"], bao["n"] >= 1
+    # Mục 14.2: chuyển người không sinh việc; người trực được báo bằng chuông.
+    assert goi(app_that, bang_chung) == (1, 0, True)
 
 
 def test_chay_lai_khi_DA_co_phan_hoi_thi_khong_chuyen_nguoi(app_that, monkeypatch):

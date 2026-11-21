@@ -62,7 +62,7 @@ NHOM = {
     "Quyền và vai trò": [
         "vai_tro", "vai_tro_quyen", "nguoi_dung_vai_tro",
     ],
-    "Công việc": ["cong_viec"],
+    "Công việc và thông báo": ["cong_viec", "thong_bao"],
     "Lịch ca": ["ca_truc", "ca_nghi"],
     "Dữ liệu cá nhân": ["yeu_cau_chu_the"],
     "Hồ sơ agent": ["agent_ho_so"],

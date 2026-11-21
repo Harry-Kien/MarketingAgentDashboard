@@ -76,7 +76,7 @@ def _phien_ban(app, cid: str) -> int:
 
 
 def _ghi_bao(monkeypatch) -> list[str]:
-    """Bắt mọi lần báo nhân viên — đường `cong_viec._bao_viec_moi_cho_nhan_vien`."""
+    """Bắt mọi lần báo nhân viên — đường `thong_bao_noi_bo._bao_ngoai`."""
     from agent import canh_gac
 
     bao: list[str] = []
@@ -90,15 +90,19 @@ def _quan_tri_co_id(app, ten: str = "sep") -> tuple[str, Nguoi]:
     return str(uid), Nguoi(app, token)
 
 
-# ------------------------------------------------------------------ 1. việc tự sinh tự đóng
+# ------------------------------------------------------------------ 1. việc tự sinh CŨ tự đóng
+#
+# Từ mục 14.2 chuyển người KHÔNG sinh việc nữa — chỉ sinh thông báo (lần
+# chuyển giao sau vẫn báo lại: tests/test_thong_bao_noi_bo.py). Nhưng CSDL
+# đang chạy còn việc tự sinh cũ đang mở; chúng vẫn phải tự đóng, nếu không
+# nằm mở mãi và chặn tự giải quyết.
 
-def test_giai_quyet_dong_viec_tu_sinh_nen_lan_chuyen_nguoi_sau_co_viec_moi_va_co_bao(
-        app_that, monkeypatch):
-    """
-    Trước bản vá: việc "Khách cần người trả lời" mở mãi sau khi giải quyết.
-    Chốt một-việc-mỗi-hội-thoại nuốt lần chuyển người SAU — không việc mới,
-    không báo ai, khách chờ.
-    """
+def _viec_tu_sinh_cu(app, cid: str) -> None:
+    _mot(app, "INSERT INTO cong_viec (tieu_de, nguon, uu_tien, conversation_id) "
+              "VALUES ('Khách cần người trả lời', 'agent', 'cao', $1::uuid) RETURNING 1", cid)
+
+
+def test_giai_quyet_dong_viec_tu_sinh_cu_va_lan_sau_khong_sinh_viec(app_that, monkeypatch):
     bao = _ghi_bao(monkeypatch)
     qt = _quan_tri_vao(app_that)
     tk = _kenh_webchat(qt)                       # agent TẮT → mọi tin chuyển người
@@ -106,6 +110,7 @@ def test_giai_quyet_dong_viec_tu_sinh_nen_lan_chuyen_nguoi_sau_co_viec_moi_va_co
     gui("cần tư vấn")
     cid = _hoi_thoai_cua(app_that, tk)
     assert len(bao) == 1
+    _viec_tu_sinh_cu(app_that, cid)
 
     r = qt.post(f"/api/inbox/conversations/{cid}/giai-quyet")
     assert r.status_code == 200, r.text
@@ -116,7 +121,7 @@ def test_giai_quyet_dong_viec_tu_sinh_nen_lan_chuyen_nguoi_sau_co_viec_moi_va_co
     gui("cho em hỏi thêm")
     dem = _mot(app_that, "SELECT count(*) FILTER (WHERE trang_thai = 'moi') mo, "
                          "count(*) tat_ca FROM cong_viec WHERE conversation_id = $1::uuid", cid)
-    assert dem["tat_ca"] == 2 and dem["mo"] == 1, "lần chuyển người sau phải có việc mới"
+    assert dem["tat_ca"] == 1 and dem["mo"] == 0, "chuyển người lại sinh việc (mục 14.2)"
     assert len(bao) == 2, "lần chuyển người sau phải báo nhân viên"
 
 
@@ -128,6 +133,7 @@ def test_ket_thuc_tiep_quan_dong_viec_tu_sinh(app_that, monkeypatch):
     gui = _khach(app_that, tk)
     gui("cần tư vấn")
     cid = _hoi_thoai_cua(app_that, tk)
+    _viec_tu_sinh_cu(app_that, cid)
 
     r = qt.post(f"/api/inbox/conversations/{cid}/takeover",
                 json={"expected_version": _phien_ban(app_that, cid), "reason": "nhận khách"})
@@ -138,10 +144,10 @@ def test_ket_thuc_tiep_quan_dong_viec_tu_sinh(app_that, monkeypatch):
     assert _mot(app_that, "SELECT trang_thai FROM cong_viec WHERE conversation_id = $1::uuid",
                 cid)["trang_thai"] == "xong"
 
-    # Khách nhắn tiếp, agent vẫn tắt → chuyển người lại: việc MỚI và báo MỚI.
+    # Khách nhắn tiếp, agent vẫn tắt → chuyển người lại: KHÔNG việc mới, báo MỚI.
     gui("alo shop")
     assert _mot(app_that, "SELECT count(*) n FROM cong_viec WHERE conversation_id = $1::uuid "
-                          "AND trang_thai = 'moi'", cid)["n"] == 1
+                          "AND trang_thai = 'moi'", cid)["n"] == 0
     assert len(bao) == 2
 
 
@@ -341,7 +347,14 @@ def test_cong_viec_kenh_khac_khong_thay_khong_sua_duoc(app_that):
     tk = _kenh_webchat(qt)
     lan_id, lan = _nhan_vien_moi(qt, "lan")
     _khach_nhan(app_that, tk, "Chị Hoa", "em đang mang thai")
-    vid = qt.get("/api/cong-viec").json()["cong_viec"][0]["id"]
+    # Chuyển người không còn sinh việc (mục 14.2); phạm vi kênh vẫn phải
+    # canh cho việc CHƯA GIAO gắn hội thoại — việc quy tắc tự động hay
+    # người điều phối tạo cho khách ấy.
+    cid = _hoi_thoai_cua(app_that, tk)
+    r = qt.post("/api/cong-viec", json={"tieu_de": "Gọi lại tư vấn thai kỳ",
+                                        "conversation_id": cid})
+    assert r.status_code == 201, r.text
+    vid = r.json()["id"]
 
     assert lan.get("/api/cong-viec").json()["cong_viec"] == [], (
         "nhân viên kênh khác không được thấy tên khách và lý do chuyển người")

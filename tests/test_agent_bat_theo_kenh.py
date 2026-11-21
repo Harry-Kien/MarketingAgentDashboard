@@ -165,20 +165,30 @@ def test_tai_khoan_khong_ton_tai_thi_CHAN(csdl_kiem_thu):
     assert "Không tìm thấy" in kq.ly_do
 
 
-def test_tat_agent_thi_SINH_VIEC_chu_khong_im_lang(csdl_kiem_thu):
+def test_tat_agent_thi_BAO_NHAN_VIEN_chu_khong_im_lang(csdl_kiem_thu):
     """
     Đây là ràng buộc trung tâm của khối D.
 
     Không có nó thì tắt agent = kênh chết im lặng: tin vào, không ai trả
-    lời, dashboard vẫn xanh.
+    lời, dashboard vẫn xanh. Từ mục 14.2 "không im lặng" là một THÔNG BÁO
+    cho thành viên kênh — không phải một công việc trùng với hội thoại.
     """
-    from agent.core import agent_bat, cong_viec
+    from agent.core import agent_bat, thong_bao_noi_bo
 
     async def kich_ban(pool, tk, cid):
         async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE channel_accounts SET agent_bat = false, "
                 "agent_tat_ly_do = 'để người trực' WHERE id = $1", tk)
+            uid = await conn.fetchval(
+                "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam) "
+                "VALUES ('truc', 'x') RETURNING id")
+            await conn.execute(
+                "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id) "
+                "SELECT $1, id FROM vai_tro WHERE ten = 'Nhân viên'", uid)
+            await conn.execute(
+                "INSERT INTO account_memberships (account_id, user_id, role) "
+                "VALUES ($1, $2, 'agent')", tk, uid)
             conv = dict(await conn.fetchrow(
                 "SELECT status, mode, customer_name FROM conversations "
                 "WHERE id = $1", cid))
@@ -186,29 +196,30 @@ def test_tat_agent_thi_SINH_VIEC_chu_khong_im_lang(csdl_kiem_thu):
         kq = await agent_bat.agent_duoc_tra_loi(tk, conv)
         assert not kq.duoc
         # Mô phỏng đúng thứ `handle_inbound` làm khi bị chặn.
-        await cong_viec.tao_tu_chuyen_nguoi(
-            cid, ly_do=kq.ly_do, ten_khach=conv["customer_name"])
+        await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do=kq.ly_do)
 
         async with pool.acquire() as conn:
-            return dict(await conn.fetchrow(
-                "SELECT tieu_de, mo_ta, nguon, nguoi_nhan FROM cong_viec"))
+            tb = await conn.fetch(
+                "SELECT nguoi_nhan_id, loai, noi_dung, conversation_id FROM thong_bao")
+            so_viec = await conn.fetchval("SELECT count(*) FROM cong_viec")
+            return [dict(r) for r in tb], so_viec, uid, cid
 
-    v = _chay(csdl_kiem_thu, kich_ban)
-    assert v["nguon"] == "agent"
-    assert v["nguoi_nhan"] is None, "việc phải CHƯA GIAO để ai cũng thấy"
-    assert "Chị Hoa" in v["tieu_de"]
-    assert "để người trực" in v["mo_ta"], "lý do tắt phải đi vào mô tả việc"
+    tb, so_viec, uid, cid = _chay(csdl_kiem_thu, kich_ban)
+    assert so_viec == 0, "chuyển người vẫn sinh công việc (mục 14.2)"
+    assert len(tb) == 1 and tb[0]["nguoi_nhan_id"] == uid
+    assert tb[0]["loai"] == "ai_chuyen_giao" and tb[0]["conversation_id"] == cid
+    assert "để người trực" in tb[0]["noi_dung"], "lý do tắt phải đi vào thông báo"
 
 
-def test_main_py_that_su_goi_va_sinh_viec():
+def test_main_py_that_su_goi_va_bao_nhan_vien():
     """
-    Test trên mô phỏng thứ `handle_inbound` làm. Nếu `main.py` không gọi
-    như vậy thì test vẫn xanh trong khi hệ thống thật vẫn im lặng.
+    Test trên mô phỏng thứ `handle_inbound` làm. Nếu `handle_inbound` không
+    gọi như vậy thì test vẫn xanh trong khi hệ thống thật vẫn im lặng.
     """
     noi_dung = (ROOT / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(encoding="utf-8")
     assert "agent_bat.agent_duoc_tra_loi(" in noi_dung
     vt = noi_dung.index("agent_bat.agent_duoc_tra_loi(")
     doan = noi_dung[vt:vt + 1400]
-    assert "cong_viec.tao_tu_chuyen_nguoi(" in doan, (
-        "agent bị chặn mà không sinh việc — tin khách rơi vào hư không")
+    assert "thong_bao_noi_bo.bao_ai_chuyen_giao(" in doan, (
+        "agent bị chặn mà không báo ai — tin khách rơi vào hư không")
     assert "conversation.escalated" in doan

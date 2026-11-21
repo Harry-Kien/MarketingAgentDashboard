@@ -203,10 +203,10 @@ async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str) -> str:
     """
     Việc mang ĐÚNG tiêu đề người vận hành đặt trong quy tắc, nguồn `tu_dong`.
 
-    Không dùng `cong_viec.tao_tu_chuyen_nguoi`: hàm ấy đặt tiêu đề cố định
-    "Khách cần người trả lời", đụng chốt "mỗi hội thoại một việc agent đang
-    mở" (trả None khi đã có — vậy mà quy tắc vẫn ghi "đã tạo việc"), và nuốt
-    lỗi CSDL. Ở đây không có việc thì NỔ, để lần chạy ghi "hỏng".
+    Đây là việc THẬT do người vận hành chủ ý đặt trong quy tắc — khác với
+    chuyển người, vốn chỉ sinh thông báo (mục 14.2). Không chèn được việc
+    thì NỔ, để lần chạy ghi "hỏng": nuốt lỗi CSDL ở đây là quy tắc ghi "đã
+    tạo việc" cho một việc không tồn tại.
     """
     r = await db.fetchrow(
         "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, conversation_id, contact_id) "
@@ -245,7 +245,7 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
     chuyện với khách, một câu tự động chen ngang là nói đè lên họ.
     """
     from agent import db, runtime
-    from agent.core import cong_viec, gio_lam_viec
+    from agent.core import gio_lam_viec, thong_bao_noi_bo
 
     kq = KetQua()
     try:
@@ -329,9 +329,9 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
                     if doi is not None:
                         await db.log_event("conversation.escalated", ref_id=cid,
                                            reason=f"quy tắc: {qt['ten']} — {hd.get('ly_do', '')}")
-                        # Chuyển người mà không sinh việc là im lặng: hội thoại
+                        # Chuyển người mà không báo ai là im lặng: hội thoại
                         # nằm ở chế độ người, không ai biết phải vào.
-                        await cong_viec.tao_tu_chuyen_nguoi(
+                        await thong_bao_noi_bo.bao_ai_chuyen_giao(
                             cid, ly_do=f"Quy tắc «{qt['ten']}»: {hd.get('ly_do', '')}")
                         await _bao_chuyen_nguoi(msg, cid, str(qt["ten"]))
             except Exception as exc:  # noqa: BLE001 — hỏng một hành động không chặn hành động sau

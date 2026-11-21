@@ -22,7 +22,7 @@ from agent.channels import registry as channels
 from agent.channels.base import InboundMessage
 from agent.config import settings
 from agent.core import agent as brain
-from agent.core import agent_bat, agent_ho_so, anh_khach, cong_viec, gio_lam_viec, tu_nhien
+from agent.core import agent_bat, agent_ho_so, anh_khach, gio_lam_viec, thong_bao_noi_bo, tu_nhien
 from agent.omnichannel import giai_quyet, thong_bao_ai, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
 from agent.omnichannel.outbound_service import (
@@ -255,10 +255,10 @@ async def handle_inbound(msg: InboundMessage) -> None:
     # Agent có được trả lời hội thoại này không — ba nấc: công tắc toàn cục,
     # bật/tắt theo TÀI KHOẢN KÊNH, và người đã tiếp quản hội thoại.
     #
-    # TẮT KHÔNG PHẢI LÀ IM. Hội thoại chuyển sang người VÀ sinh một công
-    # việc. Bỏ vế thứ hai thì "agent là tuỳ chọn" biến thành "kênh chết im
-    # lặng": tin vào, không ai trả lời, và dashboard vẫn xanh vì không có gì
-    # hỏng cả.
+    # TẮT KHÔNG PHẢI LÀ IM. Hội thoại chuyển sang người VÀ báo nhân viên
+    # (thông báo nội bộ + tin báo ngoài). Bỏ vế thứ hai thì "agent là tuỳ
+    # chọn" biến thành "kênh chết im lặng": tin vào, không ai trả lời, và
+    # dashboard vẫn xanh vì không có gì hỏng cả.
     cho_phep = await agent_bat.agent_duoc_tra_loi(msg.account_id, conv)
     if not cho_phep.duoc:
         await db.execute(
@@ -267,14 +267,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
             "WHERE id = $1",
             cid,
         )
-        # Hội thoại người đã cầm rồi thì KHÔNG sinh việc mới: họ đang làm,
-        # và một việc nữa chỉ làm loãng danh sách. Chỉ sinh khi agent bị
-        # chặn vì cấu hình — đó mới là lúc chưa ai biết mình phải vào.
+        # Hội thoại người đã cầm rồi thì KHÔNG báo lại: họ đang làm, và
+        # một tiếng chuông nữa chỉ làm loãng. Chỉ báo khi agent bị chặn vì
+        # cấu hình — đó mới là lúc chưa ai biết mình phải vào.
         if "đã do người tiếp quản" not in cho_phep.ly_do:
             await db.log_event("conversation.escalated", ref_id=cid,
                                reason=cho_phep.ly_do)
-            # Tên khách: `tao_tu_chuyen_nguoi` tự đọc từ hội thoại.
-            await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=cho_phep.ly_do)
+            await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do=cho_phep.ly_do)
         return
 
     # KHÁCH ĐÒI GẶP NGƯỜI -> chuyển ngay, không qua model. Câu thông báo AI
@@ -291,7 +290,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
             "WHERE id = $1", cid,
         )
         await db.log_event("conversation.escalated", ref_id=cid, reason="khách đòi gặp nhân viên")
-        await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do="Khách đòi gặp nhân viên.")
+        await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do="Khách đòi gặp nhân viên.")
         # Báo khách ở MỌI chế độ, kể cả Gợi ý: câu báo là câu cố định trong
         # cấu hình, không phải lời model — và khách vừa đòi gặp người mà
         # nhận lại im lặng là đúng thứ vừa hứa sẽ không xảy ra.
@@ -321,9 +320,9 @@ async def handle_inbound(msg: InboundMessage) -> None:
         await db.log_event("conversation.escalated", ref_id=cid,
                            reason="khách gửi ảnh không kèm chữ")
         # Một dòng nhật ký không phải một người chịu trách nhiệm. Không
-        # tạo việc thì chuyện này chỉ được nhớ tới nếu tình cờ có ai mở
+        # báo ai thì chuyện này chỉ được nhớ tới nếu tình cờ có ai mở
         # đúng hội thoại — và "tình cờ" không phải một cơ chế.
-        await cong_viec.tao_tu_chuyen_nguoi(
+        await thong_bao_noi_bo.bao_ai_chuyen_giao(
             cid, ly_do="Khách gửi ảnh không kèm chữ — agent không đoán.")
         with suppress(Exception):
             await adapter_bao_nguoi(msg, cid)
@@ -475,7 +474,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
                 )
 
     # Chuyển người mà không nói gì với khách là để họ ngồi im không biết có
-    # ai thấy tin của mình chưa. Nhân viên thì đã có việc trong hàng chờ,
+    # ai thấy tin của mình chưa. Nhân viên thì đã có thông báo và hàng chờ,
     # còn khách thì chịu toàn bộ khoảng lặng đó.
     #
     # Gửi câu CỐ ĐỊNH trong cấu hình chứ không gửi lời model vừa sinh ra:
@@ -554,11 +553,18 @@ async def handle_inbound(msg: InboundMessage) -> None:
         1 if stored_draft else 0,
     )
 
+    # Bản nháp nằm chờ người duyệt (chế độ Gợi ý, hoặc xếp hàng gửi hỏng):
+    # báo người duyệt. Không báo thì nháp chỉ hiện ra khi có ai tình cờ mở
+    # đúng hội thoại, còn khách thì chờ. Nhánh chuyển người ngay dưới tự báo
+    # — một chuyện một tiếng chuông, không hai.
+    if stored_draft and not reply.escalate and (reply.text or "").strip():
+        await thong_bao_noi_bo.bao_can_duyet_nhap(cid)
+
     if reply.escalate:
         await db.log_event(
             "conversation.escalated", ref_id=cid, reason=reply.escalate_reason
         )
-        await cong_viec.tao_tu_chuyen_nguoi(
+        await thong_bao_noi_bo.bao_ai_chuyen_giao(
             cid, ly_do=reply.escalate_reason or "agent không xử lý được")
         await bao_nhan_vien_tiep_quan(
             adapter, msg.conversation_ref, cid,
@@ -575,9 +581,9 @@ async def _giao_nguoi_tin_nhom(cid: uuid.UUID, conv: dict, state: str | None) ->
     Tin nhóm: lưu rồi (bước ingest), giao cho người, AI đứng ngoài hẳn.
 
     Cùng khuôn với đường "agent bị tắt cho kênh này": đổi sang người và
-    sinh MỘT việc (`tao_tu_chuyen_nguoi` tự chặn việc thứ hai khi việc cũ
-    còn mở, và việc mới thì báo nhân viên). Không giao thì tin nhóm vào hộp
-    thư rồi nằm đó — "AI không trả lời" biến thành "không ai trả lời".
+    BÁO nhân viên (`thong_bao_noi_bo.bao_ai_chuyen_giao` — một thông báo
+    chưa đọc mỗi người mỗi hội thoại). Không báo thì tin nhóm vào hộp thư
+    rồi nằm đó — "AI không trả lời" biến thành "không ai trả lời".
 
     KHÔNG gửi gì vào nhóm: không câu báo chuyển người, không "em là trợ lý
     AI". Đó là khác biệt duy nhất với đường chuyển người thường, và là cả
@@ -596,12 +602,12 @@ async def _giao_nguoi_tin_nhom(cid: uuid.UUID, conv: dict, state: str | None) ->
         "version = version + 1, updated_at = now() "
         "WHERE id = $1 AND mode <> 'human' AND state NOT IN ('resolved', 'closed') "
         "RETURNING id", cid)
-    # Người đã cầm rồi thì không sinh việc mới — họ đang làm (giống nhánh
+    # Người đã cầm rồi thì không báo lại — họ đang làm (giống nhánh
     # `agent_duoc_tra_loi` bên dưới).
     if doi is None:
         return
     await db.log_event("conversation.escalated", ref_id=cid, reason=LY_DO_TIN_NHOM)
-    await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=LY_DO_TIN_NHOM)
+    await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do=LY_DO_TIN_NHOM)
 
 
 async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:

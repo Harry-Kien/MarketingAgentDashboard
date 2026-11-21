@@ -39,6 +39,7 @@ from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
 from agent.api.contacts import router_vo_chu as khach_vo_chu_router
 from agent.api.cong_viec import router as cong_viec_router
+from agent.api.thong_bao_noi_bo import router as thong_bao_noi_bo_router
 from agent.api.ho_so_agent import router as ho_so_agent_router
 from agent.api.erp import router as erp_router
 from agent.api.routing_admin import router as routing_admin_router
@@ -890,6 +891,7 @@ app.include_router(channel_accounts_router)
 app.include_router(contacts_router)
 app.include_router(khach_vo_chu_router)
 app.include_router(cong_viec_router)
+app.include_router(thong_bao_noi_bo_router)
 app.include_router(ho_so_agent_router)
 app.include_router(erp_router)
 app.include_router(routing_admin_router)

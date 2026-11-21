@@ -573,6 +573,14 @@ async def takeover_conversation(
         )
     except RoutingError as exc:
         _raise_routing(exc)
+    # Giao cho NGƯỜI KHÁC thì người ấy phải biết — không thì hội thoại nằm
+    # trong "của tôi" của họ mà họ không hay. Tự nhận thì hàm tự bỏ qua.
+    # Gọi SAU giao dịch giao: chuông hỏng không được làm hỏng lượt giao.
+    if state.assigned_to is not None:
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
+            conversation_id, state.assigned_to, boi=actor_id)
     return _routing_response(state)
 
 

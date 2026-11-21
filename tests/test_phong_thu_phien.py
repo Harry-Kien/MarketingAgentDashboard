@@ -4,7 +4,8 @@ Phiên thử sống trong RAM, hội thoại giả không được job nền nà
 
 Hội thoại thử phải có trong `conversations` (công cụ tra đơn cần khoá
 ngoại) nhưng ở `mode='human'`, `state='closed'`, gắn tài khoản kênh đã
-TẮT — auto_routing chỉ nhặt mode <> 'human', sla chỉ quét open/pending,
+TẮT — auto_routing và sla chỉ quét open/pending (từ 20.11.2026
+auto_routing nhặt cả `mode='human'` chưa ai giữ, nên `closed` mới là chốt),
 canh gác bỏ qua tài khoản disabled. Test đọc SQL, không cần Postgres.
 """
 from __future__ import annotations

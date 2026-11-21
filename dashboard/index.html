@@ -336,6 +336,22 @@
             <button type="button" class="chip" data-status="escalated">Đã chuyển</button>
             <button type="button" class="chip" data-status="auto">Tự xử lý</button>
           </div>
+          <!-- Lọc theo kênh, người giữ, riêng/nhóm, quá hạn SLA. Nằm NGOÀI
+               vùng vòng làm mới dựng lại, nên lựa chọn không bị đặt lại. -->
+          <div class="filterbar filterbar--loc" id="convloc">
+            <select id="loc-kenh" aria-label="Lọc theo kênh"><option value="">Mọi kênh</option></select>
+            <select id="loc-giu" aria-label="Lọc theo người giữ">
+              <option value="">Mọi người giữ</option>
+              <option value="toi">Của tôi</option>
+              <option value="chua_giao">Chưa ai nhận</option>
+            </select>
+            <select id="loc-loai" aria-label="Hội thoại riêng hay nhóm">
+              <option value="">Riêng và nhóm</option>
+              <option value="rieng">Chỉ riêng</option>
+              <option value="nhom">Chỉ nhóm</option>
+            </select>
+            <button type="button" class="chip" id="loc-sla" aria-pressed="false">Quá hạn SLA</button>
+          </div>
           <div class="filterbar filterbar--nhan" id="nhanfilter" hidden></div>
           <div id="convlist" class="rows"></div>
         </aside>

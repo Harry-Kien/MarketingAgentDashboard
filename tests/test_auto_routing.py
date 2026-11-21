@@ -14,6 +14,10 @@ class _Tx:
     async def lock_conversation(self, conversation_id):
         return dict(self.store.conversation)
 
+    async def da_co_nguoi_vao(self, conversation_id):
+        self.store.hoi_nguoi_vao += 1
+        return self.store.nguoi_vao
+
     async def matching_rule(self, **_kwargs):
         return self.store.rule
 
@@ -39,6 +43,8 @@ class _Store:
         self.candidates = []
         self.cursor = None
         self.applied = None
+        self.nguoi_vao = False
+        self.hoi_nguoi_vao = 0
 
     @asynccontextmanager
     async def transaction(self):
@@ -63,15 +69,49 @@ def test_auto_route_chon_tai_nhe_nhat_va_round_robin_khi_bang_tai():
     assert store.applied["source"] == "auto"
 
 
-def test_auto_route_fail_closed_khi_human_hoac_khong_co_agent():
+def test_auto_route_fail_closed_khi_nguoi_dang_giu_hoac_khong_co_agent():
     store = _Store()
     store.conversation["mode"] = "human"
+    store.conversation["assigned_to"] = uuid4()       # đồng nghiệp đang giữ
+    store.candidates = [{"user_id": uuid4(), "active_count": 0, "max_active": 5}]
     assert asyncio.run(AutoRoutingService(store).route(store.conversation["id"])) is None
 
+    store.conversation["assigned_to"] = None
     store.conversation["mode"] = "assist"
     store.candidates = []
     assert asyncio.run(AutoRoutingService(store).route(store.conversation["id"])) is None
     assert store.applied is None
+
+
+def test_ai_chuyen_nguoi_chua_ai_giu_thi_duoc_giao():
+    """
+    Trước 20.11.2026 mọi `mode='human'` bị bỏ qua: khách AI đã chuyển người
+    chỉ có một công việc không ai nhận. Nay giao theo đúng quy tắc định tuyến.
+    """
+    store = _Store()
+    store.conversation.update(mode="human", status="escalated")
+    nguoi = uuid4()
+    store.candidates = [{"user_id": nguoi, "active_count": 0, "max_active": 5}]
+    kq = asyncio.run(AutoRoutingService(store).route(store.conversation["id"]))
+    assert kq is not None and kq.assigned_to == nguoi
+    assert store.hoi_nguoi_vao == 1
+
+
+def test_human_chua_giao_nhung_nhan_vien_da_vao_tra_loi_thi_khong_giao():
+    store = _Store()
+    store.conversation.update(mode="human", status="escalated")
+    store.nguoi_vao = True
+    store.candidates = [{"user_id": uuid4(), "active_count": 0, "max_active": 5}]
+    assert asyncio.run(AutoRoutingService(store).route(store.conversation["id"])) is None
+    assert store.applied is None
+
+
+def test_hoi_thoai_ai_khong_hoi_nguoi_vao():
+    """Hội thoại AI không tốn thêm truy vấn: chỉ `human` mới cần xét."""
+    store = _Store()
+    store.candidates = [{"user_id": uuid4(), "active_count": 0, "max_active": 5}]
+    asyncio.run(AutoRoutingService(store).route(store.conversation["id"]))
+    assert store.hoi_nguoi_vao == 0
 
 
 def test_worker_route_hang_doi_va_ghi_heartbeat():

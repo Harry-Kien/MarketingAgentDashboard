@@ -640,6 +640,15 @@ def _khoa_truot(name: str, args: dict, out: dict) -> str | None:
 # ĐỌC: gói, và công cụ MCP về sau. Đó là lý do số đo ghi ở đây chứ không ở
 # ĐỌC: `chay.py` (phải thuần, có test AST canh) và không ở `respond()` (chỉ
 # ĐỌC: thấy công cụ viết sẵn). Một cửa thì đếm được đủ, và chốt được đủ.
+def _uuid_hoac_none(gia_tri) -> UUID | None:
+    if isinstance(gia_tri, UUID):
+        return gia_tri
+    try:
+        return UUID(str(gia_tri)) if gia_tri else None
+    except (TypeError, ValueError):
+        return None
+
+
 async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     """
     Thi hành công cụ và GHI SỐ ĐO: một sự kiện `cong_cu.goi` mỗi lần gọi.
@@ -650,6 +659,11 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
     """
     from agent.core import thu_nghiem
 
+    # `ref_id` = hội thoại: không có nó thì "công cụ nào đã chạy cho khách
+    # này" không truy được từ nhật ký — sự kiện chỉ còn là một con số đếm.
+    # Chuỗi lạ (id phiên thử, None) thì để trống: `log_event` với ref_id
+    # không phải UUID là lỗi asyncpg, và lỗi đó nuốt CẢ dòng nhật ký.
+    ref_id = _uuid_hoac_none(conversation_id)
     bat_dau = time.perf_counter()
     try:
         out = await _run_tool_that(name, args, conversation_id)
@@ -661,7 +675,7 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
         # MỌI lần gọi: xanh giả, nguy hơn đỏ giả vì không ai đi kiểm.
         try:
             await db.log_event(
-                "cong_cu.goi",
+                "cong_cu.goi", ref_id=ref_id,
                 ten=name, goi=_goi_cua(name), ok=False, loi=type(exc).__name__,
                 ms=int((time.perf_counter() - bat_dau) * 1000),
                 thu_nghiem=bool(thu_nghiem.dang_thu.get()),
@@ -678,7 +692,7 @@ async def run_tool(name: str, args: dict, conversation_id=None) -> dict:
         # không qua tầng lọc nào; một "cuộc tấn công" giả do phòng thử tự
         # tạo ra để chấm điểm sẽ lẫn với thật và không ai phân biệt nổi.
         await db.log_event(
-            "cong_cu.goi",
+            "cong_cu.goi", ref_id=ref_id,
             ten=name, goi=_goi_cua(name),
             ok=not (isinstance(out, dict) and "loi" in out),
             ms=int((time.perf_counter() - bat_dau) * 1000),

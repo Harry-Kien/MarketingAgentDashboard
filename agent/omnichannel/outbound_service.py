@@ -535,9 +535,9 @@ class PostgresOutboundTransaction:
                 conversation_id, role, content, delivered, direction,
                 delivery_status, client_idempotency_key, grounded, confidence,
                 sources, model, tokens_in, tokens_out, cache_read, cost_usd,
-                latency_ms, gui_boi
+                latency_ms, gui_boi, dau_vet_ai
             ) VALUES (
-                $1,$2,$3,false,'outbound','queued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+                $1,$2,$3,false,'outbound','queued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
             )
             RETURNING id
             """,
@@ -557,6 +557,10 @@ class PostgresOutboundTransaction:
             # Người gửi (tin nhân viên). Đi qua metadata để không đổi chữ ký
             # repository — xem 0030_nguoi_gui_tin.sql.
             meta.get("gui_boi"),
+            # Dấu vết AI (0053) — chỉ phần ĐẦU của câu trả lời tách nhiều tin
+            # mang nó (`_gui_nhu_nguoi` chỉ đưa metadata cho phần 0). Dict
+            # thẳng: codec JSONB của db.py đã tự mã hoá.
+            meta.get("dau_vet_ai"),
         )
         return row["id"]
 

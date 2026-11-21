@@ -172,6 +172,8 @@ async function loadConversations() {
   let query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
   if (state.convTim) query += `&q=${encodeURIComponent(state.convTim)}`;
   if (state.convNhan) query += `&nhan=${encodeURIComponent(state.convNhan)}`;
+  query += chuoiLocHopThu();
+  napBoLocHopThu();
   const [result, nhanDs] = await Promise.all([
     api("/inbox/conversations?limit=100" + query),
     api("/inbox/nhan").catch(() => ({ nhan: [] })),
@@ -180,7 +182,7 @@ async function loadConversations() {
   const list = result.items || [];
   $("#convlist").innerHTML = list.length
     ? list.map(convRow).join("")
-    : `<p class="empty">${state.convTim || state.convNhan
+    : `<p class="empty">${state.convTim || state.convNhan || dangLocHopThu()
         ? "Không có hội thoại nào khớp." : "Chưa có hội thoại nào."}</p>`;
   wireConvRows("#convlist");
   if (state.openConv) await loadThread(state.openConv);
@@ -203,20 +205,13 @@ async function loadThread(id) {
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
      * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
     const nguoiGui = nhom && m.role === "customer" ? (m.sender_name || "Thành viên nhóm") : "";
-    const who = nguoiGui
-      || { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
-    const meta = [
-      hhmm(m.created_at), who, m.delivery_status || "",
-      m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
-      m.grounded === false ? "KHÔNG có căn cứ" : "",
-      /* Nói ra là tin này đã qua tay người. Không nói thì con số "tin cậy
-       * 0.77" ngay cạnh đây trông như đang chấm câu đang hiện — mà nó chấm
-       * bản AI viết, tức là chấm một câu chữ khác. */
-      m.sua_boi ? "đã sửa bởi " + m.sua_boi : "",
-      m.cost ? usd(m.cost) : "",
-      m.latency_ms ? m.latency_ms + "ms" : "",
-      (m.sources || []).length ? "có nguồn tham chiếu" : "",
-    ].filter(Boolean).join(" · ");
+    const who = tenTacGia(m, nguoiGui, c.customer_name)
+      || { customer: "Khách hàng", agent: "AI Agent", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
+    /* MỘT dòng chuẩn dưới mỗi tin: Thời gian · Người gửi · Trạng thái.
+     * Thông tin kỹ thuật (độ tin cậy, nguồn, thời gian xử lý, model, chi phí)
+     * KHÔNG hiện mặc định — người trực đọc hội thoại, không đọc nhật ký máy;
+     * chúng nằm trong "Chi tiết" / "Xem căn cứ" của từng tin. */
+    const meta = [gioTin(m.created_at), who, trangThaiTin(m)].filter(Boolean).join(" · ");
 
     /* Ảnh khách gửi. Đường dẫn đã trỏ qua proxy từ lúc đọc webhook, nên
        hiện được bằng chính phiên dashboard — người trực không phải đăng
@@ -295,10 +290,13 @@ async function loadThread(id) {
         : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
+        ${ghiChuNguoiXuLy(m)}
         ${banGoc}
+        ${nutChiTietTin(m, draft)}
         ${draft && !dangSua ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
           <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
       </div>
+      ${veChiTietTin(m, draft)}
     </div>`;
   }).join("");
 
@@ -321,10 +319,26 @@ async function loadThread(id) {
   const nguoiKhacGiu = !!nguoiGiu && !laCuaToi;
   const hienNhan = !laCuaToi && !nguoiKhacGiu;
   const hienTra = c.mode === "human" && (laCuaToi || quanLy);
+  /* "Giao cho…" chỉ hiện khi máy chủ nói người này giao được cho người khác
+   * (quản trị, hoặc quản lý của KÊNH này). Hỏi MỘT lần mỗi kênh rồi nhớ —
+   * không hỏi mỗi 6 giây. */
+  state.convDangMo = c;
+  state.giaoDuoc = state.giaoDuoc || {};
+  const giaoDuoc = state.giaoDuoc[c.account_id];
+  if (giaoDuoc === undefined && state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan")) {
+    state.giaoDuoc[c.account_id] = null;
+    api(`/inbox/conversations/${id}/nguoi-nhan-duoc`)
+      .then((r) => { state.giaoDuoc[c.account_id] = !!r.co_the_giao_khac;
+        if (r.co_the_giao_khac && state.openConv === id) loadThread(id); })
+      .catch(() => { state.giaoDuoc[c.account_id] = false; });
+  }
   const nutGiu = `
       ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
-      ${nguoiKhacGiu && !quanLy ? '<span class="tag tag--assist">Đồng nghiệp đang giữ</span>' : ""}
-      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}`;
+      ${nguoiKhacGiu && !quanLy ? `<span class="tag tag--assist">${esc(c.assigned_to_ten || "Đồng nghiệp")} đang giữ</span>` : ""}
+      ${giaoDuoc && c.state !== "resolved" ? `<button type="button" class="btn btn--sm" id="btn-giao">Giao cho…</button>` : ""}
+      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}
+      <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
+        aria-expanded="${state.moChiTietHT === String(c.id) ? "true" : "false"}">Chi tiết</button>`;
 
   /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
    *
@@ -384,6 +398,7 @@ async function loadThread(id) {
       ${ghiChu.map((g) => `<div class="ghichu__dong"><b>${esc(g.nguoi || "—")}</b>
         <span class="msg__meta">${clock(g.tao_luc)}</span><p>${esc(g.noi_dung)}</p></div>`).join("")}
     </details>` : ""}
+    ${veChiTietHoiThoai(c, laCuaToi)}
     <div class="opsbar">
       <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>

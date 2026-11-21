@@ -291,11 +291,16 @@ class AutoRoutingWorker:
                 assigned += 1
                 # Báo người vừa được máy giao — SAU khi giao dịch giao đã
                 # chốt. Không báo thì hội thoại vào "của tôi" lặng lẽ, và
-                # người ấy chỉ thấy nếu tình cờ mở đúng bộ lọc.
-                from agent.core import thong_bao_noi_bo
+                # người ấy chỉ thấy nếu tình cờ mở đúng bộ lọc. Đọc người
+                # nhận bằng getattr: dịch vụ định tuyến khác (hay bản giả
+                # trong test) trả kết quả không mang trường ấy thì bỏ qua
+                # chuông, KHÔNG làm chết lượt quét — chuông chỉ là phụ.
+                nguoi_nhan = getattr(state, "assigned_to", None)
+                if nguoi_nhan is not None:
+                    from agent.core import thong_bao_noi_bo
 
-                await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
-                    state.conversation_id, state.assigned_to, tu_dong=True)
+                    await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
+                        conversation_id, nguoi_nhan, tu_dong=True)
         await self._repository.heartbeat(worker_id)
         return {"examined": len(ids), "assigned": assigned}
 

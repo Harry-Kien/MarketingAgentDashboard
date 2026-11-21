@@ -3,7 +3,8 @@
 -- 1. CẢNH BÁO SỚM HẠN GIẢI QUYẾT
 -- `first_response_warning` (0047) chỉ canh hạn PHẢN HỒI ĐẦU. Hạn GIẢI QUYẾT
 -- thường dài cả ngày, và người trực chỉ biết nó khi đã trễ. Thêm loại sự kiện
--- `resolution_warning`, cùng cách 50% của cảnh báo cũ (agent/omnichannel/sla.py).
+-- `resolution_warning`; ngưỡng chung với cảnh báo phản hồi đầu, đặt bằng
+-- SLA_NGUONG_CANH_BAO (mặc định 80%, agent/omnichannel/sla.py).
 ALTER TABLE sla_events
     DROP CONSTRAINT IF EXISTS sla_events_kind_check;
 

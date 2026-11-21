@@ -90,7 +90,9 @@ def test_dev12_migration_upgrade_from_pre_0039_preserves_legacy_data(csdl_kiem_t
     pre_0039 = [p for p in all_files if int(p.name.split("_", 1)[0]) < 39]
     post_0039 = [p for p in all_files if int(p.name.split("_", 1)[0]) >= 39]
     # 0039–0044 của main (0043 bỏ trống), 0045–0050 là Release 1 đã đổi số.
-    assert [p.name[:4] for p in post_0039] == [
+    # Chỉ canh đoạn ấy: migration mới hơn (0051 trở đi) nối thêm phía sau là
+    # chuyện bình thường, không phải dấu hiệu đánh số lại.
+    assert [p.name[:4] for p in post_0039][:11] == [
         "0039", "0040", "0041", "0042", "0044",
         "0045", "0046", "0047", "0048", "0049", "0050",
     ]

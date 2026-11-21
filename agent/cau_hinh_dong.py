@@ -101,9 +101,12 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
          "\"gặp nhân viên\" để gặp người, ảnh da là dữ liệu nhạy cảm. Nghĩa vụ "
          "theo Nghị định 356/2025 Điều 10 khoản 3 và Điều 6 khoản 4 — tắt thì "
          "bảng kiểm sẵn sàng sẽ cảnh báo."),
+    MoTa("SLA_NGUONG_CANH_BAO", "sla", "Cảnh báo sớm SLA khi đã dùng (%) thời gian", False,
+         y_nghia="Số nguyên 10–95, mặc định 80: cảnh báo khi hội thoại đã dùng hết "
+                 "80% thời gian cho phép — áp cho cả hạn phản hồi đầu lẫn hạn giải quyết."),
     MoTa("SLA_KHI_TRE", "sla", "Khi hội thoại trễ hạn SLA", False,
          ("bao", "bao_va_nang_uu_tien"),
-         "bao: tạo một việc gấp và báo nhân viên (mặc định). "
+         "bao: chỉ ghi sự kiện vi phạm cho chuông thông báo (mặc định). "
          "bao_va_nang_uu_tien: thêm nâng ưu tiên hội thoại một bậc để nó lên "
          "đầu hàng chờ — hạn SLA không bị rút thêm."),
     MoTa("VIETQR_BIN", "thanh_toan", "Mã BIN ngân hàng nhận tiền", False,
@@ -194,6 +197,7 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "AN_BINH_LUAN_CO_SDT": lambda: settings.an_binh_luan_co_sdt,
     "CSAT_BAT": lambda: settings.csat_bat,
     "THONG_BAO_AI": lambda: settings.thong_bao_ai,
+    "SLA_NGUONG_CANH_BAO": lambda: str(settings.sla_nguong_canh_bao),
     "SLA_KHI_TRE": lambda: settings.sla_khi_tre,
     "VIETQR_BIN": lambda: settings.vietqr_bin,
     "VIETQR_SO_TK": lambda: settings.vietqr_so_tk,
@@ -302,6 +306,8 @@ def kiem_gia_tri(khoa: str, gia_tri: str) -> str:
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: giá trị trống")
     if mo_ta.chon and gia_tri not in mo_ta.chon:
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: chỉ nhận {' | '.join(mo_ta.chon)}")
+    if khoa == "SLA_NGUONG_CANH_BAO" and not (gia_tri.isdigit() and 10 <= int(gia_tri) <= 95):
+        raise KhoaKhongHopLe(f"{mo_ta.nhan}: số nguyên từ 10 tới 95")
     if khoa == "VIETQR_BIN" and not (gia_tri.isdigit() and len(gia_tri) == 6):
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: phải gồm đúng 6 chữ số")
     if khoa == "VIETQR_SO_TK" and not (gia_tri.isalnum() and gia_tri.isascii()

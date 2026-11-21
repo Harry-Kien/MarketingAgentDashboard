@@ -321,11 +321,14 @@ class Settings(BaseSettings):
     #       đầu (hội thoại mở lại có thể đã quá hạn ngay).
     sla_theo_gio_lam_viec: bool = False
     sla_chu_ky_khi_mo_lai: bool = False
-    # Khi hội thoại trễ SLA (agent/omnichannel/sla.py `leo_thang_khi_tre`):
-    #   "bao" (mặc định) = tạo một việc gấp + báo nhân viên;
+    # Khi hội thoại trễ SLA (agent/omnichannel/sla.py):
+    #   "bao" (mặc định) = chỉ ghi sự kiện vi phạm (inbox_events) cho chuông
+    #       thông báo trong ứng dụng — chủ dự án không muốn sinh công việc;
     #   "bao_va_nang_uu_tien" = thêm nâng ưu tiên một bậc (không rút hạn).
-    # Không có lựa chọn "tắt": vi phạm mà không ai được báo là hỏng im lặng.
     sla_khi_tre: str = "bao"
+    # Cảnh báo sớm SLA khi đã dùng N% thời gian cho phép — cả hạn phản hồi
+    # đầu lẫn hạn giải quyết. Đổi được ở dashboard (SLA_NGUONG_CANH_BAO).
+    sla_nguong_canh_bao: int = 80
     # Tự giải quyết hội thoại nhàn rỗi quá N giờ, khi không còn việc dở nào
     # (agent/omnichannel/giai_quyet.py). 0 = tắt.
     tu_giai_quyet_sau_gio: float = 4.0

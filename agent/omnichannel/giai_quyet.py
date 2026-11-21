@@ -79,11 +79,6 @@ async def kiem_tra_dieu_kien_resolve(conn: Any, cid: UUID) -> bool:
           -- (`dong_viec_tu_sinh`). Việc xử lý ĐƠN (huỷ/đổi trả) cũng mang
           -- nguon='agent' nhưng có `loai_xu_ly_don` — việc đó PHẢI chặn.
           AND NOT (nguon = 'agent' AND loai_xu_ly_don IS NULL)
-          -- Việc leo thang khi trễ SLA (sla.py) cũng KHÔNG chặn: nó đòi
-          -- đúng việc giải quyết hội thoại. Chặn thì nhân viên phải đóng việc
-          -- trước rồi mới được giải quyết — vòng lặp vô nghĩa. Resolve đóng
-          -- nó theo (`dong_viec_tu_sinh`).
-          AND coalesce(khoa_chong_trung, '') NOT LIKE 'sla:%'
         ORDER BY tao_luc, id
         """,
         cid,
@@ -109,14 +104,6 @@ async def _sau_khi_giai_quyet(conn, cid: UUID, chu_ky: int, han_xong) -> None:
         "UPDATE conversation_assignments SET ended_at = now() "
         "WHERE conversation_id = $1 AND ended_at IS NULL", cid)
     await dong_viec_tu_sinh(conn, cid)
-    # Việc "trễ SLA" (khoá `sla:`, agent/omnichannel/sla.py) đóng cùng lúc:
-    # hội thoại xong là việc nó đòi đã xong. Đóng ở ĐÂY chứ không trong
-    # `dong_viec_tu_sinh`: hàm ấy còn chạy khi nhân viên trả hội thoại cho
-    # agent, lúc khách vẫn đang chờ — việc trễ hạn khi ấy chưa xong.
-    await conn.execute(
-        "UPDATE cong_viec SET trang_thai = 'xong', xong_luc = now(), sua_luc = now() "
-        "WHERE conversation_id = $1 AND trang_thai IN ('moi', 'dang_lam') "
-        "AND khoa_chong_trung LIKE 'sla:%'", cid)
     # Ghi theo CHU KỲ SLA hiện tại — mỗi lượt phục vụ một dòng (migration 0039).
     await conn.execute(
         "INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at) "
@@ -313,11 +300,8 @@ _DIEU_KIEN_TU_GIAI_QUYET = """
     AND NOT EXISTS (SELECT 1 FROM outbox_jobs j WHERE j.conversation_id = c.id
                     AND j.status IN ('pending', 'retry', 'processing', 'dead'))
     -- Công việc đang mở gắn với hội thoại: có người đang phải làm gì đó.
-    -- Trừ việc "trễ SLA" (khoá `sla:`): nó chỉ nhắc đúng việc giải quyết
-    -- này, và để nó chặn là hội thoại trễ hạn không bao giờ tự đóng được.
     AND NOT EXISTS (SELECT 1 FROM cong_viec v WHERE v.conversation_id = c.id
-                    AND v.trang_thai IN ('moi', 'dang_lam')
-                    AND coalesce(v.khoa_chong_trung, '') NOT LIKE 'sla:%')
+                    AND v.trang_thai IN ('moi', 'dang_lam'))
     -- Đơn còn treo: chờ duyệt, chờ đồng bộ ERP, khách xin huỷ hay đổi/trả.
     AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.conversation_id = c.id AND (
             o.trang_thai IN ('cho_duyet', 'cho_dong_bo')

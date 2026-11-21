@@ -5,9 +5,9 @@ Canh năm ràng buộc, mỗi cái một kiểu hỏng im lặng:
 
   1. Đổi ưu tiên KHÔNG kéo dài được hạn SLA trong cùng chu kỳ — ở API và ở
      trigger CSDL (migration 0054). Hạ ưu tiên để "thêm giờ" là né vi phạm.
-  2. Cảnh báo sớm HẠN GIẢI QUYẾT ở 50% khoảng, như cảnh báo phản hồi đầu.
-  3. Trễ SLA sinh MỘT việc gấp (chống trùng theo hội thoại+chu kỳ+loại) và
-     báo nhân viên; việc ấy không chặn nút "Đã giải quyết" và tự đóng theo.
+  2. Cảnh báo sớm HẠN GIẢI QUYẾT, cùng ngưỡng với cảnh báo phản hồi đầu.
+  3. Cảnh báo sớm ở ngưỡng cấu hình (mặc định 80%); trễ SLA ghi sự kiện đủ
+     thông tin cho chuông thông báo và KHÔNG tự sinh công việc.
   4. Số AI "tự lo" đếm theo SỰ KIỆN: duyệt nháp là có người can thiệp —
      con số cũ đếm `status = 'auto'` nên tô hồng đúng chỗ này.
   5. Mọi số của màn Phân tích tôn trọng phạm vi kênh như `/api/overview`.
@@ -272,102 +272,113 @@ def test_doi_uu_tien_ngoai_kenh_la_404_va_can_quyen(csdl_kiem_thu):
         assert r.status_code == 403
 
 
-# ============================================================ 2. cảnh báo hạn giải quyết
+# ============================================================ 2. cảnh báo sớm (ngưỡng cấu hình)
 
-def test_canh_bao_han_giai_quyet_o_nua_khoang(csdl_kiem_thu, monkeypatch):
+def _cau_hinh(monkeypatch, **gia):
+    """`cau_hinh_dong.lay` giả: khoá không nêu thì lấy giá trị mặc định thật."""
+    from agent import cau_hinh_dong
+
+    goc = cau_hinh_dong.lay
+    monkeypatch.setattr(cau_hinh_dong, "lay", lambda k: gia[k] if k in gia else goc(k))
+
+
+def test_canh_bao_han_giai_quyet_o_nguong_mac_dinh_80(csdl_kiem_thu, monkeypatch):
     _schema(csdl_kiem_thu)
-    from agent import canh_gac
-    from agent.omnichannel.sla import PostgresSlaRepository
+    from agent.omnichannel.sla import PostgresSlaRepository, ty_le_canh_bao
 
-    monkeypatch.setattr(canh_gac, "bao_nhan_vien_nen", lambda *a: None)
+    assert ty_le_canh_bao() == 0.8, "phiếu việc chủ dự án: mặc định 80% thời gian cho phép"
 
     async def ham(conn, pool):
         tk = await _kenh(conn, "web-cb")
-        # Bắt đầu 60' trước, hạn 30' nữa: đã qua 2/3 khoảng → cảnh báo.
-        qua_nua = await _hoi_thoai(conn, tk, "qua", tao="now() - interval '60 minutes'",
-                                   han_xong="now() + interval '30 minutes'")
-        # Bắt đầu 10' trước, hạn 2 giờ nữa: chưa tới nửa → im.
-        chua = await _hoi_thoai(conn, tk, "chua", tao="now() - interval '10 minutes'",
-                                han_xong="now() + interval '2 hours'")
+        # Bắt đầu 80' trước, hạn 10' nữa: đã dùng 80/90 > 80% → cảnh báo.
+        qua = await _hoi_thoai(conn, tk, "qua", tao="now() - interval '80 minutes'",
+                               han_xong="now() + interval '10 minutes'")
+        # Bắt đầu 60' trước, hạn 30' nữa: mới dùng 2/3 → im (bản 50% cũ đã kêu).
+        await _hoi_thoai(conn, tk, "chua", tao="now() - interval '60 minutes'",
+                         han_xong="now() + interval '30 minutes'")
         repo = PostgresSlaRepository(lambda: pool)
-        kq = await repo.mark_breaches()
-        assert kq["resolution_warning"] == 1
-        kq2 = await repo.mark_breaches()
-        assert kq2["resolution_warning"] == 0, "mỗi chu kỳ chỉ cảnh báo một lần"
-        ev = await conn.fetch("SELECT conversation_id FROM sla_events WHERE kind = 'resolution_warning'")
-        assert [e["conversation_id"] for e in ev] == [qua_nua]
-        assert chua not in [e["conversation_id"] for e in ev]
-        assert await conn.fetchval("SELECT count(*) FROM inbox_events "
-                                   "WHERE topic = 'sla.resolution_warning'") == 1
+        assert (await repo.mark_breaches())["resolution_warning"] == 1
+        assert (await repo.mark_breaches())["resolution_warning"] == 0, "mỗi chu kỳ một lần"
+        ev = await conn.fetch("SELECT conversation_id, detail FROM sla_events "
+                              "WHERE kind = 'resolution_warning'")
+        assert [e["conversation_id"] for e in ev] == [qua]
+        assert ev[0]["detail"]["threshold_ratio"] == 0.8
+        p = await conn.fetchval("SELECT payload FROM inbox_events WHERE topic = 'sla.resolution_warning'")
+        assert p["conversation_id"] == str(qua) and p["loai"] == "resolution_warning"
 
     _chay(csdl_kiem_thu, ham)
 
 
-# ============================================================ 3. leo thang khi trễ
-
-def test_tre_sla_sinh_mot_viec_gap_va_bao_nhan_vien(csdl_kiem_thu, monkeypatch):
+def test_nguong_canh_bao_cau_hinh_duoc_va_ap_ca_phan_hoi_dau(csdl_kiem_thu, monkeypatch):
+    """Hội thoại thường (30' mặc định) đã chờ 20': 80% → im; hạ ngưỡng xuống 50% → cảnh báo."""
     _schema(csdl_kiem_thu)
-    from agent import canh_gac, cau_hinh_dong
-    from agent.omnichannel import giai_quyet
     from agent.omnichannel.sla import PostgresSlaRepository
 
-    bao: list[tuple] = []
-    monkeypatch.setattr(canh_gac, "bao_nhan_vien_nen", lambda *a: bao.append(a))
-    monkeypatch.setattr(cau_hinh_dong, "lay", lambda k: "bao" if k == "SLA_KHI_TRE" else "")
+    async def ham(conn, pool):
+        tk = await _kenh(conn, "web-nguong")
+        cid = await _hoi_thoai(conn, tk, "cho", tao="now() - interval '20 minutes'",
+                               han_dau="now() + interval '10 minutes'")
+        repo = PostgresSlaRepository(lambda: pool)
+        assert (await repo.mark_breaches())["warning"] == 0
+        _cau_hinh(monkeypatch, SLA_NGUONG_CANH_BAO="50")
+        assert (await repo.mark_breaches())["warning"] == 1
+        d = await conn.fetchval("SELECT detail FROM sla_events WHERE conversation_id = $1 "
+                                "AND kind = 'first_response_warning'", cid)
+        assert d["threshold_ratio"] == 0.5
+        # Giá trị hỏng (sửa tay .env) lui về 80%, không làm chết worker.
+        _cau_hinh(monkeypatch, SLA_NGUONG_CANH_BAO="abc")
+        from agent.omnichannel.sla import ty_le_canh_bao
+        assert ty_le_canh_bao() == 0.8
+
+    _chay(csdl_kiem_thu, ham)
+
+
+# ============================================================ 3. khi trễ: sự kiện cho chuông, KHÔNG sinh việc
+
+def test_tre_sla_ghi_su_kien_du_thong_tin_va_khong_sinh_cong_viec(csdl_kiem_thu, monkeypatch):
+    """Chủ dự án chốt: cảnh báo SLA đi qua chuông thông báo, không tự tạo công việc."""
+    _schema(csdl_kiem_thu)
+    from agent.omnichannel.sla import PostgresSlaRepository
 
     async def ham(conn, pool):
+        await _nguoi(conn, NV, "nv")
         tk = await _kenh(conn, "web-tre")
         tre = await _hoi_thoai(conn, tk, "Lan", han_dau="now() - interval '5 minutes'")
-        # Trả lời MUỘN (outbox ghi trễ kèm lúc phản hồi): khách đã được trả lời → không việc.
-        muon = await _hoi_thoai(conn, tk, "Mai", han_dau="now() - interval '5 minutes'")
-        await conn.execute("UPDATE conversations SET first_responded_at = now() WHERE id = $1", muon)
-        await conn.execute("INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail) "
-                           "VALUES ($1, 1, 'first_response_breached', now(), $2)",
-                           muon, {"phan_hoi_luc": datetime.now(timezone.utc).isoformat(), "vai": "staff"})
-
+        await conn.execute("UPDATE conversations SET assigned_to = $2 WHERE id = $1", tre, NV)
         repo = PostgresSlaRepository(lambda: pool)
-        assert (await repo.mark_breaches())["leo_thang"] == 1
-        assert (await repo.mark_breaches())["leo_thang"] == 0, "lượt quét sau không đẻ việc thứ hai"
-        viec = await conn.fetch("SELECT * FROM cong_viec")
-        assert len(viec) == 1
-        v = viec[0]
-        assert v["conversation_id"] == tre and v["uu_tien"] == "gap" and v["nguon"] == "tu_dong"
-        assert v["khoa_chong_trung"] == f"sla:{tre}:1:first_response_breached"
-        assert len(bao) == 1 and "Lan" not in " ".join(bao[0]), "tên khách không đi ra ngoài"
-        # Mặc định "bao": không đổi ưu tiên.
-        assert await conn.fetchval("SELECT priority FROM conversations WHERE id = $1", tre) == "normal"
-
-        # Việc trễ SLA KHÔNG chặn Resolve, và Resolve đóng nó theo.
-        async with conn.transaction():
-            assert await giai_quyet.kiem_tra_dieu_kien_resolve(conn, tre) is True
-            await conn.execute("UPDATE conversations SET state = 'resolved', resolved_at = now() "
-                               "WHERE id = $1", tre)
-            await giai_quyet._sau_khi_giai_quyet(conn, tre, 1, None)
-        assert await conn.fetchval("SELECT trang_thai FROM cong_viec WHERE id = $1", v["id"]) == "xong"
+        kq = await repo.mark_breaches()
+        assert kq["first_response"] == 1 and kq["nang_uu_tien"] == 0
+        assert await conn.fetchval("SELECT count(*) FROM cong_viec") == 0
+        p = await conn.fetchval("SELECT payload FROM inbox_events "
+                                "WHERE topic = 'sla.first_response_breached'")
+        assert p["conversation_id"] == str(tre) and p["loai"] == "first_response_breached"
+        assert p["chu_ky"] == 1 and p["nguoi_phu_trach"] == str(NV) and p["han"]
+        assert p["uu_tien"] == "normal"
+        assert (await repo.mark_breaches())["first_response"] == 0, "một vi phạm ghi một lần"
 
     _chay(csdl_kiem_thu, ham)
 
 
 def test_tre_sla_nang_uu_tien_khi_bat_nhung_khong_rut_han(csdl_kiem_thu, monkeypatch):
     _schema(csdl_kiem_thu)
-    from agent import canh_gac, cau_hinh_dong
     from agent.omnichannel.sla import PostgresSlaRepository
 
-    monkeypatch.setattr(canh_gac, "bao_nhan_vien_nen", lambda *a: None)
-    monkeypatch.setattr(cau_hinh_dong, "lay",
-                        lambda k: "bao_va_nang_uu_tien" if k == "SLA_KHI_TRE" else "")
+    _cau_hinh(monkeypatch, SLA_KHI_TRE="bao_va_nang_uu_tien")
 
     async def ham(conn, pool):
         tk = await _kenh(conn, "web-nang")
         cid = await _hoi_thoai(conn, tk, "Hoa", han_dau="now() - interval '5 minutes'",
                                han_xong="now() + interval '1 day'")
         han_cu = await conn.fetchval("SELECT resolution_due_at FROM conversations WHERE id = $1", cid)
-        await PostgresSlaRepository(lambda: pool).mark_breaches()
+        repo = PostgresSlaRepository(lambda: pool)
+        assert (await repo.mark_breaches())["nang_uu_tien"] == 1
+        assert (await repo.mark_breaches())["nang_uu_tien"] == 0, "mỗi vi phạm nâng đúng một lần"
         c = await conn.fetchrow("SELECT priority, resolution_due_at FROM conversations WHERE id = $1", cid)
         assert c["priority"] == "high"
         assert c["resolution_due_at"] == han_cu, "máy tự nâng ưu tiên không được rút hạn"
         e = await conn.fetchrow("SELECT actor, detail FROM events WHERE kind = 'conversation.priority_changed'")
         assert e["actor"] == "sla" and e["detail"]["tu"] == "normal" and e["detail"]["den"] == "high"
+        assert await conn.fetchval("SELECT count(*) FROM cong_viec") == 0
 
     _chay(csdl_kiem_thu, ham)
 
@@ -478,7 +489,8 @@ def test_phan_tich_ai_theo_ho_so_dem_theo_su_kien(csdl_kiem_thu):
         assert p["ten"] == "Bán hàng", "hồ sơ phải được chụp lúc ghi tin (trigger 0054)"
         assert (p["hoi_thoai"], p["tu_giai_quyet"], p["can_nguoi"], p["dang_do"]) == (3, 1, 2, 0)
         assert p["ty_le_thanh_cong"] == round(1 / 3, 4)
-        assert p["tin_cay_tb"] == 0.7 and p["ty_le_co_can_cu"] == round(2 / 3, 4)
+        assert "tin_cay_tb" not in p, "không báo độ tin cậy model tự chấm"
+        assert p["ty_le_co_can_cu"] == round(2 / 3, 4) and p["ty_le_khong_can_cu"] == round(1 / 3, 4)
         md = ai["mac_dinh"]
         assert (md["hoi_thoai"], md["can_nguoi"], md["ai_tu_chuyen"]) == (1, 1, 1)
 
@@ -490,7 +502,18 @@ def test_phan_tich_ai_theo_ho_so_dem_theo_su_kien(csdl_kiem_thu):
         assert ph["theo_vai"]["agent"]["so"] == 1 and ph["theo_vai"]["agent"]["tb_giay"] == 60.0
         assert ph["theo_vai"]["staff"]["tre_han"] == 1 and ph["theo_vai"]["staff"]["trung_vi_giay"] == 600.0
         assert [n["ten"] for n in ph["nhan_vien"]] == ["NV"]
+        assert ph["tat_ca"]["so"] == 2
         assert o["sla"]["qua_han_dau"] == 1          # a2: chưa phản hồi trên cột, đã quá hạn
+        # b1 chuyển người, chưa nhân viên nào nhắn.
+        cg = o["sla"]["phan_hoi_sau_chuyen_giao"]
+        assert (cg["so"], cg["chua_phan_hoi"]) == (0, 1)
+        # a1: tạo lúc t0 (30 phút trước), giải quyết bây giờ.
+        gq = o["sla"]["thoi_gian_giai_quyet"]
+        assert gq["so"] == 1 and 1700 < gq["tb_giay"] < 1900
+        at = o["ai_tong"]
+        assert (at["hoi_thoai"], at["tu_giai_quyet"], at["can_nguoi"]) == (4, 1, 3)
+        assert at["ty_le_chuyen_giao"] == 0.75 and at["tu_dong_hoa"] == 0.25
+        assert o["hoi_thoai"]["ty_le_xu_ly"] == 0.25
 
         tin = {(t["kenh"], t["vai"]): t for t in o["tin_nhan"]}
         assert tin[("webchat", "customer")]["nhan"] == 4
@@ -554,6 +577,11 @@ def test_sla_khi_tre_mac_dinh_chi_bao():
     assert cau_hinh_dong.DANH_MUC["SLA_KHI_TRE"].chon == ("bao", "bao_va_nang_uu_tien")
     with pytest.raises(cau_hinh_dong.KhoaKhongHopLe):
         cau_hinh_dong.kiem_gia_tri("SLA_KHI_TRE", "tat")
+    assert settings.sla_nguong_canh_bao == 80
+    assert cau_hinh_dong.kiem_gia_tri("SLA_NGUONG_CANH_BAO", " 70 ") == "70"
+    for sai in ("5", "96", "8O", "-1"):
+        with pytest.raises(cau_hinh_dong.KhoaKhongHopLe):
+            cau_hinh_dong.kiem_gia_tri("SLA_NGUONG_CANH_BAO", sai)
 
 
 def test_dashboard_co_man_phan_tich_doi_uu_tien_va_nghe_moi_su_kien_sla():
@@ -564,7 +592,17 @@ def test_dashboard_co_man_phan_tich_doi_uu_tien_va_nghe_moi_su_kien_sla():
     import re
     for topic in set(re.findall(r'"(sla\.[a-z_]+)"', sla_py)):
         assert topic in js, f"dashboard không nghe {topic}"
-    assert 'data-view="phantich"' in html and "loadPhanTich" in js and "/phan-tich" in js
+    # Phiếu việc chủ dự án: KHÔNG thêm mục thanh bên — đổi nhãn "Số hiệu"
+    # thành "Phân tích", giữ id view.
+    assert 'data-view="phantich"' not in html and "<span>Số hiệu</span>" not in html
+    nut = html[html.index('class="rail__item" data-view="sohieu"'):]
+    assert nut[:nut.index("</button>")].count("<span>Phân tích</span>") == 1
+    view = html[html.index('<section class="view" data-view="sohieu">'):]
+    assert 'id="ptForm"' in view[:view.index('<section class="view"', 10)]
+    assert "loadPhanTich" in js and "/phan-tich" in js
+    # Không hiện độ tin cậy AI dưới dạng phần trăm ở màn phân tích.
+    pt = (ROOT / "dashboard" / "src" / "19-phan-tich.js").read_text(encoding="utf-8")
+    assert "tin_cay" not in pt and "confidence" not in pt
     assert "data-doi-uu-tien" in js and "/uu-tien" in js
     assert 'name="bat_dau"' in html and 'name="ket_thuc"' in html
     assert "business_hours: {}," not in js, "form SLA còn gửi cứng giờ rỗng"

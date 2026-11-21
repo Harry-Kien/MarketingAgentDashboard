@@ -10,11 +10,10 @@ async function refresh() {
     if (state.view === "kho") await loadKho();
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
-    if (state.view === "sohieu") {
-      if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
-      await loadAnalyticsKhach(); await loadCost();
+    if (state.view === "sohieu") {    // nhãn hiển thị: "Phân tích"
+      if (!state.ptDaTai) await loadPhanTich();
+      await loadCost();
     }
-    if (state.view === "phantich" && !state.ptDaTai) await loadPhanTich();
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();

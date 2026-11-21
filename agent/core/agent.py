@@ -1178,5 +1178,38 @@ async def respond(
         model=settings.model_chat,
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
         goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
-        tri_thuc=knowledge_refs,
+        tri_thuc=_tri_thuc_cho_dau_vet(passages),
     )
+
+
+_TRICH_TOI_DA = 300
+
+
+def _tri_thuc_cho_dau_vet(passages: list[rag.Passage]) -> list[dict]:
+    """
+    Đoạn tài liệu đã đưa cho model, KÈM TRÍCH ĐOẠN — cho nút "Xem căn cứ".
+
+    Khác `_knowledge_refs` (chỉ đoạn có id phiên bản/đoạn, dành cho kiểm
+    toán): người duyệt bản nháp cần đọc được CHÍNH câu tài liệu AI dựa vào,
+    kể cả khi kho tri thức là tệp mẫu không có id. Tài liệu cửa hàng, không
+    phải dữ liệu khách — nên không che; chỉ cắt ngắn.
+    """
+    ra: list[dict] = []
+    da_co: set[tuple] = set()
+    for p in passages:
+        khoa = (p.doc_title, str(p.chunk_id or ""), (p.content or "")[:60])
+        if khoa in da_co:
+            continue
+        da_co.add(khoa)
+        noi_dung = " ".join((p.content or "").split())
+        ra.append({
+            "document_id": str(p.document_id) if p.document_id else None,
+            "version_id": str(p.version_id) if p.version_id else None,
+            "version": p.version,
+            "chunk_id": str(p.chunk_id) if p.chunk_id else None,
+            "title": p.doc_title,
+            "diem": round(float(p.score or 0.0), 3),
+            "trich": (noi_dung if len(noi_dung) <= _TRICH_TOI_DA
+                      else noi_dung[:_TRICH_TOI_DA] + "…"),
+        })
+    return ra

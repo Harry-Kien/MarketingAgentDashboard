@@ -205,21 +205,13 @@ async function loadThread(id) {
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
      * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
     const nguoiGui = nhom && m.role === "customer" ? (m.sender_name || "Thành viên nhóm") : "";
-    const who = tenTacGia(m, nguoiGui)
-      || { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
-    const meta = [
-      gioTin(m.created_at), who, m.delivery_status || "",
-      m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
-      m.grounded === false ? "KHÔNG có căn cứ" : "",
-      /* Tin đã qua tay người: chip "Sửa bởi …" ngay dưới nói ra điều đó.
-       * Không nói thì con số "tin cậy 0.77" cạnh đây trông như đang chấm câu
-       * đang hiện — mà nó chấm bản AI viết, tức là một câu chữ khác. Máy chủ
-       * cũ chưa trả `tac_gia` thì rơi về tên đăng nhập như trước. */
-      m.sua_boi && !(m.tac_gia && m.tac_gia.sua_boi) ? "đã sửa bởi " + m.sua_boi : "",
-      m.cost ? usd(m.cost) : "",
-      m.latency_ms ? m.latency_ms + "ms" : "",
-      (m.sources || []).length ? "có nguồn tham chiếu" : "",
-    ].filter(Boolean).join(" · ");
+    const who = tenTacGia(m, nguoiGui, c.customer_name)
+      || { customer: "Khách hàng", agent: "AI Agent", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
+    /* MỘT dòng chuẩn dưới mỗi tin: Thời gian · Người gửi · Trạng thái.
+     * Thông tin kỹ thuật (độ tin cậy, nguồn, thời gian xử lý, model, chi phí)
+     * KHÔNG hiện mặc định — người trực đọc hội thoại, không đọc nhật ký máy;
+     * chúng nằm trong "Chi tiết" / "Xem căn cứ" của từng tin. */
+    const meta = [gioTin(m.created_at), who, trangThaiTin(m)].filter(Boolean).join(" · ");
 
     /* Ảnh khách gửi. Đường dẫn đã trỏ qua proxy từ lúc đọc webhook, nên
        hiện được bằng chính phiên dashboard — người trực không phải đăng
@@ -298,13 +290,13 @@ async function loadThread(id) {
         : ""}
       <div class="msg__meta">
         <span>${esc(meta)}</span>
-        ${chipTrachNhiem(m)}
+        ${ghiChuNguoiXuLy(m)}
         ${banGoc}
-        ${nutViSao(m)}
+        ${nutChiTietTin(m, draft)}
         ${draft && !dangSua ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
           <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
       </div>
-      ${veViSao(m)}
+      ${veChiTietTin(m, draft)}
     </div>`;
   }).join("");
 
@@ -341,10 +333,12 @@ async function loadThread(id) {
       .catch(() => { state.giaoDuoc[c.account_id] = false; });
   }
   const nutGiu = `
-      ${veNguoiGiu(c, laCuaToi)}
       ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
+      ${nguoiKhacGiu && !quanLy ? `<span class="tag tag--assist">${esc(c.assigned_to_ten || "Đồng nghiệp")} đang giữ</span>` : ""}
       ${giaoDuoc && c.state !== "resolved" ? `<button type="button" class="btn btn--sm" id="btn-giao">Giao cho…</button>` : ""}
-      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}`;
+      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}
+      <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
+        aria-expanded="${state.moChiTietHT === String(c.id) ? "true" : "false"}">Chi tiết</button>`;
 
   /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
    *
@@ -404,7 +398,7 @@ async function loadThread(id) {
       ${ghiChu.map((g) => `<div class="ghichu__dong"><b>${esc(g.nguoi || "—")}</b>
         <span class="msg__meta">${clock(g.tao_luc)}</span><p>${esc(g.noi_dung)}</p></div>`).join("")}
     </details>` : ""}
-    ${veLichSuPhanCong(c)}
+    ${veChiTietHoiThoai(c, laCuaToi)}
     <div class="opsbar">
       <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>

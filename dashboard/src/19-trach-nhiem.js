@@ -2,11 +2,21 @@
  *
  * Mọi việc trong một hội thoại phải quy được về người (hoặc AI) đã làm nó
  * (rà soát 20.11.2026). Trước bản này màn hội thoại chỉ hiện "Nhân viên"
- * không tên, "tin cậy 0.77" và "có nguồn tham chiếu"; không ai duyệt, không
- * hồ sơ agent nào, không lưới nào — dù phần lớn dữ liệu ấy nằm sẵn trong CSDL.
+ * không tên; không ai duyệt, không hồ sơ agent nào, không lưới nào — dù phần
+ * lớn dữ liệu ấy nằm sẵn trong CSDL.
+ *
+ * QUY ƯỚC HIỂN THỊ (chủ dự án, 21.11.2026):
+ *   · Dưới mỗi tin MỘT dòng: Thời gian · Người gửi · Trạng thái.
+ *   · Thông tin kỹ thuật (độ tin cậy, nguồn, thời gian xử lý, model, chi
+ *     phí) KHÔNG hiện mặc định — chỉ trong "Chi tiết" / "Xem căn cứ".
+ *   · Độ tin cậy KHÔNG BAO GIỜ hiện thành phần trăm: "87%" đọc như xác suất
+ *     câu trả lời đúng, mà nó chỉ là điểm khớp tài liệu. Người trực thấy
+ *     "Có căn cứ" / "Thiếu căn cứ"; con số thô chỉ ở phần kỹ thuật.
+ *   · Lịch sử bàn giao nằm trong panel "Chi tiết" của hội thoại, không
+ *     chiếm chỗ thường trực ở đầu hội thoại.
  *
  * Tệp này giữ phần VẼ; `03-hoi-thoai.js` gọi vào. Tách riêng vì 03 đã gần
- * trần 1000 dòng, và vì đây là một miền riêng: ai làm gì, vì sao.
+ * trần 1000 dòng.
  */
 
 /* Giờ của MỘT tin: hôm nay thì hh:mm, ngày khác thì kèm ngày. Chỉ hh:mm là
@@ -27,119 +37,150 @@ function gioTin(iso) {
   return `${ngay} ${gio}`;
 }
 
-/* Tên người viết tin. Nhân viên KHÔNG tên là thông tin vô dụng khi có hai
- * người trực cùng ca; AI thì kèm hồ sơ agent khi kênh có hồ sơ riêng.
- * Trả "" khi không có gì cụ thể hơn — nhãn chung theo vai nằm ở chỗ gọi
- * (`03-hoi-thoai.js`), một bảng duy nhất cho cả bốn vai. */
-function tenTacGia(m, nguoiGuiNhom) {
+/* Người gửi, cụ thể nhất có thể. Trả "" khi không có gì cụ thể hơn — nhãn
+ * chung theo vai nằm ở `const who` trong `03-hoi-thoai.js`, một bảng duy
+ * nhất cho cả bốn vai. Nhân viên KHÔNG tên là thông tin vô dụng khi hai
+ * người trực cùng ca. Trong nhóm: tên NGƯỜI GỬI tin, không phải tên nhóm. */
+function tenTacGia(m, nguoiGuiNhom, tenKhach) {
   const tg = m.tac_gia || {};
   if (nguoiGuiNhom) return nguoiGuiNhom;
-  if (m.role === "staff" && tg.ten) return `Nhân viên ${tg.ten}`;
-  if (m.role === "agent" && tg.ten && tg.ten !== "Mặc định") return `AI · ${tg.ten}`;
+  if (m.role === "staff" && tg.ten) return `Nhân viên (${tg.ten})`;
+  if (m.role === "customer" && tenKhach) return `Khách hàng (${tenKhach})`;
   return "";
 }
 
-/* "Sửa bởi X", "Duyệt bởi Y lúc …" — hai việc của người trên một câu AI. */
-function chipTrachNhiem(m) {
+/* Trạng thái lấy NGUYÊN từ `delivery_status` (dữ liệu nền tảng trả về) —
+ * không suy đoán. Tin khách vào (`received`) không có trạng thái gửi. */
+const TRANG_THAI_TIN = {
+  sent: "Đã gửi", delivered: "Đã nhận", read: "Đã đọc",
+  draft: "Bản nháp", queued: "Đang gửi", sending: "Đang gửi",
+  failed: "Gửi lỗi, đang thử lại", dead: "Không gửi được", cancelled: "Đã huỷ",
+};
+
+function trangThaiTin(m) {
+  if (m.role === "customer" || m.delivery_status === "received") return "";
+  return TRANG_THAI_TIN[m.delivery_status] || "";
+}
+
+/* Ai đã sửa / duyệt — một dòng chữ nhỏ cạnh dòng meta, không phải chip to:
+ * thông tin cần truy được, không cần đập vào mắt mỗi lần đọc hội thoại. */
+function ghiChuNguoiXuLy(m) {
   const tg = m.tac_gia || {};
-  const chip = [];
-  if (tg.sua_boi) {
-    chip.push(`<span class="tag tag--plain" title="Bản AI viết vẫn xem lại được bằng nút 'xem bản AI'">
-      Sửa bởi ${esc(tg.sua_boi)}${tg.sua_luc ? " lúc " + esc(gioTin(tg.sua_luc)) : ""}</span>`);
-  }
-  if (tg.duyet_boi) {
-    chip.push(`<span class="tag tag--auto">Duyệt bởi ${esc(tg.duyet_boi)}${
-      tg.duyet_luc ? " lúc " + esc(gioTin(tg.duyet_luc)) : ""}</span>`);
-  }
-  return chip.join("");
+  const phan = [];
+  if (tg.sua_boi) phan.push(`đã sửa bởi ${tg.sua_boi}`);
+  else if (m.sua_boi) phan.push(`đã sửa bởi ${m.sua_boi}`);
+  if (tg.duyet_boi) phan.push(`duyệt bởi ${tg.duyet_boi}`);
+  return phan.length ? `<span class="msg__ghi">${esc(phan.join(" · "))}</span>` : "";
 }
 
-function nutViSao(m) {
-  if (m.role !== "agent" || !m.dau_vet_ai) return "";
-  const mo = state.viSao && state.viSao.has(String(m.id));
-  return `<button type="button" class="msg__goc-nut" data-vi-sao="${esc(m.id)}"
-    aria-expanded="${mo ? "true" : "false"}">${mo ? "ẩn vì sao" : "Vì sao?"}</button>`;
+function nhanCanCu(m) {
+  if (m.grounded === true) return "Có căn cứ";
+  if (m.grounded === false) return "Thiếu căn cứ";
+  return "";
 }
 
-/* Bảng "Vì sao AI nói câu này" — đọc từ `messages.dau_vet_ai` (0053). */
-function veViSao(m) {
-  if (!(state.viSao && state.viSao.has(String(m.id))) || !m.dau_vet_ai) return "";
-  const dv = m.dau_vet_ai;
-  const tc = dv.tin_cay || {};
-  const duoiNguong = tc.nguong != null && tc.diem != null && tc.diem < tc.nguong;
-  const cheDo = dv.che_do || {};
-  const dong = (tieu, chi, mau = "") => `<div class="row"><span class="row__flag ${mau ? "row__flag--" + mau : ""}"></span>
-    <span class="row__body"><span class="row__title">${tieu}</span>
-    ${chi ? `<span class="row__sub">${chi}</span>` : ""}</span></div>`;
-  const luoi = dv.luoi
-    ? dong(`Lưới bắt: ${esc(dv.luoi.nhan || dv.luoi.ma)}`,
-      esc((dv.chuyen_nguoi && dv.chuyen_nguoi.ly_do) || ""),
-      (typeof NHAN_LUOI_MAU !== "undefined" && NHAN_LUOI_MAU[dv.luoi.ma]) || "assist")
-    : dong("Không lưới nào bắt", dv.chuyen_nguoi && dv.chuyen_nguoi.co
-      ? esc("Chuyển người: " + (dv.chuyen_nguoi.ly_do || "")) : "", "auto");
-  const congCu = (dv.cong_cu || []).length
-    ? dv.cong_cu.map((c, i) => `<details class="row">
-        <summary class="row__body"><span class="row__title">${i + 1}. ${esc(c.ten)}</span>
-        <span class="row__sub">${c.vong != null ? "vòng " + esc(c.vong) : ""}${c.ms != null ? " · " + esc(c.ms) + " ms" : ""}</span></summary>
-        <pre class="pre">${esc(JSON.stringify({ tham_so: c.tham_so, ket_qua: c.ket_qua }, null, 2))}</pre>
-      </details>`).join("")
-      + (dv.cong_cu_bo_bot ? `<p class="hint">… và ${esc(dv.cong_cu_bo_bot)} lần gọi nữa không lưu chi tiết.</p>` : "")
-    : '<p class="hint">Không gọi công cụ nào.</p>';
-  const triThuc = (dv.tri_thuc || []).length
-    ? dv.tri_thuc.map((t) => `<li>${esc(t.title || "(không tên)")}${
-        t.version != null ? ` <span class="tag tag--plain">phiên bản ${esc(t.version)}</span>` : ""}</li>`).join("")
-    : (dv.nguon || []).map((n) => `<li>${esc(n)}</li>`).join("");
-  return `<div class="visao">
-    ${dong(`Hồ sơ agent: <b>${esc((dv.ho_so && dv.ho_so.ten) || "Mặc định")}</b>`,
-      esc(`Chế độ chung: ${cheDo.chung === "auto" ? "AI tự gửi" : "AI soạn, người duyệt"}`
-        + (cheDo.duyet_rieng ? " · hội thoại này bắt duyệt trước khi gửi" : "")
-        + (cheDo.tu_gui ? " · đã TỰ GỬI" : " · lưu NHÁP chờ duyệt")))}
-    ${dong(`Độ tin cậy ${pct(tc.diem)} — ngưỡng ${pct(tc.nguong)}`,
-      tc.co_can_cu ? "có căn cứ" : "KHÔNG có căn cứ", duoiNguong ? "assist" : "auto")}
-    ${luoi}
-    <h4 class="visao__dau">Công cụ đã gọi</h4>${congCu}
-    <h4 class="visao__dau">Tài liệu đã đọc</h4>
-    ${triThuc ? `<ul class="visao__ds">${triThuc}</ul>` : '<p class="hint">Không trích tài liệu nào.</p>'}
-    ${(dv.goi_ky_nang || []).length ? dong("Gói kỹ năng kích hoạt", esc(dv.goi_ky_nang.join(" · "))) : ""}
-    <p class="hint">${esc(dv.model || "")} · ${usd(dv.cost_usd)} · ${esc(dv.latency_ms || 0)} ms · ${esc(dv.so_vong || 0)} vòng${
-      (dv.da_rut_gon || []).length ? " · dấu vết đã rút gọn vì quá dài" : ""}</p>
+/* "Xem căn cứ" trên BẢN NHÁP AI (chế độ gợi ý) — người duyệt cần nó để quyết
+ * gửi hay sửa. Tin khác: "Chi tiết" (cùng bảng, kèm thông tin kỹ thuật). */
+function nutChiTietTin(m, draft) {
+  const coGi = m.role === "agent" || m.tac_gia?.sua_boi || m.tac_gia?.duyet_boi || m.sua_boi;
+  if (!coGi) return "";
+  const mo = state.chiTietTin && state.chiTietTin.has(String(m.id));
+  const nhan = draft ? "Xem căn cứ" : "Chi tiết";
+  const can = draft && nhanCanCu(m)
+    ? `<span class="tag tag--${m.grounded ? "auto" : "assist"}">${esc(nhanCanCu(m))}</span>` : "";
+  return `${can}<button type="button" class="msg__goc-nut" data-chi-tiet-tin="${esc(m.id)}"
+    aria-expanded="${mo ? "true" : "false"}">${mo ? "Ẩn" : nhan}</button>`;
+}
+
+function dongCT(tieu, chi) {
+  return `<div class="ctt__dong"><b>${tieu}</b>${chi ? `<span>${chi}</span>` : ""}</div>`;
+}
+
+/* Bảng chi tiết của MỘT tin. Ba phần căn cứ — tài liệu (kèm trích đoạn),
+ * dữ liệu nghiệp vụ công cụ trả về, quy tắc và lớp lưới đã áp — rồi phần kỹ
+ * thuật. KHÔNG có suy luận thô của model: hệ thống không lưu nó, và nó
+ * không phải căn cứ. Tham số công cụ đã che số điện thoại/email và ẩn họ
+ * tên, địa chỉ ở máy chủ (`agent/core/dau_vet_ai.py`). */
+function veChiTietTin(m, draft) {
+  if (!(state.chiTietTin && state.chiTietTin.has(String(m.id)))) return "";
+  const dv = m.dau_vet_ai || null;
+  const tg = m.tac_gia || {};
+  let canCu = "";
+  if (m.role === "agent") {
+    const triThuc = dv && (dv.tri_thuc || []).length
+      ? dv.tri_thuc.map((t) => `<li><b>${esc(t.title || "(không tên)")}</b>${
+          t.version != null ? ` <span class="tag tag--plain">phiên bản ${esc(t.version)}</span>` : ""}
+          ${t.trich ? `<blockquote class="ctt__trich">${esc(t.trich)}</blockquote>` : ""}</li>`).join("")
+      : (m.sources || []).map((n) => `<li><b>${esc(n)}</b></li>`).join("");
+    const congCu = dv && (dv.cong_cu || []).length
+      ? dv.cong_cu.map((c) => `<li><b>${esc(c.ten)}</b>
+          <pre class="pre">${esc(JSON.stringify(c.ket_qua ?? null, null, 2))}</pre></li>`).join("")
+        + (dv.cong_cu_bo_bot ? `<li class="hint">… và ${esc(dv.cong_cu_bo_bot)} lần gọi nữa không lưu chi tiết.</li>` : "")
+      : "";
+    const che = (dv && dv.che_do) || {};
+    const quyTac = dv ? [
+      dongCT("Hồ sơ agent", esc((dv.ho_so && dv.ho_so.ten) || "Mặc định")),
+      dongCT("Chế độ", esc((che.chung === "auto" ? "AI tự gửi" : "AI soạn, người duyệt")
+        + (che.duyet_rieng ? " · hội thoại này bắt duyệt trước khi gửi" : ""))),
+      dv.luoi ? dongCT("Lớp lưới đã bắt", esc(dv.luoi.nhan || dv.luoi.ma)) : dongCT("Lớp lưới", "không lưới nào bắt"),
+      dv.chuyen_nguoi && dv.chuyen_nguoi.co ? dongCT("Chuyển người", esc(dv.chuyen_nguoi.ly_do || "")) : "",
+      (dv.goi_ky_nang || []).length ? dongCT("Gói kỹ năng", esc(dv.goi_ky_nang.join(" · "))) : "",
+    ].join("") : '<p class="hint">Tin AI này soạn trước khi hệ thống lưu dấu vết — chỉ còn tên tài liệu.</p>';
+    canCu = `
+      ${dongCT("Căn cứ", esc(nhanCanCu(m) || "—"))}
+      <h4 class="ctt__dau">Tài liệu đã dùng</h4>
+      ${triThuc ? `<ul class="ctt__ds">${triThuc}</ul>` : '<p class="hint">Không trích tài liệu nào.</p>'}
+      <h4 class="ctt__dau">Dữ liệu nghiệp vụ công cụ trả về</h4>
+      ${congCu ? `<ul class="ctt__ds">${congCu}</ul>` : '<p class="hint">Không tra dữ liệu nghiệp vụ nào.</p>'}
+      <h4 class="ctt__dau">Quy tắc đã áp</h4>${quyTac}`;
+  }
+  const tc = dv && dv.tin_cay;
+  const kyThuat = m.role === "agent" ? [
+    m.confidence != null ? dongCT("Điểm khớp tài liệu", esc(Number(m.confidence).toFixed(2)
+      + (tc && tc.nguong != null ? ` (ngưỡng chuyển người ${Number(tc.nguong).toFixed(2)})` : ""))) : "",
+    (dv && dv.model) || m.model ? dongCT("Model", esc((dv && dv.model) || m.model)) : "",
+    m.latency_ms ? dongCT("Thời gian xử lý", esc(m.latency_ms + " ms")) : "",
+    m.cost_usd != null || m.cost != null ? dongCT("Chi phí", esc(usd(m.cost_usd ?? m.cost))) : "",
+  ].join("") : "";
+  const nguoi = [
+    tg.sua_boi ? dongCT("Sửa bởi", esc(tg.sua_boi + (tg.sua_luc ? " lúc " + gioTin(tg.sua_luc) : ""))) : "",
+    tg.duyet_boi ? dongCT("Duyệt bởi", esc(tg.duyet_boi + (tg.duyet_luc ? " lúc " + gioTin(tg.duyet_luc) : ""))) : "",
+  ].join("");
+  return `<div class="ctt">${canCu}
+    ${nguoi ? `<h4 class="ctt__dau">Người xử lý</h4>${nguoi}` : ""}
+    ${kyThuat && !draft ? `<h4 class="ctt__dau">Kỹ thuật</h4>${kyThuat}` : ""}
+    ${kyThuat && draft ? `<details class="ctt__kt"><summary>Kỹ thuật</summary>${kyThuat}</details>` : ""}
   </div>`;
 }
 
-/* Người đang giữ hội thoại, nói bằng TÊN. "Đồng nghiệp đang giữ" không trả
- * lời được câu người trực cần hỏi tiếp: hỏi ai? */
-function veNguoiGiu(c, laCuaToi) {
-  if (c.mode !== "human") {
-    return c.assigned_to_ten
-      ? `<span class="tag tag--plain" title="Người theo dõi hội thoại AI đang xử lý">Theo dõi: ${esc(c.assigned_to_ten)}</span>`
-      : "";
-  }
-  if (!c.assigned_to) return '<span class="tag tag--halt">Chưa ai nhận</span>';
-  const ten = laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp");
-  return `<span class="tag tag--assist">${esc(ten)} đang giữ${
-    c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}</span>`;
-}
-
-/* Lịch sử bàn giao — tải khi MỞ, tải lại khi version hội thoại đổi. Không
- * gọi mỗi 6 giây cho một khung không ai mở. */
-function veLichSuPhanCong(c) {
+/* ---------------- Chi tiết hội thoại ----------------
+ * Người đang giữ, nhóm, và lịch sử bàn giao — trong MỘT panel mở bằng nút
+ * "Chi tiết" ở đầu hội thoại. Tải lịch sử khi MỞ, tải lại khi version đổi;
+ * không gọi mỗi 6 giây cho một panel không ai mở. */
+function veChiTietHoiThoai(c, laCuaToi) {
   const id = String(c.id);
-  const mo = state.moLichSu === id;
+  if (state.moChiTietHT !== id) return "";
   const bo = state.lichSuPC && state.lichSuPC[id];
-  let than = '<p class="hint">Đang tải…</p>';
-  if (bo && bo.loi) than = `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
+  if (!bo || bo.version !== c.version) taiLichSuPhanCong(c);
+  let lichSu = '<p class="hint">Đang tải…</p>';
+  if (bo && bo.loi) lichSu = `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
   else if (bo && bo.items) {
-    than = bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
+    lichSu = bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
         <b>${esc(m.tieu_de)}</b>
         <span class="msg__meta">${esc(gioTin(m.luc))}${m.nguoi_lam ? " · bởi " + esc(m.nguoi_lam) : ""}${
           m.ket_thuc ? " · kết thúc " + esc(gioTin(m.ket_thuc)) : ""}</span>
         ${m.chi_tiet ? `<p>${esc(m.chi_tiet)}</p>` : ""}
       </div>`).join("") : '<p class="hint">Chưa có lần bàn giao nào.</p>';
   }
-  if (mo && (!bo || bo.version !== c.version)) taiLichSuPhanCong(c);
-  return `<details class="lichsu" data-lichsu="${esc(id)}" ${mo ? "open" : ""}>
-    <summary>Lịch sử bàn giao</summary>${mo ? than : ""}
-  </details>`;
+  let giu;
+  if (c.mode !== "human") giu = c.assigned_to_ten ? `AI đang xử lý · theo dõi: ${esc(c.assigned_to_ten)}` : "AI đang xử lý";
+  else if (!c.assigned_to) giu = "Chưa ai nhận";
+  else giu = `${esc(laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp"))}${
+    c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}`;
+  return `<section class="lichsu" aria-label="Chi tiết hội thoại">
+    ${dongCT("Người đang giữ", giu)}
+    <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
+  </section>`;
 }
 
 async function taiLichSuPhanCong(c) {
@@ -151,7 +192,7 @@ async function taiLichSuPhanCong(c) {
     const r = await api(`/inbox/conversations/${id}/lich-su-phan-cong`);
     state.lichSuPC[id] = { items: r.items || [], version: c.version };
   } catch (e) {
-    // Hỏng thì NÓI trong khung, không toast: vòng 6 giây sẽ bắn toast mãi.
+    // Hỏng thì NÓI trong panel, không toast: vòng 6 giây sẽ bắn toast mãi.
     state.lichSuPC[id] = { loi: e.message, version: c.version };
   }
   if (state.openConv === id) loadThread(id);
@@ -202,29 +243,22 @@ async function giaoHoiThoai(c) {
 }
 
 document.addEventListener("click", (ev) => {
-  const nut = ev.target.closest("[data-vi-sao]");
+  const nut = ev.target.closest("[data-chi-tiet-tin]");
   if (nut) {
-    state.viSao = state.viSao || new Set();
-    const mid = nut.dataset.viSao;
-    if (state.viSao.has(mid)) state.viSao.delete(mid); else state.viSao.add(mid);
+    state.chiTietTin = state.chiTietTin || new Set();
+    const mid = nut.dataset.chiTietTin;
+    if (state.chiTietTin.has(mid)) state.chiTietTin.delete(mid); else state.chiTietTin.add(mid);
     if (state.openConv) loadThread(state.openConv);
+    return;
+  }
+  if (ev.target.closest("#btn-chitiet-ht") && state.openConv) {
+    const id = String(state.openConv);
+    state.moChiTietHT = state.moChiTietHT === id ? null : id;
+    loadThread(state.openConv);
     return;
   }
   if (ev.target.closest("#btn-giao") && state.convDangMo) giaoHoiThoai(state.convDangMo);
 });
-
-/* Mở/đóng lịch sử: nhớ theo hội thoại, vì panel dựng lại mỗi 6 giây. */
-document.addEventListener("toggle", (ev) => {
-  const el = ev.target;
-  if (!(el instanceof HTMLElement) || !el.matches("[data-lichsu]")) return;
-  const id = el.dataset.lichsu;
-  if (el.open && state.moLichSu !== id) {
-    state.moLichSu = id;
-    if (state.openConv) loadThread(state.openConv);
-  } else if (!el.open && state.moLichSu === id) {
-    state.moLichSu = null;
-  }
-}, true);
 
 /* ---------------- Bộ lọc hộp thư ----------------
  * Kênh, người giữ (tôi / chưa ai nhận / một người), riêng hay nhóm, quá hạn

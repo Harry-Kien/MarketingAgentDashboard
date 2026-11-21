@@ -73,6 +73,22 @@ def test_ghi_ho_so_nguong_luoi_va_tri_thuc():
     assert dv2["luoi"]["la_luoi"] is False
 
 
+def test_tri_thuc_kem_trich_doan_cat_ngan_cho_nut_xem_can_cu():
+    """Người duyệt bản nháp phải đọc được CHÍNH câu tài liệu AI dựa vào."""
+    from agent.core import rag
+
+    doan = [rag.Passage(doc_title="Đổi trả", content="Đổi trong   7 ngày. " + "x" * 900,
+                        score=0.71, version=4),
+            rag.Passage(doc_title="Đổi trả", content="Đổi trong   7 ngày. " + "x" * 900,
+                        score=0.71, version=4)]          # trùng: chỉ một
+    tt = brain._tri_thuc_cho_dau_vet(doan)
+    assert len(tt) == 1 and tt[0]["title"] == "Đổi trả" and tt[0]["version"] == 4
+    assert tt[0]["trich"].startswith("Đổi trong 7 ngày.") and len(tt[0]["trich"]) <= 301
+    dv = _dung(brain.Reply(text="x", tri_thuc=tt))
+    assert dv["tri_thuc"][0]["trich"].startswith("Đổi trong 7 ngày.")
+    assert dv["tri_thuc"][0]["diem"] == 0.71
+
+
 def test_su_kien_cong_cu_goi_mang_id_hoi_thoai(monkeypatch):
     ghi = []
 

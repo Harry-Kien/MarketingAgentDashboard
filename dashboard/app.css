@@ -1999,21 +1999,29 @@ svg { flex: none; }
   border: 1px solid hsl(var(--input)); border-radius: var(--radius); background: hsl(var(--card));
 }
 .msg__meta .tag { margin-left: 4px; }
-/* "Vì sao?" — dấu vết AI của một tin. Nền nhạt, viền trái như ghi chú nội
- * bộ: đây là chữ cho người trực, khách không thấy. */
-.visao {
+/* Người sửa/duyệt: chữ nhỏ, nhạt — truy được, không đập vào mắt. */
+.msg__ghi { margin-left: 6px; font-style: italic; opacity: .8; }
+/* Chi tiết / căn cứ của một tin. Nền nhạt, viền trái như ghi chú nội bộ:
+ * đây là chữ cho người trực, khách không thấy. */
+.ctt {
   margin: 6px 0 2px; padding: 6px 10px; border-left: 3px solid hsl(var(--primary));
   background: hsl(var(--primary) / .05); border-radius: 0 var(--radius) var(--radius) 0;
   font-size: 12.5px; max-width: 100%; overflow-wrap: anywhere;
 }
-.visao .pre { max-height: 220px; overflow: auto; white-space: pre-wrap; }
-.visao__dau { margin: 8px 0 2px; font-size: 12px; color: hsl(var(--muted-foreground)); }
-.visao__ds { margin: 2px 0; padding-left: 18px; }
+.ctt .pre { max-height: 200px; overflow: auto; white-space: pre-wrap; margin: 2px 0; }
+.ctt__dau { margin: 8px 0 2px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.ctt__ds { margin: 2px 0; padding-left: 18px; }
+.ctt__dong { display: flex; flex-wrap: wrap; gap: 6px; padding: 1px 0; }
+.ctt__dong span { color: hsl(var(--muted-foreground)); }
+.ctt__trich {
+  margin: 2px 0 6px; padding: 2px 8px; border-left: 2px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground)); white-space: pre-wrap;
+}
+.ctt__kt summary { cursor: pointer; color: hsl(var(--muted-foreground)); margin-top: 6px; }
 .lichsu {
   margin: 8px 16px; padding: 8px 12px; border-left: 3px solid hsl(var(--muted-foreground) / .5);
   background: hsl(var(--muted) / .4); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;
 }
-.lichsu summary { cursor: pointer; font-weight: 600; }
 .lichsu__dong { padding: 6px 0 0; }
 .lichsu__dong p { margin: 2px 0 0; white-space: pre-wrap; color: hsl(var(--muted-foreground)); }
 .lichsu__dong--chuyen_nguoi b, .lichsu__dong--khach_doi_nguoi b { color: hsl(var(--warning)); }

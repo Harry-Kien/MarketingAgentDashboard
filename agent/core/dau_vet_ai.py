@@ -110,9 +110,13 @@ def dung(reply: Any, *, ho_so: Any, che_do_chung: str, duyet_rieng: bool,
             for c in cong_cu[:_TOI_DA_CONG_CU]
         ],
         "cong_cu_bo_bot": max(0, len(cong_cu) - _TOI_DA_CONG_CU),
+        # Trích đoạn tài liệu CỬA HÀNG (không phải dữ liệu khách) để người
+        # duyệt đọc được câu AI dựa vào — nút "Xem căn cứ". Vẫn đi qua `_cat`
+        # để cắt ngắn và phòng tài liệu lỡ chứa số điện thoại của ai đó.
         "tri_thuc": [
-            {k: r.get(k) for k in ("document_id", "version_id", "version",
-                                   "chunk_id", "title", "published_at")}
+            {**{k: r.get(k) for k in ("document_id", "version_id", "version",
+                                      "chunk_id", "title", "published_at", "diem")},
+             "trich": _cat(r.get("trich") or "", mat_na)}
             for r in tri_thuc[:_TOI_DA_TRI_THUC]
         ],
         "nguon": list(getattr(reply, "sources", None) or [])[:_TOI_DA_TRI_THUC],

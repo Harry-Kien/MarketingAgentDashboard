@@ -10,9 +10,9 @@ async function refresh() {
     if (state.view === "kho") await loadKho();
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
-    if (state.view === "sohieu") {
-      if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
-      await loadAnalyticsKhach(); await loadCost();
+    if (state.view === "sohieu") {    // nhãn hiển thị: "Phân tích"
+      if (!state.ptDaTai) await loadPhanTich();
+      await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
@@ -40,8 +40,21 @@ function startInboxStream() {
       } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
     }, 120);
   };
-  ["message.created", "message.sent", "conversation.updated", "conversation.takeover", "conversation.released", "sla.first_response_warning", "sla.first_response_breached"]
+  /* Mọi sự kiện SLA máy chủ phát (agent/omnichannel/sla.py) phải có ở đây:
+     thiếu `sla.resolution_breached` là hội thoại trễ hạn giải quyết chỉ hiện
+     ra ở nhịp 6 giây sau — hoặc không bao giờ, khi tab đang ở màn khác. */
+  ["message.created", "message.sent", "conversation.updated", "conversation.takeover",
+   "conversation.released", "conversation.priority_changed",
+   "sla.first_response_warning", "sla.first_response_breached",
+   "sla.resolution_warning", "sla.resolution_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
+  /* Màn Phân tích không theo nhịp 6 giây; sự kiện SLA mới thì đánh dấu để
+     lần tới mở màn (hoặc đang mở) tính lại. */
+  ["sla.first_response_breached", "sla.resolution_breached",
+   "sla.first_response_warning", "sla.resolution_warning"]
+    .forEach((topic) => stream.addEventListener(topic, () => {
+      state.ptDaTai = false;
+    }));
   window.addEventListener("beforeunload", () => stream.close(), { once: true });
 }
 

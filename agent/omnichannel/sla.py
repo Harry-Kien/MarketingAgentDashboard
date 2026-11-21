@@ -1,4 +1,13 @@
-"""Worker SLA idempotent: đánh dấu warning/breach, phát event và heartbeat."""
+"""
+Worker SLA idempotent: đánh dấu cảnh báo/vi phạm, phát `inbox_events` đủ
+thông tin cho chuông thông báo, (tuỳ cấu hình) nâng ưu tiên khi trễ, và
+heartbeat.
+
+KHÔNG sinh công việc khi trễ: chủ dự án chốt (20.11.2026) cảnh báo SLA đi
+qua chuông thông báo trong ứng dụng. Mỗi sự kiện `sla.*` mang hội thoại,
+loại, chu kỳ, người phụ trách, ưu tiên và hạn — đủ để chuông dựng thông báo
+mà không phải đọc lại CSDL.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -50,11 +59,170 @@ def thoi_gian_sla_da_tieu_thu(started_at: datetime, scan_at: datetime) -> timede
     return ngay_dau + so_ngay_tron * timedelta(hours=ket_thuc_gio - bat_dau_gio) + ngay_cuoi
 
 
-def _warning_threshold(priority: str | None, policy_minutes: int | None) -> timedelta:
+NGUONG_CANH_BAO_MAC_DINH = 80
+
+
+def ty_le_canh_bao() -> float:
+    """
+    Ngưỡng cảnh báo sớm (phần của thời gian cho phép), từ `SLA_NGUONG_CANH_BAO`.
+
+    MỘT ngưỡng cho cả phản hồi đầu lẫn giải quyết. Giá trị hỏng (sửa tay
+    .env) lui về 80% chứ không ném: worker SLA chết vì một ô cấu hình là mất
+    luôn cả vi phạm, không riêng cảnh báo. Dashboard đã chặn giá trị hỏng lúc
+    lưu (`cau_hinh_dong.kiem_gia_tri`).
+    """
+    from agent import cau_hinh_dong
+
+    try:
+        phan_tram = int(str(cau_hinh_dong.lay("SLA_NGUONG_CANH_BAO")).strip())
+    except (TypeError, ValueError):
+        phan_tram = NGUONG_CANH_BAO_MAC_DINH
+    if not 10 <= phan_tram <= 95:
+        phan_tram = NGUONG_CANH_BAO_MAC_DINH
+    return phan_tram / 100
+
+
+def _warning_threshold(
+    priority: str | None, policy_minutes: int | None, ty_le: float
+) -> timedelta:
     minutes = policy_minutes or _DEFAULT_FIRST_RESPONSE_MINUTES.get(
         (priority or "normal").lower(), 30
     )
-    return timedelta(minutes=minutes) / 2
+    return timedelta(minutes=minutes) * ty_le
+
+
+async def _canh_bao_giai_quyet(
+    connection: Any, scan_at: datetime, ty_le: float
+) -> list[Any]:
+    """
+    Cảnh báo sớm HẠN GIẢI QUYẾT: đã tiêu hết `ty_le` khoảng từ lúc bắt đầu
+    chu kỳ tới hạn (migration 0054).
+
+    Ngưỡng tính trên KHOẢNG THẬT [bắt đầu, hạn] chứ không trên số phút của
+    chính sách như cảnh báo phản hồi đầu: hạn có thể đã được rút ngắn khi
+    nâng ưu tiên (agent/api/uu_tien.py), và số phút của chính sách khi ấy
+    không còn nói hạn ở đâu. Đo bằng `thoi_gian_sla_da_tieu_thu` nên tôn
+    trọng công tắc 24/7 (`SLA_THEO_GIO_LAM_VIEC`) y như cảnh báo cũ.
+    """
+    candidates = await connection.fetch(
+        """
+        SELECT c.id AS conversation_id, c.resolution_due_at,
+               COALESCE(started_event.created_at, c.created_at) AS started_at
+        FROM conversations c
+        LEFT JOIN LATERAL (
+            SELECT event.created_at FROM sla_events event
+            WHERE event.conversation_id = c.id AND event.kind = 'started'
+              AND event.chu_ky = c.sla_chu_ky
+            ORDER BY event.created_at DESC LIMIT 1
+        ) started_event ON TRUE
+        WHERE c.state IN ('open', 'pending')
+          AND c.resolved_at IS NULL
+          AND c.resolution_due_at IS NOT NULL
+          AND c.resolution_due_at >= $1
+          AND NOT EXISTS (
+              SELECT 1 FROM sla_events done_event
+              WHERE done_event.conversation_id = c.id
+                AND done_event.chu_ky = c.sla_chu_ky
+                AND done_event.kind IN (
+                    'resolution_warning', 'resolution_met', 'resolution_breached'
+                )
+          )
+        """,
+        scan_at,
+    )
+    ids: list[Any] = []
+    dues: list[datetime] = []
+    details: list[str] = []
+    for row in candidates:
+        khoang = thoi_gian_sla_da_tieu_thu(row["started_at"], row["resolution_due_at"])
+        threshold = khoang * ty_le
+        elapsed = thoi_gian_sla_da_tieu_thu(row["started_at"], scan_at)
+        if threshold > timedelta(0) and elapsed >= threshold:
+            ids.append(row["conversation_id"])
+            dues.append(row["resolution_due_at"])
+            details.append(json.dumps({
+                "threshold_ratio": ty_le,
+                "threshold_minutes": round(threshold.total_seconds() / 60.0, 2),
+                "elapsed_minutes": round(elapsed.total_seconds() / 60.0, 2),
+            }))
+    if not ids:
+        return []
+    return list(await connection.fetch(
+        """
+        INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail)
+        SELECT c.id, c.sla_chu_ky, 'resolution_warning', c.resolution_due_at,
+               d.detail::jsonb
+        FROM unnest($1::uuid[], $2::timestamptz[], $3::text[])
+             AS d(conversation_id, due_at, detail)
+        JOIN conversations c ON c.id = d.conversation_id
+        WHERE c.state IN ('open', 'pending')
+          AND c.resolved_at IS NULL
+          AND c.resolution_due_at = d.due_at
+        ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
+        RETURNING conversation_id
+        """,
+        ids, dues, details,
+    ))
+
+
+async def _nang_uu_tien_khi_tre(connection: Any, ids: list[Any]) -> int:
+    """
+    `SLA_KHI_TRE = bao_va_nang_uu_tien`: hội thoại VỪA trễ lên một bậc ưu tiên.
+
+    Chạy trên đúng những vi phạm vừa ghi ở lượt quét này (ON CONFLICT nuốt
+    vi phạm cũ), nên mỗi vi phạm nâng đúng một lần. KHÔNG rút hạn: máy tự
+    rút hạn sau một vi phạm là phạt người trực lần thứ hai cho cùng một lỗi.
+    Mỗi lần nâng ghi nhật ký kiểm toán như khi người đổi (actor `sla`).
+    """
+    from agent import cau_hinh_dong
+
+    if not ids or cau_hinh_dong.lay("SLA_KHI_TRE") != "bao_va_nang_uu_tien":
+        return 0
+    rows = await connection.fetch(
+        """
+        WITH cu AS (
+            SELECT id, priority FROM conversations
+            WHERE id = ANY($1::uuid[]) AND priority <> 'urgent'
+              AND state IN ('open', 'pending')
+            FOR UPDATE
+        )
+        UPDATE conversations c
+        SET priority = CASE cu.priority WHEN 'low' THEN 'normal'
+                                        WHEN 'normal' THEN 'high'
+                                        ELSE 'urgent' END,
+            version = c.version + 1, updated_at = now()
+        FROM cu WHERE c.id = cu.id
+        RETURNING c.id, c.account_id, cu.priority AS tu, c.priority AS den
+        """,
+        list(set(ids)),
+    )
+    for r in rows:
+        detail = {"tu": r["tu"], "den": r["den"], "tu_dong": True,
+                  "ly_do": "tự nâng khi trễ SLA (SLA_KHI_TRE)"}
+        await connection.execute(
+            "INSERT INTO events (kind, actor, ref_id, detail) "
+            "VALUES ('conversation.priority_changed', 'sla', $1, $2::text::jsonb)",
+            r["id"], json.dumps(detail))
+        await connection.execute(
+            "INSERT INTO inbox_events (account_id, topic, ref_id, payload) "
+            "VALUES ($1, 'conversation.priority_changed', $2, $3::text::jsonb)",
+            r["account_id"], r["id"], json.dumps(detail))
+    return len(rows)
+
+
+# Sự kiện SLA cho chuông thông báo: đủ để dựng một dòng "Khách X quá hạn phản
+# hồi đầu, đang giao cho Y" mà không phải tra lại. `han` là hạn của ĐÚNG mục
+# tiêu bị cảnh báo/vi phạm.
+_SQL_SU_KIEN_SLA = """
+    INSERT INTO inbox_events (account_id, topic, ref_id, payload)
+    SELECT c.account_id, $2, c.id,
+           jsonb_build_object(
+               'conversation_id', c.id, 'loai', $3::text, 'chu_ky', c.sla_chu_ky,
+               'nguoi_phu_trach', c.assigned_to, 'uu_tien', c.priority,
+               'han', CASE WHEN $3::text LIKE 'first_response%'
+                           THEN c.first_response_due_at ELSE c.resolution_due_at END)
+    FROM conversations c WHERE c.id = ANY($1::uuid[])
+"""
 
 
 class SlaRepository(Protocol):
@@ -143,12 +311,13 @@ class PostgresSlaRepository:
                     scan_at,
                 )
 
+                ty_le = ty_le_canh_bao()
                 warn_ids: list[Any] = []
                 warn_dues: list[datetime] = []
                 warn_details: list[str] = []
                 for row in candidates:
                     threshold = _warning_threshold(
-                        row["priority"], row["first_response_minutes"]
+                        row["priority"], row["first_response_minutes"], ty_le
                     )
                     elapsed = thoi_gian_sla_da_tieu_thu(row["started_at"], scan_at)
                     if elapsed >= threshold:
@@ -157,7 +326,7 @@ class PostgresSlaRepository:
                         warn_details.append(
                             json.dumps(
                                 {
-                                    "threshold_ratio": 0.5,
+                                    "threshold_ratio": ty_le,
                                     "threshold_minutes": round(
                                         threshold.total_seconds() / 60.0, 2
                                     ),
@@ -203,6 +372,9 @@ class PostgresSlaRepository:
                     """,
                     scan_at,
                 )
+                resolution_warning_rows = await _canh_bao_giai_quyet(
+                    connection, scan_at, ty_le
+                )
                 resolution_rows = await connection.fetch(
                     """
                     INSERT INTO sla_events (conversation_id, chu_ky, kind, due_at, detail)
@@ -220,23 +392,24 @@ class PostgresSlaRepository:
                 for topic, rows in (
                     ("sla.first_response_warning", warning_rows),
                     ("sla.first_response_breached", first_rows),
+                    ("sla.resolution_warning", resolution_warning_rows),
                     ("sla.resolution_breached", resolution_rows),
                 ):
                     ids = [row["conversation_id"] for row in rows]
                     if ids:
                         await connection.execute(
-                            """
-                            INSERT INTO inbox_events (account_id, topic, ref_id, payload)
-                            SELECT account_id, $2, id, '{}'
-                            FROM conversations WHERE id = ANY($1::uuid[])
-                            """,
-                            ids,
-                            topic,
+                            _SQL_SU_KIEN_SLA, ids, topic, topic.split(".", 1)[1]
                         )
+                nang = await _nang_uu_tien_khi_tre(
+                    connection,
+                    [r["conversation_id"] for r in (*first_rows, *resolution_rows)],
+                )
         return {
             "first_response": len(first_rows),
             "resolution": len(resolution_rows),
             "warning": len(warning_rows),
+            "resolution_warning": len(resolution_warning_rows),
+            "nang_uu_tien": nang,
         }
 
     async def heartbeat(self, worker_id: str) -> None:

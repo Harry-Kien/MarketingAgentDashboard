@@ -866,3 +866,50 @@ def test_18_dia_chi_mau_thuan_khong_len_don(app_that):
     assert _sql(app_that, dem) == 0
     kq = _sql(app_that, thu, "5 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP HCM")
     assert "Hỏi lại khách" not in kq.get("ly_do", "")
+
+
+# ------------------------------------------------------------------ 19. ưu tiên, SLA, phân tích
+
+def test_19_doi_uu_tien_rut_han_sla_va_man_phan_tich(app_that):
+    """
+    Đổi ưu tiên hội thoại và xem màn Phân tích.
+
+    BƯỚC 1  Quản trị đặt SLA mức thường (60/1440 phút) và gấp (5/30 phút); khách web nhắn → hội thoại có hạn.
+    BƯỚC 2  Nhân viên KHÔNG thuộc kênh đổi ưu tiên → 404, không lộ hội thoại tồn tại.
+    BƯỚC 3  Quản trị nâng lên "gấp" kèm lý do → hạn phản hồi đầu rút còn tối đa 5 phút từ bây giờ.
+    BƯỚC 4  Hạ về "thấp" → hạn KHÔNG kéo dài lại; cả hai lần đổi nằm trong nhật ký kiểm toán.
+    BƯỚC 5  Màn Phân tích: quản trị thấy 1 hội thoại mới, 1 khách mới; nhân viên ngoài kênh thấy 0.
+    """
+    from datetime import datetime, timezone
+
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    for muc, dau, xong in (("normal", 60, 1440), ("urgent", 5, 30)):
+        assert qt.put("/api/routing/sla-policies", json={
+            "account_id": tk, "priority": muc, "first_response_minutes": dau,
+            "resolution_minutes": xong, "business_hours": {}, "active": True}).status_code == 200
+    _khach_nhan(app_that, tk, "Chị Thảo", "shop ơi tư vấn giúp em")
+    cid = str(_hoi_thoai_dau(app_that)["id"])
+    _, ngoai = _nhan_vien_moi(qt, "binh")
+
+    assert ngoai.put(f"/api/conversations/{cid}/uu-tien",
+                     json={"uu_tien": "urgent", "ly_do": "thử"}).status_code == 404
+
+    r = qt.put(f"/api/conversations/{cid}/uu-tien",
+               json={"uu_tien": "urgent", "ly_do": "khách khiếu nại giao chậm"})
+    assert r.status_code == 200, r.text
+    con = (datetime.fromisoformat(r.json()["han_dau_moi"])
+           - datetime.now(timezone.utc)).total_seconds()
+    assert 0 < con <= 5 * 60 + 5
+
+    r = qt.put(f"/api/conversations/{cid}/uu-tien",
+               json={"uu_tien": "low", "ly_do": "khách hẹn mai"})
+    assert r.status_code == 200 and r.json()["han_dau_moi"] == r.json()["han_dau_cu"]
+    nk = [e for e in qt.get("/api/events?limit=50").json()
+          if e["kind"] == "conversation.priority_changed"]
+    assert len(nk) == 2
+
+    o = qt.get("/api/phan-tich").json()
+    assert o["hoi_thoai"]["moi"] == 1 and o["khach"]["moi"] == 1
+    r = ngoai.get("/api/phan-tich")
+    assert r.status_code == 200 and r.json()["hoi_thoai"]["moi"] == 0

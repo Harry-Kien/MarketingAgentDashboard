@@ -429,6 +429,8 @@ class PostgresOutboxRepository:
                         SET first_responded_at = coalesce(first_responded_at, now())
                         WHERE id = $1 AND first_responded_at IS NULL
                         RETURNING id, first_response_due_at, sla_chu_ky
+                    ), tin AS (
+                        SELECT gui_boi, agent_ho_so_id FROM messages WHERE id = $2
                     )
                     INSERT INTO sla_events (
                         conversation_id, chu_ky, kind, due_at, detail
@@ -439,11 +441,25 @@ class PostgresOutboxRepository:
                                 THEN 'first_response_breached'
                                 ELSE 'first_response_met' END,
                            first_response_due_at,
-                           '{}'
+                           -- AI hay NGƯỜI trả lời, ai, lúc nào: báo cáo SLA
+                           -- (agent/api/phan_tich.py) tách thời gian phản hồi
+                           -- đầu của AI khỏi của nhân viên. Thiếu mấy khoá
+                           -- này, một lời chào tự động 2 giây kéo trung bình
+                           -- của cả cửa hàng xuống và che mất ca chờ 40 phút.
+                           jsonb_build_object(
+                               'phan_hoi_luc', now(), 'vai', $3::text,
+                               'gui_boi', (SELECT gui_boi FROM tin),
+                               'ho_so', (SELECT agent_ho_so_id FROM tin))
                     FROM responded
-                    ON CONFLICT (conversation_id, chu_ky, kind) DO NOTHING
+                    -- Worker đã ghi "trễ" vì chưa ai trả lời: giữ sự kiện
+                    -- ấy, chỉ bổ sung lúc trả lời thật (một lần duy nhất).
+                    ON CONFLICT (conversation_id, chu_ky, kind) DO UPDATE
+                    SET detail = sla_events.detail || EXCLUDED.detail
+                    WHERE NOT (sla_events.detail ? 'phan_hoi_luc')
                     """,
                     link["conversation_id"],
+                    link["message_id"],
+                    link["message_role"],
                 )
             await connection.execute(
                         """

@@ -234,6 +234,8 @@ async def mo_lai_neu_da_giai_quyet(cid: UUID) -> bool:
             "outcome = NULL, resolved_at = NULL, first_responded_at = NULL, "
             "version = version + 1, updated_at = now() "
             "WHERE id = $1 AND state = 'resolved' RETURNING id", cid)
+        if r is not None:
+            await _ghi_mo_lai(cid, chu_ky_moi=False)
         return r is not None
 
     sql = ("""
@@ -260,7 +262,20 @@ async def mo_lai_neu_da_giai_quyet(cid: UUID) -> bool:
         SELECT count(*) AS n FROM mo
         """).replace("{han_dau}", bieu_thuc_han("first_response_minutes", 2, 3))            .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 2, 3))
     r = await db.fetchrow(sql, cid, *gio_sla())
+    if r and r["n"]:
+        await _ghi_mo_lai(cid, chu_ky_moi=True)
     return bool(r and r["n"])
+
+
+async def _ghi_mo_lai(cid: UUID, *, chu_ky_moi: bool) -> None:
+    """
+    Sự kiện `conversation.reopened` — số "mở lại" ở màn Phân tích đếm nó.
+
+    Trước bản này mở lại không để dấu vết nào ngoài `sla_events.started`,
+    mà dòng ấy chỉ có khi BẬT chu kỳ SLA (mặc định tắt): số hội thoại mở lại
+    — chỉ báo "giải quyết chưa thật xong" — không đếm được.
+    """
+    await db.log_event("conversation.reopened", ref_id=cid, chu_ky_moi=chu_ky_moi)
 
 
 # ---------------------------------------------------------------- tự giải quyết (DEV-05)

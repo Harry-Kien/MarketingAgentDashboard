@@ -451,7 +451,9 @@ async function loadDinhTuyen() {
         <span class="row__flag row__flag--${s2.active ? "auto" : "halt"}"></span>
         <div class="row__main">
           <b>${esc(dtTenKenh(s2.account_id))} · mức ${esc(DT_MUC[s2.priority] || s2.priority)}</b>
-          <span class="row__sub">trả lời đầu ${s2.first_response_minutes} phút · xong ${s2.resolution_minutes} phút</span>
+          <span class="row__sub">trả lời đầu ${s2.first_response_minutes} phút · xong ${s2.resolution_minutes} phút${
+            s2.business_hours && s2.business_hours.bat_dau != null
+              ? ` · giờ riêng ${s2.business_hours.bat_dau}h–${s2.business_hours.ket_thuc}h` : ""}</span>
         </div>
       </div>`).join("")
     : '<p class="empty">Chưa đặt hạn nào.</p>';
@@ -533,7 +535,12 @@ $("#dtFormSla")?.addEventListener("submit", (e) => {
     priority: d.priority,
     first_response_minutes: Number(d.first_response_minutes),
     resolution_minutes: Number(d.resolution_minutes),
-    business_hours: {},
+    /* Hai ô trống = {} (giờ chung). Điền một ô mà bỏ ô kia thì gửi nguyên
+       để máy chủ trả 422 có câu chữ — đoán hộ ô còn lại là đặt một giờ làm
+       việc người quản trị chưa từng chọn. */
+    business_hours: (d.bat_dau === "" && d.ket_thuc === "") ? {}
+      : { bat_dau: d.bat_dau === "" ? null : Number(d.bat_dau),
+          ket_thuc: d.ket_thuc === "" ? null : Number(d.ket_thuc) },
     active: true,
   }));
 });
@@ -760,8 +767,12 @@ async function loadOverview() {
 
   $("#readout").innerHTML = [
     cell("Hội thoại 24 giờ", o.conversations.total, "cuộc", null, "auto"),
-    cell("Agent tự xử lý", pct(o.conversations.containment),
-         `${o.conversations.handled}/${o.conversations.total}`,
+    /* "AI tự lo" đếm theo sự kiện: hội thoại có tin AI trong 24 giờ mà
+       không ai can thiệp (chuyển người, tiếp quản, nhân viên nhắn, DUYỆT
+       NHÁP). Ô cũ chia `status = auto` cho tổng — duyệt nháp lật assist
+       thành auto, nên hội thoại người duyệt từng câu cũng thành "tự xử lý". */
+    cell("AI tự lo (không người can thiệp)", pct(o.conversations.containment),
+         `${o.conversations.ai_tu_lo}/${o.conversations.ai} có AI`,
          o.conversations.containment, "auto"),
     cell("Chờ người", o.conversations.waiting, "cuộc",
          o.conversations.total ? o.conversations.waiting / o.conversations.total : 0, "assist"),
@@ -1238,7 +1249,7 @@ async function loadThread(id) {
     </details>` : ""}
     ${veChiTietHoiThoai(c, laCuaToi)}
     <div class="opsbar">
-      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(c.priority || "normal")}</b></span>
+      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</b>${c.state !== "resolved" ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}" data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : ""}</span>
       <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
       ${c.sla_warning ? `<span>Cảnh báo SLA <b>50%${c.first_response_warning_at ? ` (${clock(c.first_response_warning_at)})` : ""}</b></span>` : ""}
       ${c.sla_breached ? `<span>Trạng thái SLA <b>Quá hạn${c.first_response_breached_at ? ` (${clock(c.first_response_breached_at)})` : ""}</b></span>` : ""}
@@ -2644,50 +2655,14 @@ async function loadKho() {
     </div>`).join("") : '<p class="empty">Chưa có biến động nào.</p>';
 }
 
-/* ---------------- khách đến từ đâu ---------------- */
-
-/* Câu hỏi cơ bản nhất của người vận hành mà bảng cũ không trả lời được:
-   khách của mình đến từ kênh nào, kênh nào agent tự lo được, kênh nào phải
-   gọi người liên tục. Kênh có tỷ lệ chuyển người cao không phải kênh tệ —
-   thường là kênh có loại câu hỏi khác hẳn, và đó là chỗ cần bổ sung tài liệu. */
+/* ---------------- tên kênh ----------------
+   Bảng "Khách đến từ đâu" (`/api/analytics/khach`) đã gỡ khỏi màn ngày
+   20.11.2026: nó đếm "tự xử lý" theo `status = 'auto'`, đúng con số tô
+   hồng mà màn Phân tích thay bằng số đếm theo sự kiện. */
 const KENH_TEN = {
   zalocrm: "Zalo cá nhân", chatwoot: "Kênh tương thích", facebook: "Facebook",
   instagram: "Instagram", whatsapp: "WhatsApp", web: "Website", email: "Email",
 };
-
-async function loadAnalyticsKhach() {
-  let d;
-  try { d = await api("/analytics/khach"); } catch { return; }
-
-  $("#anaKhachTong").innerHTML = [
-    cell("Tổng hội thoại", d.tong.hoi_thoai, "cuộc", null, "auto"),
-    cell("Khách khác nhau", d.tong.khach, "người", null, "auto"),
-    cell("Số kênh đang có khách", d.tong.so_kenh, "kênh", null, "auto"),
-    cell("Chi phí 30 ngày", usd(d.tong.chi_phi), "tổng", null, "spend"),
-  ].join("");
-
-  $("#anaKhach").innerHTML = d.kenh.length ? d.kenh.map((k) => {
-    /* Màu theo tỷ lệ tự xử lý: đây là con số nói lên agent đang gánh được
-       bao nhiêu, và nó là lý do tồn tại của cả hệ thống. */
-    const tone = k.ty_le_tu_xu_ly >= 0.6 ? "auto"
-               : k.ty_le_tu_xu_ly >= 0.3 ? "assist" : "halt";
-    return `<div class="row">
-      <span class="row__flag row__flag--${tone}"></span>
-      <div class="row__main">
-        <b>${esc(NEN_TANG_LABEL[String(k.nen_tang || "").toLowerCase()]
-                  || KENH_TEN[k.nen_tang] || KENH_TEN[k.kenh] || k.nen_tang || k.kenh)}</b>
-        ${k.nen_tang && k.nen_tang !== k.kenh
-          ? `<span class="row__sub">qua ${esc(KENH_TEN[k.kenh] || k.kenh)}</span>` : ""}
-        <span class="row__sub">${k.hoi_thoai} hội thoại · ${k.khach} khách · ${k.tin} tin
-          · tự xử lý ${pct(k.ty_le_tu_xu_ly)} · chuyển người ${pct(k.ty_le_chuyen_nguoi)}
-          ${k.co_can_cu != null ? "· có căn cứ " + pct(k.co_can_cu) : ""}
-          ${k.tre_tb_ms ? "· trễ " + (k.tre_tb_ms / 1000).toFixed(1) + "s" : ""}</span>
-      </div>
-      <span class="row__num">${usd(k.chi_phi_moi_hoi_thoai)}<br>
-        <span class="row__time">mỗi hội thoại</span></span>
-    </div>`;
-  }).join("") : '<p class="empty">Chưa có hội thoại nào trong 30 ngày.</p>';
-}
 
 /* ---------------- các hệ thống đang chạy ---------------- */
 
@@ -4539,9 +4514,9 @@ async function refresh() {
     if (state.view === "kho") await loadKho();
     if (state.view === "hethong") await loadHeThong();
     if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
-    if (state.view === "sohieu") {
-      if (!state.bcnvDaTai) await loadBaoCaoNhanVien();
-      await loadAnalyticsKhach(); await loadCost();
+    if (state.view === "sohieu") {    // nhãn hiển thị: "Phân tích"
+      if (!state.ptDaTai) await loadPhanTich();
+      await loadCost();
     }
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
@@ -4569,8 +4544,21 @@ function startInboxStream() {
       } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
     }, 120);
   };
-  ["message.created", "message.sent", "conversation.updated", "conversation.takeover", "conversation.released", "sla.first_response_warning", "sla.first_response_breached"]
+  /* Mọi sự kiện SLA máy chủ phát (agent/omnichannel/sla.py) phải có ở đây:
+     thiếu `sla.resolution_breached` là hội thoại trễ hạn giải quyết chỉ hiện
+     ra ở nhịp 6 giây sau — hoặc không bao giờ, khi tab đang ở màn khác. */
+  ["message.created", "message.sent", "conversation.updated", "conversation.takeover",
+   "conversation.released", "conversation.priority_changed",
+   "sla.first_response_warning", "sla.first_response_breached",
+   "sla.resolution_warning", "sla.resolution_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
+  /* Màn Phân tích không theo nhịp 6 giây; sự kiện SLA mới thì đánh dấu để
+     lần tới mở màn (hoặc đang mở) tính lại. */
+  ["sla.first_response_breached", "sla.resolution_breached",
+   "sla.first_response_warning", "sla.resolution_warning"]
+    .forEach((topic) => stream.addEventListener(topic, () => {
+      state.ptDaTai = false;
+    }));
   window.addEventListener("beforeunload", () => stream.close(), { once: true });
 }
 
@@ -6950,7 +6938,7 @@ document.addEventListener("click", (e) => {
 
 /* ---------------- cài đặt API ---------------- */
 
-const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN / GHTK)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook", csat: "Khảo sát hài lòng (CSAT)", bvdlcn: "Bảo vệ dữ liệu cá nhân" };
+const API_NHOM = { model: "Model ngôn ngữ", erp: "ERP (ERPNext)", van_chuyen: "Vận chuyển (GHN / GHTK)", thanh_toan: "Thanh toán (VietQR)", binh_luan: "Bình luận Facebook", csat: "Khảo sát hài lòng (CSAT)", bvdlcn: "Bảo vệ dữ liệu cá nhân", sla: "SLA — khi trễ hạn" };
 
 /* Ô nhập cho một khoá. Ô BÍ MẬT là password và KHÔNG có value: giá trị
  * không có ở client để mà dựng — máy chủ chỉ gửi bốn ký tự cuối. */
@@ -7404,43 +7392,8 @@ function _giay(g) {
   return `${(g / 3600).toFixed(1)} giờ`;
 }
 
-async function loadBaoCaoNhanVien() {
-  const f = $("#bcnvForm");
-  if (!f) return;
-  if (!f.tu.value) {
-    const nay = new Date();
-    f.den.value = _ngayVN(nay);
-    f.tu.value = _ngayVN(new Date(nay.getTime() - 6 * 86400000));
-  }
-  const qs = `tu=${f.tu.value}&den=${f.den.value}`;
-  $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?${qs}`;
-  state.bcnvDaTai = true;
-  try {
-    const r = await api(`/bao-cao/nhan-vien?${qs}`);
-    const ds = r.nhan_vien || [];
-    $("#bcnvBang").innerHTML = `<thead><tr>
-      <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
-      <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
-      <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${ds.length ? ds.map((d) => `<tr>
-      <td>${esc(d.ho_ten)}</td><td>${d.hoi_thoai}</td><td>${d.tin_gui}</td>
-      <td>${_giay(d.phan_hoi_trung_vi_giay)}</td><td>${_giay(d.phan_hoi_p90_giay)}</td>
-      <td class="${d.chua_phan_hoi ? "so--xau" : ""}">${d.chua_phan_hoi}</td>
-      <td>${d.don}</td><td class="${d.tre_sla ? "so--xau" : ""}">${d.tre_sla}</td>
-      <td>${d.csat_so ? `${d.csat_tb} <span class="msg__meta">(${d.csat_so})</span>` : "—"}</td></tr>`).join("")
-      : '<tr><td colspan="9" class="empty">Chưa có nhân viên nào.</td></tr>'}</tbody>`;
-  } catch (e) { toast(e.message, true); }
-}
-
-$("#bcnvForm")?.addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  loadBaoCaoNhanVien();
-});
-$("#bcnvForm")?.addEventListener("change", () => {
-  const f = $("#bcnvForm");
-  if (f.tu.value && f.den.value) {
-    $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?tu=${f.tu.value}&den=${f.den.value}`;
-  }
-});
+/* Bảng hiệu suất nhân viên giờ dựng ở màn Phân tích (19-phan-tich.js),
+   thu hẹp theo bộ lọc chung; hai hàm trên là tiện ích dùng chung. */
 
 /* ---------------- VietQR ---------------- */
 /* Ủy quyền một trình nghe ở document: danh sách đơn dựng lại mỗi lần làm
@@ -8144,6 +8097,193 @@ $$("[data-noi]").forEach((b) => b.addEventListener("click", async () => {
     toast(e.message, true);
   }
 }));
+/* ==================== Phân tích ====================
+ *
+ * Định nghĩa từng con số ở agent/api/phan_tich.py và docs/phan-tich.md —
+ * đọc trước khi dùng nó để đánh giá một người hay một hồ sơ AI. Mọi số đếm
+ * theo SỰ KIỆN trong khoảng ngày; ô nào là ảnh chụp "bây giờ" thì nhãn nói
+ * vậy. Không nạp theo vòng 6 giây: tám câu truy vấn trên cả khoảng ngày là
+ * việc nặng, và con số theo ngày không đổi từng giây. */
+
+const UU_TIEN_NHAN = { low: "thấp", normal: "thường", high: "cao", urgent: "gấp" };
+const VAI_NHAN = { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" };
+
+function _ptQuery(f) {
+  const q = new URLSearchParams({ tu: f.tu.value, den: f.den.value });
+  for (const k of ["kenh", "account_id", "nhan_vien", "ho_so"]) {
+    if (f[k].value) q.set(k, f[k].value);
+  }
+  return q.toString();
+}
+
+async function _ptBoLoc(f) {
+  if (state.ptBoLoc) return;
+  const b = await api("/phan-tich/bo-loc");
+  const tat = '<option value="">Tất cả</option>';
+  ganLuaChon(f.kenh, tat + b.kenh.map((k) =>
+    `<option value="${esc(k)}">${esc(NEN_TANG_LABEL[String(k).toLowerCase()] || KENH_TEN[k] || k)}</option>`).join(""));
+  ganLuaChon(f.account_id, tat + b.tai_khoan.map((t) =>
+    `<option value="${esc(t.id)}">${esc(t.ten)} (${esc(t.kenh)})</option>`).join(""));
+  ganLuaChon(f.nhan_vien, tat + b.nhan_vien.map((n) =>
+    `<option value="${esc(n.id)}">${esc(n.ten)}${n.khoa ? " (đã khoá)" : ""}</option>`).join(""));
+  ganLuaChon(f.ho_so, tat + b.ho_so.map((h) =>
+    `<option value="${esc(h.id)}">${esc(h.ten)}${h.bat === false ? " (đang tắt)" : ""}</option>`).join(""));
+  state.ptBoLoc = true;
+}
+
+function _ptTiLe(x) { return x == null ? "—" : pct(x); }
+
+async function loadPhanTich() {
+  const f = $("#ptForm");
+  if (!f) return;
+  if (!f.tu.value) {
+    const nay = new Date();
+    f.den.value = _ngayVN(nay);
+    f.tu.value = _ngayVN(new Date(nay.getTime() - 6 * 86400000));
+  }
+  state.ptDaTai = true;
+  $("#ptExcel").href = `/api/bao-cao/nhan-vien.xlsx?tu=${f.tu.value}&den=${f.den.value}`;
+  let d;
+  try {
+    await _ptBoLoc(f);
+    d = await api(`/phan-tich?${_ptQuery(f)}`);
+  } catch (e) { toast(e.message, true); return; }
+
+  const h = d.hoi_thoai, k = d.khach, s = d.sla;
+  const phDau = s.phan_hoi_dau;
+  /* ---- Hiệu quả chăm sóc khách hàng ---- */
+  $("#ptCskh").innerHTML = [
+    cell("Hội thoại có hoạt động", h.hoat_dong, `${h.moi} mới`, null, "auto"),
+    cell("Tỷ lệ xử lý", _ptTiLe(h.ty_le_xu_ly), `${h.hoi_thoai_giai_quyet} được giải quyết`,
+         h.ty_le_xu_ly, "auto"),
+    cell("Phản hồi đầu (trung vị)", _giay(phDau.tat_ca.trung_vi_giay), `${phDau.tat_ca.so} lượt · AI và nhân viên`, null, "plain"),
+    cell("Thời gian giải quyết (trung vị)", _giay(s.thoi_gian_giai_quyet.trung_vi_giay),
+         `${s.thoi_gian_giai_quyet.so} lượt`, null, "plain"),
+    cell("Mở lại", h.mo_lai, "lượt", h.giai_quyet ? h.mo_lai / h.giai_quyet : null, "assist"),
+    cell("Khách có nhắn", k.tong, `${k.moi} mới · ${k.quay_lai} quay lại`, null, "auto"),
+    cell("Đang mở (bây giờ)", h.dang_mo, "hội thoại", null, "plain"),
+  ].join("");
+
+  /* ---- Hiệu quả AI Agent ---- */
+  const at = d.ai_tong;
+  $("#ptAiTong").innerHTML = [
+    cell("Hội thoại AI xử lý", at.hoi_thoai, `${at.tu_giai_quyet} tự giải quyết`, null, "auto"),
+    cell("Tỷ lệ chuyển giao nhân viên", _ptTiLe(at.ty_le_chuyen_giao), `${at.can_nguoi} cần người`,
+         at.ty_le_chuyen_giao, "assist"),
+    cell("Hiệu quả tự động hoá", _ptTiLe(at.tu_dong_hoa), "AI tự giải quyết / có hoạt động",
+         at.tu_dong_hoa, "auto"),
+    cell("Chi phí AI trong khoảng", usd(at.chi_phi_usd), "tổng", null, "spend"),
+  ].join("");
+  /* KHÔNG hiện "độ tin cậy": model tự chấm con số ấy, hiện thành phần trăm
+     là mời người đọc tin nó như xác suất đúng. Báo tỉ lệ có / không căn cứ. */
+  $("#ptAi").innerHTML = `<thead><tr><th>Hồ sơ</th><th>Hội thoại</th><th>Tự giải quyết</th>
+    <th>Cần người</th><th>Chưa kết cục</th><th>Thành công</th><th>Chuyển giao</th>
+    <th>AI tự chuyển</th><th>Có căn cứ</th><th>Không căn cứ</th><th>Chi phí</th></tr></thead><tbody>${
+    d.ai.length ? d.ai.map((a) => `<tr><td>${esc(a.ten)}</td><td>${a.hoi_thoai}</td>
+      <td>${a.tu_giai_quyet}</td><td>${a.can_nguoi}</td><td>${a.dang_do}</td>
+      <td>${_ptTiLe(a.ty_le_thanh_cong)}</td><td>${_ptTiLe(a.ty_le_can_nguoi)}</td>
+      <td>${a.ai_tu_chuyen}</td><td>${_ptTiLe(a.ty_le_co_can_cu)}</td>
+      <td class="${a.ty_le_khong_can_cu ? "so--xau" : ""}">${_ptTiLe(a.ty_le_khong_can_cu)}</td>
+      <td>${usd(a.chi_phi_usd)}</td></tr>`).join("")
+    : '<tr><td colspan="11" class="empty">Không có tin AI nào trong khoảng này.</td></tr>'}</tbody>`;
+
+  /* ---- Hiệu suất nhân viên ---- */
+  $("#ptNhanVien").innerHTML = `<thead><tr>
+    <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
+    <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
+    <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${d.nhan_vien.length
+    ? d.nhan_vien.map((n) => `<tr>
+      <td>${esc(n.ho_ten)}</td><td>${n.hoi_thoai}</td><td>${n.tin_gui}</td>
+      <td>${_giay(n.phan_hoi_trung_vi_giay)}</td><td>${_giay(n.phan_hoi_p90_giay)}</td>
+      <td class="${n.chua_phan_hoi ? "so--xau" : ""}">${n.chua_phan_hoi}</td>
+      <td>${n.don}</td><td class="${n.tre_sla ? "so--xau" : ""}">${n.tre_sla}</td>
+      <td>${n.csat_so ? `${n.csat_tb} <span class="msg__meta">(${n.csat_so})</span>` : "—"}</td></tr>`).join("")
+    : '<tr><td colspan="9" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
+
+  /* ---- Chỉ số SLA ---- */
+  $("#ptSlaNote").textContent = "tỷ lệ đáp ứng tính trên mục tiêu có hạn · thời gian đo "
+    + (d.theo_gio_lam_viec ? "theo giờ làm việc" : "24/7") + " · \"quá hạn\" là ảnh chụp bây giờ";
+  $("#ptSla").innerHTML = [
+    cell("Đáp ứng phản hồi đầu", _ptTiLe(s.ty_le_dung_han_dau), `${s.dau_dat} đạt · ${s.dau_tre} trễ`,
+         s.ty_le_dung_han_dau, s.ty_le_dung_han_dau != null && s.ty_le_dung_han_dau < 0.9 ? "halt" : "auto"),
+    cell("Đáp ứng giải quyết", _ptTiLe(s.ty_le_dung_han_xong), `${s.xong_dat} đạt · ${s.xong_tre} trễ`,
+         s.ty_le_dung_han_xong, s.ty_le_dung_han_xong != null && s.ty_le_dung_han_xong < 0.9 ? "halt" : "auto"),
+    cell("Số vi phạm", s.vi_pham, `${s.dau_canh_bao + s.xong_canh_bao} cảnh báo sớm`, null,
+         s.vi_pham ? "halt" : "auto"),
+    cell("Đang quá hạn (bây giờ)", s.qua_han,
+         `${s.qua_han_dau} chưa phản hồi · ${s.qua_han_xong} chưa xong`, null, s.qua_han ? "halt" : "auto"),
+  ].join("");
+
+  const dongTg = (ten, r, them = "") => `<tr><td>${esc(ten)}</td><td>${r.so}</td><td>${_giay(r.tb_giay)}</td>
+    <td>${_giay(r.trung_vi_giay)}</td><td>${r.ty_le_dung_han !== undefined ? _ptTiLe(r.ty_le_dung_han) : "—"}</td>
+    <td>${them}</td></tr>`;
+  const cg = s.phan_hoi_sau_chuyen_giao;
+  $("#ptThoiGian").innerHTML = `<thead><tr><th>Thước đo</th><th>Số lượt</th><th>Trung bình</th>
+    <th>Trung vị</th><th>Đúng hạn</th><th>Ghi chú</th></tr></thead><tbody>
+    ${dongTg("Phản hồi đầu — AI", phDau.theo_vai.agent, `${phDau.theo_vai.agent.tre_han} trễ`)}
+    ${phDau.ho_so.map((r) => dongTg("   AI · " + r.ten, r, `${r.tre_han} trễ`)).join("")}
+    ${dongTg("Phản hồi đầu — nhân viên", phDau.theo_vai.staff, `${phDau.theo_vai.staff.tre_han} trễ`)}
+    ${phDau.nhan_vien.map((r) => dongTg("   " + r.ten, r, `${r.tre_han} trễ`)).join("")}
+    ${phDau.theo_vai.khong_ro.so ? dongTg("Phản hồi đầu — không rõ (trước 20.11.2026)", phDau.theo_vai.khong_ro) : ""}
+    ${dongTg("Phản hồi sau chuyển giao", cg, cg.chua_phan_hoi ? `${cg.chua_phan_hoi} chưa ai nhắn` : "")}
+    ${cg.nhan_vien.map((r) => dongTg("   " + r.ten, r)).join("")}
+    ${dongTg("Thời gian giải quyết", s.thoi_gian_giai_quyet)}
+    </tbody>`;
+
+  $("#ptNgay").innerHTML = `<thead><tr><th>Ngày</th><th>Mới</th><th>Giải quyết</th>
+    <th>Có AI</th><th>Chuyển giao</th><th>Đáp ứng phản hồi đầu</th><th>Vi phạm SLA</th>
+    <th>Chi phí AI</th></tr></thead><tbody>${
+    d.theo_ngay.map((r) => `<tr><td>${esc(r.ngay)}</td><td>${r.moi}</td><td>${r.giai_quyet}</td>
+      <td>${r.ai}</td><td>${_ptTiLe(r.ty_le_can_nguoi)}</td><td>${_ptTiLe(r.ty_le_dung_han_dau)}</td>
+      <td class="${r.vi_pham ? "so--xau" : ""}">${r.vi_pham}</td><td>${usd(r.chi_phi_ai_usd)}</td></tr>`).join("")}</tbody>`;
+
+  /* ---- Tin nhắn ---- */
+  $("#ptTin").innerHTML = `<thead><tr><th>Nền tảng</th><th>Vai</th><th>Nhận</th>
+    <th>Đã gửi</th><th>Gửi lỗi</th><th>Chưa gửi</th></tr></thead><tbody>${d.tin_nhan.length
+    ? d.tin_nhan.map((t) => `<tr><td>${esc(NEN_TANG_LABEL[String(t.kenh || "").toLowerCase()] || KENH_TEN[t.kenh] || t.kenh)}</td>
+      <td>${esc(VAI_NHAN[t.vai] || t.vai)}</td><td>${t.nhan}</td><td>${t.gui}</td>
+      <td class="${t.loi ? "so--xau" : ""}">${t.loi}</td><td>${t.chua_gui}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="empty">Không có tin nào trong khoảng này.</td></tr>'}</tbody>`;
+}
+
+$("#ptForm")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  loadPhanTich();
+});
+
+/* ---------------- Đổi ưu tiên hội thoại ----------------
+ *
+ * Nút "Đổi" nằm cạnh mức ưu tiên ở thanh trạng thái hội thoại. Luật hạn SLA
+ * (chỉ rút ngắn, không kéo dài) ở agent/api/uu_tien.py — hộp thoại nói luật
+ * ấy ra để người bấm không tưởng hạ ưu tiên là được thêm giờ. */
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-doi-uu-tien]");
+  if (!b) return;
+  const cid = b.dataset.doiUuTien;
+  const d = await hoiHop({
+    tieu_de: "Đổi mức ưu tiên",
+    phu: "Nâng ưu tiên rút hạn SLA đang chạy (tính từ bây giờ, không trễ hơn hạn cũ). "
+       + "Hạ ưu tiên KHÔNG kéo dài hạn của lượt này — mức mới áp dụng khi hội thoại mở lại.",
+    truong: [
+      { name: "uu_tien", label: "Mức mới", type: "select", value: b.dataset.uuTien,
+        options: Object.entries(UU_TIEN_NHAN).map(([value, label]) => ({ value, label })) },
+      { name: "ly_do", label: "Lý do", type: "textarea", required: true, maxlength: 500,
+        placeholder: "vd khách khiếu nại, khách sỉ cần gấp…" },
+    ],
+    nut: "Đổi",
+  });
+  if (!d) return;
+  try {
+    const r = await api(`/conversations/${cid}/uu-tien`, {
+      method: "PUT",
+      body: JSON.stringify({ uu_tien: d.uu_tien, ly_do: d.ly_do,
+                             version: b.dataset.version ? Number(b.dataset.version) : null }),
+    });
+    const rut = r.han_dau_moi !== r.han_dau_cu || r.han_xong_moi !== r.han_xong_cu;
+    toast(`Đã đổi sang mức ${UU_TIEN_NHAN[r.uu_tien]}.${rut ? " Hạn SLA đã được rút ngắn." : " Hạn SLA của lượt này giữ nguyên."}`);
+    if (state.openConv === cid) await loadThread(cid);
+  } catch (e) { toast(e.message, true); }
+});
 /* ---------------- Trách nhiệm trong hội thoại ----------------
  *
  * Mọi việc trong một hội thoại phải quy được về người (hoặc AI) đã làm nó

@@ -105,6 +105,33 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
         since, xem_het, nguoi_id,
     ) or {}
 
+    # AI TỰ LO — đếm theo SỰ KIỆN, không theo `status` lúc này.
+    #
+    # Bản cũ: containment = hội thoại `status = 'auto'` / tổng. Duyệt một bản
+    # nháp AI lật `assist` → `auto` (outbox.py), nên hội thoại người phải đọc
+    # và bấm duyệt từng câu cũng thành "Agent tự xử lý" — con số tô hồng đúng
+    # thứ nó sinh ra để đo (rà soát 20.11.2026). Giờ: trong số hội thoại có
+    # tin AI trong 24 giờ, bao nhiêu KHÔNG có người can thiệp trong 24 giờ ấy
+    # (chuyển người, tiếp quản, nhân viên gửi tin, duyệt nháp) — cùng định
+    # nghĩa với màn Phân tích (agent/api/phan_tich.py).
+    from .phan_tich import co_nguoi_can_thiep
+
+    ai = await db.fetchrow(
+        f"""
+        WITH ai AS (
+            SELECT DISTINCT m.conversation_id
+            FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            WHERE m.role = 'agent' AND m.created_at >= $1 AND c.channel <> 'phong_thu'
+              AND {pham_vi % (2, 3)}
+        )
+        SELECT count(*) AS ai,
+               count(*) FILTER (WHERE NOT {co_nguoi_can_thiep(
+                   'ai.conversation_id', '$1', "'infinity'::timestamptz")}) AS tu_lo
+        FROM ai
+        """,
+        since, xem_het, nguoi_id,
+    ) or {}
+
     # Băng ca trực — signature của dashboard.
     tape = await db.fetch(
         f"""
@@ -167,6 +194,8 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
 
     total = int(conv.get("total") or 0)
     handled = int(conv.get("handled") or 0)
+    co_ai = int(ai.get("ai") or 0)
+    ai_tu_lo = int(ai.get("tu_lo") or 0)
     replies = int(msg.get("replies") or 0)
     grounded = int(msg.get("grounded") or 0)
 
@@ -176,7 +205,12 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
             "handled": handled,
             "escalated": int(conv.get("escalated") or 0),
             "waiting": int(conv.get("waiting") or 0),
-            "containment": round(handled / total, 4) if total else None,
+            # `handled` giữ cho khách cũ của API, nhưng KHÔNG còn là tử số
+            # của `containment`: nó là ảnh chụp `status = 'auto'`, gồm cả
+            # hội thoại người đã duyệt từng câu. Xem khối "AI TỰ LO" ở trên.
+            "ai": co_ai,
+            "ai_tu_lo": ai_tu_lo,
+            "containment": round(ai_tu_lo / co_ai, 4) if co_ai else None,
         },
         "quality": {
             "replies": replies,

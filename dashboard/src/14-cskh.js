@@ -247,43 +247,8 @@ function _giay(g) {
   return `${(g / 3600).toFixed(1)} giờ`;
 }
 
-async function loadBaoCaoNhanVien() {
-  const f = $("#bcnvForm");
-  if (!f) return;
-  if (!f.tu.value) {
-    const nay = new Date();
-    f.den.value = _ngayVN(nay);
-    f.tu.value = _ngayVN(new Date(nay.getTime() - 6 * 86400000));
-  }
-  const qs = `tu=${f.tu.value}&den=${f.den.value}`;
-  $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?${qs}`;
-  state.bcnvDaTai = true;
-  try {
-    const r = await api(`/bao-cao/nhan-vien?${qs}`);
-    const ds = r.nhan_vien || [];
-    $("#bcnvBang").innerHTML = `<thead><tr>
-      <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
-      <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
-      <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${ds.length ? ds.map((d) => `<tr>
-      <td>${esc(d.ho_ten)}</td><td>${d.hoi_thoai}</td><td>${d.tin_gui}</td>
-      <td>${_giay(d.phan_hoi_trung_vi_giay)}</td><td>${_giay(d.phan_hoi_p90_giay)}</td>
-      <td class="${d.chua_phan_hoi ? "so--xau" : ""}">${d.chua_phan_hoi}</td>
-      <td>${d.don}</td><td class="${d.tre_sla ? "so--xau" : ""}">${d.tre_sla}</td>
-      <td>${d.csat_so ? `${d.csat_tb} <span class="msg__meta">(${d.csat_so})</span>` : "—"}</td></tr>`).join("")
-      : '<tr><td colspan="9" class="empty">Chưa có nhân viên nào.</td></tr>'}</tbody>`;
-  } catch (e) { toast(e.message, true); }
-}
-
-$("#bcnvForm")?.addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  loadBaoCaoNhanVien();
-});
-$("#bcnvForm")?.addEventListener("change", () => {
-  const f = $("#bcnvForm");
-  if (f.tu.value && f.den.value) {
-    $("#bcnvExcel").href = `/api/bao-cao/nhan-vien.xlsx?tu=${f.tu.value}&den=${f.den.value}`;
-  }
-});
+/* Bảng hiệu suất nhân viên giờ dựng ở màn Phân tích (19-phan-tich.js),
+   thu hẹp theo bộ lọc chung; hai hàm trên là tiện ích dùng chung. */
 
 /* ---------------- VietQR ---------------- */
 /* Ủy quyền một trình nghe ở document: danh sách đơn dựng lại mỗi lần làm

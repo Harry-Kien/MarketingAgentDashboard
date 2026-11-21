@@ -205,7 +205,8 @@ async function loadThread(id) {
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
      * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
     const nguoiGui = nhom && m.role === "customer" ? (m.sender_name || "Thành viên nhóm") : "";
-    const who = tenTacGia(m, nguoiGui);
+    const who = tenTacGia(m, nguoiGui)
+      || { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
     const meta = [
       gioTin(m.created_at), who, m.delivery_status || "",
       m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",

@@ -1043,7 +1043,8 @@ async function loadThread(id) {
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
      * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
     const nguoiGui = nhom && m.role === "customer" ? (m.sender_name || "Thành viên nhóm") : "";
-    const who = tenTacGia(m, nguoiGui);
+    const who = tenTacGia(m, nguoiGui)
+      || { customer: "Khách", agent: "AI", staff: "Nhân viên", system: "Hệ thống" }[m.role] || m.role;
     const meta = [
       gioTin(m.created_at), who, m.delivery_status || "",
       m.confidence != null ? "tin cậy " + m.confidence.toFixed(2) : "",
@@ -8179,13 +8180,15 @@ function gioTin(iso) {
 }
 
 /* Tên người viết tin. Nhân viên KHÔNG tên là thông tin vô dụng khi có hai
- * người trực cùng ca; AI thì kèm hồ sơ agent khi kênh có hồ sơ riêng. */
+ * người trực cùng ca; AI thì kèm hồ sơ agent khi kênh có hồ sơ riêng.
+ * Trả "" khi không có gì cụ thể hơn — nhãn chung theo vai nằm ở chỗ gọi
+ * (`03-hoi-thoai.js`), một bảng duy nhất cho cả bốn vai. */
 function tenTacGia(m, nguoiGuiNhom) {
   const tg = m.tac_gia || {};
   if (nguoiGuiNhom) return nguoiGuiNhom;
-  if (m.role === "staff") return tg.ten ? `Nhân viên ${tg.ten}` : "Nhân viên";
-  if (m.role === "agent") return tg.ten && tg.ten !== "Mặc định" ? `AI · ${tg.ten}` : "AI";
-  return { customer: "Khách", system: "Hệ thống" }[m.role] || m.role;
+  if (m.role === "staff" && tg.ten) return `Nhân viên ${tg.ten}`;
+  if (m.role === "agent" && tg.ten && tg.ten !== "Mặc định") return `AI · ${tg.ten}`;
+  return "";
 }
 
 /* "Sửa bởi X", "Duyệt bởi Y lúc …" — hai việc của người trên một câu AI. */
@@ -8419,13 +8422,17 @@ async function napBoLocHopThu() {
   $("#loc-giu").value = state.convLoc.giu;
 }
 
-["loc-kenh", "loc-giu", "loc-loai"].forEach((ma) => {
-  $("#" + ma)?.addEventListener("change", (ev) => {
-    const khoa = { "loc-kenh": "kenh", "loc-giu": "giu", "loc-loai": "loai" }[ma];
+/* Gắn TỪNG ô bằng id viết đủ: `tests/test_nut_chet.py` tìm "#loc-…" trong
+ * app.js để biết ô có người nghe — ghép chuỗi id là ô trông như nút chết. */
+function ganLoc(o, khoa) {
+  o?.addEventListener("change", (ev) => {
     state.convLoc[khoa] = ev.target.value;
     loadConversations();
   });
-});
+}
+ganLoc($("#loc-kenh"), "kenh");
+ganLoc($("#loc-giu"), "giu");
+ganLoc($("#loc-loai"), "loai");
 
 $("#loc-sla")?.addEventListener("click", (ev) => {
   state.convLoc.sla = !state.convLoc.sla;

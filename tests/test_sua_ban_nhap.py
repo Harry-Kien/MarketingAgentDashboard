@@ -236,9 +236,12 @@ def test_duyet_khong_kem_noi_dung_giu_nguyen_hanh_vi_cu(monkeypatch):
     chay(routes._queue_approved_draft(uuid.uuid4()))
 
     assert _Outbound.da_gui == ["Bản AI viết."]
-    assert not [s for s in gia.sql if "UPDATE messages" in s[0]], (
-        "không sửa thì không được đụng vào dòng messages"
+    # Không sửa thì không đụng NỘI DUNG — chỉ được ghi người duyệt (migration 0052).
+    sua = [s[0] for s in gia.sql if "UPDATE messages" in s[0]]
+    assert not [s for s in sua if "content" in s or "noi_dung_goc" in s], (
+        "không sửa thì không được đụng vào nội dung tin"
     )
+    assert any("duyet_boi" in s for s in sua), "duyệt phải ghi người duyệt"
 
 
 def test_noi_dung_sai_thi_KHONG_ghi_gi_va_KHONG_gui(monkeypatch):

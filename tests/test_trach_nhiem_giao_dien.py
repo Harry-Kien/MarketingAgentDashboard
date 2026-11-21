@@ -23,7 +23,7 @@ def test_tin_hien_ten_nguoi_gio_day_du_va_chip_sua_duyet():
     assert "gioTin(m.created_at)" in HOI_THOAI and "hhmm(m.created_at)" not in HOI_THOAI
     assert "chipTrachNhiem(m)" in HOI_THOAI
     assert "Duyệt bởi" in TRACH_NHIEM and "Sửa bởi" in TRACH_NHIEM
-    assert "tg.ten ? `Nhân viên ${tg.ten}`" in TRACH_NHIEM
+    assert 'm.role === "staff" && tg.ten) return `Nhân viên ${tg.ten}`' in TRACH_NHIEM
 
 
 def test_nut_vi_sao_ve_du_dau_vet():

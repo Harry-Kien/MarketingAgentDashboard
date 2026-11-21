@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-19 07:12 UTC trên commit `c4a2f0f`. **18/18 kịch bản đạt.**
+Chạy lúc 2026-11-21 17:47 UTC trên commit `43e0a86`. **19/19 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -26,6 +26,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 16 | "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã | đạt |
 | 17 | Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM) | đạt |
 | 18 | Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025) | đạt |
+| 19 | Đổi ưu tiên hội thoại và xem màn Phân tích | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -207,3 +208,13 @@ Kết quả: **đạt** · `test_18_dia_chi_mau_thuan_khong_len_don`
 1. Công cụ lên đơn nhận "Phường Ba Đình, TP Hồ Chí Minh" → không lên đơn, bảo hỏi lại khách.
 2. Không đơn nào được ghi vào CSDL.
 3. Địa chỉ cũ ba cấp ("Phường Bến Nghé, Quận 1, TP HCM") không bị chặn vì lý do địa chỉ.
+
+## 19. Đổi ưu tiên hội thoại và xem màn Phân tích
+
+Kết quả: **đạt** · `test_19_doi_uu_tien_rut_han_sla_va_man_phan_tich`
+
+1. Quản trị đặt SLA mức thường (60/1440 phút) và gấp (5/30 phút); khách web nhắn → hội thoại có hạn.
+2. Nhân viên KHÔNG thuộc kênh đổi ưu tiên → 404, không lộ hội thoại tồn tại.
+3. Quản trị nâng lên "gấp" kèm lý do → hạn phản hồi đầu rút còn tối đa 5 phút từ bây giờ.
+4. Hạ về "thấp" → hạn KHÔNG kéo dài lại; cả hai lần đổi nằm trong nhật ký kiểm toán.
+5. Màn Phân tích: quản trị thấy 1 hội thoại mới, 1 khách mới; nhân viên ngoài kênh thấy 0.

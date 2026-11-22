@@ -267,7 +267,7 @@ def _quet_dinh_tuyen(app) -> dict:
     return _sql(app, quet)
 
 
-def test_hoi_thoai_chuyen_nguoi_chua_ai_giu_duoc_tu_giao_kem_cong_viec(app_that):
+def test_hoi_thoai_chuyen_nguoi_chua_ai_giu_duoc_tu_giao_va_bao_chuong(app_that):
     qt, tk, ids, nv = _hai_nhan_vien_va_quan_ly(app_that)
     nhom = _mot(app_that, "INSERT INTO teams (name) VALUES ('Trực') RETURNING id")["id"]
     _mot(app_that, "INSERT INTO team_members (team_id, user_id) VALUES ($1, $2::uuid) "
@@ -292,9 +292,12 @@ def test_hoi_thoai_chuyen_nguoi_chua_ai_giu_duoc_tu_giao_kem_cong_viec(app_that)
                         "WHERE id = $1::uuid", cho)
     assert str(hk["assigned_to"]) == ids["lan"] and hk["assigned_team_id"] == nhom
     assert hk["mode"] == "human", "giao người không được bật lại AI"
-    viec = _mot(app_that, "SELECT nguoi_nhan FROM cong_viec WHERE conversation_id = $1::uuid "
-                          "AND nguon = 'agent'", cho)
-    assert viec and str(viec["nguoi_nhan"]) == ids["lan"]
+    # Phiếu việc chủ dự án mục 14.2: AI chuyển giao KHÔNG sinh công việc —
+    # người được giao nhận chuông "được giao hội thoại" thay vì một việc trùng.
+    assert _mot(app_that, "SELECT count(*) n FROM cong_viec WHERE conversation_id = $1::uuid "
+                          "AND nguon = 'agent'", cho)["n"] == 0
+    assert _mot(app_that, "SELECT count(*) n FROM thong_bao WHERE nguoi_nhan_id = $1::uuid "
+                          "AND conversation_id = $2::uuid", ids["lan"], cho)["n"] >= 1
     assert _mot(app_that, "SELECT assigned_to FROM conversations WHERE id = $1::uuid",
                 co_nguoi)["assigned_to"] is None, "đã có nhân viên trả lời thì không giao lại"
     ls = qt.get(f"/api/inbox/conversations/{cho}/lich-su-phan-cong").json()["items"]

@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "dashboard" / "src"
 HOI_THOAI = (SRC / "03-hoi-thoai.js").read_text(encoding="utf-8")
 TRACH_NHIEM = (SRC / "19-trach-nhiem.js").read_text(encoding="utf-8")
+# Thanh thông tin + luật nút xử lý (mục 6) — tách khỏi 03 vì trần 1000 dòng.
+THANH = (SRC / "03b-thanh-hoi-thoai.js").read_text(encoding="utf-8")
 HTML = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
 
 
@@ -34,7 +36,7 @@ def test_mot_dong_meta_thoi_gian_nguoi_gui_trang_thai():
 
 
 def test_khong_hien_ky_thuat_mac_dinh_va_khong_phan_tram_tin_cay():
-    khoi_tin = HOI_THOAI[HOI_THOAI.index("const msgs = c.messages.map"):HOI_THOAI.index("const taken =")]
+    khoi_tin = HOI_THOAI[HOI_THOAI.index("const msgs = xenGhiChu("):HOI_THOAI.index("const nguoiGiu =")]
     for cam in ("m.confidence", "usd(m.cost", "m.latency_ms", "có nguồn tham chiếu"):
         assert cam not in khoi_tin, f"thông tin kỹ thuật lộ ra dòng meta: {cam}"
     for tep in SRC.glob("*.js"):
@@ -55,15 +57,17 @@ def test_xem_can_cu_tren_ban_nhap_va_chi_tiet_tung_tin():
 
 
 def test_lich_su_ban_giao_trong_panel_chi_tiet_va_giao_cho_nguoi_khac():
-    assert 'id="btn-chitiet-ht"' in HOI_THOAI and "veChiTietHoiThoai(c, laCuaToi)" in HOI_THOAI
+    assert 'id="btn-chitiet-ht"' in THANH and "veChiTietHoiThoai(c, laCuaToi)" in HOI_THOAI
     assert "/lich-su-phan-cong" in TRACH_NHIEM and "/nguoi-nhan-duoc" in TRACH_NHIEM
     # Chỉ tải khi panel mở.
     than = TRACH_NHIEM[TRACH_NHIEM.index("function veChiTietHoiThoai"):]
     assert than.index("state.moChiTietHT !== id) return") < than.index("taiLichSuPhanCong(c)")
     # Người đang giữ có TÊN.
-    assert "c.assigned_to_ten || \"Đồng nghiệp\"" in HOI_THOAI
+    assert "c.assigned_to_ten || \"Đồng nghiệp\"" in THANH
     # Nút giao chỉ hiện khi máy chủ nói giao được — không bày nút chỉ để nhận 403.
-    assert re.search(r"giaoDuoc && c\.state !== \"resolved\" \? `<button[^`]*id=\"btn-giao\"", HOI_THOAI)
+    # Bảng trạng thái × quyền chạy thật ở test_thanh_thong_tin_hoi_thoai.py.
+    assert THANH.count("if (ng.giaoDuoc) ds.push(HANH_DONG_HT.giao)") == 3
+    assert "giaoDuoc: !!giaoDuoc" in HOI_THOAI
     assert "co_the_giao_khac" in TRACH_NHIEM
     assert "assignee_id: d.assignee_id, team_id: d.team_id || null" in TRACH_NHIEM
 

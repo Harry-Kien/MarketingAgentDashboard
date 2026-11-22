@@ -343,6 +343,10 @@ class PostgresInboxQueryRepository:
                    conversation.msg_count, conversation.updated_at,
                    latest.content AS last_message,
                    latest.delivery_status AS last_delivery_status,
+                   -- Trong NHÓM, "tin cuối" không kèm ai nói là vô nghĩa:
+                   -- danh sách hiện "Lan: còn size M không" (mục 9.5).
+                   latest.role AS last_role,
+                   latest.sender_name AS last_sender_name,
                    -- `nhan`: mảng TÊN, giữ cho mã cũ. `nhan_chi_tiet`: id,
                    -- màu, đang dùng — thứ chip trên màn hình cần.
                    ARRAY(
@@ -368,7 +372,7 @@ class PostgresInboxQueryRepository:
               ON read_state.conversation_id = conversation.id
              AND read_state.user_id = $1
             LEFT JOIN LATERAL (
-                SELECT content, delivery_status
+                SELECT content, delivery_status, role, sender_name
                 FROM messages
                 WHERE conversation_id = conversation.id
                 ORDER BY created_at DESC, id DESC

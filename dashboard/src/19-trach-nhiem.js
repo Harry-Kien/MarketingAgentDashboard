@@ -177,8 +177,21 @@ function veChiTietHoiThoai(c, laCuaToi) {
   else if (!c.assigned_to) giu = "Chưa ai nhận";
   else giu = `${esc(laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp"))}${
     c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}`;
+  /* Ưu tiên, chế độ AI, Version, trạng thái, kênh — dời từ thanh thông tin
+   * xuống đây (mục 6.1, 6.2, 6.7, 6.8): cần khi tra cứu, không cần mỗi lần
+   * đọc hội thoại. SLA KHÔNG có ở đây (mục 15.7) — cảnh báo SLA đi qua
+   * chuông. "Đổi" ưu tiên đòi `hoi_thoai.nhan` như máy chủ (uu_tien.py). */
+  const doiUuTien = state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan") && c.state !== "resolved"
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
+        data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
+  const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
   return `<section class="lichsu" aria-label="Chi tiết hội thoại">
     ${dongCT("Người đang giữ", giu)}
+    ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+    ${dongCT("Chế độ AI", esc(cheDo))}
+    <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+    ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+    ${dongCT("Version", esc(c.version || 1))}
     <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
   </section>`;
 }
@@ -257,7 +270,10 @@ document.addEventListener("click", (ev) => {
     loadThread(state.openConv);
     return;
   }
-  if (ev.target.closest("#btn-giao") && state.convDangMo) giaoHoiThoai(state.convDangMo);
+  if (ev.target.closest("#btn-giao") && state.convDangMo) {
+    state.moHanhDong = null;   // nút nằm trong menu "⋯" — đóng nó lại
+    giaoHoiThoai(state.convDangMo);
+  }
 });
 
 /* ---------------- Bộ lọc hộp thư ----------------

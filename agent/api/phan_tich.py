@@ -117,6 +117,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agent import db
 from agent.config import settings
+from agent.core.lien_he_nhom import sql_khong_phai_nhom
 from agent.omnichannel.sla import thoi_gian_sla_da_tieu_thu
 
 from .bao_cao_nhan_vien import MUI_GIO, _khoang, dong_hieu_suat, sql_hieu_suat
@@ -296,7 +297,8 @@ SELECT count(*) AS tong,
        count(*) FILTER (WHERE ct.first_seen >= k.tu) AS moi,
        count(*) FILTER (WHERE ct.first_seen < k.tu) AS quay_lai
 FROM kh JOIN contacts ct ON ct.id = kh.contact_id, khoang k
-"""
+-- Nhóm Zalo không phải "khách mới" hay "khách quay lại" (mục 9.7).
+WHERE """ + sql_khong_phai_nhom("ct") + "\n"
 
 _SQL_AI = _DAU + f""",
 tin_ai AS (

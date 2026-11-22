@@ -288,10 +288,13 @@ def test_dashboard_gan_nhan_nhom_va_ten_nguoi_gui():
     assert "Number(c && c.thread_type) === 1" in src
     # Nhãn ở CẢ danh sách lẫn đầu khung chi tiết.
     assert "${nhomBadge(c)}${srcBadge(c.channel" in src
-    assert '<span class="convo__name">${esc(c.customer_name || "Khách")}</span>\n      ${nhomBadge(c)}' in src
+    thanh = (ROOT / "dashboard/src/03b-thanh-hoi-thoai.js").read_text(encoding="utf-8")
+    assert ('<span class="convo__name">${esc(c.customer_name || "Khách")}</span>\n'
+            '          ${nhomBadge(c)}') in thanh
     assert "m.sender_name" in src and "msg__nguoi" in src
-    # Không mời "Để agent tự trả lời" trong nhóm.
-    assert "!taken && !nhom" in src
+    # Không mời "Để agent tự trả lời" trong nhóm (bảng đầy đủ chạy bằng node ở
+    # test_thanh_thong_tin_hoi_thoai.py).
+    assert "if (!taken && !laNhom(c))" in thanh
     goi = (ROOT / "dashboard/app.js").read_text(encoding="utf-8")
     assert "function nhomBadge(c)" in goi, "chưa đóng gói lại dashboard"
     assert ".msg__nguoi" in (ROOT / "dashboard/app.css").read_text(encoding="utf-8")

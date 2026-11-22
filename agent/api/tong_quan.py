@@ -172,9 +172,12 @@ async def overview(_quyen: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dict:
     #
     # Dùng đúng mệnh đề của `/api/khach-vo-chu`: hai định nghĩa lệch nhau là
     # con số nói một đằng, danh sách hiện một nẻo.
+    from agent.core.lien_he_nhom import sql_khong_phai_nhom
+
     vo_chu = await db.fetchrow(
         "SELECT count(*) AS n, min(first_seen) AS lau_nhat FROM contacts "
-        "WHERE owner_user_id IS NULL AND status = 'active'"
+        "WHERE owner_user_id IS NULL AND status = 'active' AND "
+        + sql_khong_phai_nhom("contacts")
     ) or {}
 
     # VIỆC QUÁ HẠN — cùng họ với hai ô trên, cũng không cắt theo 24 giờ.

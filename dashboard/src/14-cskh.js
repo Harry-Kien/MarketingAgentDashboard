@@ -191,30 +191,8 @@ $("#convtim")?.addEventListener("input", (ev) => {
   }, 300);
 });
 
-document.addEventListener("click", async (ev) => {
-  const id = state.openConv;
-  if (!id) return;
-  // Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js.
-  if (ev.target.closest("#btn-them-ghichu")) {
-    const d = await hoiHop({
-      tieu_de: "Ghi chú nội bộ",
-      phu: "Chỉ người trong cửa hàng thấy — KHÔNG gửi cho khách. Dùng để bàn giao giữa ca.",
-      truong: [{ name: "noi_dung", label: "Ghi chú", type: "textarea", rows: 4,
-                 required: true, maxlength: 5000 }],
-      nut: "Lưu ghi chú",
-    });
-    if (!d || !d.noi_dung) return;
-    try {
-      await api(`/inbox/conversations/${id}/ghi-chu`, { method: "POST", body: JSON.stringify({ noi_dung: d.noi_dung }) });
-      state.moGhiChu = true;
-      toast("Đã lưu ghi chú.");
-      loadThread(id);
-    } catch (e) { toast(e.message, true); }
-  }
-});
-document.addEventListener("toggle", (ev) => {
-  if (ev.target.classList && ev.target.classList.contains("ghichu")) state.moGhiChu = ev.target.open;
-}, true);
+// Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js. Ghi chú nội bộ
+// là một kiểu soạn trong ô soạn tin — xem 03b-thanh-hoi-thoai.js.
 
 /* ---------------- Hiệu suất nhân viên ---------------- */
 function _ngayVN(d) {
@@ -250,6 +228,7 @@ document.addEventListener("click", async (ev) => {
 /* ---------------- Đã giải quyết ---------------- */
 document.addEventListener("click", async (ev) => {
   if (!ev.target.closest("#btn-giai-quyet") || !state.openConv) return;
+  state.moHanhDong = null;   // nút có thể nằm trong menu "⋯" — đóng nó lại
   try {
     const r = await api(`/inbox/conversations/${state.openConv}/giai-quyet`, { method: "POST" });
     toast(r.da_truoc ? "Hội thoại đã được giải quyết từ trước."

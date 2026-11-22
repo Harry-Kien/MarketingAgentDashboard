@@ -176,3 +176,31 @@ async def giai_quyet_hoi_thoai(
         )
     except giai_quyet.ConversationHasPendingTasksError as exc:
         raise HTTPException(status_code=409, detail=exc.api_detail()) from exc
+
+
+@router.post("/conversations/{conversation_id}/mo-lai")
+async def mo_lai_hoi_thoai(
+    conversation_id: UUID,
+    nguoi: dict = Depends(can_quyen("hoi_thoai.nhan")),
+) -> dict[str, Any]:
+    """
+    Mở lại TAY một hội thoại đã giải quyết.
+
+    Trước bản này chỉ KHÁCH mở lại được (nhắn thêm). Hội thoại đã đóng mà
+    cửa hàng cần nhắn tiếp — báo hàng về, hẹn giao lại — thì người trực
+    không có nút nào: thanh thông tin chỉ hiện chữ "Đã giải quyết". Đi CHUNG
+    đường với khách mở lại (`mo_lai_neu_da_giai_quyet`): cùng luật chu kỳ
+    SLA, cùng sự kiện `conversation.reopened` mà màn Phân tích đếm — hai
+    đường mở lại lệch luật là số "mở lại" nói dối.
+    """
+    from agent.omnichannel import giai_quyet
+
+    await chan_neu_ngoai_kenh(conversation_id, nguoi)
+    if await db.fetchrow("SELECT 1 FROM conversations WHERE id = $1", conversation_id) is None:
+        raise HTTPException(404, "Không thấy hội thoại")
+    da_mo = await giai_quyet.mo_lai_neu_da_giai_quyet(conversation_id)
+    if da_mo:
+        # Ai mở — sự kiện chung `conversation.reopened` không mang người làm.
+        await db.log_event("conversation.mo_lai_tay", ref_id=conversation_id,
+                           actor=_actor(nguoi))
+    return {"da_mo": da_mo}

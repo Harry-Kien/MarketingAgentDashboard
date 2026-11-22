@@ -1211,19 +1211,31 @@ function nhomBadge(c) {
     : "";
 }
 
+/* Ai nói câu cuối trong NHÓM (mục 9.5). "còn size M không" mà không kèm
+ * tên thì người trực không biết thành viên nào đang chờ — trong khi tên
+ * nhóm ở dòng trên là tên CẢ NHÓM. Tin riêng thì không cần: chỉ có khách. */
+function nguoiTinCuoi(c) {
+  if (!laNhom(c) || !c.last_role) return "";
+  if (c.last_role === "customer") return c.last_sender_name || "Thành viên nhóm";
+  return { staff: "Nhân viên", agent: "AI", system: "Hệ thống" }[c.last_role] || "";
+}
+
 function convRow(c, hangDoi) {
   const sig = SIGNAL[c.status] || "plain";
+  const ai = nguoiTinCuoi(c);
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
-    : `<span class="row__sub">${esc(c.last_message || "—")}</span>`;
+    : `<span class="row__sub">${ai ? `<b class="row__ai">${esc(ai)}:</b> ` : ""}${esc(c.last_message || "—")}</span>`;
   const customer = c.customer_name || c.customer || "Khách";
   const unread = Number(c.unread_count || 0);
-  const due = c.first_response_due_at || c.resolution_due_at;
+  /* Hạn SLA KHÔNG hiện thường trực trên dòng (mục 15.7): giờ hạn trên mọi
+   * dòng là con số người ta thôi nhìn sau ngày đầu. Chỉ còn huy hiệu khi
+   * SẮP hoặc ĐÃ quá hạn (`slaBadge`), và chuông báo người trực. */
   return `<button type="button" class="row ${state.openConv === c.id ? "is-on" : ""}" data-conv="${c.id}">
     <span class="row__flag row__flag--${sig}"></span>
     <span class="row__body">
       <span class="row__title">${esc(customer)} ${nhomBadge(c)}${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
-      <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
+      <span class="row__sub">${esc(c.account_name || "")}</span>
       ${sub}
       ${chipNhanDong(c)}
     </span>
@@ -1329,7 +1341,10 @@ async function loadThread(id) {
   catch { $("#convdetail").innerHTML = '<p class="empty">Không tìm thấy hội thoại.</p>'; return; }
 
   const nhom = laNhom(c);
-  const msgs = c.messages.map((m) => {
+  /* Ghi chú nội bộ nằm XEN trong luồng theo thời gian — xem `xenGhiChu`. */
+  const msgs = xenGhiChu(c.messages, ghiChu).map((muc) => {
+    if (muc.loai === "ghichu") return veGhiChuTrongLuong(muc.g);
+    const m = muc.m;
     const draft = m.role === "agent" && m.delivery_status === "draft";
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
      * thoại là tên NHÓM. Lấy tên người gửi của chính tin này. */
@@ -1429,26 +1444,12 @@ async function loadThread(id) {
     </div>`;
   }).join("");
 
-  const taken = c.mode === "human" || c.status === "escalated";
-
-  /* AI giữ hay NGƯỜI giữ — và người nào.
-   *
-   * Trước đây chỉ có một nút lật theo `taken`: hội thoại agent tự chuyển
-   * người (mode human, CHƯA giao cho ai) hiện "Kết thúc tiếp quản". Nhân
-   * viên thường bấm thì 403 (máy chủ chỉ cho người đang giữ hoặc quản lý
-   * release); quản lý bấm thì hội thoại bị trả về AI — đúng ngược ý, vì
-   * agent chuyển người chính là vì nó không xử lý được. Không ai bấm được
-   * "Tôi tiếp quản", nên hội thoại cần người nhất lại là cái kẹt nhất.
-   *
-   * `assigned_to` so với `state.toiId` (nạp từ /toi lúc kiểm phiên). Quản
-   * lý = `hoi_thoai.xem_tat_ca`, cùng cờ máy chủ dùng làm `is_admin`. */
+  /* AI giữ hay NGƯỜI giữ — và người nào. Luật nút (trạng thái × quyền) nằm
+   * ở `hanhDongXuLy` (03b-thanh-hoi-thoai.js), một hàm thuần test chạy thật.
+   * `assigned_to` so với `state.toiId` (nạp từ /toi lúc kiểm phiên). */
   const nguoiGiu = c.mode === "human" ? (c.assigned_to ? String(c.assigned_to) : "") : "";
   const laCuaToi = !!nguoiGiu && nguoiGiu === String(state.toiId || "");
-  const quanLy = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.xem_tat_ca"));
-  const nguoiKhacGiu = !!nguoiGiu && !laCuaToi;
-  const hienNhan = !laCuaToi && !nguoiKhacGiu;
-  const hienTra = c.mode === "human" && (laCuaToi || quanLy);
-  /* "Giao cho…" chỉ hiện khi máy chủ nói người này giao được cho người khác
+  /* "Chuyển nhân viên…" chỉ hiện khi máy chủ nói người này giao được cho người khác
    * (quản trị, hoặc quản lý của KÊNH này). Hỏi MỘT lần mỗi kênh rồi nhớ —
    * không hỏi mỗi 6 giây. */
   state.convDangMo = c;
@@ -1464,13 +1465,8 @@ async function loadThread(id) {
   /* Nhãn và ghi chú nội bộ có quyền riêng từ 0058 (`hoi_thoai.ghi_chu`).
    * Vẽ nút cho người không có quyền là mời một 403 mỗi lần bấm. */
   const ghiChuDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.ghi_chu"));
-  const nutGiu = `
-      ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
-      ${nguoiKhacGiu && !quanLy ? `<span class="tag tag--assist">${esc(c.assigned_to_ten || "Đồng nghiệp")} đang giữ</span>` : ""}
-      ${giaoDuoc && c.state !== "resolved" ? `<button type="button" class="btn btn--sm" id="btn-giao">Giao cho…</button>` : ""}
-      ${hienTra ? `<button type="button" class="btn btn--sm" id="btn-release">Kết thúc tiếp quản</button>` : ""}
-      <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
-        aria-expanded="${state.moChiTietHT === String(c.id) ? "true" : "false"}">Chi tiết</button>`;
+  const ghi = ghiChuDuoc && dangGhiChu(id);
+  const hd = hanhDongXuLy(c, { toiId: state.toiId, quyen: state.toiQuyen, giaoDuoc: !!giaoDuoc });
 
   /* Nhớ những gì NGƯỜI DÙNG đang giữ, TRƯỚC khi đập panel đi dựng lại.
    *
@@ -1500,51 +1496,26 @@ async function loadThread(id) {
     || thread_cu.scrollHeight - thread_cu.scrollTop - thread_cu.clientHeight < 40;
   const cuon_cu = thread_cu ? thread_cu.scrollTop : 0;
 
+  /* Thanh thông tin: Tên | Nhãn | Customer 360 | Hành động | Chi tiết
+   * (03b). Trạng thái, kênh, Mode, ưu tiên, Version, SLA KHÔNG ở đây —
+   * ưu tiên/Version/chế độ AI vào panel "Chi tiết" khi người trực mở. */
   $("#convdetail").innerHTML = `
-    <div class="convo__title">
-      <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
-      ${nhomBadge(c)}
-      <span class="tag tag--${SIGNAL[c.status] || "plain"}">${SIGNAL_LABEL[c.status] || c.status}</span>
-      ${slaBadge(c)}
-      <span class="convo__spacer"></span>
-      ${srcBadge(c.account_channel, c.nen_tang)}<span class="msg__meta">${esc(c.account_name || "")}</span>
-      ${c.contact_id ? `<button type="button" class="btn btn--sm" id="open-contact" data-contact="${c.contact_id}">Customer 360</button>` : ""}
-      ${!taken && !nhom ? `<button type="button" class="btn btn--sm ${c.mode === "auto" ? "" : "btn--go"}" id="btn-chedo"
-        data-chedo="${c.mode === "auto" ? "assist" : "auto"}">
-        ${c.mode === "auto" ? "Duyệt trước khi gửi" : "Để agent tự trả lời"}
-      </button>` : ""}
-      ${c.state !== "resolved" ? `<button type="button" class="btn btn--sm btn--go" id="btn-giai-quyet"
-        title="Đóng vụ việc: SLA giải quyết được tính, khách nhắn tiếp thì tự mở lại">Đã giải quyết</button>`
-        : '<span class="tag tag--auto">Đã giải quyết</span>'}
-      ${nutGiu}
-    </div>
-    <div class="nhanbar">
-      ${nhanHoiThoaiHtml(c)}
-      ${ghiChuDuoc ? `<button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>` : ""}
-    </div>
-    ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>
-      <summary>Ghi chú nội bộ (${ghiChu.length}) — khách không thấy</summary>
-      ${ghiChu.map((g) => `<div class="ghichu__dong"><b>${esc(g.nguoi || "—")}</b>
-        <span class="msg__meta">${clock(g.tao_luc)}</span><p>${esc(g.noi_dung)}</p></div>`).join("")}
-    </details>` : ""}
+    ${veThanhThongTin(c, hd)}
     ${veChiTietHoiThoai(c, laCuaToi)}
-    <div class="opsbar">
-      <span>Mode <b>${esc(c.mode || "auto")}</b></span><span>Ưu tiên <b>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</b>${c.state !== "resolved" ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}" data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : ""}</span>
-      <span>SLA phản hồi <b>${c.first_response_due_at ? clock(c.first_response_due_at) : "chưa áp dụng"}</b></span>
-      ${c.sla_warning ? `<span>Cảnh báo SLA <b>50%${c.first_response_warning_at ? ` (${clock(c.first_response_warning_at)})` : ""}</b></span>` : ""}
-      ${c.sla_breached ? `<span>Trạng thái SLA <b>Quá hạn${c.first_response_breached_at ? ` (${clock(c.first_response_breached_at)})` : ""}</b></span>` : ""}
-      <span>Version <b>${c.version || 1}</b></span>
-    </div>
     <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
       ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
     </div>
-    <form class="convo__bar" id="replyform">
-      <textarea name="text" placeholder="Nhắn trực tiếp cho khách…" required></textarea>
-      <span class="convo__dinhkem">
-        <button type="button" class="btn btn--sm" data-dinhkem title="Gửi ảnh hoặc tài liệu">📎</button>
-        <input type="file" id="tep-dinhkem" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>
-      </span>
-      <button type="submit" class="btn btn--primary">Gửi</button>
+    <form class="convo__bar${ghi ? " convo__bar--ghichu" : ""}" id="replyform">
+      ${veCheDoSoan(id, ghiChuDuoc)}
+      <div class="convo__soan">
+        <textarea name="text" required aria-label="${ghi ? "Ghi chú nội bộ" : "Trả lời khách"}"
+          placeholder="${ghi ? "Ghi chú nội bộ — chỉ nhân viên thấy, KHÔNG gửi cho khách…" : "Nhắn trực tiếp cho khách…"}"></textarea>
+        ${ghi ? "" : `<span class="convo__dinhkem">
+          <button type="button" class="btn btn--sm" data-dinhkem title="Gửi ảnh hoặc tài liệu">📎</button>
+          <input type="file" id="tep-dinhkem" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>
+        </span>`}
+        <button type="submit" class="btn ${ghi ? "btn--ghichu" : "btn--primary"}">${ghi ? "Lưu ghi chú" : "Gửi"}</button>
+      </div>
     </form>`;
 
   const thread = $("#thread");
@@ -1556,10 +1527,11 @@ async function loadThread(id) {
    *
    * Gắn theo TỪNG hội thoại: giữ chung một biến là dán chữ soạn cho khách A
    * sang khung của khách B — tệ hơn mất chữ nhiều, vì nó gửi nhầm nội dung
-   * cho nhầm người.
+   * cho nhầm người. Và theo từng KIỂU SOẠN (`khoaNhap`): ghi chú nội bộ
+   * không bao giờ được nằm sẵn trong khung trả lời khách.
    */
   const o_moi = $('#replyform [name="text"]');
-  const nhap = state.nhapTheoHoiThoai && state.nhapTheoHoiThoai[id];
+  const nhap = state.nhapTheoHoiThoai && state.nhapTheoHoiThoai[khoaNhap(id)];
   if (o_moi && nhap) {
     o_moi.value = nhap;
     if (dang_focus) {
@@ -1568,13 +1540,18 @@ async function loadThread(id) {
       o_moi.setSelectionRange(vt, vt);
     }
   }
+  if (o_moi && state.soanVuaDoi) {
+    // Vừa đổi kiểu soạn: đưa con trỏ về ô, người bấm thẻ là để gõ ngay.
+    state.soanVuaDoi = false;
+    o_moi.focus();
+  }
   if (o_moi) {
     // Gắn TRƯỚC phím Enter-gửi bên dưới: khi khung mẫu đang mở, Enter là
     // "chọn mẫu", và trình nghe này chặn không cho nó tới trình gửi tin.
     ganMauNhanh(o_moi);
     o_moi.addEventListener("input", () => {
       state.nhapTheoHoiThoai = state.nhapTheoHoiThoai || {};
-      state.nhapTheoHoiThoai[id] = o_moi.value;
+      state.nhapTheoHoiThoai[khoaNhap(id)] = o_moi.value;
     });
 
     /* Enter gửi, Shift+Enter xuống dòng.
@@ -1695,65 +1672,8 @@ async function loadThread(id) {
   const openContact = $("#open-contact");
   if (openContact) openContact.addEventListener("click", () => openCustomer(openContact.dataset.contact));
 
-  /* Trả hội thoại VỀ cho agent, hoặc bắt duyệt trước khi gửi.
-   *
-   * Trước khi có nút này, hội thoại rơi xuống "Chờ duyệt" hay "Đã chuyển
-   * người" là KẸT ở đó vĩnh viễn: chỉ có nút đi xuống, không có nút đi lên.
-   * Ô xanh "Agent xử lý" trên chú giải là một lời hứa hệ thống không giữ
-   * được, và mọi hội thoại cũ dồn dần vào hàng chờ duyệt.
-   *
-   * Không hiện khi đang có người tiếp quản: phải "Kết thúc tiếp quản" trước.
-   * Bật auto sau lưng người đang giữ là để AI nhắn chen vào giữa cuộc họ
-   * đang xử lý. */
-  const nutCheDo = $("#btn-chedo");
-  if (nutCheDo) nutCheDo.addEventListener("click", async () => {
-    const sang = nutCheDo.dataset.chedo;
-    const ly_do = sang === "auto"
-      ? "Người trực trả hội thoại về cho agent"
-      : "Người trực bật duyệt trước khi gửi";
-    nutCheDo.disabled = true;
-    try {
-      await api(`/inbox/conversations/${id}/che-do`, {
-        method: "POST",
-        body: JSON.stringify({
-          che_do: sang, expected_version: c.version || 1, reason: ly_do,
-        }),
-      });
-      toast(sang === "auto"
-        ? "Agent sẽ tự trả lời hội thoại này."
-        : "Từ giờ AI soạn xong sẽ chờ bạn duyệt.");
-      refresh();
-    } catch (e) {
-      toast(e.message, true);
-      nutCheDo.disabled = false;
-    }
-  });
-
-  $("#btn-take")?.addEventListener("click", async () => {
-    try {
-      await api(`/inbox/conversations/${id}/takeover`, {
-        method: "POST",
-        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên nhận xử lý" }),
-      });
-      toast("Bạn đang giữ hội thoại này. AI đã dừng gửi.");
-      refresh();
-    } catch (e) { toast(e.message, true); }
-  });
-
-  $("#btn-release")?.addEventListener("click", async () => {
-    try {
-      const r = await api(`/inbox/conversations/${id}/release`, {
-        method: "POST",
-        body: JSON.stringify({ expected_version: c.version || 1, reason: "Nhân viên kết thúc tiếp quản" }),
-      });
-      /* `ghi_chu` = đã bật agent trong CSDL nhưng CHƯA giành lại quyền từ
-       * Meta (Messenger) — agent bật mà câm. Phải hiện thành lỗi, không
-       * được nuốt sau một toast xanh. */
-      if (r && r.ghi_chu) toast(r.ghi_chu, true);
-      else toast("Đã chuyển về chế độ gợi ý.");
-      refresh();
-    } catch (e) { toast(e.message, true); }
-  });
+  // Tiếp quản / Kết thúc / Đổi chế độ / Mở lại: trình nghe ủy quyền ở
+  // 03b-thanh-hoi-thoai.js — nút nằm trong menu "⋯" dựng lại liên tục.
 
   /* Đính kèm ảnh hoặc tài liệu — như mọi công cụ chat thật.
    *
@@ -1771,7 +1691,9 @@ async function loadThread(id) {
     nutKem.addEventListener("click", () => oTep.click());
     oTep.addEventListener("change", async () => {
       const f = oTep.files && oTep.files[0];
-      if (!f) return;
+      // Kiểu ghi chú không vẽ nút đính kèm; chặn thêm ở đây vì tệp đi thẳng
+      // tới KHÁCH — ghi chú nội bộ không bao giờ được đi đường này.
+      if (!f || dangGhiChu(id)) return;
       nutKem.disabled = true;
       const chu = nutKem.textContent;
       nutKem.textContent = "⏳";
@@ -1795,7 +1717,7 @@ async function loadThread(id) {
         toast("Đã gửi tệp cho khách.");
         if (oChu) {
           oChu.value = "";
-          if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[id];
+          if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[khoaNhap(id)];
         }
         refresh();
       } catch (e) {
@@ -1812,20 +1734,296 @@ async function loadThread(id) {
     ev.preventDefault();
     const text = new FormData(ev.target).get("text").trim();
     if (!text) return;
+    // Đọc kiểu soạn MỘT lần, trước mọi await: người bấm đổi thẻ trong lúc
+    // chờ mạng không được làm ghi chú đổi đường thành tin gửi khách.
+    const laGhiChu = dangGhiChu(id);
     try {
-      const r = await api(`/conversations/${id}/send`, {
-        method: "POST", body: JSON.stringify({ text }),
-      });
-      toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
+      const r = await guiTuKhungSoan(id, text, laGhiChu);
+      if (laGhiChu) toast("Đã lưu ghi chú nội bộ — khách không thấy.");
+      else toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
       ev.target.reset();
       // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
       // trở vào khung và người trực tưởng tin chưa gửi đi.
-      if (state.nhapTheoHoiThoai) delete state.nhapTheoHoiThoai[id];
+      if (state.nhapTheoHoiThoai) {
+        delete state.nhapTheoHoiThoai[laGhiChu ? `${id}:ghichu` : String(id)];
+      }
       refresh();
     } catch (e) { toast(e.message, true); }
   });
 }
 
+/* ---------------- Thanh thông tin hội thoại (mục 6 của bảng việc) ----------------
+ *
+ * Cấu trúc chủ dự án chốt (22.11.2026):
+ *
+ *   Tên khách hàng | Nhãn hội thoại | Customer 360 | Hành động xử lý | Chi tiết
+ *
+ * Trước bản này thanh ấy chở MƯỜI thứ một lúc: trạng thái, SLA, kênh, chế
+ * độ, ưu tiên, version, ba bốn nút xử lý, nút ghi chú. Người trực mở hội
+ * thoại để đọc khách nói gì — mười thứ thường trực là mười thứ mắt phải
+ * nhảy qua trước khi tới câu đầu tiên. Nên:
+ *
+ *   · trạng thái, kênh, chế độ AI/Mode    -> bỏ (danh sách bên trái đã có),
+ *                                           hoặc vào "Chi tiết" khi cần;
+ *   · ưu tiên, Version, SLA               -> "Chi tiết" (SLA không hiện
+ *                                           thường trực — cảnh báo SLA tới
+ *                                           người trực qua chuông);
+ *   · ghi chú nội bộ                      -> một kiểu soạn trong ô soạn tin;
+ *   · nút xử lý                           -> MỘT nút chính + menu "⋯".
+ *
+ * Tệp riêng vì `03-hoi-thoai.js` đã gần trần 1000 dòng. Đặt tên `03b` để
+ * đóng gói nằm ngay sau 03, trước Customer 360 (04).
+ */
+
+/* Các hành động xử lý. `id` giữ đúng id nút cũ: trình nghe ở dưới và các
+ * test nút chết tìm theo id viết đủ. */
+const HANH_DONG_HT = {
+  tiepQuan: { id: "btn-take", nhan: "Tiếp quản", lop: "btn--halt",
+              goi_y: "Nhận hội thoại về mình; AI dừng gửi" },
+  giao: { id: "btn-giao", nhan: "Chuyển nhân viên…", lop: "",
+          goi_y: "Giao hội thoại cho một nhân viên khác của kênh" },
+  ketThuc: { id: "btn-release", nhan: "Kết thúc tiếp quản", lop: "",
+             goi_y: "Trả hội thoại về chế độ AI gợi ý" },
+  tuTraLoi: { id: "btn-chedo", nhan: "Để agent tự trả lời", lop: "", che_do: "auto",
+              goi_y: "AI tự gửi câu trả lời, không chờ duyệt" },
+  duyetTruoc: { id: "btn-chedo", nhan: "Duyệt trước khi gửi", lop: "", che_do: "assist",
+                goi_y: "AI soạn xong chờ người duyệt rồi mới gửi" },
+  giaiQuyet: { id: "btn-giai-quyet", nhan: "Đã giải quyết", lop: "btn--go",
+               goi_y: "Đóng vụ việc; khách nhắn tiếp thì tự mở lại" },
+  moLai: { id: "btn-mo-lai", nhan: "Mở lại", lop: "",
+           goi_y: "Mở lại hội thoại đã giải quyết để xử lý tiếp" },
+};
+
+/* Hội thoại này, với người này, được làm gì — và việc nào là việc CHÍNH.
+ *
+ * Hàm THUẦN (không đọc `state`, không đụng DOM) để test chạy thật được bằng
+ * node trên từng ô của bảng trạng thái × quyền. Luật nút trước đây nằm rải
+ * trong một chuỗi template, mỗi nút một điều kiện riêng, và chỉ test được
+ * bằng regex — đúng kiểu xanh giả với mã đã bị tắt.
+ *
+ * `ng` = { toiId, quyen: Set, giaoDuoc: bool (máy chủ nói giao người khác
+ * được) }. Trả { chinh, them: [...], giu } — `giu` là dòng chữ "X đang giữ"
+ * khi không có nút nào để bấm, để người xem biết VÌ SAO không có nút.
+ *
+ * Máy chủ vẫn chặn từng việc (`hoi_thoai.nhan`, luật can_assign/can_release).
+ * Ẩn nút ở đây là để màn hình không mời một 403 — không phải lớp chặn. */
+function hanhDongXuLy(c, ng) {
+  const co = (q) => !!(ng && ng.quyen && ng.quyen.has(q));
+  const kq = { chinh: null, them: [], giu: "" };
+  const nguoiGiu = c.mode === "human" && c.assigned_to ? String(c.assigned_to) : "";
+  const laCuaToi = !!nguoiGiu && nguoiGiu === String((ng && ng.toiId) || "");
+  const nguoiKhacGiu = !!nguoiGiu && !laCuaToi;
+  if (nguoiKhacGiu) kq.giu = `${c.assigned_to_ten || "Đồng nghiệp"} đang giữ`;
+  // Mọi hành động xử lý đều đòi `hoi_thoai.nhan` ở máy chủ.
+  if (!co("hoi_thoai.nhan")) return kq;
+  const quanLy = co("hoi_thoai.xem_tat_ca");
+  const ds = [];
+  if (c.state === "resolved") {
+    ds.push(HANH_DONG_HT.moLai);
+  } else if (laCuaToi) {
+    ds.push(HANH_DONG_HT.giaiQuyet);
+    if (ng.giaoDuoc) ds.push(HANH_DONG_HT.giao);
+    ds.push(HANH_DONG_HT.ketThuc);
+  } else if (nguoiKhacGiu) {
+    // Hội thoại đồng nghiệp đang nói dở: chỉ người quản lý được can thiệp.
+    // "Tiếp quản" KHÔNG hiện — giành việc là dùng "Chuyển nhân viên…".
+    if (ng.giaoDuoc) ds.push(HANH_DONG_HT.giao);
+    if (quanLy) ds.push(HANH_DONG_HT.ketThuc, HANH_DONG_HT.giaiQuyet);
+  } else {
+    // AI đang xử lý, hoặc đã chuyển người mà chưa ai nhận.
+    ds.push(HANH_DONG_HT.tiepQuan);
+    const taken = c.mode === "human" || c.status === "escalated";
+    // Không mời "Để agent tự trả lời" khi đang chờ người (phải tiếp quản
+    // rồi kết thúc trước), và không bao giờ trong NHÓM — AI không nói ở đó.
+    if (!taken && !laNhom(c)) {
+      ds.push(c.mode === "auto" ? HANH_DONG_HT.duyetTruoc : HANH_DONG_HT.tuTraLoi);
+    }
+    if (ng.giaoDuoc) ds.push(HANH_DONG_HT.giao);
+    // Trả hội thoại agent đã chuyển người về cho AI là quyết định của quản
+    // lý — nhân viên thường bấm thì máy chủ trả 403 (xem can_release).
+    if (c.mode === "human" && quanLy) ds.push(HANH_DONG_HT.ketThuc);
+    ds.push(HANH_DONG_HT.giaiQuyet);
+  }
+  kq.chinh = ds[0] || null;
+  kq.them = ds.slice(1);
+  return kq;
+}
+
+function _nutHanhDong(a, trongMenu) {
+  const lop = trongMenu ? "hd-them__muc" : `btn btn--sm ${a.lop}`;
+  return `<button type="button" class="${lop}" id="${a.id}" title="${esc(a.goi_y)}"
+    ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${esc(a.nhan)}</button>`;
+}
+
+/* Một nút chính + menu "⋯". Menu là <details>: mở/đóng không cần JS, và
+ * trạng thái mở nhớ trong `state.moHanhDong` vì panel dựng lại mỗi 6 giây —
+ * không nhớ là menu tự sập ngay dưới ngón tay người đang chọn. */
+function veHanhDongXuLy(c, hd) {
+  const mo = state.moHanhDong === String(c.id);
+  return `<span class="hd" aria-label="Hành động xử lý">
+    ${hd.giu ? `<span class="tag tag--assist">${esc(hd.giu)}</span>` : ""}
+    ${hd.chinh ? _nutHanhDong(hd.chinh, false) : ""}
+    ${hd.them.length ? `<details class="hd-them" data-hd-them="${esc(c.id)}" ${mo ? "open" : ""}>
+      <summary class="btn btn--sm btn--ghost" aria-label="Hành động khác" title="Hành động khác">⋯</summary>
+      <div class="hd-them__menu" role="menu">${hd.them.map((a) => _nutHanhDong(a, true)).join("")}</div>
+    </details>` : ""}
+  </span>`;
+}
+
+const ICON_C360 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>`;
+
+/* Đầu khung chi tiết. Nhãn hội thoại nằm NGAY DƯỚI tên (mục 6.3) — cùng
+ * một khối với tên, không phải một hàng riêng kéo dài cả khung.
+ *
+ * Customer 360 không hiện cho NHÓM (mục 9.7): nhóm không phải một khách
+ * hàng, và máy chủ trả 404 cho hồ sơ của nhóm. */
+function veThanhThongTin(c, hd) {
+  return `<div class="convo__title">
+      <div class="convo__danh">
+        <div class="convo__ten">
+          <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
+          ${nhomBadge(c)}
+        </div>
+        <div class="nhanbar">${nhanHoiThoaiHtml(c)}</div>
+      </div>
+      <span class="convo__spacer"></span>
+      ${c.contact_id && !laNhom(c) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"
+        data-contact="${c.contact_id}" title="Customer 360" aria-label="Mở Customer 360">${ICON_C360}</button>` : ""}
+      ${veHanhDongXuLy(c, hd)}
+      <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
+        aria-expanded="${state.moChiTietHT === String(c.id) ? "true" : "false"}">Chi tiết</button>
+    </div>`;
+}
+
+document.addEventListener("toggle", (ev) => {
+  const d = ev.target;
+  if (!(d.dataset && d.dataset.hdThem)) return;
+  if (d.open) state.moHanhDong = d.dataset.hdThem;
+  else if (state.moHanhDong === d.dataset.hdThem) state.moHanhDong = null;
+}, true);
+
+/* <details> không tự đóng khi bấm ra ngoài hay chọn một mục — như mọi menu
+ * khác thì phải đóng, không thì menu treo đè lên luồng tin. */
+document.addEventListener("click", (ev) => {
+  $$(".hd-them[open]").forEach((d) => {
+    if (!d.contains(ev.target) || ev.target.closest(".hd-them__muc")) d.open = false;
+  });
+});
+
+/* ---------------- Trình nghe hành động xử lý ----------------
+ * Ủy quyền ở document: panel dựng lại mỗi lần làm mới, gắn vào từng nút là
+ * gắn lại mãi. `state.convDangMo` là hội thoại đang vẽ (03-hoi-thoai.js). */
+async function _goiHanhDong(duong, than, xong) {
+  const c = state.convDangMo;
+  if (!c) return;
+  state.moHanhDong = null;
+  try {
+    const r = await api(`/inbox/conversations/${c.id}/${duong}`, {
+      method: "POST",
+      body: than ? JSON.stringify({ expected_version: c.version || 1, ...than }) : undefined,
+    });
+    xong(r);
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#btn-take")) {
+    _goiHanhDong("takeover", { reason: "Nhân viên nhận xử lý" },
+      () => toast("Bạn đang giữ hội thoại này. AI đã dừng gửi."));
+  } else if (ev.target.closest("#btn-release")) {
+    _goiHanhDong("release", { reason: "Nhân viên kết thúc tiếp quản" }, (r) => {
+      /* `ghi_chu` = đã bật agent trong CSDL nhưng CHƯA giành lại quyền từ
+       * Meta (Messenger) — agent bật mà câm. Phải hiện thành lỗi, không
+       * được nuốt sau một toast xanh. */
+      if (r && r.ghi_chu) toast(r.ghi_chu, true);
+      else toast("Đã chuyển về chế độ gợi ý.");
+    });
+  } else if (ev.target.closest("#btn-chedo")) {
+    /* Trả hội thoại VỀ cho agent, hoặc bắt duyệt trước khi gửi. Không có
+     * nút này thì hội thoại rơi xuống "Chờ duyệt" là kẹt ở đó vĩnh viễn —
+     * chỉ có nút đi xuống, không có nút đi lên. */
+    const sang = ev.target.closest("#btn-chedo").dataset.chedo;
+    _goiHanhDong("che-do", {
+      che_do: sang,
+      reason: sang === "auto" ? "Người trực trả hội thoại về cho agent" : "Người trực bật duyệt trước khi gửi",
+    }, () => toast(sang === "auto" ? "Agent sẽ tự trả lời hội thoại này." : "Từ giờ AI soạn xong sẽ chờ bạn duyệt."));
+  } else if (ev.target.closest("#btn-mo-lai")) {
+    _goiHanhDong("mo-lai", null, (r) =>
+      toast(r && r.da_mo ? "Đã mở lại hội thoại." : "Hội thoại đã mở từ trước."));
+  }
+});
+
+/* ---------------- Ghi chú nội bộ trong ô soạn tin (mục 6.6) ----------------
+ *
+ * Ô soạn có HAI kiểu: "Trả lời khách" và "Ghi chú nội bộ". Kiểu ghi chú
+ * KHÔNG BAO GIỜ đi qua đường gửi tin (`/send`, `/send-file`): chỉ gọi
+ * `/inbox/conversations/{id}/ghi-chu`, và route ấy không đụng outbox.
+ *
+ * Kiểu soạn và BẢN NHÁP nhớ theo từng hội thoại, và bản nháp tách riêng
+ * cho từng kiểu. Chung một bản nháp là lỗi nguy hiểm nhất ở đây: gõ ghi chú
+ * "khách này hay bom hàng", lỡ bấm sang "Trả lời khách", Enter — câu ấy đi
+ * thẳng tới khách. */
+function dangGhiChu(id) {
+  return !!(state.soanGhiChu && state.soanGhiChu[id]);
+}
+
+function khoaNhap(id) {
+  return dangGhiChu(id) ? `${id}:ghichu` : String(id);
+}
+
+async function guiTuKhungSoan(id, text, laGhiChu) {
+  if (laGhiChu) {
+    await api(`/inbox/conversations/${id}/ghi-chu`, {
+      method: "POST", body: JSON.stringify({ noi_dung: text }),
+    });
+    return { ok: true, ghi_chu: true };
+  }
+  return api(`/conversations/${id}/send`, {
+    method: "POST", body: JSON.stringify({ text }),
+  });
+}
+
+document.addEventListener("click", (ev) => {
+  const nut = ev.target.closest("[data-soan]");
+  if (!nut || !state.openConv) return;
+  const id = state.openConv;
+  state.soanGhiChu = state.soanGhiChu || {};
+  state.soanGhiChu[id] = nut.dataset.soan === "ghichu";
+  state.soanVuaDoi = true;
+  loadThread(id);
+});
+
+/* Trộn ghi chú vào luồng tin theo THỜI GIAN. Ghi chú để riêng một hộp gấp
+ * ở đầu hội thoại thì người đọc phải tự ghép "ghi chú này viết lúc khách
+ * đang nói gì" — mà đó chính là ngữ cảnh làm ghi chú có nghĩa. */
+function xenGhiChu(tin, ghiChu) {
+  const ds = (tin || []).map((m, i) => ({ loai: "tin", luc: m.created_at, thu_tu: i, m }));
+  (ghiChu || []).forEach((g, i) => ds.push({ loai: "ghichu", luc: g.tao_luc, thu_tu: 1e6 + i, g }));
+  const ms = (x) => { const t = Date.parse(x.luc || ""); return Number.isNaN(t) ? 0 : t; };
+  return ds.sort((a, b) => ms(a) - ms(b) || a.thu_tu - b.thu_tu);
+}
+
+function veGhiChuTrongLuong(g) {
+  return `<div class="msg msg--ghichu" role="note" aria-label="Ghi chú nội bộ">
+    <div class="msg__bubble"><span class="msg__ghichu-nhan">Ghi chú nội bộ · khách không thấy</span>${esc(g.noi_dung)}</div>
+    <div class="msg__meta"><span>${esc([gioTin(g.tao_luc), g.nguoi || "Nhân viên"].filter(Boolean).join(" · "))}</span></div>
+  </div>`;
+}
+
+/* Hai thẻ chọn kiểu soạn. Người không có `hoi_thoai.ghi_chu` chỉ có một
+ * kiểu — không vẽ thẻ nào, để khỏi mời một 403. */
+function veCheDoSoan(id, ghiChuDuoc) {
+  if (!ghiChuDuoc) return "";
+  const ghi = dangGhiChu(id);
+  const the = (ma, nhan, bat) => `<button type="button" role="tab" class="soan__tab${bat ? " is-on" : ""}"
+    aria-selected="${bat ? "true" : "false"}" data-soan="${ma}">${nhan}</button>`;
+  return `<div class="soan__che-do" role="tablist" aria-label="Kiểu soạn">
+    ${the("tra_loi", "Trả lời khách", !ghi)}${the("ghichu", "Ghi chú nội bộ", ghi)}
+  </div>`;
+}
 /* ---------------- Customer 360 ---------------- */
 
 function openCustomer(id) {
@@ -7684,30 +7882,8 @@ $("#convtim")?.addEventListener("input", (ev) => {
   }, 300);
 });
 
-document.addEventListener("click", async (ev) => {
-  const id = state.openConv;
-  if (!id) return;
-  // Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js.
-  if (ev.target.closest("#btn-them-ghichu")) {
-    const d = await hoiHop({
-      tieu_de: "Ghi chú nội bộ",
-      phu: "Chỉ người trong cửa hàng thấy — KHÔNG gửi cho khách. Dùng để bàn giao giữa ca.",
-      truong: [{ name: "noi_dung", label: "Ghi chú", type: "textarea", rows: 4,
-                 required: true, maxlength: 5000 }],
-      nut: "Lưu ghi chú",
-    });
-    if (!d || !d.noi_dung) return;
-    try {
-      await api(`/inbox/conversations/${id}/ghi-chu`, { method: "POST", body: JSON.stringify({ noi_dung: d.noi_dung }) });
-      state.moGhiChu = true;
-      toast("Đã lưu ghi chú.");
-      loadThread(id);
-    } catch (e) { toast(e.message, true); }
-  }
-});
-document.addEventListener("toggle", (ev) => {
-  if (ev.target.classList && ev.target.classList.contains("ghichu")) state.moGhiChu = ev.target.open;
-}, true);
+// Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js. Ghi chú nội bộ
+// là một kiểu soạn trong ô soạn tin — xem 03b-thanh-hoi-thoai.js.
 
 /* ---------------- Hiệu suất nhân viên ---------------- */
 function _ngayVN(d) {
@@ -7743,6 +7919,7 @@ document.addEventListener("click", async (ev) => {
 /* ---------------- Đã giải quyết ---------------- */
 document.addEventListener("click", async (ev) => {
   if (!ev.target.closest("#btn-giai-quyet") || !state.openConv) return;
+  state.moHanhDong = null;   // nút có thể nằm trong menu "⋯" — đóng nó lại
   try {
     const r = await api(`/inbox/conversations/${state.openConv}/giai-quyet`, { method: "POST" });
     toast(r.da_truoc ? "Hội thoại đã được giải quyết từ trước."
@@ -8654,7 +8831,8 @@ $("#ptForm")?.addEventListener("submit", (ev) => {
 
 /* ---------------- Đổi ưu tiên hội thoại ----------------
  *
- * Nút "Đổi" nằm cạnh mức ưu tiên ở thanh trạng thái hội thoại. Luật hạn SLA
+ * Nút "Đổi" nằm cạnh mức ưu tiên trong panel "Chi tiết" của hội thoại
+ * (mục 6.8 — không còn ở thanh thông tin). Luật hạn SLA
  * (chỉ rút ngắn, không kéo dài) ở agent/api/uu_tien.py — hộp thoại nói luật
  * ấy ra để người bấm không tưởng hạ ưu tiên là được thêm giờ. */
 document.addEventListener("click", async (ev) => {
@@ -9005,8 +9183,21 @@ function veChiTietHoiThoai(c, laCuaToi) {
   else if (!c.assigned_to) giu = "Chưa ai nhận";
   else giu = `${esc(laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp"))}${
     c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}`;
+  /* Ưu tiên, chế độ AI, Version, trạng thái, kênh — dời từ thanh thông tin
+   * xuống đây (mục 6.1, 6.2, 6.7, 6.8): cần khi tra cứu, không cần mỗi lần
+   * đọc hội thoại. SLA KHÔNG có ở đây (mục 15.7) — cảnh báo SLA đi qua
+   * chuông. "Đổi" ưu tiên đòi `hoi_thoai.nhan` như máy chủ (uu_tien.py). */
+  const doiUuTien = state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan") && c.state !== "resolved"
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
+        data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
+  const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
   return `<section class="lichsu" aria-label="Chi tiết hội thoại">
     ${dongCT("Người đang giữ", giu)}
+    ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+    ${dongCT("Chế độ AI", esc(cheDo))}
+    <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+    ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+    ${dongCT("Version", esc(c.version || 1))}
     <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
   </section>`;
 }
@@ -9085,7 +9276,10 @@ document.addEventListener("click", (ev) => {
     loadThread(state.openConv);
     return;
   }
-  if (ev.target.closest("#btn-giao") && state.convDangMo) giaoHoiThoai(state.convDangMo);
+  if (ev.target.closest("#btn-giao") && state.convDangMo) {
+    state.moHanhDong = null;   // nút nằm trong menu "⋯" — đóng nó lại
+    giaoHoiThoai(state.convDangMo);
+  }
 });
 
 /* ---------------- Bộ lọc hộp thư ----------------

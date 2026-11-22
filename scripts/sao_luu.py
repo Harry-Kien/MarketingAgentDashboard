@@ -184,6 +184,25 @@ def _thong_tin_db() -> tuple[str, str]:
     return user, ten_db
 
 
+def _ghi_nguyen_tu(dich: Path, ghi) -> None:
+    """
+    Ghi `dich` qua tệp tạm cạnh nó rồi đổi tên — tệp đích CHỈ tồn tại khi
+    đã ghi trọn.
+
+    Đo 22.11.2026: ổ D đầy giữa lúc gói `tep-*.tar.gz`, lệnh để lại một tệp
+    cụt 5,8 MB mang đúng tên của bản sao lưu tốt. Nó nằm trong vòng 14 bản
+    giữ lại, đẩy một bản tốt ra ngoài, và chỉ lộ ra vào đúng hôm cần phục
+    hồi. Hỏng thì xoá tệp tạm và để lỗi nổ ra ngoài.
+    """
+    tam = dich.with_name(dich.name + ".dang-ghi")
+    try:
+        ghi(tam)
+        tam.replace(dich)
+    except BaseException:
+        tam.unlink(missing_ok=True)
+        raise
+
+
 def sao_luu_db(dich: Path) -> tuple[bool, str]:
     """Chạy pg_dump trong container, nén gzip. Trả (thành công, ghi chú)."""
     ct = _container()
@@ -210,7 +229,7 @@ def sao_luu_db(dich: Path) -> tuple[bool, str]:
     dich.parent.mkdir(parents=True, exist_ok=True)
     nen = gzip.compress(kq.stdout)
     if not settings.sao_luu_mat_khau:
-        dich.write_bytes(nen)
+        _ghi_nguyen_tu(dich, lambda p: p.write_bytes(nen))
         return True, f"{dich.stat().st_size / 1_048_576:.2f} MB · CHƯA MÃ HOÁ (đặt SAO_LUU_MAT_KHAU)"
     from scripts import goi_ma_hoa
 
@@ -235,8 +254,11 @@ def sao_luu_tai_lieu(dich: Path) -> tuple[bool, str]:
     if not nguon.exists() or not any(nguon.iterdir()):
         return False, "chưa có tài liệu nào trong data/knowledge"
     dich.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(dich, "w:gz") as tar:
-        tar.add(nguon, arcname="knowledge")
+
+    def _goi(p: Path) -> None:
+        with tarfile.open(p, "w:gz") as tar:
+            tar.add(nguon, arcname="knowledge")
+    _ghi_nguyen_tu(dich, _goi)
     return True, f"{dich.stat().st_size / 1024:.0f} KB"
 
 
@@ -277,16 +299,22 @@ def sao_luu_tep(dich: Path) -> tuple[bool, str]:
 
     ma_hoa = bool(settings.sao_luu_mat_khau)
     goi = dich.with_name(dich.name + ".dang_goi") if ma_hoa else dich
-    try:
-        with tarfile.open(goi, mode="w:gz") as tar:
+
+    def _goi(p: Path) -> None:
+        with tarfile.open(p, mode="w:gz") as tar:
             for t in co:
                 tar.add(t, arcname=t.name, filter=_bo_tam)
+    try:
+        _ghi_nguyen_tu(goi, _goi)
         if ma_hoa:
             from scripts import goi_ma_hoa
 
             dich = dich.with_name(dich.name + DUOI_MA_HOA)
-            with goi.open("rb") as vao, dich.open("wb") as f:
-                goi_ma_hoa.ma_hoa(vao, f, settings.sao_luu_mat_khau)
+
+            def _ma(p: Path) -> None:
+                with goi.open("rb") as vao, p.open("wb") as f:
+                    goi_ma_hoa.ma_hoa(vao, f, settings.sao_luu_mat_khau)
+            _ghi_nguyen_tu(dich, _ma)
     finally:
         if ma_hoa:
             # Bản RÕ của tệp khách không được nằm lại trong thư mục sao lưu.

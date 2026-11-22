@@ -60,3 +60,37 @@ def test_co_mat_khau_thi_ma_hoa(tmp_path, monkeypatch):
 def test_vong_sao_luu_hang_ngay_goi_tep():
     src = (ROOT / "agent" / "main.py").read_text(encoding="utf-8")
     assert "bk.sao_luu_tep" in src
+
+
+def test_ghi_hong_giua_chung_khong_de_lai_tep_cut(tmp_path):
+    """
+    22.11.2026: ổ đầy giữa lúc gói, lệnh để lại `tep-*.tar.gz` cụt mang tên
+    của bản tốt. Nay hỏng giữa chừng thì KHÔNG có tệp đích, không sót tệp tạm.
+    """
+    from scripts import sao_luu
+
+    dich = tmp_path / "tep-1.tar.gz"
+
+    def ghi_hong(p):
+        p.write_bytes(b"mot nua")
+        raise OSError(28, "No space left on device")
+
+    try:
+        sao_luu._ghi_nguyen_tu(dich, ghi_hong)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("lỗi ghi phải nổ ra ngoài")
+    assert not dich.exists()
+    assert list(tmp_path.iterdir()) == []
+
+    sao_luu._ghi_nguyen_tu(dich, lambda p: p.write_bytes(b"du"))
+    assert dich.read_bytes() == b"du"
+
+
+def test_ba_loai_sao_luu_deu_ghi_nguyen_tu():
+    src = (ROOT / "scripts" / "sao_luu.py").read_text(encoding="utf-8")
+    for ham in ("def sao_luu_db", "def sao_luu_tai_lieu", "def sao_luu_tep"):
+        than = src[src.index(ham):]
+        than = than[:than.index("\ndef ", 5)]
+        assert "_ghi_nguyen_tu(" in than, ham

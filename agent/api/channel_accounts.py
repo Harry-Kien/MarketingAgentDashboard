@@ -112,6 +112,18 @@ def _actor(user: dict) -> AccountActor:
                         quyen=frozenset(user.get("quyen", ())))
 
 
+async def _lich_su(user: dict, account: Any, hanh_dong: str, truong: str) -> None:
+    """Một dòng "ai đổi gì" cho màn Kết nối & Tích hợp — TÊN trường, không giá trị."""
+    from agent import ket_noi_tich_hop
+
+    kenh = getattr(account, "channel", "")
+    await ket_noi_tich_hop.ghi_lich_su(
+        dich_vu=str(getattr(kenh, "value", kenh) or "kenh"), truong=truong,
+        hanh_dong=hanh_dong, sua_boi=str(user.get("ten_dang_nhap") or "?"),
+        bi_mat=hanh_dong == "doi_credential", account_id=getattr(account, "id", None),
+        doi_tuong=getattr(account, "display_name", None))
+
+
 def _raise_public(exc: Exception) -> None:
     if isinstance(exc, AccountNotFound):
         raise HTTPException(404, str(exc)) from exc
@@ -252,6 +264,7 @@ async def create_account(
         )
     except (AccountAlreadyExists, AccountDisabled, AccountNotFound, VuotHanMuc) as exc:
         _raise_public(exc)
+    await _lich_su(user, account, "tao", "tai_khoan")
     return account.to_public(has_credentials=bool(credentials))
 
 
@@ -424,6 +437,10 @@ async def rotate_credentials(
         )
     except (AccountNotFound, AccountDisabled) as exc:
         _raise_public(exc)
+    # Chỉ TÊN các trường người gửi lên (access_token, app_secret...) — đủ để
+    # trả lời "ai đổi token Trang này hôm qua" mà không giữ bản sao nào.
+    await _lich_su(user, account, "doi_credential",
+                   ",".join(sorted(str(k) for k in body.credentials))[:300] or "credentials")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -518,6 +535,7 @@ async def disable_account(
         account = await service.disable_account(account_id, actor=_actor(user))
     except (AccountNotFound, AccountDisabled) as exc:
         _raise_public(exc)
+    await _lich_su(user, account, "tat", "trang_thai")
     return account.to_public(
         has_credentials=await repository.has_credentials(account.id)
     )
@@ -533,6 +551,7 @@ async def enable_account(
         account = await service.enable_account(account_id, actor=_actor(user))
     except (AccountNotFound, AccountDisabled) as exc:
         _raise_public(exc)
+    await _lich_su(user, account, "bat", "trang_thai")
     return account.to_public(has_credentials=True)
 
 
@@ -629,6 +648,7 @@ async def xoa_tai_khoan(
                     else account.channel),
         display_name=account.display_name or "",
     )
+    await _lich_su(user, account, "xoa_tai_khoan", "tai_khoan")
     await db.execute("DELETE FROM channel_accounts WHERE id = $1", account_id)
     return {"da_xoa": str(account_id)}
 

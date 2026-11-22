@@ -60,3 +60,18 @@ def dat_lai() -> None:
     """Chỉ dùng trong test."""
     global _cong
     _cong = None
+
+
+def bo_cong_sau_doi_cau_hinh() -> None:
+    """Đổi URL/khoá ERPNext trên dashboard thì lần gọi kế dựng cổng MỚI.
+
+    `NguonErpNext` chụp URL và khoá lúc dựng, còn cổng sống suốt đời tiến
+    trình. Không bỏ cổng cũ thì dashboard báo "có hiệu lực ngay" trong khi
+    giá và tồn kho vẫn hỏi ERP bằng khoá cũ tới lần khởi động lại.
+
+    Mất cache giá/tồn và trạng thái ngắt mạch là chủ ý: chúng thuộc về bộ
+    khoá cũ. Client HTTP cũ không đóng tay — lời gọi đang chạy dở vẫn cần
+    nó; nó tự đóng khi không còn ai giữ.
+    """
+    global _cong
+    _cong = None

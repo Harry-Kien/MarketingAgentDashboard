@@ -89,10 +89,52 @@ class ConnectionCheck:
     detail: dict = field(default_factory=dict)
 
 
+# Khả năng một plugin kênh có thể khai. DỮ LIỆU, không phải mã chạy: màn
+# Kết nối & Tích hợp đọc bảng này để nói thật với người vận hành kênh nào
+# gửi được ảnh, kênh nào báo "đã xem".
+#
+# VÌ SAO KHAI TƯỜNG MINH TỪNG KHOÁ, KHÔNG MẶC ĐỊNH False
+# ------------------------------------------------------
+# Mặc định False thì adapter mới quên khai là hiện "không hỗ trợ gì" — đỏ
+# giả, người ta đi tìm lỗi không có. Nên lớp gốc để TRỐNG, và
+# `tests/test_kha_nang_kenh.py` bắt mọi adapter khai đủ mọi khoá.
+#
+# `da_nhan` / `da_xem` chỉ được True khi mã THẬT SỰ đọc biên nhận từ webhook
+# và ghi `delivery_status`. Hiện chưa kênh nào có — khai True trước là hứa
+# với người vận hành một dấu "đã xem" sẽ không bao giờ hiện (test canh).
+KHA_NANG: dict[str, str] = {
+    "van_ban": "Nhận và gửi văn bản",
+    "nhan_anh": "Nhận ảnh khách gửi",
+    "nhan_tep": "Nhận tệp khác (video, tài liệu…)",
+    "gui_anh": "Gửi ảnh cho khách",
+    "gui_tep": "Gửi tệp không phải ảnh",
+    "da_gui": "Trạng thái Đã gửi (nền tảng đã nhận tin)",
+    "da_nhan": "Biên nhận đã tới máy khách",
+    "da_xem": "Biên nhận khách đã xem",
+    "dang_go": "Hiện “đang gõ…”",
+    "an_binh_luan": "Ẩn bình luận công khai",
+}
+
+
+def kha_nang(**co: bool) -> dict[str, bool]:
+    """Khai khả năng: khoá nào không nêu là False — nhưng khoá LẠ thì nổ.
+
+    Nổ lúc import, không phải lúc màn hình vẽ: gõ nhầm `gui_anhh=True` mà
+    lặng lẽ bỏ qua là kênh ấy hiện "không gửi được ảnh" mãi.
+    """
+    la = set(co) - set(KHA_NANG)
+    if la:
+        raise KeyError(f"khả năng không có trong danh mục: {sorted(la)}")
+    return {k: bool(co.get(k, False)) for k in KHA_NANG}
+
+
 class ChannelAdapter(ABC):
     """Hợp đồng mà mọi kênh phải tuân thủ."""
 
     name: str = "base"
+    # Mỗi adapter cụ thể ghi đè bằng `kha_nang(...)`. Trống ở đây có chủ ý —
+    # xem chú thích ở `KHA_NANG`.
+    KHA_NANG_KENH: dict[str, bool] = {}
 
     def __init__(self, *, account_id: UUID | None = None) -> None:
         self.account_id = account_id or legacy_account_id(self.name)

@@ -14,6 +14,7 @@ chặn một hàm mà webhook lấy từ chỗ khác. Giờ có MỘT chỗ đ�
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from contextlib import suppress
 
@@ -132,12 +133,41 @@ async def _ingest_inbound(msg: InboundMessage):
     return await InboxService(PostgresInboxRepository()).ingest(msg)
 
 
+logger = logging.getLogger("agent.xu_ly_tin_vao")
+
+# Tuỳ chọn RIÊNG của một Trang trong `channel_accounts.metadata`. Cửa hàng
+# có nhiều Trang thì mỗi Trang một quyết định: Trang bán lẻ ẩn SĐT, Trang
+# tuyển cộng tác viên lại muốn để công khai.
+TUY_CHON_AN_BINH_LUAN = "an_binh_luan_co_sdt"
+
+
+async def che_do_an_binh_luan(account_id) -> str:
+    """'bat' / 'tat' cho Trang này: tuỳ chọn riêng thắng cấu hình chung.
+
+    Đọc CSDL hỏng thì lui về cấu hình chung VÀ ghi cảnh báo — không đoán
+    "tắt" lặng lẽ: số điện thoại khách nằm công khai là thứ người trực cần
+    biết.
+    """
+    try:
+        r = await db.fetchrow(
+            "SELECT metadata->>$2 AS v FROM channel_accounts WHERE id = $1",
+            account_id, TUY_CHON_AN_BINH_LUAN)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("binh_luan: không đọc được tuỳ chọn riêng của Trang %s (%s), "
+                       "dùng cấu hình chung", account_id, type(exc).__name__)
+        r = None
+    rieng = str((r or {}).get("v") or "")
+    if rieng in ("bat", "tat"):
+        return rieng
+    return cau_hinh_dong.lay("AN_BINH_LUAN_CO_SDT")
+
+
 async def _xu_ly_binh_luan(msg, cid: uuid.UUID) -> None:
     await db.execute(
         "UPDATE conversations SET status = 'escalated', mode = 'human', "
         "version = version + 1, updated_at = now() WHERE id = $1", cid)
     meta = msg.meta or {}
-    if not meta.get("co_sdt") or cau_hinh_dong.lay("AN_BINH_LUAN_CO_SDT") != "bat":
+    if not meta.get("co_sdt") or await che_do_an_binh_luan(msg.account_id) != "bat":
         return
     # Ẩn là hành động CÔNG KHAI trên Trang của khách hàng — chỉ khi cửa hàng
     # bật. Hỏng thì ghi nhật ký cảnh báo, không nuốt: số điện thoại của

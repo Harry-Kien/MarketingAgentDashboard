@@ -103,12 +103,69 @@ def khoa(cid: uuid.UUID) -> str:
     return f"thong_bao_ai:{cid}"
 
 
+DO_DAI_TOI_DA = 600
+_NGOAC_KEP = re.compile(r"[\"“”«»]([^\"“”«»]{2,60})[\"“”«»]")
+# "AI" phân biệt hoa thường: "ai" thường là đại từ ("ai cũng được") — khớp
+# nó là cho qua một câu không hề nói tới trí tuệ nhân tạo.
+_NOI_AI = re.compile(r"\bAI\b|(?i:trợ lý ảo|chatbot)")
+
+
+def kiem_noi_dung(van_ban: str) -> str:
+    """Lỗi của một câu thông báo do quản trị viên soạn; chuỗi rỗng = hợp lệ.
+
+    Bốn luật, mỗi luật canh một cách hỏng IM LẶNG:
+
+    1. `{ten}` là chỗ giữ chỗ DUY NHẤT. `{ten_shop}` hay `{` lẻ làm
+       `str.format` nổ — trong `gui_neu_chua`, nơi lỗi bị nuốt để không chặn
+       câu trả lời, tức là khách không bao giờ được báo và chẳng ai biết.
+    2. Phải nói là AI — đó là mục đích của câu (NĐ 356 Điều 10 khoản 3).
+    3. Cụm gọi người đặt trong ngoặc kép phải là cụm MÃ nhận ra
+       (`khach_doi_gap_nguoi`). Viết `nhắn "gặp người thật"` thì khách làm
+       đúng hướng dẫn mà vẫn nói chuyện với máy.
+    4. Phải nhắc dữ liệu nhạy cảm (NĐ 356 Điều 6 khoản 4), và không hứa
+       "24/7" — ở chế độ Gợi ý ban đêm không ai duyệt.
+    """
+    s = (van_ban or "").strip()
+    if not s:
+        return "nội dung trống"
+    if len(s) > DO_DAI_TOI_DA:
+        return f"dài quá {DO_DAI_TOI_DA} ký tự — khách đọc trên điện thoại"
+    try:
+        s.format(ten="BLANICA")
+    except (KeyError, IndexError, ValueError):
+        return "chỉ được dùng {ten} (tên thương hiệu); muốn viết dấu ngoặc nhọn thì gõ {{ }}"
+    if not _NOI_AI.search(s):
+        return "phải nói rõ khách đang nói chuyện với trợ lý AI (có chữ \"AI\")"
+    cum = [c for c in _NGOAC_KEP.findall(s) if khach_doi_gap_nguoi(c)]
+    if not cum:
+        return ("phải hướng dẫn cách gặp người bằng một cụm trong ngoặc kép mà hệ thống "
+                "nhận ra, ví dụ \"gặp nhân viên\" hoặc \"chuyển nhân viên\"")
+    if "nhạy cảm" not in s.lower():
+        return "phải nhắc ảnh/thông tin về da là dữ liệu nhạy cảm (NĐ 356 Điều 6 khoản 4)"
+    if "24/7" in s:
+        return "không hứa \"24/7\" — ở chế độ Gợi ý, ban đêm không ai duyệt câu trả lời"
+    return ""
+
+
 def cau_thong_bao() -> str:
-    from agent.config import settings
+    from agent import cau_hinh_dong
+    from agent.config import Settings
     from agent.core import tools
 
     ten = (tools.ten_thuong_hieu() or "").strip() or "shop"
-    return settings.tin_thong_bao_ai.format(ten=ten)
+    # Qua cấu hình động: quản trị viên sửa câu trên dashboard thì hội thoại
+    # MỚI nhận câu mới. Hội thoại đã được báo thì không báo lại — khoá chống
+    # trùng là theo hội thoại, không theo nội dung.
+    mau = cau_hinh_dong.lay("TIN_THONG_BAO_AI")
+    try:
+        return mau.format(ten=ten)
+    except (KeyError, IndexError, ValueError):
+        # Chỉ tới được đây nếu `.env` mang câu hỏng (dashboard đã chặn qua
+        # `kiem_noi_dung`). Lui về câu mặc định thay vì không báo gì — im
+        # lặng ở đây là vi phạm nghĩa vụ báo khách.
+        logger.error("thong_bao_ai: TIN_THONG_BAO_AI hỏng định dạng, dùng câu mặc định")
+        mac_dinh = str(Settings.model_fields["tin_thong_bao_ai"].default)
+        return mac_dinh.format(ten=ten)
 
 
 async def gui_neu_chua(msg, cid: uuid.UUID) -> bool:

@@ -71,6 +71,7 @@ NHOM = {
         "goi_ky_nang", "goi_ky_nang_lich_su", "ky_nang_lich_su",
         "tich_hop_ung_dung",
         "cau_hinh_agent", "cau_hinh_bi_mat", "mcp_may_chu",
+        "ket_noi_kiem_tra", "lich_su_ket_noi",
     ],
     "Tài khoản kênh": [
         "channel_accounts",
@@ -80,6 +81,7 @@ NHOM = {
     ],
     "Inbox native": [
         "webhook_deliveries",
+        "webhook_nhan",
         "tin_vao",
         "attachments",
         "outbox_jobs",

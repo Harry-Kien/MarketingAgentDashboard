@@ -1,6 +1,8 @@
 """Kênh webchat first-party; provider chính là realtime stream nội bộ."""
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import os
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -12,6 +14,8 @@ from agent.channels.base import ChannelAdapter, ConnectionCheck, Delivery, Inbou
 
 class WebchatAdapter(ChannelAdapter):
     name = "webchat"
+    # Widget web chỉ có ô chữ (dashboard/widget.js); API nhận tin chỉ có `text`.
+    KHA_NANG_KENH = kha_nang(van_ban=True, da_gui=True)
 
     def __init__(
         self,

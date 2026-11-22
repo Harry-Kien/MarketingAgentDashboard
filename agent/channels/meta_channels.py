@@ -1,6 +1,8 @@
 """Instagram Messaging và WhatsApp Cloud native, account-scoped."""
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import hashlib
 import hmac
 import mimetypes
@@ -139,6 +141,8 @@ class _MetaAdapter(ChannelAdapter):
 
 class InstagramAdapter(_MetaAdapter):
     name = "instagram"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             da_gui=True)
 
     def __init__(self, *, account_id: UUID, credentials, client=None) -> None:
         super().__init__(account_id=account_id, credentials=credentials, client=client)
@@ -258,6 +262,8 @@ class InstagramAdapter(_MetaAdapter):
 
 class WhatsAppAdapter(_MetaAdapter):
     name = "whatsapp"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             gui_tep=True, da_gui=True)
 
     def __init__(self, *, account_id: UUID, credentials, client=None) -> None:
         super().__init__(account_id=account_id, credentials=credentials, client=client)

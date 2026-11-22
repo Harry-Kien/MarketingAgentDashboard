@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-69 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+72 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -137,9 +137,9 @@ thay đổi mới đi qua migration có version và checksum:
 | **Lịch ca** | `ca_truc` · `ca_nghi` |
 | **Dữ liệu cá nhân** | `yeu_cau_chu_the` |
 | **Hồ sơ agent** | `agent_ho_so` |
-| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` |
+| **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` · `ket_noi_kiem_tra` · `lich_su_ket_noi` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
-| **Inbox native** | `webhook_deliveries` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
+| **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` · `truong_khach` |
 | **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
 
@@ -755,6 +755,37 @@ erDiagram
         UUID cong_viec_id
         UUID order_id
         _ con_3_cot_nua
+    }
+    ket_noi_kiem_tra {
+        TEXT dich_vu
+        BOOLEAN ok
+        TEXT chi_tiet
+        INT ms
+        TEXT dau_van_tay
+        TEXT kiem_boi
+        TIMESTAMPTZ kiem_luc
+    }
+    lich_su_ket_noi {
+        BIGSERIAL id
+        TEXT dich_vu
+        TEXT truong
+        TEXT hanh_dong
+        BOOLEAN bi_mat
+        UUID account_id
+        TEXT doi_tuong
+        TEXT sua_boi
+        _ con_1_cot_nua
+    }
+    webhook_nhan {
+        BIGSERIAL id
+        TEXT dich_vu
+        UUID account_id
+        TEXT phuong_thuc
+        TEXT duong
+        INT ma_http
+        INT thoi_gian_ms
+        TEXT loi
+        _ con_1_cot_nua
     }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""

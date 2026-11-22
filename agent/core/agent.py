@@ -40,6 +40,19 @@ SYSTEM = (ROOT / "agent" / "prompts" / "system.md").read_text(
     encoding="utf-8").replace("{THUONG_HIEU}", tools.ten_thuong_hieu())
 MAX_TOOL_ROUNDS = 4
 
+
+def _model_chat() -> str:
+    """Model trả lời khách: dashboard (cấu hình động) trước, `.env` sau.
+
+    Đọc thẳng `settings.model_chat` như bản trước là đổi MODEL_CHAT trên
+    dashboard chỉ đổi con số trên màn hình: lưu "thành công", kiểm "xanh",
+    agent vẫn chạy model cũ — hỏng im lặng đúng nghĩa.
+    """
+    from agent import cau_hinh_dong
+
+    return cau_hinh_dong.lay("MODEL_CHAT") or settings.model_chat
+
+
 # ĐỌC: BẢN ĐỒ TỆP NÀY — năm chặng của respond(), theo đúng thứ tự mã chạy.
 # ĐỌC:
 # ĐỌC:   dòng  52–249  BẢY HÀM CANH LƯỚI  ← một phần ba tệp, đọc chậm nhất
@@ -907,7 +920,7 @@ async def respond(
                 # Phần ổn định mang cache_control; ngữ cảnh RAG biến động nằm SAU.
                 system=llm.cached_system(SYSTEM, context),
                 messages=messages,
-                model=settings.model_chat,
+                model=_model_chat(),
                 tools=cong_cu,
                 max_tokens=MAX_TOKENS_LUOT,
                 effort="medium",
@@ -1175,7 +1188,7 @@ async def respond(
         tokens_out=tok_out,
         cache_read=cache_read,
         latency_ms=latency,
-        model=settings.model_chat,
+        model=_model_chat(),
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
         goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
         tri_thuc=_tri_thuc_cho_dau_vet(passages),

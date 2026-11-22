@@ -77,7 +77,9 @@ def test_tao_liet_ke_sua_xoa(csdl_kiem_thu):
         qid = r.json()["id"]
         ds = k.get("/api/tu-dong").json()
         assert [q["ten"] for q in ds["quy_tac"]] == ["Chào ngoài giờ"]
-        assert ds["quy_tac"][0]["bay_ngay"] == {"da_lam": 0, "hong": 0, "lan_cuoi": None}
+        assert ds["quy_tac"][0]["bay_ngay"] == {"da_lam": 0, "hong": 0, "bo_qua": 0,
+                                                "lan_cuoi": None}
+        assert ds["quy_tac"][0]["lan_chay_cuoi"] is None and ds["quy_tac"][0]["loi_cuoi"] is None
         assert "gui_mau" in ds["hanh_dong"] and "facebook" in ds["kenh"]
 
         r = k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": False, "thu_tu": 5})
@@ -148,3 +150,81 @@ def test_tat_duoc_quy_tac_da_hong(csdl_kiem_thu):
         assert k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": True}).status_code == 422
         r = k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": False})
         assert r.status_code == 200 and r.json()["bat"] is False
+
+
+# ------------------------------------------------------------------ thứ tự & xung đột (0060)
+
+def test_co_uu_tien_luu_va_giu_khi_bat_tat(csdl_kiem_thu):
+    """
+    Hai cờ 0060 lưu được, và nút Bật/Tắt gửi lại quy tắc KHÔNG kèm hai cờ
+    thì cờ GIỮ NGUYÊN — thiếu khoá mà hiểu là false thì mỗi lần bấm Tắt là
+    cờ lặng lẽ mất.
+    """
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        r = k.post("/api/tu-dong", json={**MAU, "dung_xet_sau": True, "cho_ai_tra_loi": True})
+        assert r.status_code == 201, r.text
+        qid = r.json()["id"]
+        assert (r.json()["dung_xet_sau"], r.json()["cho_ai_tra_loi"]) == (True, True)
+        r = k.put(f"/api/tu-dong/{qid}", json={**MAU, "bat": False})
+        assert (r.json()["bat"], r.json()["dung_xet_sau"], r.json()["cho_ai_tra_loi"]) == (
+            False, True, True)
+        r = k.put(f"/api/tu-dong/{qid}", json={**MAU, "dung_xet_sau": False})
+        assert (r.json()["dung_xet_sau"], r.json()["cho_ai_tra_loi"]) == (False, True)
+        # Tạo không gửi cờ -> mặc định an toàn: AI nhường, không dừng xét.
+        r = k.post("/api/tu-dong", json={**MAU, "ten": "Khác"})
+        assert (r.json()["dung_xet_sau"], r.json()["cho_ai_tra_loi"]) == (False, False)
+
+
+def test_danh_sach_theo_thu_tu_chay(csdl_kiem_thu):
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        for ten, tt in (("C", 30), ("A", 10), ("B", 10)):
+            assert k.post("/api/tu-dong", json={**MAU, "ten": ten, "thu_tu": tt}).status_code == 201
+        # A và B cùng 10: tạo trước (A) đứng trước — đúng thứ tự lúc chạy.
+        assert [q["ten"] for q in k.get("/api/tu-dong").json()["quy_tac"]] == ["A", "B", "C"]
+
+
+def test_dieu_kien_va_hanh_dong_mau_thuan_la_422(csdl_kiem_thu):
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        nid = k.post("/api/tu-dong", json=MAU).json()["hanh_dong"][0]["nhan_id"]
+        r = k.post("/api/tu-dong", json={**MAU, "dieu_kien": {
+            "nhan_hoi_thoai_co": [nid], "nhan_hoi_thoai_khong": [nid]}})
+        assert r.status_code == 422 and "mâu thuẫn" in r.text
+        r = k.post("/api/tu-dong", json={**MAU, "hanh_dong": [
+            {"loai": "gui_mau", "ma_tat": "chao"}, {"loai": "gui_mau", "ma_tat": "chao"}]})
+        assert r.status_code == 422
+
+
+def test_dau_vet_lan_chay_hien_tren_dong_quy_tac(csdl_kiem_thu):
+    """
+    Mỗi dòng quy tắc mang lần chạy cuối và LỖI cuối; nhật ký lọc được theo
+    từng quy tắc. Không có thì "quy tắc của tôi có chạy không, hỏng vì sao"
+    chỉ trả lời được bằng cách lục nhật ký chung.
+    """
+    import asyncio
+
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        a = k.post("/api/tu-dong", json={**MAU, "ten": "A"}).json()["id"]
+        b = k.post("/api/tu-dong", json={**MAU, "ten": "B"}).json()["id"]
+
+        async def ghi():
+            conn = await asyncpg.connect(csdl_kiem_thu)
+            try:
+                await conn.execute(
+                    "INSERT INTO quy_tac_lan_chay (quy_tac_id, ket_qua, chi_tiet, luc) VALUES "
+                    "($1,'hong','{\"loi\": \"gui_mau: mẫu bị xoá\"}'::jsonb, now() - interval '1 hour'),"
+                    "($1,'da_lam','{\"lam\": [\"gửi mẫu /chao\"], \"ai_nhuong\": true}'::jsonb, now()),"
+                    "($2,'bo_qua','{\"bo_qua\": [\"không gửi mẫu: nhân viên đang tiếp hội thoại\"]}'::jsonb, now())",
+                    UUID(a), UUID(b))
+            finally:
+                await conn.close()
+        asyncio.run(ghi())
+        ds = {q["ten"]: q for q in k.get("/api/tu-dong").json()["quy_tac"]}
+        assert ds["A"]["lan_chay_cuoi"]["ket_qua"] == "da_lam"
+        assert ds["A"]["lan_chay_cuoi"]["tom_tat"] == "gửi mẫu /chao"
+        assert ds["A"]["loi_cuoi"]["loi"] == "gui_mau: mẫu bị xoá"
+        assert ds["A"]["bay_ngay"]["hong"] == 1 and ds["A"]["bay_ngay"]["da_lam"] == 1
+        assert ds["B"]["lan_chay_cuoi"]["tom_tat"] == "không gửi mẫu: nhân viên đang tiếp hội thoại"
+        assert ds["B"]["loi_cuoi"] is None
+        loc = k.get(f"/api/tu-dong/lan-chay?quy_tac_id={b}").json()["lan_chay"]
+        assert [x["quy_tac"] for x in loc] == ["B"] and loc[0]["quy_tac_id"] == b
+        assert len(k.get("/api/tu-dong/lan-chay").json()["lan_chay"]) == 3

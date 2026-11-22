@@ -358,7 +358,19 @@ async def handle_inbound(msg: InboundMessage) -> None:
         await thong_bao_noi_bo.bao_ai_chuyen_giao(
             cid, ly_do="Khách gửi ảnh không kèm chữ — agent không đoán.")
         with suppress(Exception):
-            await adapter_bao_nguoi(msg, cid)
+            # Quy tắc vừa gửi mẫu cho chính tin này thì khách đã có một câu
+            # — câu báo chuyển người thứ hai là thừa (tu_dong.py, chính sách a).
+            await adapter_bao_nguoi(msg, cid, bao_khach=not tu_dong_kq.da_gui_khach)
+        return
+
+    # QUY TẮC ĐÃ TRẢ LỜI TIN NÀY -> AI NHƯỜNG (mục 7.7). Đặt SAU các nhánh
+    # chuyển người ở trên chứ không ngay sau `chay_tin_khach`: agent tắt theo
+    # kênh, khách đòi gặp người, ảnh không kèm chữ vẫn phải giao người và
+    # báo nhân viên — một câu chào tự động không được nuốt mất việc ấy.
+    # Đặt TRƯỚC "em là trợ lý AI": AI không nói gì thì câu ấy là nói sai.
+    if tu_dong_kq.ai_nhuong:
+        await db.log_event("tu_dong.ai_nhuong", ref_id=cid,
+                           quy_tac=(tu_dong_kq.quy_tac_gui or "")[:80])
         return
 
     # Agent SẮP trả lời: báo khách đang nói với trợ lý AI (một lần mỗi hội
@@ -665,7 +677,7 @@ async def _giao_nguoi_tin_nhom(cid: uuid.UUID, conv: dict, state: str | None) ->
     await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do=LY_DO_TIN_NHOM)
 
 
-async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
+async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID, *, bao_khach: bool = True) -> None:
     """
     Báo cả hai phía khi chuyển người: khách nhận một câu, nhân viên nhận
     ghi chú trong hộp thư của kênh.
@@ -679,7 +691,7 @@ async def adapter_bao_nguoi(msg: InboundMessage, cid: uuid.UUID) -> None:
     await bao_nhan_vien_tiep_quan(
         adapter, msg.conversation_ref, cid, "khách gửi ảnh, cần người xem"
     )
-    if runtime.mode() == "auto":
+    if bao_khach and runtime.mode() == "auto":
         await bao_khach_dang_chuyen_nguoi(adapter, msg.conversation_ref, cid)
 
 

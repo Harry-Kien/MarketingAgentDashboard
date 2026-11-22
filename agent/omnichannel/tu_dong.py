@@ -33,6 +33,43 @@ BA CHỐT
   3. Hỏng KHÔNG chặn tin của khách: ghi `quy_tac_lan_chay` (hong) và
      `events` (tu_dong.loi), rồi luồng thường chạy tiếp. Hỏng mà im lặng là
      quy tắc "đang bật" không bao giờ làm gì — không ai biết.
+
+THỨ TỰ VÀ XUNG ĐỘT (mục 7.6–7.7, migration 0060)
+-------------------------------------------------
+Quy tắc chạy TRƯỚC agent (xu_ly_tin_vao.py), theo `thu_tu` tăng dần; cùng
+số thì quy tắc tạo trước chạy trước, cùng lúc tạo thì theo `id` — một bộ
+quy tắc luôn chạy đúng một thứ tự. Nhiều quy tắc cùng khớp một tin thì:
+
+  a. KHÁCH NHẬN TỐI ĐA MỘT TIN TỰ ĐỘNG cho mỗi tin của khách. Tin ấy là
+     của quy tắc khớp ĐẦU TIÊN có thứ gì để nói: mẫu nó gửi, hoặc câu báo
+     chuyển người cố định nếu nó chuyển người mà không gửi mẫu. Mẫu của
+     các quy tắc sau bị BỎ QUA, ghi rõ trong nhật ký lần chạy. Một quy tắc
+     vừa gửi mẫu vừa chuyển người thì mẫu chính là câu báo — không gửi
+     thêm câu báo cố định (thứ tự hai hành động trong quy tắc không đổi
+     điều này).
+  b. Nhãn GỘP: mọi nhãn của mọi quy tắc khớp đều được gắn (gắn lại là vô
+     hại), và quy tắc sau THẤY nhãn quy tắc trước vừa gắn.
+  c. Công việc GỘP theo tiêu đề: hai quy tắc tạo cùng một tiêu đề cho một
+     tin thì chỉ một việc.
+  d. Chuyển người: quy tắc đầu tiên thắng, các lần sau không ghi lại.
+  e. "Dừng xét quy tắc sau" (`dung_xet_sau`): quy tắc có cờ này KHỚP thì
+     các quy tắc xếp sau không được xét cho tin này.
+
+QUY TẮC VÀ AI KHÔNG CÙNG TRẢ LỜI MỘT TIN
+---------------------------------------
+Quy tắc đã gửi mẫu cho tin này thì AI KHÔNG trả lời CHÍNH tin ấy (`ai_nhuong`)
+— trừ khi quy tắc đã gửi bật `cho_ai_tra_loi`. Tin sau của khách AI vẫn trả
+lời bình thường. Quy tắc chuyển người thì agent dừng hẳn (`dung_agent`).
+
+KHI NÀO QUY TẮC KHÔNG ĐƯỢC NÓI VỚI KHÁCH
+----------------------------------------
+Gắn nhãn, tạo việc, chuyển người vẫn chạy; riêng GỬI MẪU thì bỏ qua (ghi lý
+do) khi: agent tắt toàn hệ thống; nhân viên đang tiếp hoặc hội thoại đang
+chờ người (`mode='human'` / `status='escalated'`); hội thoại bật "Duyệt
+trước khi gửi"; khách đã đòi gặp nhân viên (NĐ 356/2025 Đ.10 k.3 — quyền
+không bị xử lý tự động); hội thoại NHÓM. Tin nhóm thậm chí không tới đây —
+`handle_inbound` giao người trước mọi nhánh; outbox chặn thêm lần nữa.
+Ngoài cửa sổ gửi của kênh thì hành động ghi "hỏng" (chốt 1).
 """
 from __future__ import annotations
 
@@ -66,6 +103,7 @@ HANH_DONG_NHAN = {"gan_nhan_hoi_thoai": "hoi_thoai", "gan_nhan_khach": "khach"}
 TOI_DA_NHAN = 10
 # Làm tối đa một lần mỗi hội thoại (chốt 2). Gắn nhãn/chuyển người lặp lại vô hại.
 MOT_LAN = frozenset({"gui_mau", "tao_viec"})
+DUY_NHAT_MOI_QUY_TAC = ("gui_mau", "tao_viec", "chuyen_nguoi")
 TOI_DA_HANH_DONG = 5
 TOI_DA_TU_KHOA = 30
 
@@ -128,6 +166,13 @@ def kiem_dieu_kien(dk: Any) -> dict[str, Any]:
     for k in DIEU_KIEN_NHAN:
         if k in dk:
             ra[k] = _ds_id(dk[k], k)
+    # "CÓ nhãn X" và "CHƯA có nhãn X" cùng lúc: quy tắc không bao giờ khớp mà
+    # vẫn trông "đang bật" — loại hỏng im lặng phải chặn lúc bấm Lưu.
+    for loai in ("hoi_thoai", "khach"):
+        trung = set(ra.get(f"nhan_{loai}_co", [])) & set(ra.get(f"nhan_{loai}_khong", []))
+        if trung:
+            raise QuyTacHong(f"điều kiện mâu thuẫn: cùng một nhãn vừa phải CÓ vừa phải CHƯA có "
+                             f"({'nhãn hội thoại' if loai == 'hoi_thoai' else 'nhãn khách'})")
     # Khoá cũ: giữ hình dạng để API đổi sang id (cần CSDL — hàm này thuần).
     for k in DIEU_KIEN_CU:
         if k in dk:
@@ -169,6 +214,16 @@ def kiem_hanh_dong(ds: Any) -> list[dict[str, Any]]:
             ra.append({"loai": loai, "tieu_de": td})
         else:
             ra.append({"loai": loai, "ly_do": str(hd.get("ly_do") or "quy tắc tự động").strip()[:200]})
+    # Hai mẫu trong một quy tắc là hai tin cho một tin khách — đúng thứ chính
+    # sách "một tin tự động mỗi tin khách" cấm; mẫu thứ hai sẽ không bao giờ
+    # được gửi, nên cho lưu là để người vận hành tin một điều sai.
+    for loai in DUY_NHAT_MOI_QUY_TAC:
+        if sum(1 for h in ra if h["loai"] == loai) > 1:
+            raise QuyTacHong(f"mỗi quy tắc chỉ có MỘT hành động {loai}")
+    nhan = [(h["loai"], h.get("nhan_id") or h.get("nhan")) for h in ra
+            if h["loai"] in ("gan_nhan", *HANH_DONG_NHAN)]
+    if len(nhan) != len(set(nhan)):
+        raise QuyTacHong("một nhãn bị gắn hai lần trong cùng quy tắc")
     return ra
 
 
@@ -220,17 +275,37 @@ def khop(dk: dict[str, Any], nc: NguCanh) -> bool:
 class KetQua:
     dung_agent: bool = False          # có quy tắc chuyển người -> agent không trả lời
     da_lam: list[str] = field(default_factory=list)
+    # Đã xếp hàng (hoặc đã thử gửi) MỘT tin cho khách ở tin này: mẫu, hoặc
+    # câu báo chuyển người. Nhánh sau trong handle_inbound đọc cờ này để
+    # không gửi câu thứ hai.
+    da_gui_khach: bool = False
+    # AI nhường CHÍNH tin này cho quy tắc (mục 7.7): quy tắc đã gửi mẫu và
+    # không bật `cho_ai_tra_loi`.
+    ai_nhuong: bool = False
+    quy_tac_gui: str | None = None    # tên quy tắc đã nói với khách — cho nhật ký
 
 
 def _jsonb(v: Any) -> Any:
     return json.loads(v) if isinstance(v, str) else (v or {})
 
 
-async def _da_lam_mot_lan(db, quy_tac_id, cid) -> bool:
-    r = await db.fetchrow(
-        "SELECT 1 FROM quy_tac_lan_chay WHERE quy_tac_id = $1 AND conversation_id = $2 "
-        "AND ket_qua = 'da_lam' AND chi_tiet ? 'mot_lan' LIMIT 1", quy_tac_id, cid)
-    return r is not None
+async def _mot_lan_da_lam(db, quy_tac_id, cid) -> set[str]:
+    """
+    Hành động MỘT-LẦN nào của quy tắc này đã làm trong hội thoại này.
+
+    Theo TỪNG loại, không theo cả quy tắc: quy tắc "gửi mẫu + tạo việc" mà
+    lần đầu mẫu bị bỏ qua (nhân viên đang tiếp, quy tắc khác đã gửi) thì lần
+    sau mẫu vẫn còn quyền gửi. Dòng cũ trước 0060 chỉ có `mot_lan: true` —
+    coi như mọi hành động một-lần đã làm, đúng nghĩa của nó lúc ghi.
+    """
+    rows = await db.fetch(
+        "SELECT chi_tiet FROM quy_tac_lan_chay WHERE quy_tac_id = $1 AND conversation_id = $2 "
+        "AND ket_qua = 'da_lam' AND chi_tiet ? 'mot_lan'", quy_tac_id, cid)
+    da: set[str] = set()
+    for r in rows:
+        ct = _jsonb(r["chi_tiet"])
+        da |= set(ct.get("mot_lan_loai") or MOT_LAN)
+    return da
 
 
 async def _gui_mau(db, msg, cid, ma_tat: str, khoa: str) -> str:
@@ -273,45 +348,89 @@ async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str) -> str:
     return str(r["id"])
 
 
-async def _bao_chuyen_nguoi(msg, cid: uuid.UUID, ten_quy_tac: str) -> None:
+async def _bao_nhan_vien_chuyen(msg, cid: uuid.UUID, ten_quy_tac: str) -> None:
     """
-    Báo CẢ HAI PHÍA như mọi nhánh chuyển người khác: khách nhận câu cố định,
-    nhân viên thấy ghi chú trong hộp thư kênh. Thiếu bước này thì khách nhận
-    im lặng — đúng thứ chuyển người sinh ra để tránh (rà soát 28.10.2026).
+    Nhân viên thấy ghi chú trong hộp thư kênh — như mọi nhánh chuyển người.
+    Câu báo cho KHÁCH đi riêng (`_bao_khach_chuyen`), cuối quy tắc, và chỉ
+    khi khách chưa nhận tin tự động nào cho tin này (chính sách a).
     """
     from agent.channels import registry as channels
     from agent.omnichannel import xu_ly_tin_vao
 
     ad = await channels.get_for_account(msg.account_id)
+    await xu_ly_tin_vao.bao_nhan_vien_tiep_quan(
+        ad, msg.conversation_ref, cid, f"quy tắc tự động «{ten_quy_tac}»")
+
+
+async def _bao_khach_chuyen(msg, cid: uuid.UUID) -> None:
+    """
+    Thiếu câu này thì khách nhận im lặng — đúng thứ chuyển người sinh ra để
+    tránh (rà soát 28.10.2026). Hàm dưới tự ghi nhật ký khi gửi hỏng.
+    """
+    from agent.channels import registry as channels
+    from agent.omnichannel import xu_ly_tin_vao
+
+    ad = await channels.get_for_account(msg.account_id)
+    await xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(ad, msg.conversation_ref, cid)
+
+
+async def _ly_do_khong_gui(db, msg, cid: uuid.UUID, nguoi_dang_tiep: bool) -> str | None:
+    """
+    Vì sao quy tắc KHÔNG được nói với khách ở tin này; None = được nói.
+
+    Đọc trạng thái hội thoại từ CSDL chứ không chỉ tin cờ người gọi đưa:
+    hội thoại `escalated` đang chờ người cũng là lúc một câu chào tự động
+    chen ngang trước mặt nhân viên sắp vào.
+    """
+    from agent import runtime
+    from agent.channels.base import THREAD_NHOM
+    from agent.omnichannel import thong_bao_ai
+
+    if not runtime.enabled():
+        return "agent đang tắt toàn hệ thống"
+    c = await db.fetchrow(
+        "SELECT mode, status, thread_type, duyet_truoc_khi_gui FROM conversations WHERE id = $1",
+        cid)
+    c = dict(c) if c else {}
+    if nguoi_dang_tiep or c.get("mode") == "human" or c.get("status") == "escalated":
+        return "nhân viên đang tiếp hội thoại"
+    if getattr(msg, "la_nhom", False) or c.get("thread_type") == THREAD_NHOM:
+        return "hội thoại nhóm — máy không nói vào nhóm"
+    if c.get("duyet_truoc_khi_gui"):
+        return "hội thoại đang bật «Duyệt trước khi gửi»"
+    if (thong_bao_ai.khach_doi_gap_nguoi(getattr(msg, "text", "") or "")
+            or await thong_bao_ai.da_doi_gap_nguoi(cid)):
+        return "khách đã đòi gặp nhân viên"
+    return None
+
+
+async def _ghi_loi_su_kien(db, cid, exc: BaseException) -> None:
+    logger.exception("tu_dong: không đọc được quy tắc / ngữ cảnh hội thoại %s", cid)
     try:
-        await xu_ly_tin_vao.bao_nhan_vien_tiep_quan(
-            ad, msg.conversation_ref, cid, f"quy tắc tự động «{ten_quy_tac}»")
-    finally:
-        await xu_ly_tin_vao.bao_khach_dang_chuyen_nguoi(ad, msg.conversation_ref, cid)
+        await db.log_event("tu_dong.loi", ref_id=cid, loi=f"{type(exc).__name__}: {exc}"[:200])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
                          nguoi_dang_tiep: bool = False) -> KetQua:
     """
-    Chạy mọi quy tắc đang bật cho một tin khách. Không bao giờ ném.
+    Chạy mọi quy tắc đang bật cho một tin khách, theo chính sách ở đầu mô-đun.
+    Không bao giờ ném.
 
-    `nguoi_dang_tiep`: hội thoại đã ở chế độ người TRƯỚC tin này. Khi ấy, và
-    khi công tắc agent toàn cục đang tắt, KHÔNG gửi mẫu: nhân viên đang nói
-    chuyện với khách, một câu tự động chen ngang là nói đè lên họ.
+    `nguoi_dang_tiep`: hội thoại đã ở chế độ người TRƯỚC tin này. Khi ấy
+    (và mọi lý do trong `_ly_do_khong_gui`) KHÔNG gửi mẫu: nhân viên đang
+    nói chuyện với khách, một câu tự động chen ngang là nói đè lên họ.
     """
-    from agent import db, runtime
+    from agent import db
     from agent.core import gio_lam_viec, thong_bao_noi_bo
 
     kq = KetQua()
     try:
         ds = await db.fetch("SELECT * FROM quy_tac_tu_dong WHERE bat AND su_kien = 'tin_khach' "
-                            "ORDER BY thu_tu, tao_luc")
+                            "ORDER BY thu_tu, tao_luc, id")
     except Exception as exc:  # noqa: BLE001 — bảng chưa có / CSDL lỗi: báo, không chặn tin
-        logger.exception("tu_dong: không đọc được quy tắc")
-        try:
-            await db.log_event("tu_dong.loi", ref_id=cid, loi=f"{type(exc).__name__}: {exc}"[:200])
-        except Exception:  # noqa: BLE001
-            pass
+        await _ghi_loi_su_kien(db, cid, exc)
         return kq
     if not ds:
         return kq
@@ -328,53 +447,66 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
         gan_kh = await db.fetch(
             "SELECT g.nhan_id::text AS id FROM conversations c "
             "JOIN khach_gan_nhan g ON g.contact_id = c.contact_id WHERE c.id = $1", cid)
+        khong_gui = await _ly_do_khong_gui(db, msg, cid, nguoi_dang_tiep)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("tu_dong: không đọc được ngữ cảnh hội thoại %s", cid)
-        try:
-            await db.log_event("tu_dong.loi", ref_id=cid, loi=f"{type(exc).__name__}: {exc}"[:200])
-        except Exception:  # noqa: BLE001
-            pass
+        await _ghi_loi_su_kien(db, cid, exc)
         return kq
     nc = NguCanh(kenh=str(msg.channel),
                  van_ban=msg.text or "", ngoai_gio=not gio_lam_viec.dang_trong_gio(),
                  lan_dau=lan_dau, nhan={r["ten"] for r in gan_ht},
                  nhan_hoi_thoai={r["id"] for r in gan_ht},
                  nhan_khach={r["id"] for r in gan_kh})
-    duoc_gui = runtime.enabled() and not nguoi_dang_tiep
+    viec_da_tao: set[str] = set()     # chính sách c — gộp việc cùng tiêu đề
     for qt in ds:
         try:
             if not khop(_jsonb(qt["dieu_kien"]), nc):
                 continue
-            da_mot_lan = await _da_lam_mot_lan(db, qt["id"], cid)
+            da_mot_lan = await _mot_lan_da_lam(db, qt["id"], cid)
         except Exception as exc:  # noqa: BLE001
             await _ghi_hong(db, qt, cid, f"{type(exc).__name__}: {exc}"[:300])
             continue
+        ten = str(qt["ten"])
         lam: list[str] = []
         loi: list[str] = []
         bo_qua: list[str] = []
-        mot_lan = False
+        mot_lan_loai: list[str] = []
+        chuyen_moi = False
+        gui_mau_nay = False
         # MỖI HÀNH ĐỘNG HỎNG RIÊNG. Bản trước để một mẫu hỏng (bị xoá, dính
         # cụm cấm, ngoài cửa sổ gửi) huỷ cả quy tắc — "chuyển người" đứng sau
         # không chạy, và AGENT trả lời đúng người cửa hàng muốn giao cho
         # nhân viên (rà soát 28.10.2026).
         for hd in _jsonb(qt["hanh_dong"]) or []:
             loai = hd.get("loai")
-            if loai in MOT_LAN and da_mot_lan:
+            if loai in MOT_LAN and loai in da_mot_lan:
                 continue
             try:
                 if loai in ("gan_nhan", "gan_nhan_hoi_thoai", "gan_nhan_khach"):
                     lam.append(await _gan_nhan(db, cid, hd, nc))
                 elif loai == "gui_mau":
-                    if not duoc_gui:
-                        bo_qua.append("không gửi mẫu: nhân viên đang tiếp hoặc agent đang tắt toàn hệ thống")
+                    if khong_gui:
+                        bo_qua.append(f"không gửi mẫu: {khong_gui}")
+                        continue
+                    if kq.da_gui_khach:
+                        bo_qua.append(f"không gửi mẫu /{hd['ma_tat']}: quy tắc «{kq.quy_tac_gui}» "
+                                      "đã gửi tin cho tin này của khách")
                         continue
                     lam.append(await _gui_mau(db, msg, cid, hd["ma_tat"],
                                               f"tu_dong:{qt['id']}:{cid}"))
-                    mot_lan = True
+                    # Đánh dấu SAU khi xếp hàng được: mẫu hỏng (bị xoá, dính
+                    # cụm cấm) mà đã giữ chỗ thì câu báo chuyển người phía sau
+                    # bị bỏ — khách nhận im lặng đúng lúc cần được báo nhất.
+                    kq.da_gui_khach, kq.quy_tac_gui = True, ten
+                    mot_lan_loai.append("gui_mau")
+                    gui_mau_nay = True
                 elif loai == "tao_viec":
-                    await _tao_viec(db, cid, hd["tieu_de"], str(qt["ten"]))
+                    if hd["tieu_de"] in viec_da_tao:
+                        bo_qua.append(f"việc «{hd['tieu_de']}» đã được quy tắc trước tạo cho tin này")
+                        continue
+                    await _tao_viec(db, cid, hd["tieu_de"], ten)
+                    viec_da_tao.add(hd["tieu_de"])
                     lam.append(f"tạo việc: {hd['tieu_de']}")
-                    mot_lan = True
+                    mot_lan_loai.append("tao_viec")
                 elif loai == "chuyen_nguoi":
                     # Đã ở chế độ người thì không ghi lại: khách nhắn mười tin
                     # là mười sự kiện "chuyển người" giả trong báo cáo.
@@ -385,36 +517,58 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
                     kq.dung_agent = True
                     lam.append("chuyển người")
                     if doi is not None:
+                        chuyen_moi = True
                         await db.log_event("conversation.escalated", ref_id=cid,
-                                           reason=f"quy tắc: {qt['ten']} — {hd.get('ly_do', '')}")
+                                           reason=f"quy tắc: {ten} — {hd.get('ly_do', '')}")
                         # Chuyển người mà không báo ai là im lặng: hội thoại
                         # nằm ở chế độ người, không ai biết phải vào.
                         await thong_bao_noi_bo.bao_ai_chuyen_giao(
-                            cid, ly_do=f"Quy tắc «{qt['ten']}»: {hd.get('ly_do', '')}")
-                        await _bao_chuyen_nguoi(msg, cid, str(qt["ten"]))
+                            cid, ly_do=f"Quy tắc «{ten}»: {hd.get('ly_do', '')}")
+                        await _bao_nhan_vien_chuyen(msg, cid, ten)
             except Exception as exc:  # noqa: BLE001 — hỏng một hành động không chặn hành động sau
                 loi.append(f"{loai}: {type(exc).__name__}: {exc}"[:300])
+        # Câu báo chuyển người cố định: CUỐI quy tắc, để mẫu của chính quy
+        # tắc này (dù đứng trước hay sau "chuyển người") được làm câu báo.
+        if chuyen_moi:
+            if kq.da_gui_khach:
+                bo_qua.append(f"không gửi câu báo chuyển người: khách đã nhận tin của "
+                              f"quy tắc «{kq.quy_tac_gui}»")
+            else:
+                kq.da_gui_khach, kq.quy_tac_gui = True, ten
+                try:
+                    await _bao_khach_chuyen(msg, cid)
+                except Exception as exc:  # noqa: BLE001
+                    loi.append(f"báo khách chuyển người: {type(exc).__name__}: {exc}"[:300])
+        if gui_mau_nay and not qt.get("cho_ai_tra_loi"):
+            kq.ai_nhuong = True
         chi_tiet: dict[str, Any] = {"lam": lam}
-        if mot_lan:
+        if mot_lan_loai:
             chi_tiet["mot_lan"] = True
+            chi_tiet["mot_lan_loai"] = mot_lan_loai
+        if gui_mau_nay:
+            chi_tiet["ai_nhuong"] = not qt.get("cho_ai_tra_loi")
         if bo_qua:
             chi_tiet["bo_qua"] = bo_qua
         if loi:
             chi_tiet["loi"] = "; ".join(loi)[:500]
+        if qt.get("dung_xet_sau"):
+            chi_tiet["dung_xet_sau"] = True
         ket_qua = "da_lam" if lam else ("hong" if loi else "bo_qua")
         try:
             await db.execute(
                 "INSERT INTO quy_tac_lan_chay (quy_tac_id, conversation_id, ket_qua, chi_tiet) "
                 "VALUES ($1,$2,$3,$4::jsonb)", qt["id"], cid, ket_qua, chi_tiet)
         except Exception:  # noqa: BLE001
-            logger.exception("tu_dong: không ghi được lần chạy của %s", qt["ten"])
+            logger.exception("tu_dong: không ghi được lần chạy của %s", ten)
         if loi:
             try:
-                await db.log_event("tu_dong.loi", ref_id=cid, quy_tac=str(qt["ten"])[:80],
+                await db.log_event("tu_dong.loi", ref_id=cid, quy_tac=ten[:80],
                                    loi=chi_tiet["loi"])
             except Exception:  # noqa: BLE001
-                logger.exception("tu_dong: không ghi được sự kiện lỗi của %s", qt["ten"])
+                logger.exception("tu_dong: không ghi được sự kiện lỗi của %s", ten)
         kq.da_lam += lam
+        if qt.get("dung_xet_sau"):
+            break
     return kq
 
 

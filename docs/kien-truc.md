@@ -676,7 +676,7 @@ erDiagram
         BOOLEAN bat
         INT thu_tu
         UUID tao_boi
-        _ con_2_cot_nua
+        _ con_4_cot_nua
     }
     quy_tac_lan_chay {
         BIGSERIAL id

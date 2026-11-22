@@ -42,6 +42,11 @@ class QuyTacIn(BaseModel):
     hanh_dong: list[dict[str, Any]]
     bat: bool = True
     thu_tu: int = Field(default=100, ge=0, le=10000)
+    # None = GIỮ giá trị đang lưu (lúc sửa) / mặc định false (lúc tạo). Nút
+    # Bật/Tắt cũ gửi lại cả quy tắc mà không biết hai cờ này — nếu thiếu khoá
+    # nghĩa là "false" thì mỗi lần bấm Tắt là cờ lặng lẽ mất (migration 0060).
+    dung_xet_sau: bool | None = None
+    cho_ai_tra_loi: bool | None = None
 
 
 async def _kiem(body: QuyTacIn) -> tuple[dict, list]:
@@ -131,22 +136,52 @@ def _json(v: Any) -> Any:
 def _dong(r) -> dict[str, Any]:
     return {"id": str(r["id"]), "ten": r["ten"], "su_kien": r["su_kien"],
             "dieu_kien": _json(r["dieu_kien"]), "hanh_dong": _json(r["hanh_dong"]),
-            "bat": r["bat"], "thu_tu": r["thu_tu"], "sua_luc": r["sua_luc"].isoformat()}
+            "bat": r["bat"], "thu_tu": r["thu_tu"],
+            "dung_xet_sau": r["dung_xet_sau"], "cho_ai_tra_loi": r["cho_ai_tra_loi"],
+            "tao_luc": r["tao_luc"].isoformat(), "sua_luc": r["sua_luc"].isoformat()}
+
+
+def _tom_tat_lan(ket_qua: str, ct: dict[str, Any]) -> str:
+    if ket_qua == "hong":
+        return "hỏng: " + str(ct.get("loi") or "?")
+    if ket_qua == "bo_qua":
+        return "; ".join(ct.get("bo_qua") or []) or "khớp, không còn gì để làm"
+    return ", ".join(ct.get("lam") or [])
 
 
 @router.get("")
 async def liet_ke(_q: dict = Depends(can_quyen("dinh_tuyen.doc"))) -> dict[str, Any]:
-    rows = await db.fetch("SELECT * FROM quy_tac_tu_dong ORDER BY thu_tu, tao_luc")
+    # CÙNG thứ tự với lúc chạy (tu_dong.chay_tin_khach): danh sách là thứ tự
+    # khách thật sự gặp, không phải một thứ tự trông giống.
+    rows = await db.fetch("SELECT * FROM quy_tac_tu_dong ORDER BY thu_tu, tao_luc, id")
     dem = {str(r["quy_tac_id"]): r for r in await db.fetch(
         "SELECT quy_tac_id, count(*) FILTER (WHERE ket_qua = 'da_lam') AS da_lam, "
-        "count(*) FILTER (WHERE ket_qua = 'hong') AS hong, max(luc) AS lan_cuoi "
+        "count(*) FILTER (WHERE ket_qua = 'hong') AS hong, "
+        "count(*) FILTER (WHERE ket_qua = 'bo_qua') AS bo_qua, max(luc) AS lan_cuoi "
         "FROM quy_tac_lan_chay WHERE luc > now() - interval '7 days' GROUP BY 1")}
+    # Lần chạy cuối và LỖI cuối của từng quy tắc, không giới hạn bảy ngày:
+    # quy tắc hỏng từ tuần trước rồi im (vì không ai nhắn đúng điều kiện)
+    # vẫn phải hiện lý do hỏng ngay trên dòng của nó.
+    cuoi = {str(r["quy_tac_id"]): r for r in await db.fetch(
+        "SELECT DISTINCT ON (quy_tac_id) quy_tac_id, ket_qua, chi_tiet, luc "
+        "FROM quy_tac_lan_chay ORDER BY quy_tac_id, luc DESC, id DESC")}
+    loi_cuoi = {str(r["quy_tac_id"]): r for r in await db.fetch(
+        "SELECT DISTINCT ON (quy_tac_id) quy_tac_id, chi_tiet, luc FROM quy_tac_lan_chay "
+        "WHERE chi_tiet ? 'loi' ORDER BY quy_tac_id, luc DESC, id DESC")}
     ra = []
     for r in rows:
         d = _dong(r)
         t = dem.get(d["id"])
         d["bay_ngay"] = {"da_lam": int(t["da_lam"]) if t else 0, "hong": int(t["hong"]) if t else 0,
+                         "bo_qua": int(t["bo_qua"]) if t else 0,
                          "lan_cuoi": t["lan_cuoi"].isoformat() if t and t["lan_cuoi"] else None}
+        c = cuoi.get(d["id"])
+        d["lan_chay_cuoi"] = None if c is None else {
+            "ket_qua": c["ket_qua"], "luc": c["luc"].isoformat(),
+            "tom_tat": _tom_tat_lan(c["ket_qua"], _json(c["chi_tiet"]) or {})}
+        e = loi_cuoi.get(d["id"])
+        d["loi_cuoi"] = None if e is None else {
+            "luc": e["luc"].isoformat(), "loi": str((_json(e["chi_tiet"]) or {}).get("loi"))}
         ra.append(d)
     return {"quy_tac": ra, "dieu_kien": list(tu_dong.DIEU_KIEN),
             "hanh_dong": list(tu_dong.HANH_DONG), "kenh": list(tu_dong.KENH)}
@@ -156,9 +191,11 @@ async def liet_ke(_q: dict = Depends(can_quyen("dinh_tuyen.doc"))) -> dict[str, 
 async def tao(body: QuyTacIn, nguoi: dict = Depends(can_quyen("dinh_tuyen.sua"))) -> dict[str, Any]:
     dk, hd = await _kiem(body)
     r = await db.fetchrow(
-        "INSERT INTO quy_tac_tu_dong (ten, su_kien, dieu_kien, hanh_dong, bat, thu_tu, tao_boi) "
-        "VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7) RETURNING *",
-        body.ten.strip(), body.su_kien, dk, hd, body.bat, body.thu_tu, UUID(str(nguoi["id"])))
+        "INSERT INTO quy_tac_tu_dong (ten, su_kien, dieu_kien, hanh_dong, bat, thu_tu, tao_boi, "
+        "dung_xet_sau, cho_ai_tra_loi) "
+        "VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9) RETURNING *",
+        body.ten.strip(), body.su_kien, dk, hd, body.bat, body.thu_tu, UUID(str(nguoi["id"])),
+        bool(body.dung_xet_sau), bool(body.cho_ai_tra_loi))
     await db.log_event("tu_dong.tao", actor=nguoi.get("ten_dang_nhap") or "?", ten=body.ten.strip())
     return _dong(r)
 
@@ -169,8 +206,10 @@ async def sua(quy_tac_id: UUID, body: QuyTacIn,
     dk, hd = await _kiem(body)
     r = await db.fetchrow(
         "UPDATE quy_tac_tu_dong SET ten=$2, su_kien=$3, dieu_kien=$4::jsonb, hanh_dong=$5::jsonb, "
-        "bat=$6, thu_tu=$7, sua_luc=now() WHERE id=$1 RETURNING *",
-        quy_tac_id, body.ten.strip(), body.su_kien, dk, hd, body.bat, body.thu_tu)
+        "bat=$6, thu_tu=$7, dung_xet_sau=coalesce($8, dung_xet_sau), "
+        "cho_ai_tra_loi=coalesce($9, cho_ai_tra_loi), sua_luc=now() WHERE id=$1 RETURNING *",
+        quy_tac_id, body.ten.strip(), body.su_kien, dk, hd, body.bat, body.thu_tu,
+        body.dung_xet_sau, body.cho_ai_tra_loi)
     if r is None:
         raise HTTPException(404, "Không thấy quy tắc.")
     await db.log_event("tu_dong.sua", actor=nguoi.get("ten_dang_nhap") or "?", ten=body.ten.strip())
@@ -187,10 +226,13 @@ async def xoa(quy_tac_id: UUID, nguoi: dict = Depends(can_quyen("dinh_tuyen.sua"
 
 @router.get("/lan-chay")
 async def lan_chay(gioi_han: int = Query(50, ge=1, le=200),
+                   quy_tac_id: UUID | None = None,
                    _q: dict = Depends(can_quyen("dinh_tuyen.doc"))) -> dict[str, Any]:
     rows = await db.fetch(
         "SELECT l.*, q.ten FROM quy_tac_lan_chay l JOIN quy_tac_tu_dong q ON q.id = l.quy_tac_id "
-        "ORDER BY l.luc DESC LIMIT $1", gioi_han)
-    return {"lan_chay": [{"quy_tac": r["ten"], "conversation_id": str(r["conversation_id"] or ""),
+        "WHERE $2::uuid IS NULL OR l.quy_tac_id = $2 "
+        "ORDER BY l.luc DESC, l.id DESC LIMIT $1", gioi_han, quy_tac_id)
+    return {"lan_chay": [{"quy_tac": r["ten"], "quy_tac_id": str(r["quy_tac_id"]),
+                          "conversation_id": str(r["conversation_id"] or ""),
                           "ket_qua": r["ket_qua"], "chi_tiet": _json(r["chi_tiet"]),
                           "luc": r["luc"].isoformat()} for r in rows]}

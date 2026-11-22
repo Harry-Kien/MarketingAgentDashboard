@@ -709,21 +709,34 @@
           <section class="panel">
             <h2 class="panel__head">Quy tắc tự động
               <span class="panel__note">khi khách nhắn → nếu … → thì …</span></h2>
-            <p class="panel__note">
-              Chạy <b>trước</b> agent, theo thứ tự số nhỏ trước. Gửi mẫu và tạo việc chỉ
-              làm <b>một lần mỗi hội thoại</b> — khách nhắn mười tin không nhận mười câu chào.
+            <!-- Chính sách chạy viết ở agent/omnichannel/tu_dong.py (đầu mô-đun);
+                 đoạn dưới là bản cho người vận hành — đổi một bên thì đổi cả hai. -->
+            <p class="panel__note" id="qtChinhSach">
+              Chạy <b>trước</b> AI, theo thứ tự ưu tiên (số nhỏ trước; bằng nhau thì quy tắc tạo
+              trước). Nhiều quy tắc cùng khớp: khách nhận <b>tối đa một tin tự động</b> cho mỗi tin
+              — của quy tắc khớp đầu tiên; nhãn và công việc được <b>gộp</b>; chuyển người thì quy
+              tắc đầu thắng. Quy tắc đã gửi mẫu thì <b>AI không trả lời chính tin đó</b> (trừ khi
+              bật «Cho AI trả lời thêm»). Gửi mẫu và tạo việc chỉ làm <b>một lần mỗi hội thoại</b>.
+              Không gửi mẫu vào nhóm, vào hội thoại nhân viên đang tiếp, hoặc khi khách đã đòi gặp
+              nhân viên.
             </p>
             <div id="qtDs" class="rows"></div>
             <form id="qtForm" class="form" hidden>
               <input type="hidden" name="qt_id">
+              <!-- BA NHÓM (mục 7.3): Thông tin quy tắc · Nếu · Thì. -->
+              <h3 class="panel__head qt__muc" data-qt-nhom="thong-tin">1 · Thông tin quy tắc</h3>
               <div class="form__row">
                 <label class="field"><span>Tên quy tắc</span>
                   <input name="ten" maxlength="80" required placeholder="Chào khách ngoài giờ"></label>
-                <label class="field"><span>Thứ tự <em class="hint">nhỏ chạy trước</em></span>
+                <label class="field"><span>Thứ tự ưu tiên <em class="hint">số nhỏ chạy trước</em></span>
                   <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
                 <label class="quyen__o"><input name="bat" type="checkbox" checked> Đang bật</label>
               </div>
-              <h3 class="panel__head qt__muc">Nếu <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
+              <div class="form__row">
+                <label class="quyen__o"><input name="dung_xet_sau" type="checkbox">
+                  Khớp quy tắc này thì <b>dừng xét các quy tắc sau</b></label>
+              </div>
+              <h3 class="panel__head qt__muc" data-qt-nhom="neu">2 · Nếu — điều kiện kích hoạt <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
               <div class="field field--wide"><span>Kênh <em class="hint">không chọn = mọi kênh</em></span>
                 <span class="tk__nhieu" id="qtKenh"></span></div>
               <div class="form__row">
@@ -759,7 +772,7 @@
                 <label class="field"><span>Khách CHƯA có nhãn khách hàng</span>
                   <select name="nhan_khach_khong" data-qt-nhan="khach"></select></label>
               </div>
-              <h3 class="panel__head qt__muc">Thì <span class="panel__note">điền ít nhất một</span></h3>
+              <h3 class="panel__head qt__muc" data-qt-nhom="thi">3 · Thì — hành động <span class="panel__note">điền ít nhất một; điền nhiều ô thì làm tất cả</span></h3>
               <div class="form__row">
                 <label class="field"><span>Gắn nhãn hội thoại</span>
                   <select name="hd_gan_nhan_hoi_thoai" data-qt-nhan="hoi_thoai"></select></label>
@@ -767,14 +780,16 @@
                   <select name="hd_gan_nhan_khach" data-qt-nhan="khach"></select></label>
               </div>
               <div class="form__row">
-                <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt</em></span>
+                <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt, chọn từ «Mẫu trả lời nhanh» ở trên</em></span>
                   <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
                 <datalist id="qtMauDs"></datalist>
+                <label class="quyen__o"><input name="cho_ai_tra_loi" type="checkbox">
+                  Cho AI trả lời thêm tin đó</label>
               </div>
               <div class="form__row">
                 <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
                   <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả"></label>
-                <label class="field"><span>Chuyển người, agent không trả lời <em class="hint">lý do</em></span>
+                <label class="field"><span>Chuyển hội thoại cho nhân viên, AI dừng <em class="hint">lý do</em></span>
                   <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
               </div>
               <div class="row__nut">
@@ -782,7 +797,7 @@
                 <button type="button" class="btn btn--sm" id="qtHuy">Bỏ sửa</button>
               </div>
             </form>
-            <h3 class="panel__head">Lần chạy gần đây</h3>
+            <h3 class="panel__head" id="qtLanChayTieuDe">Lần chạy gần đây</h3>
             <div id="qtLanChay" class="rows"></div>
           </section>
         </div>

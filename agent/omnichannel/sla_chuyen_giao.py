@@ -42,11 +42,16 @@ from typing import Any
 from agent.omnichannel import sla_muc_tieu
 
 MUC_TIEU = "phan_hoi_sau_chuyen_giao"
+# Tìm mốc theo TÊN migration chứ không theo số: số có thể đổi khi gộp nhánh,
+# và tra hụt thì mốc lui về -infinity — tức mở lượt cho cả hàng chờ cũ.
+# test_sla_muc_tieu_lich canh tên này khớp một tệp migration có thật.
+TEN_MIGRATION = "sla_muc_tieu_va_lich_lam_viec"
 
 # Lượt đang chờ: AI đã chuyển, chưa nhân viên nào nhắn.
 _SQL_MO_LUOT = """
 WITH moc AS (
-    SELECT coalesce((SELECT applied_at FROM schema_migrations WHERE version = '0062'),
+    SELECT coalesce((SELECT min(applied_at) FROM schema_migrations
+                     WHERE name = '""" + TEN_MIGRATION + """'),
                     '-infinity'::timestamptz) AS tu
 ), ung_vien AS (
     SELECT c.id, c.sla_chu_ky, c.priority, c.account_id, e.bat_dau

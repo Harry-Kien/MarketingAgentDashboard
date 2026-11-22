@@ -326,8 +326,19 @@ async def _dung_chuyen_giao(conn, ma: str, *, truoc: str = "25 minutes", phut: i
 
 async def _lui_moc_migration(conn) -> None:
     """Chuyển giao trong test xảy ra 'trước' lúc 0062 chạy — lùi mốc như một CSDL đã chạy lâu."""
-    await conn.execute("UPDATE schema_migrations SET applied_at = now() - interval '2 days' "
-                       "WHERE version = '0062'")
+    from agent.omnichannel.sla_chuyen_giao import TEN_MIGRATION
+
+    kq = await conn.execute("UPDATE schema_migrations SET applied_at = now() - interval '2 days' "
+                            "WHERE name = $1", TEN_MIGRATION)
+    assert kq == "UPDATE 1"
+
+
+def test_moc_chuyen_giao_tra_dung_ten_migration():
+    """Tra hụt tên thì mốc lui về -infinity: cả hàng chờ cũ thành một trận chuông 'đã trễ'."""
+    from agent.migrations.runner import discover_migrations
+    from agent.omnichannel.sla_chuyen_giao import TEN_MIGRATION
+
+    assert [m.name for m in discover_migrations()].count(TEN_MIGRATION) == 1
 
 
 def test_chuyen_giao_mo_luot_canh_bao_vi_pham_chuong_va_chot(csdl_kiem_thu):

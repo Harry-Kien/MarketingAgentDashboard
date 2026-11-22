@@ -220,26 +220,35 @@ def test_khong_khop_thi_khong_lam_gi(csdl_kiem_thu, gio_lam, kenh):
     assert kq.da_lam == [] and so == 0
 
 
-def test_chuyen_nguoi_dung_agent_va_tao_viec(csdl_kiem_thu, gio_lam, kenh):
+def test_chuyen_nguoi_dung_agent_va_bao_nhan_vien(csdl_kiem_thu, gio_lam, kenh):
     async def chay():
         db, tk, cid = await _mo(csdl_kiem_thu)
         try:
             await _quy_tac(db, "Đổi trả", {"chua_tu": ["đổi trả", "hoàn tiền"]},
                            [{"loai": "chuyen_nguoi", "ly_do": "khách hỏi đổi trả"}])
+            # Một quản trị để chuông có người nhận (kênh chưa có thành viên ->
+            # lui về người quản lý).
+            qt = await _v(db, "INSERT INTO nguoi_dung (ten_dang_nhap, mat_khau_bam) "
+                              "VALUES ('qt', 'x') RETURNING id")
+            await db.execute("INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id) "
+                             "SELECT $1, id FROM vai_tro WHERE ten = 'Quản trị'", qt)
             kq = await tu_dong.chay_tin_khach(_msg(tk, "Em muốn DOI TRA hàng"), cid)
             await tu_dong.chay_tin_khach(_msg(tk, "hoàn tiền giúp em"), cid)
             conv = await db.fetchrow("SELECT status, mode FROM conversations WHERE id = $1", cid)
             viec = await _v(db, "SELECT count(*) FROM cong_viec WHERE conversation_id = $1", cid)
+            bao = await _v(db, "SELECT count(*) FROM thong_bao WHERE conversation_id = $1 "
+                               "AND loai = 'ai_chuyen_giao'", cid)
             su_kien = await _v(db, 
                 "SELECT count(*) FROM events WHERE kind = 'conversation.escalated'")
-            return kq, conv, viec, su_kien
+            return kq, conv, viec, bao, su_kien
         finally:
             await _dong(db)
 
-    kq, conv, viec, su_kien = asyncio.run(chay())
+    kq, conv, viec, bao, su_kien = asyncio.run(chay())
     assert kq.dung_agent
     assert (conv["status"], conv["mode"]) == ("escalated", "human")
-    assert viec == 1                      # chuyển người mà không có việc là kênh chết im lặng
+    assert viec == 0                      # mục 14.2: chuyển người không sinh việc
+    assert bao == 1                       # chuyển người mà không báo ai là kênh chết im lặng
     assert su_kien == 1                   # tin thứ hai không ghi thêm "chuyển người" giả
 
 

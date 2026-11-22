@@ -2087,3 +2087,70 @@ svg { flex: none; }
   .kn-dong > :nth-child(n+3) { grid-column: 2; }
   .kn-dk { flex-direction: column; } .kn-dk b { min-width: 0; }
 }
+
+/* ---------- Chuông thông báo nội bộ (19-thong-bao.js) ---------- */
+.chuong { position: relative; }
+.chuong__nut {
+  position: relative;
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  box-shadow: var(--shadow-sm);
+}
+.chuong__nut:hover, .chuong__nut[aria-expanded="true"] { color: hsl(var(--foreground)); }
+.chuong__so {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px;
+  background: hsl(var(--destructive));
+  color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.chuong__so[hidden] { display: none; }
+.chuong__khung {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  display: flex; flex-direction: column;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px hsl(222 47% 11% / .18);
+}
+.chuong__khung[hidden] { display: none; }
+.chuong__dau {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.chuong__dau > b { margin-right: auto; }
+.chuong__loc { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.chuong__ds { overflow-y: auto; }
+.chuong__ds .empty { padding: 16px 12px; }
+.chuong__dong {
+  display: grid; gap: 2px; width: 100%;
+  padding: 10px 12px 10px 15px;
+  border: 0; border-bottom: 1px solid hsl(var(--border));
+  background: transparent; color: inherit; font: inherit; text-align: left;
+  cursor: pointer; overflow-wrap: anywhere;
+}
+.chuong__dong:hover { background: hsl(var(--muted)); }
+.chuong__dong.is-moi { box-shadow: inset 3px 0 0 hsl(var(--primary)); background: hsl(var(--accent) / .45); }
+.chuong__tieude { font-size: 13.5px; }
+.chuong__dong:not(.is-moi) .chuong__tieude { font-weight: 500; }
+.chuong__phu { font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.chuong__gio { font-size: 11.5px; color: hsl(var(--muted-foreground)); }
+.chuong__loai { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--accent-foreground)); }
+.chuong__loai--sla_tre, .chuong__loai--sla_sap_tre { color: hsl(var(--destructive)); }
+.chuong__loai--ai_chuyen_giao { color: hsl(var(--warning)); }
+.chuong__them { margin: 8px auto; }
+.row.is-chuong { outline: 2px solid hsl(var(--primary)); outline-offset: -2px; }
+/* Khổ điện thoại: chuông không nằm ở mép phải (công tắc chế độ đứng sau),
+   khung neo theo nút là tràn ra ngoài màn — neo theo màn hình. */
+@media (max-width: 560px) {
+  .chuong__khung { position: fixed; left: 16px; right: 16px; top: 64px; width: auto; }
+}

@@ -404,6 +404,21 @@ class PostgresSlaRepository:
                     connection,
                     [r["conversation_id"] for r in (*first_rows, *resolution_rows)],
                 )
+            # Chuông nội bộ — SAU khi giao dịch đã chốt, nên chuông hỏng
+            # không cuộn ngược sự kiện SLA. Mỗi sự kiện chỉ chèn được một lần
+            # (khoá hội thoại, chu kỳ, loại), nên chỉ báo một lần.
+            from agent.core import thong_bao_noi_bo
+
+            await thong_bao_noi_bo.bao_sla(connection, [
+                (row["conversation_id"], kind)
+                for kind, rows in (
+                    ("first_response_warning", warning_rows),
+                    ("first_response_breached", first_rows),
+                    ("resolution_warning", resolution_warning_rows),
+                    ("resolution_breached", resolution_rows),
+                )
+                for row in rows
+            ])
         return {
             "first_response": len(first_rows),
             "resolution": len(resolution_rows),

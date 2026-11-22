@@ -480,7 +480,8 @@ def test_handle_inbound_nhom_AI_khong_chay_khong_nhap_giao_nguoi(csdl, monkeypat
 
     c, dem = _chay(csdl, chay)
     assert (c["status"], c["mode"]) == ("escalated", "human")
-    assert dem == {"may_noi": 0, "job": 0, "viec": 1}, "không nháp, không job; MỘT việc cho người"
+    assert dem == {"may_noi": 0, "job": 0, "viec": 0}, (
+        "không nháp, không job, không việc (mục 14.2 — người được báo bằng thông báo)")
 
 
 def test_nhom_da_giai_quyet_co_tin_moi_thi_mo_lai_cho_NGUOI(csdl, monkeypatch):

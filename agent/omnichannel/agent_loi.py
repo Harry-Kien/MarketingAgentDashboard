@@ -67,7 +67,7 @@ async def chuyen_nguoi_vi_agent_loi(msg, cid: uuid.UUID, adapter, exc: BaseExcep
     phút" khi ấy không bao giờ chạm — khoá API chết cả buổi mà không ai biết.
     """
     from agent import db, runtime
-    from agent.core import cong_viec
+    from agent.core import thong_bao_noi_bo
     from agent.omnichannel import xu_ly_tin_vao
 
     loi = f"{type(exc).__name__}: {exc}"[:500]
@@ -86,7 +86,7 @@ async def chuyen_nguoi_vi_agent_loi(msg, cid: uuid.UUID, adapter, exc: BaseExcep
     await db.log_event("agent.error", ref_id=cid, error=loi, cost_usd=chi_phi)
     ly_do = f"Agent gặp lỗi kỹ thuật ({type(exc).__name__}) — cần người trả lời."
     await db.log_event("conversation.escalated", ref_id=cid, reason=ly_do)
-    await cong_viec.tao_tu_chuyen_nguoi(cid, ly_do=ly_do)
+    await thong_bao_noi_bo.bao_ai_chuyen_giao(cid, ly_do=ly_do)
 
     # Hai lời báo hỏng thì KHÔNG được chặn báo động phía dưới: chính lúc
     # kênh và model cùng hỏng là lúc báo động cần nhất. Hai hàm này tự ghi

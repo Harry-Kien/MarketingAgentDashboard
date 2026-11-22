@@ -152,6 +152,12 @@ MIEN_TRU: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/api/toi/hai-buoc/bat-dau"),
     ("POST", "/api/toi/hai-buoc/xac-nhan"),
     ("POST", "/api/toi/hai-buoc/tat"),
+    # Chuông thông báo của CHÍNH mình — mọi câu SQL lọc theo người đăng
+    # nhập (xem agent/api/thong_bao_noi_bo.py). Vẫn đòi đăng nhập.
+    ("GET", "/api/toi/thong-bao"),
+    ("GET", "/api/toi/thong-bao/so-chua-doc"),
+    ("POST", "/api/toi/thong-bao/da-doc-het"),
+    ("POST", "/api/toi/thong-bao/{thong_bao_id}/da-doc"),
     ("GET", "/api/suc-khoe"),
     ("GET", "/api/he-thong"),
     ("GET", "/api/connect/meta/callback"),   # xác thực bằng state token

@@ -419,7 +419,9 @@ def test_tc08_resolve_created_first_prevents_late_open_task(
 @pytest.mark.parametrize(
     ("producer", "expected_source"),
     [
-        ("handover", "agent"),
+        # Chuyển người không còn sinh việc (mục 14.2); việc nguon='agent' thật
+        # còn lại là yêu cầu huỷ/sửa đơn khách gửi qua AI.
+        ("order_request", "agent"),
         ("automation", "tu_dong"),
         ("shipping", "van_chuyen"),
     ],
@@ -430,17 +432,11 @@ def test_reopen_allows_real_pending_action_producers(
     producer: str,
     expected_source: str,
 ):
-    """0045 không chặn nhầm task Handover/Automation/Shipping sau Reopen."""
+    """0045 không chặn nhầm task xử lý đơn/Automation/Shipping sau Reopen."""
     from agent import canh_gac, db
     from agent.core import cong_viec
     from agent.omnichannel import giai_quyet, tu_dong
 
-    async def no_notification(*_args, **_kwargs):
-        return None
-
-    monkeypatch.setattr(
-        cong_viec, "_bao_viec_moi_cho_nhan_vien", no_notification
-    )
     monkeypatch.setattr(canh_gac, "bao_nhan_vien_nen", lambda *_a, **_k: None)
 
     async def exercise() -> tuple[dict, str | None]:
@@ -470,9 +466,20 @@ def test_reopen_allows_real_pending_action_producers(
             )
             assert reopened is True
 
-            if producer == "handover":
-                task_id = await cong_viec.tao_tu_chuyen_nguoi(
-                    conversation_id, ly_do="Khách cần nhân viên sau Reopen"
+            if producer == "order_request":
+                order_id = await db._pool.fetchval(
+                    "INSERT INTO orders (ma_don, conversation_id, khach_ten, "
+                    "khach_sdt, khach_dia_chi, trang_thai) VALUES "
+                    "('DH-REOPEN', $1, 'Khách', '0900000000', 'HN', 'da_chot') "
+                    "RETURNING id",
+                    conversation_id,
+                )
+                task_id = await cong_viec.tao_tu_yeu_cau_xu_ly_don(
+                    order_id=order_id,
+                    conversation_id=conversation_id,
+                    loai="huy",
+                    tieu_de="Xử lý yêu cầu hủy đơn DH-REOPEN",
+                    mo_ta="Khách xin huỷ sau Reopen",
                 )
             elif producer == "automation":
                 task_id = await tu_dong._tao_viec(

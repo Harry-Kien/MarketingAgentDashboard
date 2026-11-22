@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from agent import db
 from agent.core import cong_viec as cv
+from agent.core import thong_bao_noi_bo
 
 from .routes import can_quyen
 
@@ -191,6 +192,12 @@ async def tao(
 
     await db.log_event("cong_viec.tao", actor=nguoi.get("ten_dang_nhap", "?"),
                        ref_id=d["id"], tieu_de=body.tieu_de.strip())
+    if body.nguoi_nhan:
+        # Việc giao cho người khác mà người ấy không được báo là việc vô
+        # hình cho tới khi họ tình cờ mở màn Công việc. Tự giao: hàm bỏ qua.
+        await thong_bao_noi_bo.bao_duoc_giao_viec(
+            d["id"], body.nguoi_nhan, boi=nguoi.get("id"),
+            tieu_de_viec=body.tieu_de.strip())
     return {"id": str(d["id"])}
 
 
@@ -237,7 +244,7 @@ async def sua(
         async with conn.transaction():
             cu = await conn.fetchrow(
                 "SELECT trang_thai, nguoi_nhan, order_id, loai_xu_ly_don, "
-                "       ket_qua_xu_ly_don FROM cong_viec "
+                "       ket_qua_xu_ly_don, tieu_de FROM cong_viec "
                 f"WHERE id = $1 AND {loc} FOR UPDATE",  # noqa: S608
                 cong_viec_id, *ts)
             if cu is None:
@@ -290,6 +297,13 @@ async def sua(
 
     await db.log_event("cong_viec.sua", actor=nguoi.get("ten_dang_nhap", "?"),
                        ref_id=cong_viec_id, trang_thai=moi_tt)
+    # Chỉ khi người nhận ĐỔI sang một người mới: sửa tiêu đề hay đổi trạng
+    # thái một việc đã giao không phải là "được giao" lần nữa.
+    if (body.nguoi_nhan is not None and not body.xoa_nguoi_nhan
+            and str(body.nguoi_nhan) != str(cu["nguoi_nhan"] or "")):
+        await thong_bao_noi_bo.bao_duoc_giao_viec(
+            cong_viec_id, body.nguoi_nhan, boi=nguoi.get("id"),
+            tieu_de_viec=(body.tieu_de or cu["tieu_de"] or "").strip())
     return {"id": str(cong_viec_id), "trang_thai": moi_tt}
 
 

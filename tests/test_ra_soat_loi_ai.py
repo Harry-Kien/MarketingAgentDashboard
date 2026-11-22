@@ -364,7 +364,7 @@ def test_luot_binh_thuong_ghi_dung_mot_lan(san):
 @pytest.fixture
 def kenh(monkeypatch):
     from agent import canh_gac, db, runtime
-    from agent.core import cong_viec
+    from agent.core import thong_bao_noi_bo
     from agent.omnichannel import agent_loi, xu_ly_tin_vao
 
     hop: dict = {"sql": [], "su_kien": [], "viec": [], "bao_nv": [], "bao_khach": [], "bao_dong": []}
@@ -389,7 +389,7 @@ def kenh(monkeypatch):
 
     monkeypatch.setattr(db, "execute", execute)
     monkeypatch.setattr(db, "log_event", log_event)
-    monkeypatch.setattr(cong_viec, "tao_tu_chuyen_nguoi", tao)
+    monkeypatch.setattr(thong_bao_noi_bo, "bao_ai_chuyen_giao", tao)
     monkeypatch.setattr(xu_ly_tin_vao, "bao_nhan_vien_tiep_quan", bao_nv)
     monkeypatch.setattr(xu_ly_tin_vao, "bao_khach_dang_chuyen_nguoi", bao_khach)
     monkeypatch.setattr(canh_gac, "bao_dong", bao_dong)
@@ -408,7 +408,7 @@ def test_agent_loi_chuyen_nguoi_du_bon_viec(kenh):
     loi = RuntimeError("Gemini 403: API key invalid")
     loi.chi_phi_da_tieu = 0.015  # type: ignore[attr-defined]
     chay(agent_loi.chuyen_nguoi_vi_agent_loi(_msg(), uuid.uuid4(), object(), loi))
-    assert kenh["viec"], "agent lỗi mà không sinh công việc — không ai được giao"
+    assert kenh["viec"], "agent lỗi mà không báo nhân viên (thông báo chuyển giao)"
     assert kenh["bao_nv"] and kenh["bao_khach"], "không báo nhân viên/khách"
     assert {"agent.error", "conversation.escalated"} <= set(kenh["su_kien"])
     sql, tham_so = kenh["sql"][0]
@@ -425,7 +425,7 @@ def test_bao_dong_toi_da_mot_lan_moi_cua_so(kenh, monkeypatch):
     for _ in range(5):
         chay(agent_loi.chuyen_nguoi_vi_agent_loi(_msg(), uuid.uuid4(), object(), RuntimeError("x")))
     assert len(kenh["bao_dong"]) == 1
-    assert len(kenh["viec"]) == 5, "giới hạn báo động không được nuốt việc của từng khách"
+    assert len(kenh["viec"]) == 5, "giới hạn báo động không được nuốt thông báo của từng khách"
     gio["t"] += agent_loi.CUA_SO_BAO_DONG_GIAY + 1
     chay(agent_loi.chuyen_nguoi_vi_agent_loi(_msg(), uuid.uuid4(), object(), RuntimeError("x")))
     assert len(kenh["bao_dong"]) == 2

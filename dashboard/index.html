@@ -37,6 +37,25 @@
       <span id="killswitch-label">Đang chạy</span>
     </button>
 
+    <!-- Chuông thông báo nội bộ: chỉ ở thanh trên, không có mục điều hướng
+         riêng (19-thong-bao.js). Không bao giờ gửi gì cho khách. -->
+    <div class="chuong" id="chuong">
+      <button type="button" id="chuongNut" class="chuong__nut" aria-label="Thông báo"
+              aria-haspopup="dialog" aria-expanded="false" aria-controls="chuongKhung">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <b id="chuongSo" class="chuong__so" hidden></b>
+      </button>
+      <div class="chuong__khung" id="chuongKhung" role="dialog" aria-label="Thông báo" hidden>
+        <div class="chuong__dau">
+          <b>Thông báo</b>
+          <label class="chuong__loc"><input type="checkbox" id="chuongChuaDoc"> Chỉ chưa đọc</label>
+          <button type="button" class="btn btn--sm btn--ghost" id="chuongDocHet">Đã đọc hết</button>
+        </div>
+        <div class="chuong__ds" id="chuongDs" role="list"></div>
+        <button type="button" class="btn btn--sm btn--ghost chuong__them" id="chuongThem" hidden>Xem thêm</button>
+      </div>
+    </div>
+
     <button type="button" id="themetoggle" class="themetoggle" aria-label="Đổi giao diện sáng tối">
       <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
       <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>

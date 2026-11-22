@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-68 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+69 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -133,7 +133,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Tri thức (RAG)** | `documents` · `document_versions` · `chunks` |
 | **Không còn dùng (video, bài đăng — gỡ 19.11.2026)** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
-| **Công việc** | `cong_viec` |
+| **Công việc và thông báo** | `cong_viec` · `thong_bao` |
 | **Lịch ca** | `ca_truc` · `ca_nghi` |
 | **Dữ liệu cá nhân** | `yeu_cau_chu_the` |
 | **Hồ sơ agent** | `agent_ho_so` |
@@ -745,6 +745,17 @@ erDiagram
         BIGINT phi_van_chuyen
         _ con_13_cot_nua
     }
+    thong_bao {
+        UUID id
+        UUID nguoi_nhan_id
+        TEXT loai
+        TEXT tieu_de
+        TEXT noi_dung
+        UUID conversation_id
+        UUID cong_viec_id
+        UUID order_id
+        _ con_3_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -822,6 +833,10 @@ erDiagram
     channel_accounts ||--o{ sla_policies : ""
     nguoi_dung ||--o{ team_members : ""
     teams ||--o{ team_members : ""
+    cong_viec ||--o{ thong_bao : ""
+    conversations ||--o{ thong_bao : ""
+    nguoi_dung ||--o{ thong_bao : ""
+    orders ||--o{ thong_bao : ""
     nguoi_dung ||--o{ tra_loi_nhanh : ""
     vai_tro ||--o{ vai_tro_quyen : ""
     videos ||--o{ video_assets : ""

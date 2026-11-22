@@ -329,10 +329,18 @@ def test_thieu_quyen_doc_thi_403(csdl_kiem_thu):
 
 
 # =====================================================================
-#  Task tự sinh khi agent chuyển người
+#  Chuyển người KHÔNG còn sinh việc (mục 14.2) — xem tests/test_thong_bao_noi_bo.py
 # =====================================================================
 
-def test_agent_chuyen_nguoi_thi_SINH_MOT_VIEC(csdl_kiem_thu):
+def test_viec_tu_sinh_CU_con_mo_thanh_viec_xu_ly_don(csdl_kiem_thu):
+    """
+    CSDL đang chạy còn việc "Khách cần người trả lời" mở từ trước mục 14.2.
+    Nó chiếm chỗ của `idx_cong_viec_agent_mot_viec`, nên yêu cầu huỷ đơn của
+    khách trên cùng hội thoại phải BIẾN nó thành việc xử lý đơn — không thì
+    `ON CONFLICT` nuốt mất việc huỷ đơn, không lỗi, không ai biết.
+    """
+    from uuid import UUID
+
     from agent.core import cong_viec as cv
 
     async def chay(url):
@@ -352,119 +360,29 @@ def test_agent_chuyen_nguoi_thi_SINH_MOT_VIEC(csdl_kiem_thu):
             async with pool.acquire() as conn:
                 await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
                 await apply_all(conn)
-                cid = await _dung_hoi_thoai(conn, ext="ext-1",
-                                            ten_khach="Chị Hoa")
-
-            mot = await cv.tao_tu_chuyen_nguoi(
-                cid, ly_do="Khách hỏi về thuốc trị mụn", ten_khach="Chị Hoa")
-            # Gọi LẠI: cùng hội thoại, không được đẻ việc thứ hai.
-            hai = await cv.tao_tu_chuyen_nguoi(
-                cid, ly_do="Khách nhắn tiếp", ten_khach="Chị Hoa")
-
-            async with pool.acquire() as conn:
-                so = await conn.fetchval("SELECT count(*) FROM cong_viec")
-                v = await conn.fetchrow("SELECT * FROM cong_viec LIMIT 1")
-            return mot, hai, so, dict(v)
-        finally:
-            db._pool = cu
-            await pool.close()
-
-    mot, hai, so, v = asyncio.run(chay(csdl_kiem_thu))
-    assert mot is not None
-    assert hai is None, (
-        "hội thoại đã có việc đang mở mà vẫn đẻ việc thứ hai — cuối ngày màn "
-        "Công việc sẽ có bốn mươi dòng cho cùng một chuyện")
-    assert so == 1
-    assert v["nguon"] == "agent"
-    assert v["nguoi_nhan"] is None, "việc tự sinh phải là việc CHƯA GIAO"
-    assert v["uu_tien"] == "cao"
-    assert "Chị Hoa" in v["tieu_de"]
-    assert "thuốc trị mụn" in v["mo_ta"]
-
-
-def test_viec_tu_sinh_tu_lay_ten_va_khach_tu_hoi_thoai(csdl_kiem_thu):
-    """
-    `handle_inbound` không có tên khách trong tay — nó chỉ có id hội thoại.
-    Trước 23.10.2026 nó truyền `conv.get("customer_name")` từ một dict KHÔNG
-    có khoá ấy, nên MỌI việc tự sinh đều tên "Khách cần người trả lời", không
-    tên, không gắn khách: người trực phải mở từng việc mới biết là ai. Không
-    nổ, không nhật ký — mypy bắt được, test thì không.
-    """
-    from agent.core import cong_viec as cv
-
-    async def chay(url):
-        import asyncpg
-
-        from agent import db
-        from agent.migrations.runner import apply_all
-
-        async def _codec(conn):
-            await conn.set_type_codec("jsonb", encoder=json.dumps,
-                                      decoder=json.loads, schema="pg_catalog")
-
-        pool = await asyncpg.create_pool(url, min_size=1, max_size=2, init=_codec)
-        cu = db._pool
-        db._pool = pool
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
-                await apply_all(conn)
-                cid = await _dung_hoi_thoai(conn, ext="ext-ten",
-                                            ten_khach="Chị Lan")
-                contact = await conn.fetchval(
-                    "SELECT contact_id FROM conversations WHERE id = $1", cid)
-
-            await cv.tao_tu_chuyen_nguoi(cid, ly_do="khách gửi ảnh")
-            async with pool.acquire() as conn:
-                v = await conn.fetchrow("SELECT * FROM cong_viec LIMIT 1")
-            return dict(v), contact
-        finally:
-            db._pool = cu
-            await pool.close()
-
-    v, contact = asyncio.run(chay(csdl_kiem_thu))
-    assert "Chị Lan" in v["tieu_de"]
-    assert v["contact_id"] == contact and contact is not None
-
-
-def test_viec_tu_sinh_lai_duoc_sau_khi_viec_cu_da_xong(csdl_kiem_thu):
-    """
-    Chốt "một việc mỗi hội thoại" chỉ áp cho việc ĐANG MỞ. Khách quay lại
-    tuần sau với chuyện khác thì phải sinh việc mới — không thì lần thứ hai
-    rơi vào im lặng y như trước khi có khối này.
-    """
-    from agent.core import cong_viec as cv
-
-    async def chay(url):
-        import asyncpg
-
-        from agent import db
-        from agent.migrations.runner import apply_all
-
-        async def _codec(conn):
-            await conn.set_type_codec("jsonb", encoder=json.dumps,
-                                      decoder=json.loads, schema="pg_catalog")
-
-        pool = await asyncpg.create_pool(url, min_size=1, max_size=2, init=_codec)
-        cu = db._pool
-        db._pool = pool
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
-                await apply_all(conn)
-                cid = await _dung_hoi_thoai(conn, ext="ext-2")
-
-            await cv.tao_tu_chuyen_nguoi(cid, ly_do="lần một")
-            async with pool.acquire() as conn:
+                cid = await _dung_hoi_thoai(conn, ext="ext-cu", ten_khach="Chị Hoa")
                 await conn.execute(
-                    "UPDATE cong_viec SET trang_thai='xong', xong_luc=now()")
-            lan_hai = await cv.tao_tu_chuyen_nguoi(cid, ly_do="lần hai")
+                    "INSERT INTO cong_viec (tieu_de, nguon, uu_tien, conversation_id) "
+                    "VALUES ('Khách cần người trả lời: Chị Hoa', 'agent', 'cao', $1)", cid)
+                don = await conn.fetchval(
+                    "INSERT INTO orders (ma_don, conversation_id, khach_ten, khach_sdt, "
+                    "khach_dia_chi, items, tong_tien, trang_thai) "
+                    "VALUES ('DH-CU-1', $1, 'Chị Hoa', '0900000000', 'HN', '[]', 1000, "
+                    "'da_chot') RETURNING id", cid)
+
+            vid = await cv.tao_tu_yeu_cau_xu_ly_don(
+                order_id=don, conversation_id=cid, loai="huy",
+                tieu_de="Xử lý yêu cầu hủy đơn DH-CU-1", mo_ta="khách đổi ý")
             async with pool.acquire() as conn:
-                return lan_hai, await conn.fetchval("SELECT count(*) FROM cong_viec")
+                ds = await conn.fetch(
+                    "SELECT id, order_id, loai_xu_ly_don FROM cong_viec")
+            return vid, don, [dict(r) for r in ds]
         finally:
             db._pool = cu
             await pool.close()
 
-    lan_hai, so = asyncio.run(chay(csdl_kiem_thu))
-    assert lan_hai is not None
-    assert so == 2
+    vid, don, ds = asyncio.run(chay(csdl_kiem_thu))
+    assert vid is not None, "yêu cầu huỷ đơn bị nuốt vì việc tự sinh cũ"
+    assert len(ds) == 1
+    assert ds[0]["id"] == UUID(vid) and ds[0]["order_id"] == don
+    assert ds[0]["loai_xu_ly_don"] == "huy"

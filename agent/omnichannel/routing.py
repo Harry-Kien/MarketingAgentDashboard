@@ -494,12 +494,15 @@ class PostgresRoutingTransaction:
             "WHERE conversation_id = $1 AND ended_at IS NULL",
             conversation_id,
         )
-        # Người kết thúc tiếp quản = việc "Khách cần người trả lời" đã xong.
-        # Để mở là lần chuyển người sau không sinh việc, không báo ai — xem
+        # Người kết thúc tiếp quản = việc "Khách cần người trả lời" CŨ (trước
+        # mục 14.2) đã xong. Để mở là nó nằm mãi và chặn tự giải quyết — xem
         # `giai_quyet.dong_viec_tu_sinh`.
+        from agent.core import thong_bao_noi_bo
         from agent.omnichannel.giai_quyet import dong_viec_tu_sinh
 
         await dong_viec_tu_sinh(self._connection, conversation_id)
+        # Cùng lý do cho thông báo: lần chuyển giao sau phải là chuyện MỚI.
+        await thong_bao_noi_bo.ket_thuc_luot_chuyen_giao(self._connection, conversation_id)
         updated = await self._connection.fetchrow(
             """
             UPDATE conversations

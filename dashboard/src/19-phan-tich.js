@@ -156,7 +156,8 @@ $("#ptForm")?.addEventListener("submit", (ev) => {
 
 /* ---------------- Đổi ưu tiên hội thoại ----------------
  *
- * Nút "Đổi" nằm cạnh mức ưu tiên ở thanh trạng thái hội thoại. Luật hạn SLA
+ * Nút "Đổi" nằm cạnh mức ưu tiên trong panel "Chi tiết" của hội thoại
+ * (mục 6.8 — không còn ở thanh thông tin). Luật hạn SLA
  * (chỉ rút ngắn, không kéo dài) ở agent/api/uu_tien.py — hộp thoại nói luật
  * ấy ra để người bấm không tưởng hạ ưu tiên là được thêm giờ. */
 document.addEventListener("click", async (ev) => {

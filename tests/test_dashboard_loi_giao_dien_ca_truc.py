@@ -289,25 +289,29 @@ def test_them_kenh_doc_ok_cua_verify():
 # ------------------------------------------------- 5. nút tiếp quản
 
 def test_nut_tiep_quan_theo_nguoi_giu():
+    """
+    Luật nút theo người giữ giờ là hàm thuần `hanhDongXuLy` (mục 6.5) — bảng
+    trạng thái × quyền đầy đủ chạy THẬT bằng node ở
+    tests/test_thanh_thong_tin_hoi_thoai.py. Ở đây chỉ canh lỗi cũ: hội
+    thoại agent tự chuyển người (mode human, CHƯA ai nhận) phải mời "Tiếp
+    quản", không phải "Kết thúc tiếp quản".
+    """
     than = _than_ham("loadThread")
     assert "c.assigned_to" in than and "state.toiId" in than
-    assert 'has("hoi_thoai.xem_tat_ca")' in than
+    assert "hanhDongXuLy(c, { toiId: state.toiId, quyen: state.toiQuyen" in than
     # Hai nút tách hẳn: một nút lật theo `taken` là lỗi cũ.
-    assert '${taken ? "release" : "takeover"}' not in than
-    assert re.search(r"hienTra \? `<button[^`]*id=\"btn-release\"[^`]*Kết thúc tiếp quản", than)
-    assert re.search(r"hienNhan \? `<button[^`]*id=\"btn-take\"[^`]*Tôi tiếp quản", than)
-    assert re.search(r"const hienTra = c\.mode === \"human\" && \(laCuaToi \|\| quanLy\)", than)
-    # Chưa giao cho ai (nguoiGiu rỗng) -> hienNhan.
-    assert re.search(r"const hienNhan = !laCuaToi && !nguoiKhacGiu", than)
-    assert "/release`" in than[than.index('$("#btn-release")'):]
-    tk = than[than.index('$("#btn-take")'):than.index('$("#btn-release")')]
-    assert "/takeover`" in tk and "/release" not in tk
+    assert '${taken ? "release" : "takeover"}' not in _bo_chu_thich(JS)
+    luat = _than_ham("hanhDongXuLy")
+    assert 'co("hoi_thoai.xem_tat_ca")' in luat
+    assert re.search(r'if \(c\.mode === "human" && quanLy\) ds\.push\(HANH_DONG_HT\.ketThuc\)', luat)
 
 
 def test_release_hien_ghi_chu_thanh_loi():
-    than = _than_ham("loadThread")
-    rl = than[than.index('$("#btn-release")'):]
-    assert "r.ghi_chu" in rl and "toast(r.ghi_chu, true)" in rl
+    doan = _doan('else if (ev.target.closest("#btn-release"))', 700)
+    assert '_goiHanhDong("release"' in doan
+    assert "r.ghi_chu" in doan and "toast(r.ghi_chu, true)" in doan
+    tk = _doan('if (ev.target.closest("#btn-take"))', 300)
+    assert '_goiHanhDong("takeover"' in tk and "release" not in tk.split("else if")[0]
 
 
 # ------------------------------------------------- 6. hoàn tác gộp

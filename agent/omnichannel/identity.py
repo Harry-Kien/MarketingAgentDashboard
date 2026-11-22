@@ -115,6 +115,12 @@ class IdentityService:
             target = contacts[target_id]
             if source["status"] != "active" or target["status"] != "active":
                 raise InvalidMerge("chỉ merge được hai contact đang active")
+            # Nhóm Zalo không phải một người (mục 9.7). Gộp nhóm vào hồ sơ
+            # một thành viên là trộn lịch sử cả nhóm vào trí nhớ riêng của
+            # họ. Chặn ở dịch vụ: route nào gọi tới cũng không lọt.
+            if source.get("la_nhom") or target.get("la_nhom"):
+                raise InvalidMerge(
+                    "nhóm Zalo không phải một khách hàng — không gộp được")
             if (
                 int(source["version"]) != expected_source_version
                 or int(target["version"]) != expected_target_version
@@ -245,8 +251,11 @@ class PostgresIdentityTransaction:
         return row
 
     async def lock_contacts(self, contact_ids: list[UUID]):
+        from agent.core.lien_he_nhom import sql_la_nhom
+
         rows = await self._connection.fetch(
-            "SELECT * FROM contacts WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE",
+            f"SELECT *, {sql_la_nhom('contacts')} AS la_nhom FROM contacts "
+            "WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE",
             contact_ids,
         )
         return {row["id"]: dict(row) for row in rows}

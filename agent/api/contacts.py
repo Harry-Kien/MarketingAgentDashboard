@@ -21,6 +21,7 @@ from agent.omnichannel.identity import (
 
 from agent.core import nhan as nhan_loi
 from agent.core import pham_vi, truong_khach
+from agent.core.lien_he_nhom import sql_khong_phai_nhom
 
 from .routes import can_quyen
 
@@ -139,6 +140,9 @@ class PostgresContactRepository:
                 LEFT JOIN nguoi_dung chu ON chu.id = contact.owner_user_id
                 WHERE contact.status <> 'deleted'
                   AND {loc}
+                  -- Nhóm Zalo không phải một khách hàng (mục 9.7): không vào
+                  -- danh sách, không tìm ra — xem agent/core/lien_he_nhom.py.
+                  AND {sql_khong_phai_nhom("contact")}
                   AND ($6::uuid IS NULL OR EXISTS (
                       SELECT 1 FROM khach_gan_nhan loc_nhan
                       WHERE loc_nhan.contact_id = contact.id AND loc_nhan.nhan_id = $6
@@ -181,7 +185,7 @@ class PostgresContactRepository:
     ) -> dict[str, Any] | None:
         async with self._pool_provider().acquire() as connection:
             contact = await connection.fetchrow(
-                """
+                f"""
                 SELECT contact.*,
                        chu.ho_ten AS owner_ho_ten,
                        chu.ten_dang_nhap AS owner_ten_dang_nhap,
@@ -196,6 +200,9 @@ class PostgresContactRepository:
                 FROM contacts contact
                 LEFT JOIN nguoi_dung chu ON chu.id = contact.owner_user_id
                 WHERE contact.id = $1
+                  -- Mở thẳng id một nhóm cũng 404: Customer 360 của một
+                  -- NHÓM là hồ sơ khách không có người thật nào đứng sau.
+                  AND {sql_khong_phai_nhom("contact")}
                   AND EXISTS (
                       SELECT 1 FROM contact_points point
                       LEFT JOIN account_memberships membership
@@ -1398,7 +1405,10 @@ async def khach_vo_chu(
     nhau là con số nói một đằng, danh sách hiện một nẻo — rồi người ta thôi
     tin cả hai, và thôi nhìn cả hai.
     """
-    dieu_kien = "owner_user_id IS NULL AND status = 'active'"
+    # Nhóm Zalo không có "chủ" theo nghĩa khách hàng — đếm nó là phình hàng
+    # chờ bằng những dòng không ai giao được.
+    dieu_kien = ("owner_user_id IS NULL AND status = 'active' AND "
+                 + sql_khong_phai_nhom("contacts"))
     tong = await db.fetchrow_chac(
         f"SELECT count(*) AS so, min(first_seen) AS lau_nhat "  # noqa: S608
         f"FROM contacts WHERE {dieu_kien}")

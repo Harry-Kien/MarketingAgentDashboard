@@ -591,8 +591,37 @@ svg { flex: none; }
   flex-wrap: wrap;
 }
 
-.convo__name { font-weight: 600; font-size: 15px; }
+.convo__name { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
 .convo__spacer { margin-left: auto; }
+/* Tên + nhãn hội thoại là MỘT khối: nhãn nằm ngay dưới tên (mục 6.3). */
+.convo__danh { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 180px; }
+.convo__ten { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.convo__danh .nhanbar:empty { display: none; }
+.btn--icon { padding: 5px 8px; line-height: 0; }
+/* Hành động xử lý: một nút chính + menu "⋯" (mục 6.5). */
+.hd { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hd-them { position: relative; }
+.hd-them > summary { list-style: none; cursor: pointer; font-weight: 700; letter-spacing: 1px; }
+.hd-them > summary::-webkit-details-marker { display: none; }
+.hd-them__menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  display: flex; flex-direction: column; min-width: 200px; max-width: calc(100vw - 32px);
+  padding: 4px; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card)); box-shadow: var(--shadow-md, 0 6px 20px rgb(0 0 0 / .12));
+}
+.hd-them__muc {
+  text-align: left; padding: 8px 10px; border: 0; background: none; cursor: pointer;
+  border-radius: calc(var(--radius) - 2px); font: inherit; font-size: 13px; color: hsl(var(--foreground));
+}
+.hd-them__muc:hover, .hd-them__muc:focus-visible { background: hsl(var(--muted)); }
+/* Khổ hẹp: tên chiếm trọn một dòng, hàng nút xuống dòng dưới bắt đầu từ mép
+ * trái — menu neo phải sẽ thò ra ngoài màn hình bên trái (đo 375px: -40px),
+ * nên neo trái. */
+@media (max-width: 600px) {
+  .convo__danh { flex-basis: 100%; }
+  .convo__spacer { display: none; }
+  .hd-them__menu { right: auto; left: 0; }
+}
 
 .thread {
   flex: 1;
@@ -762,9 +791,24 @@ svg { flex: none; }
   border-top: 1px solid hsl(var(--border));
   padding: 12px 14px;
   display: flex;
-  gap: 10px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
 }
+.convo__soan { display: flex; gap: 10px; align-items: flex-end; }
+/* Kiểu "Ghi chú nội bộ": cả khung soạn đổi màu. Cùng màu với ghi chú trong
+ * luồng — người gõ phải THẤY mình đang không nhắn cho khách. */
+.convo__bar--ghichu { background: hsl(var(--warning) / .08); border-top-color: hsl(var(--warning) / .6); }
+.convo__bar--ghichu textarea { border-color: hsl(var(--warning) / .6); }
+.soan__che-do { display: flex; gap: 4px; flex-wrap: wrap; }
+.soan__tab {
+  border: 1px solid hsl(var(--border)); background: hsl(var(--card)); border-radius: 999px;
+  padding: 3px 11px; font: inherit; font-size: 12.5px; color: hsl(var(--muted-foreground)); cursor: pointer;
+}
+.soan__tab.is-on { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.convo__bar--ghichu .soan__tab.is-on { background: hsl(var(--warning)); border-color: hsl(var(--warning)); color: #fff; }
+.btn--ghichu { background: hsl(var(--warning)); border-color: hsl(var(--warning)); color: #fff; }
+.btn--ghichu:hover { background: hsl(var(--warning) / .88); }
+.row__ai { font-weight: 600; color: hsl(var(--foreground)); }
 
 .convo__bar textarea {
   flex: 1;
@@ -1272,9 +1316,6 @@ svg { flex: none; }
 .is-hidden { display: none !important; }
 .eyebrow { margin: 0 0 4px; font: 600 10px/1.2 "JetBrains Mono", monospace; letter-spacing: .14em; color: hsl(var(--primary)); }
 .unread { display: grid; place-items: center; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 999px; background: hsl(var(--primary)); color: white; font-size: 11px; font-weight: 700; }
-.opsbar { display: flex; gap: 7px; flex-wrap: wrap; padding: 8px 13px; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .35); }
-.opsbar span { font-size: 10.5px; color: hsl(var(--muted-foreground)); padding: 4px 7px; border: 1px solid hsl(var(--border)); border-radius: 999px; }
-.opsbar b { color: hsl(var(--foreground)); }
 
 .customer360 { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: 12px; height: calc(100vh - 116px); }
 .customer360 > .panel { min-height: 0; overflow: auto; margin: 0; }
@@ -1982,7 +2023,6 @@ svg { flex: none; }
 .chip__so { opacity: .6; margin-left: 2px; }
 .row__nhan, .nhanbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .row__nhan { margin-top: 4px; }
-.nhanbar { padding: 6px 16px; border-bottom: 1px solid hsl(var(--border)); }
 .nhan {
   display: inline-flex; align-items: center; gap: 2px; padding: 1px 8px;
   border-radius: 999px; font-size: 12px; line-height: 18px;
@@ -1999,16 +2039,18 @@ svg { flex: none; }
 .quan-ly-nhan__loai { min-width: 0; }
 .quan-ly-nhan .subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .quan-ly-nhan .row.is-ngung .row__body { opacity: .7; }
-/* Ghi chú nội bộ phải trông KHÁC HẲN tin khách: người trực liếc qua là biết
- * đây là chữ nội bộ, không phải thứ đã gửi đi. */
-.ghichu {
-  margin: 8px 16px; padding: 8px 12px; border-left: 3px solid hsl(var(--warning));
-  background: hsl(var(--warning) / .06); border-radius: 0 var(--radius) var(--radius) 0;
-  font-size: 13px;
+/* Ghi chú nội bộ trong luồng tin: GIỮA khung (không phía khách, không phía
+ * shop), nền vàng, viền đứt — người trực liếc qua là biết đây là chữ nội
+ * bộ, không phải thứ đã gửi đi. */
+.msg--ghichu { align-self: center; align-items: center; max-width: 86%; }
+.msg--ghichu .msg__bubble {
+  background: hsl(var(--warning) / .1); border: 1px dashed hsl(var(--warning) / .6);
+  color: hsl(var(--foreground));
 }
-.ghichu summary { cursor: pointer; font-weight: 600; color: hsl(var(--warning)); }
-.ghichu__dong { padding-top: 6px; }
-.ghichu__dong p { margin: 2px 0 0; white-space: pre-wrap; }
+.msg__ghichu-nhan {
+  display: block; margin-bottom: 2px; font-size: 11px; font-weight: 600;
+  color: hsl(var(--warning));
+}
 
 /* ---------------- Trách nhiệm trong hội thoại ---------------- */
 /* Bộ lọc dạng ô chọn: xuống dòng ở 375px thay vì đẩy trang tràn ngang. */
@@ -2275,7 +2317,7 @@ svg { flex: none; }
   .rail.is-mo .rail__item { white-space: normal; }
   .rail__nhom { margin-top: 6px; padding-top: 6px; }
 }
-=======
+
 /* Lịch sử nhân sự & phân quyền: phần "đổi gì" (quyền thêm/bớt, trước → sau)
    xuống dòng thành cụm nhãn — một vai trò đổi 10 quyền không được đẩy cả
    dòng tràn ngang ở màn 375px. */

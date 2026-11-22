@@ -135,6 +135,10 @@ async def _thi_hanh(dx: dict, nguoi: dict) -> tuple[bool, dict, str | None, Any]
         if not kq.get("ok"):
             return False, kq, f"ERP từ chối đơn: {kq.get('erp_loi') or ''}".strip(), None
         return True, kq, None, None
+    if hanh_dong == "tao_don" and ts.get("order_id"):
+        # Đề xuất gắn một đơn đã ghi, nhưng đơn ấy không còn (cột về NULL do
+        # xoá): KHÔNG rơi xuống nhánh lên đơn mới dưới đây.
+        return False, {}, "Đơn của đề xuất không còn trong sổ.", None
     if hanh_dong == "tao_don":
         # Chế độ Gợi ý: đơn chưa từng được ghi. Chạy lại TOÀN BỘ đường lên
         # đơn — xác nhận, thông tin, địa giới, giá danh mục, tồn sống, chống
@@ -209,3 +213,40 @@ async def tu_choi_de_xuat(de_xuat_id: str, body: TuChoiIn | None = None,
             except thao_tac_don.LoiThaoTacDon as exc:
                 kq["canh_bao"] = f"Chưa huỷ được đơn chờ duyệt: {exc.thong_diep}"
     return kq
+
+
+# ---------------------------------------------------- từ chối BẢN NHÁP AI
+
+@router.post("/messages/{message_id}/tu-choi")
+async def tu_choi_ban_nhap(message_id: str, body: TuChoiIn | None = None,
+                           nguoi: dict = Depends(can_quyen("ai.duyet"))) -> dict:
+    """
+    Từ chối một bản nháp AI (chế độ Gợi ý): bản nháp thành `cancelled`, không
+    bao giờ gửi được nữa. Trước đây chỉ có Duyệt — bản nháp sai nằm mãi trong
+    luồng như một việc chưa xong, và lịch sử không phân biệt được "chưa ai
+    xem" với "người đã xem và bác".
+
+    Cùng chốt với Duyệt: phạm vi kênh + mức tầm nhìn khách. Điều kiện
+    `delivery_status = 'draft'` trong câu UPDATE là chốt chống đua với nút
+    Duyệt (đường duyệt cũng chỉ nhận bản nháp).
+    """
+    from .phu_thuoc import chan_neu_khong_duoc_tra_loi
+
+    mid = _uuid(message_id, "tin nhắn")
+    dong = await db.fetchrow("SELECT conversation_id FROM messages WHERE id = $1", mid)
+    if dong is None:
+        raise HTTPException(404, "Không thấy tin nhắn")
+    await chan_neu_khong_duoc_tra_loi(dong["conversation_id"], nguoi)
+    ly_do = ((body.ly_do if body else "") or "").strip()[:500]
+    sau = await db.fetchrow(
+        "UPDATE messages SET delivery_status = 'cancelled' "
+        "WHERE id = $1 AND role = 'agent' AND delivery_status = 'draft' "
+        "RETURNING conversation_id", mid)
+    if sau is None:
+        raise HTTPException(409, "Chỉ từ chối được bản nháp AI chưa gửi.")
+    await db.log_event(
+        "ai.ban_nhap.tu_choi", actor=_ten(nguoi), ref_id=sau["conversation_id"],
+        message_id=str(mid), conversation_id=str(sau["conversation_id"]),
+        nguoi_tu_choi_id=str(nguoi.get("id") or ""), ly_do=ly_do or None,
+        muc_uy_quyen=None)
+    return {"ok": True, "trang_thai": "cancelled"}

@@ -288,3 +288,23 @@ def test_api_chinh_sach_quyen_va_kiem_het_truoc_khi_ghi(app_that):
     ev = _dong(app_that, "SELECT detail FROM events WHERE kind='ai.uy_quyen.sua' "
                "ORDER BY id DESC LIMIT 1")["detail"]
     assert ev["muc_truoc"] == "co_phe_duyet" and ev["muc_sau"] == "khong_su_dung"
+
+
+def test_tu_choi_ban_nhap_ai_khong_gui_duoc_nua(app_that):
+    qt = _quan_tri_vao(app_that)
+    conv = _hoi_thoai(app_that)
+    mid = _dong(app_that, "INSERT INTO messages (conversation_id, role, content, delivered, "
+                "direction, delivery_status) VALUES ($1, 'agent', 'Dạ có ạ', false, 'outbound', "
+                "'draft') RETURNING id", conv)["id"]
+    _, minh = _nhan_vien_moi(qt, "minh")
+    assert minh.post(f"/api/messages/{mid}/tu-choi", json={}).status_code == 404, "ngoài kênh"
+
+    r = qt.post(f"/api/messages/{mid}/tu-choi", json={"ly_do": "sai giá"})
+    assert r.status_code == 200, r.text
+    assert _dong(app_that, "SELECT delivery_status FROM messages WHERE id=$1",
+                 mid)["delivery_status"] == "cancelled"
+    assert qt.post(f"/api/messages/{mid}/approve").status_code == 409, "đã bác thì không gửi được"
+    assert qt.post(f"/api/messages/{mid}/tu-choi", json={}).status_code == 409
+    ev = _dong(app_that, "SELECT detail, ref_id FROM events WHERE kind='ai.ban_nhap.tu_choi'")
+    assert ev["ref_id"] == conv and ev["detail"]["ly_do"] == "sai giá"
+    assert ev["detail"]["message_id"] == str(mid)

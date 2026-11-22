@@ -314,7 +314,8 @@ async function loadThread(id) {
         ${banGoc}
         ${nutChiTietTin(m, draft)}
         ${draft && !dangSua && nutDuyetDuoc() ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
-          <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
+          <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>
+          <button type="button" class="btn btn--sm btn--ghost" data-tu-choi-nhap="${m.id}">Từ chối</button>` : ""}
       </div>
       ${veChiTietTin(m, draft)}
     </div>`;

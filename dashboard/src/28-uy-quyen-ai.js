@@ -192,6 +192,27 @@ function veTheDeXuat(d) {
   </div>`;
 }
 
+/* Từ chối BẢN NHÁP AI: bản nháp thành "Đã huỷ", không gửi được nữa. Không
+ * xoá — lịch sử phải còn thấy AI đã soạn gì và ai đã bác. */
+document.addEventListener("click", async (e) => {
+  const nut = e.target.closest("[data-tu-choi-nhap]");
+  if (!nut) return;
+  const v = await hoiHop({
+    tieu_de: "Từ chối bản nháp AI", nut: "Từ chối", nguy_hiem: true,
+    phu: "Bản nháp sẽ không gửi cho khách. Bạn tự trả lời khách ở ô soạn bên dưới.",
+    truong: [{ name: "ly_do", label: "Lý do (không bắt buộc)", type: "textarea", maxlength: 500 }],
+  });
+  if (v === null) return;
+  try {
+    await api(`/messages/${nut.dataset.tuChoiNhap}/tu-choi`, {
+      method: "POST", body: JSON.stringify({ ly_do: v.ly_do || "" }) });
+    toast("Đã từ chối bản nháp");
+  } catch (err) {
+    toast(err.message, true);
+  }
+  if (state.openConv) await loadThread(state.openConv);
+});
+
 document.addEventListener("click", async (e) => {
   const duyet = e.target.closest("[data-dx-duyet]");
   const tuChoi = e.target.closest("[data-dx-tu-choi]");

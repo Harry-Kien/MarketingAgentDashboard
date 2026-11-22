@@ -37,15 +37,46 @@ TRANG_THAI = ("moi", "dang_lam", "xong", "huy")
 UU_TIEN = ("thap", "thuong", "cao", "gap")
 NGUON = ("nguoi", "agent", "tu_dong", "van_chuyen", "don_hang")
 
+# Mã giữ nguyên (CHECK ở 0022, mọi truy vấn và dữ liệu cũ dùng chúng), chỉ
+# nhãn đổi theo phiếu việc mục 14.7. "Chưa phân công" KHÔNG phải trạng thái
+# thứ năm: nó là `nguoi_nhan IS NULL` của một việc còn mở — tách thành mã
+# riêng là hai cột nói cùng một chuyện, và sớm muộn chúng nói khác nhau.
 NHAN_TRANG_THAI = {
-    "moi": "Mới",
-    "dang_lam": "Đang làm",
-    "xong": "Xong",
-    "huy": "Đã huỷ",
+    "moi": "Chờ xử lý",
+    "dang_lam": "Đang thực hiện",
+    "xong": "Hoàn thành",
+    "huy": "Đã hủy",
 }
+NHAN_CHUA_PHAN_CONG = "Chưa phân công"
 NHAN_UU_TIEN = {
     "thap": "Thấp", "thuong": "Thường", "cao": "Cao", "gap": "Gấp",
 }
+# Nguồn việc (mục 14.3). `agent` = AI ĐỀ XUẤT: luôn ra đời chưa phân công,
+# người quyết định ai làm — mức tự quyết của AI là việc của giai đoạn sau.
+NHAN_NGUON = {
+    "nguoi": "Nhân viên tạo",
+    "agent": "AI đề xuất",
+    "tu_dong": "Tự động",
+    "van_chuyen": "Vận chuyển",
+    "don_hang": "Đơn hàng",
+}
+
+# Lịch sử hoạt động (bảng `cong_viec_lich_su`, trigger 0061). CHECK của
+# migration giữ đúng tập này — có test canh hai nơi không lệch.
+LOAI_LICH_SU = {
+    "tao": "Tạo việc",
+    "giao": "Giao việc",
+    "nhan": "Tự nhận việc",
+    "chuyen": "Chuyển việc",
+    "bo_giao": "Thu hồi người nhận",
+    "tu_dong_giao": "Phân công tự động",
+    "trang_thai": "Đổi trạng thái",
+    "tien_do": "Cập nhật tiến độ",
+    "ket_qua": "Ghi kết quả",
+    "sua": "Sửa thông tin",
+}
+# Trigger ghi MÃ trường vào dòng "sua"; đây là nhãn để hiện.
+NHAN_TRUONG = {"tieu_de": "tiêu đề", "mo_ta": "mô tả", "uu_tien": "ưu tiên", "han": "hạn"}
 
 CHUA_XONG = ("moi", "dang_lam")
 LOAI_XU_LY_DON = ("sua", "huy")
@@ -106,6 +137,60 @@ def kiem_uu_tien(gia_tri: str) -> str:
             f"Mức ưu tiên không hợp lệ: {gia_tri!r}. "
             f"Chỉ nhận: {', '.join(UU_TIEN)}")
     return gia_tri
+
+
+# Hai CTE dùng chung cho "ai làm được / ai điều phối được việc $1": `viec`
+# (hội thoại, kênh của việc) và `quyen` (quyền HIỆU LỰC của từng người không
+# bị khoá — vai trò đang dùng, Quản trị có mọi quyền, cùng luật với
+# `thong_bao_noi_bo._SQL_CO_QUYEN`). Một bản cho cả phân công tự động lẫn
+# chuông người điều phối: hai bản là hai luật "ai thấy được việc này" lệch nhau.
+SQL_VIEC_VA_QUYEN = """
+    WITH viec AS (
+        SELECT v.conversation_id, c.account_id
+        FROM cong_viec v LEFT JOIN conversations c ON c.id = v.conversation_id
+        WHERE v.id = $1
+    ), quyen AS (
+        SELECT n.id,
+               coalesce(bool_or(vq.quyen = 'cong_viec.doc' OR vt.qt), false) AS doc,
+               coalesce(bool_or(vq.quyen = 'cong_viec.sua' OR vt.qt), false) AS sua,
+               coalesce(bool_or(vq.quyen = 'cong_viec.giao' OR vt.qt), false) AS giao,
+               coalesce(bool_or(vq.quyen IN ('hoi_thoai.xem_tat_ca', 'cong_viec.xem_tat_ca')
+                                OR vt.qt), false) AS moi_kenh
+        FROM nguoi_dung n
+        JOIN nguoi_dung_vai_tro x ON x.nguoi_dung_id = n.id
+        JOIN (SELECT id, (he_thong AND ten = 'Quản trị') AS qt FROM vai_tro
+              WHERE dang_dung) vt ON vt.id = x.vai_tro_id
+        LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id
+        WHERE NOT n.khoa
+        GROUP BY n.id
+    )
+"""
+# Người này thấy được việc gắn hội thoại của kênh ấy không (dùng sau hai CTE).
+SQL_CUNG_KENH = (
+    "(viec.conversation_id IS NULL OR q.moi_kenh OR EXISTS ("
+    " SELECT 1 FROM account_memberships m"
+    " WHERE m.user_id = q.id AND m.account_id = viec.account_id))"
+)
+
+
+async def dat_ngu_canh(conn: Any, *, nguoi_id: Any = None, ghi_chu: str = "",
+                       tu_dong_giao: bool = False) -> None:
+    """
+    Nói cho trigger lịch sử (0061) AI vừa làm và VÌ SAO, cho đúng giao dịch này.
+
+    `set_config(..., true)` = chỉ sống tới hết giao dịch, nên PHẢI gọi trong
+    `conn.transaction()`. Gọi ngoài giao dịch thì biến chết ngay sau câu
+    SELECT này, câu UPDATE sau đó ghi lịch sử với người thao tác "hệ thống"
+    — sai mà không lỗi. Nên hàm này tự kiểm và NỔ.
+    """
+    if not conn.is_in_transaction():
+        raise RuntimeError("dat_ngu_canh phải chạy trong conn.transaction()")
+    await conn.execute(
+        "SELECT set_config('cong_viec.nguoi_id', $1, true), "
+        "       set_config('cong_viec.ghi_chu', $2, true), "
+        "       set_config('cong_viec.tu_dong_giao', $3, true)",
+        str(nguoi_id) if nguoi_id else "", (ghi_chu or "")[:2000],
+        "1" if tu_dong_giao else "")
 
 
 def qua_han(viec: dict, bay_gio: datetime | None = None) -> bool:
@@ -519,7 +604,14 @@ async def tao_tu_yeu_cau_xu_ly_don(
             order_id,
             loai,
         )
-        return str(dong["id"]) if dong is not None else None
+        if dong is None:
+            return None
+        # AI ĐỀ XUẤT việc (mục 14.3): ra đời chưa phân công, người điều phối
+        # được báo. AI không tự chọn người làm — mức tự quyết ấy chưa có.
+        from agent.core import giao_viec
+
+        await giao_viec.bao_neu_chua_giao(dong["id"], ly_do="AI đề xuất")
+        return str(dong["id"])
     except Exception as exc:  # noqa: BLE001 — không làm chết lượt chat
         import logging
 
@@ -591,6 +683,9 @@ async def tao_tu_kenh(*, tieu_de: str, mo_ta: str, khoa: str) -> str | None:
         from agent import canh_gac
 
         canh_gac.bao_nhan_vien_nen(tieu_de, "Mở dashboard → Kết nối.")
+        from agent.core import giao_viec
+
+        await giao_viec.bao_neu_chua_giao(dong["id"])
         return str(dong["id"])
     except Exception as exc:  # noqa: BLE001
         import logging
@@ -629,6 +724,9 @@ async def _tao_viec_he_thong(
 
         # Mã đơn là mã nội bộ của cửa hàng, không phải dữ liệu của khách.
         canh_gac.bao_nhan_vien_nen(tieu_de, f"Đơn {ma_don}. Mở dashboard → Công việc.")
+        from agent.core import giao_viec
+
+        await giao_viec.bao_neu_chua_giao(dong["id"])
         return str(dong["id"])
     except Exception as exc:  # noqa: BLE001
         import logging

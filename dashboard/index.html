@@ -503,6 +503,10 @@
             <div id="cvSla" class="rows"><p class="empty">Đang tải…</p></div>
           </section>
 
+          <!-- Khối CÔNG VIỆC của tổng quan (phiếu việc mục 14.10): tồn đọng, chưa
+               phân công, ai đang trong ca. Mô-đun 25-cong-viec.js gắn vào đây. -->
+          <div data-gan="cv-ca-truc-viec"></div>
+
           <section class="panel">
             <h2 class="panel__head">Chờ người xử lý</h2>
             <div id="queue" class="rows"></div>
@@ -513,13 +517,13 @@
         <div class="tab__goc">
           <section class="panel">
             <h2 class="panel__head">Công việc
-              <span class="panel__note">việc chưa giao hiện với mọi người · agent chuyển người thì tự sinh một việc</span>
+              <span class="panel__note">việc chưa phân công hiện với người cùng kênh · chuyển hội thoại cho người KHÔNG sinh việc</span>
               <button type="button" id="cv-them" class="btn btn--sm">Thêm việc</button></h2>
             <div class="filterbar" id="cv-loc" role="group" aria-label="Lọc công việc">
               <button type="button" class="chip is-on" data-cvloc="">Tất cả</button>
-              <button type="button" class="chip" data-cvloc="moi">Mới</button>
-              <button type="button" class="chip" data-cvloc="dang_lam">Đang làm</button>
-              <button type="button" class="chip" data-cvloc="xong">Xong</button>
+              <button type="button" class="chip" data-cvloc="moi">Chờ xử lý</button>
+              <button type="button" class="chip" data-cvloc="dang_lam">Đang thực hiện</button>
+              <button type="button" class="chip" data-cvloc="xong">Hoàn thành</button>
               <button type="button" class="chip" data-cvtoi="1">Việc của tôi</button>
             </div>
             <div id="cv-ds" class="rows"><p class="empty">Đang tải…</p></div>
@@ -773,7 +777,8 @@
               </div>
               <div class="form__row">
                 <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
-                  <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả"></label>
+                  <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả">
+                  <span class="hint"><input type="checkbox" name="hd_tao_viec_tu_giao"> tự phân công cho người đang trong ca (không ai thì để Chưa phân công)</span></label>
                 <label class="field"><span>Chuyển người, agent không trả lời <em class="hint">lý do</em></span>
                   <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
               </div>

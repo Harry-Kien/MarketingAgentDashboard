@@ -132,7 +132,10 @@ function veThanhThongTin(c, hd) {
           <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
           ${nhomBadge(c)}
         </div>
-        <div class="nhanbar">${nhanHoiThoaiHtml(c)}</div>
+        <div class="nhanbar">${nhanHoiThoaiHtml(c)}
+          ${state.toiQuyen && state.toiQuyen.has("cong_viec.sua")
+            ? `<button type="button" class="btn btn--sm btn--ghost" id="btn-tao-viec-ht"
+                title="Tạo công việc gắn với hội thoại và khách này">+ Việc</button>` : ""}</div>
       </div>
       <span class="convo__spacer"></span>
       ${c.contact_id && !laNhom(c) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"

@@ -443,11 +443,23 @@ def test_hong_CSDL_khong_nem_vao_luot_tra_loi_nhung_ghi_loi_va_van_bao_ngoai(
 # ------------------------------------------------------------------ canh tĩnh
 
 def test_loai_trong_ma_khop_check_cua_migration():
+    """
+    CHECK của `thong_bao.loai` dựng ở 0055, mở rộng ở 0061 (chuông công
+    việc). So với bản MỚI NHẤT: migration sau cùng định nghĩa lại ràng buộc
+    là bản đang chạy trên CSDL.
+    """
     from agent.core import thong_bao_noi_bo as tb
 
-    sql = (ROOT / "agent" / "migrations" / "versions" / "0055_thong_bao_noi_bo.sql"
-           ).read_text(encoding="utf-8")
-    khoi = sql[sql.index("loai             TEXT"):sql.index("tieu_de          TEXT")]
+    thu_muc = ROOT / "agent" / "migrations" / "versions"
+    dinh_nghia_lai = [p for p in sorted(thu_muc.glob("*.sql"))
+                      if "ADD CONSTRAINT thong_bao_loai_check" in p.read_text(encoding="utf-8")]
+    if dinh_nghia_lai:
+        sql = dinh_nghia_lai[-1].read_text(encoding="utf-8")
+        khoi = sql[sql.index("ADD CONSTRAINT thong_bao_loai_check"):]
+        khoi = khoi[:khoi.index(");")]
+    else:
+        sql = (thu_muc / "0055_thong_bao_noi_bo.sql").read_text(encoding="utf-8")
+        khoi = sql[sql.index("loai             TEXT"):sql.index("tieu_de          TEXT")]
     assert set(re.findall(r"'([a-z_]+)'", khoi)) == set(tb.LOAI)
 
 

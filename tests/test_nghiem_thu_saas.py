@@ -996,3 +996,64 @@ def test_20_quan_ly_nhan_va_gan_nhan_hai_loai(app_that):
     assert lan.post("/api/nhan", json={"loai": "khach", "ten": "x"}).status_code == 403
     nk = {e["kind"] for e in qt.get("/api/events?limit=100").json()}
     assert {"nhan.tao", "nhan.gan_hoi_thoai", "nhan.gan_khach", "nhan.ngung"} <= nk
+
+
+# ------------------------------------------------------------------ 21. hệ thống giao việc
+
+def test_21_he_thong_giao_viec_theo_ca_chuyen_viec_va_lich_su(app_that):
+    """
+    Hệ thống giao việc: phân công theo ca trực, chuyển việc, tiến độ, kết quả, lịch sử, chuông.
+
+    BƯỚC 1  Chưa ai có lịch ca → tạo việc "phân công tự động" → Chưa phân công, kèm lý do (không đoán người).
+    BƯỚC 2  Quản trị xếp ca 24/7 cho "lan" và "minh" → hai việc tự động chia lần lượt cho hai người; mỗi người có chuông "Được giao việc".
+    BƯỚC 3  "lan" (không có cong_viec.giao) đẩy việc của mình sang "minh" → 403; quản trị chuyển kèm ghi chú → "minh" có chuông "Bạn được chuyển một việc".
+    BƯỚC 4  "minh" ghi tiến độ rồi hoàn thành kèm kết quả → chi tiết việc có đủ lịch sử: tạo, phân công tự động, chuyển, tiến độ, đổi trạng thái, kết quả.
+    BƯỚC 5  Quản trị hủy việc còn lại của "minh" → "minh" có chuông "Việc bị hủy".
+    BƯỚC 6  Tổng quan ca trực đếm đúng (1 chưa phân công, 1 hoàn thành hôm nay); lọc "Chưa phân công" ra đúng việc ở bước 1.
+    """
+    qt = _quan_tri_vao(app_that)
+    lan_id, lan = _nhan_vien_moi(qt, "lan")
+    minh_id, minh = _nhan_vien_moi(qt, "minh")
+
+    r = qt.post("/api/cong-viec", json={"tieu_de": "Gọi lại chị Hoa", "giao_tu_dong": True})
+    assert r.status_code == 201, r.text
+    v1 = r.json()
+    assert v1["nguoi_nhan"] is None and "lịch ca" in v1["ly_do_khong_giao"]
+
+    ca = [{"thu": t, "bat_dau": "00:00", "ket_thuc": "24:00"} for t in range(1, 8)]
+    for uid in (lan_id, minh_id):
+        assert qt.put(f"/api/lich-ca/{uid}", json={"ca": ca}).status_code == 200
+    giao = {}
+    for ten in ("Xác nhận địa chỉ đơn", "Gửi lại hướng dẫn dùng"):
+        r = qt.post("/api/cong-viec", json={"tieu_de": ten, "giao_tu_dong": True})
+        assert r.status_code == 201, r.text
+        giao[r.json()["nguoi_nhan"]] = r.json()["id"]
+    assert set(giao) == {lan_id, minh_id}, "phải chia lần lượt, không dồn cho một người"
+    for nv in (lan, minh):
+        assert [t["loai"] for t in nv.get("/api/toi/thong-bao").json()["thong_bao"]] == ["duoc_giao_viec"]
+
+    v_lan, v_minh = giao[lan_id], giao[minh_id]
+    assert lan.put(f"/api/cong-viec/{v_lan}", json={"nguoi_nhan": minh_id}).status_code == 403
+    r = qt.put(f"/api/cong-viec/{v_lan}", json={"nguoi_nhan": minh_id, "ghi_chu": "Lan nghỉ chiều"})
+    assert r.status_code == 200, r.text
+    assert "Bạn được chuyển một việc" in [
+        t["tieu_de"] for t in minh.get("/api/toi/thong-bao").json()["thong_bao"]]
+
+    assert minh.post(f"/api/cong-viec/{v_lan}/tien-do",
+                     json={"noi_dung": "Đã gọi, khách hẹn 15h"}).status_code == 201
+    r = minh.put(f"/api/cong-viec/{v_lan}", json={"trang_thai": "xong", "ket_qua": "Khách xác nhận địa chỉ"})
+    assert r.status_code == 200, r.text
+    ct = qt.get(f"/api/cong-viec/{v_lan}").json()
+    assert [x["loai"] for x in ct["lich_su"]] == [
+        "tao", "tu_dong_giao", "chuyen", "tien_do", "trang_thai", "ket_qua"]
+    assert ct["lich_su"][2]["ghi_chu"] == "Lan nghỉ chiều"
+    assert ct["cong_viec"]["nhan_trang_thai"] == "Hoàn thành"
+
+    assert qt.put(f"/api/cong-viec/{v_minh}", json={
+        "trang_thai": "huy", "ghi_chu": "khách tự xử lý"}).status_code == 200
+    assert "viec_huy" in [t["loai"] for t in minh.get("/api/toi/thong-bao").json()["thong_bao"]]
+
+    d = qt.get("/api/cong-viec/tong-quan").json()
+    assert d["dem"]["chua_phan_cong"] == 1 and d["dem"]["xong_hom_nay"] == 1
+    ds = qt.get("/api/cong-viec?chua_phan_cong=true").json()["cong_viec"]
+    assert [v["id"] for v in ds] == [v1["id"]]

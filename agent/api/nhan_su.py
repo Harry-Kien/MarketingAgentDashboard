@@ -260,6 +260,12 @@ async def chuyen_viec(
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             if body.cong_viec:
+                # Lịch sử từng việc (trigger 0061) ghi đúng người chuyển và lý
+                # do — không thì mỗi dòng "chuyển việc" mang người thao tác
+                # "Hệ thống" và không ai truy được vì sao việc đổi chủ.
+                from agent.core import cong_viec as cv
+
+                await cv.dat_ngu_canh(conn, nguoi_id=actor_id, ghi_chu=ly_do)
                 viec = await conn.fetch(
                     "UPDATE cong_viec SET nguoi_nhan = $2, sua_luc = now() "
                     "WHERE nguoi_nhan = $1 AND trang_thai IN ('moi', 'dang_lam') "
@@ -280,7 +286,8 @@ async def chuyen_viec(
             UUID(cid), body.nguoi_nhan, boi=actor_id)
     for v in viec:
         await thong_bao_noi_bo.bao_duoc_giao_viec(
-            v["id"], body.nguoi_nhan, boi=actor_id, tieu_de_viec=v["tieu_de"] or "")
+            v["id"], body.nguoi_nhan, boi=actor_id, tieu_de_viec=v["tieu_de"] or "",
+            chuyen=True)
 
     return {
         "nguoi_nhan": den["ten_dang_nhap"],

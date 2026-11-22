@@ -145,7 +145,7 @@ class PostgresRetentionRepository:
                        JOIN messages m ON m.id=a.message_id
                        JOIN conversations c ON c.id=m.conversation_id
                        WHERE c.contact_id=$1) AS attachments,
-                      (SELECT count(*) FROM contact_tags
+                      (SELECT count(*) FROM khach_gan_nhan
                        WHERE contact_id=$1) AS tags,
                       (SELECT count(*) FROM contact_notes
                        WHERE contact_id=$1) AS notes,

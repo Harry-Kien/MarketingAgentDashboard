@@ -124,6 +124,11 @@ async def _mo(url: str):
             "VALUES ($1,'facebook','k1','k1','Chị Lan',$2,$3) RETURNING id", tk, kh, d)
         await conn.execute(
             "INSERT INTO messages (conversation_id, role, content) VALUES ($1,'customer','alo')", cid)
+        # Nhãn chữ trong các quy tắc CŨ bên dưới phải có trong danh mục
+        # (0056): khoá cũ còn sót được tra theo tên, không tự tạo nhãn.
+        await conn.execute(
+            "INSERT INTO nhan (loai, ten) VALUES ('hoi_thoai','ngoài giờ'), "
+            "('hoi_thoai','mới'), ('hoi_thoai','khách mới'), ('hoi_thoai','x')")
     return db, tk, cid
 
 
@@ -189,7 +194,7 @@ def test_gui_mau_mot_lan_moi_hoi_thoai(csdl_kiem_thu, gio_lam, kenh):
             so_tin = await _v(db, 
                 "SELECT count(*) FROM outbox_jobs WHERE conversation_id = $1", cid)
             nhan = await _v(db, 
-                "SELECT count(*) FROM hoi_thoai_nhan WHERE conversation_id = $1", cid)
+                "SELECT count(*) FROM hoi_thoai_gan_nhan WHERE conversation_id = $1", cid)
             lan = await db.fetch("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay ORDER BY id")
             return kq1, kq2, so_tin, nhan, lan
         finally:
@@ -297,12 +302,12 @@ def test_mot_quy_tac_hong_khong_chan_quy_tac_sau(csdl_kiem_thu, gio_lam, kenh):
             await _quy_tac(db, "Hỏng", {}, [{"loai": "gui_mau", "ma_tat": "khongco"}], thu_tu=1)
             await _quy_tac(db, "Gắn nhãn", {}, [{"loai": "gan_nhan", "nhan": "mới"}], thu_tu=2)
             kq = await tu_dong.chay_tin_khach(_msg(tk), cid)
-            return kq, await _v(db, "SELECT count(*) FROM hoi_thoai_nhan")
+            return kq, await _v(db, "SELECT count(*) FROM hoi_thoai_gan_nhan")
         finally:
             await _dong(db)
 
     kq, nhan = asyncio.run(chay())
-    assert kq.da_lam == ["gắn nhãn mới"] and nhan == 1
+    assert kq.da_lam == ["gắn nhãn hội thoại mới"] and nhan == 1
 
 
 def test_csdl_hong_khong_nem(monkeypatch):
@@ -331,7 +336,85 @@ def test_lan_dau_chi_tin_dau(csdl_kiem_thu, gio_lam, kenh):
             await _dong(db)
 
     kq1, kq2 = asyncio.run(chay())
-    assert kq1.da_lam == ["gắn nhãn khách mới"] and kq2.da_lam == []
+    assert kq1.da_lam == ["gắn nhãn hội thoại khách mới"] and kq2.da_lam == []
+
+
+# ------------------------------------------------------------------ nhãn theo danh mục (0056)
+
+def test_khop_tach_nhan_hoi_thoai_va_nhan_khach():
+    """Cùng một id nhưng khác loại ô thì không khớp — hai loại độc lập."""
+    a, b = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+    assert khop({"nhan_hoi_thoai_co": [a, b]}, _nc(nhan_hoi_thoai={b}))
+    assert not khop({"nhan_hoi_thoai_co": [a]}, _nc(nhan_khach={a}))
+    assert khop({"nhan_khach_co": [a]}, _nc(nhan_khach={a}))
+    assert not khop({"nhan_khach_khong": [a, b]}, _nc(nhan_khach={b}))
+    assert khop({"nhan_hoi_thoai_khong": [a]}, _nc(nhan_hoi_thoai={b}, nhan_khach={a}))
+
+
+def test_kiem_khoa_nhan_moi():
+    a = "11111111-1111-1111-1111-111111111111"
+    assert kiem_dieu_kien({"nhan_khach_co": [a.upper(), a]}) == {"nhan_khach_co": [a]}
+    with pytest.raises(QuyTacHong, match="id nhãn"):
+        kiem_dieu_kien({"nhan_hoi_thoai_co": ["vip"]})
+    with pytest.raises(QuyTacHong):
+        kiem_dieu_kien({"nhan_khach_co": []})
+    assert kiem_hanh_dong([{"loai": "gan_nhan_khach", "nhan_id": a}]) == [
+        {"loai": "gan_nhan_khach", "nhan_id": a}]
+    with pytest.raises(QuyTacHong):
+        kiem_hanh_dong([{"loai": "gan_nhan_khach"}])
+
+
+def test_gan_nhan_khach_theo_dieu_kien_nhan_hoi_thoai(csdl_kiem_thu, gio_lam, kenh):
+    """
+    Điều kiện đọc nhãn HỘI THOẠI, hành động gắn nhãn KHÁCH lên hồ sơ của
+    hội thoại — và nhãn đã ngừng thì lần chạy ghi hỏng có lý do, không im.
+    """
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            ht = await _v(db, "INSERT INTO nhan (loai, ten) VALUES ('hoi_thoai','khiếu nại') "
+                              "RETURNING id::text")
+            kh = await _v(db, "INSERT INTO nhan (loai, ten) VALUES ('khach','hay khiếu nại') "
+                              "RETURNING id::text")
+            await _quy_tac(db, "Đánh dấu khách", {"nhan_hoi_thoai_co": [ht]},
+                           [{"loai": "gan_nhan_khach", "nhan_id": kh}])
+            kq0 = await tu_dong.chay_tin_khach(_msg(tk), cid)         # chưa có nhãn hội thoại
+            await db.execute("INSERT INTO hoi_thoai_gan_nhan (conversation_id, nhan_id) "
+                             "VALUES ($1,$2::uuid)", cid, ht)
+            kq1 = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            gan = await _v(db, "SELECT count(*) FROM khach_gan_nhan g JOIN conversations c "
+                               "ON c.contact_id = g.contact_id WHERE c.id = $1", cid)
+            su_kien = await _v(db, "SELECT actor FROM events WHERE kind = 'nhan.gan_khach'")
+            await db.execute("DELETE FROM khach_gan_nhan")
+            await db.execute("UPDATE nhan SET dang_dung = false WHERE id = $1::uuid", kh)
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            hong = await db.fetchrow("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay "
+                                     "ORDER BY id DESC LIMIT 1")
+            return kq0, kq1, gan, su_kien, hong
+        finally:
+            await _dong(db)
+
+    kq0, kq1, gan, su_kien, hong = asyncio.run(chay())
+    assert kq0.da_lam == []
+    assert kq1.da_lam == ["gắn nhãn khách hay khiếu nại"] and gan == 1
+    assert su_kien == "tu_dong"
+    assert hong["ket_qua"] == "hong" and "ngừng" in hong["chi_tiet"]["loi"]
+
+
+def test_khoa_cu_nhan_chu_khong_co_trong_danh_muc_thi_ghi_hong(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _quy_tac(db, "Cũ", {}, [{"loai": "gan_nhan", "nhan": "chưa từng tạo"}])
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return (await db.fetchrow("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay"),
+                    await _v(db, "SELECT count(*) FROM nhan WHERE ten = 'chưa từng tạo'"))
+        finally:
+            await _dong(db)
+
+    lan, tao = asyncio.run(chay())
+    assert lan["ket_qua"] == "hong" and "không có trong danh mục" in lan["chi_tiet"]["loi"]
+    assert tao == 0, "quy tắc không được tự tạo nhãn chữ tự do"
 
 
 

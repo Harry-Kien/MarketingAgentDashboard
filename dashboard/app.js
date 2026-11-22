@@ -925,12 +925,6 @@ function nhomBadge(c) {
 }
 
 function convRow(c, hangDoi) {
-  // Nhãn của hội thoại đang mở lấy từ DÒNG danh sách (đã có sẵn trong phản
-  // hồi), khỏi thêm một request nữa mỗi 6 giây.
-  if (Array.isArray(c.nhan)) {
-    state.nhanTheoHoiThoai = state.nhanTheoHoiThoai || {};
-    state.nhanTheoHoiThoai[c.id] = c.nhan;
-  }
   const sig = SIGNAL[c.status] || "plain";
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
@@ -944,8 +938,7 @@ function convRow(c, hangDoi) {
       <span class="row__title">${esc(customer)} ${nhomBadge(c)}${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
       <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
       ${sub}
-      ${(c.nhan || []).length ? `<span class="row__nhan">${c.nhan.map((n) =>
-        `<span class="nhan">${esc(n)}</span>`).join("")}</span>` : ""}
+      ${chipNhanDong(c)}
     </span>
     <span class="row__side">
       ${slaBadge(c)}
@@ -1020,7 +1013,7 @@ $$("#convfilter .chip").forEach((chip) =>
 async function loadConversations() {
   let query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
   if (state.convTim) query += `&q=${encodeURIComponent(state.convTim)}`;
-  if (state.convNhan) query += `&nhan=${encodeURIComponent(state.convNhan)}`;
+  if (state.convNhan) query += `&nhan_id=${encodeURIComponent(state.convNhan)}`;
   query += chuoiLocHopThu();
   napBoLocHopThu();
   const [result, nhanDs] = await Promise.all([
@@ -1236,10 +1229,7 @@ async function loadThread(id) {
       ${nutGiu}
     </div>
     <div class="nhanbar">
-      ${(state.nhanTheoHoiThoai && state.nhanTheoHoiThoai[id] || []).map((n) =>
-        `<span class="nhan">${esc(n)}<button type="button" class="nhan__go" data-go-nhan="${esc(n)}"
-          aria-label="Gỡ nhãn ${esc(n)}">×</button></span>`).join("")}
-      <button type="button" class="btn btn--sm btn--ghost" id="btn-them-nhan">+ Nhãn</button>
+      ${nhanHoiThoaiHtml(c)}
       <button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>
     </div>
     ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>
@@ -1738,7 +1728,9 @@ $("#gopKetQua")?.addEventListener("click", async (e) => {
 });
 
 async function loadContacts() {
-  const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}`);
+  napLocNhanKhach();          // không chờ: ô lọc nhãn không được chặn danh sách
+  const locNhan = state.khachNhan ? `&nhan_id=${encodeURIComponent(state.khachNhan)}` : "";
+  const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}${locNhan}`);
   /* Lọc Ở PHÍA GIAO DIỆN là có chủ ý và chỉ hợp lệ vì nó KHÔNG phải lớp bảo
    * vệ: máy chủ đã lọc theo mức tầm nhìn trước khi trả về. Ba chip này chỉ
    * thu hẹp thứ người dùng đã được phép thấy. */
@@ -2027,7 +2019,6 @@ async function loadContactDetail(id) {
       <span>${clock(point.last_seen)}</span></div>`).join("");
   const consents = (contact.consents || []).map((consent) => `
     <span class="consent consent--${esc(consent.status)}">${esc(consent.purpose)} · ${esc(consent.status)}</span>`).join("");
-  const tags = (contact.tags || []).map((tag) => `<span class="profile-tag">${esc(tag.tag)}</span>`).join("");
   const notes = (contact.notes || []).map((note) => `
     <article class="contact-note"><p>${esc(note.body)}</p><small>${esc(note.visibility)} · ${clock(note.created_at)}</small></article>`).join("");
   const conversations = (contact.conversations || []).map((conv) => `
@@ -2068,9 +2059,8 @@ async function loadContactDetail(id) {
     </div>
     <div id="contact-lichsu-giao"></div>
     ${oTruongKhach(contact)}
-    <h3 class="subhead">Nhãn chăm sóc</h3>
-    <div class="profile-actions"><div class="profile-tags">${tags || '<span class="empty">Chưa có nhãn.</span>'}</div>
-      <form id="contact-tag-form" class="inline-action"><input name="tag" maxlength="80" required placeholder="VIP, cần gọi lại…"><button class="btn btn--sm" type="submit">Thêm nhãn</button></form></div>
+    <h3 class="subhead">Nhãn khách hàng</h3>
+    ${nhanKhachHtml(contact)}
     <h3 class="subhead">Danh tính theo kênh</h3><div class="identity-grid">${points || '<p class="empty">Chưa có danh tính.</p>'}</div>
     <h3 class="subhead">Consent</h3><div class="consent-row">${consents || '<span class="empty">Chưa ghi nhận consent.</span>'}</div>
     <form id="contact-consent-form" class="consent-form">
@@ -2133,21 +2123,6 @@ async function loadContactDetail(id) {
     } catch (e) { toast(e.message, true); }
   });
 
-  $("#contact-tag-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const tag = String(new FormData(form).get("tag") || "").trim();
-    if (!tag) return;
-    try {
-      await api(`/contacts/${id}/tags`, { method: "POST", body: JSON.stringify({ tag }) });
-      toast("Đã thêm nhãn khách hàng.");
-      /* reset() TRƯỚC khi nạp lại. loadContactDetail giữ mọi ô lệch
-         defaultValue (để không mất chữ đang gõ), nên không reset thì chữ
-         vừa lưu vẫn nằm trong ô — bấm thêm lần nữa là gửi trùng. */
-      form.reset();
-      await loadContactDetail(id);
-    } catch (error) { toast(error.message, true); }
-  });
   $("#contact-note-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -3210,7 +3185,7 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       <span class="row__body">
         <span class="row__title">${esc(h.display_name || "Khách")}</span>
         <span class="row__sub">${h.danh_tinh} danh tính kênh · ${h.ghi_chu} ghi chú ·
-          ${h.nhan} nhãn · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
+          ${h.nhan} nhãn${(h.nhan_ten || []).length ? ` (${esc(h.nhan_ten.join(", "))})` : ""} · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
             h.co_email ? " · có email" : ""}</span>
       </span>
     </div>`).join("");
@@ -4524,7 +4499,7 @@ async function refresh() {
     if (state.view === "trithuc") await loadDocs();
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadMauNhanh(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    if (state.view === "cauhinh") { await loadMauNhanh(); await napQuanLyNhan(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
     if (state.view === "nhatky") { await loadYeuCauChuThe(); await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
@@ -7315,12 +7290,13 @@ $("#mauNhanhHuy")?.addEventListener("click", () => {
  * 360. Thêm nhãn và ghi chú bằng hộp hỏi (`hoiHop`) chứ không bằng ô trong
  * panel: vòng làm mới 6 giây dựng lại cả panel, chữ đang gõ trong đó sẽ mất. */
 
+/* Lọc theo ID nhãn (0056): đổi tên nhãn không làm gãy bộ lọc đang chọn. */
 function veLocNhan(ds) {
   const k = $("#nhanfilter");
   if (!k) return;
   k.hidden = !ds.length && !state.convNhan;
-  k.innerHTML = ds.map((n) => `<button type="button" class="chip ${state.convNhan === n.nhan ? "is-on" : ""}"
-    data-loc-nhan="${esc(n.nhan)}">${esc(n.nhan)} <span class="chip__so">${n.so}</span></button>`).join("");
+  k.innerHTML = ds.map((n) => `<button type="button" class="chip ${state.convNhan === n.id ? "is-on" : ""}"
+    data-loc-nhan="${esc(n.id)}">${chipNhan(n)} <span class="chip__so">${n.so}</span></button>`).join("");
 }
 
 $("#nhanfilter")?.addEventListener("click", (ev) => {
@@ -7342,26 +7318,8 @@ $("#convtim")?.addEventListener("input", (ev) => {
 document.addEventListener("click", async (ev) => {
   const id = state.openConv;
   if (!id) return;
-  if (ev.target.closest("#btn-them-nhan")) {
-    const d = await hoiHop({
-      tieu_de: "Gắn nhãn cho hội thoại",
-      phu: "Nhãn mô tả vụ việc này, ví dụ: chờ hàng về, khiếu nại ship, đã báo giá.",
-      truong: [{ name: "nhan", label: "Nhãn", required: true, maxlength: 40 }],
-      nut: "Gắn nhãn",
-    });
-    if (!d || !d.nhan) return;
-    try {
-      await api(`/inbox/conversations/${id}/nhan`, { method: "POST", body: JSON.stringify({ nhan: d.nhan }) });
-      toast("Đã gắn nhãn.");
-      loadConversations();
-    } catch (e) { toast(e.message, true); }
-  } else if (ev.target.closest("[data-go-nhan]")) {
-    const n = ev.target.closest("[data-go-nhan]").dataset.goNhan;
-    try {
-      await api(`/inbox/conversations/${id}/nhan/${encodeURIComponent(n)}`, { method: "DELETE" });
-      loadConversations();
-    } catch (e) { toast(e.message, true); }
-  } else if (ev.target.closest("#btn-them-ghichu")) {
+  // Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js.
+  if (ev.target.closest("#btn-them-ghichu")) {
     const d = await hoiHop({
       tieu_de: "Ghi chú nội bộ",
       phu: "Chỉ người trong cửa hàng thấy — KHÔNG gửi cho khách. Dùng để bàn giao giữa ca.",
@@ -7505,10 +7463,19 @@ function _moTaQuyTac(q) {
   if (dk.ngoai_gio === false) neu.push("trong giờ");
   if (dk.lan_dau === true) neu.push("tin đầu tiên");
   if (dk.lan_dau === false) neu.push("không phải tin đầu");
+  // Nhãn theo id (0056) — đọc tên qua `tenNhanTheoId` (21-nhan.js). Khoá
+  // chữ cũ còn sót thì vẫn hiện chữ.
+  const ten = (ds) => (ds || []).map(tenNhanTheoId).join(" / ");
+  if (dk.nhan_hoi_thoai_co) neu.push("hội thoại có nhãn " + ten(dk.nhan_hoi_thoai_co));
+  if (dk.nhan_hoi_thoai_khong) neu.push("hội thoại chưa có nhãn " + ten(dk.nhan_hoi_thoai_khong));
+  if (dk.nhan_khach_co) neu.push("khách có nhãn " + ten(dk.nhan_khach_co));
+  if (dk.nhan_khach_khong) neu.push("khách chưa có nhãn " + ten(dk.nhan_khach_khong));
   if (dk.nhan_co) neu.push("có nhãn " + dk.nhan_co);
   if (dk.nhan_khong) neu.push("chưa có nhãn " + dk.nhan_khong);
   const thi = (q.hanh_dong || []).map((h) => ({
     gan_nhan: "gắn nhãn " + h.nhan,
+    gan_nhan_hoi_thoai: "gắn nhãn hội thoại " + tenNhanTheoId(h.nhan_id),
+    gan_nhan_khach: "gắn nhãn khách " + tenNhanTheoId(h.nhan_id),
     gui_mau: "gửi mẫu /" + h.ma_tat,
     tao_viec: "tạo việc «" + h.tieu_de + "»",
     chuyen_nguoi: "chuyển người",
@@ -7529,6 +7496,7 @@ async function loadQuyTac() {
   let r;
   try { r = await api("/tu-dong"); } catch (e) { toast(e.message, true); return; }
   state.quyTac = r.quy_tac;
+  await napONhanQuyTac();
   const kenh = (r.kenh || []).filter((k) => KENH_HIEN.includes(k));
   const o = $("#qtKenh");
   if (o && !o.children.length) {
@@ -7596,10 +7564,12 @@ function _gomQuyTac(f) {
   if (tu.length) dk.chua_tu = tu;
   if (f.ngoai_gio.value) dk.ngoai_gio = f.ngoai_gio.value === "true";
   if (f.lan_dau.value) dk.lan_dau = f.lan_dau.value === "true";
-  if (f.nhan_co.value.trim()) dk.nhan_co = f.nhan_co.value.trim();
-  if (f.nhan_khong.value.trim()) dk.nhan_khong = f.nhan_khong.value.trim();
+  for (const k of ["nhan_hoi_thoai_co", "nhan_hoi_thoai_khong", "nhan_khach_co", "nhan_khach_khong"]) {
+    if (f[k].value) dk[k] = [f[k].value];
+  }
   const hd = [];
-  if (f.hd_gan_nhan.value.trim()) hd.push({ loai: "gan_nhan", nhan: f.hd_gan_nhan.value.trim() });
+  if (f.hd_gan_nhan_hoi_thoai.value) hd.push({ loai: "gan_nhan_hoi_thoai", nhan_id: f.hd_gan_nhan_hoi_thoai.value });
+  if (f.hd_gan_nhan_khach.value) hd.push({ loai: "gan_nhan_khach", nhan_id: f.hd_gan_nhan_khach.value });
   if (f.hd_gui_mau.value.trim()) hd.push({ loai: "gui_mau", ma_tat: f.hd_gui_mau.value.trim().replace(/^\//, "") });
   if (f.hd_tao_viec.value.trim()) hd.push({ loai: "tao_viec", tieu_de: f.hd_tao_viec.value.trim() });
   if (f.hd_chuyen_nguoi.value.trim()) hd.push({ loai: "chuyen_nguoi", ly_do: f.hd_chuyen_nguoi.value.trim() });
@@ -7616,9 +7586,12 @@ function _datQuyTac(f, q) {
   f.chua_tu.value = (dk.chua_tu || []).join(", ");
   f.ngoai_gio.value = dk.ngoai_gio == null ? "" : String(dk.ngoai_gio);
   f.lan_dau.value = dk.lan_dau == null ? "" : String(dk.lan_dau);
-  f.nhan_co.value = dk.nhan_co || ""; f.nhan_khong.value = dk.nhan_khong || "";
+  for (const k of ["nhan_hoi_thoai_co", "nhan_hoi_thoai_khong", "nhan_khach_co", "nhan_khach_khong"]) {
+    _datONhan(f[k], (dk[k] || [])[0] || "");
+  }
   const lay = (loai, k) => ((q.hanh_dong || []).find((h) => h.loai === loai) || {})[k] || "";
-  f.hd_gan_nhan.value = lay("gan_nhan", "nhan");
+  _datONhan(f.hd_gan_nhan_hoi_thoai, lay("gan_nhan_hoi_thoai", "nhan_id"));
+  _datONhan(f.hd_gan_nhan_khach, lay("gan_nhan_khach", "nhan_id"));
   f.hd_gui_mau.value = lay("gui_mau", "ma_tat");
   f.hd_tao_viec.value = lay("tao_viec", "tieu_de");
   f.hd_chuyen_nguoi.value = lay("chuyen_nguoi", "ly_do");
@@ -8753,3 +8726,330 @@ $("#loc-sla")?.addEventListener("click", (ev) => {
   ev.currentTarget.setAttribute("aria-pressed", state.convLoc.sla ? "true" : "false");
   loadConversations();
 });
+/* ---------------- Nhãn động (mục 3 của bảng việc) ---------------- */
+/* MỘT danh mục, HAI loại độc lập (migration 0056, agent/core/nhan.py):
+ *   nhãn KHÁCH     mô tả con người, gắn ở Customer 360, đi theo hồ sơ.
+ *   nhãn HỘI THOẠI mô tả một vụ việc, gắn bằng nút "+ Nhãn" dưới tên khách
+ *                  trên đầu hội thoại; KHÔNG thay trạng thái xử lý.
+ * Nhãn đã ngừng không có trong ô chọn, nhưng chỗ đã gắn vẫn hiện (xám) —
+ * ngừng dùng là thôi gắn MỚI, không phải xoá khỏi lịch sử.
+ *
+ * Mọi hộp nhập đi qua `hoiHop` chứ không là ô trong panel: vòng làm mới 6
+ * giây dựng lại panel, chữ đang gõ trong đó sẽ mất. */
+
+const LOAI_NHAN = {
+  khach: { ten: "Nhãn khách hàng", duong: "/nhan/khach",
+           giai_thich: "Mô tả con người, sống lâu: khách sỉ, da nhạy cảm. Gắn ở Customer 360." },
+  hoi_thoai: { ten: "Nhãn hội thoại", duong: "/nhan/hoi-thoai",
+               giai_thich: "Mô tả một vụ việc: chờ hàng về, khiếu nại ship. Gắn trên hội thoại; không thay trạng thái xử lý." },
+};
+const MAU_NHAN_MAC_DINH = "#4b5563";
+
+/* Màu đi vào thuộc tính `style` — chỉ nhận đúng dạng #rrggbb. Máy chủ đã
+ * kiểm, nhưng một chuỗi lạ lọt vào đây là chèn được CSS tuỳ ý. */
+function _mauNhan(m) {
+  return /^#[0-9a-f]{6}$/i.test(String(m || "")) ? String(m).toLowerCase() : MAU_NHAN_MAC_DINH;
+}
+
+/* Chữ trắng hay chữ đậm — cùng công thức WCAG với `mau_chu()` bên máy chủ.
+ * Người quản trị chọn màu tuỳ ý; nhãn vàng nhạt chữ trắng là nhãn không ai
+ * đọc được. */
+function mauChuNhan(nen) {
+  const m = _mauNhan(nen);
+  const sang = (hex) => {
+    const k = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * k[0] + 0.7152 * k[1] + 0.0722 * k[2];
+  };
+  const tp = (a, b) => { const [x, y] = [sang(a), sang(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  return tp(m, "#ffffff") >= tp(m, "#111827") ? "#ffffff" : "#111827";
+}
+
+/* Một chip nhãn. `go` = { loai, dich } thì có nút × gỡ. */
+function chipNhan(n, go) {
+  const mau = _mauNhan(n.mau);
+  const ngung = n.dang_dung === false;
+  const nut = go
+    ? `<button type="button" class="nhan__go" data-nhan-go="${esc(n.id)}" data-nhan-loai="${esc(go.loai)}"
+        data-nhan-dich="${esc(go.dich)}" aria-label="Gỡ nhãn ${esc(n.ten)}">×</button>`
+    : "";
+  return `<span class="nhan nhan--mau${ngung ? " is-ngung" : ""}"
+    style="--nhan-nen:${mau};--nhan-chu:${mauChuNhan(mau)}"
+    title="${esc(n.ten)}${ngung ? " — đã ngừng sử dụng" : ""}">${esc(n.ten)}${nut}</span>`;
+}
+
+/* Chip ở dòng danh sách hội thoại. Phản hồi cũ chỉ có `nhan` (tên). */
+function chipNhanDong(c) {
+  const ds = Array.isArray(c.nhan_chi_tiet) ? c.nhan_chi_tiet
+    : (c.nhan || []).map((t) => ({ id: "", ten: t, mau: MAU_NHAN_MAC_DINH }));
+  return ds.length ? `<span class="row__nhan">${ds.map((n) => chipNhan(n)).join("")}</span>` : "";
+}
+
+/* Hàng nhãn dưới tên khách trên đầu hội thoại (mục 6.3). Chỉ nhãn HỘI
+ * THOẠI: nhãn khách sống ở Customer 360 (mục 6.4), không lặp lại ở đây. */
+function nhanHoiThoaiHtml(c) {
+  const sua = state.toiQuyen && state.toiQuyen.has("hoi_thoai.tra_loi");
+  const ds = c.nhan_chi_tiet || [];
+  return `${ds.map((n) => chipNhan(n, sua ? { loai: "hoi_thoai", dich: c.id } : null)).join("")}
+    ${sua ? `<button type="button" class="btn btn--sm btn--ghost" data-nhan-them="hoi_thoai"
+      data-nhan-dich="${esc(c.id)}">+ Nhãn</button>` : ""}`;
+}
+
+/* Khối nhãn khách trong Customer 360 (mục 6.4). */
+function nhanKhachHtml(contact) {
+  const sua = state.toiQuyen && state.toiQuyen.has("khach.sua");
+  const ds = contact.nhan || [];
+  return `<div class="profile-actions" id="contact-nhan">
+    <div class="profile-tags">${ds.length
+      ? ds.map((n) => chipNhan(n, sua ? { loai: "khach", dich: contact.id } : null)).join("")
+      : '<span class="empty">Chưa có nhãn.</span>'}</div>
+    ${sua ? `<button type="button" class="btn btn--sm" data-nhan-them="khach"
+      data-nhan-dich="${esc(contact.id)}">+ Nhãn</button>` : ""}</div>`;
+}
+
+/* Hộp chọn một nhãn ĐANG DÙNG của một loại, bỏ những nhãn đã gắn. */
+async function chonNhan(loai, daGan = []) {
+  const L = LOAI_NHAN[loai];
+  let ds;
+  try { ds = (await api(L.duong)).nhan || []; } catch (e) { toast(e.message, true); return null; }
+  const con = ds.filter((n) => !daGan.includes(n.id));
+  if (!con.length) {
+    toast(ds.length ? "Đã gắn hết các nhãn đang dùng."
+      : `Chưa có ${L.ten.toLowerCase()} nào — tạo ở Cấu hình → Quản lý nhãn.`, true);
+    return null;
+  }
+  const d = await hoiHop({
+    tieu_de: `Gắn ${L.ten.toLowerCase()}`,
+    phu: L.giai_thich,
+    truong: [{ name: "nhan_id", label: "Nhãn", type: "select", required: true,
+               options: con.map((n) => ({ value: n.id, label: n.mo_ta ? `${n.ten} — ${n.mo_ta}` : n.ten })) }],
+    nut: "Gắn nhãn",
+  });
+  return d && d.nhan_id ? d.nhan_id : null;
+}
+
+function _napLaiSauNhan(loai, dich) {
+  if (loai === "hoi_thoai") return loadConversations();
+  if (typeof loadContactDetail === "function") return loadContactDetail(dich);
+}
+
+document.addEventListener("click", async (ev) => {
+  const them = ev.target.closest("[data-nhan-them]");
+  const go = ev.target.closest("[data-nhan-go]");
+  if (!them && !go) return;
+  const el = them || go;
+  const loai = el.dataset.nhanThem || el.dataset.nhanLoai;
+  const dich = el.dataset.nhanDich;
+  const goc = loai === "hoi_thoai" ? `/inbox/conversations/${dich}/nhan` : `/contacts/${dich}/nhan`;
+  try {
+    if (them) {
+      const khung = el.parentElement;
+      const daGan = $$("[data-nhan-go]", khung).map((b) => b.dataset.nhanGo);
+      const nid = await chonNhan(loai, daGan);
+      if (!nid) return;
+      await api(goc, { method: "POST", body: JSON.stringify({ nhan_id: nid }) });
+      toast("Đã gắn nhãn.");
+    } else {
+      await api(`${goc}/${encodeURIComponent(el.dataset.nhanGo)}`, { method: "DELETE" });
+      toast("Đã gỡ nhãn.");
+    }
+    await _napLaiSauNhan(loai, dich);
+  } catch (e) { toast(e.message, true); }
+});
+
+/* Ô lọc danh sách khách theo nhãn khách. Lọc ở MÁY CHỦ (`nhan_id`), không
+ * lọc 100 dòng đã tải: khách thứ 101 mang nhãn thì lọc phía giao diện nói
+ * "không có ai" — sai mà trông đúng. */
+async function napLocNhanKhach() {
+  const o = $("#contactLocNhan");
+  if (!o) return;
+  let ds = [];
+  try { ds = (await api(LOAI_NHAN.khach.duong)).nhan || []; } catch { o.hidden = true; return; }
+  const html = '<option value="">Mọi nhãn khách</option>'
+    + ds.map((n) => `<option value="${esc(n.id)}">${esc(n.ten)}</option>`).join("");
+  if (o.dataset.html !== html) {
+    o.innerHTML = html;
+    o.dataset.html = html;
+    o.value = state.khachNhan || "";
+  }
+  o.hidden = !ds.length && !state.khachNhan;
+}
+
+$("#contactLocNhan")?.addEventListener("change", (ev) => {
+  state.khachNhan = ev.target.value;
+  loadContacts();
+});
+
+/* ---------------- Quản lý nhãn (Cấu hình chung → tab "Quản lý nhãn") ---------------- */
+/* Đăng ký như một mô-đun gắn được: màn Cài đặt & Quản trị gọi
+ * `GAN_TAB['cc-nhan'](khung)` với khung của tab. Cho tới khi màn ấy có,
+ * trang Cấu hình gắn cùng hàm vào `#quan-ly-nhan` (napQuanLyNhan). */
+window.GAN_TAB = window.GAN_TAB || {};
+GAN_TAB["cc-nhan"] = (el) => moQuanLyNhan(el);
+
+async function moQuanLyNhan(el) {
+  if (!el) return;
+  if (!el.dataset.nhanGan) {
+    el.dataset.nhanGan = "1";
+    el.addEventListener("click", (ev) => _bamQuanLyNhan(el, ev));
+  }
+  await _veQuanLyNhan(el);
+}
+
+async function _veQuanLyNhan(el) {
+  let d;
+  try { d = await api("/nhan"); }
+  catch (e) { el.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+  el._nhan = d;
+  const sua = state.toiQuyen && state.toiQuyen.has("cau_hinh.sua");
+  const khoi = Object.keys(LOAI_NHAN).map((loai) => {
+    const L = LOAI_NHAN[loai];
+    const ds = d.nhan.filter((n) => n.loai === loai);
+    const dong = ds.map((n) => {
+      const dung = Number(n.so_khach || 0) + Number(n.so_hoi_thoai || 0) + Number(n.so_quy_tac || 0);
+      const noi = loai === "khach" ? `${n.so_khach} khách` : `${n.so_hoi_thoai} hội thoại`;
+      return `<div class="row${n.dang_dung ? "" : " is-ngung"}">
+        <span class="row__body">
+          <span class="row__title">${chipNhan(n)}${n.dang_dung ? "" : ' <em class="hint">đã ngừng sử dụng</em>'}</span>
+          ${n.mo_ta ? `<span class="row__sub">${esc(n.mo_ta)}</span>` : ""}
+          <span class="row__sub">Đang gắn: ${esc(noi)}${n.so_quy_tac ? ` · ${n.so_quy_tac} quy tắc tự động` : ""}</span>
+        </span>
+        ${sua ? `<span class="row__side">
+          <button type="button" class="btn btn--sm" data-nl-sua="${esc(n.id)}">Sửa</button>
+          <button type="button" class="btn btn--sm" data-nl-trang-thai="${esc(n.id)}"
+            data-dang-dung="${n.dang_dung ? "1" : ""}">${n.dang_dung ? "Ngừng sử dụng" : "Dùng lại"}</button>
+          ${dung ? "" : `<button type="button" class="btn btn--sm btn--halt" data-nl-xoa="${esc(n.id)}"
+            title="Chỉ xoá được nhãn chưa từng dùng">Xoá</button>`}
+        </span>` : ""}
+      </div>`;
+    }).join("");
+    return `<section class="quan-ly-nhan__loai">
+      <h3 class="subhead">${esc(L.ten)}
+        ${sua ? `<button type="button" class="btn btn--sm btn--primary" data-nl-them="${loai}">+ Thêm nhãn</button>` : ""}</h3>
+      <p class="panel__note">${esc(L.giai_thich)}</p>
+      <div class="rows">${dong || '<p class="empty">Chưa có nhãn nào.</p>'}</div>
+    </section>`;
+  }).join("");
+  const html = `<div class="quan-ly-nhan">${khoi}</div>`;
+  // Chỉ thay khi đổi: trang Cấu hình làm mới 6 giây một lần, thay lại cả
+  // khối là nút đang được rê chuột nhấp nháy.
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
+function _truongNhan(n, bangMau, soDaCo) {
+  const mau = n ? n.mau : bangMau[soDaCo % bangMau.length];
+  return [
+    { name: "ten", label: "Tên nhãn", required: true, maxlength: 80, value: n ? n.ten : "" },
+    { name: "mau", label: "Màu", type: "color", value: mau,
+      hint: "chữ trên nhãn tự chọn trắng hoặc đậm cho dễ đọc" },
+    { name: "mo_ta", label: "Mô tả", type: "textarea", rows: 2, maxlength: 300, value: n ? n.mo_ta : "" },
+    { name: "thu_tu", label: "Thứ tự", type: "number", min: 0, max: 10000, value: n ? n.thu_tu : 100,
+      hint: "số nhỏ đứng trước trong ô chọn" },
+  ];
+}
+
+async function _bamQuanLyNhan(el, ev) {
+  const b = ev.target.closest("[data-nl-them], [data-nl-sua], [data-nl-trang-thai], [data-nl-xoa]");
+  if (!b) return;
+  const d = el._nhan || { nhan: [], bang_mau: [MAU_NHAN_MAC_DINH] };
+  const tim = (id) => d.nhan.find((n) => n.id === id);
+  try {
+    if (b.dataset.nlThem) {
+      const loai = b.dataset.nlThem;
+      const v = await hoiHop({ tieu_de: `Thêm ${LOAI_NHAN[loai].ten.toLowerCase()}`,
+        phu: LOAI_NHAN[loai].giai_thich,
+        truong: _truongNhan(null, d.bang_mau, d.nhan.filter((n) => n.loai === loai).length), nut: "Tạo nhãn" });
+      if (!v) return;
+      await api("/nhan", { method: "POST", body: JSON.stringify({
+        loai, ten: v.ten, mau: v.mau, mo_ta: v.mo_ta || "", thu_tu: Number(v.thu_tu || 100) }) });
+      toast("Đã tạo nhãn.");
+    } else if (b.dataset.nlSua) {
+      const n = tim(b.dataset.nlSua);
+      if (!n) return;
+      const v = await hoiHop({ tieu_de: `Sửa nhãn «${n.ten}»`,
+        phu: "Đổi tên hay màu là đổi ở MỌI chỗ đang gắn nhãn này. Không đổi được loại nhãn.",
+        truong: _truongNhan(n, d.bang_mau, 0), nut: "Lưu" });
+      if (!v) return;
+      await api(`/nhan/${n.id}`, { method: "PUT", body: JSON.stringify({
+        ten: v.ten, mau: v.mau, mo_ta: v.mo_ta || "", thu_tu: Number(v.thu_tu || 100) }) });
+      toast("Đã lưu nhãn.");
+    } else if (b.dataset.nlTrangThai) {
+      const n = tim(b.dataset.nlTrangThai);
+      if (!n) return;
+      if (b.dataset.dangDung) {
+        const ok = await hoiHop({ tieu_de: `Ngừng sử dụng «${n.ten}»?`,
+          phu: "Nhãn biến khỏi ô chọn, không gắn mới được. Chỗ đã gắn GIỮ NGUYÊN (hiện xám), lịch sử vẫn đọc được tên. Bật lại lúc nào cũng được.",
+          nut: "Ngừng sử dụng", nguy_hiem: true });
+        if (!ok) return;
+        const r = await api(`/nhan/${n.id}/ngung`, { method: "POST" });
+        toast(r.canh_bao || "Đã ngừng sử dụng nhãn.", Boolean(r.canh_bao));
+      } else {
+        await api(`/nhan/${n.id}/dung-lai`, { method: "POST" });
+        toast("Đã dùng lại nhãn.");
+      }
+    } else if (b.dataset.nlXoa) {
+      const n = tim(b.dataset.nlXoa);
+      if (!n) return;
+      const ok = await hoiHop({ tieu_de: `Xoá nhãn «${n.ten}»?`,
+        phu: "Chỉ xoá được nhãn CHƯA từng gắn ở đâu (tạo nhầm). Nhãn đã dùng thì hãy Ngừng sử dụng.",
+        nut: "Xoá", nguy_hiem: true });
+      if (!ok) return;
+      await api(`/nhan/${n.id}`, { method: "DELETE" });
+      toast("Đã xoá nhãn.");
+    }
+    await _veQuanLyNhan(el);
+  } catch (e) { toast(e.message, true); }
+}
+
+/* Gắn vào trang Cấu hình hiện có — gọi từ vòng làm mới (10-vong-lam-moi.js).
+ * Thiếu `cau_hinh.doc` thì ẩn cả khung: một khung chắc chắn 403 không phải
+ * là một khung. */
+async function napQuanLyNhan() {
+  const panel = $("#quan-ly-nhan-panel");
+  if (!panel) return;
+  const doc = state.toiQuyen && state.toiQuyen.has("cau_hinh.doc");
+  panel.hidden = !doc;
+  if (doc) await GAN_TAB["cc-nhan"]($("#quan-ly-nhan"));
+}
+
+/* ---------------- Nhãn trong quy tắc tự động (mục 7.8) ---------------- */
+/* Sáu ô chọn của biểu mẫu quy tắc: ô `data-qt-nhan="hoi_thoai"` chỉ có nhãn
+ * hội thoại, ô `"khach"` chỉ có nhãn khách. Tên nhãn theo id giữ trong
+ * `state.tenNhan` để câu mô tả quy tắc đọc được ("có nhãn Chờ hàng"). */
+async function napONhanQuyTac() {
+  state.tenNhan = state.tenNhan || {};
+  for (const loai of Object.keys(LOAI_NHAN)) {
+    let ds = [];
+    try { ds = (await api(LOAI_NHAN[loai].duong)).nhan || []; } catch { ds = []; }
+    ds.forEach((n) => { state.tenNhan[n.id] = n.ten; });
+    const html = '<option value="">— không xét —</option>'
+      + ds.map((n) => `<option value="${esc(n.id)}">${esc(n.ten)}</option>`).join("");
+    $$(`[data-qt-nhan="${loai}"]`).forEach((o) => {
+      // Giữ lựa chọn đang có; chỉ thay khi danh sách đổi (làm mới 6 giây).
+      if (o.dataset.html === html) return;
+      const giu = o.value;
+      o.innerHTML = html;
+      o.dataset.html = html;
+      if (giu) _datONhan(o, giu);
+    });
+  }
+}
+
+/* Chọn một id trong ô; nhãn đã ngừng (không có trong ô) thì thêm một dòng
+ * "(đã ngừng)" — không thì mở sửa quy tắc là mất lặng lẽ điều kiện cũ. */
+function _datONhan(o, id) {
+  if (!id) { o.value = ""; return; }
+  if (![...o.options].some((x) => x.value === id)) {
+    const x = document.createElement("option");
+    x.value = id;
+    x.textContent = `${tenNhanTheoId(id)} (đã ngừng)`;
+    o.appendChild(x);
+  }
+  o.value = id;
+}
+
+function tenNhanTheoId(id) {
+  return (state.tenNhan && state.tenNhan[id]) || "nhãn đã ngừng";
+}

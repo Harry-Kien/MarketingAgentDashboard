@@ -1980,6 +1980,16 @@ svg { flex: none; }
   background: hsl(var(--warning) / .12); color: hsl(var(--warning));
 }
 .nhan__go { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; }
+/* Nhãn từ danh mục (0056): nền là màu người quản trị chọn, chữ trắng hoặc
+ * đậm do mauChuNhan() tính cho đủ tương phản. Nhãn đã ngừng vẫn hiện ở chỗ
+ * đã gắn nhưng xám đi — ngừng là thôi gắn mới, không phải biến mất. */
+.nhan--mau { background: var(--nhan-nen); color: var(--nhan-chu); }
+.nhan.is-ngung { opacity: .55; filter: grayscale(1); text-decoration: line-through; }
+.filterbar__chon { margin: 0 0 8px; padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 12px; max-width: 100%; }
+.quan-ly-nhan { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.quan-ly-nhan__loai { min-width: 0; }
+.quan-ly-nhan .subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quan-ly-nhan .row.is-ngung .row__body { opacity: .7; }
 /* Ghi chú nội bộ phải trông KHÁC HẲN tin khách: người trực liếc qua là biết
  * đây là chữ nội bộ, không phải thứ đã gửi đi. */
 .ghichu {

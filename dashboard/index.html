@@ -621,6 +621,15 @@
         </form>
       </section>
 
+      <!-- QUẢN LÝ NHÃN (mục 3): danh mục chung cho hai loại nhãn độc lập.
+           Phần thân do `GAN_TAB['cc-nhan']` (dashboard/src/21-nhan.js) dựng —
+           cùng hàm sẽ được gắn vào tab "Quản lý nhãn" của Cấu hình chung. -->
+      <section class="panel" id="quan-ly-nhan-panel" hidden>
+        <h2 class="panel__head">Quản lý nhãn
+          <span class="panel__note">nhãn khách hàng · nhãn hội thoại</span></h2>
+        <div id="quan-ly-nhan"></div>
+      </section>
+
       <!-- QUY TẮC TỰ ĐỘNG: khi khách nhắn → nếu thoả điều kiện → làm hành động.
            Chỉ chọn trong danh sách đóng (agent/omnichannel/tu_dong.py) — không
            gọi URL, không chạy mã. Gửi tin CHỈ bằng mẫu trả lời nhanh ở trên,
@@ -663,16 +672,29 @@
                 <option value="false">không phải tin đầu tiên</option>
               </select></label>
           </div>
+          <!-- Nhãn chọn từ DANH MỤC (Quản lý nhãn), hai loại tách riêng
+               (mục 7.8): nhãn hội thoại phân loại vụ việc, nhãn khách đi
+               theo hồ sơ. Gõ chữ tự do là quy tắc không bao giờ khớp. -->
           <div class="form__row">
-            <label class="field"><span>Hội thoại CÓ nhãn</span>
-              <input name="nhan_co" maxlength="40" placeholder="vip"></label>
-            <label class="field"><span>Hội thoại CHƯA có nhãn</span>
-              <input name="nhan_khong" maxlength="40" placeholder="đã chào"></label>
+            <label class="field"><span>Hội thoại CÓ nhãn hội thoại</span>
+              <select name="nhan_hoi_thoai_co" data-qt-nhan="hoi_thoai"></select></label>
+            <label class="field"><span>Hội thoại CHƯA có nhãn hội thoại</span>
+              <select name="nhan_hoi_thoai_khong" data-qt-nhan="hoi_thoai"></select></label>
+          </div>
+          <div class="form__row">
+            <label class="field"><span>Khách CÓ nhãn khách hàng</span>
+              <select name="nhan_khach_co" data-qt-nhan="khach"></select></label>
+            <label class="field"><span>Khách CHƯA có nhãn khách hàng</span>
+              <select name="nhan_khach_khong" data-qt-nhan="khach"></select></label>
           </div>
           <h3 class="panel__head qt__muc">Thì <span class="panel__note">điền ít nhất một</span></h3>
           <div class="form__row">
-            <label class="field"><span>Gắn nhãn</span>
-              <input name="hd_gan_nhan" maxlength="40" placeholder="ngoài giờ"></label>
+            <label class="field"><span>Gắn nhãn hội thoại</span>
+              <select name="hd_gan_nhan_hoi_thoai" data-qt-nhan="hoi_thoai"></select></label>
+            <label class="field"><span>Gắn nhãn khách hàng <em class="hint">lên hồ sơ khách</em></span>
+              <select name="hd_gan_nhan_khach" data-qt-nhan="khach"></select></label>
+          </div>
+          <div class="form__row">
             <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt</em></span>
               <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
             <datalist id="qtMauDs"></datalist>
@@ -1229,6 +1251,8 @@
             <button type="button" class="chip" data-chuloc="cua_toi">Khách của tôi<b class="chip__dem"></b></button>
             <button type="button" class="chip" data-chuloc="vo_chu">Chưa có chủ<b class="chip__dem"></b></button>
           </div>
+          <!-- Lọc theo NHÃN KHÁCH (danh mục 0056) — lọc ở máy chủ, không ở đây. -->
+          <select id="contactLocNhan" class="filterbar__chon" aria-label="Lọc khách theo nhãn khách hàng" hidden></select>
           <!-- Thanh giao hàng loạt: chỉ hiện khi đã tick ít nhất một khách.
            Giao từng khách bằng cách mở từng hồ sơ là việc người ta bỏ dở
            ở khách thứ mười — và mười khách còn lại thành "vô chủ" mãi. -->

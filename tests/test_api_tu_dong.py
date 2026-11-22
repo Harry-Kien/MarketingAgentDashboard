@@ -49,6 +49,11 @@ def _app(url: str, nguoi: dict) -> FastAPI:
                 "INSERT INTO tra_loi_nhanh (ma_tat, noi_dung) VALUES "
                 "('chao','Dạ shop chào chị ạ.'), ('xau','Serum này đặc trị mụn ạ') "
                 "ON CONFLICT DO NOTHING")
+            # MAU dùng khoá chữ cũ `gan_nhan` — API đổi sang id nếu tên có
+            # trong danh mục (0056), không thì 422.
+            await conn.execute(
+                "INSERT INTO nhan (loai, ten) VALUES ('hoi_thoai','ngoài giờ') "
+                "ON CONFLICT DO NOTHING")
 
     @app.on_event("shutdown")
     async def _dong():

@@ -1,8 +1,20 @@
 """
 Quy tắc tự động hoá: SỰ KIỆN → ĐIỀU KIỆN → HÀNH ĐỘNG (bảng `quy_tac_tu_dong`).
 
-    khi khách nhắn tin  →  nếu [kênh, từ khoá, ngoài giờ, tin đầu, nhãn]
-                        →  gắn nhãn · gửi mẫu trả lời nhanh · tạo việc · chuyển người
+    khi khách nhắn tin  →  nếu [kênh, từ khoá, ngoài giờ, tin đầu,
+                               nhãn HỘI THOẠI, nhãn KHÁCH]
+                        →  gắn nhãn hội thoại · gắn nhãn khách · gửi mẫu trả
+                           lời nhanh · tạo việc · chuyển người
+
+NHÃN THEO ID, HAI LOẠI TÁCH BẠCH (mục 7.8)
+------------------------------------------
+Điều kiện và hành động về nhãn trỏ vào DANH MỤC nhãn (0056) bằng id, và
+tên khoá nói rõ loại: `nhan_hoi_thoai_co` khác `nhan_khach_co`. Quy tắc cũ
+viết bằng CHỮ (`nhan_co`, `nhan_khong`, `gan_nhan` + `nhan`) đã được
+migration 0056 đổi sang id. Khoá cũ nào còn sót vẫn chạy như trước — so
+theo TÊN nhãn hội thoại đang gắn; gắn nhãn chữ thì tra danh mục, không có
+thì hành động ấy ghi "hỏng" kèm lý do (không tự tạo nhãn). API lưu quy tắc
+đổi khoá cũ sang id hoặc từ chối 422 (agent/api/tu_dong_api.py).
 
 DANH SÁCH ĐÓNG
 --------------
@@ -39,8 +51,19 @@ SU_KIEN = ("tin_khach",)
 # Lấy từ Channel, không gõ tay: thêm kênh mới mà quên ở đây là quy tắc theo
 # kênh ấy bị từ chối lúc lưu — dễ thấy, nhưng vẫn là một bước người ta quên.
 KENH = tuple(c.value for c in Channel)
-DIEU_KIEN = ("kenh", "chua_tu", "ngoai_gio", "lan_dau", "nhan_co", "nhan_khong")
-HANH_DONG = ("gan_nhan", "gui_mau", "tao_viec", "chuyen_nguoi")
+DIEU_KIEN = ("kenh", "chua_tu", "ngoai_gio", "lan_dau",
+             "nhan_hoi_thoai_co", "nhan_hoi_thoai_khong",
+             "nhan_khach_co", "nhan_khach_khong")
+# Khoá chữ tự do trước 0056 — vẫn đọc được, không còn là đường chính.
+DIEU_KIEN_CU = ("nhan_co", "nhan_khong")
+HANH_DONG = ("gan_nhan_hoi_thoai", "gan_nhan_khach", "gui_mau", "tao_viec", "chuyen_nguoi")
+HANH_DONG_CU = ("gan_nhan",)
+# Điều kiện nhãn -> loại nhãn nó được phép trỏ tới. API kiểm loại theo bảng
+# này; trộn nhầm loại là quy tắc không bao giờ khớp mà trông vẫn đúng.
+DIEU_KIEN_NHAN = {"nhan_hoi_thoai_co": "hoi_thoai", "nhan_hoi_thoai_khong": "hoi_thoai",
+                  "nhan_khach_co": "khach", "nhan_khach_khong": "khach"}
+HANH_DONG_NHAN = {"gan_nhan_hoi_thoai": "hoi_thoai", "gan_nhan_khach": "khach"}
+TOI_DA_NHAN = 10
 # Làm tối đa một lần mỗi hội thoại (chốt 2). Gắn nhãn/chuyển người lặp lại vô hại.
 MOT_LAN = frozenset({"gui_mau", "tao_viec"})
 TOI_DA_HANH_DONG = 5
@@ -69,10 +92,24 @@ def _ds_chu(gt: Any, ten: str, toi_da: int = TOI_DA_TU_KHOA) -> list[str]:
     return ra
 
 
+def _ds_id(gt: Any, ten: str) -> list[str]:
+    if not isinstance(gt, list) or not 1 <= len(gt) <= TOI_DA_NHAN:
+        raise QuyTacHong(f"{ten} cần 1–{TOI_DA_NHAN} nhãn (id trong danh mục)")
+    ra: list[str] = []
+    for x in gt:
+        try:
+            ma = str(uuid.UUID(str(x)))
+        except ValueError:
+            raise QuyTacHong(f"{ten}: «{x}» không phải id nhãn — chọn nhãn trong danh mục") from None
+        if ma not in ra:
+            ra.append(ma)
+    return ra
+
+
 def kiem_dieu_kien(dk: Any) -> dict[str, Any]:
     if not isinstance(dk, dict):
         raise QuyTacHong("điều kiện phải là object")
-    la = set(dk) - set(DIEU_KIEN)
+    la = set(dk) - set(DIEU_KIEN) - set(DIEU_KIEN_CU)
     if la:
         raise QuyTacHong(f"điều kiện không có: {', '.join(sorted(la))}")
     ra: dict[str, Any] = {}
@@ -88,11 +125,15 @@ def kiem_dieu_kien(dk: Any) -> dict[str, Any]:
             if not isinstance(dk[k], bool):
                 raise QuyTacHong(f"{k} phải là true/false")
             ra[k] = dk[k]
-    for k in ("nhan_co", "nhan_khong"):
+    for k in DIEU_KIEN_NHAN:
         if k in dk:
-            if not isinstance(dk[k], str) or not 1 <= len(dk[k].strip()) <= 40:
-                raise QuyTacHong(f"{k} phải là một nhãn 1–40 ký tự")
-            ra[k] = dk[k].strip().lower()
+            ra[k] = _ds_id(dk[k], k)
+    # Khoá cũ: giữ hình dạng để API đổi sang id (cần CSDL — hàm này thuần).
+    for k in DIEU_KIEN_CU:
+        if k in dk:
+            if not isinstance(dk[k], str) or not 1 <= len(dk[k].strip()) <= 80:
+                raise QuyTacHong(f"{k} phải là một nhãn 1–80 ký tự")
+            ra[k] = " ".join(dk[k].split()).lower()
     return ra
 
 
@@ -101,16 +142,18 @@ def kiem_hanh_dong(ds: Any) -> list[dict[str, Any]]:
         raise QuyTacHong(f"cần 1–{TOI_DA_HANH_DONG} hành động")
     ra = []
     for hd in ds:
-        if not isinstance(hd, dict) or hd.get("loai") not in HANH_DONG:
+        if not isinstance(hd, dict) or hd.get("loai") not in HANH_DONG + HANH_DONG_CU:
             raise QuyTacHong(f"hành động phải là một trong: {', '.join(HANH_DONG)}")
         loai = hd["loai"]
-        la = set(hd) - {"loai", "nhan", "ma_tat", "tieu_de", "ly_do"}
+        la = set(hd) - {"loai", "nhan", "nhan_id", "ma_tat", "tieu_de", "ly_do"}
         if la:
             raise QuyTacHong(f"hành động {loai} có khoá lạ: {', '.join(sorted(la))}")
-        if loai == "gan_nhan":
-            n = str(hd.get("nhan") or "").strip().lower()
-            if not 1 <= len(n) <= 40:
-                raise QuyTacHong("gan_nhan cần nhan 1–40 ký tự")
+        if loai in HANH_DONG_NHAN:
+            ra.append({"loai": loai, "nhan_id": _ds_id([hd.get("nhan_id")], loai)[0]})
+        elif loai == "gan_nhan":
+            n = " ".join(str(hd.get("nhan") or "").split()).lower()
+            if not 1 <= len(n) <= 80:
+                raise QuyTacHong("gan_nhan cần nhan 1–80 ký tự")
             ra.append({"loai": loai, "nhan": n})
         elif loai == "gui_mau":
             ma = str(hd.get("ma_tat") or "").strip().lower()
@@ -137,7 +180,10 @@ class NguCanh:
     van_ban: str
     ngoai_gio: bool
     lan_dau: bool
+    # TÊN nhãn hội thoại (chữ thường) — chỉ để khoá cũ `nhan_co` còn khớp.
     nhan: set[str] = field(default_factory=set)
+    nhan_hoi_thoai: set[str] = field(default_factory=set)    # id
+    nhan_khach: set[str] = field(default_factory=set)        # id
 
 
 def khop(dk: dict[str, Any], nc: NguCanh) -> bool:
@@ -156,6 +202,15 @@ def khop(dk: dict[str, Any], nc: NguCanh) -> bool:
         return False
     if "nhan_khong" in dk and dk["nhan_khong"] in nc.nhan:
         return False
+    # "_co": có ÍT NHẤT MỘT nhãn trong danh sách. "_khong": không có nhãn
+    # NÀO trong danh sách.
+    for k, co in (("nhan_hoi_thoai_co", nc.nhan_hoi_thoai), ("nhan_khach_co", nc.nhan_khach)):
+        if k in dk and not set(dk[k]) & co:
+            return False
+    for k, co in (("nhan_hoi_thoai_khong", nc.nhan_hoi_thoai),
+                  ("nhan_khach_khong", nc.nhan_khach)):
+        if k in dk and set(dk[k]) & co:
+            return False
     return True
 
 
@@ -267,8 +322,12 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
             r = await db.fetchrow("SELECT count(*) n FROM messages "
                                   "WHERE conversation_id = $1 AND role = 'customer'", cid)
             lan_dau = (r["n"] if r else 0) <= 1
-        nhan = {r["nhan"] for r in await db.fetch(
-            "SELECT nhan FROM hoi_thoai_nhan WHERE conversation_id = $1", cid)}
+        gan_ht = await db.fetch(
+            "SELECT n.id::text AS id, lower(n.ten) AS ten FROM hoi_thoai_gan_nhan g "
+            "JOIN nhan n ON n.id = g.nhan_id WHERE g.conversation_id = $1", cid)
+        gan_kh = await db.fetch(
+            "SELECT g.nhan_id::text AS id FROM conversations c "
+            "JOIN khach_gan_nhan g ON g.contact_id = c.contact_id WHERE c.id = $1", cid)
     except Exception as exc:  # noqa: BLE001
         logger.exception("tu_dong: không đọc được ngữ cảnh hội thoại %s", cid)
         try:
@@ -278,7 +337,9 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
         return kq
     nc = NguCanh(kenh=str(msg.channel),
                  van_ban=msg.text or "", ngoai_gio=not gio_lam_viec.dang_trong_gio(),
-                 lan_dau=lan_dau, nhan=nhan)
+                 lan_dau=lan_dau, nhan={r["ten"] for r in gan_ht},
+                 nhan_hoi_thoai={r["id"] for r in gan_ht},
+                 nhan_khach={r["id"] for r in gan_kh})
     duoc_gui = runtime.enabled() and not nguoi_dang_tiep
     for qt in ds:
         try:
@@ -301,11 +362,8 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
             if loai in MOT_LAN and da_mot_lan:
                 continue
             try:
-                if loai == "gan_nhan":
-                    await db.execute("INSERT INTO hoi_thoai_nhan (conversation_id, nhan) VALUES ($1,$2) "
-                                     "ON CONFLICT DO NOTHING", cid, hd["nhan"])
-                    nc.nhan.add(hd["nhan"])
-                    lam.append(f"gắn nhãn {hd['nhan']}")
+                if loai in ("gan_nhan", "gan_nhan_hoi_thoai", "gan_nhan_khach"):
+                    lam.append(await _gan_nhan(db, cid, hd, nc))
                 elif loai == "gui_mau":
                     if not duoc_gui:
                         bo_qua.append("không gửi mẫu: nhân viên đang tiếp hoặc agent đang tắt toàn hệ thống")
@@ -358,6 +416,44 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
                 logger.exception("tu_dong: không ghi được sự kiện lỗi của %s", qt["ten"])
         kq.da_lam += lam
     return kq
+
+
+async def _gan_nhan(db, cid: uuid.UUID, hd: dict[str, Any], nc: NguCanh) -> str:
+    """
+    Gắn nhãn qua CÙNG đường với nhân viên (`agent/core/nhan.py`): nhãn đã
+    ngừng không gắn được, sai loại không gắn được, và mỗi lần gắn MỚI để
+    lại một dòng `events` (actor `tu_dong`). Hỏng thì NỔ — lần chạy ghi
+    "hỏng" kèm lý do, không im lặng như quy tắc "đang bật" mà không làm gì.
+    """
+    from agent.core import nhan as nhan_loi
+
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            if hd["loai"] == "gan_nhan":
+                # Khoá cũ còn sót: tra TÊN trong danh mục nhãn hội thoại.
+                n = await nhan_loi.tim_theo_ten(conn, "hoi_thoai", hd["nhan"])
+                if n is None:
+                    raise QuyTacHong(f"nhãn «{hd['nhan']}» không có trong danh mục nhãn hội thoại")
+                nid, loai = n["id"], "hoi_thoai"
+            else:
+                nid, loai = uuid.UUID(str(hd["nhan_id"])), HANH_DONG_NHAN[hd["loai"]]
+            try:
+                if loai == "hoi_thoai":
+                    n, _ = await nhan_loi.gan_hoi_thoai(conn, conversation_id=cid, nhan_id=nid,
+                                                        gan_boi=None, actor="tu_dong")
+                    nc.nhan_hoi_thoai.add(str(nid))
+                    nc.nhan.add(n["ten"].lower())
+                    return f"gắn nhãn hội thoại {n['ten']}"
+                contact_id = await conn.fetchval(
+                    "SELECT contact_id FROM conversations WHERE id = $1", cid)
+                if contact_id is None:
+                    raise QuyTacHong("hội thoại chưa gắn hồ sơ khách — không gắn được nhãn khách")
+                n, _ = await nhan_loi.gan_khach(conn, contact_id=contact_id, nhan_id=nid,
+                                                gan_boi=None, actor="tu_dong")
+                nc.nhan_khach.add(str(nid))
+                return f"gắn nhãn khách {n['ten']}"
+            except (nhan_loi.NhanHong, nhan_loi.NhanKhongThay) as exc:
+                raise QuyTacHong(str(exc)) from exc
 
 
 async def _ghi_hong(db, qt, cid, loi: str) -> None:

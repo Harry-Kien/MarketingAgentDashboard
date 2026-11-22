@@ -62,6 +62,9 @@ NHOM = {
     "Quyền và vai trò": [
         "vai_tro", "vai_tro_quyen", "nguoi_dung_vai_tro",
     ],
+    # Danh mục nhãn (0056). `hoi_thoai_nhan` và `contact_tags` ở hai nhóm
+    # trên là bảng chữ tự do CŨ — thôi được ghi, giữ làm ảnh chụp.
+    "Nhãn": ["nhan", "hoi_thoai_gan_nhan", "khach_gan_nhan"],
     "Công việc và thông báo": ["cong_viec", "thong_bao"],
     "Lịch ca": ["ca_truc", "ca_nghi"],
     "Dữ liệu cá nhân": ["yeu_cau_chu_the"],

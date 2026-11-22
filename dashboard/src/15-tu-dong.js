@@ -25,10 +25,19 @@ function _moTaQuyTac(q) {
   if (dk.ngoai_gio === false) neu.push("trong giờ");
   if (dk.lan_dau === true) neu.push("tin đầu tiên");
   if (dk.lan_dau === false) neu.push("không phải tin đầu");
+  // Nhãn theo id (0056) — đọc tên qua `tenNhanTheoId` (21-nhan.js). Khoá
+  // chữ cũ còn sót thì vẫn hiện chữ.
+  const ten = (ds) => (ds || []).map(tenNhanTheoId).join(" / ");
+  if (dk.nhan_hoi_thoai_co) neu.push("hội thoại có nhãn " + ten(dk.nhan_hoi_thoai_co));
+  if (dk.nhan_hoi_thoai_khong) neu.push("hội thoại chưa có nhãn " + ten(dk.nhan_hoi_thoai_khong));
+  if (dk.nhan_khach_co) neu.push("khách có nhãn " + ten(dk.nhan_khach_co));
+  if (dk.nhan_khach_khong) neu.push("khách chưa có nhãn " + ten(dk.nhan_khach_khong));
   if (dk.nhan_co) neu.push("có nhãn " + dk.nhan_co);
   if (dk.nhan_khong) neu.push("chưa có nhãn " + dk.nhan_khong);
   const thi = (q.hanh_dong || []).map((h) => ({
     gan_nhan: "gắn nhãn " + h.nhan,
+    gan_nhan_hoi_thoai: "gắn nhãn hội thoại " + tenNhanTheoId(h.nhan_id),
+    gan_nhan_khach: "gắn nhãn khách " + tenNhanTheoId(h.nhan_id),
     gui_mau: "gửi mẫu /" + h.ma_tat,
     tao_viec: "tạo việc «" + h.tieu_de + "»",
     chuyen_nguoi: "chuyển người",
@@ -49,6 +58,7 @@ async function loadQuyTac() {
   let r;
   try { r = await api("/tu-dong"); } catch (e) { toast(e.message, true); return; }
   state.quyTac = r.quy_tac;
+  await napONhanQuyTac();
   const kenh = (r.kenh || []).filter((k) => KENH_HIEN.includes(k));
   const o = $("#qtKenh");
   if (o && !o.children.length) {
@@ -116,10 +126,12 @@ function _gomQuyTac(f) {
   if (tu.length) dk.chua_tu = tu;
   if (f.ngoai_gio.value) dk.ngoai_gio = f.ngoai_gio.value === "true";
   if (f.lan_dau.value) dk.lan_dau = f.lan_dau.value === "true";
-  if (f.nhan_co.value.trim()) dk.nhan_co = f.nhan_co.value.trim();
-  if (f.nhan_khong.value.trim()) dk.nhan_khong = f.nhan_khong.value.trim();
+  for (const k of ["nhan_hoi_thoai_co", "nhan_hoi_thoai_khong", "nhan_khach_co", "nhan_khach_khong"]) {
+    if (f[k].value) dk[k] = [f[k].value];
+  }
   const hd = [];
-  if (f.hd_gan_nhan.value.trim()) hd.push({ loai: "gan_nhan", nhan: f.hd_gan_nhan.value.trim() });
+  if (f.hd_gan_nhan_hoi_thoai.value) hd.push({ loai: "gan_nhan_hoi_thoai", nhan_id: f.hd_gan_nhan_hoi_thoai.value });
+  if (f.hd_gan_nhan_khach.value) hd.push({ loai: "gan_nhan_khach", nhan_id: f.hd_gan_nhan_khach.value });
   if (f.hd_gui_mau.value.trim()) hd.push({ loai: "gui_mau", ma_tat: f.hd_gui_mau.value.trim().replace(/^\//, "") });
   if (f.hd_tao_viec.value.trim()) hd.push({ loai: "tao_viec", tieu_de: f.hd_tao_viec.value.trim() });
   if (f.hd_chuyen_nguoi.value.trim()) hd.push({ loai: "chuyen_nguoi", ly_do: f.hd_chuyen_nguoi.value.trim() });
@@ -136,9 +148,12 @@ function _datQuyTac(f, q) {
   f.chua_tu.value = (dk.chua_tu || []).join(", ");
   f.ngoai_gio.value = dk.ngoai_gio == null ? "" : String(dk.ngoai_gio);
   f.lan_dau.value = dk.lan_dau == null ? "" : String(dk.lan_dau);
-  f.nhan_co.value = dk.nhan_co || ""; f.nhan_khong.value = dk.nhan_khong || "";
+  for (const k of ["nhan_hoi_thoai_co", "nhan_hoi_thoai_khong", "nhan_khach_co", "nhan_khach_khong"]) {
+    _datONhan(f[k], (dk[k] || [])[0] || "");
+  }
   const lay = (loai, k) => ((q.hanh_dong || []).find((h) => h.loai === loai) || {})[k] || "";
-  f.hd_gan_nhan.value = lay("gan_nhan", "nhan");
+  _datONhan(f.hd_gan_nhan_hoi_thoai, lay("gan_nhan_hoi_thoai", "nhan_id"));
+  _datONhan(f.hd_gan_nhan_khach, lay("gan_nhan_khach", "nhan_id"));
   f.hd_gui_mau.value = lay("gui_mau", "ma_tat");
   f.hd_tao_viec.value = lay("tao_viec", "tieu_de");
   f.hd_chuyen_nguoi.value = lay("chuyen_nguoi", "ly_do");

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from agent import db
 from agent.config import settings
+from agent.core import nhan as nhan_loi
 from agent.omnichannel.routing import (
     AssignmentDenied,
     ConversationConflict,
@@ -45,6 +46,10 @@ class InboxFilters:
     chua_giao: bool = False
     loai_thread: Literal["nhom", "rieng"] | None = None
     qua_han_sla: bool = False
+    # Lọc theo nhãn hội thoại trong danh mục (0056). `nhan` (tên) ở trên giữ
+    # cho đường cũ; id là đường chính — đổi tên nhãn không làm gãy bộ lọc
+    # đang chọn trên màn hình.
+    nhan_id: UUID | None = None
 
 
 # Tên hiển thị của một người dùng: họ tên, không có thì tên đăng nhập. MỘT
@@ -286,11 +291,18 @@ class PostgresInboxQueryRepository:
             clauses.append("coalesce(conversation.thread_type, 0) <> 1")
         if filters.qua_han_sla:
             clauses.append(self._SLA_QUA_HAN_SQL)
+        if filters.nhan_id is not None:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM hoi_thoai_gan_nhan nhan_loc "
+                "WHERE nhan_loc.conversation_id = conversation.id "
+                f"AND nhan_loc.nhan_id = {bind(filters.nhan_id)})"
+            )
         if filters.nhan:
             clauses.append(
-                "EXISTS (SELECT 1 FROM hoi_thoai_nhan nhan_loc "
+                "EXISTS (SELECT 1 FROM hoi_thoai_gan_nhan nhan_loc "
+                "JOIN nhan nhan_ten ON nhan_ten.id = nhan_loc.nhan_id "
                 "WHERE nhan_loc.conversation_id = conversation.id "
-                f"AND nhan_loc.nhan = {bind(filters.nhan)})"
+                f"AND lower(nhan_ten.ten) = lower({bind(' '.join(filters.nhan.split()))}))"
             )
         if filters.q:
             # Bỏ dấu + chữ thường ở CẢ hai phía: gõ "kem chong nang" ra tin
@@ -331,11 +343,16 @@ class PostgresInboxQueryRepository:
                    conversation.msg_count, conversation.updated_at,
                    latest.content AS last_message,
                    latest.delivery_status AS last_delivery_status,
+                   -- `nhan`: mảng TÊN, giữ cho mã cũ. `nhan_chi_tiet`: id,
+                   -- màu, đang dùng — thứ chip trên màn hình cần.
                    ARRAY(
-                       SELECT nhan_hien.nhan FROM hoi_thoai_nhan nhan_hien
-                       WHERE nhan_hien.conversation_id = conversation.id
-                       ORDER BY nhan_hien.nhan
+                       SELECT nhan_hien.ten FROM hoi_thoai_gan_nhan nhan_gan
+                       JOIN nhan nhan_hien ON nhan_hien.id = nhan_gan.nhan_id
+                       WHERE nhan_gan.conversation_id = conversation.id
+                       ORDER BY nhan_hien.thu_tu, lower(nhan_hien.ten)
                    ) AS nhan,
+                   {nhan_loi.sql_nhan_da_gan("hoi_thoai_gan_nhan", "conversation_id", "conversation.id")}
+                       AS nhan_chi_tiet,
                    (
                        SELECT count(*)
                        FROM messages unread_message
@@ -378,6 +395,8 @@ class PostgresInboxQueryRepository:
                    {_ten_nguoi_sql("nd.id = conversation.assigned_to")} AS assigned_to_ten,
                    (SELECT team.name FROM teams team
                     WHERE team.id = conversation.assigned_team_id) AS assigned_team_ten,
+                   {nhan_loi.sql_nhan_da_gan("hoi_thoai_gan_nhan", "conversation_id", "conversation.id")}
+                       AS nhan_chi_tiet,
                    {self._SLA_STATUS_COLUMNS_SQL}
             FROM conversations conversation
             JOIN channel_accounts account ON account.id = conversation.account_id
@@ -773,7 +792,8 @@ async def list_inbox_conversations(
     channel: str | None = None,
     status: str | None = None,
     assignee_id: UUID | None = None,
-    nhan: str | None = Query(None, max_length=40),
+    nhan: str | None = Query(None, max_length=80),
+    nhan_id: UUID | None = None,
     q: str | None = Query(None, max_length=100),
     chua_giao: bool = False,
     loai: Literal["nhom", "rieng"] | None = None,
@@ -803,7 +823,7 @@ async def list_inbox_conversations(
                              (nhan or "").strip() or None,
                              q.strip() if q and len(q.strip()) >= 2 else None,
                              chua_giao=chua_giao, loai_thread=loai,
-                             qua_han_sla=qua_han_sla),
+                             qua_han_sla=qua_han_sla, nhan_id=nhan_id),
         cursor=decoded,
         limit=limit + 1,
     )

@@ -284,6 +284,21 @@ class PostgresIdentityTransaction:
         target_version: int,
         snapshot: Mapping[str, list[UUID]],
     ) -> None:
+        # Nhãn khách đi theo HỒ SƠ (0056): gộp khách là khách giữ lại mang
+        # cả nhãn của khách bị gộp. Không chép thì "khách sỉ" của hồ sơ nguồn
+        # biến mất khỏi mọi bộ lọc ngay sau khi gộp — không lỗi, không ai báo.
+        #
+        # Chỉ ghi vào snapshot những nhãn đích CHƯA có, để hoàn tác gỡ đúng
+        # những nhãn ấy và không đụng nhãn đích vốn có từ trước. Nguồn giữ
+        # nguyên nhãn của nó: hoàn tác là nguồn sống lại đủ như cũ.
+        nhan_them = await self._connection.fetch(
+            "INSERT INTO khach_gan_nhan (contact_id, nhan_id, gan_boi, gan_luc) "
+            "SELECT $2, nhan_id, gan_boi, gan_luc FROM khach_gan_nhan "
+            "WHERE contact_id = $1 ON CONFLICT DO NOTHING RETURNING nhan_id",
+            source_id,
+            target_id,
+        )
+        snapshot = {**snapshot, "khach_nhan_ids": [row["nhan_id"] for row in nhan_them]}
         await self._connection.execute(
             """
             INSERT INTO contact_merges (
@@ -332,7 +347,8 @@ class PostgresIdentityTransaction:
             "VALUES ('contact.merged',$1,$2,$3)",
             str(actor_id),
             merge_id,
-            {"source_id": str(source_id), "target_id": str(target_id), "reason": reason},
+            {"source_id": str(source_id), "target_id": str(target_id), "reason": reason,
+             "nhan_chep": [str(row["nhan_id"]) for row in nhan_them]},
         )
 
     async def lock_merge(self, merge_id: UUID):
@@ -380,6 +396,15 @@ class PostgresIdentityTransaction:
             conversation_ids,
             source_id,
         )
+        # Gỡ khỏi đích đúng những nhãn lúc gộp đã chép sang (snapshot cũ từ
+        # trước 0056 không có khoá này — không gỡ gì).
+        nhan_chep = [UUID(value) for value in snapshot.get("khach_nhan_ids", [])]
+        if nhan_chep:
+            await self._connection.execute(
+                "DELETE FROM khach_gan_nhan WHERE contact_id = $1 AND nhan_id = ANY($2::uuid[])",
+                target_id,
+                nhan_chep,
+            )
         await self._connection.execute(
             """
             UPDATE contacts SET status = 'active', merged_into = NULL,

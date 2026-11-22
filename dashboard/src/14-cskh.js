@@ -166,12 +166,13 @@ $("#mauNhanhHuy")?.addEventListener("click", () => {
  * 360. Thêm nhãn và ghi chú bằng hộp hỏi (`hoiHop`) chứ không bằng ô trong
  * panel: vòng làm mới 6 giây dựng lại cả panel, chữ đang gõ trong đó sẽ mất. */
 
+/* Lọc theo ID nhãn (0056): đổi tên nhãn không làm gãy bộ lọc đang chọn. */
 function veLocNhan(ds) {
   const k = $("#nhanfilter");
   if (!k) return;
   k.hidden = !ds.length && !state.convNhan;
-  k.innerHTML = ds.map((n) => `<button type="button" class="chip ${state.convNhan === n.nhan ? "is-on" : ""}"
-    data-loc-nhan="${esc(n.nhan)}">${esc(n.nhan)} <span class="chip__so">${n.so}</span></button>`).join("");
+  k.innerHTML = ds.map((n) => `<button type="button" class="chip ${state.convNhan === n.id ? "is-on" : ""}"
+    data-loc-nhan="${esc(n.id)}">${chipNhan(n)} <span class="chip__so">${n.so}</span></button>`).join("");
 }
 
 $("#nhanfilter")?.addEventListener("click", (ev) => {
@@ -193,26 +194,8 @@ $("#convtim")?.addEventListener("input", (ev) => {
 document.addEventListener("click", async (ev) => {
   const id = state.openConv;
   if (!id) return;
-  if (ev.target.closest("#btn-them-nhan")) {
-    const d = await hoiHop({
-      tieu_de: "Gắn nhãn cho hội thoại",
-      phu: "Nhãn mô tả vụ việc này, ví dụ: chờ hàng về, khiếu nại ship, đã báo giá.",
-      truong: [{ name: "nhan", label: "Nhãn", required: true, maxlength: 40 }],
-      nut: "Gắn nhãn",
-    });
-    if (!d || !d.nhan) return;
-    try {
-      await api(`/inbox/conversations/${id}/nhan`, { method: "POST", body: JSON.stringify({ nhan: d.nhan }) });
-      toast("Đã gắn nhãn.");
-      loadConversations();
-    } catch (e) { toast(e.message, true); }
-  } else if (ev.target.closest("[data-go-nhan]")) {
-    const n = ev.target.closest("[data-go-nhan]").dataset.goNhan;
-    try {
-      await api(`/inbox/conversations/${id}/nhan/${encodeURIComponent(n)}`, { method: "DELETE" });
-      loadConversations();
-    } catch (e) { toast(e.message, true); }
-  } else if (ev.target.closest("#btn-them-ghichu")) {
+  // Gắn/gỡ NHÃN hội thoại: chọn từ danh mục — xem 21-nhan.js.
+  if (ev.target.closest("#btn-them-ghichu")) {
     const d = await hoiHop({
       tieu_de: "Ghi chú nội bộ",
       phu: "Chỉ người trong cửa hàng thấy — KHÔNG gửi cho khách. Dùng để bàn giao giữa ca.",

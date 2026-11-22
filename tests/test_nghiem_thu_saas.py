@@ -630,8 +630,8 @@ def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
     """
     Quy tắc tự động: khi khách nhắn → nếu … → thì ….
 
-    BƯỚC 1  Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
-    BƯỚC 2  Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
+    BƯỚC 1  Quản trị tạo mẫu /doitra và nhãn hội thoại «đổi trả»; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
+    BƯỚC 2  Tạo quy tắc «có từ đổi trả → gắn nhãn hội thoại, gửi mẫu /doitra, chuyển người».
     BƯỚC 3  Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
     BƯỚC 4  Hội thoại chuyển người, có nhãn "đổi trả", MỘT thông báo chuyển giao (không sinh việc), mẫu đã vào hàng gửi.
     BƯỚC 5  Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
@@ -643,11 +643,14 @@ def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
     _, lan = _nhan_vien_moi(qt, "lan")
     assert qt.post("/api/tra-loi-nhanh", json={
         "ma_tat": "doitra", "noi_dung": "Dạ shop hỗ trợ đổi trả trong 7 ngày ạ."}).status_code == 201
+    r = qt.post("/api/nhan", json={"loai": "hoi_thoai", "ten": "đổi trả"})
+    assert r.status_code == 201, r.text
+    doi_tra = r.json()["id"]
     quy_tac = {"ten": "Đổi trả", "dieu_kien": {"chua_tu": ["đổi trả"]},
-               "hanh_dong": [{"loai": "gan_nhan", "nhan": "đổi trả"},
+               "hanh_dong": [{"loai": "gan_nhan_hoi_thoai", "nhan_id": doi_tra},
                              {"loai": "gui_mau", "ma_tat": "khongco"}]}
     assert qt.post("/api/tu-dong", json=quy_tac).status_code == 422
-    quy_tac["hanh_dong"] = [{"loai": "gan_nhan", "nhan": "đổi trả"},
+    quy_tac["hanh_dong"] = [{"loai": "gan_nhan_hoi_thoai", "nhan_id": doi_tra},
                             {"loai": "gui_mau", "ma_tat": "doitra"},
                             {"loai": "chuyen_nguoi", "ly_do": "khách hỏi đổi trả"}]
     assert qt.post("/api/tu-dong", json=quy_tac).status_code == 201
@@ -659,8 +662,9 @@ def test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi(app_that):
 
     async def dem(cid):
         return {
-            "nhan": [r["nhan"] for r in await db.fetch(
-                "SELECT nhan FROM hoi_thoai_nhan WHERE conversation_id = $1", cid)],
+            "nhan": [r["ten"] for r in await db.fetch(
+                "SELECT n.ten FROM hoi_thoai_gan_nhan g JOIN nhan n ON n.id = g.nhan_id "
+                "WHERE g.conversation_id = $1", cid)],
             "viec": (await db.fetchrow("SELECT count(*) n FROM cong_viec WHERE conversation_id = $1",
                                        cid))["n"],
             "bao": (await db.fetchrow("SELECT count(*) n FROM thong_bao WHERE conversation_id = $1 "
@@ -939,3 +943,56 @@ def test_19_doi_uu_tien_rut_han_sla_va_man_phan_tich(app_that):
     assert o["hoi_thoai"]["moi"] == 1 and o["khach"]["moi"] == 1
     r = ngoai.get("/api/phan-tich")
     assert r.status_code == 200 and r.json()["hoi_thoai"]["moi"] == 0
+
+
+# ------------------------------------------------------------------ 20. nhãn động
+
+def test_20_quan_ly_nhan_va_gan_nhan_hai_loai(app_that):
+    """
+    Quản lý nhãn: hai loại độc lập, gắn đúng màn, ngừng thay vì xoá.
+
+    BƯỚC 1  Quản trị tạo nhãn khách «Khách sỉ» và nhãn hội thoại «Chờ hàng»; tạo trùng tên «khách sỉ» → 409.
+    BƯỚC 2  Khách web nhắn. Nhân viên trong kênh gắn «Chờ hàng» lên hội thoại; gắn nhãn KHÁCH lên hội thoại → 422.
+    BƯỚC 3  Hộp thư lọc theo nhãn «Chờ hàng» ra đúng hội thoại ấy; nhân viên NGOÀI kênh gắn nhãn → 404.
+    BƯỚC 4  Customer 360: quản trị gắn «Khách sỉ» cho khách; danh sách khách lọc theo nhãn ra đúng khách ấy.
+    BƯỚC 5  Xoá «Khách sỉ» đang dùng → 409; Ngừng sử dụng → biến khỏi ô chọn, khách vẫn mang nhãn (đã ngừng).
+    BƯỚC 6  Nhân viên không có quyền cấu hình không sửa được danh mục (403); mọi thao tác nằm trong nhật ký.
+    """
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    lan_id, lan = _nhan_vien_moi(qt, "lan")
+    _them_thanh_vien(app_that, tk, lan_id)
+    _, binh = _nhan_vien_moi(qt, "binh")
+
+    r = qt.post("/api/nhan", json={"loai": "khach", "ten": "Khách sỉ"})
+    assert r.status_code == 201, r.text
+    si = r.json()["id"]
+    cho = qt.post("/api/nhan", json={"loai": "hoi_thoai", "ten": "Chờ hàng"}).json()["id"]
+    assert qt.post("/api/nhan", json={"loai": "khach", "ten": "khách sỉ"}).status_code == 409
+
+    _khach_nhan(app_that, tk, "Chị Hoa", "bao giờ có hàng ạ")
+    cid = str(_hoi_thoai_dau(app_that)["id"])
+    r = lan.post(f"/api/inbox/conversations/{cid}/nhan", json={"nhan_id": cho})
+    assert r.status_code == 201, r.text
+    assert lan.post(f"/api/inbox/conversations/{cid}/nhan",
+                    json={"nhan_id": si}).status_code == 422
+
+    loc = lan.get(f"/api/inbox/conversations?nhan_id={cho}").json()["items"]
+    assert [x["id"] for x in loc] == [cid]
+    assert [x["ten"] for x in loc[0]["nhan_chi_tiet"]] == ["Chờ hàng"]
+    assert binh.post(f"/api/inbox/conversations/{cid}/nhan",
+                     json={"nhan_id": cho}).status_code == 404
+
+    kh = qt.get("/api/contacts").json()[0]["id"]
+    assert qt.post(f"/api/contacts/{kh}/nhan", json={"nhan_id": si}).status_code == 201
+    assert [c["id"] for c in qt.get(f"/api/contacts?nhan_id={si}").json()] == [kh]
+
+    assert qt.delete(f"/api/nhan/{si}").status_code == 409
+    assert qt.post(f"/api/nhan/{si}/ngung").status_code == 200
+    assert si not in [n["id"] for n in qt.get("/api/nhan/khach").json()["nhan"]]
+    assert [(n["ten"], n["dang_dung"]) for n in qt.get(f"/api/contacts/{kh}").json()["nhan"]] == [
+        ("Khách sỉ", False)]
+
+    assert lan.post("/api/nhan", json={"loai": "khach", "ten": "x"}).status_code == 403
+    nk = {e["kind"] for e in qt.get("/api/events?limit=100").json()}
+    assert {"nhan.tao", "nhan.gan_hoi_thoai", "nhan.gan_khach", "nhan.ngung"} <= nk

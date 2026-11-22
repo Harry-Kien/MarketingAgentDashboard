@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-22 02:05 UTC trên commit `e9df6a8`. **19/19 kịch bản đạt.**
+Chạy lúc 2026-11-22 02:24 UTC trên commit `e9df6a8`. **20/20 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -27,6 +27,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 17 | Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM) | đạt |
 | 18 | Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025) | đạt |
 | 19 | Đổi ưu tiên hội thoại và xem màn Phân tích | đạt |
+| 20 | Quản lý nhãn: hai loại độc lập, gắn đúng màn, ngừng thay vì xoá | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -154,8 +155,8 @@ Kết quả: **đạt** · `test_12_giao_nhieu_khach_mot_luot_va_thu_hoi`
 
 Kết quả: **đạt** · `test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi`
 
-1. Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
-2. Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
+1. Quản trị tạo mẫu /doitra và nhãn hội thoại «đổi trả»; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
+2. Tạo quy tắc «có từ đổi trả → gắn nhãn hội thoại, gửi mẫu /doitra, chuyển người».
 3. Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
 4. Hội thoại chuyển người, có nhãn "đổi trả", MỘT thông báo chuyển giao (không sinh việc), mẫu đã vào hàng gửi.
 5. Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
@@ -219,3 +220,14 @@ Kết quả: **đạt** · `test_19_doi_uu_tien_rut_han_sla_va_man_phan_tich`
 3. Quản trị nâng lên "gấp" kèm lý do → hạn phản hồi đầu rút còn tối đa 5 phút từ bây giờ.
 4. Hạ về "thấp" → hạn KHÔNG kéo dài lại; cả hai lần đổi nằm trong nhật ký kiểm toán.
 5. Màn Phân tích: quản trị thấy 1 hội thoại mới, 1 khách mới; nhân viên ngoài kênh thấy 0.
+
+## 20. Quản lý nhãn: hai loại độc lập, gắn đúng màn, ngừng thay vì xoá
+
+Kết quả: **đạt** · `test_20_quan_ly_nhan_va_gan_nhan_hai_loai`
+
+1. Quản trị tạo nhãn khách «Khách sỉ» và nhãn hội thoại «Chờ hàng»; tạo trùng tên «khách sỉ» → 409.
+2. Khách web nhắn. Nhân viên trong kênh gắn «Chờ hàng» lên hội thoại; gắn nhãn KHÁCH lên hội thoại → 422.
+3. Hộp thư lọc theo nhãn «Chờ hàng» ra đúng hội thoại ấy; nhân viên NGOÀI kênh gắn nhãn → 404.
+4. Customer 360: quản trị gắn «Khách sỉ» cho khách; danh sách khách lọc theo nhãn ra đúng khách ấy.
+5. Xoá «Khách sỉ» đang dùng → 409; Ngừng sử dụng → biến khỏi ô chọn, khách vẫn mang nhãn (đã ngừng).
+6. Nhân viên không có quyền cấu hình không sửa được danh mục (403); mọi thao tác nằm trong nhật ký.

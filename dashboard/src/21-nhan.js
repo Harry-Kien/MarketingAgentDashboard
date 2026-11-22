@@ -155,9 +155,8 @@ $("#contactLocNhan")?.addEventListener("change", (ev) => {
 });
 
 /* ---------------- Quản lý nhãn (Cấu hình chung → tab "Quản lý nhãn") ---------------- */
-/* Đăng ký như một mô-đun gắn được: màn Cài đặt & Quản trị gọi
- * `GAN_TAB['cc-nhan'](khung)` với khung của tab. Cho tới khi màn ấy có,
- * trang Cấu hình gắn cùng hàm vào `#quan-ly-nhan` (napQuanLyNhan). */
+/* Đăng ký như một mô-đun gắn được: khung tab (01b-dieu-huong.js `ganKhe`)
+ * gọi `GAN_TAB['cc-nhan'](khung)` một lần, lần đầu tab hiện ra. */
 window.GAN_TAB = window.GAN_TAB || {};
 GAN_TAB["cc-nhan"] = (el) => moQuanLyNhan(el);
 
@@ -273,17 +272,6 @@ async function _bamQuanLyNhan(el, ev) {
     }
     await _veQuanLyNhan(el);
   } catch (e) { toast(e.message, true); }
-}
-
-/* Gắn vào trang Cấu hình hiện có — gọi từ vòng làm mới (10-vong-lam-moi.js).
- * Thiếu `cau_hinh.doc` thì ẩn cả khung: một khung chắc chắn 403 không phải
- * là một khung. */
-async function napQuanLyNhan() {
-  const panel = $("#quan-ly-nhan-panel");
-  if (!panel) return;
-  const doc = state.toiQuyen && state.toiQuyen.has("cau_hinh.doc");
-  panel.hidden = !doc;
-  if (doc) await GAN_TAB["cc-nhan"]($("#quan-ly-nhan"));
 }
 
 /* ---------------- Nhãn trong quy tắc tự động (mục 7.8) ---------------- */

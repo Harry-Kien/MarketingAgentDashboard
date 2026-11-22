@@ -104,7 +104,7 @@ def canh_bao_thanh_vien(
                 "ho_ten": ten,
                 "ly_do": f"{ten} chưa là thành viên kênh nào — bộ định tuyến "
                          "sẽ không bao giờ giao hội thoại cho người này. "
-                         "Vào Nhân sự → Kênh được vào.",
+                         "Vào Nhân sự & Phân quyền → nút Kênh.",
             })
             continue
         # Luật trỏ tới một kênh cụ thể mà người này không ở trong kênh ấy.

@@ -30,7 +30,7 @@ function pdpdKhoiXoa(d) {
         <b>${esc(String(pd.so_nguoi_duyet_duoc ?? 0))}</b> người dùng được quyền
         <code>khach.xoa</code>. Người tạo phiếu không tự duyệt được, nên phiếu sẽ
         <b>treo mãi</b> và yêu cầu xoá của khách không bao giờ được đáp ứng.
-        Cấp quyền ấy cho ít nhất một người nữa ở màn <b>Nhân sự</b>.</div>`
+        Cấp quyền ấy cho ít nhất một người nữa ở <b>Nhân sự &amp; Phân quyền</b>.</div>`
     : "";
   if (pd.xoa_duoc) {
     return `<div class="kit__note">Đã có phiếu duyệt của người khác — phiếu này

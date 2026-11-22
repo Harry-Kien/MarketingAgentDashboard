@@ -201,7 +201,7 @@ async def keu_neu_cham_tran(da: float, t: float) -> None:
             "nghiem_trong",
             "Chạm trần chi phí ngày",
             f"Đã tiêu {da:.2f} USD / trần {t:.2f} USD. Mọi hội thoại đang "
-            "chuyển sang người. Nâng trần ở màn Cấu hình, hoặc để nguyên và "
+            "chuyển sang người. Nâng trần ở Cấu hình AI Agent → Cấu hình cơ bản, hoặc để nguyên và "
             "xử lý bằng người tới hết ngày.",
             {},
         )

@@ -1628,7 +1628,16 @@ svg { flex: none; }
  * và bảng "không chỉnh được ở đây". Cả hai đều là chữ giải thích, và cả hai
  * đều bị `.row__sub { white-space: nowrap }` cắt cụt. */
 #cauhinh-lichsu .row__sub,
-.view[data-view="cauhinh"] .rows .row__sub {
+/* Màn Cấu hình cũ nay chia vào các tab dưới đây (phiếu việc 20.11.2026);
+   giữ đúng các vùng ấy, không mở rộng sang Tri thức hay Kênh chat. */
+#ai-co-ban .rows .row__sub,
+#cc-nhan .rows .row__sub,
+#cc-tu-dong .rows .row__sub,
+#cc-sla .rows .row__sub,
+#cc-dieu-phoi .rows .row__sub,
+#api-panel .rows .row__sub,
+#ht-sao-luu [data-api-cac-nhom] .row__sub,
+#tamnhin .row__sub {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -2183,3 +2192,87 @@ svg { flex: none; }
 .kntt-bang table { border-collapse: collapse; font-size: 12px; width: 100%; }
 .kntt-bang th, .kntt-bang td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line, #eef2f8); }
 .kntt-fb { margin-top: 6px; }
+/* ============================================================
+   Cây menu mới: nhóm "Cài đặt & Quản trị" + tab trong màn
+   (phiếu việc 20.11.2026 — 01b-dieu-huong.js)
+   ============================================================ */
+
+.rail__nhom { display: flex; flex-direction: column; gap: 2px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
+.rail__cha {
+  display: flex; align-items: center; gap: 11px;
+  border: 0; border-radius: var(--radius); background: transparent;
+  padding: 9px 12px; text-align: left; font: inherit; font-size: 14px; font-weight: 600;
+  color: hsl(var(--sidebar-foreground)); cursor: pointer;
+}
+.rail__cha > span { flex: 1; }
+.rail__cha svg { width: 17px; height: 17px; opacity: .75; flex: none; }
+.rail__cha:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.rail__mui { transition: transform .15s; }
+.rail__nhom.is-mo .rail__mui { transform: rotate(180deg); }
+.rail__con { display: flex; flex-direction: column; gap: 2px; }
+.rail__con[hidden] { display: none; }
+.rail__item--con { padding-left: 22px; font-size: 13.5px; }
+.rail__item[hidden], .rail__nhom[hidden] { display: none; }
+
+/* Thanh tab trong màn. Cuộn ngang TRONG chính nó ở khổ hẹp — trang không
+   bao giờ cuộn ngang (đo ở 375px, tests/test_cay_menu.py). */
+.tabbar {
+  display: flex; gap: 4px; margin: 0 0 16px; padding: 4px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--muted)); overflow-x: auto; scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar { display: none; }
+.tabbar__nut {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px;
+  border: 0; border-radius: calc(var(--radius) - 3px); background: transparent;
+  padding: 7px 13px; font: inherit; font-size: 13.5px; font-weight: 500; white-space: nowrap;
+  color: hsl(var(--muted-foreground)); cursor: pointer; transition: background .15s, color .15s;
+}
+.tabbar__nut:hover { color: hsl(var(--foreground)); }
+.tabbar__nut.is-on { background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 600;
+  box-shadow: var(--shadow-sm); }
+.tabbar__nut[hidden] { display: none; }
+.tabpanel[hidden], .tab__goc[hidden] { display: none; }
+.tab__cho { text-align: left; padding: 14px 16px; }
+
+/* Khối "AI Agent" ở Cấu hình cơ bản: công tắc + chế độ, chữ hệ quả ngay
+   cạnh — người bấm tắt phải đọc được "tin vào thẳng hàng chờ người". */
+.ai-bat, .ai-che-do { padding: 12px 16px; display: grid; gap: 8px; }
+.ai-che-do { border-top: 1px solid hsl(var(--border)); }
+.ai-bat__cong { font-size: 14.5px; font-weight: 600; color: hsl(var(--foreground)); }
+.ai-bat__cong input { width: 2.6rem; height: 1.3rem; }
+.ai-che-do__nhan { font-size: 13px; font-weight: 600; }
+.ai-che-do .modeswitch { justify-self: start; }
+.ai-bat .panel__note, .ai-che-do .panel__note { padding: 0; margin: 0; white-space: normal; }
+
+.nang-cao { margin: 0 0 18px; }
+.nang-cao > summary {
+  cursor: pointer; padding: 10px 14px; font-size: 13.5px; font-weight: 600;
+  border: 1px dashed hsl(var(--border)); border-radius: var(--radius);
+  color: hsl(var(--muted-foreground));
+}
+.nang-cao[open] > summary { margin-bottom: 12px; }
+
+/* Nút mở menu: chỉ có ở khổ hẹp. */
+.menumo {
+  display: none; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: none; margin-right: 4px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card)); color: hsl(var(--foreground)); cursor: pointer;
+}
+
+@media (max-width: 780px) {
+  .menumo { display: inline-flex; }
+  /* Thanh bên ẨN HẲN, mở bằng nút ☰ thành một cột dưới thanh trên. Dải cuộn
+     ngang cũ giấu mất nửa số mục ở khổ 375px, và nhóm Cài đặt thu gọn không
+     có chỗ để mở ra trên một dải ngang. */
+  .rail { display: none; }
+  .rail.is-mo {
+    display: flex; flex-direction: column; overflow: visible;
+    padding: 10px 12px; border-bottom: 1px solid hsl(var(--border));
+    scroll-snap-type: none;
+  }
+  .rail.is-mo .rail__item { white-space: normal; }
+  .rail__nhom { margin-top: 6px; padding-top: 6px; }
+}

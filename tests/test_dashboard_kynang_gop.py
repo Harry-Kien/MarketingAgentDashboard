@@ -34,8 +34,10 @@ JS = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
 
 
 def _man_ky_nang() -> str:
-    i = HTML.index('<section class="view" data-view="kynang">')
-    j = HTML.index('<section class="view" data-view=', i + 40)
+    # Màn Kỹ năng cũ nay là tab "Kỹ năng & Công cụ" của Cấu hình AI Agent
+    # (phiếu việc 20.11.2026) — chuyển nguyên vẹn, các chốt dưới giữ nguyên.
+    i = HTML.index('<section class="tabpanel" id="ai-ky-nang"')
+    j = HTML.index('<section class="tabpanel"', i + 40)
     return HTML[i:j]
 
 

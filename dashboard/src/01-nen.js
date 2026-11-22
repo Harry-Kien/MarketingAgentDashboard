@@ -3,7 +3,7 @@
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
+const state = { view: "hoithoai", tab: {}, convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
 let inboxRefreshTimer = null;
 
 /* ---------------- tiện ích ---------------- */
@@ -145,20 +145,8 @@ const SIGNAL_LABEL = {
   auto: "Tự xử lý", assist: "Chờ duyệt", escalated: "Đã chuyển", closed: "Đã đóng",
 };
 
-/* ---------------- điều hướng ---------------- */
-
-/* MỘT chỗ đổi màn. Trước đây logic này bị chép lại ở `moManKetNoi`, và mỗi
-   bản chép là một chỗ có thể quên cập nhật khi thanh điều hướng đổi. */
-function doiMan(ten) {
-  state.view = ten;
-  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
-  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === ten));
-  refresh();
-}
-
-$$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => doiMan(btn.dataset.view))
-);
+/* ---------------- điều hướng ----------------
+   doiMan(), nhóm "Cài đặt & Quản trị" và tab nằm ở 01b-dieu-huong.js. */
 
 /* ---------------- sáng / tối ---------------- */
 
@@ -199,7 +187,31 @@ function applyRuntime(rt) {
   sw.classList.toggle("is-off", !rt.enabled);
   $("#killswitch-label").textContent = rt.enabled ? "Đang chạy" : "Đã ngắt";
   $$(".modeswitch__opt").forEach((b) => b.classList.toggle("is-on", b.dataset.mode === rt.mode));
+  /* Công tắc AI ở Cấu hình cơ bản và đèn ngắt khẩn cấp ở thanh trên là
+     HAI mặt của cùng `runtime.enabled` — vẽ cả hai từ một chỗ, nên không
+     bao giờ một bên nói "đang chạy" khi bên kia nói "đã ngắt". */
+  const bat = $("#aiBat");
+  if (bat) {
+    bat.checked = !!rt.enabled;
+    $("#aiBatNhan").textContent = rt.enabled ? "AI Agent đang BẬT" : "AI Agent đang TẮT";
+  }
 }
+
+$("#aiBat")?.addEventListener("change", async (e) => {
+  const bat = e.target.checked;
+  try {
+    applyRuntime(await api("/runtime", {
+      method: "POST", body: JSON.stringify({ enabled: bat }),
+    }));
+    toast(bat ? "AI Agent đã bật cho mọi kênh. Hội thoại nhân viên đang giữ vẫn của nhân viên."
+      : "AI Agent đã tắt. Tin khách vào thẳng hàng chờ người.");
+  } catch (err) {
+    // Máy chủ từ chối (thiếu quyền agent.dieu_khien…): trả công tắc về
+    // đúng trạng thái đang chạy, không để nó nói dối.
+    e.target.checked = !bat;
+    toast(err.message, true);
+  }
+});
 
 /* ---------------- băng ca trực (signature) ---------------- */
 

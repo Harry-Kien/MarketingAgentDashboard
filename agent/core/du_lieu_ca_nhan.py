@@ -457,7 +457,7 @@ async def _gianh_phieu_duyet(so: str) -> dict:
     if row is None:
         raise ChuaDuyet(
             "Chưa có phiếu duyệt cho số này. Bấm 'Xin duyệt xoá', rồi một "
-            "người KHÁC vào màn Nhật ký duyệt phiếu ấy — xoá dữ liệu cá nhân "
+            "người KHÁC vào Hệ thống & Nhật ký → Sao lưu & Bảo trì duyệt phiếu ấy — xoá dữ liệu cá nhân "
             "không hoàn tác được nên cần hai người."
         )
     return dict(row)

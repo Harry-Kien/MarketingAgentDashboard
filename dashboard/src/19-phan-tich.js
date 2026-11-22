@@ -88,18 +88,20 @@ async function loadPhanTich() {
       <td>${usd(a.chi_phi_usd)}</td></tr>`).join("")
     : '<tr><td colspan="11" class="empty">Không có tin AI nào trong khoảng này.</td></tr>'}</tbody>`;
 
-  /* ---- Hiệu suất nhân viên ---- */
+  /* ---- Hiệu suất nhân viên ----
+     Cột CSAT đã gỡ khỏi bảng: chủ dự án ẩn CSAT khỏi giao diện (phiếu việc
+     20.11.2026) và câu hỏi chấm điểm mặc định TẮT — một cột luôn "—" là
+     cột người ta học cách bỏ qua. API vẫn trả csat_tb/csat_so. */
   $("#ptNhanVien").innerHTML = `<thead><tr>
     <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
     <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
-    <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${d.nhan_vien.length
+    <th>Đơn</th><th>Trễ SLA</th></tr></thead><tbody>${d.nhan_vien.length
     ? d.nhan_vien.map((n) => `<tr>
       <td>${esc(n.ho_ten)}</td><td>${n.hoi_thoai}</td><td>${n.tin_gui}</td>
       <td>${_giay(n.phan_hoi_trung_vi_giay)}</td><td>${_giay(n.phan_hoi_p90_giay)}</td>
       <td class="${n.chua_phan_hoi ? "so--xau" : ""}">${n.chua_phan_hoi}</td>
-      <td>${n.don}</td><td class="${n.tre_sla ? "so--xau" : ""}">${n.tre_sla}</td>
-      <td>${n.csat_so ? `${n.csat_tb} <span class="msg__meta">(${n.csat_so})</span>` : "—"}</td></tr>`).join("")
-    : '<tr><td colspan="9" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
+      <td>${n.don}</td><td class="${n.tre_sla ? "so--xau" : ""}">${n.tre_sla}</td></tr>`).join("")
+    : '<tr><td colspan="8" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
 
   /* ---- Chỉ số SLA ---- */
   $("#ptSlaNote").textContent = "tỷ lệ đáp ứng tính trên mục tiêu có hạn · thời gian đo "

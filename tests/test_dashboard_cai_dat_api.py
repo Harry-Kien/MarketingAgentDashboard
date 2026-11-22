@@ -19,9 +19,15 @@ def _than_ham(ten: str) -> str:
 
 
 def test_panel_nam_trong_man_cau_hinh():
+    """
+    Khoá tích hợp nằm ở Cấu hình chung → Kết nối & Tích hợp; nhóm model ở
+    Cấu hình AI Agent → Cấu hình cơ bản (phiếu việc 20.11.2026).
+    """
     assert 'id="api-panel"' in HTML
-    assert HTML.index('id="api-panel"') > HTML.index('data-view="cauhinh"')
-    assert HTML.index('id="api-panel"') < HTML.index('id="cauhinh-ds"')
+    ket_noi = HTML.index('<section class="tabpanel" id="cc-ket-noi"')
+    assert ket_noi < HTML.index('id="api-panel"') < HTML.index('<section class="tabpanel" id="cc-sla"')
+    co_ban = HTML.index('<section class="tabpanel" id="ai-co-ban"')
+    assert co_ban < HTML.index('id="api-nhom-model"') < HTML.index('<section class="tabpanel" id="ai-tri-thuc"')
 
 
 def test_o_bi_mat_la_password_va_khong_co_value():
@@ -45,14 +51,15 @@ def test_kiem_tra_gui_gia_tri_dang_go_chua_luu():
 
 def _nhanh_view(ten: str) -> str:
     """
-    Thân của nhánh `if (state.view === "<ten>") { ... }` trong vòng làm mới.
+    Thân của nhánh `if (dangMo("<tab>")) { ... }` trong vòng làm mới (màn cài
+    đặt nạp theo TAB từ phiếu việc 20.11.2026; trước đó `state.view`).
 
     Trước đây test dưới đo KHOẢNG CÁCH 120 ký tự giữa `state.view` và lời
     gọi. Nó đỏ ngay khi có người thêm một loader khác vào cùng nhánh — một
     thay đổi hoàn toàn đúng — và người sửa sẽ nới con số ấy chứ không đọc
     lại ý định. Đọc đúng thân nhánh thì không có con số nào để nới.
     """
-    i = JS.index(f'state.view === "{ten}"')
+    i = JS.index(f'if (dangMo("{ten}"))')
     j = JS.index("{", i)
     sau, k = 0, j
     while k < len(JS):
@@ -67,7 +74,10 @@ def _nhanh_view(ten: str) -> str:
 
 
 def test_loader_goi_khi_mo_man_cau_hinh():
-    assert "loadCaiDatApi()" in _nhanh_view("cauhinh")
+    assert "loadCaiDatApi()" in _nhanh_view("cc-ket-noi")
+    assert "loadCaiDatApi()" in _nhanh_view("cc-sla")
+    # Nhóm model ở Cấu hình cơ bản — nạp khi khe nhà cung cấp chưa bị thay.
+    assert re.search(r'tabDangHien\("ai-co-ban"\) && !daGan\("ai-co-ban-nha-cung-cap"\)\) await loadCaiDatApi\(\)', JS)
 
 
 def test_bo_doc_nhanh_view_khong_om_ca_file():
@@ -75,7 +85,7 @@ def test_bo_doc_nhanh_view_khong_om_ca_file():
     Canh chính bộ đọc trên: ôm quá tay thì mọi `assert ... in` đều đúng, và
     test kia xanh vĩnh viễn dù nhánh đã mất lời gọi.
     """
-    than = _nhanh_view("cauhinh")
+    than = _nhanh_view("cc-ket-noi")
     assert than.startswith("{") and than.endswith("}")
     assert len(than) < 600, "đọc lố sang phần khác của vòng làm mới"
     assert "loadCongViec()" not in than, "ôm nhầm cả nhánh của màn khác"

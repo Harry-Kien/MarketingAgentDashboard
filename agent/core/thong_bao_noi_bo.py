@@ -250,7 +250,7 @@ def _bao_ngoai(kenh: str) -> None:
         canh_gac.bao_nhan_vien_nen(
             "Khách cần người trả lời",
             f"Kênh {TEN_KENH.get(kenh, kenh or 'không rõ')}: agent đã chuyển hội thoại "
-            "cho người. Mở dashboard → chuông thông báo hoặc Ca trực để nhận.")
+            "cho người. Mở dashboard → chuông thông báo hoặc Công việc → Tổng quan ca trực để nhận.")
     except Exception as exc:  # noqa: BLE001
         _loi("bao_ngoai", kenh, exc)
 

@@ -27,6 +27,13 @@ const VAN_DON_YEU_CAU_LABEL = {
 };
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
+/* Thanh toán VietQR ẨN khỏi giao diện theo phiếu việc của chủ dự án
+   (20.11.2026): không có ô cấu hình tài khoản nhận tiền nào được vẽ, nên
+   nút QR trên dòng đơn chỉ còn là nút bấm ra lỗi "chưa cấu hình". Mã và
+   API (/api/orders/{id}/vietqr*) giữ nguyên — bật lại là đổi hằng này và
+   cho nhóm `thanh_toan` một ô trong `[data-api-cac-nhom]`. */
+const HIEN_VIETQR = false;
+
 $$("#orderfilter .chip").forEach((chip) =>
   chip.addEventListener("click", () => {
     state.orderFilter = chip.dataset.ostatus;
@@ -131,7 +138,7 @@ async function loadOrders() {
         ${da_thu > 0 ? `<span class="tag tag--auto" title="${
             o.da_thu_luc ? "Ghi lúc " + esc(clock(o.da_thu_luc)) : ""}">Đã thu ${vnd(da_thu)}</span>` : ""}
         <span class="row__time">${clock(o.created_at)}</span>
-        ${o.trang_thai === "da_chot" ? `<span class="order__qr">
+        ${HIEN_VIETQR && o.trang_thai === "da_chot" ? `<span class="order__qr">
             <a class="btn btn--sm btn--ghost" href="/api/orders/${o.id}/vietqr.svg" target="_blank"
                rel="noopener" title="Mở mã VietQR (tổng hàng + phí ship)">QR</a>
             ${o.conversation_id ? `<button type="button" class="btn btn--sm" data-oqr-gui="${o.id}"

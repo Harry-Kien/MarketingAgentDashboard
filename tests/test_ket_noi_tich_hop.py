@@ -512,12 +512,12 @@ def test_giao_dien_gan_tab_va_khong_dung_lai_moi_nhip():
     src23 = (ROOT / "dashboard" / "src" / "23-ai-co-ban.js").read_text(encoding="utf-8")
     assert 'window.GAN_TAB["cc-ket-noi"]' in src22
     assert 'window.GAN_TAB["ai-co-ban-nha-cung-cap"]' in src23
+    # Khung tab (01b-dieu-huong.js `ganKhe`) có đúng hai khe để gắn vào.
     html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
-    assert 'data-gan-tab="cc-ket-noi"' in html and 'data-gan-tab="ai-co-ban-nha-cung-cap"' in html
+    assert 'data-gan="cc-ket-noi"' in html and 'data-gan="ai-co-ban-nha-cung-cap"' in html
     vong = (ROOT / "dashboard" / "src" / "10-vong-lam-moi.js").read_text(encoding="utf-8")
-    # Gắn một lần (ganTabTam đánh dấu daGan), KHÔNG gọi thẳng ganKetNoiTichHop
-    # mỗi nhịp 6 giây — làm thế là xoá khoá đang dán dở.
-    assert "ganTabTam()" in vong and "ganKetNoiTichHop" not in vong
-    assert "el.dataset.daGan" in src22
+    # Gắn MỘT lần (ganKhe), KHÔNG gọi thẳng ganKetNoiTichHop mỗi nhịp 6 giây
+    # — làm thế là xoá khoá đang dán dở.
+    assert "ganKetNoiTichHop" not in vong
     # Ô bí mật không bao giờ được dựng với value.
     assert 'type="password" autocomplete="off" data-kntt-khoa' in src22

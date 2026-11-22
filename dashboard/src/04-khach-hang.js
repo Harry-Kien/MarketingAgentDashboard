@@ -301,7 +301,7 @@ $("#chonGiao")?.addEventListener("click", async () => {
       dong();
       state.khachDaChon = new Set();
       await loadContacts();
-      if (state.view === "ca") { await loadVoChu(); await loadOverview(); }
+      if (dangMo("cv-ca-truc")) { await loadVoChu(); await loadOverview(); }
     } catch (err) { toast(err.message, true); }
     finally { nut.disabled = false; }
   };

@@ -7,8 +7,7 @@
  * Luật trạng thái (Chưa cấu hình / Chưa kiểm tra / Thành công / Lỗi) nằm ở
  * MÁY CHỦ (agent/ket_noi_tich_hop.py). Ở đây chỉ vẽ.
  *
- * Gắn vào khung tab qua `GAN_TAB['cc-ket-noi']`. Khi khung chưa có, phần tử
- * `[data-gan-tab]` trong index.html được gắn bằng `ganTabTam()`.
+ * Gắn vào khung tab qua `GAN_TAB['cc-ket-noi']` (01b-dieu-huong.js `ganKhe`).
  *
  * KHÔNG nằm trong vòng làm mới 6 giây: ô bí mật đang dán dở mà bị dựng lại
  * là khoá mất trắng, rồi người ta bấm Lưu và tưởng đã lưu. Chỉ dựng lại khi
@@ -327,14 +326,3 @@ async function ganKetNoiTichHop(goc) {
 
 window.GAN_TAB["cc-ket-noi"] = (el) => ganKetNoiTichHop(el);
 
-/* Gắn tạm khi khung tab chưa có: mỗi `[data-gan-tab]` trong màn đang mở
- * được gắn MỘT lần (dựng lại mỗi 6 giây là xoá khoá đang dán dở). */
-function ganTabTam() {
-  $$(".view.is-active [data-gan-tab]").forEach((el) => {
-    if (el.dataset.daGan) return;
-    const gan = window.GAN_TAB[el.dataset.ganTab];
-    if (!gan) return;
-    el.dataset.daGan = "1";
-    gan(el);
-  });
-}

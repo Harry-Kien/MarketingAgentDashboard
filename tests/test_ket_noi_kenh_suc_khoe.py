@@ -249,8 +249,11 @@ def test_kenh_web_chi_mo_tren_dung_website(app_that):
 
 def test_man_ket_noi_tai_suc_khoe_kenh_moi_vong():
     src = _js("10-vong-lam-moi.js")
-    dong = next(d for d in src.splitlines() if 'state.view === "ketnoi"' in d)
-    assert "loadSucKhoeKenh()" in dong
+    # Màn Kết nối cũ là tab cc-ket-noi; khối kênh LUÔN ở lại dù mô-đun Tích
+    # hợp gắn vào, nên nạp theo `tabDangHien`, không theo `dangMo`.
+    i = src.index('if (tabDangHien("cc-ket-noi")')
+    nhanh = src[i:src.index("\n    }", i)]
+    assert "loadSucKhoeKenh()" in nhanh
     html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
     for o in ('id="kn-dieukien"', 'id="kn-suckhoe"', 'data-noi="meta"', 'data-noi="zalo_oa"',
               'data-noi="zalo_personal"', 'data-noi="webchat"', 'data-noi="whatsapp"'):

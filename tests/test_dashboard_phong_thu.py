@@ -16,8 +16,11 @@ def _than_ham(ten: str) -> str:
 
 
 def test_rail_va_view_co_mat():
-    assert 'data-view="phongthu"' in HTML
-    assert HTML.count('data-view="phongthu"') >= 2  # nút rail + section
+    # Phòng thử là tab của Cấu hình AI Agent (phiếu việc 20.11.2026): một
+    # nút tab + một khung tab, thay cho nút thanh bên + màn riêng.
+    assert 'data-tab="ai-phong-thu"' in HTML
+    assert '<section class="tabpanel" id="ai-phong-thu"' in HTML
+    assert 'id="phongthu-form"' in HTML[HTML.index('id="ai-phong-thu"'):]
 
 
 def test_goi_dung_api():
@@ -54,7 +57,7 @@ def test_ve_chat_qua_esc():
 
 def test_khong_tu_tai_lai_theo_vong_refresh():
     src = _than_ham("refresh")
-    assert "phongthu" in src
+    assert "ai-phong-thu" in src
     assert "loadPhongThu()" in src and "state.phongThuDaTai" in src
 
 

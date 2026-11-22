@@ -1,11 +1,30 @@
 /* TỆP SINH RA — ĐỪNG SỬA TAY. Mã nguồn ở dashboard/src/*.js; sửa ở đó rồi
    chạy: python -m scripts.dong_goi_dashboard */
+/* ---------------- sổ điểm gắn tab (GAN_TAB) ----------------
+ *
+ * Tệp ĐẦU TIÊN của app.js, cố ý chỉ có một dòng mã: mô-đun nào nằm ở tệp
+ * sau cũng đăng ký được NGAY LÚC TẢI, không phụ thuộc thứ tự tên tệp.
+ *
+ *   window.GAN_TAB["ns-nhan-vien"] = (o, ctx) => { o.innerHTML = "…"; };
+ *
+ * Hợp đồng (01b-dieu-huong.js thực hiện):
+ *   · Khoá là id của tab (cc-*, ai-*, ns-*, ht-*, cv-*) hoặc của một khe gắn
+ *     bên trong tab (`data-gan="ai-co-ban-nha-cung-cap"`).
+ *   · Hàm được gọi MỘT lần, lần đầu tab hiện ra, với một <div> mới làm chỗ
+ *     vẽ và `ctx = { id, api, toast, esc, quyen }`.
+ *   · Khi đã gắn, phần `.tab__goc` (nội dung mặc định) bị ẩn — các khối
+ *     nằm ngoài `.tab__goc` thì ở lại. Mỗi lần tab hiện lại, khe phát sự
+ *     kiện `tab:hien` để mô-đun tự làm mới nếu muốn.
+ *   · Hàm ném lỗi thì nội dung mặc định hiện lại và người dùng được báo:
+ *     một mô-đun hỏng không được biến cả tab thành trang trắng im lặng.
+ */
+window.GAN_TAB = window.GAN_TAB || {};
 /* Trạm điều độ — logic giao diện. Không framework, không build step. */
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-const state = { view: "ca", convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
+const state = { view: "hoithoai", tab: {}, convFilter: "all", orderFilter: "all", khoFilter: "all", openConv: null, openContact: null, contactQuery: "", timer: null };
 let inboxRefreshTimer = null;
 
 /* ---------------- tiện ích ---------------- */
@@ -147,20 +166,8 @@ const SIGNAL_LABEL = {
   auto: "Tự xử lý", assist: "Chờ duyệt", escalated: "Đã chuyển", closed: "Đã đóng",
 };
 
-/* ---------------- điều hướng ---------------- */
-
-/* MỘT chỗ đổi màn. Trước đây logic này bị chép lại ở `moManKetNoi`, và mỗi
-   bản chép là một chỗ có thể quên cập nhật khi thanh điều hướng đổi. */
-function doiMan(ten) {
-  state.view = ten;
-  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
-  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === ten));
-  refresh();
-}
-
-$$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => doiMan(btn.dataset.view))
-);
+/* ---------------- điều hướng ----------------
+   doiMan(), nhóm "Cài đặt & Quản trị" và tab nằm ở 01b-dieu-huong.js. */
 
 /* ---------------- sáng / tối ---------------- */
 
@@ -201,7 +208,31 @@ function applyRuntime(rt) {
   sw.classList.toggle("is-off", !rt.enabled);
   $("#killswitch-label").textContent = rt.enabled ? "Đang chạy" : "Đã ngắt";
   $$(".modeswitch__opt").forEach((b) => b.classList.toggle("is-on", b.dataset.mode === rt.mode));
+  /* Công tắc AI ở Cấu hình cơ bản và đèn ngắt khẩn cấp ở thanh trên là
+     HAI mặt của cùng `runtime.enabled` — vẽ cả hai từ một chỗ, nên không
+     bao giờ một bên nói "đang chạy" khi bên kia nói "đã ngắt". */
+  const bat = $("#aiBat");
+  if (bat) {
+    bat.checked = !!rt.enabled;
+    $("#aiBatNhan").textContent = rt.enabled ? "AI Agent đang BẬT" : "AI Agent đang TẮT";
+  }
 }
+
+$("#aiBat")?.addEventListener("change", async (e) => {
+  const bat = e.target.checked;
+  try {
+    applyRuntime(await api("/runtime", {
+      method: "POST", body: JSON.stringify({ enabled: bat }),
+    }));
+    toast(bat ? "AI Agent đã bật cho mọi kênh. Hội thoại nhân viên đang giữ vẫn của nhân viên."
+      : "AI Agent đã tắt. Tin khách vào thẳng hàng chờ người.");
+  } catch (err) {
+    // Máy chủ từ chối (thiếu quyền agent.dieu_khien…): trả công tắc về
+    // đúng trạng thái đang chạy, không để nó nói dối.
+    e.target.checked = !bat;
+    toast(err.message, true);
+  }
+});
 
 /* ---------------- băng ca trực (signature) ---------------- */
 
@@ -246,6 +277,254 @@ function cell(label, value, unit, ratio, tone) {
   </div>`;
 }
 
+/* ---------------- điều hướng: thanh bên, nhóm Cài đặt, tab ----------------
+ *
+ * Cây menu theo phiếu việc của chủ dự án (20.11.2026): sáu màn nghiệp vụ,
+ * rồi một nhóm "Cài đặt & Quản trị" bốn màn con, mỗi màn con chia tab.
+ * Một tab là `<section class="tabpanel" id="…">` nằm thẳng trong `.view`;
+ * id tab cũng là khoá điểm gắn trong `window.GAN_TAB` (00-gan-tab.js).
+ */
+
+/* Tên màn CŨ -> tab mới. Thông báo trên máy, nút "Cấu hình" ở màn Hệ thống
+ * (`di_toi_man` do máy chủ trả) và mã cũ vẫn gọi doiMan("ca"),
+ * doiMan("ketnoi")… — đổi tên mà không giữ bảng này thì mỗi lời gọi cũ là
+ * một nút bấm không đi đâu, và không có gì báo lỗi. */
+const MAN_CU = {
+  ca: "cv-ca-truc",
+  ketnoi: "cc-ket-noi",
+  cauhinh: "ai-co-ban",
+  trithuc: "ai-tri-thuc",
+  kynang: "ai-ky-nang",
+  phongthu: "ai-phong-thu",
+  nhatky: "ht-nhat-ky",
+};
+
+/* Quyền để THẤY một tab — đủ MỘT quyền trong danh sách là thấy. Chỉ để
+ * không mời người ta vào một màn toàn lỗi 403; chốt thật là `can_quyen`
+ * ở máy chủ (agent/core/quyen.py), giấu ở đây không bảo vệ được gì. */
+const QUYEN_TAB = {
+  "cv-ca-truc": ["hoi_thoai.doc"],
+  "cv-danh-sach": ["cong_viec.doc"],
+  "cc-nhan": ["cau_hinh.doc", "khach.sua"],
+  "cc-tu-dong": ["tra_loi_nhanh.sua", "dinh_tuyen.doc"],
+  "cc-ket-noi": ["kenh.doc", "tich_hop.doc", "cau_hinh.doc"],
+  "cc-sla": ["dinh_tuyen.doc"],
+  "cc-dieu-phoi": ["dinh_tuyen.doc"],
+  "ai-co-ban": ["agent.doc", "cau_hinh.doc"],
+  "ai-tri-thuc": ["cau_hinh.doc"],
+  "ai-ky-nang": ["ky_nang.doc"],
+  "ai-chinh-sach": ["cau_hinh.doc"],
+  "ai-phong-thu": ["phong_thu.dung"],
+  "ns-nhan-vien": ["nguoi_dung.doc"],
+  "ns-vai-tro": ["nguoi_dung.doc"],
+  "ht-suc-khoe": ["cau_hinh.doc", "nhat_ky.doc"],
+  "ht-sao-luu": ["khach.pii", "cau_hinh.doc"],
+  "ht-nhat-ky": ["nhat_ky.doc"],
+};
+const QUYEN_MAN = {
+  hoithoai: ["hoi_thoai.doc"],
+  khachhang: ["khach.doc"],
+  donhang: ["don.doc"],
+  kho: ["don.doc"],
+  sohieu: ["bao_cao.doc"],
+};
+
+function duocThay(ds) {
+  // Chưa biết quyền (chưa đăng nhập xong) thì không giấu gì: giấu trước rồi
+  // hiện sau là thanh bên nhảy múa ngay lần tải đầu.
+  if (!state.toiQuyen || !ds) return true;
+  return ds.some((q) => state.toiQuyen.has(q));
+}
+
+function cacTab(man) {
+  const v = $(`.view[data-view="${man}"]`);
+  return v ? [...v.children].filter((c) => c.classList.contains("tabpanel")) : [];
+}
+
+function manCuaTab(id) {
+  const t = document.getElementById(id);
+  return t && t.classList.contains("tabpanel") ? t.closest(".view")?.dataset.view || null : null;
+}
+
+const tabDuocThay = (id) => duocThay(QUYEN_TAB[id]);
+
+/* Một quyền đơn lẻ — dùng trong vòng làm mới cho tab gộp nhiều nguồn. */
+const coQuyen = (q) => duocThay([q]);
+
+function manDuocThay(man) {
+  const tabs = cacTab(man);
+  if (tabs.length) return tabs.some((t) => tabDuocThay(t.id));
+  return duocThay(QUYEN_MAN[man]);
+}
+
+/* Tab đang mở của một màn: tab nhớ lần trước nếu còn được thấy, không thì
+ * tab ĐẦU TIÊN được thấy. */
+function tabCuaMan(man) {
+  const tabs = cacTab(man).filter((t) => tabDuocThay(t.id));
+  if (!tabs.length) return null;
+  const nho = state.tab[man];
+  return tabs.some((t) => t.id === nho) ? nho : tabs[0].id;
+}
+
+/* Tab đang HIỆN trên màn hình. */
+function tabDangHien(id) {
+  const man = manCuaTab(id);
+  return !!man && state.view === man && tabCuaMan(man) === id;
+}
+
+/* Có mô-đun nào gắn vào (và gắn thành công) khe này chưa. */
+const GAN_LOI = new Set();
+function daGan(id) {
+  return typeof window.GAN_TAB[id] === "function" && !GAN_LOI.has(id);
+}
+
+/* Tab đang hiện VÀ đang dùng nội dung mặc định — điều kiện để vòng làm mới
+ * nạp dữ liệu cho nó. Đã có mô-đun thay thế thì nội dung cũ bị ẩn, nạp vào
+ * đó là kéo dữ liệu đổ vào chỗ không ai nhìn (test_vong_lam_moi_khong_keo_thua). */
+function dangMo(id) {
+  return tabDangHien(id) && !daGan(id);
+}
+
+/* Gắn mô-đun vào MỘT khe (tab hoặc `[data-gan]` bên trong tab), một lần. */
+function ganKhe(o) {
+  const id = o && o.dataset.gan;
+  if (!id || o._daGan || GAN_LOI.has(id)) return;
+  const fn = window.GAN_TAB[id];
+  if (typeof fn !== "function") return;
+  o._daGan = true;
+  const goc = [...o.children].find((c) => c.classList.contains("tab__goc"));
+  const cho = document.createElement("div");
+  cho.className = "tab__gan";
+  cho.dataset.ganVao = id;
+  if (goc) { goc.hidden = true; goc.after(cho); } else { o.append(cho); }
+  try {
+    fn(cho, { id, api, toast, esc, quyen: state.toiQuyen || new Set() });
+  } catch (e) {
+    /* Hỏng thì phải có người biết, và màn không được trắng: trả nội dung
+       mặc định, báo bằng toast, ghi console cho người sửa. */
+    GAN_LOI.add(id);
+    cho.remove();
+    if (goc) goc.hidden = false;
+    console.error(`GAN_TAB["${id}"] hỏng:`, e);
+    toast(`Mô-đun "${id}" lỗi khi mở — đang hiện nội dung mặc định.`, true);
+  }
+}
+
+/* Gọi ở MỖI nhịp làm mới: mô-đun đăng ký muộn (sau lần đầu tab hiện) vẫn
+ * được gắn, không bắt người dùng chuyển tab đi rồi quay lại. ganKhe() tự
+ * bỏ qua khe đã gắn, nên gọi lặp không tốn gì. */
+function ganTabDangHien() {
+  const id = tabCuaMan(state.view);
+  const o = id && document.getElementById(id);
+  if (!o) return;
+  ganKhe(o);
+  $$("[data-gan]", o).forEach(ganKhe);
+}
+
+function veTab(man) {
+  const id = tabCuaMan(man);
+  const v = $(`.view[data-view="${man}"]`);
+  if (!v || !id) return;
+  state.tab[man] = id;
+  $$(".tabbar__nut", v).forEach((b) => {
+    const on = b.dataset.tab === id;
+    b.hidden = !tabDuocThay(b.dataset.tab);
+    b.classList.toggle("is-on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    b.tabIndex = on ? 0 : -1;
+  });
+  cacTab(man).forEach((t) => { t.hidden = t.id !== id; });
+  const o = document.getElementById(id);
+  ganKhe(o);
+  $$("[data-gan]", o).forEach(ganKhe);
+  o.dispatchEvent(new CustomEvent("tab:hien", { detail: { id } }));
+  $$(".tab__gan", o).forEach((g) =>
+    g.dispatchEvent(new CustomEvent("tab:hien", { detail: { id: g.dataset.ganVao } })));
+}
+
+/* MỘT chỗ đổi màn. `ten` là tên màn, tên màn cũ, hoặc id một tab. Trước
+   đây logic này bị chép lại ở `moManKetNoi`, và mỗi bản chép là một chỗ có
+   thể quên cập nhật khi thanh điều hướng đổi. `lamMoi = false` chỉ dành
+   cho lúc dựng menu theo quyền: vòng làm mới đầu tiên chạy ngay sau đó. */
+function doiMan(ten, tab, lamMoi = true) {
+  ten = MAN_CU[ten] || ten;
+  if (manCuaTab(ten)) { tab = ten; ten = manCuaTab(ten); }
+  state.view = ten;
+  if (tab) state.tab[ten] = tab;
+  $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === ten));
+  veTab(ten);
+  if ($(`#railCaiDatCon [data-view="${ten}"]`)) moNhomCaiDat(true);
+  dongMenuDiDong();
+  if (lamMoi) refresh();
+}
+
+$$(".rail__item").forEach((btn) =>
+  btn.addEventListener("click", () => doiMan(btn.dataset.view))
+);
+
+/* Nối nút tab với khung tab cho trình đọc màn hình (aria-labelledby). Dựng
+   ở đây thay vì viết tay trong index.html: id nút suy ra từ id tab, nên đổi
+   id tab không thể để lại một nhãn trỏ vào hư không. */
+$$(".tabbar__nut").forEach((b) => {
+  b.id = `${b.dataset.tab}-nut`;
+  document.getElementById(b.dataset.tab)?.setAttribute("aria-labelledby", b.id);
+});
+
+/* Bấm tab, hoặc mũi tên trái/phải khi đang đứng trên thanh tab (mẫu tablist
+   của WAI-ARIA — người dùng bàn phím không phải Tab qua từng nút). */
+$$(".tabbar").forEach((bar) => {
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest(".tabbar__nut");
+    if (b) doiMan(b.dataset.tab);
+  });
+  bar.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const nut = $$(".tabbar__nut", bar).filter((b) => !b.hidden);
+    const i = nut.indexOf(document.activeElement);
+    if (i < 0) return;
+    const k = nut[(i + (e.key === "ArrowRight" ? 1 : nut.length - 1)) % nut.length];
+    k.focus();
+    doiMan(k.dataset.tab);
+  });
+});
+
+/* ---- nhóm "Cài đặt & Quản trị" thu gọn được ---- */
+function moNhomCaiDat(mo) {
+  const con = $("#railCaiDatCon");
+  if (!con) return;
+  con.hidden = !mo;
+  $("#railCaiDatNut").setAttribute("aria-expanded", mo ? "true" : "false");
+  $("#railCaiDat").classList.toggle("is-mo", mo);
+}
+$("#railCaiDatNut")?.addEventListener("click", () =>
+  moNhomCaiDat($("#railCaiDatCon").hidden));
+
+/* ---- thanh bên ở khổ hẹp: ẩn hẳn, mở bằng nút ☰ ở thanh trên ---- */
+function dongMenuDiDong() {
+  $("#rail")?.classList.remove("is-mo");
+  $("#railMo")?.setAttribute("aria-expanded", "false");
+}
+$("#railMo")?.addEventListener("click", () => {
+  const mo = !$("#rail").classList.contains("is-mo");
+  $("#rail").classList.toggle("is-mo", mo);
+  $("#railMo").setAttribute("aria-expanded", mo ? "true" : "false");
+});
+
+/* Ẩn mục, tab, cả nhóm Cài đặt mà người này không có quyền. Gọi một lần
+ * sau khi biết quyền (kiemPhien). Màn đang mở bị ẩn thì chuyển sang màn
+ * đầu tiên còn thấy — không để người ta đứng trước một màn rỗng. */
+function apDungQuyenMenu() {
+  $$(".rail__item").forEach((b) => { b.hidden = !manDuocThay(b.dataset.view); });
+  const nhom = $("#railCaiDat");
+  if (nhom) nhom.hidden = !$$(".rail__item", nhom).some((b) => !b.hidden);
+  $$(".tabbar__nut").forEach((b) => { b.hidden = !tabDuocThay(b.dataset.tab); });
+  if (!manDuocThay(state.view)) {
+    const dau = $$(".rail__item").find((b) => !b.hidden);
+    if (dau) { doiMan(dau.dataset.view, undefined, false); return; }
+  }
+  veTab(state.view);
+}
 /* ================= Tin không gửi được, và khách chưa có chủ =================
  *
  * Hai ô trên dải chỉ số Ca trực đếm hai thứ này từ lâu. Không có gì phía
@@ -651,7 +930,7 @@ $("#dsRetention")?.addEventListener("click", async (e) => {
 async function rtYeuCauDem(contactId) {
   const d = await hoiHop({
     tieu_de: "Đếm dữ liệu sẽ xoá",
-    phu: "Chỉ đếm, chưa xoá gì. Một người khác phải duyệt ở màn Nhật ký. Lý do ghi vào nhật ký.",
+    phu: "Chỉ đếm, chưa xoá gì. Một người khác phải duyệt ở Hệ thống & Nhật ký → Sao lưu & Bảo trì. Lý do ghi vào nhật ký.",
     truong: [{ name: "ly_do", label: "Lý do", value: "Khách yêu cầu xoá dữ liệu",
                required: true, maxlength: 500 }],
     nut: "Tạo yêu cầu",
@@ -662,7 +941,7 @@ async function rtYeuCauDem(contactId) {
       method: "POST",
       body: JSON.stringify({ kind: "delete", reason: d.ly_do, dry_run: true }),
     });
-    toast("Đã tạo yêu cầu. Một người khác cần duyệt ở màn Nhật ký.");
+    toast("Đã tạo yêu cầu. Một người khác cần duyệt ở Hệ thống & Nhật ký → Sao lưu & Bảo trì.");
   } catch (e) { toast(e.message, true); }
 }
 
@@ -725,7 +1004,7 @@ function baoKhachCanNguoi(escalated, tong) {
   if (!tang || !("Notification" in window) || Notification.permission !== "granted") return;
   try {
     const tb = new Notification("Khách cần người trả lời", {
-      body: `${escalated} hội thoại đang chờ người · mở Ca trực để nhận`,
+      body: `${escalated} hội thoại đang chờ người · mở Công việc → Tổng quan ca trực để nhận`,
       tag: "khach-can-nguoi",
     });
     tb.onclick = () => { window.focus(); doiMan("ca"); tb.close(); };
@@ -827,7 +1106,7 @@ async function loadOverview() {
      hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
      lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
      API đã xếp sẵn ai chờ lâu nhất lên đầu. */
-  /* Khối dưới đây (`#queue`) chỉ tồn tại trong màn Ca trực. Nạp nó khi
+  /* Khối dưới đây (`#queue`) chỉ tồn tại trong tab Tổng quan ca trực. Nạp nó khi
      đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
      ĐO ĐƯỢC 22.09.2026 trên dashboard đang chạy: `loadOverview()` phát BA
      request (hồi còn hàng chờ video), và `refresh()` gọi nó mỗi 6 giây bất
@@ -838,7 +1117,7 @@ async function loadOverview() {
      Vẫn giữ `/overview` chạy mọi lúc: nó nuôi các con số trên thanh điều
      hướng, và người trực cần thấy "Ca trực" nhảy số kể cả khi đang đứng ở
      màn khác — đó chính là cách họ biết có việc mới. */
-  if (state.view !== "ca") return;
+  if (!dangMo("cv-ca-truc")) return;   // tab Tổng quan ca trực của màn Công việc
 
   const waiting = await api("/conversations?status=can_nguoi&limit=200");
   $("#queue").innerHTML = waiting.length
@@ -1839,7 +2118,7 @@ $("#chonGiao")?.addEventListener("click", async () => {
       dong();
       state.khachDaChon = new Set();
       await loadContacts();
-      if (state.view === "ca") { await loadVoChu(); await loadOverview(); }
+      if (dangMo("cv-ca-truc")) { await loadVoChu(); await loadOverview(); }
     } catch (err) { toast(err.message, true); }
     finally { nut.disabled = false; }
   };
@@ -2188,6 +2467,13 @@ const VAN_DON_YEU_CAU_LABEL = {
 };
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
+/* Thanh toán VietQR ẨN khỏi giao diện theo phiếu việc của chủ dự án
+   (20.11.2026): không có ô cấu hình tài khoản nhận tiền nào được vẽ, nên
+   nút QR trên dòng đơn chỉ còn là nút bấm ra lỗi "chưa cấu hình". Mã và
+   API (/api/orders/{id}/vietqr*) giữ nguyên — bật lại là đổi hằng này và
+   cho nhóm `thanh_toan` một ô trong `[data-api-cac-nhom]`. */
+const HIEN_VIETQR = false;
+
 $$("#orderfilter .chip").forEach((chip) =>
   chip.addEventListener("click", () => {
     state.orderFilter = chip.dataset.ostatus;
@@ -2292,7 +2578,7 @@ async function loadOrders() {
         ${da_thu > 0 ? `<span class="tag tag--auto" title="${
             o.da_thu_luc ? "Ghi lúc " + esc(clock(o.da_thu_luc)) : ""}">Đã thu ${vnd(da_thu)}</span>` : ""}
         <span class="row__time">${clock(o.created_at)}</span>
-        ${o.trang_thai === "da_chot" ? `<span class="order__qr">
+        ${HIEN_VIETQR && o.trang_thai === "da_chot" ? `<span class="order__qr">
             <a class="btn btn--sm btn--ghost" href="/api/orders/${o.id}/vietqr.svg" target="_blank"
                rel="noopener" title="Mở mã VietQR (tổng hàng + phí ship)">QR</a>
             ${o.conversation_id ? `<button type="button" class="btn btn--sm" data-oqr-gui="${o.id}"
@@ -3112,7 +3398,7 @@ function pdpdKhoiXoa(d) {
         <b>${esc(String(pd.so_nguoi_duyet_duoc ?? 0))}</b> người dùng được quyền
         <code>khach.xoa</code>. Người tạo phiếu không tự duyệt được, nên phiếu sẽ
         <b>treo mãi</b> và yêu cầu xoá của khách không bao giờ được đáp ứng.
-        Cấp quyền ấy cho ít nhất một người nữa ở màn <b>Nhân sự</b>.</div>`
+        Cấp quyền ấy cho ít nhất một người nữa ở <b>Nhân sự &amp; Phân quyền</b>.</div>`
     : "";
   if (pd.xoa_duoc) {
     return `<div class="kit__note">Đã có phiếu duyệt của người khác — phiếu này
@@ -4467,7 +4753,7 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
         <span>${esc(k.display_name)}</span>
         <small>${esc(k.channel)} · ${esc(TT[k.status] || k.status)}${
           k.role === "owner" ? " · đã nối kênh này, không gỡ ở đây" : ""}</small></label>`).join("")
-      : '<p class="empty">Chưa nối kênh nào. Nối ở màn Kết nối rồi quay lại.</p>'}
+      : '<p class="empty">Chưa nối kênh nào. Nối ở Cấu hình chung → Kết nối & Tích hợp rồi quay lại.</p>'}
       </fieldset>
       <div class="row__nut">
         <button type="button" class="btn btn--sm btn--primary" data-kenhluu="${esc(id)}">Lưu</button>
@@ -4485,26 +4771,55 @@ async function refresh() {
   taiSoThongBao();
   try {
     await loadOverview();
-    if (state.view === "ca") { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); }
+    // Mô-đun đăng ký SAU lần đầu tab hiện vẫn được gắn ở nhịp kế tiếp.
+    ganTabDangHien();
     if (state.view === "hoithoai") await loadConversations();
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
-    if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {    // nhãn hiển thị: "Phân tích"
       if (!state.ptDaTai) await loadPhanTich();
       await loadCost();
     }
-    if (state.view === "trithuc") await loadDocs();
-    if (state.view === "kynang") await loadKyNang();
-    if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadMauNhanh(); await napQuanLyNhan(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
-    // Gắn MỘT lần, không dựng lại mỗi nhịp (22-ket-noi-tich-hop.js).
-    if (state.view === "cauhinh") ganTabTam();
-    if (state.view === "congviec") await loadCongViec();
-    if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
-    if (state.view === "nhatky") { await loadYeuCauChuThe(); await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
+    /* Màn có tab: nạp THEO TAB đang hiện, không theo màn — mỗi màn cài đặt
+       gộp ba bốn màn cũ, nạp cả màn là kéo dữ liệu cho ba tab không ai nhìn.
+       `dangMo(id)` = tab đang hiện VÀ chưa bị mô-đun gắn vào thay thế;
+       `tabDangHien(id)` cho các khối luôn ở lại dù có mô-đun gắn vào.
+       Tab gộp nhiều nguồn thì mỗi nguồn kèm `coQuyen`: thiếu một quyền mà
+       vẫn gọi là một 403 chặn mọi loader phía sau, mỗi 6 giây. */
+    if (dangMo("cv-ca-truc")) { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); await loadTongQuanCa(); }
+    if (dangMo("cv-danh-sach")) await loadCongViec();
+    if (tabDangHien("cc-nhan")) await loadTruongKhach();
+    if (dangMo("cc-tu-dong")) { await loadMauNhanh(); await loadQuyTac(); }
+    if (tabDangHien("cc-ket-noi") && coQuyen("kenh.doc")) {
+      if (coQuyen("agent.doc")) await loadHoSoAgent();
+      await loadSucKhoeKenh(); await loadKetNoi();
+    }
+    if (dangMo("cc-ket-noi")) {
+      await loadCaiDatApi();
+      if (coQuyen("don.doc")) await loadErpCauHinh();
+      if (coQuyen("tich_hop.doc")) await loadTichHop();
+    }
+    if (dangMo("cc-sla")) { await loadDinhTuyen(); await loadCaiDatApi(); }
+    if (dangMo("cc-dieu-phoi")) await loadDinhTuyen();
+    if (tabDangHien("ai-co-ban")) {
+      if (coQuyen("cau_hinh.doc")) await loadCauHinh();
+      if (coQuyen("agent.doc")) await loadHoSoAgent();
+    }
+    if (tabDangHien("ai-co-ban") && !daGan("ai-co-ban-nha-cung-cap")) await loadCaiDatApi();
+    if (dangMo("ai-tri-thuc")) await loadDocs();
+    if (dangMo("ai-ky-nang")) await loadKyNang();
+    if (dangMo("ai-phong-thu") && !state.phongThuDaTai) await loadPhongThu();
+    if (dangMo("ns-nhan-vien") || dangMo("ns-vai-tro")) await loadNhanSu();
+    if (tabDangHien("ns-nhan-vien")) await loadLichCa();
+    if (tabDangHien("ns-vai-tro")) await loadTamNhin();
+    if (dangMo("ht-suc-khoe")) await loadHeThong();
+    if (dangMo("ht-sao-luu")) {
+      await loadYeuCauChuThe();
+      if (coQuyen("khach.pii")) { await loadPdpdPolicy(); await loadRetention(); }
+      await loadCaiDatApi();
+    }
+    if (dangMo("ht-nhat-ky")) await loadEvents();
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }
@@ -4548,6 +4863,7 @@ function startInboxStream() {
 // thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
 kiemPhien().then((co) => {
   if (!co) return;
+  apDungQuyenMenu();
   refresh();
   startInboxStream();
   state.timer = setInterval(refresh, 6000);
@@ -4556,7 +4872,7 @@ kiemPhien().then((co) => {
 /* Trung tâm kết nối native. Secret chỉ đi từ form tới vault; response không
    chứa credential nên DOM cũng không có gì để vô tình làm lộ. */
 function moManKetNoi() {
-  doiMan("ketnoi");
+  doiMan("cc-ket-noi");
 }
 
 $("#connection-add-toggle")?.addEventListener("click", () => {
@@ -6603,6 +6919,8 @@ function oNhapCauHinh(m) {
  *
  * Sau khi lưu (hoặc lưu hỏng) thì gọi với `false`: lúc đó thứ phải hiện là
  * thứ máy chủ đang chạy, không phải thứ người ta vừa gõ mà bị từ chối. */
+const KHOA_CO_KHOI_RIENG = new Set(["enabled", "mode"]);
+
 async function loadCauHinh(giuDangGo = true) {
   const d = await api("/cau-hinh");
   const lech = d.muc.filter((m) => m.lech_mac_dinh).length;
@@ -6610,7 +6928,9 @@ async function loadCauHinh(giuDangGo = true) {
 
   const oGoc = $("#cauhinh-ds");
   const dangGo = giuDangGo ? _luuDangGo(oGoc) : null;
-  oGoc.innerHTML = d.muc.map((m) => `<div class="row">
+  /* Công tắc AI và chế độ Gợi ý/Tự động có khối riêng ngay trên (#aiTrangThai).
+     Vẽ chúng ở đây nữa là hai công tắc cho cùng một cờ trên một màn. */
+  oGoc.innerHTML = d.muc.filter((m) => !KHOA_CO_KHOI_RIENG.has(m.khoa)).map((m) => `<div class="row">
       <span class="row__flag ${m.lech_mac_dinh ? "row__flag--halt" : "row__flag--auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(m.nhan)}
@@ -6943,9 +7263,22 @@ function trangThaiApi(m) {
   return `<span class="row__sub">${nguon}${kiem}</span>`;
 }
 
+/* Mỗi nhóm khoá dựng vào ĐÚNG tab của nó (phiếu việc 20.11.2026): ô nào
+ * mang `data-api-cac-nhom="erp,van_chuyen"` thì nhận đúng các nhóm ấy.
+ * Model ở Cấu hình AI, SLA ở tab SLA, ERP/vận chuyển/bình luận ở Kết nối,
+ * bảo vệ dữ liệu ở Hệ thống. `thanh_toan` (VietQR) và `csat` CỐ Ý không
+ * có ô nào: chủ dự án ẩn hai tính năng này khỏi giao diện — mã và API giữ
+ * nguyên, CSAT mặc định tắt (CSAT_BAT=tat). Ô nào cũng không nhận một
+ * nhóm thì nhóm ấy đơn giản là không vẽ, không có cờ ẩn riêng để quên. */
 async function loadCaiDatApi() {
+  const cacO = $$("[data-api-cac-nhom]");
+  if (!coQuyen("cau_hinh.doc")) {
+    cacO.forEach((o) => { o.innerHTML = '<p class="empty">Cần quyền cau_hinh.doc để xem mục này.</p>'; });
+    return;
+  }
   const d = await api("/cai-dat-api");
-  $("#api-vault").textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
+  const vault = $("#api-vault");
+  if (vault) vault.textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
   const nhom = {};
   for (const m of d.muc) (nhom[m.nhom] ||= []).push(m);
   /* Giữ khoá đang dán dở qua mỗi lần dựng lại.
@@ -6955,9 +7288,10 @@ async function loadCaiDatApi() {
    * ta bấm Lưu và nhận toast XANH "Đã lưu 0 khoá" — xanh giả, vì không có
    * gì được lưu cả. Ô bí mật không có `value` từ máy chủ, nên bất kỳ chữ
    * nào trong đó đều là người dùng gõ — `_oDaSua` bắt đúng điều đó. */
-  const oGoc = $("#api-nhom");
-  const dangGo = _luuDangGo(oGoc);
-  oGoc.innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
+  for (const oGoc of cacO) {
+    const chi = oGoc.dataset.apiCacNhom.split(",").map((x) => x.trim());
+    const dangGo = _luuDangGo(oGoc);
+    oGoc.innerHTML = Object.entries(API_NHOM).filter(([ma]) => chi.includes(ma)).map(([ma, ten]) => `
     <div class="row" data-api-nhom="${ma}">
       <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
       <span class="row__body">
@@ -6979,9 +7313,10 @@ async function loadCaiDatApi() {
         </div>
       </span>
     </div>`).join("");
+    _traDangGo(oGoc, dangGo);
+  }
   // Trả TRƯỚC hienODungProvider(): ô provider người ta vừa đổi quyết định
   // ô khoá nào hiện — làm ngược thì hiện ô khoá của provider cũ.
-  _traDangGo(oGoc, dangGo);
   hienODungProvider();
 }
 
@@ -7692,7 +8027,7 @@ async function loadLichCa() {
   $("#lcCanhBao").innerHTML = r.canh_bao.map((c) => `
     <div class="row"><span class="row__flag row__flag--halt"></span>
       <span class="row__body"><span class="row__title">${esc(c.ghi)}</span>
-        <span class="row__sub">Xếp thêm người vào ca, hoặc tạm tắt luật định tuyến của đội ở trang Cấu hình.</span></span>
+        <span class="row__sub">Xếp thêm người vào ca, hoặc tạm tắt luật định tuyến của đội ở Cấu hình chung → Điều phối hội thoại.</span></span>
     </div>`).join("");
   $("#lcNguoi").innerHTML = r.nguoi.length ? r.nguoi.map((n) => {
     const tt = n.dang_nghi ? "đang nghỉ" : !n.ca.length ? "luôn trực" : n.trong_ca ? "đang trong ca" : "ngoài ca";
@@ -7777,6 +8112,59 @@ $("#lcNghi")?.addEventListener("click", async (ev) => {
     loadLichCa();
   } catch (e) { toast(e.message, true); }
 });
+
+/* ---------------- Tổng quan ca trực (Công việc → tab đầu) ----------------
+ * Ba khối thêm vào màn Ca trực cũ: ai đang trong ca, hội thoại chưa ai
+ * nhận, hội thoại quá hạn SLA. Không con số nào tính ở đây — "trong ca" là
+ * hàm SQL dang_trong_ca (qua /lich-ca), hai danh sách là bộ lọc của hộp
+ * thư (`chua_giao`, `qua_han_sla`). Tính lại bằng JS là hai bản sự thật.
+ *
+ * Mỗi khối hỏng RIÊNG: một khối lỗi ghi lỗi tại chỗ, không ném ra ngoài —
+ * ném ra là chặn luôn hàng chờ "Chờ người xử lý" ngay bên dưới. */
+const TQ_SO_DONG = 20;
+
+async function loadTongQuanCa() {
+  const pnCa = $("#cvTrongCaPanel");
+  if (pnCa) {
+    const doc = state.toiQuyen && state.toiQuyen.has("dinh_tuyen.doc");
+    pnCa.hidden = !doc;
+    if (doc) {
+      try {
+        const r = await api("/lich-ca");
+        const truc = r.nguoi.filter((n) => !n.dang_nghi && (!n.ca.length || n.trong_ca));
+        $("#cvTrongCaDem").textContent = `${truc.length}/${r.nguoi.length} người đang trực`;
+        $("#cvTrongCa").innerHTML = truc.length ? truc.map((n) => `<div class="row">
+            <span class="row__flag row__flag--auto"></span>
+            <span class="row__body"><span class="row__title">${esc(n.ten)}</span>
+              <span class="row__sub">${n.ca.length ? "đang trong ca" : "luôn trực (chưa xếp ca)"}</span></span>
+          </div>`).join("")
+          : '<p class="empty">Không ai đang trong ca — hội thoại mới sẽ nằm chờ người tự nhận.</p>';
+      } catch (e) {
+        $("#cvTrongCa").innerHTML = `<p class="empty">Không tải được lịch ca: ${esc(e.message)}</p>`;
+      }
+    }
+  }
+  await _tqDanhSach("#cvChuaGiao", "chua_giao=true",
+    "Không có hội thoại nào chưa ai nhận.");
+  await _tqDanhSach("#cvSla", "qua_han_sla=true",
+    "Không hội thoại nào quá hạn SLA.");
+}
+
+async function _tqDanhSach(sel, loc, rong) {
+  const o = $(sel);
+  if (!o) return;
+  try {
+    const r = await api(`/inbox/conversations?limit=${TQ_SO_DONG}&${loc}`);
+    const ds = r.items || [];
+    o.innerHTML = ds.length
+      ? ds.map((c) => convRow(c)).join("")
+        + (r.next_cursor ? `<p class="empty">Còn nữa — mở Hội thoại và lọc để xem hết.</p>` : "")
+      : `<p class="empty">${esc(rong)}</p>`;
+    wireConvRows(sel);
+  } catch (e) {
+    o.innerHTML = `<p class="empty">Không tải được: ${esc(e.message)}</p>`;
+  }
+}
 /* ---------------- Sổ yêu cầu của khách (Luật 91/2025, NĐ 356/2025) ---------------- */
 /* Hạn và tình trạng do MÁY CHỦ tính (agent/core/yeu_cau_chu_the.py). Ở đây
  * chỉ hiện và gửi thao tác — tính hạn ở hai nơi là hai bản sự thật. */
@@ -8166,18 +8554,20 @@ async function loadPhanTich() {
       <td>${usd(a.chi_phi_usd)}</td></tr>`).join("")
     : '<tr><td colspan="11" class="empty">Không có tin AI nào trong khoảng này.</td></tr>'}</tbody>`;
 
-  /* ---- Hiệu suất nhân viên ---- */
+  /* ---- Hiệu suất nhân viên ----
+     Cột CSAT đã gỡ khỏi bảng: chủ dự án ẩn CSAT khỏi giao diện (phiếu việc
+     20.11.2026) và câu hỏi chấm điểm mặc định TẮT — một cột luôn "—" là
+     cột người ta học cách bỏ qua. API vẫn trả csat_tb/csat_so. */
   $("#ptNhanVien").innerHTML = `<thead><tr>
     <th>Nhân viên</th><th>Hội thoại được giao</th><th>Tin đã gửi</th>
     <th>Phản hồi đầu (trung vị)</th><th>p90</th><th>Chưa phản hồi</th>
-    <th>Đơn</th><th>Trễ SLA</th><th>CSAT</th></tr></thead><tbody>${d.nhan_vien.length
+    <th>Đơn</th><th>Trễ SLA</th></tr></thead><tbody>${d.nhan_vien.length
     ? d.nhan_vien.map((n) => `<tr>
       <td>${esc(n.ho_ten)}</td><td>${n.hoi_thoai}</td><td>${n.tin_gui}</td>
       <td>${_giay(n.phan_hoi_trung_vi_giay)}</td><td>${_giay(n.phan_hoi_p90_giay)}</td>
       <td class="${n.chua_phan_hoi ? "so--xau" : ""}">${n.chua_phan_hoi}</td>
-      <td>${n.don}</td><td class="${n.tre_sla ? "so--xau" : ""}">${n.tre_sla}</td>
-      <td>${n.csat_so ? `${n.csat_tb} <span class="msg__meta">(${n.csat_so})</span>` : "—"}</td></tr>`).join("")
-    : '<tr><td colspan="9" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
+      <td>${n.don}</td><td class="${n.tre_sla ? "so--xau" : ""}">${n.tre_sla}</td></tr>`).join("")
+    : '<tr><td colspan="8" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
 
   /* ---- Chỉ số SLA ---- */
   $("#ptSlaNote").textContent = "tỷ lệ đáp ứng tính trên mục tiêu có hạn · thời gian đo "
@@ -8352,7 +8742,7 @@ async function diToiLienKet(lk) {
   }
   if (lk.loai === "don_hang") { doiMan("donhang"); return; }
   if (lk.loai === "cong_viec") {
-    doiMan("congviec");
+    doiMan("cv-danh-sach");
     try { await loadCongViec(); } catch { /* vòng làm mới sẽ thử lại */ }
     const dong = $(`#cv-ds [data-cv="${CSS.escape(lk.id)}"]`);
     if (!dong) { toast("Việc này không nằm trong bộ lọc đang chọn ở màn Công việc."); return; }
@@ -8885,9 +9275,8 @@ $("#contactLocNhan")?.addEventListener("change", (ev) => {
 });
 
 /* ---------------- Quản lý nhãn (Cấu hình chung → tab "Quản lý nhãn") ---------------- */
-/* Đăng ký như một mô-đun gắn được: màn Cài đặt & Quản trị gọi
- * `GAN_TAB['cc-nhan'](khung)` với khung của tab. Cho tới khi màn ấy có,
- * trang Cấu hình gắn cùng hàm vào `#quan-ly-nhan` (napQuanLyNhan). */
+/* Đăng ký như một mô-đun gắn được: khung tab (01b-dieu-huong.js `ganKhe`)
+ * gọi `GAN_TAB['cc-nhan'](khung)` một lần, lần đầu tab hiện ra. */
 window.GAN_TAB = window.GAN_TAB || {};
 GAN_TAB["cc-nhan"] = (el) => moQuanLyNhan(el);
 
@@ -9005,17 +9394,6 @@ async function _bamQuanLyNhan(el, ev) {
   } catch (e) { toast(e.message, true); }
 }
 
-/* Gắn vào trang Cấu hình hiện có — gọi từ vòng làm mới (10-vong-lam-moi.js).
- * Thiếu `cau_hinh.doc` thì ẩn cả khung: một khung chắc chắn 403 không phải
- * là một khung. */
-async function napQuanLyNhan() {
-  const panel = $("#quan-ly-nhan-panel");
-  if (!panel) return;
-  const doc = state.toiQuyen && state.toiQuyen.has("cau_hinh.doc");
-  panel.hidden = !doc;
-  if (doc) await GAN_TAB["cc-nhan"]($("#quan-ly-nhan"));
-}
-
 /* ---------------- Nhãn trong quy tắc tự động (mục 7.8) ---------------- */
 /* Sáu ô chọn của biểu mẫu quy tắc: ô `data-qt-nhan="hoi_thoai"` chỉ có nhãn
  * hội thoại, ô `"khach"` chỉ có nhãn khách. Tên nhãn theo id giữ trong
@@ -9064,8 +9442,7 @@ function tenNhanTheoId(id) {
  * Luật trạng thái (Chưa cấu hình / Chưa kiểm tra / Thành công / Lỗi) nằm ở
  * MÁY CHỦ (agent/ket_noi_tich_hop.py). Ở đây chỉ vẽ.
  *
- * Gắn vào khung tab qua `GAN_TAB['cc-ket-noi']`. Khi khung chưa có, phần tử
- * `[data-gan-tab]` trong index.html được gắn bằng `ganTabTam()`.
+ * Gắn vào khung tab qua `GAN_TAB['cc-ket-noi']` (01b-dieu-huong.js `ganKhe`).
  *
  * KHÔNG nằm trong vòng làm mới 6 giây: ô bí mật đang dán dở mà bị dựng lại
  * là khoá mất trắng, rồi người ta bấm Lưu và tưởng đã lưu. Chỉ dựng lại khi
@@ -9384,17 +9761,6 @@ async function ganKetNoiTichHop(goc) {
 
 window.GAN_TAB["cc-ket-noi"] = (el) => ganKetNoiTichHop(el);
 
-/* Gắn tạm khi khung tab chưa có: mỗi `[data-gan-tab]` trong màn đang mở
- * được gắn MỘT lần (dựng lại mỗi 6 giây là xoá khoá đang dán dở). */
-function ganTabTam() {
-  $$(".view.is-active [data-gan-tab]").forEach((el) => {
-    if (el.dataset.daGan) return;
-    const gan = window.GAN_TAB[el.dataset.ganTab];
-    if (!gan) return;
-    el.dataset.daGan = "1";
-    gan(el);
-  });
-}
 /* ---------------- Cấu hình AI cơ bản: nhà cung cấp, khoá, model, thông báo AI ----------------
  *
  * Gắn qua `GAN_TAB['ai-co-ban-nha-cung-cap']`. Dùng chung bộ Lưu / Kiểm tra

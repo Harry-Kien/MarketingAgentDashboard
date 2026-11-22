@@ -608,18 +608,16 @@ def _src(ten: str) -> str:
     return (SRC / ten).read_text(encoding="utf-8")
 
 
-def test_quan_ly_nhan_dang_ky_mo_dun_gan_duoc_va_co_cho_dung_hom_nay():
+def test_quan_ly_nhan_dang_ky_mo_dun_va_khung_tab_co_khe():
     """
-    Màn Cài đặt & Quản trị (đang dựng) gọi `GAN_TAB['cc-nhan'](khung)`. Cho
-    tới lúc đó trang Cấu hình phải gắn CÙNG hàm — không thì tính năng có mã
-    mà không có đường vào, đúng kiểu "có endpoint mà không có màn hình".
+    Màn Cài đặt & Quản trị gọi `GAN_TAB['cc-nhan'](khung)` (01b-dieu-huong.js
+    `ganKhe`). Thiếu một trong hai đầu là tính năng có mã mà không có đường
+    vào — đúng kiểu "có endpoint mà không có màn hình".
     """
     nhan = _src("21-nhan.js")
     assert "window.GAN_TAB = window.GAN_TAB || {};" in nhan
     assert 'GAN_TAB["cc-nhan"] = (el) => moQuanLyNhan(el);' in nhan
-    assert 'GAN_TAB["cc-nhan"]($("#quan-ly-nhan"))' in nhan
-    assert "await napQuanLyNhan();" in _src("10-vong-lam-moi.js")
-    assert 'id="quan-ly-nhan"' in (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert 'data-gan="cc-nhan"' in (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
 
 
 def test_dau_hoi_thoai_chi_co_nhan_hoi_thoai():

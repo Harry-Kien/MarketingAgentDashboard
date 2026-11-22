@@ -21,17 +21,24 @@
 
 <header class="masthead">
   <div class="masthead__id">
+    <!-- Nút mở thanh bên ở khổ hẹp (≤780px). Thanh bên ở đó ẩn hẳn thay vì
+         thành một dải cuộn ngang: mười mấy mục trên một dải 375px là dải
+         người ta không biết còn gì ở phía phải. -->
+    <button type="button" class="menumo" id="railMo" aria-label="Mở menu"
+            aria-expanded="false" aria-controls="rail">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
     <span class="masthead__mark" aria-hidden="true"></span>
     <span class="masthead__title">Kien Omnichannel</span>
     <span class="masthead__sub">Customer Care OS</span>
   </div>
 
   <div class="masthead__controls">
-    <div class="modeswitch" role="group" aria-label="Chế độ làm việc">
-      <button type="button" data-mode="assist" class="modeswitch__opt">Gợi ý</button>
-      <button type="button" data-mode="auto" class="modeswitch__opt">Tự động</button>
-    </div>
 
+    <!-- Bộ chọn Gợi ý/Tự động đã chuyển vào Cài đặt & Quản trị → Cấu hình AI
+         Agent → Cấu hình cơ bản (phiếu việc 20.11.2026): nó là CẤU HÌNH chung
+         cho mọi kênh, không phải nút bấm hằng giờ. Công tắc ngắt khẩn cấp
+         ở lại đây: lúc cần nó là lúc không có thời gian đi tìm. -->
     <button type="button" id="killswitch" class="killswitch">
       <span class="killswitch__lamp" aria-hidden="true"></span>
       <span id="killswitch-label">Đang chạy</span>
@@ -75,17 +82,19 @@
 </header>
 
 <div class="shell">
-  <nav class="rail" aria-label="Khu vực">
-    <button type="button" class="rail__item is-active" data-view="ca">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M13.4 10.6 19 5"/><path d="M20.6 17A9 9 0 1 0 3.4 17"/></svg>
-      <span>Ca trực</span><b id="c-ca" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="hoithoai">
+  <!-- THANH BÊN: sáu màn nghiệp vụ, rồi MỘT nhóm "Cài đặt & Quản trị" thu
+       gọn được (phiếu việc của chủ dự án 20.11.2026). Trước đây là 15 mục
+       ngang hàng, cấu hình nằm rải ở năm chỗ và "Sức khoẻ" ở ba chỗ.
+       Mỗi màn cài đặt có tab bên trong; id tab là điểm gắn cho mô-đun
+       khác (00-gan-tab.js). Ẩn mục theo quyền chỉ là giấu cửa — máy chủ
+       vẫn là chốt thật (agent/core/quyen.py). -->
+  <nav class="rail" id="rail" aria-label="Khu vực">
+    <button type="button" class="rail__item is-active" data-view="hoithoai">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
       <span>Hội thoại</span><b id="c-hoithoai" class="rail__count"></b>
     </button>
     <button type="button" class="rail__item" data-view="khachhang">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 11a4 4 0 0 1 6 3.5V21"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 11a4 4 0 0 1 6 3.5V21"/></svg>
       <span>Khách hàng</span><b id="c-khachhang" class="rail__count"></b>
     </button>
     <button type="button" class="rail__item" data-view="donhang">
@@ -93,49 +102,44 @@
       <span>Đơn hàng</span><b id="c-donhang" class="rail__count"></b>
     </button>
     <button type="button" class="rail__item" data-view="kho">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-5 9 5v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21V12h6v9"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-5 9 5v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21V12h6v9"/></svg>
       <span>Kho</span><b id="c-kho" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="sohieu">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Phân tích</span><b class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="trithuc">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></svg>
-      <span>Tri thức</span><b id="c-trithuc" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="cauhinh">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-      <span>Cấu hình</span><b id="c-cauhinh" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="kynang">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6M15 3v6"/><rect x="6" y="9" width="12" height="7" rx="2"/><path d="M12 16v5"/></svg>
-      <span>Kỹ năng</span><b id="c-kynang" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="phongthu">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>
-      <span>Phòng thử</span><b class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="hethong">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
-      <span>Hệ thống</span><b id="c-hethong" class="rail__count"></b>
-    </button>
-    <button type="button" class="rail__item" data-view="ketnoi">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.8"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.8-1.8"/></svg>
-      <span>Kết nối</span><b class="rail__count"></b>
     </button>
     <button type="button" class="rail__item" data-view="congviec">
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M9 9h6M9 13h6M9 17h3M8 2v4M16 2v4"/></svg>
-      <span>Công việc</span><b id="c-congviec" class="rail__count"></b>
+      <span>Công việc</span><b id="c-ca" class="rail__count"></b>
     </button>
-    <button type="button" class="rail__item" data-view="nhansu">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      <span>Nhân sự</span><b id="c-nhansu" class="rail__count"></b>
+    <button type="button" class="rail__item" data-view="sohieu">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Phân tích</span><b class="rail__count"></b>
     </button>
-    <button type="button" class="rail__item" data-view="nhatky">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-      <span>Nhật ký</span><b class="rail__count"></b>
-    </button>
+
+    <div class="rail__nhom" id="railCaiDat">
+      <button type="button" class="rail__cha" id="railCaiDatNut"
+              aria-expanded="false" aria-controls="railCaiDatCon">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        <span>Cài đặt &amp; Quản trị</span>
+        <svg class="rail__mui" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="rail__con" id="railCaiDatCon" hidden>
+        <button type="button" class="rail__item rail__item--con" data-view="cauhinhchung">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+          <span>Cấu hình chung</span><b class="rail__count"></b>
+        </button>
+        <button type="button" class="rail__item rail__item--con" data-view="cauhinhai">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6M15 3v6"/><rect x="6" y="9" width="12" height="7" rx="2"/><path d="M12 16v5"/></svg>
+          <span>Cấu hình AI Agent</span><b class="rail__count"></b>
+        </button>
+        <button type="button" class="rail__item rail__item--con" data-view="nhansu">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Nhân sự &amp; Phân quyền</span><b class="rail__count"></b>
+        </button>
+        <button type="button" class="rail__item rail__item--con" data-view="hethong">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg>
+          <span>Hệ thống &amp; Nhật ký</span><b class="rail__count"></b>
+        </button>
+      </div>
+    </div>
 
     <div class="rail__foot">
       <span class="rail__footlabel" id="rail-nguoi"></span>
@@ -168,7 +172,7 @@
       <button type="submit" class="btn btn--primary">Đăng nhập</button>
       <p class="cong__loi" id="loginerr"></p>
       <p class="cong__note"><b>Nhân viên:</b> tài khoản do quản trị cấp ở màn
-        <i>Nhân sự</i>. Không tự đăng ký được — hệ thống này nắm dữ liệu khách.</p>
+        <i>Cài đặt &amp; Quản trị → Nhân sự &amp; Phân quyền</i>. Không tự đăng ký được — hệ thống này nắm dữ liệu khách.</p>
       <p class="cong__note"><b>Lần đầu dựng, chưa có ai:</b> chạy trên máy chủ
         <code>python -m scripts.tao_tai_khoan admin "mật khẩu" --quan-tri</code></p>
     </form>
@@ -203,7 +207,7 @@
                value="Phân công ca trực" autocomplete="off">
       </label>
       <button type="submit" class="btn btn--primary">Giao</button>
-      <p class="cong__note"><a href="#" id="giaoHuy">Thôi, quay lại</a></p>
+      <p class="cong__note"><a href="#" id="giaoHuy">← Quay lại</a></p>
     </form>
   </div>
 
@@ -234,7 +238,7 @@
       </label>
       <button type="submit" class="btn btn--primary">Đổi</button>
       <p class="cong__loi" id="mkerr"></p>
-      <p class="cong__note"><a href="#" id="mkhuy">Thôi, quay lại</a></p>
+      <p class="cong__note"><a href="#" id="mkhuy">← Quay lại</a></p>
     </form>
   </div>
 
@@ -249,7 +253,7 @@
       <div class="cong__truong" id="hoiTruong"></div>
       <button type="submit" class="btn btn--primary" id="hoiNut">Lưu</button>
       <p class="cong__loi" id="hoiLoi"></p>
-      <p class="cong__note"><a href="#" id="hoiHuy">Thôi, quay lại</a></p>
+      <p class="cong__note"><a href="#" id="hoiHuy">← Quay lại</a></p>
     </form>
   </div>
 
@@ -295,46 +299,8 @@
 
   <main class="stage" id="stage">
 
-    <!-- ============ CA TRỰC ============ -->
-    <section class="view is-active" data-view="ca">
-      <div class="readout" id="readout"></div>
-      <!-- Ca của tôi. Ẩn khi người này chưa xếp ca nào (luôn trực — không có
-           gì để nói). Hiện khi NGOÀI ca: người trực cần biết vì sao không
-           được chia hội thoại mới, thay vì tưởng hệ thống hỏng. -->
-      <p class="panel__note ca-cua-toi" id="caCuaToi" hidden></p>
-      <!-- Thông báo trên máy người trực khi có khách cần người. Trình duyệt
-           chỉ cho xin quyền khi người dùng BẤM, nên phải có nút. Ẩn khi đã
-           bật, hoặc trình duyệt không hỗ trợ. -->
-      <p class="panel__note" id="batThongBao" hidden></p>
-
-      <!-- HAI Ô BÁO ĐỘNG Ở TRÊN TRƯỚC ĐÂY LÀ NGÕ CỤT.
-           Người trực thấy "Tin KHÔNG gửi được: 3" rồi không đi đâu được —
-           API đã có đủ từ lâu (liệt kê, thử lại, bỏ qua) nhưng không màn
-           hình nào gọi tới. Chuông kêu mà không có cửa thì chỉ tạo ra thói
-           quen bỏ qua chuông.
-
-           Cả hai panel ẩn khi không có gì: một bảng lúc nào cũng hiện
-           "không có" là một bảng người ta thôi đọc. -->
-      <section class="panel is-hidden" id="pnChet">
-        <h2 class="panel__head">Tin KHÔNG gửi được
-          <span class="panel__note" id="chetNote">khách không nhận được · thử lại hoặc bỏ qua</span></h2>
-        <div id="dsChet" class="rows"></div>
-      </section>
-
-      <section class="panel is-hidden" id="pnVoChu">
-        <h2 class="panel__head">Khách chưa có chủ
-          <span class="panel__note" id="voChuNote">chưa ai chịu trách nhiệm · giao cho một người</span></h2>
-        <div id="dsVoChu" class="rows"></div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Chờ người xử lý</h2>
-        <div id="queue" class="rows"></div>
-      </section>
-    </section>
-
     <!-- ============ HỘI THOẠI ============ -->
-    <section class="view" data-view="hoithoai">
+    <section class="view is-active" data-view="hoithoai">
       <div class="nickbar" id="nickbar">
         <span class="nickbar__label">Tài khoản trả lời</span>
         <span class="nickbar__hint">Tự động dùng đúng tài khoản đã nhận hội thoại</span>
@@ -380,6 +346,62 @@
       </div>
     </section>
 
+    <section class="view" data-view="khachhang">
+      <!-- GỘP KHÁCH TRÙNG.
+           Một người nhắn Zalo rồi nhắn Facebook là HAI contact, và không có
+           gì tự nối chúng lại. API gộp (xem trước / gộp / hoàn tác) đã có
+           đủ từ lâu nhưng không màn hình nào gọi tới — nên trên thực tế
+           lịch sử của một khách nằm rải ở hai chỗ, vĩnh viễn.
+
+           Panel ẩn mặc định: nó là việc thỉnh thoảng mới làm, và để mở sẵn
+           thì hai ô chọn chiếm chỗ của thứ người ta nhìn hằng ngày. -->
+      <section class="panel is-hidden" id="pnGop">
+        <h2 class="panel__head">Gộp hai khách làm một
+          <span class="panel__note">hội thoại và danh tính dồn về bên GIỮ LẠI</span></h2>
+        <div class="form__row">
+          <label class="field"><span>Gộp khách này…</span>
+            <select id="gopNguon"></select></label>
+          <label class="field"><span>…vào khách này (giữ lại)</span>
+            <select id="gopDich"></select></label>
+        </div>
+        <div class="row__nut">
+          <button type="button" class="btn btn--sm" id="gopXem">Xem trước</button>
+          <button type="button" class="btn btn--sm btn--ghost" id="gopDong">Đóng</button>
+        </div>
+        <div id="gopKetQua" class="rows"></div>
+      </section>
+      <div class="customer360">
+        <aside class="panel customer360__list">
+          <h2 class="panel__head">Customer 360
+            <span class="panel__note">hợp nhất có kiểm soát</span>
+            <button type="button" class="btn btn--sm btn--ghost" id="gopMo">Gộp trùng</button></h2>
+          <form id="contactsearch" class="searchline">
+            <input name="q" maxlength="120" placeholder="Tìm theo tên…" aria-label="Tìm khách hàng">
+            <button class="btn btn--sm" type="submit">Tìm</button>
+          </form>
+          <div class="filterbar" id="contactloc" role="group" aria-label="Lọc khách theo người phụ trách">
+            <button type="button" class="chip is-on" data-chuloc="tat_ca">Tất cả<b class="chip__dem"></b></button>
+            <button type="button" class="chip" data-chuloc="cua_toi">Khách của tôi<b class="chip__dem"></b></button>
+            <button type="button" class="chip" data-chuloc="vo_chu">Chưa có chủ<b class="chip__dem"></b></button>
+          </div>
+          <!-- Thanh giao hàng loạt: chỉ hiện khi đã tick ít nhất một khách.
+           Giao từng khách bằng cách mở từng hồ sơ là việc người ta bỏ dở
+           ở khách thứ mười — và mười khách còn lại thành "vô chủ" mãi. -->
+      <div class="chonbar is-hidden" id="chonbar">
+        <span id="chonDem">Đã chọn 0</span>
+        <span class="row__nut">
+          <button type="button" class="btn btn--sm btn--primary" id="chonGiao">Giao cho…</button>
+          <button type="button" class="btn btn--sm btn--ghost" id="chonHuy">Bỏ chọn</button>
+        </span>
+      </div>
+      <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
+        </aside>
+        <section class="panel customer360__detail" id="contactdetail">
+          <p class="empty">Chọn một khách hàng để xem danh tính đa kênh, hội thoại và consent.</p>
+        </section>
+      </div>
+    </section>
+
     <!-- ============ ĐƠN HÀNG ============ -->
     <section class="view" data-view="donhang">
       <section class="panel">
@@ -401,14 +423,6 @@
       <div class="readout" id="khoCards"></div>
 
       <section class="panel">
-        <h2 class="panel__head">Kết nối kho / ERP
-          <span class="panel__note">nguồn của giá và tồn kho agent nói với khách</span>
-          <button type="button" id="erpthu" class="btn btn--sm">Thử kết nối</button></h2>
-        <div id="erpcauhinh" class="rows"></div>
-        <div id="erpketqua" class="rows"></div>
-      </section>
-
-      <section class="panel">
         <h2 class="panel__head">Tồn kho
           <span class="panel__note">số sống — trừ khi chốt đơn, trả khi huỷ</span></h2>
         <div class="filterbar" id="khofilter">
@@ -422,6 +436,93 @@
         <h2 class="panel__head">Sổ biến động
           <span class="panel__note">mọi lần cộng trừ đều có lý do và mã đơn</span></h2>
         <div id="khoSo" class="rows"></div>
+      </section>
+    </section>
+
+    <!-- ============ CÔNG VIỆC ============
+         Gộp "Ca trực" và "Công việc" (phiếu việc 20.11.2026). Tab đầu là
+         màn Ca trực cũ nguyên vẹn, thêm ba khối tổng quan. -->
+    <section class="view" data-view="congviec">
+      <div class="tabbar" role="tablist" aria-label="Công việc">
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cv-ca-truc" aria-controls="cv-ca-truc" aria-selected="false">Tổng quan ca trực</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cv-danh-sach" aria-controls="cv-danh-sach" aria-selected="false">Danh sách công việc<b id="c-congviec" class="rail__count"></b></button>
+      </div>
+      <section class="tabpanel" id="cv-ca-truc" data-gan="cv-ca-truc" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <div class="readout" id="readout"></div>
+          <!-- Ca của tôi. Ẩn khi người này chưa xếp ca nào (luôn trực — không có
+               gì để nói). Hiện khi NGOÀI ca: người trực cần biết vì sao không
+               được chia hội thoại mới, thay vì tưởng hệ thống hỏng. -->
+          <p class="panel__note ca-cua-toi" id="caCuaToi" hidden></p>
+          <!-- Thông báo trên máy người trực khi có khách cần người. Trình duyệt
+               chỉ cho xin quyền khi người dùng BẤM, nên phải có nút. Ẩn khi đã
+               bật, hoặc trình duyệt không hỗ trợ. -->
+          <p class="panel__note" id="batThongBao" hidden></p>
+
+          <!-- HAI Ô BÁO ĐỘNG Ở TRÊN TRƯỚC ĐÂY LÀ NGÕ CỤT.
+               Người trực thấy "Tin KHÔNG gửi được: 3" rồi không đi đâu được —
+               API đã có đủ từ lâu (liệt kê, thử lại, bỏ qua) nhưng không màn
+               hình nào gọi tới. Chuông kêu mà không có cửa thì chỉ tạo ra thói
+               quen bỏ qua chuông.
+
+               Cả hai panel ẩn khi không có gì: một bảng lúc nào cũng hiện
+               "không có" là một bảng người ta thôi đọc. -->
+          <section class="panel is-hidden" id="pnChet">
+            <h2 class="panel__head">Tin KHÔNG gửi được
+              <span class="panel__note" id="chetNote">khách không nhận được · thử lại hoặc bỏ qua</span></h2>
+            <div id="dsChet" class="rows"></div>
+          </section>
+
+          <section class="panel is-hidden" id="pnVoChu">
+            <h2 class="panel__head">Khách chưa có chủ
+              <span class="panel__note" id="voChuNote">chưa ai chịu trách nhiệm · giao cho một người</span></h2>
+            <div id="dsVoChu" class="rows"></div>
+          </section>
+
+          <!-- BA KHỐI CỦA TỔNG QUAN CA TRỰC (phiếu việc 20.11.2026): ai đang trong
+               ca, hội thoại chưa ai nhận, hội thoại quá hạn SLA. Dùng lại đúng API
+               của Lịch ca và bộ lọc hộp thư — không có con số nào tính riêng ở đây.
+               Mỗi khối tự ẩn khi người xem không có quyền đọc nguồn của nó. -->
+          <div class="split">
+            <section class="panel" id="cvTrongCaPanel" hidden>
+              <h2 class="panel__head">Nhân viên trong ca
+                <span class="panel__note" id="cvTrongCaDem"></span></h2>
+              <div id="cvTrongCa" class="rows"><p class="empty">Đang tải…</p></div>
+            </section>
+            <section class="panel" id="cvChuaGiaoPanel">
+              <h2 class="panel__head">Hội thoại chưa ai nhận
+                <span class="panel__note">mở hội thoại để nhận hoặc giao</span></h2>
+              <div id="cvChuaGiao" class="rows"><p class="empty">Đang tải…</p></div>
+            </section>
+          </div>
+          <section class="panel" id="cvSlaPanel">
+            <h2 class="panel__head">Cảnh báo SLA
+              <span class="panel__note">hội thoại đang quá hạn trả lời hoặc xử lý</span></h2>
+            <div id="cvSla" class="rows"><p class="empty">Đang tải…</p></div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Chờ người xử lý</h2>
+            <div id="queue" class="rows"></div>
+          </section>
+        </div>
+      </section>
+      <section class="tabpanel" id="cv-danh-sach" data-gan="cv-danh-sach" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Công việc
+              <span class="panel__note">việc chưa giao hiện với mọi người · agent chuyển người thì tự sinh một việc</span>
+              <button type="button" id="cv-them" class="btn btn--sm">Thêm việc</button></h2>
+            <div class="filterbar" id="cv-loc" role="group" aria-label="Lọc công việc">
+              <button type="button" class="chip is-on" data-cvloc="">Tất cả</button>
+              <button type="button" class="chip" data-cvloc="moi">Mới</button>
+              <button type="button" class="chip" data-cvloc="dang_lam">Đang làm</button>
+              <button type="button" class="chip" data-cvloc="xong">Xong</button>
+              <button type="button" class="chip" data-cvtoi="1">Việc của tôi</button>
+            </div>
+            <div id="cv-ds" class="rows"><p class="empty">Đang tải…</p></div>
+          </section>
+        </div>
       </section>
     </section>
 
@@ -508,1065 +609,1163 @@
         <div class="bang-cuon"><table class="bang" id="ptTin"></table></div>
       </section>
 
-      <section class="panel">
-        <h2 class="panel__head">Sức khoẻ hệ thống
-          <span class="panel__note">gọi thật từng thứ · mất vài giây</span>
-          <button type="button" id="healthrun" class="btn btn--sm">Kiểm tra</button></h2>
-        <div id="health" class="rows">
-          <p class="empty">Bấm <b>Kiểm tra</b> để xem mọi mảnh có đang phục vụ được không.</p>
-        </div>
-      </section>
     </section>
 
-    <!-- ============ TRI THỨC ============ -->
-    <section class="view" data-view="trithuc">
-      <div class="split">
-        <section class="panel">
-          <h2 class="panel__head">Nạp tài liệu</h2>
-          <form id="docform" class="form">
-            <input type="hidden" name="document_id">
-            <label class="field field--wide">
-              <span>Kho tri thức của tài khoản</span>
-              <select name="account_id" id="knowledge-account" required></select>
-            </label>
-            <label class="field field--wide">
-              <span>Tên tài liệu</span>
-              <input name="title" required maxlength="200" placeholder="Chính sách bảo hành 2026">
-            </label>
-            <label class="field field--wide">
-              <span>Nội dung</span>
-              <textarea name="text" required rows="8" minlength="20"
-                placeholder="Dán nội dung tài liệu vào đây. Cách nhau một dòng trống giữa các đoạn để hệ thống cắt đúng ngữ nghĩa."></textarea>
-            </label>
-            <div class="rowbtns">
-              <button type="submit" class="btn btn--primary" id="docsave">Lưu Draft</button>
-              <button type="button" class="btn btn--sm" id="docnew">Draft mới</button>
-            </div>
-          </form>
-        </section>
-        <section class="panel">
-          <h2 class="panel__head">Thử truy vấn</h2>
-          <p class="panel__note">Kiểm tra agent tìm được gì, không tốn lượt gọi model.</p>
-          <form id="probeform" class="form">
-            <input type="hidden" name="account_id">
-            <label class="field field--wide">
-              <span>Câu hỏi của khách</span>
-              <input name="question" required placeholder="Sản phẩm này dùng được cho da nhạy cảm không?">
-            </label>
-            <button type="submit" class="btn">Tìm</button>
-          </form>
-          <div id="probe" class="rows"></div>
-        </section>
+    <!-- ============ CÀI ĐẶT · CẤU HÌNH CHUNG ============
+         Thiết lập VẬN HÀNH và KẾT NỐI. Cấu hình AI, nhân sự, giám sát hệ
+         thống nằm ở ba màn anh em — không khối nào xuất hiện hai nơi. -->
+    <section class="view" data-view="cauhinhchung">
+      <div class="tabbar" role="tablist" aria-label="Cấu hình chung">
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cc-nhan" aria-controls="cc-nhan" aria-selected="false">Quản lý nhãn</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cc-tu-dong" aria-controls="cc-tu-dong" aria-selected="false">Tin nhắn &amp; Quy tắc tự động</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cc-ket-noi" aria-controls="cc-ket-noi" aria-selected="false">Kết nối &amp; Tích hợp</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cc-sla" aria-controls="cc-sla" aria-selected="false">SLA &amp; Giờ làm việc</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="cc-dieu-phoi" aria-controls="cc-dieu-phoi" aria-selected="false">Điều phối hội thoại</button>
       </div>
-      <section class="panel">
-        <h2 class="panel__head">Tài liệu và phiên bản</h2>
-        <div id="docs" class="rows"></div>
-        <div id="docversions" class="rows"></div>
-      </section>
-    </section>
-
-    <!-- ============ PHÒNG THỬ AGENT ============ -->
-    <section class="view" data-view="phongthu">
-      <div class="split">
-        <section class="panel">
-          <h2 class="panel__head">Nhắn thử như khách</h2>
-          <p class="panel__note">Chạy agent thật, nhưng đơn và yêu cầu huỷ/đổi chỉ được MÔ PHỎNG. Tốn tiền model theo trần riêng.</p>
-          <div id="phongthu-chat" class="thread"></div>
-          <form id="phongthu-form" class="form">
-            <label class="field field--wide">
-              <span>Khách nhắn</span>
-              <textarea name="cau_hoi" rows="2" maxlength="2000" placeholder="Em da dầu, nên dùng gì ạ?"></textarea>
-            </label>
-            <div class="rowbtns">
-              <button type="submit" class="btn btn--primary">Gửi</button>
-              <button type="button" class="btn btn--sm" id="phongthu-moi">Phiên mới</button>
-              <button type="button" class="btn btn--sm" id="phongthu-xoa">Xoá phiên</button>
-              <span id="phongthu-ngansach" class="panel__note"></span>
-            </div>
-          </form>
-          <h3 class="panel__head">Gợi ý từ bộ câu vàng</h3>
-          <div id="phongthu-goiy" class="rows"></div>
-        </section>
-        <section class="panel">
-          <h2 class="panel__head">Bên trong lượt vừa rồi</h2>
-          <div id="phongthu-bentrong"><p class="empty">Chưa có lượt nào.</p></div>
-        </section>
-      </div>
-    </section>
-
-    <!-- ============ CẤU HÌNH AGENT ============ -->
-    <section class="view" data-view="cauhinh">
-      <!-- MẪU TRẢ LỜI NHANH. Người trực gõ "/" + mã tắt trong ô nhắn tin.
-           Máy chủ CHẶN mẫu có cụm cấm quảng cáo mỹ phẩm — một mẫu sai là
-           vi phạm nhân lên theo số lần cả cửa hàng dùng nó. -->
-      <section class="panel">
-        <h2 class="panel__head">Mẫu trả lời nhanh
-          <span class="panel__note">gõ <b>/</b> + mã tắt trong ô nhắn tin</span></h2>
-        <div id="mauNhanhDs" class="rows"></div>
-        <form id="mauNhanhForm" class="form" hidden>
-          <input type="hidden" name="mau_id">
-          <div class="form__row">
-            <label class="field"><span>Mã tắt</span>
-              <input name="ma_tat" placeholder="ship" maxlength="32"
-                     pattern="[a-z0-9_\-]{1,32}" required
-                     title="chữ thường không dấu, số, gạch ngang hoặc gạch dưới"></label>
-          </div>
-          <label class="field"><span>Nội dung</span>
-            <textarea name="noi_dung" rows="3" maxlength="2000" required
-                      placeholder="Dạ shop giao toàn quốc, phí ship 30.000đ ạ."></textarea></label>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Lưu mẫu</button>
-            <button type="button" class="btn btn--sm" id="mauNhanhHuy">Bỏ sửa</button>
-          </div>
-        </form>
-      </section>
-
-      <!-- QUY TẮC TỰ ĐỘNG: khi khách nhắn → nếu thoả điều kiện → làm hành động.
-           Chỉ chọn trong danh sách đóng (agent/omnichannel/tu_dong.py) — không
-           gọi URL, không chạy mã. Gửi tin CHỈ bằng mẫu trả lời nhanh ở trên,
-           nên mọi câu tự động gửi đều đã qua bộ soi cụm cấm quảng cáo. -->
-      <section class="panel">
-        <h2 class="panel__head">Quy tắc tự động
-          <span class="panel__note">khi khách nhắn → nếu … → thì …</span></h2>
-        <p class="panel__note">
-          Chạy <b>trước</b> agent, theo thứ tự số nhỏ trước. Gửi mẫu và tạo việc chỉ
-          làm <b>một lần mỗi hội thoại</b> — khách nhắn mười tin không nhận mười câu chào.
-        </p>
-        <div id="qtDs" class="rows"></div>
-        <form id="qtForm" class="form" hidden>
-          <input type="hidden" name="qt_id">
-          <div class="form__row">
-            <label class="field"><span>Tên quy tắc</span>
-              <input name="ten" maxlength="80" required placeholder="Chào khách ngoài giờ"></label>
-            <label class="field"><span>Thứ tự <em class="hint">nhỏ chạy trước</em></span>
-              <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
-            <label class="quyen__o"><input name="bat" type="checkbox" checked> Đang bật</label>
-          </div>
-          <h3 class="panel__head qt__muc">Nếu <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
-          <div class="field field--wide"><span>Kênh <em class="hint">không chọn = mọi kênh</em></span>
-            <span class="tk__nhieu" id="qtKenh"></span></div>
-          <div class="form__row">
-            <label class="field"><span>Tin có chứa một trong các từ <em class="hint">cách nhau bằng dấu phẩy, không phân biệt dấu</em></span>
-              <input name="chua_tu" placeholder="đổi trả, hoàn tiền, khiếu nại"></label>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Giờ làm việc</span>
-              <select name="ngoai_gio">
-                <option value="">bất kỳ lúc nào</option>
-                <option value="true">chỉ NGOÀI giờ làm việc</option>
-                <option value="false">chỉ TRONG giờ làm việc</option>
-              </select></label>
-            <label class="field"><span>Tin đầu tiên</span>
-              <select name="lan_dau">
-                <option value="">bất kỳ tin nào</option>
-                <option value="true">chỉ tin ĐẦU TIÊN của khách</option>
-                <option value="false">không phải tin đầu tiên</option>
-              </select></label>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Hội thoại CÓ nhãn</span>
-              <input name="nhan_co" maxlength="40" placeholder="vip"></label>
-            <label class="field"><span>Hội thoại CHƯA có nhãn</span>
-              <input name="nhan_khong" maxlength="40" placeholder="đã chào"></label>
-          </div>
-          <h3 class="panel__head qt__muc">Thì <span class="panel__note">điền ít nhất một</span></h3>
-          <div class="form__row">
-            <label class="field"><span>Gắn nhãn</span>
-              <input name="hd_gan_nhan" maxlength="40" placeholder="ngoài giờ"></label>
-            <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt</em></span>
-              <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
-            <datalist id="qtMauDs"></datalist>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
-              <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả"></label>
-            <label class="field"><span>Chuyển người, agent không trả lời <em class="hint">lý do</em></span>
-              <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Lưu quy tắc</button>
-            <button type="button" class="btn btn--sm" id="qtHuy">Bỏ sửa</button>
-          </div>
-        </form>
-        <h3 class="panel__head">Lần chạy gần đây</h3>
-        <div id="qtLanChay" class="rows"></div>
-      </section>
-
-      <!-- ĐỊNH TUYẾN TỰ ĐỘNG.
-           `AutoRoutingWorker` chạy nền từ lâu, nhưng không màn hình nào tạo
-           được đội hay luật — nên nó chạy mỗi vòng, không tìm thấy luật nào,
-           và không làm gì. Cả một hệ thống con nằm ngủ mà không ai biết là
-           nó có tồn tại.
-
-           Đây KHÔNG thay cho "giao khách cho nhân viên": giao khách là gán
-           MỘT KHÁCH lâu dài cho một người; định tuyến là chia TỪNG HỘI
-           THOẠI mới cho người đang rảnh trong đội. -->
-      <section class="panel">
-        <h2 class="panel__head">Định tuyến tự động
-          <span class="panel__note" id="dtTrangThai">đang tải…</span></h2>
-        <p class="panel__note">
-          Chia hội thoại mới cho người đang rảnh trong một <b>đội</b>. Chưa có
-          luật nào thì bộ định tuyến <b>không làm gì cả</b> — hội thoại nằm
-          chờ người tự nhận, đúng như trước.
-        </p>
-        <div id="dtDoi" class="rows"></div>
-        <!-- Người trong đội mà không ở trong kênh thì KHÔNG BAO GIỜ được
-             giao — bộ định tuyến lọc qua account_memberships. Máy chủ tính
-             sẵn danh sách này; ở đây chỉ hiện, không đoán. -->
-        <div id="dtCanhBao" class="rows"></div>
-
-        <form id="dtFormDoi" class="form">
-          <div class="form__row">
-            <label class="field"><span>Tên đội mới</span>
-              <input name="name" placeholder="Ca sáng" required></label>
-            <label class="field"><span>Mô tả</span>
-              <input name="description" placeholder="Trực 8h–14h"></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Tạo đội</button>
-          </div>
-        </form>
-
-        <h2 class="panel__head">Thành viên đội
-          <span class="panel__note">người này còn phải là thành viên KÊNH (Nhân sự → Kênh) mới được giao</span></h2>
-        <form id="dtFormNguoi" class="form">
-          <div class="form__row">
-            <label class="field"><span>Đội</span>
-              <select name="team_id" id="dtChonDoi" required></select></label>
-            <label class="field"><span>Nhân viên</span>
-              <select name="user_id" id="dtChonNguoi" required></select></label>
-            <label class="field"><span>Tối đa cùng lúc</span>
-              <input name="max_active" type="number" min="1" max="500" value="20"></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm">Thêm vào đội</button>
-          </div>
-        </form>
-
-        <h2 class="panel__head">Luật chia việc
-          <span class="panel__note">luật hẹp thắng luật rộng; cùng độ hẹp thì trọng số cao thắng</span></h2>
-        <div id="dtLuat" class="rows"></div>
-        <form id="dtFormLuat" class="form">
-          <div class="form__row">
-            <label class="field"><span>Hội thoại của kênh</span>
-              <select name="account_id" id="dtChonKenh"></select></label>
-            <label class="field"><span>Giao cho đội</span>
-              <select name="team_id" id="dtLuatDoi" required></select></label>
-            <label class="field"><span>Chỉ mức ưu tiên</span>
-              <select name="priority">
-                <option value="">mọi mức</option>
-                <option value="low">thấp</option>
-                <option value="normal">thường</option>
-                <option value="high">cao</option>
-                <option value="urgent">gấp</option>
-              </select></label>
-            <label class="field"><span>Trọng số</span>
-              <input name="weight" type="number" min="1" max="10000" value="100"></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Tạo luật</button>
-          </div>
-        </form>
-
-        <h2 class="panel__head">Hạn trả lời (SLA)
-          <span class="panel__note">chỉ để ĐO và cảnh báo — không tự đóng hội thoại</span></h2>
-        <div id="dtSla" class="rows"></div>
-        <form id="dtFormSla" class="form">
-          <div class="form__row">
-            <label class="field"><span>Kênh</span>
-              <select name="account_id" id="dtSlaKenh"></select></label>
-            <label class="field"><span>Mức ưu tiên</span>
-              <select name="priority">
-                <option value="normal">thường</option>
-                <option value="low">thấp</option>
-                <option value="high">cao</option>
-                <option value="urgent">gấp</option>
-              </select></label>
-            <label class="field"><span>Trả lời đầu trong (phút)</span>
-              <input name="first_response_minutes" type="number" min="1" max="43200" value="15" required></label>
-            <label class="field"><span>Xử lý xong trong (phút)</span>
-              <input name="resolution_minutes" type="number" min="1" max="525600" value="1440" required></label>
-            <!-- Giờ riêng của chính sách (business_hours). Chỉ có tác dụng khi
-                 bật SLA_THEO_GIO_LAM_VIEC; để trống = dùng giờ chung. -->
-            <label class="field"><span>Giờ mở riêng <em class="hint">trống = giờ chung</em></span>
-              <input name="bat_dau" type="number" min="0" max="23" placeholder="vd 8"></label>
-            <label class="field"><span>Giờ đóng riêng</span>
-              <input name="ket_thuc" type="number" min="1" max="24" placeholder="vd 21"></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm">Lưu SLA</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Nhân viên thấy khách của nhau tới đâu
-          <span class="panel__note">áp dụng ngay, không cần khởi động lại</span></h2>
-        <p class="panel__note">
-          Chỉ có tác dụng với khách <b>đã được giao</b> cho ai đó. Khách chưa
-          giao luôn là của chung — mọi nhân viên đều thấy và trả lời được, ở
-          cả bốn mức. Quản trị và người có quyền <code>khach.xem_tat_ca</code>
-          không bị mức nào hạn chế.
-        </p>
-        <div id="tamnhin" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Hồ sơ agent
-          <span class="panel__note" id="hsa-toancuc"></span>
-          <button type="button" id="hsa-them" class="btn btn--sm">Thêm hồ sơ</button></h2>
-        <p class="panel__note">
-          Mỗi hồ sơ là một cách nói và hai ngưỡng vận hành, gán cho từng
-          kênh ở màn <b>Kết nối</b>. Ngưỡng ở đây chỉ <b>siết thêm</b> được:
-          đặt lỏng hơn ngưỡng toàn cục thì hệ thống vẫn chạy bằng ngưỡng
-          toàn cục, và cột <i>hiệu lực</i> nói rõ con số thật sự đang dùng.
-          Hướng dẫn ở đây là phần <b>thêm vào</b> — nó không thay được các
-          câu cấm trong prompt gốc.
-        </p>
-        <!-- Form thay cho năm hộp prompt() nối nhau. Hướng dẫn tới 4000 ký
-             tự không viết được trong một ô prompt một dòng, và bấm Huỷ ở hộp
-             thứ tư là mất sạch ba hộp trước. -->
-        <form id="hsaForm" class="form is-hidden">
-          <!-- Không đặt name="id": `form.id` là thuộc tính id của chính form,
-               ô nhập tên "id" bị nó che mất và đọc ra chuỗi "hsaForm". -->
-          <input type="hidden" name="ho_so_id">
-          <div class="form__row">
-            <label class="field"><span>Tên hồ sơ</span>
-              <input name="ten" required maxlength="80" placeholder="Bán hàng Zalo"></label>
-            <label class="field"><span>Dành cho kênh nào</span>
-              <input name="mo_ta" maxlength="500" placeholder="Khách Zalo OA, chủ yếu hỏi giá"></label>
-          </div>
-          <label class="field field--wide"><span>Hướng dẫn thêm cho agent ở kênh này</span>
-            <textarea name="huong_dan" rows="4" maxlength="4000"
-              placeholder="Xưng 'shop', gọi khách là 'chị'. Luôn hỏi loại da trước khi gợi ý sản phẩm."></textarea></label>
-          <div class="form__row">
-            <label class="field"><span>Ngưỡng tự tin (0–1)</span>
-              <input name="nguong_tu_tin" type="number" min="0" max="1" step="0.05" placeholder="để trống = toàn cục"></label>
-            <label class="field"><span>Trần chi phí mỗi hội thoại (USD)</span>
-              <input name="tran_chi_phi" type="number" min="0.01" max="5" step="0.01" placeholder="để trống = toàn cục"></label>
-            <label class="quyen__o"><input type="checkbox" name="bat" value="1" checked>
-              <span>Đang bật</span></label>
-          </div>
-          <p class="panel__note" id="hsaGhiChu">Ngưỡng chỉ siết thêm được: đặt lỏng hơn toàn cục thì hệ thống vẫn chạy bằng toàn cục.</p>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Lưu hồ sơ</button>
-            <button type="button" class="btn btn--sm btn--ghost" id="hsaHuy">Huỷ</button>
-          </div>
-        </form>
-        <div id="hsa-ds" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Trường thông tin khách
-          <span class="panel__note" id="truong-dem"></span>
-          <button type="button" id="truong-them" class="btn btn--sm">Thêm trường</button></h2>
-        <p class="panel__note">
-          Thêm ở đây thì ô nhập hiện ngay trong hồ sơ mọi khách. Kiểu được
-          kiểm ở máy chủ, không chỉ ở giao diện — gõ chữ vào ô số thì bị từ
-          chối kèm lý do, chứ không lặng lẽ lưu một ô rỗng.
-        </p>
-        <!-- Kiểu là ô CHỌN, không phải prompt bắt gõ "chon" hay "nhieu_chon":
-             gõ sai một chữ là máy chủ từ chối với một câu người vận hành
-             không hiểu vì sao. Khi sửa, mã và kiểu bị khoá — máy chủ cũng
-             không cho đổi (xem TruongSuaIn). -->
-        <form id="truongForm" class="form is-hidden">
-          <div class="form__row">
-            <label class="field"><span>Mã trường <em class="hint">chữ thường không dấu</em></span>
-              <input name="ma" required maxlength="40" pattern="[a-z][a-z0-9_]*" placeholder="loai_da" autocomplete="off"></label>
-            <label class="field"><span>Nhãn hiện cho người dùng</span>
-              <input name="nhan" required maxlength="80" placeholder="Loại da"></label>
-            <label class="field"><span>Kiểu</span>
-              <select name="kieu" id="truongKieu"></select></label>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Các lựa chọn <em class="hint">cách nhau bằng dấu phẩy, chỉ cho kiểu chọn</em></span>
-              <input name="lua_chon" placeholder="dầu, khô, hỗn hợp, nhạy cảm"></label>
-            <label class="field"><span>Gợi ý trong ô nhập</span>
-              <input name="goi_y" maxlength="300" placeholder="Hỏi khách khi tư vấn lần đầu"></label>
-            <label class="field"><span>Thứ tự</span>
-              <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
-          </div>
-          <div class="form__row">
-            <label class="quyen__o"><input type="checkbox" name="bat_buoc" value="1">
-              <span>Bắt buộc phải điền</span></label>
-            <label class="quyen__o"><input type="checkbox" name="hien_danh_sach" value="1">
-              <span>Hiện ở danh sách khách</span></label>
-          </div>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--sm btn--primary">Lưu trường</button>
-            <button type="button" class="btn btn--sm btn--ghost" id="truongHuy">Huỷ</button>
-          </div>
-        </form>
-        <div id="truong-ds" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-
-      <section class="panel" id="api-panel">
-        <h2 class="panel__head">Cài đặt API
-          <span class="panel__note" id="api-vault"></span></h2>
-        <p class="panel__note">
-          Khoá dán ở đây được mã hoá trong cơ sở dữ liệu và có hiệu lực ngay,
-          không cần khởi động lại. Khoá không bao giờ hiện lại — chỉ bốn ký tự
-          cuối. Chưa đặt ở đây thì hệ thống dùng <code>.env</code>. Bấm
-          <b>Kiểm tra</b> trước khi <b>Lưu</b>: kiểm chạy bằng đúng thứ bạn
-          vừa gõ.
-        </p>
-        <div id="api-nhom" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Cấu hình agent
-          <span class="panel__note" id="cauhinh-luu">sống qua khởi động lại</span></h2>
-        <p class="panel__note">
-          Đổi ở đây có hiệu lực từ tin nhắn kế tiếp, và được ghi xuống cơ sở
-          dữ liệu — khởi động lại máy chủ không làm mất.
-        </p>
-        <div id="cauhinh-ds" class="rows"><p class="empty">Đang tải…</p></div>
-        <div class="rowbtns" style="margin-top:.9rem">
-          <button type="button" class="btn btn--halt" id="cauhinh-macdinh">
-            Quay về mặc định</button>
+      <section class="tabpanel" id="cc-nhan" data-gan="cc-nhan" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Quản lý nhãn</h2>
+            <p class="empty tab__cho">Nhãn đang được gắn và lọc ngay trong từng hội thoại (màn Hội thoại). Màn quản lý nhãn tập trung đang được hoàn thiện.</p>
+          </section>
         </div>
-      </section>
-
-      <div class="split">
         <section class="panel">
-          <h2 class="panel__head">Ai đổi gì, lúc nào</h2>
+          <h2 class="panel__head">Trường thông tin khách
+            <span class="panel__note" id="truong-dem"></span>
+            <button type="button" id="truong-them" class="btn btn--sm">Thêm trường</button></h2>
           <p class="panel__note">
-            Cấu hình đổi được mà không truy được ai đổi thì lúc có sự cố
-            không dựng lại được chuyện gì đã xảy ra.
+            Thêm ở đây thì ô nhập hiện ngay trong hồ sơ mọi khách. Kiểu được
+            kiểm ở máy chủ, không chỉ ở giao diện — gõ chữ vào ô số thì bị từ
+            chối kèm lý do, chứ không lặng lẽ lưu một ô rỗng.
           </p>
-          <div id="cauhinh-lichsu" class="rows"></div>
+          <!-- Kiểu là ô CHỌN, không phải prompt bắt gõ "chon" hay "nhieu_chon":
+               gõ sai một chữ là máy chủ từ chối với một câu người vận hành
+               không hiểu vì sao. Khi sửa, mã và kiểu bị khoá — máy chủ cũng
+               không cho đổi (xem TruongSuaIn). -->
+          <form id="truongForm" class="form is-hidden">
+            <div class="form__row">
+              <label class="field"><span>Mã trường <em class="hint">chữ thường không dấu</em></span>
+                <input name="ma" required maxlength="40" pattern="[a-z][a-z0-9_]*" placeholder="loai_da" autocomplete="off"></label>
+              <label class="field"><span>Nhãn hiện cho người dùng</span>
+                <input name="nhan" required maxlength="80" placeholder="Loại da"></label>
+              <label class="field"><span>Kiểu</span>
+                <select name="kieu" id="truongKieu"></select></label>
+            </div>
+            <div class="form__row">
+              <label class="field"><span>Các lựa chọn <em class="hint">cách nhau bằng dấu phẩy, chỉ cho kiểu chọn</em></span>
+                <input name="lua_chon" placeholder="dầu, khô, hỗn hợp, nhạy cảm"></label>
+              <label class="field"><span>Gợi ý trong ô nhập</span>
+                <input name="goi_y" maxlength="300" placeholder="Hỏi khách khi tư vấn lần đầu"></label>
+              <label class="field"><span>Thứ tự</span>
+                <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
+            </div>
+            <div class="form__row">
+              <label class="quyen__o"><input type="checkbox" name="bat_buoc" value="1">
+                <span>Bắt buộc phải điền</span></label>
+              <label class="quyen__o"><input type="checkbox" name="hien_danh_sach" value="1">
+                <span>Hiện ở danh sách khách</span></label>
+            </div>
+            <div class="row__nut">
+              <button type="submit" class="btn btn--sm btn--primary">Lưu trường</button>
+              <button type="button" class="btn btn--sm btn--ghost" id="truongHuy">Huỷ</button>
+            </div>
+          </form>
+          <div id="truong-ds" class="rows"><p class="empty">Đang tải…</p></div>
         </section>
-
-        <section class="panel">
-          <h2 class="panel__head">Không chỉnh được ở đây</h2>
-          <p class="panel__note">
-            Ba thứ sau cố ý nằm trong mã, không phải trên giao diện — sửa
-            được từ dashboard thì sẽ có ngày ai đó sửa.
-          </p>
-          <div class="rows">
-            <div class="row"><span class="row__flag"></span><span class="row__body">
-              <span class="row__title">Sáu lớp lưới an toàn</span>
-              <span class="row__sub">Trần chi phí · quét injection · ngưỡng tin cậy ·
-                từ khoá bắt buộc chuyển người · hứa mà không làm · chẩn đoán y tế.
-                <code>agent/core/agent.py</code></span>
-            </span></div>
-            <div class="row"><span class="row__flag"></span><span class="row__body">
-              <span class="row__title">Prompt hệ thống</span>
-              <span class="row__sub">Ô nhập tự do đi thẳng vào prompt là một
-                đường prompt injection do chính người trong nhà mở.
-                <code>agent/prompts/system.md</code></span>
-            </span></div>
-            <div class="row"><span class="row__flag"></span><span class="row__body">
-              <span class="row__title">Host cho phép gọi ra ngoài</span>
-              <span class="row__sub">Sửa được từ dashboard thì chiếm một tài
-                khoản quản trị là chiếm luôn đường ra mạng.
-                <code>KY_NANG_HOST_CHO_PHEP</code> trong <code>.env</code></span>
-            </span></div>
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <!-- ============ KỸ NĂNG (SKILL) VÀ PLUGIN ============ -->
-    <section class="view" data-view="kynang">
-      <!-- KHỐI 1 · agent đang làm được gì. MỘT danh sách cho cả bốn nguồn:
-           viết sẵn, tự tạo, của gói, của máy chủ MCP. Ba danh sách rời thì
-           không chỗ nào hiện được tổng suất cắm thêm, mà trần 12 lại đếm
-           chung — người vận hành chỉ biết mình chạm trần lúc bị từ chối. -->
-      <section class="panel">
-        <h2 class="panel__head">Kỹ năng agent đang có
-          <span class="panel__note" id="kynang-dem"></span></h2>
-        <p class="panel__note">
-          Tắt một kỹ năng KHÔNG làm agent im lặng về việc đó — nó chuyển hội
-          thoại cho người. Đọc cột “tắt thì mất gì” trước khi bấm.
-        </p>
-        <div class="chips" id="kynang-loc" aria-label="Lọc theo nguồn">
-          <button type="button" class="chip is-on" data-loc-nguon="tat-ca">Tất cả</button>
-          <button type="button" class="chip" data-loc-nguon="viet-san">Viết sẵn</button>
-          <button type="button" class="chip" data-loc-nguon="tu-tao">Tự tạo</button>
-          <button type="button" class="chip" data-loc-nguon="goi">Từ gói</button>
-          <button type="button" class="chip" data-loc-nguon="mcp">Từ MCP</button>
-        </div>
-        <div id="kynang-tatca" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
+      <section class="tabpanel" id="cc-tu-dong" data-gan="cc-tu-dong" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <!-- MẪU TRẢ LỜI NHANH. Người trực gõ "/" + mã tắt trong ô nhắn tin.
+               Máy chủ CHẶN mẫu có cụm cấm quảng cáo mỹ phẩm — một mẫu sai là
+               vi phạm nhân lên theo số lần cả cửa hàng dùng nó. -->
+          <section class="panel">
+            <h2 class="panel__head">Mẫu trả lời nhanh
+              <span class="panel__note">gõ <b>/</b> + mã tắt trong ô nhắn tin</span></h2>
+            <div id="mauNhanhDs" class="rows"></div>
+            <form id="mauNhanhForm" class="form" hidden>
+              <input type="hidden" name="mau_id">
+              <div class="form__row">
+                <label class="field"><span>Mã tắt</span>
+                  <input name="ma_tat" placeholder="ship" maxlength="32"
+                         pattern="[a-z0-9_\-]{1,32}" required
+                         title="chữ thường không dấu, số, gạch ngang hoặc gạch dưới"></label>
+              </div>
+              <label class="field"><span>Nội dung</span>
+                <textarea name="noi_dung" rows="3" maxlength="2000" required
+                          placeholder="Dạ shop giao toàn quốc, phí ship 30.000đ ạ."></textarea></label>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm btn--primary">Lưu mẫu</button>
+                <button type="button" class="btn btn--sm" id="mauNhanhHuy">Bỏ sửa</button>
+              </div>
+            </form>
+          </section>
 
-      <!-- KHỐI 2 · thêm cái mới thế nào. MỘT nút, ba lựa chọn, mỗi lựa chọn
-           một câu nói khi nào dùng nó. Ba form đặt cạnh nhau trông ngang
-           hàng là lý do người vận hành đứng lại ở đây. -->
-      <section class="panel">
-        <h2 class="panel__head">Thêm kỹ năng</h2>
-        <div class="chips" id="them-chon" aria-label="Cách thêm kỹ năng">
-          <button type="button" class="chip is-on" data-them="bang">Tự viết bảng hỏi đáp</button>
-          <button type="button" class="chip" data-them="goi">Cài gói có sẵn</button>
-          <button type="button" class="chip" data-them="mcp">Nối máy chủ MCP</button>
+          <!-- QUY TẮC TỰ ĐỘNG: khi khách nhắn → nếu thoả điều kiện → làm hành động.
+               Chỉ chọn trong danh sách đóng (agent/omnichannel/tu_dong.py) — không
+               gọi URL, không chạy mã. Gửi tin CHỈ bằng mẫu trả lời nhanh ở trên,
+               nên mọi câu tự động gửi đều đã qua bộ soi cụm cấm quảng cáo. -->
+          <section class="panel">
+            <h2 class="panel__head">Quy tắc tự động
+              <span class="panel__note">khi khách nhắn → nếu … → thì …</span></h2>
+            <p class="panel__note">
+              Chạy <b>trước</b> agent, theo thứ tự số nhỏ trước. Gửi mẫu và tạo việc chỉ
+              làm <b>một lần mỗi hội thoại</b> — khách nhắn mười tin không nhận mười câu chào.
+            </p>
+            <div id="qtDs" class="rows"></div>
+            <form id="qtForm" class="form" hidden>
+              <input type="hidden" name="qt_id">
+              <div class="form__row">
+                <label class="field"><span>Tên quy tắc</span>
+                  <input name="ten" maxlength="80" required placeholder="Chào khách ngoài giờ"></label>
+                <label class="field"><span>Thứ tự <em class="hint">nhỏ chạy trước</em></span>
+                  <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
+                <label class="quyen__o"><input name="bat" type="checkbox" checked> Đang bật</label>
+              </div>
+              <h3 class="panel__head qt__muc">Nếu <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
+              <div class="field field--wide"><span>Kênh <em class="hint">không chọn = mọi kênh</em></span>
+                <span class="tk__nhieu" id="qtKenh"></span></div>
+              <div class="form__row">
+                <label class="field"><span>Tin có chứa một trong các từ <em class="hint">cách nhau bằng dấu phẩy, không phân biệt dấu</em></span>
+                  <input name="chua_tu" placeholder="đổi trả, hoàn tiền, khiếu nại"></label>
+              </div>
+              <div class="form__row">
+                <label class="field"><span>Giờ làm việc</span>
+                  <select name="ngoai_gio">
+                    <option value="">bất kỳ lúc nào</option>
+                    <option value="true">chỉ NGOÀI giờ làm việc</option>
+                    <option value="false">chỉ TRONG giờ làm việc</option>
+                  </select></label>
+                <label class="field"><span>Tin đầu tiên</span>
+                  <select name="lan_dau">
+                    <option value="">bất kỳ tin nào</option>
+                    <option value="true">chỉ tin ĐẦU TIÊN của khách</option>
+                    <option value="false">không phải tin đầu tiên</option>
+                  </select></label>
+              </div>
+              <div class="form__row">
+                <label class="field"><span>Hội thoại CÓ nhãn</span>
+                  <input name="nhan_co" maxlength="40" placeholder="vip"></label>
+                <label class="field"><span>Hội thoại CHƯA có nhãn</span>
+                  <input name="nhan_khong" maxlength="40" placeholder="đã chào"></label>
+              </div>
+              <h3 class="panel__head qt__muc">Thì <span class="panel__note">điền ít nhất một</span></h3>
+              <div class="form__row">
+                <label class="field"><span>Gắn nhãn</span>
+                  <input name="hd_gan_nhan" maxlength="40" placeholder="ngoài giờ"></label>
+                <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt</em></span>
+                  <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
+                <datalist id="qtMauDs"></datalist>
+              </div>
+              <div class="form__row">
+                <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
+                  <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả"></label>
+                <label class="field"><span>Chuyển người, agent không trả lời <em class="hint">lý do</em></span>
+                  <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
+              </div>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm btn--primary">Lưu quy tắc</button>
+                <button type="button" class="btn btn--sm" id="qtHuy">Bỏ sửa</button>
+              </div>
+            </form>
+            <h3 class="panel__head">Lần chạy gần đây</h3>
+            <div id="qtLanChay" class="rows"></div>
+          </section>
         </div>
-        <p class="panel__note" id="them-giaithich"></p>
-
-        <div data-them-o="bang">
-          <div class="chips" id="plugin-mau" aria-label="Mẫu có sẵn"></div>
-          <form id="pluginform" class="form" novalidate>
-            <label class="field field--wide">
-              <span>Tên kỹ năng <em class="hint">tiếng Việt có dấu, hệ thống tự đặt mã máy</em></span>
-              <input name="nhan" required maxlength="60" placeholder="Tra bảo hành theo dòng sản phẩm" autocomplete="off">
-              <small class="field__ma">Mã máy: <code id="plugin-ma">—</code></small>
-            </label>
-
-            <label class="field field--wide">
-              <span>Kỹ năng này làm gì</span>
-              <select name="loai" id="plugin-loai"></select>
-              <small class="field__giaithich" id="plugin-loai-giaithich"></small>
-            </label>
-
-            <label class="field field--wide">
-              <span>Khi nào agent dùng, khi nào không <em class="hint">agent chọn kỹ năng DỰA TRÊN ô này · 20–600 ký tự</em></span>
-              <textarea name="mo_ta" required rows="3" minlength="20" maxlength="600"
-                placeholder="Tra thời hạn bảo hành của một dòng sản phẩm theo tên dòng. Không dùng cho câu hỏi về đổi trả."></textarea>
-            </label>
-
-            <div class="field field--wide" data-cauhinh="tra_bang">
-              <span>Bảng tra <em class="hint">khách hỏi về cột trái, agent trả lời cột phải · nhiều cách gọi thì ngăn bằng dấu | · dán thẳng từ Excel được</em></span>
-              <table class="plugin-bang" id="plugin-bang">
-                <thead><tr><th>Khách hỏi về</th><th>Agent trả lời</th><th></th></tr></thead>
-                <tbody></tbody>
-              </table>
-              <div class="rowbtns">
-                <button type="button" class="btn btn--sm" id="plugin-bang-them">+ Thêm dòng</button>
-              </div>
-            </div>
-
-            <div class="field field--wide" data-cauhinh="tra_bang">
-              <span>Câu thử <em class="hint">vài câu khách hay hỏi · chạy lại mỗi lần Lưu · để trống cột phải nghĩa là câu ấy PHẢI không khớp</em></span>
-              <table class="plugin-bang" id="plugin-cauthu">
-                <thead><tr><th>Khách hỏi</th><th>Câu trả lời phải chứa</th><th></th></tr></thead>
-                <tbody></tbody>
-              </table>
-              <div class="rowbtns">
-                <button type="button" class="btn btn--sm" id="plugin-cauthu-them">+ Thêm câu thử</button>
-              </div>
-            </div>
-
-            <div class="field field--wide" data-cauhinh="tra_tai_lieu" hidden>
-              <span>Chỉ tra trong nhóm tài liệu <em class="hint">gõ một mẩu tên tài liệu đã nạp ở màn Tri thức</em></span>
-              <input name="nhom_tai_lieu" list="plugin-nhom-ds" maxlength="100" placeholder="bao-hanh"
-                     aria-label="Nhóm tài liệu">
-              <datalist id="plugin-nhom-ds"></datalist>
-              <span>Số đoạn lấy về <em class="hint">1–8, thường để 4</em></span>
-              <!-- Khối này có HAI ô nhập nên không bọc chung một <label> được:
-                   label bọc nhiều ô chỉ gắn với ô đầu, ô sau vẫn không tên.
-                   Nhãn nhìn thấy nằm ở <span> và <span> đang mang style
-                   `.field > span`, đổi nó thành <label> là vỡ giao diện. -->
-              <input name="k" type="number" min="1" max="8" value="4"
-                     aria-label="Số đoạn tài liệu lấy về">
-            </div>
-
-            <!-- `<label>` chứ không `<div>`: khối này có đúng MỘT ô nhập nên
-                 bọc bằng label là gắn được nhãn mà không đổi gì về hình —
-                 `.field` và `.field > span` vẫn khớp y nguyên. Đây cũng là
-                 lối chung của file này (81 `label.field` so với 5 `div.field`). -->
-            <label class="field field--wide" data-cauhinh="chuyen_chuyen_biet" hidden>
-              <span>Câu người trực sẽ đọc <em class="hint">để biết vì sao hội thoại tới tay mình</em></span>
-              <input name="ly_do" maxlength="200" placeholder="Khách hỏi hợp tác bán buôn">
-            </label>
-
-            <div class="field field--wide" data-cauhinh="goi_api_doc" hidden>
-              <span>Địa chỉ cần gọi <em class="hint">bắt đầu bằng https:// · chỗ điền giá trị viết {ma} · máy chủ phải nằm trong KY_NANG_HOST_CHO_PHEP</em></span>
-              <input name="url" maxlength="400" placeholder="https://noi-bo.example.com/tra/{ma}"
-                     aria-label="Địa chỉ cần gọi">
-              <span>Chờ tối đa (giây)</span>
-              <!-- Cũng là khối hai ô — xem lý do ở khối `tra_tai_lieu` bên trên. -->
-              <input name="han_giay" type="number" min="1" max="30" value="5"
-                     aria-label="Chờ tối đa, tính bằng giây">
-            </div>
-
-            <details class="field--wide plugin-nangcao" id="plugin-nangcao">
-              <summary>Nâng cao: tham số agent điền vào</summary>
-              <div class="plugin-nangcao__o">
-                <label class="field">
-                  <span>Mã tham số</span>
-                  <input name="tham_so_ten" maxlength="30" placeholder="dong_san_pham">
-                </label>
-                <label class="field">
-                  <span>Agent điền gì vào đây</span>
-                  <input name="tham_so_mo_ta" maxlength="200" placeholder="Tên dòng sản phẩm khách hỏi">
-                </label>
+      </section>
+      <section class="tabpanel" id="cc-ket-noi" data-gan="cc-ket-noi" role="tabpanel" hidden>
+        <div class="connections-head">
+          <div><p class="eyebrow">MULTI-ACCOUNT CONNECTIONS</p><h2>Tất cả tài khoản kênh</h2>
+            <p>Mỗi tài khoản có credential, sức khỏe và luồng gửi riêng. Secret chỉ được nhập, không hiển thị lại.</p></div>
+          <button type="button" class="btn btn--primary" id="connection-add-toggle">Thêm tài khoản</button>
+        </div>
+        <!-- KẾT NỐI KÊNH: điều kiện chung → nối kênh mới → sức khoẻ từng kênh.
+             Thứ tự ấy là thứ tự người vận hành cần: thiếu địa chỉ công khai thì
+             nối gì cũng vô ích; nối xong thì câu duy nhất còn lại là "tin có về
+             không". Xem agent/omnichannel/suc_khoe_kenh.py. -->
+        <section class="panel kn-dieukien" id="kn-dieukien" aria-live="polite">
+          <p class="empty">Đang kiểm điều kiện chung…</p></section>
+        <section class="panel kn-moi">
+          <h2 class="panel__head">Nối kênh mới <span class="panel__note">mỗi nền tảng một nút — không phải dán token</span></h2>
+          <div class="kn-o">
+            <button type="button" class="kn-the" data-noi="meta">
+              <b>Facebook + Instagram</b>
+              <span>Đăng nhập Facebook, chọn Trang. Instagram Business đã liên kết Trang được nối cùng lúc.</span></button>
+            <button type="button" class="kn-the" data-noi="zalo_oa">
+              <b>Zalo OA</b>
+              <span>Đăng nhập Zalo, chọn OA. Kênh chính thức, bền lâu dài.</span></button>
+            <button type="button" class="kn-the" data-noi="zalo_personal">
+              <b>Zalo cá nhân</b>
+              <span>Đặt tên rồi quét mã QR bằng app Zalo. Không chính thức — Zalo có thể khoá nick.</span></button>
+            <button type="button" class="kn-the" data-noi="webchat">
+              <b>Chat trên website</b>
+              <span>Nhập địa chỉ website, nhận một đoạn mã dán vào website là xong.</span></button>
+            <button type="button" class="kn-the kn-the--phu" data-noi="whatsapp">
+              <b>WhatsApp</b>
+              <span>Hiện còn nhập tay từ Meta (Phone number ID, token). Nối bằng đăng nhập: sắp có.</span></button>
+          </div>
+          <div id="kn-ketqua"></div>
+        </section>
+        <section class="panel kn-suckhoe">
+          <h2 class="panel__head">Sức khoẻ kênh <span class="panel__note" id="kn-dem"></span></h2>
+          <div id="kn-suckhoe" class="rows"><p class="empty">Đang tải…</p></div>
+        </section>
+        <section class="panel connection-create is-hidden" id="connection-create">
+          <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
+          <div class="oauth-row">
+            <button type="button" class="btn btn--primary" id="btn-oauth-meta">Kết nối Facebook / Instagram bằng đăng nhập</button>
+            <span class="oauth-row__note">Chọn Trang trên Meta, hệ thống tự nhận token. Không phải dán tay.</span>
+          </div>
+          <div class="oauth-row">
+            <button type="button" class="btn btn--primary" id="btn-oauth-zalo-oa">Kết nối Zalo OA bằng cấp quyền</button>
+            <span class="oauth-row__note">Zalo hỏi bạn chọn OA, hệ thống tự nhận khoá. Xong còn một bước dán địa chỉ webhook — cửa sổ sẽ chỉ chỗ.</span>
+          </div>
+          <form id="connectionform" class="form connection-form">
+            <label class="field"><span>Kênh</span><select name="channel" required>
+              <option value="zalo_personal">Zalo cá nhân</option><option value="zalo_oa">Zalo Official Account</option>
+              <option value="facebook">Facebook Page</option><option value="instagram">Instagram</option>
+              <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
+            </select></label>
+            <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
+            <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
+            <details class="nhap-tay" id="nhap-tay">
+              <summary>Nhập thủ công</summary>
+              <div class="nhap-tay__o">
+            <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
+            <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
+            <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
+            <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
+            <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
+            <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
               </div>
             </details>
-
-            <label class="field field--wide" id="plugin-thu-o">
-              <span>Thử với câu khách hỏi</span>
-              <input name="thu_gia_tri" placeholder="Kem chống nắng" autocomplete="off">
-            </label>
-
-            <div class="rowbtns">
-              <button type="button" class="btn" id="plugin-thu">Chạy thử</button>
-              <button type="submit" class="btn btn--primary">Lưu và bật</button>
-            </div>
+            <p class="form__ketiep" id="connection-ketiep"></p>
+            <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
           </form>
-          <div id="plugin-ketqua" class="rows"></div>
-        </div>
-
-        <div data-them-o="goi" hidden>
-          <form id="goiform" class="form">
-            <label class="field field--wide">
-              <span>Dán JSON của gói</span>
-              <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
-            </label>
-            <label class="field field--wide">
-              <span>hoặc chọn tệp <em class="hint">.json, hoặc .zip theo một trong hai chuẩn</em></span>
-              <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
-              <small class="field__giaithich">
-                Zip nhận cả gói của hệ thống này (có <code>goi.json</code>) lẫn
-                chuẩn Agent Skills (có <code>SKILL.md</code> với
-                <code>name</code> và <code>description</code>). Gói theo chuẩn
-                kia mang thư mục <code>scripts/</code> sẽ bị từ chối: kỹ năng ở
-                đây là dữ liệu, không chạy mã.
-              </small>
-            </label>
-            <div class="rowbtns">
-              <button type="button" class="btn" id="goi-kiem">Kiểm</button>
-              <button type="button" class="btn btn--primary" id="goi-cai">Cài</button>
-            </div>
-          </form>
-          <div id="goi-ketqua" class="rows"></div>
-        </div>
-
-        <!-- Chỗ để sẵn cho form máy chủ MCP (Task 6 của kế hoạch MCP điền
-             vào đây, thay vì thêm một khối rời thứ tám). -->
-        <div data-them-o="mcp" hidden id="them-mcp">
-
-                    <form id="mcpform" class="form">
-                      <label class="field">
-                        <span>Tên <em class="hint">chữ thường, số, gạch dưới</em></span>
-                        <input name="ten" required pattern="[a-z][a-z0-9_]{1,19}" maxlength="20"
-                          placeholder="kho_erp" autocomplete="off">
-                      </label>
-                      <label class="field">
-                        <span>Nhãn hiển thị</span>
-                        <input name="nhan" required maxlength="60" placeholder="Kho ERP nội bộ">
-                      </label>
-                      <label class="field field--wide">
-                        <span>Địa chỉ</span>
-                        <input name="dia_chi" required maxlength="400"
-                          placeholder="https://.../mcp hoặc http://127.0.0.1:8765/mcp">
-                      </label>
-                      <label class="field field--wide">
-                        <span>Headers <em class="hint">mỗi dòng một cặp "Tên: giá trị" · được mã hoá, không hiện lại</em></span>
-                        <textarea name="headers" rows="3" placeholder="Authorization: Bearer ..."></textarea>
-                      </label>
-                      <p class="panel__note">
-                        Địa chỉ phải nằm trong <code>KY_NANG_HOST_CHO_PHEP</code> hoặc
-                        <code>MCP_MAY_CHU_NOI_BO</code> trong <code>.env</code> — cố ý
-                        không sửa được ở đây.
-                      </p>
-                      <div class="rowbtns">
-                        <button type="button" class="btn" id="mcp-kiem">Kiểm</button>
-                        <button type="button" class="btn btn--primary" id="mcp-them">Thêm</button>
-                      </div>
-                    </form>
-                    <div id="mcp-ketqua" class="rows"></div>
-        </div>
-      </section>
-
-      <!-- KHỐI 3 · nguồn tôi đã nối ra sao. Gói và máy chủ MCP nằm chung:
-           với người vận hành cả hai đều là "nơi kỹ năng đến từ", và mỗi
-           dòng mang đúng nút quản lý của loại nó. -->
-      <section class="panel">
-        <h2 class="panel__head">Nguồn đã nối
-          <span class="panel__note">gói kỹ năng và máy chủ MCP</span></h2>
-        <p class="panel__note">
-          Hướng dẫn của gói là một mẩu prompt do người trong nhà viết: nó bị
-          quét như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
-        </p>
-        <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
-        <div id="nguon-mcp">
-                    <h3 class="panel__head">Máy chủ MCP
-                      <span class="panel__note">nối máy chủ công cụ ngoài theo Model Context Protocol</span></h3>
-                    <p class="panel__note">
-                      Công cụ lấy về từ một máy chủ MCP vào thẳng danh sách plugin bên
-                      dưới, có chủ là máy chủ đã nối — giống hệt công cụ của một gói.
-                      Mặc định mọi công cụ chỉ ĐỌC; phải bật tay từng công cụ mới GHI.
-                    </p>
-                    <div id="mcp-ds" class="rows"><p class="empty">Chưa có máy chủ MCP nào.</p></div>
-        </div>
-      </section>
-    </section>
-
-    <section class="view" data-view="khachhang">
-      <!-- GỘP KHÁCH TRÙNG.
-           Một người nhắn Zalo rồi nhắn Facebook là HAI contact, và không có
-           gì tự nối chúng lại. API gộp (xem trước / gộp / hoàn tác) đã có
-           đủ từ lâu nhưng không màn hình nào gọi tới — nên trên thực tế
-           lịch sử của một khách nằm rải ở hai chỗ, vĩnh viễn.
-
-           Panel ẩn mặc định: nó là việc thỉnh thoảng mới làm, và để mở sẵn
-           thì hai ô chọn chiếm chỗ của thứ người ta nhìn hằng ngày. -->
-      <section class="panel is-hidden" id="pnGop">
-        <h2 class="panel__head">Gộp hai khách làm một
-          <span class="panel__note">hội thoại và danh tính dồn về bên GIỮ LẠI</span></h2>
-        <div class="form__row">
-          <label class="field"><span>Gộp khách này…</span>
-            <select id="gopNguon"></select></label>
-          <label class="field"><span>…vào khách này (giữ lại)</span>
-            <select id="gopDich"></select></label>
-        </div>
-        <div class="row__nut">
-          <button type="button" class="btn btn--sm" id="gopXem">Xem trước</button>
-          <button type="button" class="btn btn--sm btn--ghost" id="gopDong">Đóng</button>
-        </div>
-        <div id="gopKetQua" class="rows"></div>
-      </section>
-      <div class="customer360">
-        <aside class="panel customer360__list">
-          <h2 class="panel__head">Customer 360
-            <span class="panel__note">hợp nhất có kiểm soát</span>
-            <button type="button" class="btn btn--sm btn--ghost" id="gopMo">Gộp trùng</button></h2>
-          <form id="contactsearch" class="searchline">
-            <input name="q" maxlength="120" placeholder="Tìm theo tên…" aria-label="Tìm khách hàng">
-            <button class="btn btn--sm" type="submit">Tìm</button>
-          </form>
-          <div class="filterbar" id="contactloc" role="group" aria-label="Lọc khách theo người phụ trách">
-            <button type="button" class="chip is-on" data-chuloc="tat_ca">Tất cả<b class="chip__dem"></b></button>
-            <button type="button" class="chip" data-chuloc="cua_toi">Khách của tôi<b class="chip__dem"></b></button>
-            <button type="button" class="chip" data-chuloc="vo_chu">Chưa có chủ<b class="chip__dem"></b></button>
-          </div>
-          <!-- Thanh giao hàng loạt: chỉ hiện khi đã tick ít nhất một khách.
-           Giao từng khách bằng cách mở từng hồ sơ là việc người ta bỏ dở
-           ở khách thứ mười — và mười khách còn lại thành "vô chủ" mãi. -->
-      <div class="chonbar is-hidden" id="chonbar">
-        <span id="chonDem">Đã chọn 0</span>
-        <span class="row__nut">
-          <button type="button" class="btn btn--sm btn--primary" id="chonGiao">Giao cho…</button>
-          <button type="button" class="btn btn--sm btn--ghost" id="chonHuy">Bỏ chọn</button>
-        </span>
-      </div>
-      <div id="contactlist" class="rows"><p class="empty">Đang tải hồ sơ…</p></div>
-        </aside>
-        <section class="panel customer360__detail" id="contactdetail">
-          <p class="empty">Chọn một khách hàng để xem danh tính đa kênh, hội thoại và consent.</p>
         </section>
-      </div>
+        <div id="connectiongrid" class="connection-grid"><p class="empty">Đang tải tài khoản kênh…</p></div>
+        <section class="panel connection-guide">
+          <h2 class="panel__head">Checklist kích hoạt</h2>
+          <div class="guide-steps"><span><b>1</b> Tạo tài khoản</span><span><b>2</b> Đăng nhập/cấp quyền</span><span><b>3</b> Gắn webhook</span><span><b>4</b> Test inbound + outbound + media</span></div>
+        </section>
+        <div class="tab__goc">
+          <section class="panel" id="api-panel">
+            <h2 class="panel__head">Khoá API tích hợp
+              <span class="panel__note" id="api-vault"></span></h2>
+            <p class="panel__note">
+              Khoá dán ở đây được mã hoá trong cơ sở dữ liệu và có hiệu lực ngay,
+              không cần khởi động lại. Khoá không bao giờ hiện lại — chỉ bốn ký tự
+              cuối. Chưa đặt ở đây thì hệ thống dùng <code>.env</code>. Bấm
+              <b>Kiểm tra</b> trước khi <b>Lưu</b>: kiểm chạy bằng đúng thứ bạn
+              vừa gõ.
+            </p>
+            <div id="api-nhom" class="rows" data-api-cac-nhom="erp,van_chuyen,binh_luan"><p class="empty">Đang tải…</p></div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Kết nối kho / ERP
+              <span class="panel__note">nguồn của giá và tồn kho agent nói với khách</span>
+              <button type="button" id="erpthu" class="btn btn--sm">Thử kết nối</button></h2>
+            <div id="erpcauhinh" class="rows"></div>
+            <div id="erpketqua" class="rows"></div>
+          </section>
+
+          <!-- Ứng dụng nhúng: nối công cụ nội bộ vào thẳng dashboard -->
+          <div class="split">
+            <section class="panel">
+              <h2 class="panel__head">Ứng dụng nhúng
+                <span class="panel__note">mở ngay trong dashboard</span></h2>
+              <p class="panel__note">
+                Công cụ nội bộ nào có giao diện web đều nhúng được: Grafana,
+                Metabase, Uptime Kuma… Chỉ nhận địa chỉ trong mạng nội bộ.
+              </p>
+              <div id="tichhop-ds" class="rows"><p class="empty">Đang tải…</p></div>
+            </section>
+
+            <section class="panel">
+              <h2 class="panel__head">Thêm ứng dụng</h2>
+              <form id="tichhopform" class="form">
+                <label class="field">
+                  <span>Tên (đi vào đường dẫn)</span>
+                  <input name="ten" required maxlength="31" placeholder="grafana">
+                </label>
+                <label class="field">
+                  <span>Nhãn hiển thị</span>
+                  <input name="nhan" maxlength="60" placeholder="Grafana">
+                </label>
+                <label class="field field--wide">
+                  <span>Địa chỉ gốc</span>
+                  <input name="dia_chi" required maxlength="200"
+                    placeholder="http://127.0.0.1:3000">
+                </label>
+                <div class="rowbtns">
+                  <button type="button" class="btn" id="tichhop-thu">Thử kết nối</button>
+                  <button type="submit" class="btn btn--primary">Lưu và nhúng</button>
+                </div>
+              </form>
+              <div id="tichhop-ketqua" class="rows"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+      <section class="tabpanel" id="cc-sla" data-gan="cc-sla" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <!-- SLA tách khỏi khối định tuyến thành tab riêng; id các ô giữ nguyên nên
+               loadDinhTuyen() vẫn đổ dữ liệu vào đúng chỗ. -->
+          <section class="panel" id="slaPanel">
+            <h2 class="panel__head">Hạn trả lời (SLA)
+              <span class="panel__note">chỉ để ĐO và cảnh báo — không tự đóng hội thoại</span></h2>
+            <div id="dtSla" class="rows"></div>
+            <form id="dtFormSla" class="form">
+              <div class="form__row">
+                <label class="field"><span>Kênh</span>
+                  <select name="account_id" id="dtSlaKenh"></select></label>
+                <label class="field"><span>Mức ưu tiên</span>
+                  <select name="priority">
+                    <option value="normal">thường</option>
+                    <option value="low">thấp</option>
+                    <option value="high">cao</option>
+                    <option value="urgent">gấp</option>
+                  </select></label>
+                <label class="field"><span>Trả lời đầu trong (phút)</span>
+                  <input name="first_response_minutes" type="number" min="1" max="43200" value="15" required></label>
+                <label class="field"><span>Xử lý xong trong (phút)</span>
+                  <input name="resolution_minutes" type="number" min="1" max="525600" value="1440" required></label>
+                <!-- Giờ riêng của chính sách (business_hours). Chỉ có tác dụng khi
+                     bật SLA_THEO_GIO_LAM_VIEC; để trống = dùng giờ chung. -->
+                <label class="field"><span>Giờ mở riêng <em class="hint">trống = giờ chung</em></span>
+                  <input name="bat_dau" type="number" min="0" max="23" placeholder="vd 8"></label>
+                <label class="field"><span>Giờ đóng riêng</span>
+                  <input name="ket_thuc" type="number" min="1" max="24" placeholder="vd 21"></label>
+              </div>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm">Lưu SLA</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Khi trễ hạn SLA
+              <span class="panel__note">cảnh báo sớm và việc hệ thống làm khi quá hạn</span></h2>
+            <div id="api-nhom-sla" class="rows" data-api-cac-nhom="sla"><p class="empty">Đang tải…</p></div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Giờ làm việc chung</h2>
+            <p class="panel__note">
+              Giờ chung đặt trong <code>.env</code>: <code>GIO_LAM_VIEC_BAT_DAU</code>,
+              <code>GIO_LAM_VIEC_KET_THUC</code> (giờ Việt Nam). SLA chỉ đếm trong giờ
+              làm việc khi bật <code>SLA_THEO_GIO_LAM_VIEC</code>; giờ riêng của từng
+              chính sách đặt ở form bên trên. Quy tắc tự động "ngoài giờ" dùng cùng giờ này.
+            </p>
+          </section>
+        </div>
+      </section>
+      <section class="tabpanel" id="cc-dieu-phoi" data-gan="cc-dieu-phoi" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <!-- ĐỊNH TUYẾN TỰ ĐỘNG.
+               `AutoRoutingWorker` chạy nền từ lâu, nhưng không màn hình nào tạo
+               được đội hay luật — nên nó chạy mỗi vòng, không tìm thấy luật nào,
+               và không làm gì. Cả một hệ thống con nằm ngủ mà không ai biết là
+               nó có tồn tại.
+
+               Đây KHÔNG thay cho "giao khách cho nhân viên": giao khách là gán
+               MỘT KHÁCH lâu dài cho một người; định tuyến là chia TỪNG HỘI
+               THOẠI mới cho người đang rảnh trong đội. -->
+          <section class="panel">
+            <h2 class="panel__head">Định tuyến tự động
+              <span class="panel__note" id="dtTrangThai">đang tải…</span></h2>
+            <p class="panel__note">
+              Chia hội thoại mới cho người đang rảnh trong một <b>đội</b>. Chưa có
+              luật nào thì bộ định tuyến <b>không làm gì cả</b> — hội thoại nằm
+              chờ người tự nhận, đúng như trước.
+            </p>
+            <div id="dtDoi" class="rows"></div>
+            <!-- Người trong đội mà không ở trong kênh thì KHÔNG BAO GIỜ được
+                 giao — bộ định tuyến lọc qua account_memberships. Máy chủ tính
+                 sẵn danh sách này; ở đây chỉ hiện, không đoán. -->
+            <div id="dtCanhBao" class="rows"></div>
+
+            <form id="dtFormDoi" class="form">
+              <div class="form__row">
+                <label class="field"><span>Tên đội mới</span>
+                  <input name="name" placeholder="Ca sáng" required></label>
+                <label class="field"><span>Mô tả</span>
+                  <input name="description" placeholder="Trực 8h–14h"></label>
+              </div>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm btn--primary">Tạo đội</button>
+              </div>
+            </form>
+
+            <h2 class="panel__head">Thành viên đội
+              <span class="panel__note">người này còn phải là thành viên KÊNH (Nhân sự &amp; Phân quyền → nút Kênh) mới được giao</span></h2>
+            <form id="dtFormNguoi" class="form">
+              <div class="form__row">
+                <label class="field"><span>Đội</span>
+                  <select name="team_id" id="dtChonDoi" required></select></label>
+                <label class="field"><span>Nhân viên</span>
+                  <select name="user_id" id="dtChonNguoi" required></select></label>
+                <label class="field"><span>Tối đa cùng lúc</span>
+                  <input name="max_active" type="number" min="1" max="500" value="20"></label>
+              </div>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm">Thêm vào đội</button>
+              </div>
+            </form>
+
+            <h2 class="panel__head">Luật chia việc
+              <span class="panel__note">luật hẹp thắng luật rộng; cùng độ hẹp thì trọng số cao thắng</span></h2>
+            <div id="dtLuat" class="rows"></div>
+            <form id="dtFormLuat" class="form">
+              <div class="form__row">
+                <label class="field"><span>Hội thoại của kênh</span>
+                  <select name="account_id" id="dtChonKenh"></select></label>
+                <label class="field"><span>Giao cho đội</span>
+                  <select name="team_id" id="dtLuatDoi" required></select></label>
+                <label class="field"><span>Chỉ mức ưu tiên</span>
+                  <select name="priority">
+                    <option value="">mọi mức</option>
+                    <option value="low">thấp</option>
+                    <option value="normal">thường</option>
+                    <option value="high">cao</option>
+                    <option value="urgent">gấp</option>
+                  </select></label>
+                <label class="field"><span>Trọng số</span>
+                  <input name="weight" type="number" min="1" max="10000" value="100"></label>
+              </div>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm btn--primary">Tạo luật</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
     </section>
 
-    <!-- ============ KẾT NỐI NATIVE ============ -->
-    <section class="view" data-view="ketnoi">
-      <div class="connections-head">
-        <div><p class="eyebrow">MULTI-ACCOUNT CONNECTIONS</p><h2>Tất cả tài khoản kênh</h2>
-          <p>Mỗi tài khoản có credential, sức khỏe và luồng gửi riêng. Secret chỉ được nhập, không hiển thị lại.</p></div>
-        <button type="button" class="btn btn--primary" id="connection-add-toggle">Thêm tài khoản</button>
+    <!-- ============ CÀI ĐẶT · CẤU HÌNH AI AGENT ============
+         Model, tri thức, kỹ năng, chính sách — và nơi thử. Tri thức, Kỹ
+         năng, Phòng thử là ba màn cũ chuyển vào nguyên vẹn. -->
+    <section class="view" data-view="cauhinhai">
+      <div class="tabbar" role="tablist" aria-label="Cấu hình AI Agent">
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ai-co-ban" aria-controls="ai-co-ban" aria-selected="false">Cấu hình cơ bản<b id="c-cauhinh" class="rail__count"></b></button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ai-tri-thuc" aria-controls="ai-tri-thuc" aria-selected="false">Tri thức (RAG)<b id="c-trithuc" class="rail__count"></b></button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ai-ky-nang" aria-controls="ai-ky-nang" aria-selected="false">Kỹ năng &amp; Công cụ<b id="c-kynang" class="rail__count"></b></button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ai-chinh-sach" aria-controls="ai-chinh-sach" aria-selected="false">Chính sách &amp; Ủy quyền</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ai-phong-thu" aria-controls="ai-phong-thu" aria-selected="false">Phòng thử</button>
       </div>
-      <!-- KẾT NỐI KÊNH: điều kiện chung → nối kênh mới → sức khoẻ từng kênh.
-           Thứ tự ấy là thứ tự người vận hành cần: thiếu địa chỉ công khai thì
-           nối gì cũng vô ích; nối xong thì câu duy nhất còn lại là "tin có về
-           không". Xem agent/omnichannel/suc_khoe_kenh.py. -->
-      <section class="panel kn-dieukien" id="kn-dieukien" aria-live="polite">
-        <p class="empty">Đang kiểm điều kiện chung…</p></section>
-      <section class="panel kn-moi">
-        <h2 class="panel__head">Nối kênh mới <span class="panel__note">mỗi nền tảng một nút — không phải dán token</span></h2>
-        <div class="kn-o">
-          <button type="button" class="kn-the" data-noi="meta">
-            <b>Facebook + Instagram</b>
-            <span>Đăng nhập Facebook, chọn Trang. Instagram Business đã liên kết Trang được nối cùng lúc.</span></button>
-          <button type="button" class="kn-the" data-noi="zalo_oa">
-            <b>Zalo OA</b>
-            <span>Đăng nhập Zalo, chọn OA. Kênh chính thức, bền lâu dài.</span></button>
-          <button type="button" class="kn-the" data-noi="zalo_personal">
-            <b>Zalo cá nhân</b>
-            <span>Đặt tên rồi quét mã QR bằng app Zalo. Không chính thức — Zalo có thể khoá nick.</span></button>
-          <button type="button" class="kn-the" data-noi="webchat">
-            <b>Chat trên website</b>
-            <span>Nhập địa chỉ website, nhận một đoạn mã dán vào website là xong.</span></button>
-          <button type="button" class="kn-the kn-the--phu" data-noi="whatsapp">
-            <b>WhatsApp</b>
-            <span>Hiện còn nhập tay từ Meta (Phone number ID, token). Nối bằng đăng nhập: sắp có.</span></button>
-        </div>
-        <div id="kn-ketqua"></div>
-      </section>
-      <section class="panel kn-suckhoe">
-        <h2 class="panel__head">Sức khoẻ kênh <span class="panel__note" id="kn-dem"></span></h2>
-        <div id="kn-suckhoe" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-      <section class="panel connection-create is-hidden" id="connection-create">
-        <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
-        <div class="oauth-row">
-          <button type="button" class="btn btn--primary" id="btn-oauth-meta">Kết nối Facebook / Instagram bằng đăng nhập</button>
-          <span class="oauth-row__note">Chọn Trang trên Meta, hệ thống tự nhận token. Không phải dán tay.</span>
-        </div>
-        <div class="oauth-row">
-          <button type="button" class="btn btn--primary" id="btn-oauth-zalo-oa">Kết nối Zalo OA bằng cấp quyền</button>
-          <span class="oauth-row__note">Zalo hỏi bạn chọn OA, hệ thống tự nhận khoá. Xong còn một bước dán địa chỉ webhook — cửa sổ sẽ chỉ chỗ.</span>
-        </div>
-        <form id="connectionform" class="form connection-form">
-          <label class="field"><span>Kênh</span><select name="channel" required>
-            <option value="zalo_personal">Zalo cá nhân</option><option value="zalo_oa">Zalo Official Account</option>
-            <option value="facebook">Facebook Page</option><option value="instagram">Instagram</option>
-            <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
-          </select></label>
-          <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
-          <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
-          <details class="nhap-tay" id="nhap-tay">
-            <summary>Nhập thủ công</summary>
-            <div class="nhap-tay__o">
-          <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
-          <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
-          <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
-          <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
-          <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
-          <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
+      <section class="tabpanel" id="ai-co-ban" data-gan="ai-co-ban" role="tabpanel" hidden>
+        <!-- MỘT cấu hình AI cho MỌI kênh (phiếu việc 20.11.2026). Công tắc và chế
+             độ ghi vào runtime.STATE qua POST /api/runtime — bền qua khởi động lại
+             (bảng cau_hinh_agent), ghi nhật ký runtime.update, quyền agent.dieu_khien.
+             Ràng buộc thật nằm ở agent/core/agent_bat.py, không ở công tắc này:
+             hội thoại người đã tiếp quản thì AI không bao giờ chen vào, bật hay tắt. -->
+        <section class="panel" id="aiTrangThai">
+          <h2 class="panel__head">AI Agent
+            <span class="panel__note">một cấu hình cho mọi kênh</span></h2>
+          <div class="ai-bat">
+            <label class="switch ai-bat__cong">
+              <input type="checkbox" id="aiBat" aria-describedby="aiBatGhi">
+              <span id="aiBatNhan">đang tải…</span>
+            </label>
+            <p class="panel__note" id="aiBatGhi">
+              <b>Tắt:</b> AI không trả lời và không soạn nháp mới ở mọi kênh — tin khách
+              vào thẳng hàng chờ người, nhân viên làm việc bình thường. <b>Bật lại:</b>
+              hội thoại nhân viên đang giữ vẫn là của nhân viên; AI chỉ nhận lại hội
+              thoại được bấm <i>Trả lại AI</i>.
+            </p>
+          </div>
+          <div class="ai-che-do">
+            <span class="ai-che-do__nhan">Chế độ trả lời</span>
+            <div class="modeswitch" role="group" aria-label="Chế độ trả lời của AI">
+              <button type="button" data-mode="assist" class="modeswitch__opt">Gợi ý</button>
+              <button type="button" data-mode="auto" class="modeswitch__opt">Tự động</button>
             </div>
-          </details>
-          <p class="form__ketiep" id="connection-ketiep"></p>
-          <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
-        </form>
-      </section>
-      <div id="connectiongrid" class="connection-grid"><p class="empty">Đang tải tài khoản kênh…</p></div>
-      <section class="panel connection-guide">
-        <h2 class="panel__head">Checklist kích hoạt</h2>
-        <div class="guide-steps"><span><b>1</b> Tạo tài khoản</span><span><b>2</b> Đăng nhập/cấp quyền</span><span><b>3</b> Gắn webhook</span><span><b>4</b> Test inbound + outbound + media</span></div>
-      </section>
+            <p class="panel__note">
+              <b>Gợi ý</b>: AI soạn nháp, nhân viên duyệt rồi mới gửi. <b>Tự động</b>:
+              AI gửi thẳng cho khách. Áp dụng cho mọi kênh; nhân viên vẫn đặt được
+              "duyệt trước khi gửi" cho riêng một hội thoại.
+            </p>
+          </div>
+        </section>
 
-      <!-- Ứng dụng nhúng: nối công cụ nội bộ vào thẳng dashboard -->
-      <div class="split">
+        <!-- Điểm gắn: nhà cung cấp, khoá API, model, câu thông báo minh bạch AI.
+             Chưa có mô-đun gắn vào thì hiện nhóm "Model ngôn ngữ" của Cài đặt API. -->
+        <div data-gan="ai-co-ban-nha-cung-cap">
+          <div class="tab__goc">
+            <section class="panel">
+              <h2 class="panel__head">Nhà cung cấp và model
+                <span class="panel__note">khoá mã hoá trong CSDL · không hiện lại</span></h2>
+              <div id="api-nhom-model" class="rows" data-api-cac-nhom="model"><p class="empty">Đang tải…</p></div>
+            </section>
+          </div>
+        </div>
+
         <section class="panel">
-          <h2 class="panel__head">Ứng dụng nhúng
-            <span class="panel__note">mở ngay trong dashboard</span></h2>
+          <h2 class="panel__head">Cấu hình agent
+            <span class="panel__note" id="cauhinh-luu">sống qua khởi động lại</span></h2>
           <p class="panel__note">
-            Công cụ nội bộ nào có giao diện web đều nhúng được: Grafana,
-            Metabase, Uptime Kuma… Chỉ nhận địa chỉ trong mạng nội bộ.
+            Đổi ở đây có hiệu lực từ tin nhắn kế tiếp, và được ghi xuống cơ sở
+            dữ liệu — khởi động lại máy chủ không làm mất.
           </p>
-          <div id="tichhop-ds" class="rows"><p class="empty">Đang tải…</p></div>
+          <div id="cauhinh-ds" class="rows"><p class="empty">Đang tải…</p></div>
+          <div class="rowbtns" style="margin-top:.9rem">
+            <button type="button" class="btn btn--halt" id="cauhinh-macdinh">
+              Quay về mặc định</button>
+          </div>
         </section>
 
-        <section class="panel">
-          <h2 class="panel__head">Thêm ứng dụng</h2>
-          <form id="tichhopform" class="form">
-            <label class="field">
-              <span>Tên (đi vào đường dẫn)</span>
-              <input name="ten" required maxlength="31" placeholder="grafana">
-            </label>
-            <label class="field">
-              <span>Nhãn hiển thị</span>
-              <input name="nhan" maxlength="60" placeholder="Grafana">
-            </label>
-            <label class="field field--wide">
-              <span>Địa chỉ gốc</span>
-              <input name="dia_chi" required maxlength="200"
-                placeholder="http://127.0.0.1:3000">
-            </label>
-            <div class="rowbtns">
-              <button type="button" class="btn" id="tichhop-thu">Thử kết nối</button>
-              <button type="submit" class="btn btn--primary">Lưu và nhúng</button>
+        <div class="split">
+          <section class="panel">
+            <h2 class="panel__head">Ai đổi gì, lúc nào</h2>
+            <p class="panel__note">
+              Cấu hình đổi được mà không truy được ai đổi thì lúc có sự cố
+              không dựng lại được chuyện gì đã xảy ra.
+            </p>
+            <div id="cauhinh-lichsu" class="rows"></div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Không chỉnh được ở đây</h2>
+            <p class="panel__note">
+              Ba thứ sau cố ý nằm trong mã, không phải trên giao diện — sửa
+              được từ dashboard thì sẽ có ngày ai đó sửa.
+            </p>
+            <div class="rows">
+              <div class="row"><span class="row__flag"></span><span class="row__body">
+                <span class="row__title">Sáu lớp lưới an toàn</span>
+                <span class="row__sub">Trần chi phí · quét injection · ngưỡng tin cậy ·
+                  từ khoá bắt buộc chuyển người · hứa mà không làm · chẩn đoán y tế.
+                  <code>agent/core/agent.py</code></span>
+              </span></div>
+              <div class="row"><span class="row__flag"></span><span class="row__body">
+                <span class="row__title">Prompt hệ thống</span>
+                <span class="row__sub">Ô nhập tự do đi thẳng vào prompt là một
+                  đường prompt injection do chính người trong nhà mở.
+                  <code>agent/prompts/system.md</code></span>
+              </span></div>
+              <div class="row"><span class="row__flag"></span><span class="row__body">
+                <span class="row__title">Host cho phép gọi ra ngoài</span>
+                <span class="row__sub">Sửa được từ dashboard thì chiếm một tài
+                  khoản quản trị là chiếm luôn đường ra mạng.
+                  <code>KY_NANG_HOST_CHO_PHEP</code> trong <code>.env</code></span>
+              </span></div>
             </div>
-          </form>
-          <div id="tichhop-ketqua" class="rows"></div>
-        </section>
-      </div>
-    </section>
-
-    <section class="view" data-view="hethong">
-      <section class="panel">
-        <h2 class="panel__head">Các hệ thống đang chạy
-          <span class="panel__note">một cổng vào để nhớ · bấm để mở</span>
-          <button type="button" id="hethongrun" class="btn btn--sm">Kiểm tra</button></h2>
-        <div id="hethong" class="rows">
-          <p class="empty">Bấm <b>Kiểm tra</b> để xem hệ thống nào đang sống.</p>
+          </section>
         </div>
-        <p class="empty" id="hethongvisao" style="text-align:left"></p>
+
+        <!-- Hồ sơ agent theo kênh: tính năng NÂNG CAO. Luồng chính là MỘT cấu hình
+             cho mọi kênh; backend hồ sơ giữ nguyên, chỉ thu vào chỗ mở ra. -->
+        <details class="nang-cao" id="hsaNangCao">
+          <summary>Nâng cao: hồ sơ agent riêng cho từng kênh</summary>
+          <section class="panel" id="hsaPanel">
+            <h2 class="panel__head">Hồ sơ agent
+              <span class="panel__note" id="hsa-toancuc"></span>
+              <button type="button" id="hsa-them" class="btn btn--sm">Thêm hồ sơ</button></h2>
+            <p class="panel__note">
+              Mỗi hồ sơ là một cách nói và hai ngưỡng vận hành, gán cho từng
+              kênh ở <b>Cấu hình chung → Kết nối &amp; Tích hợp</b>. Ngưỡng ở đây chỉ <b>siết thêm</b> được:
+              đặt lỏng hơn ngưỡng toàn cục thì hệ thống vẫn chạy bằng ngưỡng
+              toàn cục, và cột <i>hiệu lực</i> nói rõ con số thật sự đang dùng.
+              Hướng dẫn ở đây là phần <b>thêm vào</b> — nó không thay được các
+              câu cấm trong prompt gốc.
+            </p>
+            <!-- Form thay cho năm hộp prompt() nối nhau. Hướng dẫn tới 4000 ký
+                 tự không viết được trong một ô prompt một dòng, và bấm Huỷ ở hộp
+                 thứ tư là mất sạch ba hộp trước. -->
+            <form id="hsaForm" class="form is-hidden">
+              <!-- Không đặt name="id": `form.id` là thuộc tính id của chính form,
+                   ô nhập tên "id" bị nó che mất và đọc ra chuỗi "hsaForm". -->
+              <input type="hidden" name="ho_so_id">
+              <div class="form__row">
+                <label class="field"><span>Tên hồ sơ</span>
+                  <input name="ten" required maxlength="80" placeholder="Bán hàng Zalo"></label>
+                <label class="field"><span>Dành cho kênh nào</span>
+                  <input name="mo_ta" maxlength="500" placeholder="Khách Zalo OA, chủ yếu hỏi giá"></label>
+              </div>
+              <label class="field field--wide"><span>Hướng dẫn thêm cho agent ở kênh này</span>
+                <textarea name="huong_dan" rows="4" maxlength="4000"
+                  placeholder="Xưng 'shop', gọi khách là 'chị'. Luôn hỏi loại da trước khi gợi ý sản phẩm."></textarea></label>
+              <div class="form__row">
+                <label class="field"><span>Ngưỡng tự tin (0–1)</span>
+                  <input name="nguong_tu_tin" type="number" min="0" max="1" step="0.05" placeholder="để trống = toàn cục"></label>
+                <label class="field"><span>Trần chi phí mỗi hội thoại (USD)</span>
+                  <input name="tran_chi_phi" type="number" min="0.01" max="5" step="0.01" placeholder="để trống = toàn cục"></label>
+                <label class="quyen__o"><input type="checkbox" name="bat" value="1" checked>
+                  <span>Đang bật</span></label>
+              </div>
+              <p class="panel__note" id="hsaGhiChu">Ngưỡng chỉ siết thêm được: đặt lỏng hơn toàn cục thì hệ thống vẫn chạy bằng toàn cục.</p>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--sm btn--primary">Lưu hồ sơ</button>
+                <button type="button" class="btn btn--sm btn--ghost" id="hsaHuy">Huỷ</button>
+              </div>
+            </form>
+            <div id="hsa-ds" class="rows"><p class="empty">Đang tải…</p></div>
+          </section>
+        </details>
+      </section>
+      <section class="tabpanel" id="ai-tri-thuc" data-gan="ai-tri-thuc" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <div class="split">
+            <section class="panel">
+              <h2 class="panel__head">Nạp tài liệu</h2>
+              <form id="docform" class="form">
+                <input type="hidden" name="document_id">
+                <label class="field field--wide">
+                  <span>Kho tri thức của tài khoản</span>
+                  <select name="account_id" id="knowledge-account" required></select>
+                </label>
+                <label class="field field--wide">
+                  <span>Tên tài liệu</span>
+                  <input name="title" required maxlength="200" placeholder="Chính sách bảo hành 2026">
+                </label>
+                <label class="field field--wide">
+                  <span>Nội dung</span>
+                  <textarea name="text" required rows="8" minlength="20"
+                    placeholder="Dán nội dung tài liệu vào đây. Cách nhau một dòng trống giữa các đoạn để hệ thống cắt đúng ngữ nghĩa."></textarea>
+                </label>
+                <div class="rowbtns">
+                  <button type="submit" class="btn btn--primary" id="docsave">Lưu Draft</button>
+                  <button type="button" class="btn btn--sm" id="docnew">Draft mới</button>
+                </div>
+              </form>
+            </section>
+            <section class="panel">
+              <h2 class="panel__head">Thử truy vấn</h2>
+              <p class="panel__note">Kiểm tra agent tìm được gì, không tốn lượt gọi model.</p>
+              <form id="probeform" class="form">
+                <input type="hidden" name="account_id">
+                <label class="field field--wide">
+                  <span>Câu hỏi của khách</span>
+                  <input name="question" required placeholder="Sản phẩm này dùng được cho da nhạy cảm không?">
+                </label>
+                <button type="submit" class="btn">Tìm</button>
+              </form>
+              <div id="probe" class="rows"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <h2 class="panel__head">Tài liệu và phiên bản</h2>
+            <div id="docs" class="rows"></div>
+            <div id="docversions" class="rows"></div>
+          </section>
+        </div>
+      </section>
+      <section class="tabpanel" id="ai-ky-nang" data-gan="ai-ky-nang" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <!-- KHỐI 1 · agent đang làm được gì. MỘT danh sách cho cả bốn nguồn:
+               viết sẵn, tự tạo, của gói, của máy chủ MCP. Ba danh sách rời thì
+               không chỗ nào hiện được tổng suất cắm thêm, mà trần 12 lại đếm
+               chung — người vận hành chỉ biết mình chạm trần lúc bị từ chối. -->
+          <section class="panel">
+            <h2 class="panel__head">Kỹ năng agent đang có
+              <span class="panel__note" id="kynang-dem"></span></h2>
+            <p class="panel__note">
+              Tắt một kỹ năng KHÔNG làm agent im lặng về việc đó — nó chuyển hội
+              thoại cho người. Đọc cột “tắt thì mất gì” trước khi bấm.
+            </p>
+            <div class="chips" id="kynang-loc" aria-label="Lọc theo nguồn">
+              <button type="button" class="chip is-on" data-loc-nguon="tat-ca">Tất cả</button>
+              <button type="button" class="chip" data-loc-nguon="viet-san">Viết sẵn</button>
+              <button type="button" class="chip" data-loc-nguon="tu-tao">Tự tạo</button>
+              <button type="button" class="chip" data-loc-nguon="goi">Từ gói</button>
+              <button type="button" class="chip" data-loc-nguon="mcp">Từ MCP</button>
+            </div>
+            <div id="kynang-tatca" class="rows"><p class="empty">Đang tải…</p></div>
+          </section>
+
+          <!-- KHỐI 2 · thêm cái mới thế nào. MỘT nút, ba lựa chọn, mỗi lựa chọn
+               một câu nói khi nào dùng nó. Ba form đặt cạnh nhau trông ngang
+               hàng là lý do người vận hành đứng lại ở đây. -->
+          <section class="panel">
+            <h2 class="panel__head">Thêm kỹ năng</h2>
+            <div class="chips" id="them-chon" aria-label="Cách thêm kỹ năng">
+              <button type="button" class="chip is-on" data-them="bang">Tự viết bảng hỏi đáp</button>
+              <button type="button" class="chip" data-them="goi">Cài gói có sẵn</button>
+              <button type="button" class="chip" data-them="mcp">Nối máy chủ MCP</button>
+            </div>
+            <p class="panel__note" id="them-giaithich"></p>
+
+            <div data-them-o="bang">
+              <div class="chips" id="plugin-mau" aria-label="Mẫu có sẵn"></div>
+              <form id="pluginform" class="form" novalidate>
+                <label class="field field--wide">
+                  <span>Tên kỹ năng <em class="hint">tiếng Việt có dấu, hệ thống tự đặt mã máy</em></span>
+                  <input name="nhan" required maxlength="60" placeholder="Tra bảo hành theo dòng sản phẩm" autocomplete="off">
+                  <small class="field__ma">Mã máy: <code id="plugin-ma">—</code></small>
+                </label>
+
+                <label class="field field--wide">
+                  <span>Kỹ năng này làm gì</span>
+                  <select name="loai" id="plugin-loai"></select>
+                  <small class="field__giaithich" id="plugin-loai-giaithich"></small>
+                </label>
+
+                <label class="field field--wide">
+                  <span>Khi nào agent dùng, khi nào không <em class="hint">agent chọn kỹ năng DỰA TRÊN ô này · 20–600 ký tự</em></span>
+                  <textarea name="mo_ta" required rows="3" minlength="20" maxlength="600"
+                    placeholder="Tra thời hạn bảo hành của một dòng sản phẩm theo tên dòng. Không dùng cho câu hỏi về đổi trả."></textarea>
+                </label>
+
+                <div class="field field--wide" data-cauhinh="tra_bang">
+                  <span>Bảng tra <em class="hint">khách hỏi về cột trái, agent trả lời cột phải · nhiều cách gọi thì ngăn bằng dấu | · dán thẳng từ Excel được</em></span>
+                  <table class="plugin-bang" id="plugin-bang">
+                    <thead><tr><th>Khách hỏi về</th><th>Agent trả lời</th><th></th></tr></thead>
+                    <tbody></tbody>
+                  </table>
+                  <div class="rowbtns">
+                    <button type="button" class="btn btn--sm" id="plugin-bang-them">+ Thêm dòng</button>
+                  </div>
+                </div>
+
+                <div class="field field--wide" data-cauhinh="tra_bang">
+                  <span>Câu thử <em class="hint">vài câu khách hay hỏi · chạy lại mỗi lần Lưu · để trống cột phải nghĩa là câu ấy PHẢI không khớp</em></span>
+                  <table class="plugin-bang" id="plugin-cauthu">
+                    <thead><tr><th>Khách hỏi</th><th>Câu trả lời phải chứa</th><th></th></tr></thead>
+                    <tbody></tbody>
+                  </table>
+                  <div class="rowbtns">
+                    <button type="button" class="btn btn--sm" id="plugin-cauthu-them">+ Thêm câu thử</button>
+                  </div>
+                </div>
+
+                <div class="field field--wide" data-cauhinh="tra_tai_lieu" hidden>
+                  <span>Chỉ tra trong nhóm tài liệu <em class="hint">gõ một mẩu tên tài liệu đã nạp ở tab Tri thức (RAG)</em></span>
+                  <input name="nhom_tai_lieu" list="plugin-nhom-ds" maxlength="100" placeholder="bao-hanh"
+                         aria-label="Nhóm tài liệu">
+                  <datalist id="plugin-nhom-ds"></datalist>
+                  <span>Số đoạn lấy về <em class="hint">1–8, thường để 4</em></span>
+                  <!-- Khối này có HAI ô nhập nên không bọc chung một <label> được:
+                       label bọc nhiều ô chỉ gắn với ô đầu, ô sau vẫn không tên.
+                       Nhãn nhìn thấy nằm ở <span> và <span> đang mang style
+                       `.field > span`, đổi nó thành <label> là vỡ giao diện. -->
+                  <input name="k" type="number" min="1" max="8" value="4"
+                         aria-label="Số đoạn tài liệu lấy về">
+                </div>
+
+                <!-- `<label>` chứ không `<div>`: khối này có đúng MỘT ô nhập nên
+                     bọc bằng label là gắn được nhãn mà không đổi gì về hình —
+                     `.field` và `.field > span` vẫn khớp y nguyên. Đây cũng là
+                     lối chung của file này (81 `label.field` so với 5 `div.field`). -->
+                <label class="field field--wide" data-cauhinh="chuyen_chuyen_biet" hidden>
+                  <span>Câu người trực sẽ đọc <em class="hint">để biết vì sao hội thoại tới tay mình</em></span>
+                  <input name="ly_do" maxlength="200" placeholder="Khách hỏi hợp tác bán buôn">
+                </label>
+
+                <div class="field field--wide" data-cauhinh="goi_api_doc" hidden>
+                  <span>Địa chỉ cần gọi <em class="hint">bắt đầu bằng https:// · chỗ điền giá trị viết {ma} · máy chủ phải nằm trong KY_NANG_HOST_CHO_PHEP</em></span>
+                  <input name="url" maxlength="400" placeholder="https://noi-bo.example.com/tra/{ma}"
+                         aria-label="Địa chỉ cần gọi">
+                  <span>Chờ tối đa (giây)</span>
+                  <!-- Cũng là khối hai ô — xem lý do ở khối `tra_tai_lieu` bên trên. -->
+                  <input name="han_giay" type="number" min="1" max="30" value="5"
+                         aria-label="Chờ tối đa, tính bằng giây">
+                </div>
+
+                <details class="field--wide plugin-nangcao" id="plugin-nangcao">
+                  <summary>Nâng cao: tham số agent điền vào</summary>
+                  <div class="plugin-nangcao__o">
+                    <label class="field">
+                      <span>Mã tham số</span>
+                      <input name="tham_so_ten" maxlength="30" placeholder="dong_san_pham">
+                    </label>
+                    <label class="field">
+                      <span>Agent điền gì vào đây</span>
+                      <input name="tham_so_mo_ta" maxlength="200" placeholder="Tên dòng sản phẩm khách hỏi">
+                    </label>
+                  </div>
+                </details>
+
+                <label class="field field--wide" id="plugin-thu-o">
+                  <span>Thử với câu khách hỏi</span>
+                  <input name="thu_gia_tri" placeholder="Kem chống nắng" autocomplete="off">
+                </label>
+
+                <div class="rowbtns">
+                  <button type="button" class="btn" id="plugin-thu">Chạy thử</button>
+                  <button type="submit" class="btn btn--primary">Lưu và bật</button>
+                </div>
+              </form>
+              <div id="plugin-ketqua" class="rows"></div>
+            </div>
+
+            <div data-them-o="goi" hidden>
+              <form id="goiform" class="form">
+                <label class="field field--wide">
+                  <span>Dán JSON của gói</span>
+                  <textarea name="json" rows="8" placeholder='{"ten": "tu-van-da-nhay-cam", "phien_ban": "1.0.0", ...}'></textarea>
+                </label>
+                <label class="field field--wide">
+                  <span>hoặc chọn tệp <em class="hint">.json, hoặc .zip theo một trong hai chuẩn</em></span>
+                  <input type="file" id="goi-tep" name="tep" accept=".json,.zip">
+                  <small class="field__giaithich">
+                    Zip nhận cả gói của hệ thống này (có <code>goi.json</code>) lẫn
+                    chuẩn Agent Skills (có <code>SKILL.md</code> với
+                    <code>name</code> và <code>description</code>). Gói theo chuẩn
+                    kia mang thư mục <code>scripts/</code> sẽ bị từ chối: kỹ năng ở
+                    đây là dữ liệu, không chạy mã.
+                  </small>
+                </label>
+                <div class="rowbtns">
+                  <button type="button" class="btn" id="goi-kiem">Kiểm</button>
+                  <button type="button" class="btn btn--primary" id="goi-cai">Cài</button>
+                </div>
+              </form>
+              <div id="goi-ketqua" class="rows"></div>
+            </div>
+
+            <!-- Chỗ để sẵn cho form máy chủ MCP (Task 6 của kế hoạch MCP điền
+                 vào đây, thay vì thêm một khối rời thứ tám). -->
+            <div data-them-o="mcp" hidden id="them-mcp">
+
+                        <form id="mcpform" class="form">
+                          <label class="field">
+                            <span>Tên <em class="hint">chữ thường, số, gạch dưới</em></span>
+                            <input name="ten" required pattern="[a-z][a-z0-9_]{1,19}" maxlength="20"
+                              placeholder="kho_erp" autocomplete="off">
+                          </label>
+                          <label class="field">
+                            <span>Nhãn hiển thị</span>
+                            <input name="nhan" required maxlength="60" placeholder="Kho ERP nội bộ">
+                          </label>
+                          <label class="field field--wide">
+                            <span>Địa chỉ</span>
+                            <input name="dia_chi" required maxlength="400"
+                              placeholder="https://.../mcp hoặc http://127.0.0.1:8765/mcp">
+                          </label>
+                          <label class="field field--wide">
+                            <span>Headers <em class="hint">mỗi dòng một cặp "Tên: giá trị" · được mã hoá, không hiện lại</em></span>
+                            <textarea name="headers" rows="3" placeholder="Authorization: Bearer ..."></textarea>
+                          </label>
+                          <p class="panel__note">
+                            Địa chỉ phải nằm trong <code>KY_NANG_HOST_CHO_PHEP</code> hoặc
+                            <code>MCP_MAY_CHU_NOI_BO</code> trong <code>.env</code> — cố ý
+                            không sửa được ở đây.
+                          </p>
+                          <div class="rowbtns">
+                            <button type="button" class="btn" id="mcp-kiem">Kiểm</button>
+                            <button type="button" class="btn btn--primary" id="mcp-them">Thêm</button>
+                          </div>
+                        </form>
+                        <div id="mcp-ketqua" class="rows"></div>
+            </div>
+          </section>
+
+          <!-- KHỐI 3 · nguồn tôi đã nối ra sao. Gói và máy chủ MCP nằm chung:
+               với người vận hành cả hai đều là "nơi kỹ năng đến từ", và mỗi
+               dòng mang đúng nút quản lý của loại nó. -->
+          <section class="panel">
+            <h2 class="panel__head">Nguồn đã nối
+              <span class="panel__note">gói kỹ năng và máy chủ MCP</span></h2>
+            <p class="panel__note">
+              Hướng dẫn của gói là một mẩu prompt do người trong nhà viết: nó bị
+              quét như tin khách và bị chặn từ cấm quảng cáo trước khi lưu.
+            </p>
+            <div id="goi-ds" class="rows"><p class="empty">Chưa có gói nào.</p></div>
+            <div id="nguon-mcp">
+                        <h3 class="panel__head">Máy chủ MCP
+                          <span class="panel__note">nối máy chủ công cụ ngoài theo Model Context Protocol</span></h3>
+                        <p class="panel__note">
+                          Công cụ lấy về từ một máy chủ MCP vào thẳng danh sách plugin bên
+                          dưới, có chủ là máy chủ đã nối — giống hệt công cụ của một gói.
+                          Mặc định mọi công cụ chỉ ĐỌC; phải bật tay từng công cụ mới GHI.
+                        </p>
+                        <div id="mcp-ds" class="rows"><p class="empty">Chưa có máy chủ MCP nào.</p></div>
+            </div>
+          </section>
+        </div>
+      </section>
+      <section class="tabpanel" id="ai-chinh-sach" data-gan="ai-chinh-sach" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Chính sách &amp; Ủy quyền</h2>
+            <p class="empty tab__cho">Nội dung chi tiết sẽ được hoàn thiện sau.</p>
+          </section>
+        </div>
+      </section>
+      <section class="tabpanel" id="ai-phong-thu" data-gan="ai-phong-thu" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <div class="split">
+            <section class="panel">
+              <h2 class="panel__head">Nhắn thử như khách</h2>
+              <p class="panel__note">Chạy agent thật, nhưng đơn và yêu cầu huỷ/đổi chỉ được MÔ PHỎNG. Tốn tiền model theo trần riêng.</p>
+              <div id="phongthu-chat" class="thread"></div>
+              <form id="phongthu-form" class="form">
+                <label class="field field--wide">
+                  <span>Khách nhắn</span>
+                  <textarea name="cau_hoi" rows="2" maxlength="2000" placeholder="Em da dầu, nên dùng gì ạ?"></textarea>
+                </label>
+                <div class="rowbtns">
+                  <button type="submit" class="btn btn--primary">Gửi</button>
+                  <button type="button" class="btn btn--sm" id="phongthu-moi">Phiên mới</button>
+                  <button type="button" class="btn btn--sm" id="phongthu-xoa">Xoá phiên</button>
+                  <span id="phongthu-ngansach" class="panel__note"></span>
+                </div>
+              </form>
+              <h3 class="panel__head">Gợi ý từ bộ câu vàng</h3>
+              <div id="phongthu-goiy" class="rows"></div>
+            </section>
+            <section class="panel">
+              <h2 class="panel__head">Bên trong lượt vừa rồi</h2>
+              <div id="phongthu-bentrong"><p class="empty">Chưa có lượt nào.</p></div>
+            </section>
+          </div>
+        </div>
       </section>
     </section>
 
-    <!-- ============ CÔNG VIỆC ============ -->
-    <section class="view" data-view="congviec">
-      <section class="panel">
-        <h2 class="panel__head">Công việc
-          <span class="panel__note">việc chưa giao hiện với mọi người · agent chuyển người thì tự sinh một việc</span>
-          <button type="button" id="cv-them" class="btn btn--sm">Thêm việc</button></h2>
-        <div class="filterbar" id="cv-loc" role="group" aria-label="Lọc công việc">
-          <button type="button" class="chip is-on" data-cvloc="">Tất cả</button>
-          <button type="button" class="chip" data-cvloc="moi">Mới</button>
-          <button type="button" class="chip" data-cvloc="dang_lam">Đang làm</button>
-          <button type="button" class="chip" data-cvloc="xong">Xong</button>
-          <button type="button" class="chip" data-cvtoi="1">Việc của tôi</button>
-        </div>
-        <div id="cv-ds" class="rows"><p class="empty">Đang tải…</p></div>
-      </section>
-    </section>
-
-    <!-- ============ NHÂN SỰ ============ -->
+    <!-- ============ CÀI ĐẶT · NHÂN SỰ & PHÂN QUYỀN ============
+         Tài khoản và quyền. Lịch ca và mức "thấy khách của nhau" luôn ở
+         lại; phần còn lại là chỗ mô-đun Nhân sự gắn vào. -->
     <section class="view" data-view="nhansu">
-      <section class="panel">
-        <h2 class="panel__head">Nhân viên
-          <span class="panel__note" id="nsDem">đang đếm…</span>
-          <button type="button" id="nsThemNguoi" class="btn btn--sm">Thêm nhân viên</button></h2>
-        <!-- Form thay cho ba cái prompt() trước đây. prompt() hiện mật khẩu
-             dạng chữ thường ngay giữa màn hình — ai đứng sau lưng cũng đọc
-             được, và ảnh chụp màn hình thì đi khắp nơi. -->
-        <form id="nsFormNguoi" class="form is-hidden">
-          <div class="form__row">
-            <label class="field"><span>Tên đăng nhập</span>
-              <input name="ten_dang_nhap" autocomplete="off" required
-                     placeholder="lan.nv"></label>
-            <label class="field"><span>Họ tên</span>
-              <input name="ho_ten" autocomplete="off" placeholder="Nguyễn Thị Lan"></label>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Mật khẩu ban đầu</span>
-              <input name="mat_khau" type="password" autocomplete="new-password"
-                     minlength="8" required></label>
-            <label class="field"><span>Vai trò</span>
-              <select name="vai_tro_id" id="nsVaiTroMoi"></select></label>
-          </div>
-          <!-- Kênh là trục lọc thứ hai, và là trục hay bị quên: vai trò cho
-               phép "đọc hội thoại", nhưng người không phải thành viên kênh
-               nào thì không có hội thoại nào để đọc — kể cả của khách đã
-               giao cho họ. Đo được trên hệ thống thật trước khi thêm ô này. -->
-          <label class="quyen__o field--wide">
-            <input type="checkbox" name="moi_kenh" value="1" checked>
-            <span>Cho vào mọi kênh đang hoạt động</span>
-            <small>Bỏ tick là họ đăng nhập được mà không thấy hội thoại, không
-              thấy khách nào — sửa sau ở nút <b>Kênh</b> trên dòng của họ.</small>
-          </label>
-          <p class="panel__note">Gán vai trò ngay tại đây: tạo xong mà chưa có
-            vai trò thì họ đăng nhập được nhưng mọi màn đều trống, và không có
-            gì trên màn hình nói cho họ biết vì sao.</p>
-          <div class="row__nut">
-            <button type="submit" class="btn btn--primary btn--sm">Tạo tài khoản</button>
-            <button type="button" id="nsHuyNguoi" class="btn btn--sm btn--ghost">Huỷ</button>
-          </div>
-        </form>
-        <div id="nsNguoi" class="rows">
-          <p class="empty">Đang tải…</p>
+      <div class="tabbar" role="tablist" aria-label="Nhân sự và phân quyền">
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ns-nhan-vien" aria-controls="ns-nhan-vien" aria-selected="false">Nhân viên<b id="c-nhansu" class="rail__count"></b></button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ns-vai-tro" aria-controls="ns-vai-tro" aria-selected="false">Vai trò &amp; Quyền</button>
+      </div>
+      <section class="tabpanel" id="ns-nhan-vien" data-gan="ns-nhan-vien" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Nhân viên
+              <span class="panel__note" id="nsDem">đang đếm…</span>
+              <button type="button" id="nsThemNguoi" class="btn btn--sm">Thêm nhân viên</button></h2>
+            <!-- Form thay cho ba cái prompt() trước đây. prompt() hiện mật khẩu
+                 dạng chữ thường ngay giữa màn hình — ai đứng sau lưng cũng đọc
+                 được, và ảnh chụp màn hình thì đi khắp nơi. -->
+            <form id="nsFormNguoi" class="form is-hidden">
+              <div class="form__row">
+                <label class="field"><span>Tên đăng nhập</span>
+                  <input name="ten_dang_nhap" autocomplete="off" required
+                         placeholder="lan.nv"></label>
+                <label class="field"><span>Họ tên</span>
+                  <input name="ho_ten" autocomplete="off" placeholder="Nguyễn Thị Lan"></label>
+              </div>
+              <div class="form__row">
+                <label class="field"><span>Mật khẩu ban đầu</span>
+                  <input name="mat_khau" type="password" autocomplete="new-password"
+                         minlength="8" required></label>
+                <label class="field"><span>Vai trò</span>
+                  <select name="vai_tro_id" id="nsVaiTroMoi"></select></label>
+              </div>
+              <!-- Kênh là trục lọc thứ hai, và là trục hay bị quên: vai trò cho
+                   phép "đọc hội thoại", nhưng người không phải thành viên kênh
+                   nào thì không có hội thoại nào để đọc — kể cả của khách đã
+                   giao cho họ. Đo được trên hệ thống thật trước khi thêm ô này. -->
+              <label class="quyen__o field--wide">
+                <input type="checkbox" name="moi_kenh" value="1" checked>
+                <span>Cho vào mọi kênh đang hoạt động</span>
+                <small>Bỏ tick là họ đăng nhập được mà không thấy hội thoại, không
+                  thấy khách nào — sửa sau ở nút <b>Kênh</b> trên dòng của họ.</small>
+              </label>
+              <p class="panel__note">Gán vai trò ngay tại đây: tạo xong mà chưa có
+                vai trò thì họ đăng nhập được nhưng mọi màn đều trống, và không có
+                gì trên màn hình nói cho họ biết vì sao.</p>
+              <div class="row__nut">
+                <button type="submit" class="btn btn--primary btn--sm">Tạo tài khoản</button>
+                <button type="button" id="nsHuyNguoi" class="btn btn--sm btn--ghost">Huỷ</button>
+              </div>
+            </form>
+            <div id="nsNguoi" class="rows">
+              <p class="empty">Đang tải…</p>
+            </div>
+          </section>
+
+          <section class="panel" id="nsPanelGiaiThich" hidden>
+            <h2 class="panel__head" id="nsGiaiThichTieuDe">Quyền của người này</h2>
+            <p class="kit__note">Mỗi dòng nói rõ <b>vai trò nào</b> cấp quyền ấy. Không có
+              màn này thì khi đông vai trò, không ai trả lời được vì sao một người
+              vào được màn nào đó.</p>
+            <div id="nsGiaiThich" class="rows"></div>
+          </section>
         </div>
+        <!-- LỊCH CA. Bộ định tuyến chỉ giao hội thoại cho người ĐANG trong ca
+             và không trong lịch nghỉ (0034_lich_ca.sql). Người chưa xếp ca nào
+             thì luôn được giao, như trước khi có lịch ca. -->
+        <section class="panel" id="lcPanel" hidden>
+          <h2 class="panel__head">Lịch ca
+            <span class="panel__note">bộ định tuyến chỉ giao hội thoại cho người đang trong ca · chưa xếp ca = luôn trực</span></h2>
+          <div id="lcCanhBao" class="rows"></div>
+          <div id="lcNguoi" class="rows"><p class="empty">Đang tải…</p></div>
+          <h3 class="panel__head">Lịch nghỉ sắp tới</h3>
+          <div id="lcNghi" class="rows"></div>
+        </section>
       </section>
+      <section class="tabpanel" id="ns-vai-tro" data-gan="ns-vai-tro" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Vai trò
+              <span class="panel__note">một vai trò là một tập quyền · gán cho nhân viên, đổi một lần là cả nhóm đổi theo</span>
+              <button type="button" id="nsThemVaiTro" class="btn btn--sm">Tạo vai trò</button></h2>
+            <div id="nsVaiTro" class="rows">
+              <p class="empty">Đang tải…</p>
+            </div>
+          </section>
 
-      <!-- LỊCH CA. Bộ định tuyến chỉ giao hội thoại cho người ĐANG trong ca
-           và không trong lịch nghỉ (0034_lich_ca.sql). Người chưa xếp ca nào
-           thì luôn được giao, như trước khi có lịch ca. -->
-      <section class="panel" id="lcPanel" hidden>
-        <h2 class="panel__head">Lịch ca
-          <span class="panel__note">bộ định tuyến chỉ giao hội thoại cho người đang trong ca · chưa xếp ca = luôn trực</span></h2>
-        <div id="lcCanhBao" class="rows"></div>
-        <div id="lcNguoi" class="rows"><p class="empty">Đang tải…</p></div>
-        <h3 class="panel__head">Lịch nghỉ sắp tới</h3>
-        <div id="lcNghi" class="rows"></div>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Vai trò
-          <span class="panel__note">một vai trò là một tập quyền · gán cho nhân viên, đổi một lần là cả nhóm đổi theo</span>
-          <button type="button" id="nsThemVaiTro" class="btn btn--sm">Tạo vai trò</button></h2>
-        <div id="nsVaiTro" class="rows">
-          <p class="empty">Đang tải…</p>
+          <section class="panel" id="nsPanelSua" hidden>
+            <h2 class="panel__head" id="nsSuaTieuDe">Sửa vai trò</h2>
+            <form id="nsFormVaiTro" class="form">
+              <label class="field">
+                <span>Tên vai trò</span>
+                <input name="ten" required maxlength="80" placeholder="Trưởng nhóm CSKH" autocomplete="off">
+              </label>
+              <label class="field">
+                <span>Mô tả <em class="hint">để người sau hiểu vai trò này dành cho ai</em></span>
+                <input name="mo_ta" maxlength="500" placeholder="Trả lời khách và giao việc trong ca" autocomplete="off">
+              </label>
+              <div id="nsQuyen" class="quyen"></div>
+              <div class="form__row">
+                <button type="submit" class="btn">Lưu vai trò</button>
+                <button type="button" id="nsHuySua" class="btn btn--ghost">Huỷ</button>
+              </div>
+            </form>
+          </section>
         </div>
-      </section>
-
-      <section class="panel" id="nsPanelSua" hidden>
-        <h2 class="panel__head" id="nsSuaTieuDe">Sửa vai trò</h2>
-        <form id="nsFormVaiTro" class="form">
-          <label class="field">
-            <span>Tên vai trò</span>
-            <input name="ten" required maxlength="80" placeholder="Trưởng nhóm CSKH" autocomplete="off">
-          </label>
-          <label class="field">
-            <span>Mô tả <em class="hint">để người sau hiểu vai trò này dành cho ai</em></span>
-            <input name="mo_ta" maxlength="500" placeholder="Trả lời khách và giao việc trong ca" autocomplete="off">
-          </label>
-          <div id="nsQuyen" class="quyen"></div>
-          <div class="form__row">
-            <button type="submit" class="btn">Lưu vai trò</button>
-            <button type="button" id="nsHuySua" class="btn btn--ghost">Huỷ</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel" id="nsPanelGiaiThich" hidden>
-        <h2 class="panel__head" id="nsGiaiThichTieuDe">Quyền của người này</h2>
-        <p class="kit__note">Mỗi dòng nói rõ <b>vai trò nào</b> cấp quyền ấy. Không có
-          màn này thì khi đông vai trò, không ai trả lời được vì sao một người
-          vào được màn nào đó.</p>
-        <div id="nsGiaiThich" class="rows"></div>
+        <section class="panel">
+          <h2 class="panel__head">Nhân viên thấy khách của nhau tới đâu
+            <span class="panel__note">áp dụng ngay, không cần khởi động lại</span></h2>
+          <p class="panel__note">
+            Chỉ có tác dụng với khách <b>đã được giao</b> cho ai đó. Khách chưa
+            giao luôn là của chung — mọi nhân viên đều thấy và trả lời được, ở
+            cả bốn mức. Quản trị và người có quyền <code>khach.xem_tat_ca</code>
+            không bị mức nào hạn chế.
+          </p>
+          <div id="tamnhin" class="rows"><p class="empty">Đang tải…</p></div>
+        </section>
       </section>
     </section>
 
-    <!-- ============ NHẬT KÝ ============ -->
-    <section class="view" data-view="nhatky">
-      <!-- SỔ YÊU CẦU CỦA KHÁCH. Khách đòi xem/sửa/xoá/rút đồng ý qua chat thì
-           ghi vào đây NGAY — hạn luật định tính từ lúc khách gửi, không phải
-           lúc vào sổ (NĐ 356/2025 Điều 5). Quá hạn là vi phạm đã xảy ra, nên
-           khối cảnh báo đứng trên cùng. -->
-      <section class="panel" id="ycPanel" hidden>
-        <h2 class="panel__head">Yêu cầu của khách
-          <span class="panel__note" id="ycDem">đang tải…</span></h2>
-        <p class="panel__note">Phản hồi trong <b>2 ngày làm việc</b> · xem/sửa <b>10 ngày</b> ·
-          rút đồng ý, hạn chế, phản đối <b>15 ngày</b> · xoá <b>20 ngày</b> — dài hơn nếu phải
-          nhờ bên thứ ba (ERP, hãng vận chuyển). Gia hạn được một lần, phải báo khách.</p>
-        <div id="ycDs" class="rows"></div>
-        <form id="ycForm" class="form">
-          <div class="form__row">
-            <label class="field"><span>Loại yêu cầu</span>
-              <select name="loai" required>
-                <option value="xoa">Xoá dữ liệu</option>
-                <option value="xem">Xem / cung cấp dữ liệu</option>
-                <option value="sua">Sửa dữ liệu</option>
-                <option value="rut_dong_y">Rút lại sự đồng ý</option>
-                <option value="han_che">Hạn chế xử lý</option>
-                <option value="phan_doi">Phản đối xử lý</option>
-                <option value="bao_ve">Áp biện pháp bảo vệ</option>
-              </select></label>
-            <label class="field"><span>Kênh nhận</span>
-              <select name="kenh_nhan">
-                <option value="chat">Tin nhắn</option>
-                <option value="dien_thoai">Điện thoại</option>
-                <option value="email">Email</option>
-                <option value="truc_tiep">Trực tiếp</option>
-                <option value="van_ban">Văn bản</option>
-              </select></label>
-          </div>
-          <div class="form__row">
-            <label class="field"><span>Số điện thoại khách <em class="hint">chỉ lưu dấu băm</em></span>
-              <input name="sdt" maxlength="20" placeholder="0967 627 336" autocomplete="off"></label>
-            <label class="field"><span>Khách gửi lúc <em class="hint">để trống = bây giờ</em></span>
-              <input name="nhan_luc" type="datetime-local"></label>
-          </div>
-          <label class="field field--wide"><span>Tóm tắt <em class="hint">không chép nguyên văn số, địa chỉ</em></span>
-            <input name="noi_dung" maxlength="500" placeholder="khách nhắn qua Facebook xin xoá dữ liệu sau khi huỷ đơn"></label>
-          <label class="quyen__o"><input type="checkbox" name="co_ben_thu_ba"> Phải nhờ bên thứ ba (ERP, hãng vận chuyển) — hạn dài hơn</label>
-          <div class="row__nut"><button type="submit" class="btn btn--sm btn--primary">Ghi vào sổ</button></div>
-        </form>
-      </section>
+    <!-- ============ CÀI ĐẶT · HỆ THỐNG & NHẬT KÝ ============
+         Giám sát, bảo trì, nhật ký. "Sức khoẻ" chỉ còn ở ĐÂY — trước đây ở
+         ba nơi (Số hiệu, Hệ thống, Kết nối) và mỗi nơi nói một ít. -->
+    <section class="view" data-view="hethong">
+      <div class="tabbar" role="tablist" aria-label="Hệ thống và nhật ký">
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ht-suc-khoe" aria-controls="ht-suc-khoe" aria-selected="false">Sức khoẻ hệ thống<b id="c-hethong" class="rail__count"></b></button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ht-sao-luu" aria-controls="ht-sao-luu" aria-selected="false">Sao lưu &amp; Bảo trì</button>
+        <button type="button" role="tab" class="tabbar__nut" data-tab="ht-nhat-ky" aria-controls="ht-nhat-ky" aria-selected="false">Nhật ký hoạt động</button>
+      </div>
+      <section class="tabpanel" id="ht-suc-khoe" data-gan="ht-suc-khoe" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Các hệ thống đang chạy
+              <span class="panel__note">một cổng vào để nhớ · bấm để mở</span>
+              <button type="button" id="hethongrun" class="btn btn--sm">Kiểm tra</button></h2>
+            <div id="hethong" class="rows">
+              <p class="empty">Bấm <b>Kiểm tra</b> để xem hệ thống nào đang sống.</p>
+            </div>
+            <p class="empty" id="hethongvisao" style="text-align:left"></p>
+          </section>
 
-      <section class="panel">
-        <h2 class="panel__head">Dữ liệu cá nhân khách hàng
-          <span class="panel__note">Luật 91/2025/QH15 · NĐ 356/2025/NĐ-CP</span></h2>
-        <p class="kit__note" id="pdpdPolicy"></p>
-        <form id="pdpdform" class="form">
-          <label class="field">
-            <span>Số điện thoại khách <em class="hint">viết kiểu nào cũng được</em></span>
-            <input name="sdt" required placeholder="0967 627 336" autocomplete="off">
-          </label>
-          <button type="submit" class="btn">Xem hệ thống đang giữ gì</button>
-        </form>
-        <div id="pdpdOut"></div>
+          <section class="panel">
+            <h2 class="panel__head">Sức khoẻ hệ thống
+              <span class="panel__note">gọi thật từng thứ · mất vài giây</span>
+              <button type="button" id="healthrun" class="btn btn--sm">Kiểm tra</button></h2>
+            <div id="health" class="rows">
+              <p class="empty">Bấm <b>Kiểm tra</b> để xem mọi mảnh có đang phục vụ được không.</p>
+            </div>
+          </section>
+        </div>
       </section>
+      <section class="tabpanel" id="ht-sao-luu" data-gan="ht-sao-luu" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Sao lưu và khôi phục
+              <span class="panel__note">chạy trên máy chủ, không bấm từ đây</span></h2>
+            <p class="panel__note">
+              Sao lưu CSDL, ảnh và tệp khách gửi: <code>python -m scripts.sao_luu</code>.
+              Chuyển sang máy khác: <code>python -m scripts.chuyen_nha dong_goi</code> rồi
+              <code>python3 -m scripts.cua_hang nhap</code> (xem <code>docs/len-vps.md</code>).
+              Cố ý không có nút ở đây: một nút "khôi phục" trên web là một đường ghi đè
+              toàn bộ dữ liệu khách chỉ cách một lần bấm nhầm.
+            </p>
+          </section>
 
-      <!-- PHIẾU DUYỆT BỐN MẮT.
-           Khối này KHÔNG xoá gì: nó cấp phiếu. Nút xoá thật ở khung PDPD
-           phía trên đòi một phiếu đã duyệt còn hiệu lực, và tiêu phiếu ấy
-           khi xoá xong — chốt nằm trong `du_lieu_ca_nhan.xoa()`, không nằm
-           ở giao diện. Phiếu tạo từ hồ sơ khách còn chạy đếm được; phiếu
-           xin từ khung PDPD khoá theo số điện thoại nên không có đếm. -->
-      <section class="panel">
-        <h2 class="panel__head">Phiếu duyệt xoá — người thứ hai ký ở đây
-          <span class="panel__note" id="rtNote">tạo từ khung trên hoặc hồ sơ khách</span></h2>
-        <p class="panel__note">Người tạo phiếu <b>không tự duyệt được</b>. Chưa có phiếu duyệt
-          thì nút xoá ở khung trên không bấm được — máy chủ từ chối, không phải giao diện.
-          Mỗi phiếu <b>dùng một lần</b>. Với phiếu tạo từ hồ sơ khách, bấm <i>Chạy đếm</i>
-          để biết sẽ chạm bao nhiêu hội thoại, tin nhắn, tệp đính kèm.</p>
-        <div id="dsRetention" class="rows"><p class="empty">Đang tải…</p></div>
+          <section class="panel">
+            <h2 class="panel__head">Bảo vệ dữ liệu cá nhân — thiết lập</h2>
+            <div id="api-nhom-bvdlcn" class="rows" data-api-cac-nhom="bvdlcn"><p class="empty">Đang tải…</p></div>
+          </section>
+
+          <!-- SỔ YÊU CẦU CỦA KHÁCH. Khách đòi xem/sửa/xoá/rút đồng ý qua chat thì
+               ghi vào đây NGAY — hạn luật định tính từ lúc khách gửi, không phải
+               lúc vào sổ (NĐ 356/2025 Điều 5). Quá hạn là vi phạm đã xảy ra, nên
+               khối cảnh báo đứng trên cùng. -->
+          <section class="panel" id="ycPanel" hidden>
+            <h2 class="panel__head">Yêu cầu của khách
+              <span class="panel__note" id="ycDem">đang tải…</span></h2>
+            <p class="panel__note">Phản hồi trong <b>2 ngày làm việc</b> · xem/sửa <b>10 ngày</b> ·
+              rút đồng ý, hạn chế, phản đối <b>15 ngày</b> · xoá <b>20 ngày</b> — dài hơn nếu phải
+              nhờ bên thứ ba (ERP, hãng vận chuyển). Gia hạn được một lần, phải báo khách.</p>
+            <div id="ycDs" class="rows"></div>
+            <form id="ycForm" class="form">
+              <div class="form__row">
+                <label class="field"><span>Loại yêu cầu</span>
+                  <select name="loai" required>
+                    <option value="xoa">Xoá dữ liệu</option>
+                    <option value="xem">Xem / cung cấp dữ liệu</option>
+                    <option value="sua">Sửa dữ liệu</option>
+                    <option value="rut_dong_y">Rút lại sự đồng ý</option>
+                    <option value="han_che">Hạn chế xử lý</option>
+                    <option value="phan_doi">Phản đối xử lý</option>
+                    <option value="bao_ve">Áp biện pháp bảo vệ</option>
+                  </select></label>
+                <label class="field"><span>Kênh nhận</span>
+                  <select name="kenh_nhan">
+                    <option value="chat">Tin nhắn</option>
+                    <option value="dien_thoai">Điện thoại</option>
+                    <option value="email">Email</option>
+                    <option value="truc_tiep">Trực tiếp</option>
+                    <option value="van_ban">Văn bản</option>
+                  </select></label>
+              </div>
+              <div class="form__row">
+                <label class="field"><span>Số điện thoại khách <em class="hint">chỉ lưu dấu băm</em></span>
+                  <input name="sdt" maxlength="20" placeholder="0967 627 336" autocomplete="off"></label>
+                <label class="field"><span>Khách gửi lúc <em class="hint">để trống = bây giờ</em></span>
+                  <input name="nhan_luc" type="datetime-local"></label>
+              </div>
+              <label class="field field--wide"><span>Tóm tắt <em class="hint">không chép nguyên văn số, địa chỉ</em></span>
+                <input name="noi_dung" maxlength="500" placeholder="khách nhắn qua Facebook xin xoá dữ liệu sau khi huỷ đơn"></label>
+              <label class="quyen__o"><input type="checkbox" name="co_ben_thu_ba"> Phải nhờ bên thứ ba (ERP, hãng vận chuyển) — hạn dài hơn</label>
+              <div class="row__nut"><button type="submit" class="btn btn--sm btn--primary">Ghi vào sổ</button></div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__head">Dữ liệu cá nhân khách hàng
+              <span class="panel__note">Luật 91/2025/QH15 · NĐ 356/2025/NĐ-CP</span></h2>
+            <p class="kit__note" id="pdpdPolicy"></p>
+            <form id="pdpdform" class="form">
+              <label class="field">
+                <span>Số điện thoại khách <em class="hint">viết kiểu nào cũng được</em></span>
+                <input name="sdt" required placeholder="0967 627 336" autocomplete="off">
+              </label>
+              <button type="submit" class="btn">Xem hệ thống đang giữ gì</button>
+            </form>
+            <div id="pdpdOut"></div>
+          </section>
+
+          <!-- PHIẾU DUYỆT BỐN MẮT.
+               Khối này KHÔNG xoá gì: nó cấp phiếu. Nút xoá thật ở khung PDPD
+               phía trên đòi một phiếu đã duyệt còn hiệu lực, và tiêu phiếu ấy
+               khi xoá xong — chốt nằm trong `du_lieu_ca_nhan.xoa()`, không nằm
+               ở giao diện. Phiếu tạo từ hồ sơ khách còn chạy đếm được; phiếu
+               xin từ khung PDPD khoá theo số điện thoại nên không có đếm. -->
+          <section class="panel">
+            <h2 class="panel__head">Phiếu duyệt xoá — người thứ hai ký ở đây
+              <span class="panel__note" id="rtNote">tạo từ khung trên hoặc hồ sơ khách</span></h2>
+            <p class="panel__note">Người tạo phiếu <b>không tự duyệt được</b>. Chưa có phiếu duyệt
+              thì nút xoá ở khung trên không bấm được — máy chủ từ chối, không phải giao diện.
+              Mỗi phiếu <b>dùng một lần</b>. Với phiếu tạo từ hồ sơ khách, bấm <i>Chạy đếm</i>
+              để biết sẽ chạm bao nhiêu hội thoại, tin nhắn, tệp đính kèm.</p>
+            <div id="dsRetention" class="rows"><p class="empty">Đang tải…</p></div>
+          </section>
+        </div>
       </section>
-
-      <section class="panel">
-        <h2 class="panel__head">Nhật ký kiểm toán</h2>
-        <div id="events" class="rows"></div>
+      <section class="tabpanel" id="ht-nhat-ky" data-gan="ht-nhat-ky" role="tabpanel" hidden>
+        <div class="tab__goc">
+          <section class="panel">
+            <h2 class="panel__head">Nhật ký hoạt động
+              <span class="panel__note">người dùng, AI và vận hành · mới nhất trước</span></h2>
+            <div id="events" class="rows"></div>
+          </section>
+        </div>
       </section>
     </section>
 

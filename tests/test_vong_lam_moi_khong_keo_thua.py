@@ -50,26 +50,28 @@ def _man_chua(oid: str) -> str:
     """Khối `id=oid` nằm trong màn nào."""
     i = HTML.find(f'id="{oid}"')
     assert i != -1, f"không còn #{oid}"
-    j = HTML.rfind('<section class="view', 0, i)
-    assert j != -1, f"#{oid} không nằm trong màn nào"
-    return HTML[j: j + 120].split('data-view="')[1].split('"')[0]
+    # Từ phiếu việc 20.11.2026 Ca trực là TAB `cv-ca-truc` của màn Công
+    # việc — chốt đúng ở mức tab, không phải mức màn.
+    j = HTML.rfind('<section class="tabpanel"', 0, i)
+    assert j != -1, f"#{oid} không nằm trong tab nào"
+    return HTML[j: j + 120].split('id="')[1].split('"')[0]
 
 
 def test_hai_khoi_nang_van_thuoc_man_ca_truc():
     """
-    Neo của test dưới. Nếu `#queue` được chuyển sang màn khác thì chốt
-    `state.view !== "ca"` thành sai, và test dưới phải được đọc lại chứ
+    Neo của test dưới. Nếu `#queue` được chuyển sang tab khác thì chốt
+    `!dangMo("cv-ca-truc")` thành sai, và test dưới phải được đọc lại chứ
     không phải sửa cho xanh.
     """
-    assert _man_chua("queue") == "ca"
+    assert _man_chua("queue") == "cv-ca-truc"
 
 
 def test_load_overview_dung_som_khi_khong_o_man_ca_truc():
     than = _than_ham("loadOverview")
 
-    i_chot = than.find('state.view !== "ca"')
+    i_chot = than.find('!dangMo("cv-ca-truc")')
     assert i_chot != -1, (
-        "loadOverview() không còn chốt `state.view !== \"ca\"` — nó sẽ lại "
+        "loadOverview() không còn chốt `!dangMo(\"cv-ca-truc\")` — nó sẽ lại "
         "kéo 200 hội thoại mỗi 6 giây ở mọi màn còn lại"
     )
 
@@ -77,7 +79,7 @@ def test_load_overview_dung_som_khi_khong_o_man_ca_truc():
         i = than.find(duong)
         assert i != -1, f"không còn gọi {duong} — đọc lại test này"
         assert i > i_chot, (
-            f"`{duong}` đang gọi TRƯỚC chốt `state.view !== \"ca\"`, nên "
+            f"`{duong}` đang gọi TRƯỚC chốt `!dangMo(\"cv-ca-truc\")`, nên "
             "chốt không chặn được gì"
         )
 
@@ -90,7 +92,7 @@ def test_overview_van_chay_o_moi_man():
     """
     than = _than_ham("loadOverview")
     i_overview = than.find('api("/overview")')
-    i_chot = than.find('state.view !== "ca"')
+    i_chot = than.find('!dangMo("cv-ca-truc")')
     assert i_overview != -1, "loadOverview() không còn gọi /overview"
     assert i_overview < i_chot, (
         "`/overview` đang nằm SAU chốt, nên nó ngừng chạy ở 16 màn còn lại "

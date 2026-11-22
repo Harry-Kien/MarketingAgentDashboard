@@ -430,7 +430,7 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
         <span>${esc(k.display_name)}</span>
         <small>${esc(k.channel)} · ${esc(TT[k.status] || k.status)}${
           k.role === "owner" ? " · đã nối kênh này, không gỡ ở đây" : ""}</small></label>`).join("")
-      : '<p class="empty">Chưa nối kênh nào. Nối ở màn Kết nối rồi quay lại.</p>'}
+      : '<p class="empty">Chưa nối kênh nào. Nối ở Cấu hình chung → Kết nối & Tích hợp rồi quay lại.</p>'}
       </fieldset>
       <div class="row__nut">
         <button type="button" class="btn btn--sm btn--primary" data-kenhluu="${esc(id)}">Lưu</button>

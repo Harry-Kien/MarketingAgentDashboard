@@ -10,14 +10,17 @@ là vào lúc khách đã chờ hai tiếng.
 Lý do đi kèm sẽ vào nhật ký ở chỗ chặn, nên dashboard và nhật ký kiểm toán
 nói cùng một chuyện.
 
-BA NẤC, THEO ĐÚNG THỨ TỰ NÀY
------------------------------
-    công tắc toàn cục   `runtime.enabled` — cắt tất cả
-    theo tài khoản kênh `channel_accounts.agent_bat` — nấc thật sự hay dùng
+BA NẤC
+------
     theo hội thoại      `conversations.mode = 'human'` — người đã tiếp quản
+    công tắc toàn cục   `runtime.enabled` — cắt tất cả (Cấu hình AI Agent →
+                        Cấu hình cơ bản, và đèn ngắt khẩn cấp ở thanh trên)
+    theo tài khoản kênh `channel_accounts.agent_bat`
 
-Thứ tự quan trọng: kiểm toàn cục trước thì khi người vận hành bấm ngắt
-khẩn cấp, không cần hỏi CSDL thêm lần nào.
+Hai nấc đầu không hỏi CSDL (`conv` do nơi gọi đọc sẵn), nên khi người vận
+hành bấm ngắt khẩn cấp, không cần hỏi CSDL thêm lần nào. Nấc "người tiếp
+quản" đứng đầu để BẬT lại AI không bao giờ giành hội thoại nhân viên đang
+cầm, và TẮT AI không bắn thông báo thừa cho hội thoại ấy.
 
 VÀ ĐIỀU QUAN TRỌNG NHẤT: TẮT KHÔNG PHẢI LÀ IM
 ----------------------------------------------
@@ -49,12 +52,19 @@ async def agent_duoc_tra_loi(
     `conv` là dòng hội thoại đã đọc sẵn (để không phải truy vấn lại). Truyền
     None thì chỉ kiểm hai nấc đầu.
     """
-    if not runtime.enabled():
-        return KetQua(False, "Công tắc ngắt toàn hệ thống đang bật")
-
+    # Người đã tiếp quản xét TRƯỚC công tắc toàn cục. Cả hai đều không hỏi
+    # CSDL (`conv` đã đọc sẵn), nên ngắt khẩn cấp vẫn không phụ thuộc CSDL.
+    # Thứ tự này quyết định LÝ DO, và lý do quyết định có báo nhân viên hay
+    # không (xu_ly_tin_vao chỉ im khi lý do là "người tiếp quản"): xét công
+    # tắc trước thì lúc AI TẮT, mỗi tin khách vào một hội thoại nhân viên
+    # đang cầm lại bắn một thông báo "AI chuyển giao" — trong khi AI chẳng
+    # chuyển gì, nhân viên đang làm việc bình thường.
     if conv is not None:
         if conv.get("status") == "escalated" or conv.get("mode") == "human":
             return KetQua(False, "Hội thoại này đã do người tiếp quản")
+
+    if not runtime.enabled():
+        return KetQua(False, "Công tắc ngắt toàn hệ thống đang bật")
 
     if conv is not None and conv.get("id") is not None:
         from agent import goi_cuoc

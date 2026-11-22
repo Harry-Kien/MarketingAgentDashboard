@@ -30,6 +30,8 @@ function oNhapCauHinh(m) {
  *
  * Sau khi lưu (hoặc lưu hỏng) thì gọi với `false`: lúc đó thứ phải hiện là
  * thứ máy chủ đang chạy, không phải thứ người ta vừa gõ mà bị từ chối. */
+const KHOA_CO_KHOI_RIENG = new Set(["enabled", "mode"]);
+
 async function loadCauHinh(giuDangGo = true) {
   const d = await api("/cau-hinh");
   const lech = d.muc.filter((m) => m.lech_mac_dinh).length;
@@ -37,7 +39,9 @@ async function loadCauHinh(giuDangGo = true) {
 
   const oGoc = $("#cauhinh-ds");
   const dangGo = giuDangGo ? _luuDangGo(oGoc) : null;
-  oGoc.innerHTML = d.muc.map((m) => `<div class="row">
+  /* Công tắc AI và chế độ Gợi ý/Tự động có khối riêng ngay trên (#aiTrangThai).
+     Vẽ chúng ở đây nữa là hai công tắc cho cùng một cờ trên một màn. */
+  oGoc.innerHTML = d.muc.filter((m) => !KHOA_CO_KHOI_RIENG.has(m.khoa)).map((m) => `<div class="row">
       <span class="row__flag ${m.lech_mac_dinh ? "row__flag--halt" : "row__flag--auto"}"></span>
       <span class="row__body">
         <span class="row__title">${esc(m.nhan)}
@@ -370,9 +374,22 @@ function trangThaiApi(m) {
   return `<span class="row__sub">${nguon}${kiem}</span>`;
 }
 
+/* Mỗi nhóm khoá dựng vào ĐÚNG tab của nó (phiếu việc 20.11.2026): ô nào
+ * mang `data-api-cac-nhom="erp,van_chuyen"` thì nhận đúng các nhóm ấy.
+ * Model ở Cấu hình AI, SLA ở tab SLA, ERP/vận chuyển/bình luận ở Kết nối,
+ * bảo vệ dữ liệu ở Hệ thống. `thanh_toan` (VietQR) và `csat` CỐ Ý không
+ * có ô nào: chủ dự án ẩn hai tính năng này khỏi giao diện — mã và API giữ
+ * nguyên, CSAT mặc định tắt (CSAT_BAT=tat). Ô nào cũng không nhận một
+ * nhóm thì nhóm ấy đơn giản là không vẽ, không có cờ ẩn riêng để quên. */
 async function loadCaiDatApi() {
+  const cacO = $$("[data-api-cac-nhom]");
+  if (!coQuyen("cau_hinh.doc")) {
+    cacO.forEach((o) => { o.innerHTML = '<p class="empty">Cần quyền cau_hinh.doc để xem mục này.</p>'; });
+    return;
+  }
   const d = await api("/cai-dat-api");
-  $("#api-vault").textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
+  const vault = $("#api-vault");
+  if (vault) vault.textContent = d.vault_san_sang ? "mã hoá AES-256 trong CSDL" : "vault chưa cấu hình — chỉ xem được";
   const nhom = {};
   for (const m of d.muc) (nhom[m.nhom] ||= []).push(m);
   /* Giữ khoá đang dán dở qua mỗi lần dựng lại.
@@ -382,9 +399,10 @@ async function loadCaiDatApi() {
    * ta bấm Lưu và nhận toast XANH "Đã lưu 0 khoá" — xanh giả, vì không có
    * gì được lưu cả. Ô bí mật không có `value` từ máy chủ, nên bất kỳ chữ
    * nào trong đó đều là người dùng gõ — `_oDaSua` bắt đúng điều đó. */
-  const oGoc = $("#api-nhom");
-  const dangGo = _luuDangGo(oGoc);
-  oGoc.innerHTML = Object.entries(API_NHOM).map(([ma, ten]) => `
+  for (const oGoc of cacO) {
+    const chi = oGoc.dataset.apiCacNhom.split(",").map((x) => x.trim());
+    const dangGo = _luuDangGo(oGoc);
+    oGoc.innerHTML = Object.entries(API_NHOM).filter(([ma]) => chi.includes(ma)).map(([ma, ten]) => `
     <div class="row" data-api-nhom="${ma}">
       <span class="row__flag ${(nhom[ma] || []).some((m) => m.da_dat) ? "row__flag--auto" : ""}"></span>
       <span class="row__body">
@@ -406,9 +424,10 @@ async function loadCaiDatApi() {
         </div>
       </span>
     </div>`).join("");
+    _traDangGo(oGoc, dangGo);
+  }
   // Trả TRƯỚC hienODungProvider(): ô provider người ta vừa đổi quyết định
   // ô khoá nào hiện — làm ngược thì hiện ô khoá của provider cũ.
-  _traDangGo(oGoc, dangGo);
   hienODungProvider();
 }
 

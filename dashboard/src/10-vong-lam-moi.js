@@ -6,24 +6,55 @@ async function refresh() {
   taiSoThongBao();
   try {
     await loadOverview();
-    if (state.view === "ca") { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); }
+    // Mô-đun đăng ký SAU lần đầu tab hiện vẫn được gắn ở nhịp kế tiếp.
+    ganTabDangHien();
     if (state.view === "hoithoai") await loadConversations();
     if (state.view === "khachhang") { await loadTruongKhach(); await loadContacts(); }
     if (state.view === "donhang") await loadOrders();
     if (state.view === "kho") await loadKho();
-    if (state.view === "hethong") await loadHeThong();
-    if (state.view === "ketnoi") { await loadHoSoAgent(); await loadSucKhoeKenh(); await loadKetNoi(); await loadTichHop(); }
     if (state.view === "sohieu") {    // nhãn hiển thị: "Phân tích"
       if (!state.ptDaTai) await loadPhanTich();
       await loadCost();
     }
-    if (state.view === "trithuc") await loadDocs();
-    if (state.view === "kynang") await loadKyNang();
-    if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
-    if (state.view === "cauhinh") { await loadMauNhanh(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
-    if (state.view === "congviec") await loadCongViec();
-    if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
-    if (state.view === "nhatky") { await loadYeuCauChuThe(); await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }
+    /* Màn có tab: nạp THEO TAB đang hiện, không theo màn — mỗi màn cài đặt
+       gộp ba bốn màn cũ, nạp cả màn là kéo dữ liệu cho ba tab không ai nhìn.
+       `dangMo(id)` = tab đang hiện VÀ chưa bị mô-đun gắn vào thay thế;
+       `tabDangHien(id)` cho các khối luôn ở lại dù có mô-đun gắn vào.
+       Tab gộp nhiều nguồn thì mỗi nguồn kèm `coQuyen`: thiếu một quyền mà
+       vẫn gọi là một 403 chặn mọi loader phía sau, mỗi 6 giây. */
+    if (dangMo("cv-ca-truc")) { await loadTinChet(); await loadVoChu(); await loadCaCuaToi(); await loadTongQuanCa(); }
+    if (dangMo("cv-danh-sach")) await loadCongViec();
+    if (tabDangHien("cc-nhan")) await loadTruongKhach();
+    if (dangMo("cc-tu-dong")) { await loadMauNhanh(); await loadQuyTac(); }
+    if (tabDangHien("cc-ket-noi") && coQuyen("kenh.doc")) {
+      if (coQuyen("agent.doc")) await loadHoSoAgent();
+      await loadSucKhoeKenh(); await loadKetNoi();
+    }
+    if (dangMo("cc-ket-noi")) {
+      await loadCaiDatApi();
+      if (coQuyen("don.doc")) await loadErpCauHinh();
+      if (coQuyen("tich_hop.doc")) await loadTichHop();
+    }
+    if (dangMo("cc-sla")) { await loadDinhTuyen(); await loadCaiDatApi(); }
+    if (dangMo("cc-dieu-phoi")) await loadDinhTuyen();
+    if (tabDangHien("ai-co-ban")) {
+      if (coQuyen("cau_hinh.doc")) await loadCauHinh();
+      if (coQuyen("agent.doc")) await loadHoSoAgent();
+    }
+    if (tabDangHien("ai-co-ban") && !daGan("ai-co-ban-nha-cung-cap")) await loadCaiDatApi();
+    if (dangMo("ai-tri-thuc")) await loadDocs();
+    if (dangMo("ai-ky-nang")) await loadKyNang();
+    if (dangMo("ai-phong-thu") && !state.phongThuDaTai) await loadPhongThu();
+    if (dangMo("ns-nhan-vien") || dangMo("ns-vai-tro")) await loadNhanSu();
+    if (tabDangHien("ns-nhan-vien")) await loadLichCa();
+    if (tabDangHien("ns-vai-tro")) await loadTamNhin();
+    if (dangMo("ht-suc-khoe")) await loadHeThong();
+    if (dangMo("ht-sao-luu")) {
+      await loadYeuCauChuThe();
+      if (coQuyen("khach.pii")) { await loadPdpdPolicy(); await loadRetention(); }
+      await loadCaiDatApi();
+    }
+    if (dangMo("ht-nhat-ky")) await loadEvents();
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }
@@ -67,6 +98,7 @@ function startInboxStream() {
 // thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
 kiemPhien().then((co) => {
   if (!co) return;
+  apDungQuyenMenu();
   refresh();
   startInboxStream();
   state.timer = setInterval(refresh, 6000);
@@ -75,7 +107,7 @@ kiemPhien().then((co) => {
 /* Trung tâm kết nối native. Secret chỉ đi từ form tới vault; response không
    chứa credential nên DOM cũng không có gì để vô tình làm lộ. */
 function moManKetNoi() {
-  doiMan("ketnoi");
+  doiMan("cc-ket-noi");
 }
 
 $("#connection-add-toggle")?.addEventListener("click", () => {

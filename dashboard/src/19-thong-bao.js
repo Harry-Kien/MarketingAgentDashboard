@@ -87,7 +87,7 @@ async function diToiLienKet(lk) {
   }
   if (lk.loai === "don_hang") { doiMan("donhang"); return; }
   if (lk.loai === "cong_viec") {
-    doiMan("congviec");
+    doiMan("cv-danh-sach");
     try { await loadCongViec(); } catch { /* vòng làm mới sẽ thử lại */ }
     const dong = $(`#cv-ds [data-cv="${CSS.escape(lk.id)}"]`);
     if (!dong) { toast("Việc này không nằm trong bộ lọc đang chọn ở màn Công việc."); return; }

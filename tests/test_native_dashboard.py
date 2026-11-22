@@ -9,7 +9,8 @@ def test_index_co_unified_inbox_customer360_va_multi_account_native():
     html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
     assert 'data-view="hoithoai"' in html
     assert 'data-view="khachhang"' in html
-    assert 'data-view="ketnoi"' in html
+    # Kết nối kênh: tab "Kết nối & Tích hợp" của Cấu hình chung.
+    assert '<section class="tabpanel" id="cc-ket-noi"' in html
     assert 'id="connectiongrid"' in html
     assert 'id="contactlist"' in html
     assert "<iframe" not in html.lower()

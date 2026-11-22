@@ -403,7 +403,7 @@ $("#dsRetention")?.addEventListener("click", async (e) => {
 async function rtYeuCauDem(contactId) {
   const d = await hoiHop({
     tieu_de: "Đếm dữ liệu sẽ xoá",
-    phu: "Chỉ đếm, chưa xoá gì. Một người khác phải duyệt ở màn Nhật ký. Lý do ghi vào nhật ký.",
+    phu: "Chỉ đếm, chưa xoá gì. Một người khác phải duyệt ở Hệ thống & Nhật ký → Sao lưu & Bảo trì. Lý do ghi vào nhật ký.",
     truong: [{ name: "ly_do", label: "Lý do", value: "Khách yêu cầu xoá dữ liệu",
                required: true, maxlength: 500 }],
     nut: "Tạo yêu cầu",
@@ -414,7 +414,7 @@ async function rtYeuCauDem(contactId) {
       method: "POST",
       body: JSON.stringify({ kind: "delete", reason: d.ly_do, dry_run: true }),
     });
-    toast("Đã tạo yêu cầu. Một người khác cần duyệt ở màn Nhật ký.");
+    toast("Đã tạo yêu cầu. Một người khác cần duyệt ở Hệ thống & Nhật ký → Sao lưu & Bảo trì.");
   } catch (e) { toast(e.message, true); }
 }
 
@@ -477,7 +477,7 @@ function baoKhachCanNguoi(escalated, tong) {
   if (!tang || !("Notification" in window) || Notification.permission !== "granted") return;
   try {
     const tb = new Notification("Khách cần người trả lời", {
-      body: `${escalated} hội thoại đang chờ người · mở Ca trực để nhận`,
+      body: `${escalated} hội thoại đang chờ người · mở Công việc → Tổng quan ca trực để nhận`,
       tag: "khach-can-nguoi",
     });
     tb.onclick = () => { window.focus(); doiMan("ca"); tb.close(); };
@@ -579,7 +579,7 @@ async function loadOverview() {
      hình — và với thứ tự chờ-lâu-nhất-trước do API trả về, 8 người mất đi
      lại chính là 8 người mới nhắn. Thà cuộn dài còn hơn giấu người đang đợi.
      API đã xếp sẵn ai chờ lâu nhất lên đầu. */
-  /* Khối dưới đây (`#queue`) chỉ tồn tại trong màn Ca trực. Nạp nó khi
+  /* Khối dưới đây (`#queue`) chỉ tồn tại trong tab Tổng quan ca trực. Nạp nó khi
      đang mở màn khác là đổ dữ liệu vào DOM bị ẩn.
      ĐO ĐƯỢC 22.09.2026 trên dashboard đang chạy: `loadOverview()` phát BA
      request (hồi còn hàng chờ video), và `refresh()` gọi nó mỗi 6 giây bất
@@ -590,7 +590,7 @@ async function loadOverview() {
      Vẫn giữ `/overview` chạy mọi lúc: nó nuôi các con số trên thanh điều
      hướng, và người trực cần thấy "Ca trực" nhảy số kể cả khi đang đứng ở
      màn khác — đó chính là cách họ biết có việc mới. */
-  if (state.view !== "ca") return;
+  if (!dangMo("cv-ca-truc")) return;   // tab Tổng quan ca trực của màn Công việc
 
   const waiting = await api("/conversations?status=can_nguoi&limit=200");
   $("#queue").innerHTML = waiting.length

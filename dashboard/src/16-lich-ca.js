@@ -40,7 +40,7 @@ async function loadLichCa() {
   $("#lcCanhBao").innerHTML = r.canh_bao.map((c) => `
     <div class="row"><span class="row__flag row__flag--halt"></span>
       <span class="row__body"><span class="row__title">${esc(c.ghi)}</span>
-        <span class="row__sub">Xếp thêm người vào ca, hoặc tạm tắt luật định tuyến của đội ở trang Cấu hình.</span></span>
+        <span class="row__sub">Xếp thêm người vào ca, hoặc tạm tắt luật định tuyến của đội ở Cấu hình chung → Điều phối hội thoại.</span></span>
     </div>`).join("");
   $("#lcNguoi").innerHTML = r.nguoi.length ? r.nguoi.map((n) => {
     const tt = n.dang_nghi ? "đang nghỉ" : !n.ca.length ? "luôn trực" : n.trong_ca ? "đang trong ca" : "ngoài ca";
@@ -125,3 +125,56 @@ $("#lcNghi")?.addEventListener("click", async (ev) => {
     loadLichCa();
   } catch (e) { toast(e.message, true); }
 });
+
+/* ---------------- Tổng quan ca trực (Công việc → tab đầu) ----------------
+ * Ba khối thêm vào màn Ca trực cũ: ai đang trong ca, hội thoại chưa ai
+ * nhận, hội thoại quá hạn SLA. Không con số nào tính ở đây — "trong ca" là
+ * hàm SQL dang_trong_ca (qua /lich-ca), hai danh sách là bộ lọc của hộp
+ * thư (`chua_giao`, `qua_han_sla`). Tính lại bằng JS là hai bản sự thật.
+ *
+ * Mỗi khối hỏng RIÊNG: một khối lỗi ghi lỗi tại chỗ, không ném ra ngoài —
+ * ném ra là chặn luôn hàng chờ "Chờ người xử lý" ngay bên dưới. */
+const TQ_SO_DONG = 20;
+
+async function loadTongQuanCa() {
+  const pnCa = $("#cvTrongCaPanel");
+  if (pnCa) {
+    const doc = state.toiQuyen && state.toiQuyen.has("dinh_tuyen.doc");
+    pnCa.hidden = !doc;
+    if (doc) {
+      try {
+        const r = await api("/lich-ca");
+        const truc = r.nguoi.filter((n) => !n.dang_nghi && (!n.ca.length || n.trong_ca));
+        $("#cvTrongCaDem").textContent = `${truc.length}/${r.nguoi.length} người đang trực`;
+        $("#cvTrongCa").innerHTML = truc.length ? truc.map((n) => `<div class="row">
+            <span class="row__flag row__flag--auto"></span>
+            <span class="row__body"><span class="row__title">${esc(n.ten)}</span>
+              <span class="row__sub">${n.ca.length ? "đang trong ca" : "luôn trực (chưa xếp ca)"}</span></span>
+          </div>`).join("")
+          : '<p class="empty">Không ai đang trong ca — hội thoại mới sẽ nằm chờ người tự nhận.</p>';
+      } catch (e) {
+        $("#cvTrongCa").innerHTML = `<p class="empty">Không tải được lịch ca: ${esc(e.message)}</p>`;
+      }
+    }
+  }
+  await _tqDanhSach("#cvChuaGiao", "chua_giao=true",
+    "Không có hội thoại nào chưa ai nhận.");
+  await _tqDanhSach("#cvSla", "qua_han_sla=true",
+    "Không hội thoại nào quá hạn SLA.");
+}
+
+async function _tqDanhSach(sel, loc, rong) {
+  const o = $(sel);
+  if (!o) return;
+  try {
+    const r = await api(`/inbox/conversations?limit=${TQ_SO_DONG}&${loc}`);
+    const ds = r.items || [];
+    o.innerHTML = ds.length
+      ? ds.map((c) => convRow(c)).join("")
+        + (r.next_cursor ? `<p class="empty">Còn nữa — mở Hội thoại và lọc để xem hết.</p>` : "")
+      : `<p class="empty">${esc(rong)}</p>`;
+    wireConvRows(sel);
+  } catch (e) {
+    o.innerHTML = `<p class="empty">Không tải được: ${esc(e.message)}</p>`;
+  }
+}

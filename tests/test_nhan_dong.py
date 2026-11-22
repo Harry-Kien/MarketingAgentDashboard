@@ -312,8 +312,10 @@ def _dung(url: str) -> dict:
     return asyncio.run(chay())
 
 
+# `hoi_thoai.ghi_chu`: từ e4bc715 (nhân sự & phân quyền) gắn/gỡ nhãn hội
+# thoại đòi quyền ghi chú — bộ quyền thử phải theo, không thì 403 ở bước gắn.
 QT = ("cau_hinh.doc", "cau_hinh.sua", "hoi_thoai.doc", "hoi_thoai.tra_loi",
-      "khach.doc", "khach.sua")
+      "hoi_thoai.ghi_chu", "khach.doc", "khach.sua")
 
 
 def _tao(k, loai, ten, **them) -> str:

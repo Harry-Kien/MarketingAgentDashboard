@@ -15,6 +15,7 @@ câu cố định. Thứ cần kiểm là AI CÓ được gọi hay không ở t
 from __future__ import annotations
 
 import os
+import secrets
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -23,8 +24,66 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("GCP_PROJECT_ID", "test")
 
-from conftest import GOC_WEB  # noqa: E402
-from test_nghiem_thu_saas import _hoi_thoai_dau, _kenh_webchat, _quan_tri_vao, _sql  # noqa: E402
+from conftest import GOC_WEB, _quan_tri  # noqa: E402
+
+# Trợ giúp chép gọn từ tests/test_nghiem_thu_saas.py chứ không import: import
+# chéo giữa hai tệp test là một "gói" mà test_requirements không tra được, và
+# là hai tệp không thể đổi độc lập.
+
+
+class _Nguoi:
+    """Một người dùng = một token phiên trên client chung (xem test_nghiem_thu_saas)."""
+
+    def __init__(self, khach, token: str):
+        self.khach, self.token = khach, token
+
+    def _co(self):
+        from agent.api.routes import TEN_COOKIE
+
+        self.khach.cookies.set(TEN_COOKIE, self.token)
+
+    def get(self, *a, **k):
+        self._co()
+        return self.khach.get(*a, **k)
+
+    def post(self, *a, **k):
+        self._co()
+        return self.khach.post(*a, **k)
+
+    def put(self, *a, **k):
+        self._co()
+        return self.khach.put(*a, **k)
+
+
+def _sql(khach, coro_fn, *args):
+    return khach.portal.call(coro_fn, *args)
+
+
+def _quan_tri_vao(khach) -> _Nguoi:
+    _, token = _sql(khach, _quan_tri, "sep")
+    return _Nguoi(khach, token)
+
+
+def _kenh_webchat(qt: _Nguoi) -> str:
+    """Kênh webchat BẬT agent — để thấy AI có/không được gọi ở từng tin."""
+    r = qt.post("/api/channel-accounts", json={
+        "channel": "webchat", "display_name": "Web shop",
+        "capabilities": {"send_text": True, "receive_message": True},
+        "credentials": {"widget_secret": secrets.token_urlsafe(24),
+                        "allowed_origins": [GOC_WEB]},
+    })
+    assert r.status_code == 201, r.text
+    tk = r.json()["id"]
+    assert qt.post(f"/api/channel-accounts/{tk}/enable").status_code == 200
+    return tk
+
+
+def _hoi_thoai_dau(khach):
+    from agent import db
+
+    async def doc():
+        return (await db.fetchrow("SELECT id FROM conversations ORDER BY created_at LIMIT 1"))["id"]
+    return _sql(khach, doc)
 
 CHAO = "Dạ shop chào chị, chị cần em tư vấn gì ạ?"
 GIA = "Dạ bảng giá sỉ em gửi chị ngay ạ."
@@ -113,12 +172,12 @@ def test_quy_tac_cau_hinh_tren_dashboard_chay_dung_tren_luong_tin_vao(app_that, 
         r = qt.post("/api/tu-dong", json=body)
         assert r.status_code == 201, r.text
         id_[body["ten"]] = r.json()["id"]
-    tk = _kenh_webchat(qt, agent_bat=True)
+    tk = _kenh_webchat(qt)
     ve = _mo_phien(app_that, tk)
 
     # BƯỚC 2
     _nhan(app_that, tk, ve, "shop ơi cho em xin giá sỉ")
-    cid = _hoi_thoai_dau(app_that)["id"]
+    cid = _hoi_thoai_dau(app_that)
     s = _trang_thai(app_that, cid)
     assert s["mau"] == [CHAO], "hai quy tắc cùng khớp mà khách nhận hai câu"
     assert s["nhan"] == ["khách mới"] and s["viec"] == ["Gửi bảng giá sỉ"]

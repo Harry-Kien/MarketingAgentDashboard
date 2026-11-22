@@ -10538,11 +10538,11 @@ function nkVeKhung(el) {
   el.innerHTML = `<section class="panel">
     <h2 class="panel__head">Nhật ký kiểm toán
       <span class="panel__note">AI, nhân viên và hệ thống · chỉ thêm, không sửa được</span></h2>
-    <div class="tabs nk-xem" role="tablist">
+    <div class="tabs" role="tablist">
       <button type="button" class="tabbar__nut" data-nk-xem="su_kien" aria-selected="${nk.xem === "su_kien"}">Sự kiện</button>
       <button type="button" class="tabbar__nut" data-nk-xem="de_xuat" aria-selected="${nk.xem === "de_xuat"}">Đề xuất của AI &amp; phê duyệt</button>
     </div>
-    <form class="form nk-loc" data-nk-loc ${nk.xem === "su_kien" ? "" : "hidden"}>
+    <form class="form" data-nk-loc ${nk.xem === "su_kien" ? "" : "hidden"}>
       <div class="form__row">
         <label class="field"><span>Từ</span><input type="datetime-local" name="tu" value="${esc(nk.loc.tu_o || "")}"></label>
         <label class="field"><span>Đến</span><input type="datetime-local" name="den" value="${esc(nk.loc.den_o || "")}"></label>
@@ -10560,9 +10560,9 @@ function nkVeKhung(el) {
       </div>
     </form>
     <div class="rows" data-nk-ds><p class="empty">Đang tải…</p></div>
-    <div class="rowbtns nk-trang" data-nk-trang></div>
+    <div class="rowbtns" data-nk-trang></div>
   </section>
-  <section class="panel nk-chi-tiet" data-nk-chi-tiet hidden></section>`;
+  <section class="panel" data-nk-chi-tiet hidden></section>`;
 }
 
 function nkDong(b) {

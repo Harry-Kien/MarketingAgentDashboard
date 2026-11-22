@@ -24,6 +24,7 @@ from agent import cau_hinh_dong, db, nhat_ky, runtime
 from agent.api.routes import TEN_COOKIE
 from agent.api.routes import router as api_router
 from agent.api.cai_dat_api import router as cai_dat_api_router
+from agent.api.ket_noi_tich_hop import router as ket_noi_tich_hop_router
 from agent.api.phong_thu_agent import router as phong_thu_router
 from agent.api.goi_ky_nang import router as goi_ky_nang_router
 from agent.api.mcp_may_chu import router as mcp_may_chu_router
@@ -768,7 +769,28 @@ async def webhook_shipping(
     # Bí mật sai phải trả 401 THẬT, không phải 200 kèm cờ false: hãng vận
     # chuyển và người vận hành đều đọc mã HTTP, và 200 nghĩa là "đã nhận".
     ma_http = int(ket_qua.pop("http_status", 200))
+    if not ket_qua.get("ok"):
+        # Sổ webhook (middleware `so_webhook_nhan`) đọc lỗi ở đây — kể cả lỗi
+        # trả kèm mã 200 (payload hãng không hợp lệ) mà mã HTTP không lộ ra.
+        request.state.loi_webhook = str(ket_qua.get("error") or "không xử lý được")[:300]
     return JSONResponse(ket_qua, status_code=ma_http)
+
+
+@app.middleware("http")
+async def so_webhook_nhan(request: Request, call_next):
+    """
+    Ghi MỌI lời gọi vào `/webhook/*` — mã HTTP, thời gian, lỗi — vào sổ
+    `webhook_nhan` cho màn Kết nối & Tích hợp.
+
+    Ở middleware chứ không trong từng route: lời gọi bị từ chối TRƯỚC khi
+    vào thân route (chữ ký sai, 404 tài khoản, payload không đọc được) mới
+    là lời gọi cần thấy nhất. Callback Zalo cá nhân từng bị 401 tám ngày mà
+    không ai biết. Ghi sổ hỏng thì chỉ ghi log — không bao giờ làm hỏng
+    webhook. Thân ở `agent/ket_noi_tich_hop.py::so_webhook`.
+    """
+    from agent import ket_noi_tich_hop
+
+    return await ket_noi_tich_hop.so_webhook(request, call_next)
 
 
 @app.middleware("http")
@@ -904,6 +926,7 @@ app.include_router(outbox_router)
 app.include_router(native_webhooks_router)
 app.include_router(zalo_personal_webhook_router)
 app.include_router(cai_dat_api_router)
+app.include_router(ket_noi_tich_hop_router)
 app.include_router(phong_thu_router)
 app.include_router(goi_ky_nang_router)
 app.include_router(mcp_may_chu_router)

@@ -53,6 +53,8 @@ khoá nên registry không bật, không có gì chạy nhầm.
 """
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import hashlib
 import hmac
 import os
@@ -152,6 +154,8 @@ def _loai_tin(the: str | None) -> dict:
 
 class MessengerAdapter(ChannelAdapter):
     name = "messenger"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             da_gui=True, dang_go=True, an_binh_luan=True)
 
     def __init__(
         self,

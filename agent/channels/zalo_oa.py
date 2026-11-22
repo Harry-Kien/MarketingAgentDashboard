@@ -41,6 +41,8 @@ không có gì chạy nhầm. Muốn bật: điền khoá vào `.env` rồi ch�
 """
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import json
 import os
 import time
@@ -110,6 +112,8 @@ def _doc_dinh_kem(payload: dict) -> list[dict]:
 
 class ZaloOAAdapter(ChannelAdapter):
     name = "zalo_oa"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             da_gui=True)
 
     def __init__(
         self,

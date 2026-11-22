@@ -60,8 +60,25 @@ class GHNShippingProvider(BaseShippingProvider):
         from agent import cau_hinh_dong
 
         self._api_url = (api_url if api_url is not None else settings.ghn_api_url).rstrip("/")
-        self._token = token if token is not None else cau_hinh_dong.lay("GHN_TOKEN")
-        self._shop_id = shop_id if shop_id is not None else cau_hinh_dong.lay("GHN_SHOP_ID")
+        self._lay = cau_hinh_dong.lay
+        self._token_co_dinh = token
+        self._shop_id_co_dinh = shop_id
+
+    # Đọc khoá MỖI LẦN gọi, không chụp lúc dựng — cùng lý do với GHTK:
+    # provider được cache suốt đời tiến trình (service._PROVIDERS). Bản trước
+    # chụp token lúc dựng, nên đổi token GHN trên dashboard báo "có hiệu lực
+    # ngay" mà vận đơn vẫn tạo bằng token cũ tới lần khởi động lại.
+    @property
+    def _token(self) -> str:
+        if self._token_co_dinh is not None:
+            return self._token_co_dinh
+        return str(self._lay("GHN_TOKEN") or "")
+
+    @property
+    def _shop_id(self) -> str:
+        if self._shop_id_co_dinh is not None:
+            return self._shop_id_co_dinh
+        return str(self._lay("GHN_SHOP_ID") or "")
 
     @property
     def code(self) -> str:

@@ -2164,3 +2164,22 @@ svg { flex: none; }
 @media (max-width: 560px) {
   .chuong__khung { position: fixed; left: 16px; right: 16px; top: 64px; width: auto; }
 }
+
+/* Kết nối & Tích hợp + Cấu hình AI cơ bản (dashboard/src/22-, 23-*.js).
+   Mã URL/khoá dài phải xuống dòng: ở 375px một URL webhook liền mạch đẩy
+   cả trang tràn ngang. */
+.kntt-the { border: 1px solid var(--line, #eef2f8); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+.kntt-the__dau { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 6px; font-size: 15px; }
+.kntt-the__dau .kn-cham, .kntt-tk .kn-cham { display: inline-block; }
+.kntt-nhom { margin: 18px 0 4px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }
+.kntt-truong { display: grid; gap: 4px 12px; margin: 8px 0; }
+.kntt-ghichu { border-left: 3px solid #f08c00; padding-left: 8px; }
+.kntt-canhbao { border-left: 3px solid #e03131; padding-left: 8px; margin: 6px 0; }
+.kntt-khanang { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.kntt-webhook { margin: 8px 0; }
+.kntt-webhook code, .kntt-tk code { white-space: pre-wrap; word-break: break-all; }
+.kntt-lstk { grid-column: 1 / -1; }
+.kntt-bang { overflow-x: auto; max-width: 100%; }
+.kntt-bang table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.kntt-bang th, .kntt-bang td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line, #eef2f8); }
+.kntt-fb { margin-top: 6px; }

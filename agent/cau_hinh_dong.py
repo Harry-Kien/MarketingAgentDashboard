@@ -101,6 +101,11 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
          "\"gặp nhân viên\" để gặp người, ảnh da là dữ liệu nhạy cảm. Nghĩa vụ "
          "theo Nghị định 356/2025 Điều 10 khoản 3 và Điều 6 khoản 4 — tắt thì "
          "bảng kiểm sẵn sàng sẽ cảnh báo."),
+    MoTa("TIN_THONG_BAO_AI", "bvdlcn", "Nội dung thông báo minh bạch AI", False,
+         y_nghia="Gửi kèm tin đầu MỖI hội thoại agent trả lời, không lặp lại trong "
+                 "cùng hội thoại. {ten} = tên thương hiệu. Phải nói rõ là trợ lý AI, "
+                 "đặt trong ngoặc kép một cụm gọi người mà hệ thống nhận ra (vd "
+                 "\"gặp nhân viên\"), và nhắc dữ liệu da là nhạy cảm."),
     MoTa("SLA_NGUONG_CANH_BAO", "sla", "Cảnh báo sớm SLA khi đã dùng (%) thời gian", False,
          y_nghia="Số nguyên 10–95, mặc định 80: cảnh báo khi hội thoại đã dùng hết "
                  "80% thời gian cho phép — áp cho cả hạn phản hồi đầu lẫn hạn giải quyết."),
@@ -197,6 +202,7 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "AN_BINH_LUAN_CO_SDT": lambda: settings.an_binh_luan_co_sdt,
     "CSAT_BAT": lambda: settings.csat_bat,
     "THONG_BAO_AI": lambda: settings.thong_bao_ai,
+    "TIN_THONG_BAO_AI": lambda: settings.tin_thong_bao_ai,
     "SLA_NGUONG_CANH_BAO": lambda: str(settings.sla_nguong_canh_bao),
     "SLA_KHI_TRE": lambda: settings.sla_khi_tre,
     "VIETQR_BIN": lambda: settings.vietqr_bin,
@@ -313,6 +319,15 @@ def kiem_gia_tri(khoa: str, gia_tri: str) -> str:
     if khoa == "VIETQR_SO_TK" and not (gia_tri.isalnum() and gia_tri.isascii()
                                        and 6 <= len(gia_tri) <= 19):
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: chỉ chữ và số, 6–19 ký tự, không khoảng trắng")
+    if khoa == "TIN_THONG_BAO_AI":
+        # Câu này HỨA với khách một lối thoát; lời hứa được giữ bằng mã
+        # (`thong_bao_ai.khach_doi_gap_nguoi`). Để người sửa viết một cụm mã
+        # không nhận ra là khách làm đúng hướng dẫn mà vẫn nói với máy.
+        from agent.omnichannel.thong_bao_ai import kiem_noi_dung
+
+        loi = kiem_noi_dung(gia_tri)
+        if loi:
+            raise KhoaKhongHopLe(f"{mo_ta.nhan}: {loi}")
     if khoa.startswith("MODEL_"):
         from agent.core.llm import PRICING
 
@@ -331,6 +346,10 @@ def _sau_khi_doi(khoa: str) -> None:
     from agent.core import llm
 
     llm.xoa_cache_client()
+    if khoa.startswith("ERPNEXT_"):
+        from agent.erp import nha_may
+
+        nha_may.bo_cong_sau_doi_cau_hinh()
     # Bộ lọc nhật ký nhớ danh sách bí mật một lần rồi dùng mãi. Không quên
     # ở đây thì khoá vừa dán không được che cho tới lần khởi động lại — và
     # đó đúng là lúc nó bị gọi nhiều nhất.
@@ -350,6 +369,7 @@ async def dat(khoa: str, gia_tri: str, *, sua_boi: str) -> None:
     # KHÔNG ghi giá trị vào nhật ký, kể cả khoá không bí mật — một danh sách
     # trắng "khoá nào in được" là một chỗ để lần sau thêm nhầm.
     await db.log_event("cau_hinh_api.doi", actor=sua_boi, khoa=khoa)
+    await _ghi_lich_su(khoa, "dat", sua_boi)
     _sau_khi_doi(khoa)
 
 
@@ -359,7 +379,17 @@ async def xoa(khoa: str, *, sua_boi: str) -> None:
     _gia_tri.pop(khoa, None)
     _meta.pop(khoa, None)
     await db.log_event("cau_hinh_api.xoa", actor=sua_boi, khoa=khoa)
+    await _ghi_lich_su(khoa, "xoa", sua_boi)
     _sau_khi_doi(khoa)
+
+
+async def _ghi_lich_su(khoa: str, hanh_dong: str, sua_boi: str) -> None:
+    """Lịch sử đổi cấu hình cho màn Kết nối & Tích hợp: TÊN trường, không giá trị."""
+    from agent import ket_noi_tich_hop
+
+    await ket_noi_tich_hop.ghi_lich_su(
+        dich_vu=ket_noi_tich_hop.dich_vu_cua_khoa(khoa), truong=khoa,
+        hanh_dong=hanh_dong, sua_boi=sua_boi, bi_mat=_mo_ta(khoa).bi_mat)
 
 
 async def ghi_ket_qua_kiem(khoa: str, ok: bool, chi_tiet: str) -> None:

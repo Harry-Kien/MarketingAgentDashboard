@@ -30,6 +30,8 @@ HỢP ĐỒNG API (đọc từ backend/src/modules/api/public-api-routes.ts)
 """
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import os
 from datetime import datetime, timezone
 from uuid import UUID
@@ -46,6 +48,8 @@ INBOUND_SENDER = "contact"
 
 class ZaloCRMAdapter(ChannelAdapter):
     name = "zalocrm"
+    # Public API ZaloCRM chỉ đọc tin văn bản; gửi tệp thành một dòng chữ.
+    KHA_NANG_KENH = kha_nang(van_ban=True, da_gui=True)
 
     def __init__(self, *, account_id: UUID | None = None) -> None:
         super().__init__(account_id=account_id)

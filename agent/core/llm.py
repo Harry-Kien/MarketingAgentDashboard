@@ -604,10 +604,14 @@ async def _complete_claude(
 #  OpenAI
 # ===============================================================
 
-def _openai_url(path: str = "/chat/completions") -> str:
+def _openai_url(path: str = "/chat/completions", base_url: str = "") -> str:
     from agent import cau_hinh_dong
 
-    base = (cau_hinh_dong.lay("OPENAI_BASE_URL") or settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+    # `base_url` tường minh thắng: "Kiểm tra kết nối" chạy bằng endpoint NGƯỜI
+    # VỪA GÕ. Không có tham số này thì ô endpoint gõ mới bị lặng lẽ bỏ qua và
+    # phép kiểm báo xanh cho endpoint ĐANG LƯU — xanh giả.
+    base = (base_url or cau_hinh_dong.lay("OPENAI_BASE_URL") or settings.openai_base_url
+            or "https://api.openai.com/v1").rstrip("/")
     p = path.lstrip("/")
     return f"{base}/{p}"
 
@@ -694,7 +698,7 @@ def _to_openai(messages: list[dict], tools: list[dict] | None) -> tuple[list[dic
 
 async def _complete_openai(
     *, system: dict, messages: list[dict], model: str, max_tokens: int,
-    tools: list[dict] | None, api_key: str = "",
+    tools: list[dict] | None, api_key: str = "", base_url: str = "",
 ) -> LLMResult:
     oa_messages, oa_tools = _to_openai(messages, tools)
     sys_text = "\n\n".join(x for x in (system.get("stable"), system.get("volatile")) if x)
@@ -702,7 +706,7 @@ async def _complete_openai(
         oa_messages = [{"role": "system", "content": sys_text}, *oa_messages]
 
     key = _openai_key(api_key=api_key)
-    url = _openai_url("/chat/completions")
+    url = _openai_url("/chat/completions", base_url=base_url)
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
@@ -783,8 +787,12 @@ async def complete(
     tools: list[dict] | None = None,
     effort: str = "medium",
 ) -> LLMResult:
+    from agent import cau_hinh_dong
+
     p = provider()
-    model = model or settings.model_chat
+    # Qua cấu hình động: MODEL_CHAT đổi trên dashboard phải có hiệu lực ngay,
+    # không phải chỉ hiện "đã lưu" trong khi model cũ vẫn chạy.
+    model = model or cau_hinh_dong.lay("MODEL_CHAT") or settings.model_chat
 
     if p in ("gemini", "gemini_api"):
         return await _complete_gemini(
@@ -808,7 +816,7 @@ async def complete(
 
 async def kiem_khoa(
     *, provider_name: str, api_key: str = "", model: str = "", project: str = "",
-    timeout: float = 45.0,
+    timeout: float = 45.0, base_url: str = "",
 ) -> tuple[bool, str, int]:
     """
     Gọi một câu 8 token bằng ĐÚNG tham số truyền vào, không đụng cấu hình
@@ -858,7 +866,8 @@ async def kiem_khoa(
         elif p == "openai":
             r = await asyncio.wait_for(
                 _complete_openai(system=system, messages=messages, model=model,
-                                 max_tokens=8, tools=None, api_key=api_key),
+                                 max_tokens=8, tools=None, api_key=api_key,
+                                 base_url=base_url),
                 timeout,
             )
         else:

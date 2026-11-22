@@ -29,6 +29,8 @@ HỢP ĐỒNG API
 """
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import json
 import os
 from contextlib import suppress
@@ -123,6 +125,8 @@ def _doc_dinh_kem(payload: dict) -> list[dict]:
 
 class ChatwootAdapter(ChannelAdapter):
     name = "chatwoot"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             gui_tep=True, da_gui=True, dang_go=True)
 
     def __init__(self, *, account_id: UUID | None = None) -> None:
         super().__init__(account_id=account_id)

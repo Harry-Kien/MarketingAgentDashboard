@@ -1,6 +1,8 @@
 """Zalo cá nhân native qua sidecar Node được cách ly và ký HMAC."""
 from __future__ import annotations
 
+from agent.channels.base import kha_nang
+
 import hashlib
 import hmac
 import json
@@ -95,6 +97,8 @@ def _kem_boi_canh(
 
 class ZaloPersonalAdapter(ChannelAdapter):
     name = "zalo_personal"
+    KHA_NANG_KENH = kha_nang(van_ban=True, nhan_anh=True, nhan_tep=True, gui_anh=True,
+                             gui_tep=True, da_gui=True)
 
     def __init__(
         self,

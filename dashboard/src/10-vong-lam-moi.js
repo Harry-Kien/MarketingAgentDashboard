@@ -21,6 +21,8 @@ async function refresh() {
     if (state.view === "kynang") await loadKyNang();
     if (state.view === "phongthu" && !state.phongThuDaTai) await loadPhongThu();
     if (state.view === "cauhinh") { await loadMauNhanh(); await napQuanLyNhan(); await loadQuyTac(); await loadDinhTuyen(); await loadTamNhin(); await loadHoSoAgent(); await loadTruongKhach(); await loadCauHinh(); await loadCaiDatApi(); }
+    // Gắn MỘT lần, không dựng lại mỗi nhịp (22-ket-noi-tich-hop.js).
+    if (state.view === "cauhinh") ganTabTam();
     if (state.view === "congviec") await loadCongViec();
     if (state.view === "nhansu") { await loadNhanSu(); await loadLichCa(); }
     if (state.view === "nhatky") { await loadYeuCauChuThe(); await loadPdpdPolicy(); await loadRetention(); await loadEvents(); }

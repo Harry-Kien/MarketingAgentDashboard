@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/erp", tags=["erp"])
 
 
 @router.get("/san-pham")
-async def danh_sach_san_pham(_nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
+async def danh_sach_san_pham(_nguoi: dict = Depends(can_quyen("kho.doc"))) -> dict:
     try:
         data = await nha_may.cong().danh_muc()
     except LoiERP as exc:
@@ -43,7 +43,7 @@ async def danh_sach_san_pham(_nguoi: dict = Depends(can_quyen("don.doc"))) -> di
 
 @router.get("/san-pham/{ma}")
 async def mot_san_pham(
-    ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))
+    ma: str, _nguoi: dict = Depends(can_quyen("kho.doc"))
 ) -> dict:
     try:
         data = await nha_may.cong().danh_muc()
@@ -56,7 +56,7 @@ async def mot_san_pham(
 
 
 @router.get("/ton-kho/{ma}")
-async def ton_kho(ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
+async def ton_kho(ma: str, _nguoi: dict = Depends(can_quyen("kho.doc"))) -> dict:
     # `bo_qua_cache=True`: ai gọi thẳng endpoint này là đang cần con số ngay
     # lúc này — thường để quyết định có bán hay không.
     t = await nha_may.cong().ton_kho(ma, bo_qua_cache=True)
@@ -66,7 +66,7 @@ async def ton_kho(ma: str, _nguoi: dict = Depends(can_quyen("don.doc"))) -> dict
 
 
 @router.get("/suc-khoe")
-async def suc_khoe(_nguoi: dict = Depends(can_quyen("don.doc"))) -> dict:
+async def suc_khoe(_nguoi: dict = Depends(can_quyen("kho.doc"))) -> dict:
     cong = nha_may.cong()
     return {**cong.trang_thai(), "song": await cong.suc_khoe()}
 

@@ -67,6 +67,8 @@ function startInboxStream() {
 // thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
 kiemPhien().then((co) => {
   if (!co) return;
+  // Ẩn màn cả trang đều 403 với người này — 24-nhan-su.js.
+  apDungQuyenGiaoDien();
   refresh();
   startInboxStream();
   state.timer = setInterval(refresh, 6000);

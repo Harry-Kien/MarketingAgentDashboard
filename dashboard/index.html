@@ -1415,6 +1415,11 @@
             <label class="field"><span>Vai trò</span>
               <select name="vai_tro_id" id="nsVaiTroMoi"></select></label>
           </div>
+          <div class="form__row">
+            <label class="field"><span>Email <em class="hint">không bắt buộc</em></span>
+              <input name="email" type="email" maxlength="200" autocomplete="off"
+                     placeholder="lan@shop.vn"></label>
+          </div>
           <!-- Kênh là trục lọc thứ hai, và là trục hay bị quên: vai trò cho
                phép "đọc hội thoại", nhưng người không phải thành viên kênh
                nào thì không có hội thoại nào để đọc — kể cả của khách đã
@@ -1484,6 +1489,15 @@
           màn này thì khi đông vai trò, không ai trả lời được vì sao một người
           vào được màn nào đó.</p>
         <div id="nsGiaiThich" class="rows"></div>
+      </section>
+
+      <!-- LỊCH SỬ ĐỔI QUYỀN (phiếu việc mục 12.8): ai, lúc nào, vai trò/người
+           nào, và ĐỔI GÌ — trước/sau. Không có màn này thì câu "tháng trước
+           vì sao người này duyệt được đơn" chỉ trả lời được bằng psql. -->
+      <section class="panel">
+        <h2 class="panel__head">Lịch sử nhân sự &amp; phân quyền
+          <span class="panel__note">ai đổi gì, lúc nào — trước và sau</span></h2>
+        <div id="nsLichSu" class="rows"><p class="empty">Đang tải…</p></div>
       </section>
     </section>
 

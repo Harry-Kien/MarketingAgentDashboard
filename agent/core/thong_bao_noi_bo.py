@@ -83,7 +83,7 @@ _SQL_CO_QUYEN = """
     SELECT n.id
     FROM nguoi_dung n
     JOIN nguoi_dung_vai_tro x ON x.nguoi_dung_id = n.id
-    JOIN vai_tro vt ON vt.id = x.vai_tro_id
+    JOIN vai_tro vt ON vt.id = x.vai_tro_id AND vt.dang_dung
     LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id
     WHERE NOT n.khoa
     GROUP BY n.id
@@ -286,7 +286,9 @@ async def bao_can_duyet_nhap(conversation_id: UUID | str, *, conn: Any = None) -
     """
     try:
         async with _ket_noi(conn) as c:
-            nhan = await nguoi_nhan_hoi_thoai(c, conversation_id, quyen="hoi_thoai.tra_loi")
+            # `ai.duyet`, không `hoi_thoai.tra_loi`: chuông "cần duyệt" gửi
+            # cho người KHÔNG bấm được nút Duyệt là chuông họ học cách bỏ qua.
+            nhan = await nguoi_nhan_hoi_thoai(c, conversation_id, quyen="ai.duyet")
             if not nhan:
                 _khong_ai_nhan("can_duyet", conversation_id)
             return await _ghi(

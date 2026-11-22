@@ -869,7 +869,7 @@ async def giao_khach(
                 "                false) AS tra_loi_duoc "
                 "FROM nguoi_dung nd "
                 "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
-                "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+                "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id AND vt.dang_dung "
                 "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
                 "WHERE nd.id = $1 GROUP BY nd.id",
                 body.owner_user_id)
@@ -958,7 +958,7 @@ async def giao_khach_hang_loat(
                     "                false) AS tra_loi_duoc "
                     "FROM nguoi_dung nd "
                     "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
-                    "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
+                    "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id AND vt.dang_dung "
                     "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
                     "WHERE nd.id = $1 GROUP BY nd.id",
                     body.owner_user_id)

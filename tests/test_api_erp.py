@@ -45,7 +45,9 @@ def _client(nguon: NguonGia, tmp_path) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[nguoi_da_dang_nhap] = lambda: nguoi_thu(
-        "don.doc", "cau_hinh.doc", ten="thu")
+        # Sản phẩm, tồn kho, sức khoẻ ERP là màn KHO — quyền `kho.doc` từ
+        # 0058, không còn đi kèm `don.doc` (xem `agent/core/quyen.py`).
+        "kho.doc", "cau_hinh.doc", ten="thu")
     return TestClient(app)
 
 

@@ -51,7 +51,7 @@ async def liet_ke_nhan(nguoi: dict = Depends(can_quyen("hoi_thoai.doc"))) -> dic
 
 @router.post("/conversations/{conversation_id}/nhan", status_code=201)
 async def gan_nhan(conversation_id: UUID, body: NhanIn,
-                   nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict[str, Any]:
+                   nguoi: dict = Depends(can_quyen("hoi_thoai.ghi_chu"))) -> dict[str, Any]:
     await chan_neu_ngoai_kenh(conversation_id, nguoi)
     nhan = _chuan_nhan(body.nhan)
     await db.execute(
@@ -62,7 +62,7 @@ async def gan_nhan(conversation_id: UUID, body: NhanIn,
 
 @router.delete("/conversations/{conversation_id}/nhan/{nhan}", status_code=204)
 async def go_nhan(conversation_id: UUID, nhan: str,
-                  nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> None:
+                  nguoi: dict = Depends(can_quyen("hoi_thoai.ghi_chu"))) -> None:
     await chan_neu_ngoai_kenh(conversation_id, nguoi)
     await db.execute("DELETE FROM hoi_thoai_nhan WHERE conversation_id = $1 AND nhan = $2",
                      conversation_id, _chuan_nhan(nhan))
@@ -83,7 +83,7 @@ async def doc_ghi_chu(conversation_id: UUID,
 
 @router.post("/conversations/{conversation_id}/ghi-chu", status_code=201)
 async def them_ghi_chu(conversation_id: UUID, body: GhiChuIn,
-                       nguoi: dict = Depends(can_quyen("hoi_thoai.tra_loi"))) -> dict[str, Any]:
+                       nguoi: dict = Depends(can_quyen("hoi_thoai.ghi_chu"))) -> dict[str, Any]:
     await chan_neu_ngoai_kenh(conversation_id, nguoi)
     r = await db.fetchrow_chac(
         "INSERT INTO hoi_thoai_ghi_chu (conversation_id, noi_dung, tao_boi) "

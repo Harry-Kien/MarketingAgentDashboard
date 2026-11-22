@@ -40,7 +40,11 @@ class TaoNguoiDungIn(BaseModel):
     ten_dang_nhap: str = Field(min_length=3, max_length=64)
     mat_khau: str = Field(min_length=8, max_length=200)
     ho_ten: str = Field("", max_length=120)
+    # Nhãn hiển thị cũ (`quan_tri`/`nhan_vien`), KHÔNG cấp quyền gì — quyền
+    # đến từ `vai_tro_ids`.
     vai_tro: str = Field("nhan_vien")
+    email: str | None = Field(None, max_length=200)
+    vai_tro_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------
@@ -229,12 +233,21 @@ async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -
     # Cột ấy giờ là nhãn hiển thị, không còn quyết định quyền — xem
     # `agent/core/xac_thuc.py`. Màn Nhân sự hiện nó thay cho vai trò thật là
     # nói dối người vận hành ở đúng chỗ họ cần sự thật nhất.
+    #
+    # `vai_tro_ten` chỉ gồm vai trò ĐANG DÙNG — thứ thật sự cấp quyền. Vai
+    # trò đã ngừng dùng mà người này còn mang nằm riêng ở `vai_tro_ngung`.
     rows = await db.fetch(
-        "SELECT nd.id, nd.ten_dang_nhap, nd.ho_ten, nd.vai_tro, nd.khoa, "
+        "SELECT nd.id, nd.ten_dang_nhap, nd.ho_ten, nd.email, nd.vai_tro, nd.khoa, "
         "       nd.tao_luc, nd.dang_nhap_cuoi, "
         "       COALESCE(array_agg(vt.ten ORDER BY vt.ten) "
-        "                FILTER (WHERE vt.ten IS NOT NULL), "
+        "                FILTER (WHERE vt.ten IS NOT NULL AND vt.dang_dung), "
         "                ARRAY[]::text[]) AS vai_tro_ten, "
+        "       COALESCE(array_agg(vt.ten ORDER BY vt.ten) "
+        "                FILTER (WHERE vt.ten IS NOT NULL AND NOT vt.dang_dung), "
+        "                ARRAY[]::text[]) AS vai_tro_ngung, "
+        "       COALESCE(array_agg(vt.id::text ORDER BY vt.ten) "
+        "                FILTER (WHERE vt.id IS NOT NULL), "
+        "                ARRAY[]::text[]) AS vai_tro_id, "
         # Số kênh người này là thành viên. 0 kênh + không phải Quản trị =
         # đăng nhập được mà không thấy hội thoại nào, khách nào — kể cả khách
         # đã giao cho chính họ. Phải hiện ngay trên dòng, không đợi ai hỏi.
@@ -246,7 +259,15 @@ async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -
         # đọc được PII" thì phải tự đọc bảng account_memberships.
         "       (SELECT count(*) FROM account_memberships am "
         "         WHERE am.user_id = nd.id "
-        "           AND am.role IN ('owner', 'manager'))::int AS so_kenh_pii "
+        "           AND am.role IN ('owner', 'manager'))::int AS so_kenh_pii, "
+        # Việc đang giữ — để nút Khoá cảnh báo TRƯỚC khi bấm, và để quản lý
+        # thấy ai đang ôm nhiều việc (mục 13.8).
+        "       (SELECT count(*) FROM conversations c "
+        "         WHERE c.assigned_to = nd.id AND c.mode = 'human' "
+        "           AND c.state NOT IN ('resolved', 'closed'))::int AS so_hoi_thoai_giu, "
+        "       (SELECT count(*) FROM cong_viec cv "
+        "         WHERE cv.nguoi_nhan = nd.id "
+        "           AND cv.trang_thai IN ('moi', 'dang_lam'))::int AS so_viec_chua_xong "
         "FROM nguoi_dung nd "
         "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = nd.id "
         "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
@@ -263,19 +284,71 @@ async def danh_sach_nguoi_dung(_: dict = Depends(can_quyen("nguoi_dung.doc"))) -
 @router.post("/nguoi-dung")
 async def them_nguoi_dung(body: TaoNguoiDungIn,
                           nguoi: dict = Depends(can_quyen("nguoi_dung.sua"))) -> dict:
+    """
+    Tạo tài khoản, kèm email và vai trò trong CÙNG một lời gọi (mục 13.3).
+
+    Vai trò được kiểm (tồn tại, đang dùng, không vượt quyền người tạo) TRƯỚC
+    khi tạo tài khoản: kiểm sau thì lỗi ở bước gán để lại một tài khoản không
+    quyền gì — đăng nhập được, mọi màn trống, và người tạo bấm tạo lại thì
+    gặp "tên đã tồn tại".
+    """
+    from agent.api.nhan_su import chuan_email
+    from agent.api.quyen import chan_cap_vuot, ghi_lich_su, quyen_cua_vai_tro
+
+    email = chuan_email(body.email)
+    vai = sorted({uuid.UUID(str(v)) for v in body.vai_tro_ids}, key=str)
+    async with db.pool().acquire() as conn:
+        if email and await conn.fetchval(
+                "SELECT 1 FROM nguoi_dung WHERE lower(email) = $1", email):
+            raise HTTPException(409, f"Email {email} đã dùng cho tài khoản khác.")
+        ten_vai: list[str] = []
+        if vai:
+            ds = await conn.fetch(
+                "SELECT id, ten, dang_dung FROM vai_tro WHERE id = ANY($1::uuid[])", vai)
+            if len(ds) != len(vai):
+                raise HTTPException(422, "Có vai trò không tồn tại")
+            ngung = sorted(r["ten"] for r in ds if not r["dang_dung"])
+            if ngung:
+                raise HTTPException(422, f"Vai trò đã ngừng dùng: {', '.join(ngung)}")
+            chan_cap_vuot(nguoi, await quyen_cua_vai_tro(conn, vai), "gán các vai trò này")
+            ten_vai = sorted(r["ten"] for r in ds)
     try:
         r = await xac_thuc.tao_nguoi_dung(
-            body.ten_dang_nhap, body.mat_khau, body.ho_ten, body.vai_tro
+            body.ten_dang_nhap, body.mat_khau, body.ho_ten, body.vai_tro,
+            ghi_nhat_ky=False,
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    await db.log_event("auth.tao_nguoi_dung", actor=nguoi["ten_dang_nhap"],
-                       ten_moi=body.ten_dang_nhap, vai_tro=body.vai_tro)
-    return r
+    uid = uuid.UUID(str(r["id"]))
+    try:
+        async with db.pool().acquire() as conn:
+            async with conn.transaction():
+                if email:
+                    await conn.execute(
+                        "UPDATE nguoi_dung SET email = $2 WHERE id = $1", uid, email)
+                for vid in vai:
+                    await conn.execute(
+                        "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id, gan_boi) "
+                        "VALUES ($1, $2, $3)", uid, vid,
+                        uuid.UUID(str(nguoi["id"])) if nguoi.get("id") else None)
+                await ghi_lich_su(
+                    conn, "auth.tao_nguoi_dung", nguoi=nguoi, ref_id=uid,
+                    ten_dang_nhap=r["ten_dang_nhap"], ten_moi=r["ten_dang_nhap"],
+                    truoc=None,
+                    sau={"ho_ten": r["ho_ten"], "email": email, "vai_tro": ten_vai,
+                         "khoa": False},
+                    them=ten_vai, bot=[])
+    except Exception as exc:
+        # Tài khoản ĐÃ tạo. Nói đúng điều ấy — không thì người ta bấm tạo lại
+        # và gặp "tên đã tồn tại" mà không hiểu vì sao.
+        raise HTTPException(409, (
+            f"Đã tạo {r['ten_dang_nhap']} nhưng CHƯA cấp được vai trò/email "
+            f"({type(exc).__name__}). Sửa trên dòng của họ ở tab Nhân viên.")) from exc
+    return {**r, "email": email, "vai_tro_ten": ten_vai}
 
 
 @router.post("/nguoi-dung/{ten}/khoa")
-async def khoa_nguoi_dung(ten: str, khoa: bool = True,
+async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False,
                           nguoi: dict = Depends(can_quyen("nguoi_dung.sua"))) -> dict:
     """
     Khoá tài khoản và ĐÁ MỌI PHIÊN ĐANG MỞ.
@@ -283,25 +356,60 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True,
     Khoá mà không xoá phiên thì người vừa bị khoá vẫn ngồi trong hệ thống
     tới lúc phiên hết hạn — với hệ thống nắm dữ liệu khách hàng, đó là bảy
     ngày quá nhiều.
+
+    Còn giữ hội thoại hoặc việc chưa xong thì 409 kèm danh sách (mục 13.8),
+    trừ khi `bo_qua_viec=true` — xem đầu `agent/api/nhan_su.py`. Chặn ở MÁY
+    CHỦ chứ không chỉ ở hộp thoại: gọi thẳng API hay màn hình cũ đều phải
+    gặp cùng một câu hỏi.
+
+    Không bao giờ XOÁ tài khoản: người đã nghỉ vẫn là tác giả của tin đã
+    gửi, người duyệt của bản nháp, người giao của việc — khoá là đủ.
     """
     if ten.strip().lower() == nguoi["ten_dang_nhap"]:
         raise HTTPException(422, "Không tự khoá tài khoản của mình được")
-    from agent.api.quyen import chan_cap_vuot, quyen_cua_nguoi
+    from agent.api.nhan_su import viec_dang_giu
+    from agent.api.quyen import (
+        KhoaCungNgoaiHeThong,
+        _con_nguoi_giu_quyen_song_con,
+        chan_cap_vuot,
+        ghi_lich_su,
+        quyen_cua_nguoi,
+    )
 
     async with db.pool().acquire() as conn:
-        uid = await conn.fetchval(
-            "SELECT id FROM nguoi_dung WHERE ten_dang_nhap = $1", ten.strip().lower())
-        if uid is not None:
+        async with conn.transaction():
+            cu = await conn.fetchrow(
+                "SELECT id, khoa FROM nguoi_dung WHERE ten_dang_nhap = $1 FOR UPDATE",
+                ten.strip().lower())
+            if cu is None:
+                raise HTTPException(404, "Không có tài khoản này")
             # Khoá cấp trên = đá cấp trên ra khỏi hệ thống: cùng luật với gán vai trò.
-            chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, uid), "khoá người này")
-    r = await db.fetchrow(
-        "UPDATE nguoi_dung SET khoa = $2 WHERE ten_dang_nhap = $1 RETURNING id",
-        ten.strip().lower(), khoa,
-    )
-    if r is None:
-        raise HTTPException(404, "Không có tài khoản này")
-    if khoa:
-        await db.execute("DELETE FROM phien WHERE nguoi_dung_id = $1", r["id"])
-    await db.log_event("auth.khoa_nguoi_dung", actor=nguoi["ten_dang_nhap"],
-                       ten=ten, khoa=khoa)
+            chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, cu["id"]), "khoá người này")
+            viec: dict = {}
+            if khoa and not cu["khoa"]:
+                viec = await viec_dang_giu(conn, cu["id"])
+                if viec["tong"] and not bo_qua_viec:
+                    raise HTTPException(409, {
+                        "can_chuyen_viec": True, "viec": viec,
+                        "detail": (
+                            f"{ten} đang giữ {viec['so_hoi_thoai']} hội thoại và "
+                            f"{viec['so_cong_viec']} việc chưa xong. Khoá bây giờ là "
+                            "khách của họ chờ mà không ai trả lời — chuyển việc "
+                            "sang người khác trước, hoặc xác nhận để lại việc."),
+                    })
+            await conn.execute(
+                "UPDATE nguoi_dung SET khoa = $2 WHERE id = $1", cu["id"], khoa)
+            if khoa:
+                await conn.execute("DELETE FROM phien WHERE nguoi_dung_id = $1", cu["id"])
+                # Khoá cũng lấy đi một người giữ `nguoi_dung.sua`.
+                if not await _con_nguoi_giu_quyen_song_con(conn):
+                    raise KhoaCungNgoaiHeThong()
+            if cu["khoa"] != khoa:
+                await ghi_lich_su(
+                    conn, "auth.khoa_nguoi_dung", nguoi=nguoi, ref_id=cu["id"],
+                    ten=ten, ten_dang_nhap=ten, khoa=khoa,
+                    truoc={"khoa": cu["khoa"]}, sau={"khoa": khoa},
+                    de_lai_viec=({"so_hoi_thoai": viec["so_hoi_thoai"],
+                                  "so_cong_viec": viec["so_cong_viec"]}
+                                 if viec.get("tong") else None))
     return {"ok": True, "ten_dang_nhap": ten, "khoa": khoa}

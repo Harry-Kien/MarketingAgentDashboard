@@ -385,7 +385,7 @@ async def so_nguoi_duyet_duoc() -> int:
     r = await db.fetchrow(
         "SELECT count(DISTINCT n.id) AS n FROM nguoi_dung n "
         "JOIN nguoi_dung_vai_tro x ON x.nguoi_dung_id = n.id "
-        "JOIN vai_tro vt ON vt.id = x.vai_tro_id "
+        "JOIN vai_tro vt ON vt.id = x.vai_tro_id AND vt.dang_dung "
         "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
         "     AND vq.quyen = 'khach.xoa' "
         "WHERE NOT n.khoa "

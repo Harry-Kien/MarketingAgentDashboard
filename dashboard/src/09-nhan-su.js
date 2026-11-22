@@ -15,6 +15,8 @@ const nhanSu = { vaiTro: [], danhMuc: {}, dangSua: null };
 
 function nsDongNguoi(n) {
   const vai = (n.vai_tro_ten || []).map((t) => `<span class="pill">${esc(t)}</span>`).join(" ")
+    + (n.vai_tro_ngung || []).map((t) =>
+      ` <span class="pill pill--warn" title="Vai trò đã ngừng dùng — không cấp quyền nào">${esc(t)} · ngừng dùng</span>`).join("")
     || '<span class="pill pill--warn">chưa có vai trò nào</span>';
   const coVai = (n.vai_tro_ten || []).length > 0;
   /* Số KÊNH người này được vào — trục lọc thứ hai, và là trục hay bị quên.
@@ -36,7 +38,7 @@ function nsDongNguoi(n) {
     <span class="row__flag row__flag--${n.khoa ? "halt" : coVai && (soKenh || laQuanTri) ? "auto" : "assist"}"></span>
     <div class="row__main">
       <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
-      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.khoa ? " · đã khoá" : ""}${
+      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.email ? " · " + esc(n.email) : ""}${n.khoa ? " · đã khoá" : ""}${
         n.dang_nhap_cuoi ? " · vào lần cuối " + clock(n.dang_nhap_cuoi) : " · chưa đăng nhập lần nào"}</span>
     </div>
     <div class="row__side">
@@ -61,14 +63,18 @@ function nsDongVaiTro(v) {
   const soQuyen = v.toan_quyen
     ? "toàn bộ quyền (lấy từ mã)"
     : `${v.quyen.length} quyền`;
-  const nut = v.toan_quyen
+  /* Vai trò từng có người mang chỉ NGỪNG DÙNG được (mục 13.9) — Xoá chỉ
+   * hiện khi máy chủ sẽ cho xoá (`xoa_duoc`). */
+  const nut = (v.toan_quyen
     ? ""
-    : `<button type="button" class="btn btn--sm btn--ghost" data-suavai="${esc(v.id)}">Sửa</button>`
-      + (v.he_thong ? "" : `<button type="button" class="btn btn--sm btn--ghost" data-xoavai="${esc(v.id)}">Xoá</button>`);
+    : `<button type="button" class="btn btn--sm btn--ghost" data-suavai="${esc(v.id)}">Sửa</button>`)
+      + (v.he_thong ? "" : `<button type="button" class="btn btn--sm btn--ghost" data-trangthaivai="${esc(v.id)}">${v.dang_dung ? "Ngừng dùng" : "Dùng lại"}</button>`)
+      + (v.xoa_duoc ? `<button type="button" class="btn btn--sm btn--ghost" data-xoavai="${esc(v.id)}">Xoá</button>` : "");
   return `<div class="row">
     <span class="row__flag row__flag--${v.toan_quyen ? "halt" : "auto"}"></span>
     <div class="row__main">
-      <b>${esc(v.ten)}${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}</b>
+      <b>${esc(v.ten)}${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}${
+        v.dang_dung === false ? ' <span class="tag tag--plain">ngừng dùng</span>' : ""}</b>
       <span class="row__sub">${esc(v.mo_ta || "—")}</span>
     </div>
     <div class="row__side">
@@ -86,6 +92,12 @@ async function loadNhanSu() {
   nhanSu.danhMuc = dm.nhom;
 
   const ds = nguoi.nguoi_dung || nguoi.items || nguoi;
+  // Dùng CHUNG với 24-nhan-su.js: bảng tick theo nhóm chức năng, khoá kèm
+  // chuyển việc, lịch sử — một bản luật, không hai.
+  nsv.nguoi = ds;
+  nsv.vaiTro = vt.vai_tro;
+  nsv.nhom = dm.nhom_hien_thi || [];
+  nsvVeLichSu($("#nsLichSu"));
   /* Vòng làm mới 6 giây gọi lại hàm này. Dựng lại danh sách khi một bảng
      tick (vai trò, kênh) đang mở là XOÁ bảng ấy giữa lúc người ta đang tick
      — đo được trên hệ thống thật: bảng biến mất trước khi kịp bấm Lưu.
@@ -119,20 +131,15 @@ async function loadNhanSu() {
   const oVai = $("#nsVaiTroMoi");
   if (oVai) {
     oVai.innerHTML = '<option value="">— chưa gán, cấp sau —</option>'
-      + nhanSu.vaiTro.map((v) => `<option value="${esc(v.id)}">${esc(v.ten)}</option>`).join("");
+      + nhanSu.vaiTro.filter((v) => v.dang_dung !== false)
+        .map((v) => `<option value="${esc(v.id)}">${esc(v.ten)}</option>`).join("");
   }
 }
 
+/* Nhóm theo CHỨC NĂNG dashboard (phiếu việc mục 12.2) — dùng chung bảng
+   của 24-nhan-su.js, không còn nhóm theo tiền tố mã quyền. */
 function nsVeBangQuyen(dangCo) {
-  const co = new Set(dangCo || []);
-  return Object.entries(nhanSu.danhMuc).map(([nhom, ds]) => `
-    <fieldset class="quyen__nhom">
-      <legend>${esc(nhom)}</legend>
-      ${ds.map((q) => `<label class="quyen__o">
-        <input type="checkbox" name="quyen" value="${esc(q.ma)}"${co.has(q.ma) ? " checked" : ""}>
-        <span>${esc(q.nhan)}</span><code>${esc(q.ma)}</code>
-      </label>`).join("")}
-    </fieldset>`).join("");
+  return nsvBangQuyen(dangCo);
 }
 
 function nsMoSua(v) {
@@ -176,15 +183,20 @@ $("#nsVaiTro")?.addEventListener("click", async (e) => {
     nsMoSua(nhanSu.vaiTro.find((v) => v.id === sua.dataset.suavai));
     return;
   }
+  const tt = e.target.closest("[data-trangthaivai]");
+  if (tt) {
+    if (await nsvDoiTrangThaiVai(nhanSu.vaiTro.find((v) => v.id === tt.dataset.trangthaivai))) {
+      await loadNhanSu();
+    }
+    return;
+  }
   const xoa = e.target.closest("[data-xoavai]");
   if (!xoa) return;
   const v = nhanSu.vaiTro.find((x) => x.id === xoa.dataset.xoavai);
   /* Nói SỐ NGƯỜI bị ảnh hưởng, không hỏi "bạn có chắc không".
    * "Có chắc không" là câu hỏi không mang thông tin nào — người ta bấm OK
    * theo phản xạ. "3 người sẽ mất các quyền này" thì họ dừng lại. */
-  const loi = v.so_nguoi
-    ? `Xoá vai trò “${v.ten}”? ${v.so_nguoi} người đang mang nó sẽ mất các quyền này.`
-    : `Xoá vai trò “${v.ten}”? Chưa ai được gán vai trò này.`;
+  const loi = `Xoá hẳn vai trò “${v.ten}”? Chưa ai từng được gán vai trò này nên không mất lịch sử nào.`;
   if (!confirm(loi)) return;
   try {
     await api(`/vai-tro/${v.id}`, { method: "DELETE" });
@@ -209,6 +221,10 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
     const loi = dangKhoa
       ? `Mở khoá “${ten}”? Họ đăng nhập lại được ngay.`
       : `Khoá “${ten}”? Mọi phiên đang mở của họ bị đá ra ngay lập tức.`;
+    /* Khoá người đang giữ hội thoại/việc: hỏi chuyển việc trước — cùng một
+       hàm với tab Nhân viên mới (24-nhan-su.js). */
+    const n = nsv.nguoi.find((x) => x.ten_dang_nhap === ten);
+    if (!dangKhoa && n) { await nsvKhoa(n, loadNhanSu); return; }
     if (!confirm(loi)) return;
     try {
       await api(`/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=${!dangKhoa}`,
@@ -271,10 +287,13 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
     bang.dataset.vtbang = id;
     bang.innerHTML = `<fieldset class="quyen__nhom"><legend>Vai trò của ${
         esc(hien.nguoi_dung.ho_ten || hien.nguoi_dung.ten_dang_nhap)}</legend>${
-      nhanSu.vaiTro.map((v) => `<label class="quyen__o">
-        <input type="checkbox" value="${esc(v.id)}"${dangCo.has(v.ten) ? " checked" : ""}>
-        <span>${esc(v.ten)}</span>
-        <small>${esc(v.mo_ta || "")}</small></label>`).join("")}
+      nhanSu.vaiTro.map((v) => {
+        const co = dangCo.has(v.ten) || (hien.vai_tro_ngung || []).includes(v.ten);
+        return `<label class="quyen__o">
+        <input type="checkbox" value="${esc(v.id)}"${co ? " checked" : ""}${v.dang_dung === false && !co ? " disabled" : ""}>
+        <span>${esc(v.ten)}${v.dang_dung === false ? " · ngừng dùng" : ""}</span>
+        <small>${esc(v.mo_ta || "")}</small></label>`;
+      }).join("")}
       </fieldset>
       <div class="row__nut">
         <button type="button" class="btn btn--sm btn--primary" data-vtluu="${esc(id)}">Lưu</button>
@@ -322,6 +341,7 @@ $("#nsFormNguoi")?.addEventListener("submit", async (e) => {
         ten_dang_nhap: ten,
         mat_khau: d.mat_khau,
         ho_ten: String(d.ho_ten || "").trim() || ten,
+        email: String(d.email || "").trim() || null,
       }),
     });
     if (d.vai_tro_id) {

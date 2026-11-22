@@ -741,6 +741,40 @@ trong tay.
 Không xoá tài khoản: xoá là mất dấu vết ai đã làm gì. Khoá giữ lại lịch sử
 mà vẫn chặn được đường vào.
 
+**Người đang giữ việc thì hỏi chuyển việc trước.** Nếu họ còn giữ hội thoại
+(đang tiếp quản) hoặc việc chưa xong, bấm Khoá sẽ mở hộp *Chuyển việc*: chọn
+người nhận → hội thoại và việc về tay người ấy (người ấy được báo bằng
+chuông), rồi mới khoá. Máy chủ cũng chặn — gọi thẳng API mà không chuyển
+thì nhận 409 kèm danh sách việc. Cần khoá NGAY (lộ mật khẩu) thì chọn
+*Không chuyển — khoá và để lại việc*; lịch sử ghi lại số việc bị để lại.
+Hội thoại nào luật giao không cho (người nhận không phải thành viên kênh
+ấy) thì hộp báo lại từng cái, không nuốt.
+
+### Vai trò: tạo, sửa, ngừng dùng
+
+Một người mang được nhiều vai trò; quyền của họ là **hợp** quyền mọi vai
+trò **đang dùng** họ mang. Sửa quyền của một vai trò là mọi người mang nó
+đổi theo ở thao tác kế tiếp — không cần đăng nhập lại.
+
+Vai trò đã từng được gán cho ai thì **không xoá được, chỉ Ngừng dùng**: nó
+thôi cấp quyền ngay, không gán mới được, nhưng vẫn nằm trong danh sách và
+lịch sử. Vai trò tạo nhầm, chưa gán ai thì nút Xoá vẫn hiện. Hai vai trò
+dựng sẵn (Quản trị, Nhân viên) không ngừng dùng được.
+
+Màn cấp quyền gom ô tick theo chức năng: Hội thoại, Khách hàng, Đơn hàng,
+Kho, Công việc, Phân tích, Cấu hình chung, Cấu hình AI Agent, Nhân sự &
+Phân quyền, Hệ thống & Nhật ký, Phê duyệt AI. Ba quyền tách riêng từ
+22.11.2026 — nâng cấp tự cấp chúng cho đúng vai trò đang làm được việc ấy,
+nên không ai mất việc đang làm:
+
+- `ai.duyet` — bấm *Duyệt và gửi* bản nháp AI (trước đi kèm *Trả lời khách*).
+- `hoi_thoai.ghi_chu` — gắn nhãn, ghi chú nội bộ (trước đi kèm *Trả lời khách*).
+- `kho.doc` / `kho.sua` — xem sản phẩm, tồn kho / nhập kho, kiểm kê (trước
+  đi kèm xem/duyệt đơn).
+
+**Lịch sử nhân sự & phân quyền** ở cuối màn: ai đổi gì, lúc nào, trên vai
+trò hay người nào — kèm danh sách quyền trước/sau và phần thêm/bớt.
+
 Bạn không tự khoá được chính mình — máy chủ chặn, không phải màn hình ẩn
 nút. Đó là để không ai một mình biến hệ thống thành không còn quản trị nào.
 

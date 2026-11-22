@@ -2377,3 +2377,13 @@ svg { flex: none; }
 @media (max-width: 640px) {
   .cvx__loc select { flex: 1 1 45%; }
 }
+
+/* Chính sách & Uỷ quyền + thẻ đề xuất: mô tả là nội dung để ĐỌC (vì sao phải
+   duyệt, rủi ro, điều kiện thiếu) — `.row__sub` mặc định cắt một dòng bằng
+   "…", trên điện thoại còn lại bốn chữ (đo 23.11.2026 ở 375px). */
+.dx-chinh-sach .row__sub,
+.dx-the .row__sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}

@@ -6343,7 +6343,9 @@ function hienKetQuaThu(loai, r) {
 async function napNhomTaiLieuPlugin() {
   if (state.pluginNhomDaTai) return;
   try {
-    const ds = await api("/knowledge");
+    // `/knowledge` BẮT BUỘC account_id (gọi trơn là 422, mỗi lần mở tab Kỹ
+    // năng — đo 23.11.2026). Gợi ý tên nhóm lấy từ kho DÙNG CHUNG mọi kênh.
+    const ds = await api("/knowledge?account_id=00000000-0000-0000-0000-000000000000");
     $("#plugin-nhom-ds").innerHTML = ds.map((d) => `<option value="${esc(d.title)}">`).join("");
     state.pluginNhomDaTai = true;
   } catch (e) { /* không có gợi ý thì vẫn gõ tay được */ }
@@ -12287,7 +12289,7 @@ async function ganChinhSachUyQuyen(goc) {
   if (!goc) return;
   const sua = dxCoQuyen("agent.dieu_khien");
   const ve = (d) => {
-    goc.innerHTML = `<section class="panel">
+    goc.innerHTML = `<section class="panel dx-chinh-sach">
       <h2 class="panel__head">Chính sách &amp; Ủy quyền
         <span class="panel__note">AI được tự làm gì, việc gì phải có người duyệt</span></h2>
       <p class="row__sub">Chế độ AI hiện tại: <b>${d.che_do_chung === "auto" ? "Tự động" : "Gợi ý"}</b>.

@@ -167,3 +167,10 @@ def test_cong_cu_cua_goi_khong_co_nut_xoa_rieng():
     )
     # Nhánh cuối phải trả chuỗi rỗng, không phải rơi xuống nút xoá.
     assert re.search(r':\s*""\s*;', src), "thiếu nhánh 'không nút nào' cho gói/MCP"
+
+
+def test_goi_y_nhom_tai_lieu_khong_goi_knowledge_tron():
+    """`/knowledge` không kèm account_id là 422 — tab Kỹ năng gọi nó mỗi lần mở."""
+    src = (ROOT / "dashboard" / "src" / "11-ky-nang.js").read_text(encoding="utf-8")
+    assert 'api("/knowledge")' not in src
+    assert "/knowledge?account_id=" in src

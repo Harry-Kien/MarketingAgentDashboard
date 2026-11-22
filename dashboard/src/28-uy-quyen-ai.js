@@ -64,7 +64,7 @@ async function ganChinhSachUyQuyen(goc) {
   if (!goc) return;
   const sua = dxCoQuyen("agent.dieu_khien");
   const ve = (d) => {
-    goc.innerHTML = `<section class="panel">
+    goc.innerHTML = `<section class="panel dx-chinh-sach">
       <h2 class="panel__head">Chính sách &amp; Ủy quyền
         <span class="panel__note">AI được tự làm gì, việc gì phải có người duyệt</span></h2>
       <p class="row__sub">Chế độ AI hiện tại: <b>${d.che_do_chung === "auto" ? "Tự động" : "Gợi ý"}</b>.

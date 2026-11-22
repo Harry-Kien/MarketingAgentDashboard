@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-76 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+79 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -142,7 +142,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` · `truong_khach` |
-| **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
+| **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` · `sla_muc_tieu` · `sla_chuyen_giao` · `lich_lam_viec` |
 
 Invariant định tuyến quan trọng nhất là `(account_id, external_id)`, không
 phải `(channel, external_id)`. Hai Page có thể cùng nhìn thấy một external
@@ -494,6 +494,7 @@ erDiagram
         JSONB business_hours
         BOOLEAN active
         NULLS UNIQUE
+        _ con_1_cot_nua
     }
     routing_rules {
         UUID id
@@ -825,6 +826,32 @@ erDiagram
         TEXT den_trang_thai
         _ con_2_cot_nua
     }
+    lich_lam_viec {
+        SMALLINT id
+        BOOLEAN bat
+        JSONB tuan
+        JSONB ngay_nghi
+        TEXT sua_boi
+        TIMESTAMPTZ sua_luc
+    }
+    sla_muc_tieu {
+        TEXT muc_tieu
+        TEXT che_do
+        INT nguong_canh_bao
+        TEXT sua_boi
+        TIMESTAMPTZ sua_luc
+    }
+    sla_chuyen_giao {
+        UUID id
+        UUID conversation_id
+        INT chu_ky
+        INT lan
+        TIMESTAMPTZ bat_dau
+        TIMESTAMPTZ due_at
+        TIMESTAMPTZ canh_bao_luc
+        TIMESTAMPTZ vi_pham_luc
+        _ con_8_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -907,6 +934,9 @@ erDiagram
     channel_accounts ||--o{ routing_rules : ""
     teams ||--o{ routing_rules : ""
     orders ||--o{ shipping_waybill_requests : ""
+    conversations ||--o{ sla_chuyen_giao : ""
+    messages ||--o{ sla_chuyen_giao : ""
+    nguoi_dung ||--o{ sla_chuyen_giao : ""
     conversations ||--o{ sla_events : ""
     channel_accounts ||--o{ sla_policies : ""
     nguoi_dung ||--o{ team_members : ""

@@ -48,15 +48,17 @@ thành viên — cùng luật với `/api/overview`. Quyền xem màn: `bao_cao.
 | Đáp ứng SLA | đạt / (đạt + trễ), chỉ mục tiêu CÓ hạn |
 | Phản hồi đầu | bắt đầu chu kỳ SLA → tin đầu tiên gửi xong; **AI và nhân viên tách riêng** |
 | Phản hồi sau chuyển giao | sự kiện chuyển người (lần đầu trong khoảng) → tin nhân viên đầu tiên sau đó; kèm số "chưa ai nhắn" |
+| Mục tiêu sau chuyển giao | mỗi LƯỢT chuyển giao một hạn (`sla_chuyen_giao`, 0062): đạt / trễ / cảnh báo / đang chờ / không đặt hạn, thời gian lúc chuyển → tin nhân viên |
+| Giải quyết — AI / nhân viên | lượt giải quyết (và đạt / trễ hạn giải quyết) quy cho nhân viên nếu trong lượt có người can thiệp, không thì cho AI |
 | Thời gian giải quyết | tạo hội thoại (hoặc lần mở lại gần nhất) → giải quyết |
 
 Màn **không** hiện "độ tin cậy" AI: model tự chấm con số ấy, hiện thành phần
 trăm là mời người đọc tin nó như xác suất đúng. Báo tỉ lệ có / không căn cứ.
 
-Ba thước đo thời gian đo theo **cùng công tắc với hạn SLA**
-(`SLA_THEO_GIO_LAM_VIEC`): bật thì chỉ đếm giờ làm việc, tắt (mặc định) thì
-24/7. Một công tắc chung — chọn riêng 24/7 hay giờ làm việc cho TỪNG thước đo
-là đổi cả cách đặt hạn ở ba chỗ, chưa làm.
+Mỗi thước đo thời gian đo theo **chế độ của mục tiêu SLA tương ứng**
+(giờ làm việc của lịch chung, hoặc 24/7 — xem mục *Mục tiêu SLA và lịch làm
+việc* bên dưới), cùng lịch với hạn của chính mục tiêu ấy. API trả
+`che_do_muc_tieu` để màn hình nói rõ con số nào đo theo cách nào.
 
 Hồ sơ AI của mỗi tin được **chụp lúc ghi tin** (trigger migration 0054), không
 tra hồ sơ đang gán cho kênh. Tin trước 0054 hiện là "Không rõ". Sự kiện phản
@@ -76,9 +78,9 @@ chiều, nhưng hạn của chu kỳ đang chạy **chỉ được rút ngắn**
   chu kỳ, hạn chỉ đổi được khi hạn mới sớm hơn, hạn cũ còn ở tương lai và hạn
   mới không ở quá khứ.
 
-**Cảnh báo sớm**: một ngưỡng `SLA_NGUONG_CANH_BAO` (Cấu hình → Cài đặt API,
-mặc định **80%** thời gian cho phép, 10–95) cho cả phản hồi đầu lẫn giải quyết
-(`first_response_warning`, `resolution_warning`).
+**Cảnh báo sớm**: ngưỡng chung `SLA_NGUONG_CANH_BAO` (mặc định **80%** thời
+gian cho phép, 10–95), mỗi mục tiêu đặt được ngưỡng riêng — xem dưới
+(`first_response_warning`, `resolution_warning`, `handover_response_warning`).
 
 **Khi trễ**: KHÔNG sinh công việc — cảnh báo SLA đi qua chuông thông báo trong
 ứng dụng (làm sau). Mỗi sự kiện `sla.*` trong `inbox_events` mang
@@ -88,5 +90,61 @@ ghi nhật ký với actor `sla`).
 
 Màn chi tiết hội thoại không thêm thông tin SLA nào; chỉ có nút **Đổi** cạnh
 mức ưu tiên. Dashboard nghe mọi sự kiện `sla.*` và
-`conversation.priority_changed` qua SSE. Form chính sách SLA có ô giờ mở/đóng
-riêng (`business_hours`), kiểm hợp lệ lúc lưu.
+`conversation.priority_changed` qua SSE.
+
+## Mục tiêu SLA và lịch làm việc (mục 15 — 22.11.2026, migration 0062)
+
+Cấu hình chung → **SLA & Giờ làm việc** (`dashboard/src/26-sla.js`, API
+`/api/sla/*`, quyền `dinh_tuyen.doc` / `dinh_tuyen.sua`).
+
+**Ba mục tiêu**, số phút theo kênh × mức ưu tiên (`sla_policies`):
+
+| Mục tiêu | Từ | Tới (phản hồi THẬT) |
+|---|---|---|
+| Phản hồi đầu | bắt đầu chu kỳ SLA | tin AI hoặc nhân viên đầu tiên đã gửi tới kênh |
+| Phản hồi sau chuyển giao (`handover_response_minutes`) | sự kiện `conversation.escalated` | tin NHÂN VIÊN đầu tiên đã gửi |
+| Giải quyết | bắt đầu lượt phục vụ | `conversation.resolved` |
+
+**Xác nhận tự động không phải phản hồi** (`agent/omnichannel/phan_hoi_that.py`):
+tin vai `system` — thông báo minh bạch AI, câu báo chuyển người và câu báo
+ngoài giờ, tin mẫu của quy tắc tự động, câu hỏi CSAT, báo mã vận đơn — không
+bao giờ đạt hạn phản hồi đầu và không chốt lượt chuyển giao. Luật đi theo VAI
+của tin (đặt một lần lúc xếp hàng), không theo nội dung.
+
+**Mỗi mục tiêu một chế độ và một ngưỡng** (`sla_muc_tieu`): đồng hồ "giờ làm
+việc" hoặc "24/7"; ngưỡng cảnh báo riêng, trống = ngưỡng chung.
+
+**Lịch làm việc chung** (`lich_lam_viec`, `agent/core/lich_lam_viec.py`): giờ
+mở/đóng từng thứ, ngày nghỉ trong tuần, ngày lễ. MỘT nguồn cho: hạn SLA của
+mục tiêu chọn giờ làm việc (SQL `sla_han_lich`), cảnh báo sớm và thời gian ở
+màn Phân tích (`lich_lam_viec.tieu_thu` — test canh hai phép tính khớp nhau),
+câu báo khách khi chuyển người ngoài giờ (giờ mở của lần mở cửa kế tiếp),
+điều kiện "ngoài giờ" của quy tắc tự động, cảnh báo sức khoẻ.
+
+**Thứ tự ưu tiên**
+
+| Thứ | Nguồn 1 (dashboard) | Không có thì |
+|---|---|---|
+| Giờ làm việc | bảng `lich_lam_viec` | `.env` `GIO_LAM_VIEC_BAT/_BAT_DAU/_KET_THUC`, mọi ngày như nhau, không ngày lễ |
+| Giờ riêng của chính sách (`business_hours`) | **không còn tác dụng** khi đã có lịch chung | có tác dụng như trước khi lịch lui về `.env` |
+| Chế độ của mục tiêu | `sla_muc_tieu.che_do` | `.env` `SLA_THEO_GIO_LAM_VIEC` (cho cả ba) |
+| Ngưỡng cảnh báo | `sla_muc_tieu.nguong_canh_bao` | `SLA_NGUONG_CANH_BAO` (dashboard → `.env`) → 80 |
+
+Chưa ai lưu gì trên dashboard thì mọi thứ chạy y như trước bản này. Lịch và
+mục tiêu nạp vào bộ nhớ lúc khởi động, sau mỗi lần lưu, mỗi vòng canh SLA
+(15 giây) và tối đa 30 giây một lần ở đường nhận tin. Hội thoại đang chạy
+giữ hạn đã đặt; lịch mới áp cho hạn đặt sau khi lưu.
+
+**Hạn phản hồi sau chuyển giao**: mỗi lượt chuyển giao một dòng
+`sla_chuyen_giao` (không dùng `sla_events`, vì khoá (hội thoại, chu kỳ, loại)
+của bảng ấy nuốt vi phạm của lần chuyển giao thứ hai). Vòng canh SLA mở lượt
+từ sự kiện `conversation.escalated` (mọi đường chuyển giao đều ghi), outbox
+chốt lượt khi tin nhân viên gửi xong, hội thoại giải quyết / trả AI trước khi
+ai nhắn thì lượt thành `huy`. Chuyển giao trước khi 0062 chạy không mở lượt.
+Cảnh báo và vi phạm đi qua chuông (`sla_sap_tre` / `sla_tre`) tới người đang
+phụ trách — chưa giao thì thành viên kênh có `hoi_thoai.nhan` — cộng người
+quản lý; phát `sla.handover_response_warning` / `_breached` qua SSE. Vi phạm
+và cảnh báo đã ghi không xoá được (trigger 0062), kể cả khi thông báo đã đọc.
+
+SLA KHÔNG hiện thường trực trong khung hội thoại — cảnh báo đi qua chuông,
+số liệu ở màn Phân tích.

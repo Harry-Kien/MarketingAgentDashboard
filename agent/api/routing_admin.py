@@ -41,6 +41,9 @@ class SlaPolicyIn(BaseModel):
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
     first_response_minutes: int = Field(ge=1, le=43200)
     resolution_minutes: int = Field(ge=1, le=525600)
+    # Hạn phản hồi sau chuyển giao (migration 0062). None = chính sách không
+    # đặt mục tiêu này: lượt chuyển giao vẫn được ghi và đo, chỉ không có hạn.
+    handover_response_minutes: int | None = Field(default=None, ge=1, le=43200)
     business_hours: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
 
@@ -240,25 +243,40 @@ class PostgresRoutingAdminRepository:
                 )
         return dict(row)
 
-    async def upsert_sla(self, *, actor_id: UUID, **values):
+    async def upsert_sla(self, *, actor_id: UUID, da_gui: frozenset[str] | None = None,
+                         **values):
+        """
+        `da_gui`: các ô người gọi THẬT SỰ gửi. Ô không gửi thì GIỮ giá trị
+        đang lưu — form cũ không có ô phút chuyển giao, form mới không có ô
+        giờ riêng; ghi đè bằng mặc định là một lần Lưu lặng lẽ xoá mục tiêu
+        chuyển giao hay giờ riêng người khác đã đặt. None = gửi đủ mọi ô.
+        """
+        giu_cg = da_gui is not None and "handover_response_minutes" not in da_gui
+        giu_gio = da_gui is not None and "business_hours" not in da_gui
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
                     """
                     INSERT INTO sla_policies (
                         account_id,priority,first_response_minutes,
-                        resolution_minutes,business_hours,active
-                    ) VALUES ($1,$2,$3,$4,$5,$6)
+                        resolution_minutes,business_hours,active,
+                        handover_response_minutes
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7)
                     ON CONFLICT (account_id,priority) DO UPDATE SET
                         first_response_minutes=excluded.first_response_minutes,
                         resolution_minutes=excluded.resolution_minutes,
-                        business_hours=excluded.business_hours,
+                        business_hours=CASE WHEN $9 THEN sla_policies.business_hours
+                                            ELSE excluded.business_hours END,
+                        handover_response_minutes=CASE WHEN $8
+                            THEN sla_policies.handover_response_minutes
+                            ELSE excluded.handover_response_minutes END,
                         active=excluded.active, updated_at=now()
                     RETURNING *
                     """,
                     values["account_id"], values["priority"],
                     values["first_response_minutes"], values["resolution_minutes"],
                     values["business_hours"], values["active"],
+                    values.get("handover_response_minutes"), giu_cg, giu_gio,
                 )
                 await connection.execute(
                     "INSERT INTO events (kind, actor, ref_id, detail) "
@@ -323,4 +341,6 @@ async def upsert_sla_policy(
     user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
-    return await repository.upsert_sla(actor_id=_actor(user), **body.model_dump())
+    return await repository.upsert_sla(actor_id=_actor(user),
+                                       da_gui=frozenset(body.model_fields_set),
+                                       **body.model_dump())

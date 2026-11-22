@@ -257,7 +257,9 @@ def test_khoi_luon_o_lai_nam_ngoai_phan_bi_thay():
     hay Nhân sự vào là chúng biến mất mà không ai thay.
     """
     for tid, oid in [("cc-ket-noi", "connectiongrid"), ("ns-nhan-vien", "lcPanel"),
-                     ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat")]:
+                     ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat"),
+                     # Ngưỡng SLA chung / khi trễ: mô-đun 26-sla.js thay .tab__goc.
+                     ("cc-sla", "api-nhom-sla")]:
         t = _tab(tid)
         i = t.index(f'id="{oid}"')
         if 'class="tab__goc"' in t:

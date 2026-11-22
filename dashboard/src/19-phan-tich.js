@@ -104,23 +104,36 @@ async function loadPhanTich() {
     : '<tr><td colspan="8" class="empty">Không có nhân viên nào trong phạm vi.</td></tr>'}</tbody>`;
 
   /* ---- Chỉ số SLA ---- */
-  $("#ptSlaNote").textContent = "tỷ lệ đáp ứng tính trên mục tiêu có hạn · thời gian đo "
-    + (d.theo_gio_lam_viec ? "theo giờ làm việc" : "24/7") + " · \"quá hạn\" là ảnh chụp bây giờ";
+  /* Mỗi mục tiêu có đồng hồ riêng (Cấu hình chung → SLA & Giờ làm việc):
+     nói rõ con số nào đo theo cách nào, không gộp thành một chữ "24/7". */
+  const cdm = d.che_do_muc_tieu || {};
+  const cd = (m) => (cdm[m] === "gio_lam_viec" ? "giờ làm việc" : "24/7");
+  $("#ptSlaNote").textContent = "tỷ lệ đáp ứng tính trên mục tiêu có hạn · đồng hồ: phản hồi đầu "
+    + cd("phan_hoi_dau") + ", sau chuyển giao " + cd("phan_hoi_sau_chuyen_giao")
+    + ", giải quyết " + cd("giai_quyet") + " · \"quá hạn\" là ảnh chụp bây giờ";
+  const mcg = s.chuyen_giao || { dung_han: 0, tre_han: 0, ty_le_dung_han: null, canh_bao: 0,
+    qua_han: 0, dang_cho: 0, khong_han: 0, thoi_gian: { so: 0 }, nhan_vien: [] };
   $("#ptSla").innerHTML = [
     cell("Đáp ứng phản hồi đầu", _ptTiLe(s.ty_le_dung_han_dau), `${s.dau_dat} đạt · ${s.dau_tre} trễ`,
          s.ty_le_dung_han_dau, s.ty_le_dung_han_dau != null && s.ty_le_dung_han_dau < 0.9 ? "halt" : "auto"),
     cell("Đáp ứng giải quyết", _ptTiLe(s.ty_le_dung_han_xong), `${s.xong_dat} đạt · ${s.xong_tre} trễ`,
          s.ty_le_dung_han_xong, s.ty_le_dung_han_xong != null && s.ty_le_dung_han_xong < 0.9 ? "halt" : "auto"),
-    cell("Số vi phạm", s.vi_pham, `${s.dau_canh_bao + s.xong_canh_bao} cảnh báo sớm`, null,
-         s.vi_pham ? "halt" : "auto"),
+    cell("Đáp ứng sau chuyển giao", _ptTiLe(mcg.ty_le_dung_han),
+         `${mcg.dung_han} đạt · ${mcg.tre_han} trễ · ${mcg.dang_cho} đang chờ`,
+         mcg.ty_le_dung_han, mcg.ty_le_dung_han != null && mcg.ty_le_dung_han < 0.9 ? "halt" : "auto"),
+    cell("Số vi phạm", s.vi_pham_tat_ca ?? s.vi_pham,
+         `${s.dau_canh_bao + s.xong_canh_bao + mcg.canh_bao} cảnh báo sớm`, null,
+         (s.vi_pham_tat_ca ?? s.vi_pham) ? "halt" : "auto"),
     cell("Đang quá hạn (bây giờ)", s.qua_han,
-         `${s.qua_han_dau} chưa phản hồi · ${s.qua_han_xong} chưa xong`, null, s.qua_han ? "halt" : "auto"),
+         `${s.qua_han_dau} chưa phản hồi · ${s.qua_han_xong} chưa xong · ${mcg.qua_han} chờ nhân viên sau chuyển giao`,
+         null, (s.qua_han || mcg.qua_han) ? "halt" : "auto"),
   ].join("");
 
   const dongTg = (ten, r, them = "") => `<tr><td>${esc(ten)}</td><td>${r.so}</td><td>${_giay(r.tb_giay)}</td>
     <td>${_giay(r.trung_vi_giay)}</td><td>${r.ty_le_dung_han !== undefined ? _ptTiLe(r.ty_le_dung_han) : "—"}</td>
     <td>${them}</td></tr>`;
   const cg = s.phan_hoi_sau_chuyen_giao;
+  const tgVai = s.thoi_gian_giai_quyet.theo_vai || {};
   $("#ptThoiGian").innerHTML = `<thead><tr><th>Thước đo</th><th>Số lượt</th><th>Trung bình</th>
     <th>Trung vị</th><th>Đúng hạn</th><th>Ghi chú</th></tr></thead><tbody>
     ${dongTg("Phản hồi đầu — AI", phDau.theo_vai.agent, `${phDau.theo_vai.agent.tre_han} trễ`)}
@@ -130,7 +143,12 @@ async function loadPhanTich() {
     ${phDau.theo_vai.khong_ro.so ? dongTg("Phản hồi đầu — không rõ (trước 20.11.2026)", phDau.theo_vai.khong_ro) : ""}
     ${dongTg("Phản hồi sau chuyển giao", cg, cg.chua_phan_hoi ? `${cg.chua_phan_hoi} chưa ai nhắn` : "")}
     ${cg.nhan_vien.map((r) => dongTg("   " + r.ten, r)).join("")}
+    ${dongTg("Mục tiêu sau chuyển giao (theo lượt)", { ...mcg.thoi_gian, ty_le_dung_han: mcg.ty_le_dung_han },
+       `${mcg.tre_han} trễ · ${mcg.khong_han} không đặt hạn`)}
+    ${mcg.nhan_vien.map((r) => dongTg("   " + r.ten, r, `${r.tre_han} trễ`)).join("")}
     ${dongTg("Thời gian giải quyết", s.thoi_gian_giai_quyet)}
+    ${tgVai.agent ? dongTg("   AI tự lo", tgVai.agent, `${tgVai.agent.tre_han} trễ`) : ""}
+    ${tgVai.staff ? dongTg("   Có nhân viên", tgVai.staff, `${tgVai.staff.tre_han} trễ`) : ""}
     </tbody>`;
 
   $("#ptNgay").innerHTML = `<thead><tr><th>Ngày</th><th>Mới</th><th>Giải quyết</th>

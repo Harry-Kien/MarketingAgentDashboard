@@ -24,7 +24,8 @@ from uuid import UUID
 from agent import cau_hinh_dong, db
 from agent.channels.base import THREAD_NHOM
 from agent.core import cong_viec, thong_bao_noi_bo
-from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
+from agent.omnichannel import sla_muc_tieu
+from agent.omnichannel.sla_gio import bieu_thuc_han, tham_so_han
 
 CAU_HOI = ("Dạ shop cảm ơn anh/chị đã nhắn ạ. Anh/chị chấm giúp shop mức hài lòng "
            "từ 1 đến 5 nhé (5 là rất hài lòng) — chỉ cần nhắn một con số ạ.")
@@ -274,8 +275,9 @@ async def mo_lai_neu_da_giai_quyet(cid: UUID) -> bool:
             RETURNING 1
         )
         SELECT count(*) AS n FROM mo
-        """).replace("{han_dau}", bieu_thuc_han("first_response_minutes", 2, 3))            .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 2, 3))
-    r = await db.fetchrow(sql, cid, *gio_sla())
+        """).replace("{han_dau}", bieu_thuc_han("first_response_minutes", 2))            .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 3))
+    await sla_muc_tieu.lam_moi_neu_cu()
+    r = await db.fetchrow(sql, cid, *tham_so_han())
     if r and r["n"]:
         await _ghi_mo_lai(cid, chu_ky_moi=True)
     return bool(r and r["n"])

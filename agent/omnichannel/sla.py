@@ -7,18 +7,22 @@ KHÔNG sinh công việc khi trễ: chủ dự án chốt (20.11.2026) cảnh b�
 qua chuông thông báo trong ứng dụng. Mỗi sự kiện `sla.*` mang hội thoại,
 loại, chu kỳ, người phụ trách, ưu tiên và hạn — đủ để chuông dựng thông báo
 mà không phải đọc lại CSDL.
+
+BA MỤC TIÊU, MỖI MỤC TIÊU MỘT CHẾ ĐỘ VÀ MỘT NGƯỠNG (mục 15, 22.11.2026):
+phản hồi đầu, phản hồi sau chuyển giao (`sla_chuyen_giao.py`), giải quyết.
+Lịch, chế độ và ngưỡng của từng mục tiêu đọc qua `sla_muc_tieu.py` — nạp
+lại ở ĐẦU mỗi vòng quét, nên sửa trên dashboard có hiệu lực ở vòng kế.
 """
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any, Protocol
 
 from agent import db
-from agent.config import settings
-from agent.core.gio_lam_viec import VN
+from agent.omnichannel import sla_chuyen_giao, sla_muc_tieu
 
 _DEFAULT_FIRST_RESPONSE_MINUTES = {
     "urgent": 5,
@@ -28,58 +32,34 @@ _DEFAULT_FIRST_RESPONSE_MINUTES = {
 }
 
 
-def thoi_gian_sla_da_tieu_thu(started_at: datetime, scan_at: datetime) -> timedelta:
-    """Tính thời gian SLA đã tiêu thụ giữa started_at và scan_at theo giờ làm việc."""
-    if scan_at <= started_at:
-        return timedelta(0)
-    # Cùng công tắc với hạn SLA (`agent/omnichannel/sla_gio.py`): hạn tính
-    # 24/7 mà cảnh báo đếm theo giờ làm việc thì cảnh báo tới SAU vi phạm.
-    if not settings.sla_theo_gio_lam_viec or not settings.gio_lam_viec_bat:
-        return scan_at - started_at
-    bat_dau_gio = settings.gio_lam_viec_bat_dau
-    ket_thuc_gio = settings.gio_lam_viec_ket_thuc
-    if ket_thuc_gio <= bat_dau_gio:
-        return timedelta(0)
+def thoi_gian_sla_da_tieu_thu(
+    started_at: datetime, scan_at: datetime, muc_tieu: str = "phan_hoi_dau"
+) -> timedelta:
+    """
+    Thời gian SLA đã tiêu thụ giữa started_at và scan_at, theo CHẾ ĐỘ của
+    mục tiêu (`sla_muc_tieu`): giờ làm việc của lịch chung, hoặc 24/7.
 
-    start_vn = started_at.astimezone(VN)
-    end_vn = scan_at.astimezone(VN)
-
-    def _window(ngay: date) -> tuple[datetime, datetime]:
-        goc = datetime(ngay.year, ngay.month, ngay.day, tzinfo=VN)
-        return goc + timedelta(hours=bat_dau_gio), goc + timedelta(hours=ket_thuc_gio)
-
-    s0, s1 = _window(start_vn.date())
-    e0, e1 = _window(end_vn.date())
-    if start_vn.date() == end_vn.date():
-        return max(timedelta(0), min(end_vn, s1) - max(start_vn, s0))
-
-    ngay_dau = max(timedelta(0), s1 - max(start_vn, s0))
-    ngay_cuoi = max(timedelta(0), min(end_vn, e1) - e0)
-    so_ngay_tron = max(0, (end_vn.date() - start_vn.date()).days - 1)
-    return ngay_dau + so_ngay_tron * timedelta(hours=ket_thuc_gio - bat_dau_gio) + ngay_cuoi
+    Cùng lịch với hạn SLA của mục tiêu ấy (`sla_gio.bieu_thuc_han`): hạn tính
+    24/7 mà cảnh báo đếm theo giờ làm việc thì cảnh báo tới SAU vi phạm.
+    """
+    return sla_muc_tieu.tieu_thu(started_at, scan_at, muc_tieu)
 
 
 NGUONG_CANH_BAO_MAC_DINH = 80
 
 
-def ty_le_canh_bao() -> float:
+def ty_le_canh_bao(muc_tieu: str | None = None) -> float:
     """
-    Ngưỡng cảnh báo sớm (phần của thời gian cho phép), từ `SLA_NGUONG_CANH_BAO`.
+    Ngưỡng cảnh báo sớm (phần của thời gian cho phép).
 
-    MỘT ngưỡng cho cả phản hồi đầu lẫn giải quyết. Giá trị hỏng (sửa tay
-    .env) lui về 80% chứ không ném: worker SLA chết vì một ô cấu hình là mất
-    luôn cả vi phạm, không riêng cảnh báo. Dashboard đã chặn giá trị hỏng lúc
-    lưu (`cau_hinh_dong.kiem_gia_tri`).
+    Không nêu mục tiêu: ngưỡng CHUNG `SLA_NGUONG_CANH_BAO` (dashboard → .env
+    → 80%). Nêu mục tiêu: ngưỡng riêng của mục tiêu nếu đã đặt trên
+    dashboard, không thì ngưỡng chung. Giá trị hỏng lui về 80% chứ không
+    ném: worker SLA chết vì một ô cấu hình là mất luôn cả vi phạm.
     """
-    from agent import cau_hinh_dong
-
-    try:
-        phan_tram = int(str(cau_hinh_dong.lay("SLA_NGUONG_CANH_BAO")).strip())
-    except (TypeError, ValueError):
-        phan_tram = NGUONG_CANH_BAO_MAC_DINH
-    if not 10 <= phan_tram <= 95:
-        phan_tram = NGUONG_CANH_BAO_MAC_DINH
-    return phan_tram / 100
+    if muc_tieu is None:
+        return sla_muc_tieu.nguong_chung() / 100
+    return sla_muc_tieu.nguong(muc_tieu)
 
 
 def _warning_threshold(
@@ -134,9 +114,10 @@ async def _canh_bao_giai_quyet(
     dues: list[datetime] = []
     details: list[str] = []
     for row in candidates:
-        khoang = thoi_gian_sla_da_tieu_thu(row["started_at"], row["resolution_due_at"])
+        khoang = thoi_gian_sla_da_tieu_thu(
+            row["started_at"], row["resolution_due_at"], "giai_quyet")
         threshold = khoang * ty_le
-        elapsed = thoi_gian_sla_da_tieu_thu(row["started_at"], scan_at)
+        elapsed = thoi_gian_sla_da_tieu_thu(row["started_at"], scan_at, "giai_quyet")
         if threshold > timedelta(0) and elapsed >= threshold:
             ids.append(row["conversation_id"])
             dues.append(row["resolution_due_at"])
@@ -256,6 +237,10 @@ class PostgresSlaRepository:
         self, *, at: datetime | None = None
     ) -> dict[str, int]:
         async with self._pool_provider().acquire() as connection:
+            # Lịch, chế độ, ngưỡng của từng mục tiêu: nạp lại MỖI vòng (và
+            # ngoài giao dịch — bảng chưa có thì lỗi đọc không làm hỏng giao
+            # dịch quét). Không bao giờ ném: hỏng thì giữ bản đã nạp.
+            await sla_muc_tieu.nap(connection)
             async with connection.transaction():
                 scan_at = (
                     at
@@ -311,7 +296,7 @@ class PostgresSlaRepository:
                     scan_at,
                 )
 
-                ty_le = ty_le_canh_bao()
+                ty_le = ty_le_canh_bao("phan_hoi_dau")
                 warn_ids: list[Any] = []
                 warn_dues: list[datetime] = []
                 warn_details: list[str] = []
@@ -373,7 +358,7 @@ class PostgresSlaRepository:
                     scan_at,
                 )
                 resolution_warning_rows = await _canh_bao_giai_quyet(
-                    connection, scan_at, ty_le
+                    connection, scan_at, ty_le_canh_bao("giai_quyet")
                 )
                 resolution_rows = await connection.fetch(
                     """
@@ -400,9 +385,11 @@ class PostgresSlaRepository:
                         await connection.execute(
                             _SQL_SU_KIEN_SLA, ids, topic, topic.split(".", 1)[1]
                         )
+                chuyen_giao = await sla_chuyen_giao.quet(connection, scan_at)
                 nang = await _nang_uu_tien_khi_tre(
                     connection,
-                    [r["conversation_id"] for r in (*first_rows, *resolution_rows)],
+                    [r["conversation_id"] for r in (
+                        *first_rows, *resolution_rows, *chuyen_giao["tre"])],
                 )
             # Chuông nội bộ — SAU khi giao dịch đã chốt, nên chuông hỏng
             # không cuộn ngược sự kiện SLA. Mỗi sự kiện chỉ chèn được một lần
@@ -416,6 +403,8 @@ class PostgresSlaRepository:
                     ("first_response_breached", first_rows),
                     ("resolution_warning", resolution_warning_rows),
                     ("resolution_breached", resolution_rows),
+                    ("handover_response_warning", chuyen_giao["canh_bao"]),
+                    ("handover_response_breached", chuyen_giao["tre"]),
                 )
                 for row in rows
             ])
@@ -424,6 +413,9 @@ class PostgresSlaRepository:
             "resolution": len(resolution_rows),
             "warning": len(warning_rows),
             "resolution_warning": len(resolution_warning_rows),
+            "chuyen_giao_mo": len(chuyen_giao["mo"]),
+            "chuyen_giao_canh_bao": len(chuyen_giao["canh_bao"]),
+            "chuyen_giao_tre": len(chuyen_giao["tre"]),
             "nang_uu_tien": nang,
         }
 

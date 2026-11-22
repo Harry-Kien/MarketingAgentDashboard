@@ -100,6 +100,7 @@ NHOM = {
     "Routing và SLA": [
         "teams", "team_members", "routing_rules", "routing_cursors",
         "conversation_assignments", "sla_policies", "sla_events",
+        "sla_muc_tieu", "sla_chuyen_giao", "lich_lam_viec",
     ],
 }
 

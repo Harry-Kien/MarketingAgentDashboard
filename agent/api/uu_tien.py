@@ -35,7 +35,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from agent import db
-from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
+from agent.omnichannel import sla_muc_tieu
+from agent.omnichannel.sla_gio import bieu_thuc_han, tham_so_han
 
 from .phu_thuoc import can_quyen, chan_neu_ngoai_kenh
 
@@ -84,6 +85,7 @@ async def doi_uu_tien(
     nguoi: dict = Depends(can_quyen("hoi_thoai.nhan")),
 ) -> dict[str, Any]:
     await chan_neu_ngoai_kenh(cid, nguoi)
+    await sla_muc_tieu.lam_moi_neu_cu()
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             c = await conn.fetchrow(
@@ -103,9 +105,9 @@ async def doi_uu_tien(
             nang = BAC[body.uu_tien] > BAC[c["priority"]]
             moi = await conn.fetchrow(
                 _SQL_HAN_MOI
-                .replace("{han_dau}", bieu_thuc_han("first_response_minutes", 3, 4))
-                .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 3, 4)),
-                body.uu_tien, c["account_id"], *gio_sla()) or {}
+                .replace("{han_dau}", bieu_thuc_han("first_response_minutes", 3))
+                .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 4)),
+                body.uu_tien, c["account_id"], *tham_so_han()) or {}
             han_dau = han_sau_khi_doi(
                 nang=nang, han_cu=c["first_response_due_at"],
                 han_chinh_sach=moi.get("han_dau"),

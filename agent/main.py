@@ -38,6 +38,7 @@ from agent.api.nhan import router as danh_muc_nhan_router
 from agent.api.bao_cao_nhan_vien import router as bao_cao_nhan_vien_router
 from agent.api.phan_tich import router as phan_tich_router
 from agent.api.uu_tien import router as uu_tien_router
+from agent.api.sla_cau_hinh import router as sla_cau_hinh_router
 from agent.api.thanh_toan import router as thanh_toan_router
 from agent.api.thanh_vien_kenh import router as thanh_vien_kenh_router
 from agent.api.channel_accounts import router as channel_accounts_router
@@ -490,6 +491,13 @@ async def lifespan(app: FastAPI):
     # Khoá API nhập từ dashboard. Nạp SAU runtime và TRƯỚC dòng app.start,
     # cùng lý do với runtime: nhật ký khởi động phải nói đúng provider đang chạy.
     await cau_hinh_dong.nap()
+
+    # Lịch làm việc chung và mục tiêu SLA (migration 0062). Nạp trước khi
+    # nhận tin đầu tiên: câu báo "ngoài giờ" và hạn SLA của hội thoại đầu
+    # tiên sau khởi động phải theo lịch trên dashboard, không theo `.env`.
+    # Không bao giờ ném — hỏng thì chạy bằng `.env` và cảnh báo.
+    from agent.omnichannel import sla_muc_tieu
+    await sla_muc_tieu.nap()
 
     await db.log_event("app.start", mode=runtime.mode(), enabled=runtime.enabled())
 
@@ -957,6 +965,7 @@ app.include_router(danh_muc_nhan_router)
 app.include_router(bao_cao_nhan_vien_router)
 app.include_router(phan_tich_router)
 app.include_router(uu_tien_router)
+app.include_router(sla_cau_hinh_router)
 app.include_router(thanh_toan_router)
 app.include_router(quan_sat.router)
 

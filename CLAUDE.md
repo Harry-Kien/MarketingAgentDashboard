@@ -205,6 +205,15 @@ chạy (bảng viết tay là bảng người ta điền "đạt" rồi tin là 
 TEST_DATABASE_URL=postgresql://... python -m scripts.sinh_nghiem_thu --ghi
 ```
 
+Bảng đối chiếu yêu cầu của chủ dự án (`docs/yeu-cau-chuc-nang.md`, phụ lục
+khoá luận) nêu tên từng test, route, tab và kịch bản nghiệm thu — bộ sinh
+kiểm từng cái có thật. Đổi tên test hay route mà bảng nêu, thêm test vào
+tệp bảng trỏ tới, hoặc sinh lại nghiệm thu thì sinh lại bảng (có test canh):
+
+```bash
+python -m scripts.sinh_bang_yeu_cau --ghi
+```
+
 Đo chất lượng — **gọi API thật, tốn tiền**, hỏi chủ dự án trước khi chạy:
 
 ```bash

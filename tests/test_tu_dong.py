@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -506,3 +507,346 @@ def test_chuyen_nguoi_bao_ca_khach_va_nhan_vien(csdl_kiem_thu, gio_lam, kenh, mo
 def test_tieu_de_viec_qua_ngan_bi_chan_luc_luu():
     with pytest.raises(QuyTacHong):
         kiem_hanh_dong([{"loai": "tao_viec", "tieu_de": "ab"}])
+
+
+# ------------------------------------------------------------------ thứ tự & xung đột (0060)
+#
+# Chính sách ở đầu agent/omnichannel/tu_dong.py. Mỗi điều một test: một
+# chính sách không có test canh là chính sách sẽ bị "dọn" mất.
+
+async def _quy_tac2(db, ten, dk, hd, thu_tu=100, **co):
+    """Như `_quy_tac`, thêm cờ 0060 và (tuỳ) `tao_luc` / `id` để thử thứ tự."""
+    cot = ["ten", "su_kien", "dieu_kien", "hanh_dong", "thu_tu"]
+    gt: list = [ten, "tin_khach", dk, hd, thu_tu]
+    for k in ("dung_xet_sau", "cho_ai_tra_loi", "tao_luc", "id"):
+        if k in co:
+            cot.append(k)
+            gt.append(co[k])
+    giu = ", ".join(f"${i + 1}" + ("::jsonb" if c in ("dieu_kien", "hanh_dong") else "")
+                    for i, c in enumerate(cot))
+    return await _v(db, f"INSERT INTO quy_tac_tu_dong ({', '.join(cot)}) VALUES ({giu}) "
+                        "RETURNING id", *gt)
+
+
+async def _mau(db, **ds):
+    for ma, nd in ds.items():
+        await db.execute("INSERT INTO tra_loi_nhanh (ma_tat, noi_dung) VALUES ($1,$2)", ma, nd)
+
+
+async def _lan(db, qid):
+    r = await db.fetchrow("SELECT ket_qua, chi_tiet FROM quy_tac_lan_chay WHERE quy_tac_id = $1 "
+                          "ORDER BY id DESC LIMIT 1", qid)
+    return None if r is None else (r["ket_qua"], r["chi_tiet"])
+
+
+async def _tin_tu_dong(db, cid):
+    return [r["content"] for r in await db.fetch(
+        "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'system' "
+        "ORDER BY created_at", cid)]
+
+
+def test_nhieu_quy_tac_khop_khach_nhan_mot_tin_nhan_gop(csdl_kiem_thu, gio_lam, kenh):
+    """
+    Chính sách a + b: hai quy tắc cùng khớp, cùng muốn gửi — khách nhận
+    MỘT tin (của quy tắc ưu tiên hơn); nhãn của cả hai đều được gắn; quy
+    tắc bị nhường ghi rõ VÌ SAO không gửi.
+    """
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.", gia="Dạ giá serum 350.000đ ạ.")
+            ht = await _v(db, "INSERT INTO nhan (loai, ten) VALUES ('hoi_thoai','hỏi giá') "
+                              "RETURNING id::text")
+            b = await _quy_tac2(db, "Hỏi giá", {"chua_tu": ["giá"]},
+                                [{"loai": "gui_mau", "ma_tat": "gia"},
+                                 {"loai": "gan_nhan_hoi_thoai", "nhan_id": ht}], thu_tu=20)
+            a = await _quy_tac2(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"},
+                                                 {"loai": "gan_nhan", "nhan": "mới"}], thu_tu=10)
+            kq = await tu_dong.chay_tin_khach(_msg(tk, "shop ơi giá serum"), cid)
+            return (kq, await _tin_tu_dong(db, cid), await _lan(db, a), await _lan(db, b),
+                    await _v(db, "SELECT count(*) FROM hoi_thoai_gan_nhan WHERE conversation_id = $1",
+                             cid))
+        finally:
+            await _dong(db)
+
+    kq, tin, lan_a, lan_b, so_nhan = asyncio.run(chay())
+    assert tin == ["Dạ shop chào chị ạ."], "hai quy tắc cùng khớp mà khách nhận hai câu"
+    assert kq.da_gui_khach and kq.quy_tac_gui == "Chào" and kq.ai_nhuong
+    assert so_nhan == 2, "nhãn của quy tắc bị nhường phải vẫn được gắn (gộp)"
+    assert lan_a[0] == "da_lam" and lan_a[1]["ai_nhuong"] is True
+    assert lan_b[0] == "da_lam" and "Chào" in lan_b[1]["bo_qua"][0]
+    # Mẫu của B CHƯA gửi — tin sau nó vẫn còn quyền gửi (một-lần theo từng loại).
+    assert "gui_mau" not in lan_b[1].get("mot_lan_loai", [])
+
+
+def test_thu_tu_on_dinh_cung_so_uu_tien(csdl_kiem_thu, gio_lam, kenh):
+    """Cùng `thu_tu`: tạo trước chạy trước; cùng lúc tạo: theo id."""
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, mot="Một.", hai="Hai.", ba="Ba.")
+            await _quy_tac2(db, "Tạo sau", {}, [{"loai": "gui_mau", "ma_tat": "mot"}], thu_tu=5)
+            await _quy_tac2(db, "Tạo trước", {}, [{"loai": "gui_mau", "ma_tat": "hai"}], thu_tu=5,
+                            tao_luc=datetime.now(timezone.utc) - timedelta(hours=1))
+            kq1 = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            await db.execute("DELETE FROM quy_tac_tu_dong")
+            luc = datetime.now(timezone.utc)
+            await _quy_tac2(db, "id lớn", {}, [{"loai": "gui_mau", "ma_tat": "mot"}], thu_tu=1,
+                            tao_luc=luc, id=UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+            await _quy_tac2(db, "id nhỏ", {}, [{"loai": "gui_mau", "ma_tat": "ba"}], thu_tu=1,
+                            tao_luc=luc, id=UUID("00000000-0000-0000-0000-00000000000a"))
+            kq2 = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return kq1, kq2
+        finally:
+            await _dong(db)
+
+    kq1, kq2 = asyncio.run(chay())
+    assert kq1.quy_tac_gui == "Tạo trước"
+    assert kq2.quy_tac_gui == "id nhỏ"
+
+
+def test_dung_xet_quy_tac_sau(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            a = await _quy_tac2(db, "Khiếu nại", {"chua_tu": ["khiếu nại"]},
+                                [{"loai": "gan_nhan", "nhan": "x"}], thu_tu=1, dung_xet_sau=True)
+            b = await _quy_tac2(db, "Mọi tin", {}, [{"loai": "gan_nhan", "nhan": "mới"}], thu_tu=2)
+            await tu_dong.chay_tin_khach(_msg(tk, "em muốn khiếu nại"), cid)
+            dung = (await _lan(db, a), await _lan(db, b))
+            await tu_dong.chay_tin_khach(_msg(tk, "giá bao nhiêu"), cid)   # A không khớp
+            return dung, await _lan(db, b)
+        finally:
+            await _dong(db)
+
+    (lan_a, lan_b), lan_b2 = asyncio.run(chay())
+    assert lan_a[0] == "da_lam" and lan_a[1]["dung_xet_sau"] is True
+    assert lan_b is None, "quy tắc xếp sau vẫn được xét dù quy tắc trước bật «dừng xét»"
+    assert lan_b2 is not None and lan_b2[0] == "da_lam", "không khớp thì cờ dừng không có tác dụng"
+
+
+def test_mau_cua_quy_tac_chuyen_nguoi_la_cau_bao(csdl_kiem_thu, gio_lam, kenh, monkeypatch):
+    """
+    Quy tắc [chuyển người, gửi mẫu] — thứ tự nào cũng vậy: khách nhận MẪU,
+    không nhận thêm câu báo chuyển người cố định; nhân viên vẫn được báo.
+    """
+    from agent.omnichannel import xu_ly_tin_vao
+
+    goi: list[str] = []
+
+    async def bao_nv(*a, **k):
+        goi.append("nhan_vien")
+
+    async def bao_khach(*a, **k):
+        goi.append("khach")
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_nhan_vien_tiep_quan", bao_nv)
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_khach_dang_chuyen_nguoi", bao_khach)
+
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, doitra="Dạ em chuyển chị sang bạn phụ trách đổi trả ạ.")
+            await _quy_tac2(db, "Đổi trả", {}, [{"loai": "chuyen_nguoi", "ly_do": "đổi trả"},
+                                                {"loai": "gui_mau", "ma_tat": "doitra"}])
+            kq = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return kq, await _tin_tu_dong(db, cid)
+        finally:
+            await _dong(db)
+
+    kq, tin = asyncio.run(chay())
+    assert kq.dung_agent and kq.da_gui_khach
+    assert tin == ["Dạ em chuyển chị sang bạn phụ trách đổi trả ạ."]
+    assert goi == ["nhan_vien"], "khách nhận cả mẫu lẫn câu báo chuyển người"
+
+
+@pytest.mark.parametrize("chuyen_truoc", [True, False])
+def test_chuyen_nguoi_uu_tien_hon_thi_mau_sau_nhuong(csdl_kiem_thu, gio_lam, kenh, monkeypatch,
+                                                    chuyen_truoc):
+    """
+    Quy tắc chuyển người xếp TRƯỚC: câu báo chuyển người là tin duy nhất;
+    mẫu chào của quy tắc xếp sau nhường. Và ngược lại: mẫu xếp trước thì
+    quy tắc chuyển người sau KHÔNG gửi thêm câu báo (ghi lý do).
+    """
+    from agent.omnichannel import xu_ly_tin_vao
+
+    goi: list[str] = []
+
+    async def bao_nv(*a, **k):
+        goi.append("nhan_vien")
+
+    async def bao_khach(*a, **k):
+        goi.append("khach")
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_nhan_vien_tiep_quan", bao_nv)
+    monkeypatch.setattr(xu_ly_tin_vao, "bao_khach_dang_chuyen_nguoi", bao_khach)
+
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.")
+            c = await _quy_tac2(db, "Chuyển", {}, [{"loai": "chuyen_nguoi"}],
+                                thu_tu=1 if chuyen_truoc else 2)
+            m = await _quy_tac2(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"}],
+                                thu_tu=2 if chuyen_truoc else 1)
+            kq = await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return kq, await _tin_tu_dong(db, cid), await _lan(db, c), await _lan(db, m)
+        finally:
+            await _dong(db)
+
+    kq, tin, lan_c, lan_m = asyncio.run(chay())
+    assert kq.dung_agent
+    if chuyen_truoc:
+        assert goi == ["nhan_vien", "khach"] and tin == []
+        assert lan_m[0] == "bo_qua" and "Chuyển" in lan_m[1]["bo_qua"][0]
+    else:
+        assert goi == ["nhan_vien"] and tin == ["Dạ shop chào chị ạ."]
+        assert "Chào" in lan_c[1]["bo_qua"][0]
+
+
+def test_viec_cung_tieu_de_chi_tao_mot(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _quy_tac2(db, "A", {}, [{"loai": "tao_viec", "tieu_de": "Gọi lại khách"}], thu_tu=1)
+            await _quy_tac2(db, "B", {}, [{"loai": "tao_viec", "tieu_de": "Gọi lại khách"}], thu_tu=2)
+            await _quy_tac2(db, "C", {}, [{"loai": "tao_viec", "tieu_de": "Gửi báo giá"}], thu_tu=3)
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return sorted(r["tieu_de"] for r in await db.fetch(
+                "SELECT tieu_de FROM cong_viec WHERE conversation_id = $1", cid))
+        finally:
+            await _dong(db)
+
+    assert asyncio.run(chay()) == ["Gọi lại khách", "Gửi báo giá"]
+
+
+def test_cho_ai_tra_loi_thi_ai_khong_nhuong(csdl_kiem_thu, gio_lam, kenh):
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.")
+            await _quy_tac2(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"}],
+                            cho_ai_tra_loi=True)
+            return await tu_dong.chay_tin_khach(_msg(tk), cid)
+        finally:
+            await _dong(db)
+
+    kq = asyncio.run(chay())
+    assert kq.da_gui_khach and not kq.ai_nhuong
+
+
+@pytest.mark.parametrize("tinh_huong", ["cho_nguoi", "duyet_rieng", "doi_gap_nguoi",
+                                        "da_doi_gap_nguoi", "nhom"])
+def test_khong_gui_mau_nhung_van_gan_nhan(csdl_kiem_thu, gio_lam, kenh, tinh_huong):
+    """
+    Năm lúc quy tắc không được NÓI với khách. Việc không nói ra (gắn nhãn)
+    vẫn làm — để quy tắc phân loại hội thoại không ngừng chỉ vì có người.
+    """
+    from agent.omnichannel import thong_bao_ai
+
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.")
+            q = await _quy_tac2(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"},
+                                                 {"loai": "gan_nhan", "nhan": "mới"}])
+            van_ban = "alo"
+            if tinh_huong == "cho_nguoi":
+                await db.execute("UPDATE conversations SET status = 'escalated' WHERE id = $1", cid)
+            elif tinh_huong == "duyet_rieng":
+                await db.execute("UPDATE conversations SET duyet_truoc_khi_gui = true "
+                                 "WHERE id = $1", cid)
+            elif tinh_huong == "doi_gap_nguoi":
+                van_ban = "cho em gặp nhân viên"
+            elif tinh_huong == "da_doi_gap_nguoi":
+                await db.log_event(thong_bao_ai.SU_KIEN_DOI_GAP_NGUOI, ref_id=cid)
+            else:
+                await db.execute("UPDATE conversations SET thread_type = 1 WHERE id = $1", cid)
+            kq = await tu_dong.chay_tin_khach(_msg(tk, van_ban), cid)
+            return (kq, await _v(db, "SELECT count(*) FROM outbox_jobs"), await _lan(db, q))
+        finally:
+            await _dong(db)
+
+    kq, so_tin, lan = asyncio.run(chay())
+    assert so_tin == 0, tinh_huong
+    assert not kq.da_gui_khach and not kq.ai_nhuong
+    assert lan[0] == "da_lam" and lan[1]["lam"] == ["gắn nhãn hội thoại mới"]
+    assert lan[1]["bo_qua"][0].startswith("không gửi mẫu: ")
+
+
+def test_mot_lan_tinh_theo_tung_loai_hanh_dong(csdl_kiem_thu, gio_lam, kenh):
+    """
+    Lần đầu mẫu bị bỏ qua (người đang tiếp) mà việc đã tạo: lần sau mẫu vẫn
+    gửi được, việc KHÔNG tạo lại. Bản trước ghi "một lần" cho cả quy tắc —
+    mẫu ấy không bao giờ được gửi nữa.
+    """
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.")
+            await _quy_tac2(db, "Chào + việc", {}, [{"loai": "gui_mau", "ma_tat": "chao"},
+                                                    {"loai": "tao_viec", "tieu_de": "Gọi lại"}])
+            await tu_dong.chay_tin_khach(_msg(tk), cid, nguoi_dang_tiep=True)
+            await tu_dong.chay_tin_khach(_msg(tk, "tin 2"), cid)
+            await tu_dong.chay_tin_khach(_msg(tk, "tin 3"), cid)
+            return (await _tin_tu_dong(db, cid),
+                    await _v(db, "SELECT count(*) FROM cong_viec WHERE conversation_id = $1", cid))
+        finally:
+            await _dong(db)
+
+    tin, viec = asyncio.run(chay())
+    assert tin == ["Dạ shop chào chị ạ."] and viec == 1
+
+
+def test_dong_cu_mot_lan_khong_loai_van_tinh_ca_hai(csdl_kiem_thu, gio_lam, kenh):
+    """Nhật ký trước 0060 chỉ có `mot_lan: true` — không được gửi lại lần nữa."""
+    async def chay():
+        db, tk, cid = await _mo(csdl_kiem_thu)
+        try:
+            await _mau(db, chao="Dạ shop chào chị ạ.")
+            q = await _quy_tac2(db, "Chào", {}, [{"loai": "gui_mau", "ma_tat": "chao"},
+                                                 {"loai": "tao_viec", "tieu_de": "Gọi lại"}])
+            await db.execute("INSERT INTO quy_tac_lan_chay (quy_tac_id, conversation_id, ket_qua, "
+                             "chi_tiet) VALUES ($1,$2,'da_lam',$3::jsonb)", q, cid,
+                             {"lam": ["gửi mẫu /chao"], "mot_lan": True})
+            await tu_dong.chay_tin_khach(_msg(tk), cid)
+            return (await _v(db, "SELECT count(*) FROM outbox_jobs"),
+                    await _v(db, "SELECT count(*) FROM cong_viec"))
+        finally:
+            await _dong(db)
+
+    assert asyncio.run(chay()) == (0, 0)
+
+
+def test_kiem_luc_luu_chan_mau_thuan():
+    a = "11111111-1111-1111-1111-111111111111"
+    with pytest.raises(QuyTacHong, match="MỘT hành động gui_mau"):
+        kiem_hanh_dong([{"loai": "gui_mau", "ma_tat": "a"}, {"loai": "gui_mau", "ma_tat": "b"}])
+    with pytest.raises(QuyTacHong, match="chuyen_nguoi"):
+        kiem_hanh_dong([{"loai": "chuyen_nguoi"}, {"loai": "chuyen_nguoi"}])
+    with pytest.raises(QuyTacHong, match="hai lần"):
+        kiem_hanh_dong([{"loai": "gan_nhan_khach", "nhan_id": a},
+                        {"loai": "gan_nhan_khach", "nhan_id": a}])
+    with pytest.raises(QuyTacHong, match="mâu thuẫn"):
+        kiem_dieu_kien({"nhan_khach_co": [a], "nhan_khach_khong": [a]})
+    # Hai LOẠI nhãn khác nhau cùng id thì không mâu thuẫn (hai danh mục riêng).
+    kiem_dieu_kien({"nhan_hoi_thoai_co": [a], "nhan_khach_khong": [a]})
+    # Đủ bốn loại hành động trong một quy tắc là hợp lệ (mục 7.4).
+    assert len(kiem_hanh_dong([{"loai": "gan_nhan_hoi_thoai", "nhan_id": a},
+                               {"loai": "gui_mau", "ma_tat": "chao"},
+                               {"loai": "tao_viec", "tieu_de": "Gọi lại"},
+                               {"loai": "chuyen_nguoi"}])) == 4
+
+
+def test_ai_nhuong_dat_sau_cac_nhanh_chuyen_nguoi():
+    """
+    AI nhường tin cho quy tắc — nhưng KHÔNG được nuốt các nhánh giao người
+    (agent tắt theo kênh, khách đòi gặp người, ảnh không chữ): một câu chào
+    tự động không thay được việc báo nhân viên. Và phải TRƯỚC "em là trợ lý
+    AI" cùng lời gọi model.
+    """
+    src = (ROOT / "agent" / "omnichannel" / "xu_ly_tin_vao.py").read_text(encoding="utf-8")
+    i = src.index("if tu_dong_kq.ai_nhuong:")
+    for truoc in ("agent_bat.agent_duoc_tra_loi(", "thong_bao_ai.khach_doi_gap_nguoi(",
+                  "msg.attachments and not msg.text.strip()"):
+        assert src.index(truoc) < i, truoc
+    for sau in ("await thong_bao_ai.gui_neu_chua(", "reply = await brain.respond("):
+        assert i < src.index(sau), sau

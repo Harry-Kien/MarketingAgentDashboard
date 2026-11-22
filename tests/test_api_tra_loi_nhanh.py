@@ -127,3 +127,48 @@ def test_ghi_nhat_ky_kiem_toan(csdl_kiem_thu):
         finally:
             await conn.close()
     assert asyncio.run(dem()) == 1
+
+
+def test_sua_mau_thanh_cau_cam_cung_bi_chan(csdl_kiem_thu):
+    """
+    Mục 7.9: soi cụm cấm cả lúc SỬA — đường dễ lọt nhất, vì mẫu "đã được
+    duyệt" lúc tạo. Mẫu giữ nguyên nội dung cũ.
+    """
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        mid = k.post("/api/tra-loi-nhanh", json={
+            "ma_tat": "ship", "noi_dung": "Dạ phí ship 30.000đ ạ."}).json()["id"]
+        r = k.put(f"/api/tra-loi-nhanh/{mid}", json={
+            "ma_tat": "ship", "noi_dung": "Serum này đặc trị mụn, ship 30.000đ ạ"})
+        assert r.status_code == 422 and r.json()["detail"]["cum"]
+        assert k.get("/api/tra-loi-nhanh").json()["mau"][0]["noi_dung"] == "Dạ phí ship 30.000đ ạ."
+
+
+def test_doi_ma_hoac_xoa_mau_quy_tac_dang_dung_la_409(csdl_kiem_thu):
+    """
+    Mẫu là nguồn nội dung chung của "/" và của quy tắc tự động. Đổi mã tắt
+    hay xoá mẫu mà quy tắc ĐANG BẬT trỏ tới thì quy tắc hỏng ở tin khách kế
+    tiếp — chặn ngay ở đây. Quy tắc đã tắt thì không chặn.
+    """
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:
+        mid = k.post("/api/tra-loi-nhanh", json={
+            "ma_tat": "chao", "noi_dung": "Dạ shop chào chị ạ."}).json()["id"]
+
+        async def quy_tac(bat: bool):
+            conn = await asyncpg.connect(csdl_kiem_thu)
+            try:
+                await conn.execute("DELETE FROM quy_tac_tu_dong")
+                await conn.execute(
+                    "INSERT INTO quy_tac_tu_dong (ten, su_kien, hanh_dong, bat) VALUES "
+                    "('Chào khách', 'tin_khach', $1::jsonb, $2)",
+                    json.dumps([{"loai": "gui_mau", "ma_tat": "chao"}]), bat)
+            finally:
+                await conn.close()
+        asyncio.run(quy_tac(True))
+        r = k.put(f"/api/tra-loi-nhanh/{mid}", json={"ma_tat": "chao2", "noi_dung": "Dạ chào ạ."})
+        assert r.status_code == 409 and "Chào khách" in r.text
+        assert k.delete(f"/api/tra-loi-nhanh/{mid}").status_code == 409
+        # Sửa NỘI DUNG (giữ mã) thì vẫn được — đó là việc thường ngày.
+        assert k.put(f"/api/tra-loi-nhanh/{mid}", json={
+            "ma_tat": "chao", "noi_dung": "Dạ shop xin chào chị ạ."}).status_code == 200
+        asyncio.run(quy_tac(False))
+        assert k.delete(f"/api/tra-loi-nhanh/{mid}").status_code == 204

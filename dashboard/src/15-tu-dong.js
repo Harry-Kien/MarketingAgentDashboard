@@ -40,9 +40,26 @@ function _moTaQuyTac(q) {
     gan_nhan_khach: "gắn nhãn khách " + tenNhanTheoId(h.nhan_id),
     gui_mau: "gửi mẫu /" + h.ma_tat,
     tao_viec: "tạo việc «" + h.tieu_de + "»" + (h.giao_tu_dong ? " (tự phân công)" : ""),
-    chuyen_nguoi: "chuyển người",
+    chuyen_nguoi: "chuyển cho nhân viên",
   }[h.loai] || h.loai));
   return `Nếu ${neu.length ? neu.join(" và ") : "có tin bất kỳ"} → ${thi.join(", ")}`;
+}
+
+// Tóm tắt MỘT lần chạy: làm gì, bỏ qua gì và vì sao, hỏng gì. "Bỏ qua" phải
+// nói lý do — "không gửi mẫu vì quy tắc X đã gửi" là câu trả lời cho câu hỏi
+// người vận hành sẽ hỏi đầu tiên: "sao quy tắc của tôi không gửi?".
+function _tomTatLanChay(ketQua, ct) {
+  ct = ct || {};
+  const lam = (ct.lam || []).join(", ");
+  const boQua = (ct.bo_qua || []).join("; ");
+  if (ketQua === "hong") return "hỏng: " + (ct.loi || "?");
+  if (ketQua === "bo_qua") return "khớp nhưng bỏ qua — " + (boQua || "đã làm ở tin trước");
+  let s = lam;
+  if (ct.ai_nhuong) s += " · AI nhường tin này";
+  if (boQua) s += " · bỏ qua: " + boQua;
+  if (ct.loi) s += " · lỗi: " + ct.loi;
+  if (ct.dung_xet_sau) s += " · dừng xét quy tắc sau";
+  return s;
 }
 
 async function loadQuyTac() {
@@ -83,17 +100,33 @@ async function loadQuyTac() {
     const tinh = b.hong ? `<span class="pill pill--halt">${b.hong} lần hỏng</span> ` : "";
     const lan = b.da_lam ? `${b.da_lam} lần làm trong 7 ngày` + (b.lan_cuoi ? `, gần nhất ${clock(b.lan_cuoi)}` : "")
       : (q.bat ? "chưa khớp lần nào trong 7 ngày" : "");
+    const co = [q.dung_xet_sau ? "dừng xét quy tắc sau" : "",
+                q.cho_ai_tra_loi ? "AI vẫn trả lời sau mẫu" : ""].filter(Boolean);
+    const c = q.lan_chay_cuoi;
+    const cuoi = c ? `Lần chạy cuối ${clock(c.luc)}: ${c.tom_tat}` : "";
+    // Lỗi cuối hiện NGAY trên dòng quy tắc, không chỉ trong nhật ký chung:
+    // nhật ký chung trôi đi sau 20 lần chạy, lỗi thì vẫn còn đó. Nhưng lỗi
+    // ĐÃ SỬA (quy tắc được lưu lại sau lỗi) hay quá bảy ngày thì thôi hiện —
+    // một dòng đỏ mãi là dòng người ta thôi đọc.
+    const loiCon = q.loi_cuoi && Date.parse(q.loi_cuoi.luc) > Date.parse(q.sua_luc)
+      && Date.now() - Date.parse(q.loi_cuoi.luc) < 7 * 864e5;
+    const loi = loiCon ? `<span class="row__sub"><span class="pill pill--halt">Lỗi gần nhất ${
+      esc(clock(q.loi_cuoi.luc))}</span> ${esc(q.loi_cuoi.loi)}</span>` : "";
     return `
     <div class="row">
       <span class="row__flag ${!q.bat ? "row__flag--plain" : b.hong ? "row__flag--halt" : "row__flag--auto"}"></span>
-      <span class="row__body"><span class="row__title">${esc(q.thu_tu)} · ${esc(q.ten)}${q.bat ? "" : " <em>(đang tắt)</em>"}</span>
+      <span class="row__body"><span class="row__title">Ưu tiên ${esc(q.thu_tu)} · ${esc(q.ten)}${q.bat ? "" : " <em>(đang tắt)</em>"}${
+        co.length ? ` <span class="pill">${esc(co.join(" · "))}</span>` : ""}</span>
         <span class="row__sub">${esc(_moTaQuyTac(q))}</span>
-        <span class="row__sub">${tinh}${esc(lan)}</span></span>
-      ${sua ? `<span class="row__side">
+        <span class="row__sub">${tinh}${esc(lan)}</span>
+        ${cuoi ? `<span class="row__sub">${esc(cuoi)}</span>` : ""}${loi}</span>
+      <span class="row__side">
+        <button type="button" class="btn btn--sm btn--ghost" data-qt-nhatky="${esc(q.id)}">Nhật ký</button>
+      ${sua ? `
         <button type="button" class="btn btn--sm" data-qt-bat="${esc(q.id)}">${q.bat ? "Tắt" : "Bật"}</button>
         <button type="button" class="btn btn--sm" data-qt-sua="${esc(q.id)}">Sửa</button>
-        <button type="button" class="btn btn--sm btn--halt" data-qt-xoa="${esc(q.id)}">Xoá</button>
-      </span>` : ""}
+        <button type="button" class="btn btn--sm btn--halt" data-qt-xoa="${esc(q.id)}">Xoá</button>` : ""}
+      </span>
     </div>`;
   }).join("") : '<p class="empty">Chưa có quy tắc nào — agent và định tuyến chạy như thường.</p>';
   await loadQuyTacLanChay();
@@ -102,13 +135,21 @@ async function loadQuyTac() {
 async function loadQuyTacLanChay() {
   const o = $("#qtLanChay");
   if (!o) return;
+  // Lọc theo một quy tắc (nút "Nhật ký" trên dòng quy tắc). Quy tắc đã bị
+  // xoá thì bỏ lọc — không để khung trống mà không nói vì sao.
+  const loc = (state.quyTac || []).find((q) => q.id === state.qtLoc);
+  if (!loc) state.qtLoc = null;
+  const tieuDe = $("#qtLanChayTieuDe");
+  if (tieuDe) {
+    tieuDe.innerHTML = loc ? `Lần chạy gần đây — «${esc(loc.ten)}» <button type="button" class="btn btn--sm btn--ghost" data-qt-nhatky="">Xem tất cả</button>`
+      : "Lần chạy gần đây";
+  }
   let r;
-  try { r = await api("/tu-dong/lan-chay?gioi_han=20"); } catch (e) { toast(e.message, true); return; }
+  try {
+    r = await api("/tu-dong/lan-chay?gioi_han=20" + (loc ? `&quy_tac_id=${encodeURIComponent(loc.id)}` : ""));
+  } catch (e) { toast(e.message, true); return; }
   o.innerHTML = r.lan_chay.length ? r.lan_chay.map((l) => {
-    const ct = l.chi_tiet || {};
-    const viec = l.ket_qua === "hong" ? ("hỏng: " + (ct.loi || "?"))
-      : l.ket_qua === "bo_qua" ? "khớp, không còn gì để làm (đã làm ở tin trước)"
-      : (ct.lam || []).join(", ");
+    const viec = _tomTatLanChay(l.ket_qua, l.chi_tiet);
     return `<div class="row">
       <span class="row__flag ${l.ket_qua === "hong" ? "row__flag--halt" : l.ket_qua === "da_lam" ? "row__flag--auto" : "row__flag--plain"}"></span>
       <span class="row__body"><span class="row__title">${esc(l.quy_tac)}</span>
@@ -141,12 +182,14 @@ function _gomQuyTac(f) {
   return {
     ten: f.ten.value.trim(), su_kien: "tin_khach", dieu_kien: dk, hanh_dong: hd,
     bat: f.bat.checked, thu_tu: Number(f.thu_tu.value || 100),
+    dung_xet_sau: f.dung_xet_sau.checked, cho_ai_tra_loi: f.cho_ai_tra_loi.checked,
   };
 }
 
 function _datQuyTac(f, q) {
   const dk = q.dieu_kien || {};
   f.qt_id.value = q.id; f.ten.value = q.ten; f.thu_tu.value = q.thu_tu; f.bat.checked = q.bat;
+  f.dung_xet_sau.checked = !!q.dung_xet_sau; f.cho_ai_tra_loi.checked = !!q.cho_ai_tra_loi;
   $$("[data-qt-kenh]").forEach((c) => { c.checked = (dk.kenh || []).includes(c.value); });
   f.chua_tu.value = (dk.chua_tu || []).join(", ");
   f.ngoai_gio.value = dk.ngoai_gio == null ? "" : String(dk.ngoai_gio);
@@ -170,6 +213,16 @@ function _xoaFormQuyTac() {
   $$("[data-qt-kenh]").forEach((c) => { c.checked = false; });
 }
 
+// "Nhật ký" lọc khung lần chạy theo một quy tắc; "Xem tất cả" bỏ lọc. Gắn
+// vào khung CHA vì nút "Xem tất cả" nằm ngoài #qtDs.
+$("#cc-tu-dong")?.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-qt-nhatky]");
+  if (!b) return;
+  state.qtLoc = b.dataset.qtNhatky || null;
+  loadQuyTacLanChay();
+  if (state.qtLoc) $("#qtLanChay")?.scrollIntoView({ block: "nearest" });
+});
+
 $("#qtDs")?.addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-qt-sua], [data-qt-xoa], [data-qt-bat]");
   if (!b) return;
@@ -192,7 +245,8 @@ $("#qtDs")?.addEventListener("click", async (ev) => {
     } else {
       await api(`/tu-dong/${id}`, { method: "PUT", body: JSON.stringify({
         ten: q.ten, su_kien: q.su_kien, dieu_kien: q.dieu_kien, hanh_dong: q.hanh_dong,
-        bat: !q.bat, thu_tu: q.thu_tu }) });
+        bat: !q.bat, thu_tu: q.thu_tu,
+        dung_xet_sau: q.dung_xet_sau, cho_ai_tra_loi: q.cho_ai_tra_loi }) });
       toast(q.bat ? "Đã tắt quy tắc." : "Đã bật quy tắc.");
     }
     loadQuyTac();

@@ -8,7 +8,13 @@ sửa nó là sửa lời của cả cửa hàng.
 Mẫu dính cụm cấm quảng cáo mỹ phẩm bị CHẶN lúc lưu (422), khác với bản nháp
 AI chỉ bị cảnh báo — lý do ở `0027_tra_loi_nhanh.sql`. Soi bằng đúng hàm
 đang soi bản nháp do quản lý sửa: hai bản sao của một luật thì sớm muộn
-lệch nhau, và khi ấy một đường bị chặn, đường kia lọt.
+lệch nhau, và khi ấy một đường bị chặn, đường kia lọt. Soi cả lúc TẠO lẫn
+lúc SỬA (cùng `_kiem`): sửa là đường dễ lọt nhất, vì mẫu đã "được duyệt".
+
+Mẫu là NGUỒN NỘI DUNG CHUNG của hai đường: nhân viên gõ "/" + mã tắt trong
+ô nhắn tin, và quy tắc tự động gửi theo mã tắt. Nên đổi mã tắt hay xoá một
+mẫu mà quy tắc ĐANG BẬT trỏ tới bị chặn (409): cho qua là quy tắc "đang
+bật" hỏng ở tin khách kế tiếp, không ai đổi gì ở màn quy tắc cả.
 """
 from __future__ import annotations
 
@@ -54,6 +60,22 @@ def _kiem(body: MauIn) -> tuple[str, str]:
     return ma, nd
 
 
+async def _quy_tac_dang_dung(ma: str) -> list[str]:
+    rows = await db.fetch(
+        "SELECT ten FROM quy_tac_tu_dong WHERE bat AND hanh_dong @> $1::jsonb "
+        "ORDER BY thu_tu, tao_luc, id", [{"loai": "gui_mau", "ma_tat": ma}])
+    return [str(r["ten"]) for r in rows]
+
+
+async def _chan_neu_quy_tac_dung(ma: str, viec: str) -> None:
+    ds = await _quy_tac_dang_dung(ma)
+    if ds:
+        raise HTTPException(409, (
+            f"Không {viec} được: mẫu /{ma} đang được quy tắc tự động đang bật dùng — "
+            + ", ".join(f"«{x}»" for x in ds)
+            + ". Sửa hoặc tắt quy tắc ở «Quy tắc tự động» trước."))
+
+
 def _dong(r) -> dict[str, Any]:
     return {"id": str(r["id"]), "ma_tat": r["ma_tat"], "noi_dung": r["noi_dung"],
             "sua_luc": r["sua_luc"].isoformat()}
@@ -96,6 +118,9 @@ async def tao(body: MauIn,
 async def sua(mau_id: UUID, body: MauIn,
               nguoi: dict = Depends(can_quyen("tra_loi_nhanh.sua"))) -> dict[str, Any]:
     ma, nd = _kiem(body)
+    cu = await db.fetchrow("SELECT ma_tat FROM tra_loi_nhanh WHERE id = $1", mau_id)
+    if cu is not None and cu["ma_tat"] != ma:
+        await _chan_neu_quy_tac_dung(cu["ma_tat"], "đổi mã tắt")
     try:
         r = await db.fetchrow(
             "UPDATE tra_loi_nhanh SET ma_tat = $2, noi_dung = $3, sua_luc = now() "
@@ -111,6 +136,9 @@ async def sua(mau_id: UUID, body: MauIn,
 @router.delete("/{mau_id}", status_code=204)
 async def xoa(mau_id: UUID,
               nguoi: dict = Depends(can_quyen("tra_loi_nhanh.sua"))) -> None:
+    cu = await db.fetchrow("SELECT ma_tat FROM tra_loi_nhanh WHERE id = $1", mau_id)
+    if cu is not None:
+        await _chan_neu_quy_tac_dung(cu["ma_tat"], "xoá")
     r = await db.fetchrow("DELETE FROM tra_loi_nhanh WHERE id = $1 RETURNING ma_tat", mau_id)
     if r is None:
         raise HTTPException(404, "Không thấy mẫu.")

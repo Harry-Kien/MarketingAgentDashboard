@@ -38,6 +38,7 @@ CHI_DE_DOC = {
     "nguoi",      # id nhân viên trên dòng — nút nằm trong dòng
     "chuloc", "kieu", "ma", "truong", "so",
     "account-id",  # trong ĐOẠN MÃ NHÚNG widget website — widget.js đọc, không phải nút
+    "qt-nhom",    # mốc ba nhóm của biểu mẫu quy tắc — test_tu_dong_giao_dien đọc, không phải nút
 }
 
 

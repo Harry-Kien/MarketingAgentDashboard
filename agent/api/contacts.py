@@ -19,6 +19,7 @@ from agent.omnichannel.identity import (
     PostgresIdentityRepository,
 )
 
+from agent.core import nhan as nhan_loi
 from agent.core import pham_vi, truong_khach
 
 from .routes import can_quyen
@@ -98,13 +99,14 @@ class PostgresContactRepository:
         limit: int,
         nguoi: dict[str, Any] | None = None,
         muc: str = pham_vi.MUC_MAC_DINH,
+        nhan_id: UUID | None = None,
     ) -> list[dict[str, Any]]:
         # Mệnh đề phạm vi đến từ MỘT chỗ duy nhất — xem `agent/core/pham_vi.py`.
         # Viết tay ở đây là bản sao thứ hai của bốn nhánh lọc, và bản sao sẽ
         # lệch mà không nổ.
         loc, tham_so_pham_vi = pham_vi.dieu_kien_khach(
             nguoi=nguoi or {"id": user_id, "quyen": frozenset()},
-            muc=muc, so_tham_so=5, bi_danh="contact",
+            muc=muc, so_tham_so=6, bi_danh="contact",
         )
         async with self._pool_provider().acquire() as connection:
             rows = await connection.fetch(
@@ -130,11 +132,17 @@ class PostgresContactRepository:
                        (
                            SELECT count(*) FROM conversations count_conversation
                            WHERE count_conversation.contact_id = contact.id
-                       ) AS conversation_count
+                       ) AS conversation_count,
+                       {nhan_loi.sql_nhan_da_gan("khach_gan_nhan", "contact_id", "contact.id")}
+                           AS nhan
                 FROM contacts contact
                 LEFT JOIN nguoi_dung chu ON chu.id = contact.owner_user_id
                 WHERE contact.status <> 'deleted'
                   AND {loc}
+                  AND ($6::uuid IS NULL OR EXISTS (
+                      SELECT 1 FROM khach_gan_nhan loc_nhan
+                      WHERE loc_nhan.contact_id = contact.id AND loc_nhan.nhan_id = $6
+                  ))
                   AND EXISTS (
                       SELECT 1 FROM contact_points visible_point
                       LEFT JOIN account_memberships visible_membership
@@ -159,6 +167,7 @@ class PostgresContactRepository:
                 query,
                 account_id,
                 max(1, min(limit, 100)),
+                nhan_id,
                 *tham_so_pham_vi,
             )
         return [dict(row) for row in rows]
@@ -242,9 +251,12 @@ class PostgresContactRepository:
                 user_id,
                 is_admin,
             )
-            tags = await connection.fetch(
-                "SELECT tag, created_at FROM contact_tags "
-                "WHERE contact_id = $1 ORDER BY tag",
+            # Nhãn khách từ danh mục (0056), kể cả nhãn đã ngừng — hiện xám.
+            # `contact_tags` cũ thôi được đọc: nó là ảnh chụp lúc chuyển đổi.
+            nhan = await connection.fetch(
+                "SELECT n.id, n.ten, n.mau, n.mo_ta, n.dang_dung, g.gan_luc "
+                "FROM khach_gan_nhan g JOIN nhan n ON n.id = g.nhan_id "
+                "WHERE g.contact_id = $1 ORDER BY n.thu_tu, lower(n.ten)",
                 contact_id,
             )
             notes = await connection.fetch(
@@ -274,7 +286,12 @@ class PostgresContactRepository:
         result = dict(contact)
         result["contact_points"] = [dict(row) for row in points]
         result["conversations"] = [dict(row) for row in conversations]
-        result["tags"] = [dict(row) for row in tags]
+        result["nhan"] = [
+            {**dict(row), "id": str(row["id"]), "mau_chu": nhan_loi.mau_chu(row["mau"])}
+            for row in nhan
+        ]
+        # Hình dạng cũ (`tag`, `created_at`) cho mã đọc `tags` trước 0056.
+        result["tags"] = [{"tag": row["ten"], "created_at": row["gan_luc"]} for row in nhan]
         result["notes"] = [dict(row) for row in notes]
         result["consents"] = [dict(row) for row in consents]
         return result
@@ -393,24 +410,21 @@ class PostgresContactRepository:
     async def add_tag(
         self, *, contact_id: UUID, tag: str, actor_id: UUID
     ) -> None:
+        """
+        Đường cũ nhận TÊN nhãn: tra danh mục nhãn khách, KHÔNG tạo mới —
+        tự tạo là quay lại đúng mớ "VIP"/"vip " mà danh mục 0056 dọn đi.
+        Tên chưa có thì `NhanKhongThay` (route trả 422 chỉ đường).
+        """
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
-                await connection.execute(
-                    """
-                    INSERT INTO contact_tags (contact_id, tag, created_by)
-                    VALUES ($1,$2,$3) ON CONFLICT (contact_id, tag) DO NOTHING
-                    """,
-                    contact_id,
-                    tag,
-                    actor_id,
-                )
-                await connection.execute(
-                    "INSERT INTO events (kind, actor, ref_id, detail) "
-                    "VALUES ('contact.tag_added',$1,$2,$3)",
-                    str(actor_id),
-                    contact_id,
-                    {"tag": tag},
-                )
+                n = await nhan_loi.tim_theo_ten(connection, "khach", tag)
+                if n is None:
+                    raise nhan_loi.NhanKhongThay(
+                        f"Chưa có nhãn khách «{tag}» trong danh mục — tạo ở "
+                        "Cấu hình → Quản lý nhãn rồi chọn lại.")
+                await nhan_loi.gan_khach(
+                    connection, contact_id=contact_id, nhan_id=n["id"],
+                    gan_boi=actor_id, actor=str(actor_id))
 
     async def add_note(
         self,
@@ -600,6 +614,7 @@ async def list_contacts(
     q: str = Query("", max_length=120),
     account_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=100),
+    nhan_id: UUID | None = None,
     user: dict = Depends(can_quyen("khach.doc")),
     repository: PostgresContactRepository = Depends(get_contact_repository),
     muc: str = Depends(get_muc_tam_nhin),
@@ -613,6 +628,7 @@ async def list_contacts(
         limit=limit,
         nguoi=user,
         muc=muc,
+        nhan_id=nhan_id,
     )
     ra = []
     for row in rows:
@@ -751,8 +767,63 @@ async def add_contact_tag(
 ) -> dict[str, Any]:
     actor_id = await _require_contact_manager(contact_id, user, repository)
     tag = body.tag.strip()
-    await repository.add_tag(contact_id=contact_id, tag=tag, actor_id=actor_id)
+    try:
+        await repository.add_tag(contact_id=contact_id, tag=tag, actor_id=actor_id)
+    except (nhan_loi.NhanKhongThay, nhan_loi.NhanHong) as exc:
+        raise HTTPException(422, str(exc)) from exc
     return {"contact_id": str(contact_id), "tag": tag}
+
+
+class NhanKhachIn(BaseModel):
+    nhan_id: UUID
+
+
+@router.post("/{contact_id}/nhan", status_code=201)
+async def gan_nhan_khach(
+    contact_id: UUID,
+    body: NhanKhachIn,
+    user: dict = Depends(can_quyen("khach.sua")),
+    repository: PostgresContactRepository = Depends(get_contact_repository),
+) -> dict[str, Any]:
+    """
+    Gắn nhãn khách (chỉ ở Customer 360 — nhãn khách đi theo HỒ SƠ, không theo
+    từng hội thoại).
+
+    Chốt kênh như `dat_truong_khach`: ngoài kênh thì 404, không xác nhận
+    khách tồn tại. Không dùng chốt "quản lý mọi kênh" của đường `/tags` cũ:
+    nhãn là việc của người chăm khách hằng ngày, cùng tầm với trường thông
+    tin khách — đòi vai trò quản lý là nhân viên không gắn được nhãn nào.
+    """
+    await _chan_neu_khong_thay(repository, contact_id, user)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _khach_ton_tai(conn, contact_id)
+            try:
+                n, moi = await nhan_loi.gan_khach(
+                    conn, contact_id=contact_id, nhan_id=body.nhan_id,
+                    gan_boi=UUID(str(user["id"])),
+                    actor=str(user.get("ten_dang_nhap") or "?"))
+            except nhan_loi.NhanKhongThay as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except nhan_loi.NhanHong as exc:
+                raise HTTPException(422, str(exc)) from exc
+    return {"contact_id": str(contact_id), "nhan_id": str(n["id"]), "ten": n["ten"],
+            "mau": n["mau"], "moi_gan": moi}
+
+
+@router.delete("/{contact_id}/nhan/{nhan_id}", status_code=204)
+async def go_nhan_khach(
+    contact_id: UUID,
+    nhan_id: UUID,
+    user: dict = Depends(can_quyen("khach.sua")),
+    repository: PostgresContactRepository = Depends(get_contact_repository),
+) -> None:
+    await _chan_neu_khong_thay(repository, contact_id, user)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _khach_ton_tai(conn, contact_id)
+            await nhan_loi.go_khach(conn, contact_id=contact_id, nhan_id=nhan_id,
+                                    actor=str(user.get("ten_dang_nhap") or "?"))
 
 
 @router.post("/{contact_id}/notes", status_code=201)

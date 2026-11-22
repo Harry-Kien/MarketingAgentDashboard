@@ -111,8 +111,16 @@ def _ids(k, **qs) -> set[str]:
 
 
 def test_nhan_gan_go_va_loc(csdl_kiem_thu):
+    """
+    Đường cũ theo TÊN nhãn. Từ 0056 tên phải có trong danh mục — tên lạ là
+    422, không tự tạo (chi tiết ở tests/test_nhan_dong.py).
+    """
     with TestClient(_app(csdl_kiem_thu, nguoi_thu(*NV))) as k:
         h = _dung(csdl_kiem_thu)
+        assert k.post(f"/api/inbox/conversations/{h['a']}/nhan",
+                      json={"nhan": "chờ hàng"}).status_code == 422
+        asyncio.run(_dem(csdl_kiem_thu, "INSERT INTO nhan (loai, ten) "
+                                        "VALUES ('hoi_thoai', 'chờ hàng') RETURNING 1"))
         r = k.post(f"/api/inbox/conversations/{h['a']}/nhan", json={"nhan": "  Chờ   Hàng "})
         assert r.status_code == 201 and r.json()["nhan"] == "chờ hàng"
         # Gắn lại cùng nhãn (khác hoa thường) không nhân đôi.
@@ -120,7 +128,8 @@ def test_nhan_gan_go_va_loc(csdl_kiem_thu):
         dong = k.get("/api/inbox/conversations").json()["items"][0]
         assert dong["nhan"] == ["chờ hàng"]
         assert _ids(k, nhan="chờ hàng") == {h["a"]}
-        assert k.get("/api/inbox/nhan").json()["nhan"] == [{"nhan": "chờ hàng", "so": 1}]
+        assert [(x["nhan"], x["so"]) for x in k.get("/api/inbox/nhan").json()["nhan"]] == [
+            ("chờ hàng", 1)]
         assert k.delete(f"/api/inbox/conversations/{h['a']}/nhan/Chờ Hàng").status_code == 204
         assert _ids(k, nhan="chờ hàng") == set()
 

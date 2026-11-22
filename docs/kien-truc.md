@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-69 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+72 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -133,6 +133,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Tri thức (RAG)** | `documents` · `document_versions` · `chunks` |
 | **Không còn dùng (video, bài đăng — gỡ 19.11.2026)** | `videos` · `video_assets` · `posts` · `post_metrics` |
 | **Quyền và vai trò** | `vai_tro` · `vai_tro_quyen` · `nguoi_dung_vai_tro` |
+| **Nhãn** | `nhan` · `hoi_thoai_gan_nhan` · `khach_gan_nhan` |
 | **Công việc và thông báo** | `cong_viec` · `thong_bao` |
 | **Lịch ca** | `ca_truc` · `ca_nghi` |
 | **Dữ liệu cá nhân** | `yeu_cau_chu_the` |
@@ -756,6 +757,31 @@ erDiagram
         UUID order_id
         _ con_3_cot_nua
     }
+    nhan {
+        UUID id
+        TEXT loai
+        TEXT ten
+        TEXT mau
+        TEXT mo_ta
+        BOOLEAN dang_dung
+        INT thu_tu
+        UUID tao_boi
+        _ con_2_cot_nua
+    }
+    hoi_thoai_gan_nhan {
+        UUID conversation_id
+        UUID nhan_id
+        TEXT loai
+        UUID gan_boi
+        TIMESTAMPTZ gan_luc
+    }
+    khach_gan_nhan {
+        UUID contact_id
+        UUID nhan_id
+        TEXT loai
+        UUID gan_boi
+        TIMESTAMPTZ gan_luc
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
@@ -803,16 +829,23 @@ erDiagram
     nguoi_dung ||--o{ document_versions : ""
     channel_accounts ||--o{ documents : ""
     document_versions ||--o{ documents : ""
+    conversations ||--o{ hoi_thoai_gan_nhan : ""
+    nguoi_dung ||--o{ hoi_thoai_gan_nhan : ""
+    nhan ||--o{ hoi_thoai_gan_nhan : ""
     conversations ||--o{ hoi_thoai_ghi_chu : ""
     nguoi_dung ||--o{ hoi_thoai_ghi_chu : ""
     conversations ||--o{ hoi_thoai_nhan : ""
     nguoi_dung ||--o{ hoi_thoai_nhan : ""
     channel_accounts ||--o{ inbox_events : ""
+    contacts ||--o{ khach_gan_nhan : ""
+    nguoi_dung ||--o{ khach_gan_nhan : ""
+    nhan ||--o{ khach_gan_nhan : ""
     agent_ho_so ||--o{ messages : ""
     conversations ||--o{ messages : ""
     nguoi_dung ||--o{ messages : ""
     nguoi_dung ||--o{ nguoi_dung_vai_tro : ""
     vai_tro ||--o{ nguoi_dung_vai_tro : ""
+    nguoi_dung ||--o{ nhan : ""
     conversations ||--o{ orders : ""
     nguoi_dung ||--o{ orders : ""
     channel_accounts ||--o{ outbox_jobs : ""

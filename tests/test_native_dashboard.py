@@ -53,9 +53,10 @@ def test_javascript_goi_api_native_thay_vi_iframe_he_thong_tham_khao():
 
 def test_customer360_co_thao_tac_tag_ghi_chu_va_consent():
     js = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
-    for endpoint_fragment in ("/tags", "/notes", "/consents/"):
+    # Nhãn khách: chọn từ danh mục (0056) qua `/contacts/{id}/nhan`.
+    for endpoint_fragment in ("/contacts/${dich}/nhan", "/notes", "/consents/"):
         assert endpoint_fragment in js
-    for form_id in ("contact-tag-form", "contact-note-form", "contact-consent-form"):
+    for form_id in ("contact-nhan", "contact-note-form", "contact-consent-form"):
         assert form_id in js
 
 

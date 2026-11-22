@@ -324,7 +324,9 @@ def test_gop_xong_co_nut_hoan_tac_goi_route_undo():
 
 # ------------------------------------------------- 7. reset form khách
 
-@pytest.mark.parametrize("form", ["#contact-tag-form", "#contact-note-form", "#contact-consent-form"])
+# `#contact-tag-form` (gõ nhãn chữ tự do) đã thay bằng ô chọn từ danh mục nhãn
+# (0056, 21-nhan.js) — không còn ô gõ nào để reset.
+@pytest.mark.parametrize("form", ["#contact-note-form", "#contact-consent-form"])
 def test_form_khach_reset_truoc_khi_nap_lai(form):
     assert f'$("{form}")' in _than_ham("loadContactDetail")
     khoi = _khoi_handler(f'$("{form}")')

@@ -190,7 +190,9 @@ $("#gopKetQua")?.addEventListener("click", async (e) => {
 });
 
 async function loadContacts() {
-  const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}`);
+  napLocNhanKhach();          // không chờ: ô lọc nhãn không được chặn danh sách
+  const locNhan = state.khachNhan ? `&nhan_id=${encodeURIComponent(state.khachNhan)}` : "";
+  const contacts = await api(`/contacts?limit=100&q=${encodeURIComponent(state.contactQuery)}${locNhan}`);
   /* Lọc Ở PHÍA GIAO DIỆN là có chủ ý và chỉ hợp lệ vì nó KHÔNG phải lớp bảo
    * vệ: máy chủ đã lọc theo mức tầm nhìn trước khi trả về. Ba chip này chỉ
    * thu hẹp thứ người dùng đã được phép thấy. */
@@ -479,7 +481,6 @@ async function loadContactDetail(id) {
       <span>${clock(point.last_seen)}</span></div>`).join("");
   const consents = (contact.consents || []).map((consent) => `
     <span class="consent consent--${esc(consent.status)}">${esc(consent.purpose)} · ${esc(consent.status)}</span>`).join("");
-  const tags = (contact.tags || []).map((tag) => `<span class="profile-tag">${esc(tag.tag)}</span>`).join("");
   const notes = (contact.notes || []).map((note) => `
     <article class="contact-note"><p>${esc(note.body)}</p><small>${esc(note.visibility)} · ${clock(note.created_at)}</small></article>`).join("");
   const conversations = (contact.conversations || []).map((conv) => `
@@ -520,9 +521,8 @@ async function loadContactDetail(id) {
     </div>
     <div id="contact-lichsu-giao"></div>
     ${oTruongKhach(contact)}
-    <h3 class="subhead">Nhãn chăm sóc</h3>
-    <div class="profile-actions"><div class="profile-tags">${tags || '<span class="empty">Chưa có nhãn.</span>'}</div>
-      <form id="contact-tag-form" class="inline-action"><input name="tag" maxlength="80" required placeholder="VIP, cần gọi lại…"><button class="btn btn--sm" type="submit">Thêm nhãn</button></form></div>
+    <h3 class="subhead">Nhãn khách hàng</h3>
+    ${nhanKhachHtml(contact)}
     <h3 class="subhead">Danh tính theo kênh</h3><div class="identity-grid">${points || '<p class="empty">Chưa có danh tính.</p>'}</div>
     <h3 class="subhead">Consent</h3><div class="consent-row">${consents || '<span class="empty">Chưa ghi nhận consent.</span>'}</div>
     <form id="contact-consent-form" class="consent-form">
@@ -585,21 +585,6 @@ async function loadContactDetail(id) {
     } catch (e) { toast(e.message, true); }
   });
 
-  $("#contact-tag-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const tag = String(new FormData(form).get("tag") || "").trim();
-    if (!tag) return;
-    try {
-      await api(`/contacts/${id}/tags`, { method: "POST", body: JSON.stringify({ tag }) });
-      toast("Đã thêm nhãn khách hàng.");
-      /* reset() TRƯỚC khi nạp lại. loadContactDetail giữ mọi ô lệch
-         defaultValue (để không mất chữ đang gõ), nên không reset thì chữ
-         vừa lưu vẫn nằm trong ô — bấm thêm lần nữa là gửi trùng. */
-      form.reset();
-      await loadContactDetail(id);
-    } catch (error) { toast(error.message, true); }
-  });
   $("#contact-note-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

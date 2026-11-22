@@ -103,7 +103,7 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       <span class="row__body">
         <span class="row__title">${esc(h.display_name || "Khách")}</span>
         <span class="row__sub">${h.danh_tinh} danh tính kênh · ${h.ghi_chu} ghi chú ·
-          ${h.nhan} nhãn · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
+          ${h.nhan} nhãn${(h.nhan_ten || []).length ? ` (${esc(h.nhan_ten.join(", "))})` : ""} · ${h.dong_y} dòng đồng ý${h.co_sdt ? " · có số điện thoại" : ""}${
             h.co_email ? " · có email" : ""}</span>
       </span>
     </div>`).join("");

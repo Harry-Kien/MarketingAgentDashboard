@@ -174,7 +174,13 @@ async def tra_cuu(sdt: str, *, chi_kenh_cua: UUID | None = None) -> dict:
         "       c.phone IS NOT NULL AS co_sdt, c.email IS NOT NULL AS co_email, "
         "       (SELECT count(*) FROM contact_points p WHERE p.contact_id = c.id) AS danh_tinh, "
         "       (SELECT count(*) FROM contact_notes n WHERE n.contact_id = c.id) AS ghi_chu, "
-        "       (SELECT count(*) FROM contact_tags t WHERE t.contact_id = c.id) AS nhan, "
+        # Nhãn khách từ danh mục (0056) — đếm VÀ kể tên: "hệ thống đang giữ
+        # gì về tôi" thì nhãn "khách khó tính" là câu trả lời, con số 1 thì
+        # không. Nhãn hội thoại không ở đây: nó đi theo hội thoại, mà hội
+        # thoại đã được liệt kê và bị xoá hẳn (bảng gắn CASCADE theo).
+        "       (SELECT count(*) FROM khach_gan_nhan t WHERE t.contact_id = c.id) AS nhan, "
+        "       ARRAY(SELECT n.ten FROM khach_gan_nhan t JOIN nhan n ON n.id = t.nhan_id "
+        "             WHERE t.contact_id = c.id ORDER BY lower(n.ten)) AS nhan_ten, "
         "       (SELECT count(*) FROM contact_consents s WHERE s.contact_id = c.id) AS dong_y "
         "FROM contacts c "
         "WHERE c.status <> 'deleted' "
@@ -513,7 +519,13 @@ async def _xoa_ho_so_crm(ho_so: list[dict]) -> dict:
 
     ghi_chu = _dem(await db.execute(
         "DELETE FROM contact_notes WHERE contact_id = ANY($1::uuid[])", ids))
+    # Xoá CẢ hai nơi: liên kết danh mục (0056) và bảng chữ tự do cũ — bảng
+    # cũ thôi được ghi nhưng vẫn giữ chữ viết về người này từ trước 0056.
+    # Danh mục nhãn thì KHÔNG đụng: tên nhãn là từ vựng của cửa hàng, không
+    # phải dữ liệu của khách.
     nhan = _dem(await db.execute(
+        "DELETE FROM khach_gan_nhan WHERE contact_id = ANY($1::uuid[])", ids))
+    nhan += _dem(await db.execute(
         "DELETE FROM contact_tags WHERE contact_id = ANY($1::uuid[])", ids))
     danh_tinh = _dem(await db.execute(
         "UPDATE contact_points SET handle = $2, "

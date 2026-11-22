@@ -76,12 +76,6 @@ function nhomBadge(c) {
 }
 
 function convRow(c, hangDoi) {
-  // Nhãn của hội thoại đang mở lấy từ DÒNG danh sách (đã có sẵn trong phản
-  // hồi), khỏi thêm một request nữa mỗi 6 giây.
-  if (Array.isArray(c.nhan)) {
-    state.nhanTheoHoiThoai = state.nhanTheoHoiThoai || {};
-    state.nhanTheoHoiThoai[c.id] = c.nhan;
-  }
   const sig = SIGNAL[c.status] || "plain";
   const sub = c.typing
     ? `<span class="row__typing"><i></i><i></i><i></i> đang soạn tin…</span>`
@@ -95,8 +89,7 @@ function convRow(c, hangDoi) {
       <span class="row__title">${esc(customer)} ${nhomBadge(c)}${srcBadge(c.channel || c.account_channel, c.nen_tang)}</span>
       <span class="row__sub">${esc(c.account_name || "")}${due ? ` · SLA ${clock(due)}` : ""}</span>
       ${sub}
-      ${(c.nhan || []).length ? `<span class="row__nhan">${c.nhan.map((n) =>
-        `<span class="nhan">${esc(n)}</span>`).join("")}</span>` : ""}
+      ${chipNhanDong(c)}
     </span>
     <span class="row__side">
       ${slaBadge(c)}
@@ -171,7 +164,7 @@ $$("#convfilter .chip").forEach((chip) =>
 async function loadConversations() {
   let query = state.convFilter === "all" ? "" : `&status=${encodeURIComponent(state.convFilter)}`;
   if (state.convTim) query += `&q=${encodeURIComponent(state.convTim)}`;
-  if (state.convNhan) query += `&nhan=${encodeURIComponent(state.convNhan)}`;
+  if (state.convNhan) query += `&nhan_id=${encodeURIComponent(state.convNhan)}`;
   query += chuoiLocHopThu();
   napBoLocHopThu();
   const [result, nhanDs] = await Promise.all([
@@ -387,10 +380,7 @@ async function loadThread(id) {
       ${nutGiu}
     </div>
     <div class="nhanbar">
-      ${(state.nhanTheoHoiThoai && state.nhanTheoHoiThoai[id] || []).map((n) =>
-        `<span class="nhan">${esc(n)}<button type="button" class="nhan__go" data-go-nhan="${esc(n)}"
-          aria-label="Gỡ nhãn ${esc(n)}">×</button></span>`).join("")}
-      <button type="button" class="btn btn--sm btn--ghost" id="btn-them-nhan">+ Nhãn</button>
+      ${nhanHoiThoaiHtml(c)}
       <button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>
     </div>
     ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>

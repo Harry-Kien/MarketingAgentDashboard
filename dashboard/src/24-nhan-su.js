@@ -68,7 +68,7 @@ function nsvBangQuyen(dangCo, khoa = false) {
   const co = new Set(dangCo || []);
   if (!nsv.nhom.length) return '<p class="empty">Chưa tải được danh mục quyền.</p>';
   return nsv.nhom.map((g) => `
-    <fieldset class="quyen__nhom" data-nsv-nhom="${esc(g.ma)}">
+    <fieldset class="quyen__nhom">
       <legend>${esc(g.ten)}${khoa ? "" : ` <button type="button" class="btn btn--sm btn--ghost"
         data-nsv-ca-nhom="${esc(g.ma)}">chọn / bỏ cả nhóm</button>`}</legend>
       ${g.quyen.map((q) => `<label class="quyen__o">
@@ -249,7 +249,7 @@ function nsvDongNguoi(n) {
   const viec = Number(n.so_viec_chua_xong || 0);
   const ganViec = giu || viec
     ? ` <span class="pill${n.khoa ? " pill--warn" : ""}">giữ ${giu} hội thoại · ${viec} việc</span>` : "";
-  return `<div class="row" data-nsv-nguoi="${esc(n.id)}">
+  return `<div class="row">
     <span class="row__flag row__flag--${n.khoa ? "halt" : (n.vai_tro_ten || []).length ? "auto" : "assist"}"></span>
     <div class="row__main">
       <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>

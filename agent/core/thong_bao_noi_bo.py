@@ -54,8 +54,8 @@ from agent import db
 
 log = logging.getLogger("agent.thong_bao")
 
-# Loại -> nhãn hiện trên dashboard. CHECK ở migration 0055 giữ đúng tập này;
-# test canh hai nơi không lệch nhau.
+# Loại -> nhãn hiện trên dashboard. CHECK ở migration (0055, mở rộng ở 0061)
+# giữ đúng tập này; test canh hai nơi không lệch nhau.
 LOAI: dict[str, str] = {
     "duoc_giao_hoi_thoai": "Được giao hội thoại",
     "ai_chuyen_giao": "AI chuyển giao",
@@ -63,6 +63,9 @@ LOAI: dict[str, str] = {
     "duoc_giao_viec": "Được giao việc",
     "sla_sap_tre": "SLA sắp trễ",
     "sla_tre": "SLA đã trễ",
+    "viec_chua_giao": "Việc chưa phân công",
+    "viec_huy": "Việc bị hủy",
+    "viec_qua_han": "Việc quá hạn",
 }
 
 # Quyền "người quản lý" — người được báo khi kênh không có ai, và luôn được
@@ -336,21 +339,120 @@ async def bao_can_duyet_don(
 async def bao_duoc_giao_viec(
     cong_viec_id: UUID | str, nguoi_nhan_id: UUID | str, *,
     boi: UUID | str | None, tieu_de_viec: str, conn: Any = None,
+    chuyen: bool = False, tu_dong: bool = False,
 ) -> int:
-    """Một việc vừa được giao cho người này. Tự giao cho mình thì không báo."""
+    """
+    Một việc vừa được giao (hoặc CHUYỂN từ người khác) cho người này. Tự giao
+    cho mình thì không báo. Chuyển và giao mới cùng một loại chuông — với
+    người nhận đều là "có việc mới của tôi" — chỉ khác tiêu đề, để họ biết
+    việc này đã có người làm dở.
+    """
     if boi is not None and str(boi) == str(nguoi_nhan_id):
         return 0
     try:
         async with _ket_noi(conn) as c:
             return await _ghi(
                 c, [_uuid(nguoi_nhan_id)], loai="duoc_giao_viec",
-                tieu_de="Bạn được giao một việc",
-                noi_dung=tieu_de_viec,
+                tieu_de="Bạn được chuyển một việc" if chuyen else "Bạn được giao một việc",
+                noi_dung=tieu_de_viec + (" (phân công tự động)" if tu_dong else ""),
                 cong_viec_id=_uuid(cong_viec_id),
                 khoa=f"duoc_giao_viec:{_uuid(cong_viec_id)}",
             )
     except Exception as exc:  # noqa: BLE001
         _loi("duoc_giao_viec", cong_viec_id, exc)
+        return 0
+
+
+async def nguoi_dieu_phoi_viec(conn: Any, cong_viec_id: UUID | str) -> list[UUID]:
+    """
+    Ai được báo về một việc CHƯA AI NHẬN: người có `cong_viec.giao` (hoặc
+    Quản trị) THẤY được việc ấy — việc gắn hội thoại thì phải thuộc kênh hoặc
+    thấy mọi kênh. Báo người không mở được việc là một dòng bấm vào ra 404,
+    và tệ hơn là đưa tên khách kênh khác cho họ đọc.
+    """
+    from agent.core import cong_viec as cv
+
+    rows = await conn.fetch(
+        cv.SQL_VIEC_VA_QUYEN
+        + f"SELECT q.id FROM quyen q, viec WHERE q.giao AND {cv.SQL_CUNG_KENH} ORDER BY q.id",
+        _uuid(cong_viec_id))
+    return [r["id"] for r in rows]
+
+
+async def bao_viec_chua_giao(
+    cong_viec_id: UUID | str, *, tieu_de_viec: str, ly_do: str = "",
+    tru: UUID | str | None = None, conn: Any = None,
+) -> int:
+    """
+    Việc ra đời (hoặc bị thu hồi người nhận) mà không ai nhận — "Chưa phân
+    công" là danh sách không ai mở nếu không có chuông. `tru` = người vừa
+    thao tác: họ biết rồi.
+    """
+    try:
+        async with _ket_noi(conn) as c:
+            nhan = [u for u in await nguoi_dieu_phoi_viec(c, cong_viec_id)
+                    if tru is None or str(u) != str(tru)]
+            if not nhan and tru is None:
+                _khong_ai_nhan("viec_chua_giao", cong_viec_id)
+            return await _ghi(
+                c, nhan, loai="viec_chua_giao",
+                tieu_de="Việc chưa phân công",
+                noi_dung=tieu_de_viec + (f" — {ly_do}" if ly_do else ""),
+                cong_viec_id=_uuid(cong_viec_id),
+                khoa=f"viec_chua_giao:{_uuid(cong_viec_id)}",
+            )
+    except Exception as exc:  # noqa: BLE001
+        _loi("viec_chua_giao", cong_viec_id, exc)
+        return 0
+
+
+async def bao_viec_huy(
+    cong_viec_id: UUID | str, *, nguoi_nhan: Iterable[UUID | str | None],
+    boi: UUID | str | None, tieu_de_viec: str, conn: Any = None,
+) -> int:
+    """
+    Việc bị hủy: báo người đang làm và người đã tạo — trừ chính người hủy.
+    Không báo thì người nhận tiếp tục gọi khách cho một việc đã bỏ.
+    """
+    ids = [x for x in nguoi_nhan if x is not None and (boi is None or str(x) != str(boi))]
+    if not ids:
+        return 0
+    try:
+        async with _ket_noi(conn) as c:
+            return await _ghi(
+                c, [_uuid(x) for x in ids], loai="viec_huy",
+                tieu_de="Việc đã bị hủy", noi_dung=tieu_de_viec,
+                cong_viec_id=_uuid(cong_viec_id),
+                khoa=f"viec_huy:{_uuid(cong_viec_id)}",
+            )
+    except Exception as exc:  # noqa: BLE001
+        _loi("viec_huy", cong_viec_id, exc)
+        return 0
+
+
+async def bao_viec_qua_han(
+    cong_viec_id: UUID | str, *, nguoi_nhan_id: UUID | str | None,
+    tieu_de_viec: str, conn: Any = None,
+) -> int:
+    """
+    Việc chưa xong đã qua hạn: báo người đang làm; chưa ai làm thì báo
+    người điều phối — việc quá hạn mà không có chủ là việc dễ rơi nhất.
+    """
+    try:
+        async with _ket_noi(conn) as c:
+            nhan = ([_uuid(nguoi_nhan_id)] if nguoi_nhan_id is not None
+                    else await nguoi_dieu_phoi_viec(c, cong_viec_id))
+            if not nhan:
+                _khong_ai_nhan("viec_qua_han", cong_viec_id)
+            return await _ghi(
+                c, nhan, loai="viec_qua_han",
+                tieu_de="Việc đã quá hạn" if nguoi_nhan_id else "Việc quá hạn chưa ai nhận",
+                noi_dung=tieu_de_viec,
+                cong_viec_id=_uuid(cong_viec_id),
+                khoa=f"viec_qua_han:{_uuid(cong_viec_id)}",
+            )
+    except Exception as exc:  # noqa: BLE001
+        _loi("viec_qua_han", cong_viec_id, exc)
         return 0
 
 

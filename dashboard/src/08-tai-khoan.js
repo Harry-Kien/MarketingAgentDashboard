@@ -660,6 +660,9 @@ async function loadCongViec() {
   $("#cv-ds").innerHTML = d.cong_viec.length
     ? d.cong_viec.map((v) => cvDong(v, nhanTT, nhanUT)).join("")
     : '<p class="empty">Không có việc nào trong bộ lọc này.</p>';
+  // Màn Công việc mới (25-cong-viec.js) nghe để vẽ lại sau khi hộp xác nhận
+  // kết quả đơn ở đây vừa đổi dữ liệu.
+  document.dispatchEvent(new CustomEvent("congviec:doi"));
 }
 
 $("#cv-loc")?.addEventListener("click", (e) => {

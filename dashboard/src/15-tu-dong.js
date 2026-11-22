@@ -39,7 +39,7 @@ function _moTaQuyTac(q) {
     gan_nhan_hoi_thoai: "gắn nhãn hội thoại " + tenNhanTheoId(h.nhan_id),
     gan_nhan_khach: "gắn nhãn khách " + tenNhanTheoId(h.nhan_id),
     gui_mau: "gửi mẫu /" + h.ma_tat,
-    tao_viec: "tạo việc «" + h.tieu_de + "»",
+    tao_viec: "tạo việc «" + h.tieu_de + "»" + (h.giao_tu_dong ? " (tự phân công)" : ""),
     chuyen_nguoi: "chuyển người",
   }[h.loai] || h.loai));
   return `Nếu ${neu.length ? neu.join(" và ") : "có tin bất kỳ"} → ${thi.join(", ")}`;
@@ -133,7 +133,10 @@ function _gomQuyTac(f) {
   if (f.hd_gan_nhan_hoi_thoai.value) hd.push({ loai: "gan_nhan_hoi_thoai", nhan_id: f.hd_gan_nhan_hoi_thoai.value });
   if (f.hd_gan_nhan_khach.value) hd.push({ loai: "gan_nhan_khach", nhan_id: f.hd_gan_nhan_khach.value });
   if (f.hd_gui_mau.value.trim()) hd.push({ loai: "gui_mau", ma_tat: f.hd_gui_mau.value.trim().replace(/^\//, "") });
-  if (f.hd_tao_viec.value.trim()) hd.push({ loai: "tao_viec", tieu_de: f.hd_tao_viec.value.trim() });
+  if (f.hd_tao_viec.value.trim()) {
+    hd.push({ loai: "tao_viec", tieu_de: f.hd_tao_viec.value.trim(),
+              ...(f.hd_tao_viec_tu_giao && f.hd_tao_viec_tu_giao.checked ? { giao_tu_dong: true } : {}) });
+  }
   if (f.hd_chuyen_nguoi.value.trim()) hd.push({ loai: "chuyen_nguoi", ly_do: f.hd_chuyen_nguoi.value.trim() });
   return {
     ten: f.ten.value.trim(), su_kien: "tin_khach", dieu_kien: dk, hanh_dong: hd,
@@ -156,6 +159,7 @@ function _datQuyTac(f, q) {
   _datONhan(f.hd_gan_nhan_khach, lay("gan_nhan_khach", "nhan_id"));
   f.hd_gui_mau.value = lay("gui_mau", "ma_tat");
   f.hd_tao_viec.value = lay("tao_viec", "tieu_de");
+  if (f.hd_tao_viec_tu_giao) f.hd_tao_viec_tu_giao.checked = !!lay("tao_viec", "giao_tu_dong");
   f.hd_chuyen_nguoi.value = lay("chuyen_nguoi", "ly_do");
 }
 

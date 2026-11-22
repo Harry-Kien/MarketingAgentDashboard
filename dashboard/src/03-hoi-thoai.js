@@ -392,6 +392,7 @@ async function loadThread(id) {
     <div class="nhanbar">
       ${nhanHoiThoaiHtml(c)}
       ${ghiChuDuoc ? `<button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>` : ""}
+      ${state.toiQuyen && state.toiQuyen.has("cong_viec.sua") ? `<button type="button" class="btn btn--sm btn--ghost" id="btn-tao-viec-ht">+ Tạo công việc</button>` : ""}
     </div>
     ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>
       <summary>Ghi chú nội bộ (${ghiChu.length}) — khách không thấy</summary>

@@ -632,6 +632,16 @@ async def lifespan(app: FastAPI):
 
     _nen(vong_dong_bo_loop())
     _nen(vong_doi_soat_loop())
+
+    # Việc quá hạn -> chuông người đang làm (chưa ai làm thì người điều
+    # phối). Không có vòng này thì "quá hạn" chỉ là một con số trên Tổng
+    # quan, chỉ ai tình cờ mở mới thấy.
+    from agent.core.giao_viec import vong_canh_viec_loop
+
+    async def log_canh_viec_error(error: str) -> None:
+        await db.log_event("cong_viec.canh_loi", error=error)
+
+    _nen(vong_canh_viec_loop(log_error=log_canh_viec_error))
     _nen(backup_loop())
 
     # Vòng đời của MCP phải chạy TRONG vòng đời app, không tự chạy được.

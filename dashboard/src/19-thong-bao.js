@@ -87,6 +87,9 @@ async function diToiLienKet(lk) {
   }
   if (lk.loai === "don_hang") { doiMan("donhang"); return; }
   if (lk.loai === "cong_viec") {
+    /* Màn Công việc mới (25-cong-viec.js) mở thẳng chi tiết + lịch sử, bất
+       kể bộ lọc đang chọn. Mô-đun ấy hỏng thì lui về danh sách cũ. */
+    if (typeof window.moCongViec === "function" && await window.moCongViec(lk.id)) return;
     doiMan("cv-danh-sach");
     try { await loadCongViec(); } catch { /* vòng làm mới sẽ thử lại */ }
     const dong = $(`#cv-ds [data-cv="${CSS.escape(lk.id)}"]`);

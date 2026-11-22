@@ -145,7 +145,7 @@ def kiem_hanh_dong(ds: Any) -> list[dict[str, Any]]:
         if not isinstance(hd, dict) or hd.get("loai") not in HANH_DONG + HANH_DONG_CU:
             raise QuyTacHong(f"hành động phải là một trong: {', '.join(HANH_DONG)}")
         loai = hd["loai"]
-        la = set(hd) - {"loai", "nhan", "nhan_id", "ma_tat", "tieu_de", "ly_do"}
+        la = set(hd) - {"loai", "nhan", "nhan_id", "ma_tat", "tieu_de", "ly_do", "giao_tu_dong"}
         if la:
             raise QuyTacHong(f"hành động {loai} có khoá lạ: {', '.join(sorted(la))}")
         if loai in HANH_DONG_NHAN:
@@ -166,7 +166,11 @@ def kiem_hanh_dong(ds: Any) -> list[dict[str, Any]]:
             # quy tắc hỏng ở lần chạy đầu tiên thay vì lúc bấm Lưu.
             if not 3 <= len(td) <= 120:
                 raise QuyTacHong("tao_viec cần tieu_de 3–120 ký tự")
-            ra.append({"loai": loai, "tieu_de": td})
+            tu_giao = hd.get("giao_tu_dong", False)
+            if not isinstance(tu_giao, bool):
+                raise QuyTacHong("tao_viec: giao_tu_dong phải là true/false")
+            # Chỉ lưu khoá khi bật: quy tắc cũ đọc lại y nguyên như trước.
+            ra.append({"loai": loai, "tieu_de": td, **({"giao_tu_dong": True} if tu_giao else {})})
         else:
             ra.append({"loai": loai, "ly_do": str(hd.get("ly_do") or "quy tắc tự động").strip()[:200]})
     return ra
@@ -254,7 +258,8 @@ async def _gui_mau(db, msg, cid, ma_tat: str, khoa: str) -> str:
     return f"gửi mẫu /{ma_tat}"
 
 
-async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str) -> str:
+async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str,
+                    giao_tu_dong: bool = False) -> str:
     """
     Việc mang ĐÚNG tiêu đề người vận hành đặt trong quy tắc, nguồn `tu_dong`.
 
@@ -262,6 +267,10 @@ async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str) -> str:
     chuyển người, vốn chỉ sinh thông báo (mục 14.2). Không chèn được việc
     thì NỔ, để lần chạy ghi "hỏng": nuốt lỗi CSDL ở đây là quy tắc ghi "đã
     tạo việc" cho một việc không tồn tại.
+
+    `giao_tu_dong` (mục 14.5): giao người đang trong ca theo
+    `agent/core/giao_viec.py`; không ai đủ điều kiện thì việc ở Chưa phân
+    công. Hai đường đều báo chuông — chuông hỏng không làm hỏng quy tắc.
     """
     r = await db.fetchrow(
         "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, conversation_id, contact_id) "
@@ -270,6 +279,12 @@ async def _tao_viec(db, cid: uuid.UUID, tieu_de: str, ten_quy_tac: str) -> str:
         tieu_de, f"Tạo bởi quy tắc tự động «{ten_quy_tac}»", str(cid))
     if r is None:
         raise RuntimeError("không tạo được công việc")
+    from agent.core import giao_viec
+
+    if giao_tu_dong:
+        await giao_viec.giao_tu_dong_va_bao(r["id"])
+    else:
+        await giao_viec.bao_neu_chua_giao(r["id"], ly_do=f"quy tắc «{ten_quy_tac}»")
     return str(r["id"])
 
 
@@ -372,7 +387,8 @@ async def chay_tin_khach(msg, cid: uuid.UUID, *, lan_dau: bool | None = None,
                                               f"tu_dong:{qt['id']}:{cid}"))
                     mot_lan = True
                 elif loai == "tao_viec":
-                    await _tao_viec(db, cid, hd["tieu_de"], str(qt["ten"]))
+                    await _tao_viec(db, cid, hd["tieu_de"], str(qt["ten"]),
+                                    giao_tu_dong=bool(hd.get("giao_tu_dong")))
                     lam.append(f"tạo việc: {hd['tieu_de']}")
                     mot_lan = True
                 elif loai == "chuyen_nguoi":

@@ -140,6 +140,14 @@ async def dong_viec_tu_sinh(conn, cid: UUID) -> None:
     kết quả và đối soát ERP (`cong_viec.xac_nhan_ket_qua_don`); đóng hộ ở
     đây là yêu cầu huỷ đơn của khách biến mất khi nhân viên trả lại cho agent.
     """
+    # Lịch sử việc (0061) ghi lý do thay vì một dòng "Hệ thống đổi trạng thái"
+    # không giải thích. Nơi gọi luôn ở trong giao dịch (xem docstring); kết
+    # nối giả trong test đơn vị không có hàm này thì bỏ qua phần ghi chú.
+    trong_gd = getattr(conn, "is_in_transaction", None)
+    if callable(trong_gd) and trong_gd() is True:
+        await conn.execute(
+            "SELECT set_config('cong_viec.ghi_chu', $1, true)",
+            "Tự đóng: hội thoại đã giải quyết hoặc trả lại cho agent")
     await conn.execute(
         "UPDATE cong_viec SET trang_thai = 'xong', xong_luc = now(), sua_luc = now() "
         "WHERE conversation_id = $1 AND nguon = 'agent' AND loai_xu_ly_don IS NULL "

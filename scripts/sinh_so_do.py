@@ -65,7 +65,7 @@ NHOM = {
     # Danh mục nhãn (0056). `hoi_thoai_nhan` và `contact_tags` ở hai nhóm
     # trên là bảng chữ tự do CŨ — thôi được ghi, giữ làm ảnh chụp.
     "Nhãn": ["nhan", "hoi_thoai_gan_nhan", "khach_gan_nhan"],
-    "Công việc và thông báo": ["cong_viec", "thong_bao"],
+    "Công việc và thông báo": ["cong_viec", "cong_viec_lich_su", "thong_bao"],
     "Lịch ca": ["ca_truc", "ca_nghi"],
     "Dữ liệu cá nhân": ["yeu_cau_chu_the"],
     "Hồ sơ agent": ["agent_ho_so"],

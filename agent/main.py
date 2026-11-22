@@ -40,6 +40,7 @@ from agent.api.phan_tich import router as phan_tich_router
 from agent.api.uu_tien import router as uu_tien_router
 from agent.api.sla_cau_hinh import router as sla_cau_hinh_router
 from agent.api.thanh_toan import router as thanh_toan_router
+from agent.api.media_api import router as media_router
 from agent.api.thanh_vien_kenh import router as thanh_vien_kenh_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
@@ -458,6 +459,12 @@ async def don_du_lieu_loop() -> None:
                         "pdpd.auto", so_hoi_thoai=kq["da_xoa"],
                         thoi_han_ngay=kq["thoi_han_ngay"],
                     )
+                    # Hội thoại vừa xoá kéo theo đính kèm (CASCADE): tệp
+                    # media của chúng mất người giữ — dọn NGAY, không để ảnh
+                    # khách nằm lại trên đĩa thêm một ngày sau thời hạn.
+                    from agent.omnichannel import media_don
+
+                    await media_don.don(nguon="tu_dong")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -595,6 +602,14 @@ async def lifespan(app: FastAPI):
     # Hộp thư bền: nhặt lại tin khách bị bỏ dở khi app chết giữa chừng.
     _nen(hop_thu_ben.hop_thu_ben_loop(worker_id=f"inbox-{uuid.uuid4()}",
                                       log_error=log_hop_thu_error))
+
+    async def log_media_error(error: str) -> None:
+        await db.log_event("media.error", error=error)
+
+    # Tải media khách gửi về `data/media` (sau khi tin đã lưu) và dọn theo
+    # thời hạn mỗi ngày — xem agent/omnichannel/media.py.
+    from agent.omnichannel import media as _media
+    _nen(_media.media_loop(worker_id=f"media-{uuid.uuid4()}", log_error=log_media_error))
 
     async def log_routing_error(error: str) -> None:
         await db.log_event("auto_routing.error", error=error)
@@ -967,6 +982,7 @@ app.include_router(phan_tich_router)
 app.include_router(uu_tien_router)
 app.include_router(sla_cau_hinh_router)
 app.include_router(thanh_toan_router)
+app.include_router(media_router)
 app.include_router(quan_sat.router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một

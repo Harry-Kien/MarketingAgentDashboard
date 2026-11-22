@@ -14,6 +14,7 @@ from agent.channels.base import THREAD_NHOM, InboundMessage
 from agent.channels.ten_khach import la_ten_mac_dinh
 from agent.omnichannel.identity import PostgresIdentityTransaction
 from agent.omnichannel import sla_muc_tieu
+from agent.omnichannel.media import trang_thai_ban_dau
 from agent.omnichannel.sla_gio import bieu_thuc_han, tham_so_han
 
 
@@ -347,12 +348,15 @@ class PostgresInboxTransaction:
         ordinal: int,
         attachment: Mapping[str, Any],
     ) -> None:
+        # `media_trang_thai = 'cho'`: worker media (agent/omnichannel/media.py)
+        # tải bản về máy chủ SAU khi tin đã lưu. Không tải ở đây: một CDN
+        # chậm không được làm chậm webhook, càng không được làm mất tin.
         await self._connection.execute(
             """
             INSERT INTO attachments (
                 message_id, ordinal, kind, url, original_url,
-                storage_key, mime_type, size_bytes, metadata
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                storage_key, mime_type, size_bytes, metadata, media_trang_thai
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             ON CONFLICT (message_id, ordinal) DO NOTHING
             """,
             message_id,
@@ -364,6 +368,7 @@ class PostgresInboxTransaction:
             attachment["mime_type"],
             attachment["size_bytes"],
             attachment["metadata"],
+            trang_thai_ban_dau(attachment),
         )
 
     async def finish_ingest(

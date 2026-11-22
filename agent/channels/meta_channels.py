@@ -336,6 +336,29 @@ class WhatsAppAdapter(_MetaAdapter):
                     )
         return result
 
+    async def nguon_tai_media(self, tep: dict) -> tuple[str, dict[str, str]] | None:
+        """
+        WhatsApp chỉ gửi `provider_media_id`: hỏi Graph lấy URL rồi mới tải.
+
+        URL Graph trả về sống ~5 phút và ĐÒI token khi tải — nên trả kèm
+        header, và worker media hỏi lại mỗi lần thử chứ không lưu URL này.
+        """
+        media_id = str(tep.get("provider_media_id") or "").strip()
+        if not media_id or not self._access_token:
+            return None
+        hdr = {"Authorization": f"Bearer {self._access_token}"}
+        try:
+            r = await self._client.get(f"/{media_id}", headers=hdr)
+        except httpx.HTTPError:
+            return None
+        if r.is_error:
+            return None
+        try:
+            url = str((r.json() or {}).get("url") or "")
+        except ValueError:
+            return None
+        return (url, hdr) if url else None
+
     async def send_text(self, conversation_ref: str, text: str) -> Delivery:
         delivery, data = await self._post(
             f"/{self._phone_number_id}/messages",

@@ -243,35 +243,54 @@ def sao_luu_tai_lieu(dich: Path) -> tuple[bool, str]:
 # Tệp không nằm trong CSDL mà mất là mất hẳn (rà soát 20.11.2026): ảnh sản
 # phẩm (`data/products`, gửi cho khách bằng `gui_anh_san_pham`) và tệp nhân
 # viên đã gửi (`data/uploads`). Bản trước chỉ gói `data/knowledge`.
-THU_MUC_TEP = ("products", "uploads")
+#
+# `data/media` (22.11.2026): ảnh, video, tệp KHÁCH gửi, tải về từ CDN của
+# hãng (agent/omnichannel/media.py). Link CDN hết hạn sau vài ngày, nên máy
+# hỏng mà không có bản này là mất hẳn — CSDL khôi phục được dòng `media_tep`
+# nhưng không khôi phục được tệp. Cùng mức nhạy cảm với `uploads` (ảnh vùng
+# da là dữ liệu sức khoẻ) nên theo đúng luật mã hoá của bản CSDL.
+THU_MUC_TEP = ("products", "uploads", "media")
 
 
 def sao_luu_tep(dich: Path) -> tuple[bool, str]:
     """
-    Gói `data/products` + `data/uploads`. Có `SAO_LUU_MAT_KHAU` thì mã hoá
-    (`dich` + `.cskh`) — `uploads` là tệp trong hội thoại khách, cùng mức
-    nhạy cảm với bản CSDL nên theo đúng luật của bản CSDL.
-    """
-    import io
+    Gói `data/products` + `data/uploads` + `data/media`. Có `SAO_LUU_MAT_KHAU`
+    thì mã hoá (`dich` + `.cskh`).
 
+    GHI RA ĐĨA THEO LUỒNG, không dựng trong RAM. Bản trước gói vào `BytesIO`
+    — đủ cho vài trăm ảnh sản phẩm, nhưng `data/media` giữ 180 ngày video
+    khách gửi: vài GB nằm trọn trong bộ nhớ của tiến trình đang trả lời
+    khách. Tệp tạm nằm CẠNH tệp đích (cùng ổ, cùng thư mục sao lưu) và bị xoá
+    ngay sau khi mã hoá xong.
+
+    `.tam` (tệp media đang tải dở) không gói: nó không phải dữ liệu, và gói
+    nó là gói một nửa video.
+    """
     co = [ROOT / "data" / t for t in THU_MUC_TEP
           if (ROOT / "data" / t).is_dir() and any((ROOT / "data" / t).iterdir())]
     if not co:
-        return False, "chưa có tệp nào trong data/products, data/uploads"
+        return False, "chưa có tệp nào trong data/products, data/uploads, data/media"
     dich.parent.mkdir(parents=True, exist_ok=True)
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for t in co:
-            tar.add(t, arcname=t.name)
-    if settings.sao_luu_mat_khau:
-        from scripts import goi_ma_hoa
 
-        dich = dich.with_name(dich.name + DUOI_MA_HOA)
-        buf.seek(0)
-        with dich.open("wb") as f:
-            goi_ma_hoa.ma_hoa(buf, f, settings.sao_luu_mat_khau)
-    else:
-        dich.write_bytes(buf.getvalue())
+    def _bo_tam(ti: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        return None if "/.tam" in f"/{ti.name}" else ti
+
+    ma_hoa = bool(settings.sao_luu_mat_khau)
+    goi = dich.with_name(dich.name + ".dang_goi") if ma_hoa else dich
+    try:
+        with tarfile.open(goi, mode="w:gz") as tar:
+            for t in co:
+                tar.add(t, arcname=t.name, filter=_bo_tam)
+        if ma_hoa:
+            from scripts import goi_ma_hoa
+
+            dich = dich.with_name(dich.name + DUOI_MA_HOA)
+            with goi.open("rb") as vao, dich.open("wb") as f:
+                goi_ma_hoa.ma_hoa(vao, f, settings.sao_luu_mat_khau)
+    finally:
+        if ma_hoa:
+            # Bản RÕ của tệp khách không được nằm lại trong thư mục sao lưu.
+            goi.unlink(missing_ok=True)
     return True, f"{dich.stat().st_size / 1024:.0f} KB ({', '.join(t.name for t in co)})"
 
 

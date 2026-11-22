@@ -28,7 +28,8 @@ cùng nguyên tắc với việc lấy tên khách từ Graph.
 from __future__ import annotations
 
 import base64
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -92,17 +93,52 @@ def loc_anh(attachments: Sequence[Mapping[str, Any]] | None) -> list[dict]:
     return ra
 
 
+BanDia = Callable[[str], Awaitable["tuple[Path, str] | None"]]
+
+
+async def _tai_co_tran(client: httpx.AsyncClient, url: str) -> tuple[bytes, str]:
+    """
+    Tải theo luồng, DỪNG NGAY khi vượt `TOI_DA_BYTE`.
+
+    Bản trước đọc trọn `r.content` rồi mới so kích thước: một video 2GB khách
+    gửi kèm (hay một URL cố tình trỏ vào tệp khổng lồ) nằm hết trong RAM của
+    tiến trình đang trả lời khách trước khi bị từ chối.
+    """
+    async with client.stream("GET", url) as r:
+        if r.status_code >= 400:
+            raise ValueError(f"HTTP {r.status_code}")
+        try:
+            khai = int(r.headers.get("content-length") or -1)
+        except ValueError:
+            khai = -1
+        if khai > TOI_DA_BYTE:
+            raise ValueError(f"{khai} byte, quá lớn")
+        phan: list[bytes] = []
+        n = 0
+        async for khoi in r.aiter_bytes():
+            n += len(khoi)
+            if n > TOI_DA_BYTE:
+                raise ValueError(f"hơn {TOI_DA_BYTE} byte, quá lớn")
+            phan.append(khoi)
+        return b"".join(phan), str(r.headers.get("content-type") or "")
+
+
 async def lay_khoi_anh(
     attachments: Sequence[Mapping[str, Any]] | None,
     *,
     client: httpx.AsyncClient | None = None,
     ghi_loi=None,
+    ban_dia: BanDia | None = None,
 ) -> list[dict]:
     """
     Tải ảnh về và đóng thành khối `{"type": "image", ...}` cho `llm`.
 
     Trả danh sách rỗng khi không có ảnh nào dùng được — chỗ gọi cứ trả lời
     bằng phần chữ như trước.
+
+    `ban_dia(url)` (nếu có) hỏi bản đã tải về máy chủ TRƯỚC khi ra mạng —
+    xem `agent.omnichannel.media.ban_dia_theo_url`. Tin xử lý lại từ hộp thư
+    bền sau khi app chết có khi mang link CDN đã hết hạn.
     """
     can_tai = loc_anh(attachments)
     if not can_tai:
@@ -114,20 +150,26 @@ async def lay_khoi_anh(
     try:
         for anh in can_tai:
             try:
-                r = await client.get(anh["url"])
-                if getattr(r, "status_code", 200) >= 400:
-                    raise ValueError(f"HTTP {r.status_code}")
-
-                du_lieu = r.content or b""
+                du_lieu, kieu = b"", ""
+                co_san = None
+                if ban_dia is not None:
+                    try:
+                        co_san = await ban_dia(anh["url"])
+                    except Exception as exc:  # noqa: BLE001 — tra bản trên máy hỏng thì ra mạng
+                        if ghi_loi is not None:
+                            await ghi_loi(f"tra bản trên máy: {type(exc).__name__}"[:200])
+                if co_san is not None:
+                    duong, kieu = co_san
+                    if duong.stat().st_size > TOI_DA_BYTE:
+                        raise ValueError("bản trên máy quá lớn")
+                    du_lieu = duong.read_bytes()
+                else:
+                    du_lieu, kieu = await _tai_co_tran(client, anh["url"])
                 if not du_lieu:
                     raise ValueError("tệp rỗng")
-                if len(du_lieu) > TOI_DA_BYTE:
-                    raise ValueError(f"{len(du_lieu)} byte, quá lớn")
 
                 # Kiểu do máy chủ khai đáng tin hơn phần đoán từ tên tệp.
-                mime = str(
-                    (getattr(r, "headers", {}) or {}).get("content-type") or ""
-                ).split(";")[0].strip().lower() or anh["mime"]
+                mime = kieu.split(";")[0].strip().lower() or anh["mime"]
                 if mime == "image/jpg":
                     mime = "image/jpeg"
                 if mime not in MIME_CHO_PHEP:

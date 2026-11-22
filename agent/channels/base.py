@@ -185,6 +185,19 @@ class ChannelAdapter(ABC):
         """Probe không gửi tin; connector phải override để được kích hoạt."""
         return ConnectionCheck(False, "provider.verification_not_supported")
 
+    async def nguon_tai_media(
+        self, tep: dict
+    ) -> tuple[str, dict[str, str]] | None:
+        """
+        (URL, header) để tải một tệp khách gửi mà webhook KHÔNG kèm URL.
+
+        Mặc định None: hầu hết kênh đưa sẵn URL CDN trong webhook, worker
+        media tải thẳng. WhatsApp thì chỉ đưa `provider_media_id` — phải hỏi
+        Graph lấy URL rồi tải kèm token. Header trả về chứa bí mật: worker
+        không ghi chúng vào đâu và bỏ chúng khi bị chuyển hướng sang máy khác.
+        """
+        return None
+
     async def bao_dang_go(self, conversation_ref: str, bat: bool) -> None:
         """
         Bật/tắt dấu hiệu "đang gõ" phía kênh.

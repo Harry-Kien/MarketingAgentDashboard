@@ -62,7 +62,9 @@ function chipNhanDong(c) {
 /* Hàng nhãn dưới tên khách trên đầu hội thoại (mục 6.3). Chỉ nhãn HỘI
  * THOẠI: nhãn khách sống ở Customer 360 (mục 6.4), không lặp lại ở đây. */
 function nhanHoiThoaiHtml(c) {
-  const sua = state.toiQuyen && state.toiQuyen.has("hoi_thoai.tra_loi");
+  // Gắn/gỡ nhãn hội thoại đi theo `hoi_thoai.ghi_chu` (migration 0058) — cùng
+  // quyền máy chủ đòi ở POST/DELETE .../nhan.
+  const sua = state.toiQuyen && state.toiQuyen.has("hoi_thoai.ghi_chu");
   const ds = c.nhan_chi_tiet || [];
   return `${ds.map((n) => chipNhan(n, sua ? { loai: "hoi_thoai", dich: c.id } : null)).join("")}
     ${sua ? `<button type="button" class="btn btn--sm btn--ghost" data-nhan-them="hoi_thoai"

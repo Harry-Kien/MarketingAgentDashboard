@@ -2192,8 +2192,7 @@ svg { flex: none; }
 .kntt-bang table { border-collapse: collapse; font-size: 12px; width: 100%; }
 .kntt-bang th, .kntt-bang td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line, #eef2f8); }
 .kntt-fb { margin-top: 6px; }
-/* ============================================================
-   Cây menu mới: nhóm "Cài đặt & Quản trị" + tab trong màn
+/* =====================================================   Cây menu mới: nhóm "Cài đặt & Quản trị" + tab trong màn
    (phiếu việc 20.11.2026 — 01b-dieu-huong.js)
    ============================================================ */
 
@@ -2276,3 +2275,8 @@ svg { flex: none; }
   .rail.is-mo .rail__item { white-space: normal; }
   .rail__nhom { margin-top: 6px; padding-top: 6px; }
 }
+=======
+/* Lịch sử nhân sự & phân quyền: phần "đổi gì" (quyền thêm/bớt, trước → sau)
+   xuống dòng thành cụm nhãn — một vai trò đổi 10 quyền không được đẩy cả
+   dòng tràn ngang ở màn 375px. */
+.nsv-doi { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }

@@ -46,7 +46,8 @@ const QUYEN_MAN = {
   hoithoai: ["hoi_thoai.doc"],
   khachhang: ["khach.doc"],
   donhang: ["don.doc"],
-  kho: ["don.doc"],
+  kho: ["kho.doc"],        // quyền riêng từ 0058 (trước dùng don.doc)
+  nhansu: ["nguoi_dung.doc"],
   sohieu: ["bao_cao.doc"],
 };
 

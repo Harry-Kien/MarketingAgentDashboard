@@ -48,6 +48,12 @@ QUYEN: dict[str, str] = {
     # Mẫu trả lời nhanh là câu MỌI người sẽ gửi cho khách — sửa nó là sửa
     # lời của cả cửa hàng, nên tách khỏi `hoi_thoai.tra_loi` (ai cũng có).
     "tra_loi_nhanh.sua": "Thêm, sửa, xoá mẫu trả lời nhanh",
+    # Tách khỏi `hoi_thoai.tra_loi` (22.11.2026, phiếu việc mục 12): nhãn
+    # và ghi chú nội bộ là việc SẮP XẾP, không phải nói với khách. Gộp chung
+    # thì không có cách nào cho một người chỉ phân loại hội thoại mà không
+    # nhắn được cho khách — hoặc ngược lại. Migration 0058 cấp nó cho mọi vai
+    # trò đang có `hoi_thoai.tra_loi`, nên không ai mất việc đang làm được.
+    "hoi_thoai.ghi_chu": "Gắn, gỡ nhãn và viết ghi chú nội bộ cho hội thoại",
 
     "khach.doc": "Xem danh sách khách",
     "khach.xem_tat_ca": "Xem khách của mọi kênh, kể cả kênh không được giao",
@@ -101,8 +107,19 @@ QUYEN: dict[str, str] = {
     "cau_hinh.sua": "Sửa cấu hình và kho tri thức",
     "catalog.duyet": "Xác nhận bảng giá",
 
-    "don.doc": "Xem đơn hàng và tồn kho",
-    "don.sua": "Duyệt, huỷ đơn; nhập kho, kiểm kê",
+    # Nhãn cũ "Xem đơn hàng và tồn kho" / "...; nhập kho, kiểm kê" thôi đúng
+    # từ khi Kho có quyền riêng (0058): nhãn nói một việc quyền không còn làm
+    # là ô tick nói dối.
+    "don.doc": "Xem đơn hàng",
+    "don.sua": "Duyệt, huỷ, cập nhật đơn hàng",
+
+    # KHO TÁCH KHỎI ĐƠN (22.11.2026, phiếu việc mục 12). Trước đây xem tồn
+    # kho đi kèm xem đơn, nhập kho đi kèm huỷ đơn: người kiểm kê buộc phải
+    # được huỷ đơn của khách. Migration 0058 cấp `kho.doc` cho mọi vai trò
+    # có `don.doc`, `kho.sua` cho mọi vai trò có `don.sua` — không ai mất
+    # màn đang dùng.
+    "kho.doc": "Xem sản phẩm, giá và tồn kho",
+    "kho.sua": "Nhập kho, kiểm kê",
 
     "bao_cao.doc": "Xem báo cáo, số đo và chi phí",
 
@@ -113,7 +130,60 @@ QUYEN: dict[str, str] = {
     # quyền, khoá tài khoản, xoá dữ liệu khách — không phải thứ mọi nhân
     # viên đọc hội thoại cần thấy.
     "nhat_ky.doc": "Xem nhật ký kiểm toán",
+
+    # PHÊ DUYỆT AI tách khỏi `hoi_thoai.tra_loi` (22.11.2026, phiếu việc mục
+    # 12). Duyệt bản nháp là CHO PHÉP lời AI viết đi tới khách — trách nhiệm
+    # khác với tự gõ một câu trả lời, và chủ cửa hàng muốn giao nó riêng
+    # (ví dụ: nhân viên mới trả lời được nhưng chưa được duyệt lời AI).
+    # Migration 0058 cấp nó cho mọi vai trò đang có `hoi_thoai.tra_loi`.
+    #
+    # KHÔNG phải ba mức uỷ quyền của AI (AI được tự làm gì) — đó là chuyện
+    # của cấu hình AI, một giai đoạn khác. Đây là quyền của NGƯỜI.
+    "ai.duyet": "Duyệt câu trả lời AI soạn sẵn trước khi gửi khách",
 }
+
+# =====================================================================
+#  NHÓM HIỂN THỊ (phiếu việc mục 12.2)
+# =====================================================================
+# Màn cấp quyền gom ô tick theo CHỨC NĂNG của dashboard, không theo tiền tố
+# mã. Tiền tố là quy ước của người viết mã (`outbox`, `dinh_tuyen`, `mcp`),
+# còn chủ cửa hàng nghĩ theo màn hình: "người này được đụng vào phần Cấu hình
+# chung không". Đổi MÃ quyền để khớp nhóm là làm vỡ mọi vai trò đang lưu —
+# nên mã giữ nguyên, nhóm chỉ là lớp trình bày.
+#
+# Mỗi quyền nằm trong ĐÚNG MỘT nhóm — có test canh. Quyền mới quên xếp nhóm
+# thì không hiện trên màn cấp quyền, tức là không ai cấp được: hỏng im lặng.
+NHOM_QUYEN: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("hoi_thoai", "Hội thoại", (
+        "hoi_thoai.doc", "hoi_thoai.xem_tat_ca", "hoi_thoai.tra_loi",
+        "hoi_thoai.nhan", "hoi_thoai.ghi_chu",
+    )),
+    ("khach_hang", "Khách hàng", (
+        "khach.doc", "khach.xem_tat_ca", "khach.sua", "khach.giao",
+        "khach.gop", "khach.pii", "khach.xoa",
+    )),
+    ("don_hang", "Đơn hàng", ("don.doc", "don.sua")),
+    ("kho", "Kho", ("kho.doc", "kho.sua", "catalog.duyet")),
+    ("cong_viec", "Công việc", (
+        "cong_viec.doc", "cong_viec.xem_tat_ca", "cong_viec.sua",
+        "cong_viec.giao",
+    )),
+    ("phan_tich", "Phân tích", ("bao_cao.doc",)),
+    ("cau_hinh_chung", "Cấu hình chung", (
+        "tra_loi_nhanh.sua", "dinh_tuyen.doc", "dinh_tuyen.sua",
+        "kenh.doc", "kenh.sua", "kenh.noi", "tich_hop.doc", "tich_hop.sua",
+    )),
+    ("cau_hinh_ai", "Cấu hình AI Agent", (
+        "agent.doc", "agent.dieu_khien", "phong_thu.dung",
+        "cau_hinh.doc", "cau_hinh.sua", "ky_nang.doc", "ky_nang.sua",
+        "mcp.doc", "mcp.sua",
+    )),
+    ("nhan_su", "Nhân sự & Phân quyền", ("nguoi_dung.doc", "nguoi_dung.sua")),
+    ("he_thong", "Hệ thống & Nhật ký", (
+        "nhat_ky.doc", "outbox.doc", "outbox.sua",
+    )),
+    ("phe_duyet_ai", "Phê duyệt AI", ("ai.duyet",)),
+)
 
 # Quyền ĐÃ GỠ khỏi danh mục. Không bao giờ được dùng lại tên này.
 #

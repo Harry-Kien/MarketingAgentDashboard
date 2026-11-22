@@ -25,6 +25,10 @@ os.environ.setdefault("GCP_PROJECT_ID", "test")
 
 LUOC_DO = ROOT / "agent" / "schema.sql"
 
+# Quyền hiệu lực của vai trò `Nhân viên` nạp sẵn sau mọi migration — xem
+# chú thích trong `test_nhan_vien_nhan_dung_tap_cua_vai_tro`.
+SO_QUYEN_NHAN_VIEN = 21
+
 
 async def _dung_va_chay(url: str, kich_ban):
     """Trỏ `agent.db` vào CSDL kiểm thử, dựng lược đồ, chạy kịch bản."""
@@ -106,8 +110,12 @@ def test_nhan_vien_nhan_dung_tap_cua_vai_tro(csdl_kiem_thu):
     nguoi = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
     assert nguoi is not None
     # 19 dòng migration 0019 nạp cho Nhân viên, trừ `noi_dung.doc` đã gỡ
-    # khỏi danh mục ngày 19.11.2026 — dòng ấy còn trong CSDL nhưng bị lọc.
-    assert len(nguoi["quyen"]) == 18
+    # khỏi danh mục ngày 19.11.2026 — dòng ấy còn trong CSDL nhưng bị lọc —
+    # cộng 3 quyền 0058 tách ra từ quyền Nhân viên vốn có (`ai.duyet`,
+    # `hoi_thoai.ghi_chu` từ `hoi_thoai.tra_loi`; `kho.doc` từ `don.doc`).
+    assert len(nguoi["quyen"]) == SO_QUYEN_NHAN_VIEN
+    assert {"ai.duyet", "hoi_thoai.ghi_chu", "kho.doc"} <= nguoi["quyen"]
+    assert "kho.sua" not in nguoi["quyen"], "Nhân viên chưa từng có don.sua"
     assert "noi_dung.doc" not in nguoi["quyen"]
     assert "hoi_thoai.tra_loi" in nguoi["quyen"]
     assert "khach.xoa" not in nguoi["quyen"]
@@ -160,7 +168,7 @@ def test_thu_quyen_co_hieu_luc_o_request_ke_tiep(csdl_kiem_thu):
         return truoc, sau
 
     truoc, sau = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
-    assert len(truoc["quyen"]) == 18
+    assert len(truoc["quyen"]) == SO_QUYEN_NHAN_VIEN
     assert sau["quyen"] == frozenset(), "thu quyền rồi mà request sau vẫn có"
 
 
@@ -184,4 +192,4 @@ def test_quyen_mo_coi_trong_csdl_bi_loc_bo(csdl_kiem_thu):
 
     nguoi = asyncio.run(_dung_va_chay(csdl_kiem_thu, kich_ban))
     assert "quyen_cu.da_xoa" not in nguoi["quyen"]
-    assert len(nguoi["quyen"]) == 18
+    assert len(nguoi["quyen"]) == SO_QUYEN_NHAN_VIEN

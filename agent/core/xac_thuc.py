@@ -110,12 +110,17 @@ VAI_TRO_DUNG_SAN = {"quan_tri": "Quản trị", "nhan_vien": "Nhân viên"}
 async def tao_nguoi_dung(
     ten_dang_nhap: str, mat_khau: str, ho_ten: str = "",
     vai_tro: str = "nhan_vien", *, gan_vai_tro_dung_san: bool = False,
+    ghi_nhat_ky: bool = True,
 ) -> dict:
     """
     `gan_vai_tro_dung_san`: gán luôn vai trò dựng sẵn tương ứng. Script dòng
     lệnh bật cờ này. Dashboard KHÔNG bật: ở đó tạo xong người quản lý gán vai
     trò bằng màn Nhân viên, và tài khoản chưa gán gì thì không có quyền gì
     (hỏng-đóng) — đúng ý.
+
+    `ghi_nhat_ky=False`: API Nhân sự tự ghi dòng lịch sử ĐẦY ĐỦ hơn (ai tạo,
+    vai trò nào, email) trong giao dịch của nó. Ghi cả hai là màn Lịch sử
+    hiện mỗi lần tạo tài khoản thành hai dòng, một dòng mang tên "he_thong".
     """
     ten_dang_nhap = ten_dang_nhap.strip().lower()
     if len(ten_dang_nhap) < 3:
@@ -142,8 +147,9 @@ async def tao_nguoi_dung(
             "SELECT $1, id FROM vai_tro WHERE he_thong AND ten = $2 "
             "ON CONFLICT DO NOTHING", row["id"], VAI_TRO_DUNG_SAN[vai_tro])
     row["id"] = str(row["id"])
-    await db.log_event("auth.tao_nguoi_dung", actor="he_thong",
-                       ten_dang_nhap=ten_dang_nhap, vai_tro=vai_tro)
+    if ghi_nhat_ky:
+        await db.log_event("auth.tao_nguoi_dung", actor="he_thong",
+                           ten_dang_nhap=ten_dang_nhap, vai_tro=vai_tro)
     return row
 
 
@@ -416,8 +422,13 @@ async def doc_phien(token: str) -> dict | None:
         "FROM phien p "
         "JOIN nguoi_dung n ON n.id = p.nguoi_dung_id "
         "LEFT JOIN nguoi_dung_vai_tro ndvt ON ndvt.nguoi_dung_id = n.id "
-        "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id "
-        "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = ndvt.vai_tro_id "
+        # `vt.dang_dung` NGAY TRONG điều kiện nối, và quyền nối theo `vt.id`
+        # chứ không theo `ndvt.vai_tro_id`: vai trò ngừng dùng (0058) thì
+        # `vt` ra NULL và kéo luôn quyền của nó ra NULL. Nối quyền theo
+        # `ndvt` là vai trò đã ngừng vẫn cấp đủ quyền — ô "Ngừng dùng" trên
+        # màn hình thành trang trí.
+        "LEFT JOIN vai_tro vt ON vt.id = ndvt.vai_tro_id AND vt.dang_dung "
+        "LEFT JOIN vai_tro_quyen vq ON vq.vai_tro_id = vt.id "
         "WHERE p.token = $1 AND p.het_han > now() "
         "GROUP BY n.id",
         bam_token(token),

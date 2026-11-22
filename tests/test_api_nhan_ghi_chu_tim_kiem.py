@@ -101,7 +101,9 @@ async def _dem(url: str, sql: str) -> int:
         await conn.close()
 
 
-NV = ("hoi_thoai.doc", "hoi_thoai.tra_loi")
+# `hoi_thoai.ghi_chu` tách khỏi `hoi_thoai.tra_loi` từ 0058 — nhãn và ghi
+# chú nội bộ có quyền riêng. Vai trò nạp sẵn nhận cả hai qua migration.
+NV = ("hoi_thoai.doc", "hoi_thoai.tra_loi", "hoi_thoai.ghi_chu")
 
 
 def _ids(k, **qs) -> set[str]:
@@ -155,6 +157,24 @@ def test_ngoai_kenh_la_404(csdl_kiem_thu):
         assert k.get(f"/api/inbox/conversations/{h['b']}/ghi-chu").status_code == 404
         assert k.post(f"/api/inbox/conversations/{h['b']}/ghi-chu",
                       json={"noi_dung": "x"}).status_code == 404
+
+
+def test_tra_loi_khach_khong_con_kem_nhan_va_ghi_chu(csdl_kiem_thu):
+    """
+    Từ 0058 nhãn và ghi chú nội bộ có quyền riêng. Thiếu test này thì một
+    lần "dọn dẹp" trả ba route về `hoi_thoai.tra_loi` mà vẫn xanh — và ô
+    tick `hoi_thoai.ghi_chu` trên màn cấp quyền thành trang trí.
+    """
+    with TestClient(_app(csdl_kiem_thu, nguoi_thu("hoi_thoai.doc", "hoi_thoai.tra_loi"))) as k:
+        h = _dung(csdl_kiem_thu)
+        assert k.post(f"/api/inbox/conversations/{h['a']}/nhan",
+                      json={"nhan": "x"}).status_code == 403
+        assert k.delete(f"/api/inbox/conversations/{h['a']}/nhan/x").status_code == 403
+        assert k.post(f"/api/inbox/conversations/{h['a']}/ghi-chu",
+                      json={"noi_dung": "x"}).status_code == 403
+        # ĐỌC ghi chú vẫn theo `hoi_thoai.doc` — người trả lời khách cần đọc
+        # lời dặn của đồng nghiệp dù không được viết thêm.
+        assert k.get(f"/api/inbox/conversations/{h['a']}/ghi-chu").status_code == 200
 
 
 def test_tim_khong_dau_khong_hoa_thuong(csdl_kiem_thu):

@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/san-pham/{ma}/anh")
-async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap), _quyen: dict = Depends(can_quyen("don.doc"))):
+async def anh_san_pham_file(ma: str, _nguoi: dict = Depends(bat_buoc_dang_nhap), _quyen: dict = Depends(can_quyen("kho.doc"))):
     """
     Ảnh sản phẩm cho màn hình Kho và cho ô chọn khi nhân viên gửi ảnh.
 
@@ -613,7 +613,7 @@ class KiemKeIn(BaseModel):
 
 
 @router.get("/kho")
-async def kho_tong_quan(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
+async def kho_tong_quan(_quyen: dict = Depends(can_quyen("kho.doc"))) -> dict:
     """Tồn kho sống của mọi mã, kèm tên và giá lấy từ danh mục."""
     from agent.core.tools import _anh_san_pham, _catalog
 
@@ -688,12 +688,12 @@ async def kho_tong_quan(_quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
 
 
 @router.get("/kho/bien-dong")
-async def kho_bien_dong(ma: str = "", limit: int = 50, _quyen: dict = Depends(can_quyen("don.doc"))) -> dict:
+async def kho_bien_dong(ma: str = "", limit: int = 50, _quyen: dict = Depends(can_quyen("kho.doc"))) -> dict:
     return {"bien_dong": await kho.so_bien_dong(ma, limit)}
 
 
 @router.post("/kho/{ma}/nhap")
-async def kho_nhap(ma: str, body: NhapKhoIn, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
+async def kho_nhap(ma: str, body: NhapKhoIn, _quyen: dict = Depends(can_quyen("kho.sua"))) -> dict:
     try:
         r = await kho.nhap_hang(ma, body.so_luong, body.ghi_chu)
     except LookupError as exc:
@@ -705,7 +705,7 @@ async def kho_nhap(ma: str, body: NhapKhoIn, _quyen: dict = Depends(can_quyen("d
 
 
 @router.post("/kho/{ma}/kiem-ke")
-async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
+async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen("kho.sua"))) -> dict:
     """
     Đặt lại số tồn về đúng thực tế đếm được.
 

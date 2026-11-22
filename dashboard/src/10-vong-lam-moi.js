@@ -98,6 +98,7 @@ function startInboxStream() {
 // thông báo lỗi trước cả khi kịp nhìn thấy ô đăng nhập.
 kiemPhien().then((co) => {
   if (!co) return;
+  // Một chỗ quyết định mục nào hiện (01b-dieu-huong.js QUYEN_MAN / QUYEN_TAB).
   apDungQuyenMenu();
   refresh();
   startInboxStream();

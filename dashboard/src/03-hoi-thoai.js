@@ -1,5 +1,12 @@
 /* ---------------- hội thoại ---------------- */
 
+/* Nút "Duyệt và gửi" chỉ hiện cho người có `ai.duyet` (tách khỏi
+   `hoi_thoai.tra_loi` từ 0058). Máy chủ vẫn chặn — đây là để màn hình không
+   mời một 403 mỗi lần bấm. */
+function nutDuyetDuoc() {
+  return !!(state.toiQuyen && state.toiQuyen.has("ai.duyet"));
+}
+
 const CHANNEL_LABEL = {
   zalo_personal: "Zalo cá nhân", zalo_oa: "Zalo OA",
   facebook: "Facebook", instagram: "Instagram",
@@ -258,7 +265,7 @@ async function loadThread(id) {
              <span class="msg__sua-dem" data-sua-dem></span>
              <span class="msg__sua-nut">
                <button type="button" class="btn btn--sm" data-edit-cancel>Huỷ</button>
-               <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>
+               ${nutDuyetDuoc() ? `<button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
              </span>
            </div>
          </div>`
@@ -286,7 +293,7 @@ async function loadThread(id) {
         ${ghiChuNguoiXuLy(m)}
         ${banGoc}
         ${nutChiTietTin(m, draft)}
-        ${draft && !dangSua ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
+        ${draft && !dangSua && nutDuyetDuoc() ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
           <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
       </div>
       ${veChiTietTin(m, draft)}
@@ -325,6 +332,9 @@ async function loadThread(id) {
         if (r.co_the_giao_khac && state.openConv === id) loadThread(id); })
       .catch(() => { state.giaoDuoc[c.account_id] = false; });
   }
+  /* Nhãn và ghi chú nội bộ có quyền riêng từ 0058 (`hoi_thoai.ghi_chu`).
+   * Vẽ nút cho người không có quyền là mời một 403 mỗi lần bấm. */
+  const ghiChuDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.ghi_chu"));
   const nutGiu = `
       ${hienNhan ? `<button type="button" class="btn btn--sm btn--halt" id="btn-take">Tôi tiếp quản</button>` : ""}
       ${nguoiKhacGiu && !quanLy ? `<span class="tag tag--assist">${esc(c.assigned_to_ten || "Đồng nghiệp")} đang giữ</span>` : ""}
@@ -381,7 +391,7 @@ async function loadThread(id) {
     </div>
     <div class="nhanbar">
       ${nhanHoiThoaiHtml(c)}
-      <button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>
+      ${ghiChuDuoc ? `<button type="button" class="btn btn--sm btn--ghost" id="btn-them-ghichu">+ Ghi chú nội bộ</button>` : ""}
     </div>
     ${ghiChu.length ? `<details class="ghichu" ${state.moGhiChu ? "open" : ""}>
       <summary>Ghi chú nội bộ (${ghiChu.length}) — khách không thấy</summary>

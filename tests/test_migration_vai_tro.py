@@ -159,7 +159,7 @@ def test_backfill_chay_that_gan_dung_vai_tro(csdl_kiem_thu):
     assert truoc == sau, "chạy lại migration làm nhân đôi phép gán vai trò"
 
 
-def test_nhan_vien_nhan_dung_19_quyen(csdl_kiem_thu):
+def test_nhan_vien_nhan_dung_so_dong_quyen(csdl_kiem_thu):
     """
     Số cụ thể, không phải "có vài quyền".
 
@@ -188,4 +188,7 @@ def test_nhan_vien_nhan_dung_19_quyen(csdl_kiem_thu):
         finally:
             await conn.close()
 
-    assert asyncio.run(chay()) == 19
+    # 19 dòng 0019 nạp + 3 dòng 0058 cấp cho đúng vai trò đang làm được việc
+    # ấy (`ai.duyet`, `hoi_thoai.ghi_chu` theo `hoi_thoai.tra_loi`; `kho.doc`
+    # theo `don.doc`) — tách quyền không được lặng lẽ thu việc của ai.
+    assert asyncio.run(chay()) == 22

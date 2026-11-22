@@ -29,6 +29,7 @@ from agent.api.phong_thu_agent import router as phong_thu_router
 from agent.api.goi_ky_nang import router as goi_ky_nang_router
 from agent.api.mcp_may_chu import router as mcp_may_chu_router
 from agent.api.quyen import router as quyen_router
+from agent.api.nhan_su import router as nhan_su_router
 from agent.api.tra_loi_nhanh import router as tra_loi_nhanh_router
 from agent.api.tu_dong_api import router as tu_dong_router
 from agent.api.lich_ca import router as lich_ca_router
@@ -931,6 +932,7 @@ app.include_router(phong_thu_router)
 app.include_router(goi_ky_nang_router)
 app.include_router(mcp_may_chu_router)
 app.include_router(quyen_router)
+app.include_router(nhan_su_router)
 app.include_router(thanh_vien_kenh_router)
 app.include_router(zalo_oa_webhook_router)
 app.include_router(webchat_router)

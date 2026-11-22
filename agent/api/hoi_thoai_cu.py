@@ -353,7 +353,10 @@ async def approve_draft(
     message_id: str,
     body: DuyetBody | None = None,
     nguoi: dict = Depends(bat_buoc_dang_nhap),
-    _quyen: dict = Depends(can_quyen("hoi_thoai.tra_loi")),
+    # `ai.duyet`, không `hoi_thoai.tra_loi` (22.11.2026): cho phép lời AI đi
+    # tới khách là quyền RIÊNG — xem `agent/core/quyen.py`. Chốt tầm nhìn
+    # và cửa sổ gửi ngay dưới vẫn y như đường nhân viên tự gõ.
+    _quyen: dict = Depends(can_quyen("ai.duyet")),
 ) -> dict:
     """
     Chế độ assist: duyệt bản nháp rồi enqueue, không gọi provider tại API.

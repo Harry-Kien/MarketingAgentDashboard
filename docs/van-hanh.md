@@ -201,6 +201,14 @@ Rồi đổ bản mới nhất vào đó và **đếm bảng**: phải ra đúng
 diễn tập đầu tiên trong dự án này cho 41/42 bảng — thiếu đúng bảng `chunks`,
 tức toàn bộ kho tri thức RAG. Không đếm thì không ai biết.
 
+Bản tệp (`tep-*.tar.gz`, mã hoá thành `.cskh` khi có `SAO_LUU_MAT_KHAU`)
+gói `data/products`, `data/uploads` và `data/media` — media khách gửi giữ
+180 ngày nên có thể lên tới vài GB. Gói ghi thẳng ra đĩa theo luồng, không
+dựng trong RAM; bản rõ tạm thời bị xoá ngay sau khi mã hoá. Thư mục sao lưu
+giữ `SAO_LUU_GIU_LAI` bản mỗi loại, nên dung lượng cần ≈ số bản × cỡ
+`data/media` — xem cỡ hiện tại ở khung **Media khách gửi** trong tab Sao
+lưu & Bảo trì.
+
 `scripts/sao_luu.py` **không** sao lưu volume Docker. Volume `n8n_data` giữ
 workflow định tuyến báo động và credential đã nối trong n8n. Sao lưu riêng
 nếu đã dựng workflow thật trong đó.

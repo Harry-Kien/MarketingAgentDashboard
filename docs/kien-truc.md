@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-75 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+77 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -140,7 +140,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Hồ sơ agent** | `agent_ho_so` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` · `ket_noi_kiem_tra` · `lich_su_ket_noi` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
-| **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
+| **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `media_tep` · `media_lan_don` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` · `truong_khach` |
 | **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
 
@@ -369,7 +369,7 @@ erDiagram
         TEXT original_url
         TEXT storage_key
         TEXT mime_type
-        _ con_2_cot_nua
+        _ con_3_cot_nua
     }
     outbox_jobs {
         UUID id
@@ -814,9 +814,29 @@ erDiagram
         TEXT loi
         _ con_1_cot_nua
     }
+    media_tep {
+        TEXT sha256
+        TEXT storage_key
+        TEXT mime_type
+        BIGINT size_bytes
+        TIMESTAMPTZ tao_luc
+        TIMESTAMPTZ mat_tep_luc
+    }
+    media_lan_don {
+        UUID id
+        TIMESTAMPTZ bat_dau
+        TIMESTAMPTZ xong_luc
+        TEXT nguon
+        BOOLEAN xem_truoc
+        INT thoi_han_ngay
+        INT so_tep_xoa
+        BIGINT byte_giai_phong
+        _ con_4_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
+    media_tep ||--o{ attachments : ""
     messages ||--o{ attachments : ""
     nguoi_dung ||--o{ ca_nghi : ""
     nguoi_dung ||--o{ ca_truc : ""

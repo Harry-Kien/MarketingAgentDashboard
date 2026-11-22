@@ -87,6 +87,8 @@ NHOM = {
         "webhook_nhan",
         "tin_vao",
         "attachments",
+        "media_tep",
+        "media_lan_don",
         "outbox_jobs",
         "inbox_events",
         "conversation_reads",

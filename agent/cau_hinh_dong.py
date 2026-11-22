@@ -121,6 +121,13 @@ DANH_MUC: dict[str, MoTa] = {m.khoa: m for m in (
          y_nghia="Kiểm kỹ từng số: tiền khách quét QR chuyển thẳng vào tài khoản này."),
     MoTa("VIETQR_TEN_TK", "thanh_toan", "Tên chủ tài khoản", False,
          y_nghia="Chỉ để hiện cho khách đối chiếu — không nằm trong mã QR."),
+    MoTa("MEDIA_LUU_NGAY", "media", "Giữ media khách gửi (ngày)", False,
+         y_nghia="Số nguyên 1–3650, mặc định 180. Ảnh, video, tệp khách gửi đã tải "
+                 "về máy chủ bị xoá khi lần gửi GẦN NHẤT của cùng nội dung đã quá "
+                 "số ngày này. Hội thoại bị xoá thì media của nó đi theo ngay."),
+    MoTa("MEDIA_TOI_DA_MB", "media", "Trần dung lượng một tệp media (MB)", False,
+         y_nghia="Số nguyên 1–200, mặc định 25. Tệp lớn hơn không tải về — đánh dấu "
+                 "'quá lớn', link gốc của hãng vẫn còn tới khi hết hạn."),
 )}
 
 
@@ -208,6 +215,8 @@ _DOC_ENV: dict[str, Callable[[], str]] = {
     "VIETQR_BIN": lambda: settings.vietqr_bin,
     "VIETQR_SO_TK": lambda: settings.vietqr_so_tk,
     "VIETQR_TEN_TK": lambda: settings.vietqr_ten_tk,
+    "MEDIA_LUU_NGAY": lambda: str(settings.media_luu_ngay),
+    "MEDIA_TOI_DA_MB": lambda: str(settings.media_toi_da_mb),
 }
 
 
@@ -314,6 +323,10 @@ def kiem_gia_tri(khoa: str, gia_tri: str) -> str:
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: chỉ nhận {' | '.join(mo_ta.chon)}")
     if khoa == "SLA_NGUONG_CANH_BAO" and not (gia_tri.isdigit() and 10 <= int(gia_tri) <= 95):
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: số nguyên từ 10 tới 95")
+    if khoa == "MEDIA_LUU_NGAY" and not (gia_tri.isdigit() and 1 <= int(gia_tri) <= 3650):
+        raise KhoaKhongHopLe(f"{mo_ta.nhan}: số nguyên từ 1 tới 3650")
+    if khoa == "MEDIA_TOI_DA_MB" and not (gia_tri.isdigit() and 1 <= int(gia_tri) <= 200):
+        raise KhoaKhongHopLe(f"{mo_ta.nhan}: số nguyên từ 1 tới 200")
     if khoa == "VIETQR_BIN" and not (gia_tri.isdigit() and len(gia_tri) == 6):
         raise KhoaKhongHopLe(f"{mo_ta.nhan}: phải gồm đúng 6 chữ số")
     if khoa == "VIETQR_SO_TK" and not (gia_tri.isalnum() and gia_tri.isascii()

@@ -146,6 +146,36 @@ doanh nghiệp nói với khách khi thu thập.
 
 Tắt tự động: `TU_DONG_DON_DU_LIEU=false`, rồi bấm tay trên dashboard.
 
+### Media khách gửi (ảnh, video, tệp)
+
+Quyết định của chủ dự án (rà soát 20.11.2026): **tải về máy chủ, giữ 180
+ngày, chống trùng.** Trước đó hệ thống chỉ giữ link CDN của hãng — link hết
+hạn là ảnh vùng da, ảnh hàng vỡ, ảnh chuyển khoản mất hẳn.
+
+- **Tải**: tin lưu trước, tệp tải sau ở vòng nền `media_loop`
+  (`agent/omnichannel/media.py`, nhịp `media-tai` trong `worker_heartbeats`).
+  Đọc theo luồng với trần `MEDIA_TOI_DA_MB` (mặc định 25), nhận dạng kiểu
+  bằng chữ ký đầu tệp (ảnh, video, âm thanh, PDF, văn phòng), chặn địa chỉ
+  nội bộ kể cả sau chuyển hướng. Hỏng tạm thì thử lại 5 lần (30 giây → 32
+  phút); link hãng trả 403/404/410 là `het_han`. Mỗi tệp không giữ được là
+  một dòng nhật ký `media.khong_tai_duoc` — URL ghi KHÔNG kèm query string.
+- **Lưu**: `data/media/<năm>/<tháng>/<sha[:2]>/<sha256>.<đuôi>`, một tệp cho
+  mỗi nội dung (`media_tep`), nhiều đính kèm trỏ vào (`attachments.media_sha256`).
+  Số người giữ được ĐẾM từ `attachments`, không giữ trong cột đếm — hội thoại
+  bị xoá theo CASCADE, nơi không mã nào chạy để trừ.
+- **Giữ**: `MEDIA_LUU_NGAY` (mặc định 180, sửa ở Cài đặt & Quản trị → Hệ
+  thống → Sao lưu & Bảo trì → Media khách gửi). Một nội dung bị xoá khi
+  **lần gửi gần nhất** của nó đã quá hạn, hoặc khi không còn đính kèm nào
+  (hội thoại đã bị dọn theo `LUU_HOI_THOAI_NGAY` hay xoá theo yêu cầu).
+- **Tệp nhân viên gửi** (`data/uploads`) sống cùng hội thoại: hội thoại mất
+  thì tệp thành mồ côi và bị dọn (sau 2 ngày ân hạn).
+- **Yêu cầu xoá** (`du_lieu_ca_nhan.xoa`) xoá NGAY media của khách, trừ nội
+  dung khách khác cũng đã gửi. Xoá tệp hỏng thì kết quả báo `da_xoa=false`.
+- **Không bao giờ đụng** `data/products`, `data/knowledge`: lệnh xoá chỉ
+  nhận tệp trong `data/media` hoặc `data/uploads`.
+- Dòng CSDL mà tệp không còn trên đĩa chỉ bị **đánh dấu** `mat_tep`, không
+  xoá — chép `data/media` về lại thì lượt dọn sau tự gỡ dấu.
+
 ---
 
 ## Còn thiếu cho production thật

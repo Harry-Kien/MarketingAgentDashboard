@@ -424,7 +424,15 @@ class PostgresInboxQueryRepository:
                            jsonb_build_object(
                                'id', attachment.id,
                                'kind', attachment.kind,
-                               'url', attachment.url,
+                               -- Đã có bản trên máy chủ thì KHÔNG đưa link CDN:
+                               -- dashboard thấy `url` rỗng là lấy
+                               -- `/api/attachments/{id}/file` — bản không hết
+                               -- hạn. Chưa tải được thì vẫn còn link gốc.
+                               'url', CASE WHEN attachment.media_trang_thai = 'da_tai'
+                                            AND attachment.media_sha256 IS NOT NULL
+                                       THEN NULL ELSE attachment.url END,
+                               'url_goc', attachment.url,
+                               'media_trang_thai', attachment.media_trang_thai,
                                'original_url', attachment.original_url,
                                'storage_key', attachment.storage_key,
                                'mime_type', attachment.mime_type,

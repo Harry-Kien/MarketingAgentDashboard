@@ -115,6 +115,9 @@ data/sidecar.log
 
 # Ảnh và tài liệu nhân viên gửi cho khách — dữ liệu vận hành, không phải mã.
 data/uploads/
+# Ảnh, video, tệp KHÁCH gửi tải về từ CDN (agent/omnichannel/media.py).
+# Ảnh vùng da là dữ liệu sức khoẻ — không bao giờ lên GitHub.
+data/media/
 uv_err.log
 uv_out.log
 data/xac_thuc_domain/*

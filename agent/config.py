@@ -264,6 +264,15 @@ class Settings(BaseSettings):
     luu_hoi_thoai_ngay: int = 180
     # Tự dọn dữ liệu quá hạn mỗi ngày. Tắt thì phải tự bấm trên dashboard.
     tu_dong_don_du_lieu: bool = True
+    # Media khách gửi (ảnh, video, tệp) tải về `data/media`: giữ bao nhiêu
+    # ngày kể từ lần gửi GẦN NHẤT của cùng nội dung. 180 theo quyết định của
+    # chủ dự án (rà soát 20.11.2026), khớp thời hạn hội thoại. Đổi được trên
+    # dashboard (`MEDIA_LUU_NGAY`, agent/cau_hinh_dong.py) — giá trị ở đây
+    # chỉ là mặc định khi chưa ai đặt.
+    media_luu_ngay: int = 180
+    # Trần dung lượng MỘT tệp tải về (MB). Video điện thoại vài phút đã quá
+    # 25MB; tệp vượt trần được đánh dấu `qua_lon`, link gốc vẫn còn để xem.
+    media_toi_da_mb: int = 25
 
     # --- Canh gác ---
     # Hỏi sức khoẻ đều đặn và báo khi trạng thái ĐỔI sang hỏng. Báo mỗi lần

@@ -569,22 +569,27 @@ async def attachment_file(
     except ValueError as exc:
         raise HTTPException(404, "Không có tệp") from exc
 
+    # Media khách gửi đã tải về nằm ở `media_tep` (chống trùng theo sha256 —
+    # xem migration 0063), không ở `attachments.storage_key`.
     row = await db.fetchrow(
-        "SELECT a.storage_key, a.mime_type, a.metadata, m.conversation_id "
-        "FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id = $1",
+        "SELECT a.storage_key, a.mime_type, a.metadata, m.conversation_id, "
+        "       mt.storage_key AS media_key, mt.mime_type AS media_mime "
+        "FROM attachments a JOIN messages m ON m.id = a.message_id "
+        "LEFT JOIN media_tep mt ON mt.sha256 = a.media_sha256 WHERE a.id = $1",
         aid,
     )
-    if row is None or not row["storage_key"]:
+    if row is None or not (row.get("media_key") or row["storage_key"]):
         raise HTTPException(404, "Không có tệp")
     # Tệp khách gửi (ảnh vùng da, ảnh chuyển khoản) là nội dung hội thoại —
     # cùng phạm vi kênh với chính hội thoại. Trước 16.11.2026 ai có
     # `hoi_thoai.doc` cũng tải được tệp của mọi kênh, chỉ cần id.
     await chan_neu_ngoai_kenh(row["conversation_id"], _quyen)
 
-    from agent.duong_dan_du_lieu import mo_khoa
+    from agent import duong_dan_du_lieu
 
-    duong = (mo_khoa(str(row["storage_key"])) or Path("")).resolve()
-    goc_du_lieu = (Path(__file__).resolve().parents[2] / "data").resolve()
+    khoa = row.get("media_key") or row["storage_key"]
+    duong = (duong_dan_du_lieu.mo_khoa(str(khoa)) or Path("")).resolve()
+    goc_du_lieu = duong_dan_du_lieu.GOC_DU_LIEU.resolve()
     if goc_du_lieu not in duong.parents:
         await db.log_event("attachment.ngoai_thu_muc_du_lieu",
                            attachment_id=str(aid))
@@ -592,9 +597,22 @@ async def attachment_file(
     if not duong.is_file():
         raise HTTPException(404, "Tệp không còn trên máy chủ")
 
-    mime = str(row["mime_type"] or "") or _MIME_THEO_DUOI.get(
-        duong.suffix.lower(), "application/octet-stream")
-    return FileResponse(str(duong), media_type=mime)
+    # Media khách gửi: kiểu do MÁY CHỦ nhận dạng từ chữ ký tệp, không phải
+    # `attachments.mime_type` — cột ấy chép từ webhook, và webchat là đường
+    # công khai: một tệp HTML khai `text/html` phục vụ từ origin dashboard
+    # là XSS lưu trữ trong tab của người trực.
+    if row.get("media_key"):
+        mime = str(row.get("media_mime") or "application/octet-stream")
+    else:
+        mime = str(row["mime_type"] or "") or _MIME_THEO_DUOI.get(
+            duong.suffix.lower(), "application/octet-stream")
+    mo_trong_tab = mime.startswith(("image/", "video/", "audio/")) or mime == "application/pdf"
+    return FileResponse(str(duong), media_type=mime, headers={
+        "X-Content-Type-Options": "nosniff",
+        # Thứ không phải ảnh/âm thanh/video/PDF thì TẢI XUỐNG, không mở.
+        "Content-Disposition": "inline" if mo_trong_tab
+        else f'attachment; filename="tep{duong.suffix}"',
+    })
 
 
 # ---------------------------------------------------------------

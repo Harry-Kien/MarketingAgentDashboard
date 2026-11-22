@@ -395,8 +395,10 @@ async def handle_inbound(msg: InboundMessage) -> None:
                 await db.log_event("anh_khach.tai_that_bai", ref_id=cid,
                                    ly_do=ly_do)
 
+            from agent.omnichannel import media
+
             khoi_anh = await anh_khach.lay_khoi_anh(
-                msg.attachments, ghi_loi=_ghi_loi_anh)
+                msg.attachments, ghi_loi=_ghi_loi_anh, ban_dia=media.ban_dia_theo_url)
             if not khoi_anh:
                 cau_hoi = (f"[khách gửi kèm {len(msg.attachments)} tệp nhưng "
                            f"hệ thống KHÔNG tải về xem được] {msg.text}")

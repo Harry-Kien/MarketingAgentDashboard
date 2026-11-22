@@ -76,20 +76,27 @@ class _R:
         self.headers = {"content-type": ctype}
 
 
-class _Client:
-    def __init__(self, tra=None, no=None):
-        self.calls = []
-        self._tra = tra if tra is not None else _R(b"anh-that")
-        self._no = no
+def _Client(tra=None, no=None):
+    """
+    httpx THẬT trên MockTransport — không ra mạng, nhưng đi đúng đường
+    `client.stream()` mà mã thật dùng. Bản giả cũ chỉ có `.get()`, nên
+    không bắt được việc đọc trọn thân phản hồi trước khi so trần dung lượng.
+    """
+    import httpx
 
-    async def get(self, url):
-        self.calls.append(url)
-        if self._no:
-            raise self._no
-        return self._tra if not isinstance(self._tra, dict) else self._tra[url]
+    calls: list[str] = []
+    tra = tra if tra is not None else _R(b"anh-that")
 
-    async def aclose(self):
-        return None
+    def xu_ly(req: httpx.Request) -> httpx.Response:
+        calls.append(str(req.url))
+        if no:
+            raise no
+        r = tra if not isinstance(tra, dict) else tra[str(req.url)]
+        return httpx.Response(r.status_code, content=r.content, headers=r.headers)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(xu_ly))
+    client.calls = calls   # type: ignore[attr-defined]
+    return client
 
 
 def _chay(attachments, client):

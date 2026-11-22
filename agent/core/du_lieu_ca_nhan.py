@@ -47,6 +47,7 @@ from uuid import UUID
 
 from .. import db
 from . import ho_so_khach
+from ..omnichannel import media_don
 from ..config import settings
 
 AN_DANH = "[đã ẩn danh theo yêu cầu]"
@@ -588,12 +589,20 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         )
 
         # 2. Xoá hội thoại. Tin nhắn đi theo nhờ ON DELETE CASCADE.
+        #    Ghi lại TRƯỚC tệp media nào thuộc các hội thoại này: xoá xong
+        #    thì đính kèm đã đi theo CASCADE, không còn đường nào biết.
+        media_cua_khach = await media_don.tham_chieu_cua(conv_ids, csdl=db)
         hoi_thoai = 0
         if conv_ids:
             r = await db.execute(
                 "DELETE FROM conversations WHERE id = ANY($1::uuid[])", conv_ids
             )
             hoi_thoai = int(r.split()[-1]) if r.split()[-1].isdigit() else len(conv_ids)
+
+        # 2b. Xoá NGAY ảnh, video, tệp của khách trên đĩa (`data/media`,
+        #     `data/uploads`) — trừ nội dung khách khác cũng đã gửi (chống
+        #     trùng: một tệp, nhiều người giữ). Không chờ lượt dọn hằng ngày.
+        media = await media_don.xoa_sau_pdpd(media_cua_khach)
 
         # 3. Xoá hồ sơ ghi nhớ. Xây trí nhớ mà quên đường xoá là tạo ra một kho
         #    dữ liệu cá nhân ngoài tầm kiểm soát.
@@ -621,6 +630,9 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         dau_van_tay=_dau_van_tay(so),
         so_don_an_danh=truoc["so_don_hang"],
         so_hoi_thoai_xoa=hoi_thoai,
+        so_tep_media_xoa=media["so_tep"],
+        so_byte_media_xoa=media["so_byte"],
+        so_tep_media_loi=media["so_loi"],
         so_ho_so_xoa=ho_so,
         # Hồ sơ CRM: đếm riêng từng bảng. Gộp thành một con số thì lần sau
         # một bảng lặng lẽ rơi khỏi luồng xoá mà tổng vẫn trông hợp lý.
@@ -643,14 +655,18 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         can_cu="Luật Bảo vệ dữ liệu cá nhân 91/2025/QH15, Điều 4 khoản 1 và Điều 14; Nghị định 356/2025/NĐ-CP, Điều 5 khoản 4",
     )
     con_thieu = erp["ap_dung"] and not erp["da_lam"]
+    # Tệp media xoá hỏng (đĩa khoá tệp, quyền ghi) cũng là một nơi lưu CHƯA
+    # xong — báo "đã xoá" khi ảnh da của khách còn nằm trên đĩa là nói dối.
+    media_con = media["so_loi"] > 0
     return {
         "so_dien_thoai": so,
         # `da_xoa` chỉ True khi MỌI nơi lưu đã xong. ERP còn nguyên mà báo
         # True là nói dối về một nghĩa vụ pháp lý.
-        "da_xoa": not con_thieu,
-        "con_viec_chua_xong": con_thieu,
+        "da_xoa": not (con_thieu or media_con),
+        "con_viec_chua_xong": con_thieu or media_con,
         "don_hang_an_danh": truoc["so_don_hang"],
         "hoi_thoai_da_xoa": hoi_thoai,
+        "media": media,
         "ho_so_ghi_nho_da_xoa": ho_so,
         "crm": crm,
         "erp": erp,
@@ -658,8 +674,10 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
         "ghi_chu": (
             f"Đã ẩn danh {truoc['so_don_hang']} đơn hàng (giữ mã đơn và số "
             f"tiền cho sổ sách kế toán) và xoá hẳn {hoi_thoai} hội thoại "
-            f"cùng toàn bộ tin nhắn. "
-            f"Hồ sơ CRM: {crm['ho_so']} hồ sơ ẩn danh, {crm['ghi_chu']} ghi "
+            f"cùng toàn bộ tin nhắn, {media['so_tep']} tệp ảnh/video/tệp đính kèm. "
+            + (f"CHƯA XONG: {media['so_loi']} tệp media không xoá được khỏi đĩa — "
+               "xem nhật ký rồi chạy Dọn ngay ở mục Media. " if media_con else "")
+            + f"Hồ sơ CRM: {crm['ho_so']} hồ sơ ẩn danh, {crm['ghi_chu']} ghi "
             f"chú và {crm['nhan']} nhãn xoá hẳn, {crm['danh_tinh']} danh "
             f"tính kênh ẩn danh. Không hoàn tác được. "
             + ("CHƯA XONG: " + erp["ghi_chu"] + " Phải vào ERP ẩn danh tay "

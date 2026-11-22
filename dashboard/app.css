@@ -1987,6 +1987,7 @@ svg { flex: none; }
 .nhan.is-ngung { opacity: .55; filter: grayscale(1); text-decoration: line-through; }
 .filterbar__chon { margin: 0 0 8px; padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 12px; max-width: 100%; }
 .quan-ly-nhan { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.quan-ly-nhan__loai { min-width: 0; }
 .quan-ly-nhan .subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .quan-ly-nhan .row.is-ngung .row__body { opacity: .7; }
 /* Ghi chú nội bộ phải trông KHÁC HẲN tin khách: người trực liếc qua là biết

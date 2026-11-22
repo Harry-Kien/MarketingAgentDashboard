@@ -142,8 +142,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
 | **Customer 360** | `contacts` · `contact_points` · `contact_tags` · `contact_notes` · `contact_consents` · `contact_merges` · `data_retention_jobs` · `contact_owner_history` · `truong_khach` |
-| **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` |
-| (chưa xếp nhóm) | `lich_lam_viec` · `sla_muc_tieu` · `sla_chuyen_giao` |
+| **Routing và SLA** | `teams` · `team_members` · `routing_rules` · `routing_cursors` · `conversation_assignments` · `sla_policies` · `sla_events` · `sla_muc_tieu` · `sla_chuyen_giao` · `lich_lam_viec` |
 
 Invariant định tuyến quan trọng nhất là `(account_id, external_id)`, không
 phải `(channel, external_id)`. Hai Page có thể cùng nhìn thấy một external

@@ -10508,7 +10508,8 @@ GAN_TAB["ns-vai-tro"] = async (el) => {
  *      cho hạn SLA, câu báo khách ngoài giờ, điều kiện "ngoài giờ" của quy
  *      tắc tự động (agent/core/lich_lam_viec.py).
  *   4. Ngưỡng chung và việc làm khi trễ — ô `cau_hinh_dong` sẵn có
- *      (`data-api-cac-nhom="sla"`, 13-cau-hinh.js vẽ).
+ *      (`#api-nhom-sla` trong index.html, NGOÀI phần bị thay; 13-cau-hinh.js
+ *      vẽ, mô-đun này chỉ gọi nạp).
  *
  * KHÔNG nằm trong vòng làm mới 6 giây: lịch đang sửa dở mà bị dựng lại là
  * mất trắng, rồi người ta bấm Lưu một lịch cũ. Chỉ vẽ lại khi mở tab hoặc
@@ -10609,8 +10610,8 @@ function slaVeLich(d, sua) {
       <td>${esc(x.thu)}</td>
       <td><label><input type="checkbox" data-sla-mo-cua${x.nghi ? "" : " checked"}${sua ? "" : " disabled"}> mở cửa</label></td>
       <td><input type="time" data-sla-gio-mo value="${esc(x.mo || "08:00")}"${sua ? "" : " disabled"}></td>
-      <td><input type="time" data-sla-gio-dong value="${esc(x.dong === "24:00" ? "23:59" : (x.dong || "21:00"))}"
-        data-sla-24="${x.dong === "24:00" ? "1" : ""}"${sua ? "" : " disabled"}></td>
+      <td><input type="time" data-sla-gio-dong value="${esc(x.dong === "24:00" ? "23:59" : (x.dong || "21:00"))}"${
+        sua ? "" : " disabled"}></td>
     </tr>`).join("");
   const le = l.ngay_nghi.map((x) => `<li data-sla-le="${esc(x.ngay)}" data-sla-le-ten="${esc(x.ten)}">
       ${esc(x.ngay)}${x.ten ? ` — ${esc(x.ten)}` : ""}
@@ -10681,10 +10682,9 @@ async function ganSla(el) {
     try { cs = (await api("/routing")).sla_policies || []; } catch { cs = []; }
     try { kenh = await api("/channel-accounts") || []; } catch { kenh = []; }
     el.innerHTML = slaVeMucTieu(d, sua) + slaVeChinhSach(cs, kenh, d.gio_rieng_chinh_sach, sua)
-      + slaVeLich(d, sua)
-      + `<section class="panel"><h2 class="panel__head">Ngưỡng chung và khi trễ hạn
-          <span class="panel__note">ngưỡng chung áp cho mục tiêu không đặt ngưỡng riêng</span></h2>
-          <div class="rows" data-api-cac-nhom="sla"><p class="empty">Đang tải…</p></div></section>`;
+      + slaVeLich(d, sua);
+    /* Ô ngưỡng chung / khi trễ (`#api-nhom-sla`) nằm NGOÀI phần bị thay
+       (index.html) — vòng làm mới không nạp nó khi mô-đun đã gắn, nên nạp ở đây. */
     try { await loadCaiDatApi(); } catch (e) { toast(e.message, true); }
   };
   const ketQua = (sel, chu, loi = false) => {

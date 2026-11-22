@@ -959,10 +959,7 @@
           </section>
 
           <!-- Nội dung DỰ PHÒNG: tab này do dashboard/src/26-sla.js vẽ (GAN_TAB
-               "cc-sla") — mục tiêu SLA, lịch làm việc chung, ngưỡng cảnh báo.
-               Khối "Khi trễ hạn" (ô cấu hình nhóm sla) chỉ nằm ở mô-đun ấy:
-               hai ô cùng nhóm trong một trang là nút Lưu gom nhầm giá trị của
-               ô bị ẩn. -->
+               "cc-sla") — mục tiêu SLA, hạn theo kênh, lịch làm việc chung. -->
           <section class="panel">
             <h2 class="panel__head">Giờ làm việc chung</h2>
             <p class="panel__note">
@@ -971,6 +968,14 @@
             </p>
           </section>
         </div>
+        <!-- NGOÀI .tab__goc: ở lại khi mô-đun 26-sla.js gắn vào, nên ngưỡng
+             chung và việc làm khi trễ chỉ có MỘT ô trong trang — hai ô cùng
+             nhóm là nút Lưu gom nhầm giá trị của ô bị ẩn. -->
+        <section class="panel">
+          <h2 class="panel__head">Ngưỡng cảnh báo chung và khi trễ hạn SLA
+            <span class="panel__note">ngưỡng chung áp cho mục tiêu không đặt ngưỡng riêng</span></h2>
+          <div id="api-nhom-sla" class="rows" data-api-cac-nhom="sla"><p class="empty">Đang tải…</p></div>
+        </section>
       </section>
       <section class="tabpanel" id="cc-dieu-phoi" data-gan="cc-dieu-phoi" role="tabpanel" hidden>
         <div class="tab__goc">

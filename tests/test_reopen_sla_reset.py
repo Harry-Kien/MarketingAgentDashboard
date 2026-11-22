@@ -240,6 +240,10 @@ def test_reopen_does_not_create_immediate_false_breach(reopen_case: ReopenCase):
         # Thêm 20.11.2026: cảnh báo hạn giải quyết và nâng ưu tiên khi trễ —
         # hội thoại vừa mở lại cũng không được kích hoạt hai thứ ấy.
         "resolution_warning": 0,
+        # Thêm 22.11.2026 (0062): lượt phản hồi sau chuyển giao.
+        "chuyen_giao_mo": 0,
+        "chuyen_giao_canh_bao": 0,
+        "chuyen_giao_tre": 0,
         "nang_uu_tien": 0,
     }
     breach_count = asyncio.run(

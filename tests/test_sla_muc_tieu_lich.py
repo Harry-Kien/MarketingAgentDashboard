@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
@@ -28,12 +29,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from conftest import nguoi_thu
-from test_phan_tich_va_sla import (
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from tests.conftest import nguoi_thu  # noqa: E402
+from tests.test_phan_tich_va_sla import (  # noqa: E402
     LUOC_DO, NV, QT, _chay, _codec, _hoi_thoai, _kenh, _nguoi, _schema, _tin,
 )
-
-ROOT = Path(__file__).resolve().parent.parent
 VN = timezone(timedelta(hours=7))
 
 
@@ -586,12 +588,15 @@ def test_phan_tich_muc_tieu_chuyen_giao_va_giai_quyet_ai_nhan_vien(csdl_kiem_thu
 def test_giao_dien_sla_gan_tab_va_khong_trung_o_cau_hinh():
     js = (ROOT / "dashboard" / "src" / "26-sla.js").read_text(encoding="utf-8")
     assert 'window.GAN_TAB["cc-sla"]' in js
-    assert 'data-api-cac-nhom="sla"' in js, "ngưỡng chung và khi trễ hiện trong tab SLA"
     assert "/sla/lich-lam-viec" in js and "/sla/muc-tieu" in js and "handover_response_minutes" in js
+    assert "loadCaiDatApi()" in js, "mô-đun đã gắn thì vòng làm mới không nạp ô ngưỡng chung"
     assert len(js.splitlines()) <= 1000
-    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
     # Hai ô cùng nhóm trong một trang: nút Lưu gom cả giá trị của ô bị ẩn.
-    assert 'data-api-cac-nhom="sla"' not in html
+    # Ô duy nhất nằm NGOÀI .tab__goc của cc-sla để còn hiện khi mô-đun gắn vào.
+    assert 'data-api-cac-nhom="sla"' not in js
+    # (test_cay_menu canh ô ấy nằm ngoài .tab__goc của cc-sla.)
+    html = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert html.count('data-api-cac-nhom="sla"') == 1
     vong = (ROOT / "dashboard" / "src" / "10-vong-lam-moi.js").read_text(encoding="utf-8")
     assert vong.count("sla.handover_response_breached") == 2
     # Không thêm SLA thường trực vào khung hội thoại (phiếu việc 15.7).

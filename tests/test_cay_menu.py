@@ -232,9 +232,7 @@ def test_ten_man_cu_van_dan_toi_dung_tab():
     ("cc-nhan", ["truong-ds"]),
     ("cc-tu-dong", ["mauNhanhDs", "qtDs", "qtForm"]),
     ("cc-ket-noi", ["connectiongrid", "kn-dieukien", "kn-suckhoe", "api-panel", "erpthu", "tichhop-ds"]),
-    # Ngưỡng cảnh báo / khi trễ (`data-api-cac-nhom="sla"`) chuyển vào mô-đun
-    # 26-sla.js — test_sla_muc_tieu_lich canh nó ở đó.
-    ("cc-sla", ["dtSla", "dtFormSla"]),
+    ("cc-sla", ["dtSla", "dtFormSla", "api-nhom-sla"]),
     ("cc-dieu-phoi", ["dtDoi", "dtLuat", "dtFormNguoi"]),
     ("ai-co-ban", ["aiBat", "cauhinh-ds", "cauhinh-lichsu", "hsa-ds", "api-nhom-model"]),
     ("ai-tri-thuc", ["docform", "docs", "probeform"]),
@@ -259,7 +257,9 @@ def test_khoi_luon_o_lai_nam_ngoai_phan_bi_thay():
     hay Nhân sự vào là chúng biến mất mà không ai thay.
     """
     for tid, oid in [("cc-ket-noi", "connectiongrid"), ("ns-nhan-vien", "lcPanel"),
-                     ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat")]:
+                     ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat"),
+                     # Ngưỡng SLA chung / khi trễ: mô-đun 26-sla.js thay .tab__goc.
+                     ("cc-sla", "api-nhom-sla")]:
         t = _tab(tid)
         i = t.index(f'id="{oid}"')
         if 'class="tab__goc"' in t:

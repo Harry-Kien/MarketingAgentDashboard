@@ -61,6 +61,11 @@ def test_ghi_ngoai_sandbox_chua_cho_phep_thi_chuyen_nguoi(san, monkeypatch):
 
 
 def test_ghi_da_cho_phep_thi_goi_that(san, monkeypatch):
+    # Chế độ Tự động: ở Gợi ý công cụ ghi bị chặn (tests/test_uy_quyen_ai.py).
+    from agent import runtime
+
+    monkeypatch.setitem(runtime.STATE, "mode", "auto")
+
     async def tim(ten): return _bm(ghi=True, ghi_cho_phep=True)
     monkeypatch.setattr(kho_ky_nang, "tim_plugin", tim)
     kq = chay(tools.run_tool("mcp_kho_ghi_don", {"ma": "x"}))

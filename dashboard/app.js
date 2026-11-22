@@ -11702,7 +11702,9 @@ function dxDongChinhSach(h, sua) {
         <input type="number" min="0" step="1000" data-dx-nguong="${esc(h.ma)}" value="${esc(h.nguong_vnd ?? "")}"${
           sua ? "" : " disabled"}></label>`
     : "";
+  const co = !h.ho_tro ? "plain" : h.muc === "tu_dong" ? "auto" : h.muc === "co_phe_duyet" ? "assist" : "halt";
   return `<div class="row dx-cs">
+    <span class="row__flag row__flag--${co}"></span>
     <div class="row__body">
       <b>${esc(h.ten)}</b>${h.da_doi ? ' <span class="tag tag--plain">đã đổi</span>' : ""}
       <p class="row__sub">${esc(h.mo_ta)}</p>

@@ -814,7 +814,8 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
             return await uy_quyen.chan_chuyen_nguoi(
                 name, f"Chính sách ủy quyền: AI không được «{uy_quyen.DANH_MUC[quyet.hanh_dong].ten}»",
                 conversation_id, hanh_dong=quyet.hanh_dong, muc_uy_quyen=quyet.muc)
-    elif loai_cc == "mcp_ghi":
+    elif loai_cc == "mcp_ghi" and not thu_nghiem.dang_thu.get():
+        # Phòng thử: nhánh plugin dưới đây tự mô phỏng, không gọi máy chủ.
         che_do, ly_do = await uy_quyen.che_do_hieu_luc(conversation_id)
         if che_do == "goi_y":
             # Không có đường thi hành kiểm lại được cho công cụ ngoài, nên

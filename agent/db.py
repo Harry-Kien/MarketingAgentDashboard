@@ -8,6 +8,7 @@ from typing import Any
 import asyncpg
 
 from agent.config import settings
+from agent.core import luot_ai
 from agent.migrations.runner import apply_all
 
 _pool: asyncpg.Pool | None = None
@@ -99,6 +100,9 @@ async def execute(sql: str, *args: Any) -> str:
 
 async def log_event(kind: str, *, actor: str = "system", ref_id=None, **detail) -> None:
     """Ghi nhật ký kiểm toán. Không bao giờ để lỗi log làm hỏng luồng chính."""
+    # Trong một lượt AI, mọi dòng tự mang mã lượt — nơi ghi không phải nhớ.
+    # Xem agent/core/luot_ai.py.
+    detail = luot_ai.gan_vao(detail, ref_id)
     try:
         await execute(
             "INSERT INTO events (kind, actor, ref_id, detail) VALUES ($1,$2,$3,$4)",

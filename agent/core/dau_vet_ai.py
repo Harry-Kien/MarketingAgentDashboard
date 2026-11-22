@@ -80,7 +80,7 @@ def _nhan_luoi(ma: str | None) -> tuple[str, bool]:
 
 
 def dung(reply: Any, *, ho_so: Any, che_do_chung: str, duyet_rieng: bool,
-         tu_gui: bool) -> dict[str, Any]:
+         tu_gui: bool, luot: dict[str, str] | None = None) -> dict[str, Any]:
     """
     Dựng dấu vết từ `Reply` + những gì chỉ tầng kênh biết (hồ sơ, chế độ).
 
@@ -128,6 +128,13 @@ def dung(reply: Any, *, ho_so: Any, che_do_chung: str, duyet_rieng: bool,
         "latency_ms": int(getattr(reply, "latency_ms", 0) or 0),
         "so_vong": len(getattr(reply, "vong", None) or []),
     }
+    # Mã lượt (agent/core/luot_ai.py): nối tin này với MỌI dòng nhật ký của
+    # cùng lượt — tin khách, tra tài liệu, công cụ, đơn đã lên — để màn Nhật
+    # ký mở được cả lượt từ một tin, và ngược lại.
+    if luot:
+        dv["luot_id"] = luot.get("luot_id")
+        if luot.get("tin_vao_id"):
+            dv["tin_vao_id"] = luot["tin_vao_id"]
     return gioi_han(dv)
 
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from agent import db, runtime
 from agent.channels import registry as channels
 from agent.config import settings
+from agent.core import nhat_ky_kiem_toan
 
 from .phu_thuoc import (
     _num,
@@ -298,7 +299,9 @@ async def recent_events(limit: int = 50, _quyen: dict = Depends(can_quyen("nhat_
             "kind": r["kind"],
             "actor": r["actor"],
             "ref_id": str(r["ref_id"]) if r["ref_id"] else None,
-            "detail": r["detail"],
+            # Làm sạch lúc ĐỌC (phiếu việc mục 18 điểm 13): dòng cũ ghi trước
+            # khi có quy tắc che vẫn nằm trong bảng.
+            "detail": nhat_ky_kiem_toan.lam_sach(r["detail"]),
             "at": r["created_at"].isoformat(),
         }
         for r in rows

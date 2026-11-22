@@ -180,6 +180,7 @@ function veChiTietHoiThoai(c, laCuaToi) {
   return `<section class="lichsu" aria-label="Chi tiết hội thoại">
     ${dongCT("Người đang giữ", giu)}
     <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
+    ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
   </section>`;
 }
 

@@ -229,6 +229,11 @@ def test_migration_khong_nhac_quyen_da_bien_mat():
         if "vai_tro_quyen" not in noi_dung:
             continue
         for ma in re.findall(r"'([a-z_]+\.[a-z_]+)'", noi_dung):
+            # `cskh.*` là BIẾN PHIÊN Postgres (`SET LOCAL cskh.cho_xoa_nhat_ky`,
+            # migration 0064), cùng hình dạng nhưng không phải quyền. Không
+            # quyền nào được mang tiền tố này — test_nhat_ky_kiem_toan canh.
+            if ma.startswith("cskh."):
+                continue
             # Tên đã gỡ CÓ KHAI trong `QUYEN_DA_GO` thì được còn trong
             # migration cũ (đã chốt checksum). Biến mất mà không khai mới là lỗi.
             assert ma in quyen.QUYEN or ma in quyen.QUYEN_DA_GO, (

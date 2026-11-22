@@ -24,8 +24,8 @@ from agent.channels.base import InboundMessage
 from agent.config import settings
 from agent.core import agent as brain
 from agent.core import (
-    agent_bat, agent_ho_so, anh_khach, dau_vet_ai, gio_lam_viec, thong_bao_noi_bo,
-    tu_nhien,
+    agent_bat, agent_ho_so, anh_khach, dau_vet_ai, gio_lam_viec, luot_ai,
+    thong_bao_noi_bo, tu_nhien,
 )
 from agent.omnichannel import giai_quyet, thong_bao_ai, tu_dong
 from agent.omnichannel.inbox_service import InboxService, PostgresInboxRepository
@@ -183,6 +183,7 @@ async def _xu_ly_binh_luan(msg, cid: uuid.UUID) -> None:
         comment_id=meta.get("comment_id"), chi_tiet=chi_tiet or None)
 
 
+@luot_ai.pham_vi_luot
 async def handle_inbound(msg: InboundMessage) -> None:
     """Toàn bộ luồng xử lý một tin nhắn đến."""
     # ĐỌC: ══ ĐIỂM VÀO CỦA MỌI TIN NHẮN, MỌI KÊNH ═══════════════════════════
@@ -361,6 +362,13 @@ async def handle_inbound(msg: InboundMessage) -> None:
             await adapter_bao_nguoi(msg, cid)
         return
 
+    # TỪ ĐÂY LÀ MỘT LƯỢT AI: mọi dòng nhật ký bên dưới — tra tài liệu, gọi
+    # công cụ, lên đơn, chuyển người, trả lời — mang chung một `luot_id`
+    # (agent/core/luot_ai.py). Mở ở đây chứ không sớm hơn: các nhánh phía
+    # trên là hệ thống quyết định, AI chưa chạy. Đóng lượt: decorator
+    # `pham_vi_luot` của hàm này, ở MỌI lối ra.
+    luot_ai.bat_dau(cid, getattr(ingested, "message_id", None))
+
     # Agent SẮP trả lời: báo khách đang nói với trợ lý AI (một lần mỗi hội
     # thoại). Đặt ở đây chứ không sớm hơn: các nhánh phía trên đều là lúc
     # NGƯỜI tiếp khách, và "em là trợ lý AI" khi ấy là nói sai.
@@ -462,7 +470,7 @@ async def handle_inbound(msg: InboundMessage) -> None:
     try:
         dau_vet: dict | None = dau_vet_ai.dung(
             reply, ho_so=ho_so, che_do_chung=che_do_chung,
-            duyet_rieng=co_duyet_rieng, tu_gui=gui_thang)
+            duyet_rieng=co_duyet_rieng, tu_gui=gui_thang, luot=luot_ai.hien_tai())
     except Exception as exc:  # noqa: BLE001 — dấu vết không được chặn câu trả lời
         dau_vet = None
         await db.log_event("dau_vet_ai.loi", ref_id=cid,
@@ -608,6 +616,14 @@ async def handle_inbound(msg: InboundMessage) -> None:
         1 if stored_draft else 0,
     )
 
+    # KẾT QUẢ LƯỢT — một dòng nhật ký. Trước bản này "AI đã tự gửi" và "AI
+    # đã soạn nháp" là hai việc quan trọng nhất của AI mà KHÔNG để lại dòng
+    # nhật ký nào: chỉ lần ra được bằng cách đọc bảng tin nhắn.
+    if queued_parts:
+        await _ghi_ket_qua_luot(cid, reply, "ai.tu_gui", dau_vet, len(queued_parts))
+    elif stored_draft and (reply.text or "").strip():
+        await _ghi_ket_qua_luot(cid, reply, "ai.soan_nhap", dau_vet, 1)
+
     # Bản nháp nằm chờ người duyệt (chế độ Gợi ý, hoặc xếp hàng gửi hỏng):
     # báo người duyệt. Không báo thì nháp chỉ hiện ra khi có ai tình cờ mở
     # đúng hội thoại, còn khách thì chờ. Nhánh chuyển người ngay dưới tự báo
@@ -626,6 +642,43 @@ async def handle_inbound(msg: InboundMessage) -> None:
             reply.escalate_reason or "agent không xử lý được",
             tom_tat=msg.text[:200],
         )
+
+
+async def _ghi_ket_qua_luot(cid: uuid.UUID, reply, kind: str,
+                            dau_vet: dict | None, so_tin: int) -> None:
+    """
+    Dòng nhật ký kết quả của lượt AI: chế độ, căn cứ, lưới, có chuyển người.
+
+    Ghi SỐ ĐO và NHÃN, không chép câu trả lời: `events` không phải chỗ nhân
+    bản chữ gửi khách (xem `tin_nhan.sua_ban_nhap`). Câu trả lời và căn cứ
+    đầy đủ nằm ở `messages.dau_vet_ai`, nối về đây bằng `luot_id`.
+
+    `muc_uy_quyen` để trống có chủ ý: mức uỷ quyền của AI (phiếu việc mục 17)
+    chưa có. Khoá có sẵn để màn Nhật ký có cột, và bản sau chỉ việc điền.
+    """
+    try:
+        dv = dau_vet or {}
+        che_do = dv.get("che_do") or {}
+        detail = {
+            "che_do": che_do.get("chung") or runtime.mode(),
+            "duyet_rieng": bool(che_do.get("duyet_rieng")),
+            "ho_so": (dv.get("ho_so") or {}).get("ten"),
+            "diem_tin_cay": round(float(getattr(reply, "confidence", 0) or 0), 3),
+            "nguong": (dv.get("tin_cay") or {}).get("nguong"),
+            "co_can_cu": bool(getattr(reply, "grounded", False)),
+            "luoi": getattr(reply, "luoi_bat", None),
+            "chuyen_nguoi": bool(getattr(reply, "escalate", False)),
+            "cong_cu": [str(c.get("ten", "")) for c in
+                        list(getattr(reply, "cong_cu", None) or [])[:8]
+                        if isinstance(c, dict)],
+            "so_tin": so_tin,
+            "model": getattr(reply, "model", "") or "",
+            "cost_usd": float(getattr(reply, "cost_usd", 0) or 0),
+            "muc_uy_quyen": None,
+        }
+    except Exception as exc:  # noqa: BLE001 — nhật ký không được chặn lượt trả lời
+        detail = {"loi_dung_chi_tiet": f"{type(exc).__name__}: {exc}"[:200]}
+    await db.log_event(kind, actor="agent", ref_id=cid, **detail)
 
 
 LY_DO_TIN_NHOM = "Tin trong nhóm Zalo — AI không trả lời trong nhóm, cần nhân viên xem."

@@ -203,18 +203,23 @@ async function loadConversations() {
 async function loadThread(id) {
   let c;
   let ghiChu = [];
+  let deXuat = [];
   try {
-    [c, ghiChu] = await Promise.all([
+    /* Thẻ đề xuất hành động của AI (mục 17) xen trong luồng như ghi chú —
+     * hỏng thì luồng tin vẫn hiện, chỉ thiếu thẻ. */
+    [c, ghiChu, deXuat] = await Promise.all([
       api("/inbox/conversations/" + id),
       api(`/inbox/conversations/${id}/ghi-chu`).then((r) => r.ghi_chu).catch(() => []),
+      api(`/ai-de-xuat?hoi_thoai=${encodeURIComponent(id)}`).then((r) => r.de_xuat).catch(() => []),
     ]);
   }
   catch { $("#convdetail").innerHTML = '<p class="empty">Không tìm thấy hội thoại.</p>'; return; }
 
   const nhom = laNhom(c);
   /* Ghi chú nội bộ nằm XEN trong luồng theo thời gian — xem `xenGhiChu`. */
-  const msgs = xenGhiChu(c.messages, ghiChu).map((muc) => {
+  const msgs = xenGhiChu(c.messages, ghiChu, deXuat).map((muc) => {
     if (muc.loai === "ghichu") return veGhiChuTrongLuong(muc.g);
+    if (muc.loai === "dexuat") return veTheDeXuat(muc.d);
     const m = muc.m;
     const draft = m.role === "agent" && m.delivery_status === "draft";
     /* Trong nhóm, "Khách" không nói được ai gõ câu nào: tên trên đầu hội
@@ -309,7 +314,8 @@ async function loadThread(id) {
         ${banGoc}
         ${nutChiTietTin(m, draft)}
         ${draft && !dangSua && nutDuyetDuoc() ? `<button type="button" class="btn btn--sm" data-edit="${m.id}">Sửa</button>
-          <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>` : ""}
+          <button type="button" class="btn btn--sm btn--go" data-approve="${m.id}">Duyệt và gửi</button>
+          <button type="button" class="btn btn--sm btn--ghost" data-tu-choi-nhap="${m.id}">Từ chối</button>` : ""}
       </div>
       ${veChiTietTin(m, draft)}
     </div>`;

@@ -2051,6 +2051,27 @@ svg { flex: none; }
   display: block; margin-bottom: 2px; font-size: 11px; font-weight: 600;
   color: hsl(var(--warning));
 }
+/* Thẻ ĐỀ XUẤT hành động của AI (mục 17): cũng giữa khung như ghi chú nội bộ,
+ * nhưng viền liền màu chủ đạo — đây là việc chờ quyết, không phải lời nhắn.
+ * Không bao giờ được trông giống bong bóng đã gửi cho khách. */
+.msg--dexuat { align-self: center; align-items: stretch; width: min(560px, 94%); max-width: 94%; }
+.dx-the {
+  border: 1.5px solid hsl(var(--primary) / .55); border-left-width: 4px;
+  border-radius: var(--radius); background: hsl(var(--primary) / .05);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+}
+.dx-the__dau { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dx-the__nhan { font-size: 11px; font-weight: 600; color: hsl(var(--primary)); }
+.dx-the__tieu { font-size: 14px; }
+.dx-the__hai { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .dx-the__hai { grid-template-columns: 1fr; } }
+.dx-the .msg__meta { flex-wrap: wrap; gap: 6px; }
+.ctt__canh {
+  border-left: 3px solid hsl(var(--warning)); padding: 4px 8px; margin: 4px 0;
+  background: hsl(var(--warning) / .08);
+}
+.dx-cs .row__aside select { min-width: 150px; }
+.dx-nguong, .dx-han { max-width: 320px; }
 
 /* ---------------- Trách nhiệm trong hội thoại ---------------- */
 /* Bộ lọc dạng ô chọn: xuống dòng ở 375px thay vì đẩy trang tràn ngang. */

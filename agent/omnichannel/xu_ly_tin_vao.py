@@ -638,6 +638,16 @@ async def handle_inbound(msg: InboundMessage) -> None:
     elif stored_draft and (reply.text or "").strip():
         await _ghi_ket_qua_luot(cid, reply, "ai.soan_nhap", dau_vet, 1)
 
+    # Đề xuất hành động lượt này sinh ra (mục 17) trỏ về đúng tin AI vừa lưu,
+    # để thẻ đề xuất mở được "Xem căn cứ" của lượt ấy.
+    de_xuat_ids = [c["ket_qua"]["de_xuat_id"] for c in (getattr(reply, "cong_cu", None) or [])
+                   if isinstance(c, dict) and isinstance(c.get("ket_qua"), dict)
+                   and c["ket_qua"].get("de_xuat_id")]
+    if de_xuat_ids:
+        from agent.core import uy_quyen
+
+        await uy_quyen.gan_tin_nhan(cid, de_xuat_ids)
+
     # Bản nháp nằm chờ người duyệt (chế độ Gợi ý, hoặc xếp hàng gửi hỏng):
     # báo người duyệt. Không báo thì nháp chỉ hiện ra khi có ai tình cờ mở
     # đúng hội thoại, còn khách thì chờ. Nhánh chuyển người ngay dưới tự báo

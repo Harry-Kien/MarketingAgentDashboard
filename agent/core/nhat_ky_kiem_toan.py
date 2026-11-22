@@ -584,9 +584,11 @@ TRANG_THAI_DE_XUAT = {
     "da_duyet": "Đã duyệt",
     "da_sua_va_duyet": "Đã sửa rồi duyệt",
     "da_sua": "Đã sửa",
-    # Chưa có đường từ chối bản nháp; mã giữ chỗ để mục 17 (phê duyệt hành
-    # động AI) ghi vào cùng hình dạng mà màn hình không phải đổi.
     "tu_choi": "Từ chối",
+    # Vòng đời đề xuất HÀNH ĐỘNG AI (bảng ai_de_xuat, 0065).
+    "da_thuc_hien": "Đã thực hiện",
+    "loi": "Duyệt nhưng thực hiện lỗi",
+    "het_han": "Hết hạn",
 }
 
 _SQL_TT_DE_XUAT = """CASE
@@ -648,8 +650,57 @@ async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = 
         "luc_sua": r["sua_luc"].isoformat() if r.get("sua_luc") else None,
         "muc_uy_quyen": None,
     } for r in rows[:limit]]
+    # Nguồn thứ hai: đề xuất HÀNH ĐỘNG của AI (lên đơn, huỷ đơn — bảng
+    # ai_de_xuat, mục 17). Cùng hình dạng bản ghi, trộn theo thời gian; mỗi
+    # nguồn lấy limit+1 nên trang sau không hụt dòng của nguồn nào.
+    items.extend(await _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, limit + 1, mat_na))
+    items.sort(key=lambda x: x["luc_de_xuat"], reverse=True)
+    con_nua = len(items) > limit or len(rows) > limit
+    items = items[:limit]
     return {"items": items,
-            "next_cursor": items[-1]["luc_de_xuat"] if len(rows) > limit and items else None}
+            "next_cursor": items[-1]["luc_de_xuat"] if con_nua and items else None}
+
+
+async def _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, gioi_han: int,
+                             mat_na) -> list[dict[str, Any]]:
+    dk: list[str] = ["TRUE"]
+    ts: list[Any] = []
+    if hoi_thoai_id is not None:
+        ts.append(hoi_thoai_id)
+        dk.append(f"d.conversation_id = ${len(ts)}")
+    if trang_thai:
+        ts.append(trang_thai)
+        dk.append(f"d.trang_thai = ${len(ts)}")
+    if truoc is not None:
+        ts.append(truoc)
+        dk.append(f"d.tao_luc < ${len(ts)}")
+    ts.append(gioi_han)
+    rows = await db.fetch(
+        "SELECT d.id, d.conversation_id, d.hanh_dong, d.trang_thai, d.muc_uy_quyen, "
+        "       d.tao_luc, d.de_xuat ->> 'tieu_de' AS tieu_de, "
+        "       COALESCE(d.duyet_luc, d.tu_choi_luc) AS luc_quyet, "
+        "       m.dau_vet_ai ->> 'luot_id' AS luot_id, "
+        "       (SELECT COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) FROM nguoi_dung "
+        "         WHERE id = COALESCE(d.duyet_boi, d.tu_choi_boi)) AS nguoi_quyet "
+        "  FROM ai_de_xuat d LEFT JOIN messages m ON m.id = d.message_id "
+        f" WHERE {' AND '.join(dk)} ORDER BY d.tao_luc DESC, d.id DESC LIMIT ${len(ts)}", *ts)
+    return [{
+        "id": str(r["id"]),
+        "nguon": "hanh_dong_ai",
+        "loai": r["hanh_dong"],
+        "hoi_thoai_id": str(r["conversation_id"]),
+        "luot_id": r.get("luot_id"),
+        "de_xuat_boi": {"loai": "ai", "ten": "AI"},
+        "tom_tat": lam_sach((r.get("tieu_de") or r["hanh_dong"])[:200], _mat_na=mat_na),
+        "luc_de_xuat": r["tao_luc"].isoformat(),
+        "trang_thai": {"ma": r["trang_thai"],
+                       "nhan": TRANG_THAI_DE_XUAT.get(r["trang_thai"], r["trang_thai"])},
+        "nguoi_quyet": r.get("nguoi_quyet"),
+        "luc_quyet": r["luc_quyet"].isoformat() if r.get("luc_quyet") else None,
+        "nguoi_sua": None,
+        "luc_sua": None,
+        "muc_uy_quyen": r["muc_uy_quyen"],
+    } for r in rows]
 
 
 # =====================================================================

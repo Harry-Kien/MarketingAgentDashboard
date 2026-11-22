@@ -362,6 +362,12 @@ def _xoa_bo_dem_gioi_han():
     import sys
 
     yield
+    # Đệm chính sách ủy quyền AI (30 giây) cũng sống xuyên test, mà mỗi test
+    # Postgres là một CSDL khác: không xoá thì mức một test vừa đặt lọt sang
+    # test sau, và test ấy xanh/đỏ theo thứ tự chạy.
+    uq = sys.modules.get("agent.core.uy_quyen")
+    if uq is not None:
+        uq.xoa_dem()
     mod = sys.modules.get("agent.api.webchat")
     if mod is not None:
         for ten in ("GH_PHIEN_THEO_IP", "GH_TIN_THEO_KHACH", "GH_TIN_THEO_IP", "_GH_GHI_NHAT_KY"):

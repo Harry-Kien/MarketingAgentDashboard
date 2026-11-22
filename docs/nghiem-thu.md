@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-22 15:04 UTC trên commit `e025289`. **21/21 kịch bản đạt.**
+Chạy lúc 2026-11-22 15:13 UTC trên commit `b737966`. **22/22 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -29,6 +29,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 19 | Đổi ưu tiên hội thoại và xem màn Phân tích | đạt |
 | 20 | Quản lý nhãn: hai loại độc lập, gắn đúng màn, ngừng thay vì xoá | đạt |
 | 21 | Hệ thống giao việc: phân công theo ca trực, chuyển việc, tiến độ, kết quả, lịch sử, chuông | đạt |
+| 22 | Ba mức ủy quyền thực thi của AI: chế độ Gợi ý không tự làm, phê duyệt có kiểm lại | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -243,3 +244,15 @@ Kết quả: **đạt** · `test_21_he_thong_giao_viec_theo_ca_chuyen_viec_va_li
 4. "minh" ghi tiến độ rồi hoàn thành kèm kết quả → chi tiết việc có đủ lịch sử: tạo, phân công tự động, chuyển, tiến độ, đổi trạng thái, kết quả.
 5. Quản trị hủy việc còn lại của "minh" → "minh" có chuông "Việc bị hủy".
 6. Tổng quan ca trực đếm đúng (1 chưa phân công, 1 hoàn thành hôm nay); lọc "Chưa phân công" ra đúng việc ở bước 1.
+
+## 22. Ba mức ủy quyền thực thi của AI: chế độ Gợi ý không tự làm, phê duyệt có kiểm lại
+
+Kết quả: **đạt** · `test_22_uy_quyen_ai_de_xuat_va_phe_duyet`
+
+1. Cấu hình AI Agent → Chính sách & Ủy quyền: tạo đơn mặc định «Tự động», huỷ đơn «Có phê duyệt», hoàn tiền «Chưa hỗ trợ»; nhân viên không sửa được (403).
+2. Chế độ Gợi ý: AI chốt đơn với khách → KHÔNG có đơn nào, kho không bị giữ; hội thoại có thẻ «Tạo đơn» chờ duyệt kèm căn cứ (giá danh mục, tồn sống) và rủi ro.
+3. Quản trị có chuông «AI đề xuất», bấm vào mở đúng hội thoại.
+4. Nhân viên thuộc kênh (có duyệt AI, KHÔNG có quyền sửa đơn) bấm Phê duyệt → 403.
+5. Quản trị Phê duyệt → hệ thống lên đơn lại từ đầu → đơn «Đã chốt»; bấm lần hai → 409, không có đơn thứ hai.
+6. Chế độ Tự động: khách xin huỷ → đơn KHÔNG bị huỷ, có thẻ «Huỷ đơn» chờ duyệt; quản trị Từ chối kèm lý do → đơn giữ nguyên.
+7. Nhật ký kiểm toán có đủ ai.de_xuat.tao / duyet / thuc_hien / tu_choi gắn với hội thoại.

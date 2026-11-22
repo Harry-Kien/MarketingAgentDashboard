@@ -75,8 +75,11 @@ def test_huy_don_tra_hang_ve_kho():
     Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
     huỷ chín đơn là kho báo hết trong khi hàng nằm nguyên trên kệ.
     """
-    src = inspect.getsource(routes.cancel_order)
-    assert "kho.tra_hang" in src
+    from agent.core import thao_tac_don
+
+    # Luật huỷ nằm MỘT chỗ, dùng chung cho nút Huỷ và đề xuất huỷ của AI.
+    assert "thao_tac_don.huy_don" in inspect.getsource(routes.cancel_order)
+    assert "kho.tra_hang" in inspect.getsource(thao_tac_don.huy_don)
 
 
 def test_khong_tra_trung():
@@ -94,7 +97,9 @@ def test_tra_hang_doc_tu_so_khong_doc_tu_don():
 
 
 def test_huy_don_hai_lan_khong_tra_kho_hai_lan():
-    src = inspect.getsource(routes.cancel_order)
+    from agent.core import thao_tac_don
+
+    src = inspect.getsource(thao_tac_don.huy_don)
     assert "trang_thai <> 'da_huy'" in src, (
         "huỷ lại đơn đã huỷ sẽ trả kho lần nữa và thổi phồng tồn kho"
     )

@@ -512,6 +512,32 @@ def test_de_xuat_co_hinh_dang_on_dinh(csdl):
     _chay(kiem)
 
 
+def test_de_xuat_gom_ca_hanh_dong_ai_cung_hinh_dang(csdl):
+    """Mục 17 ghi đề xuất HÀNH ĐỘNG vào ai_de_xuat — màn nhật ký phải thấy chúng."""
+    from agent import db
+    from agent.core import nhat_ky_kiem_toan as nk
+
+    async def kiem():
+        cid = await _hoi_thoai()
+        await db.execute(
+            "INSERT INTO ai_de_xuat (conversation_id, hanh_dong, che_do_ai, muc_uy_quyen, "
+            " ly_do_can_duyet, de_xuat, khoa_trung, het_han_luc) "
+            "VALUES ($1, 'huy_don', 'tu_dong', 'co_phe_duyet', 'chinh_sach', $2, 'k1', "
+            " now() + interval '1 day')", cid, {"tieu_de": "Huỷ đơn DH1"})
+        kq = await nk.de_xuat(hoi_thoai_id=cid)
+        hd = [i for i in kq["items"] if i["nguon"] == "hanh_dong_ai"]
+        assert len(hd) == 1 and hd[0]["loai"] == "huy_don"
+        assert hd[0]["muc_uy_quyen"] == "co_phe_duyet"
+        assert hd[0]["trang_thai"]["ma"] == "cho_duyet" and hd[0]["tom_tat"] == "Huỷ đơn DH1"
+        khoa = {"id", "nguon", "loai", "hoi_thoai_id", "luot_id", "de_xuat_boi", "tom_tat",
+                "luc_de_xuat", "trang_thai", "nguoi_quyet", "luc_quyet", "nguoi_sua",
+                "luc_sua", "muc_uy_quyen"}
+        assert set(hd[0]) == khoa
+        assert (await nk.de_xuat(hoi_thoai_id=cid, trang_thai="tu_choi"))["items"] == []
+
+    _chay(kiem)
+
+
 # =====================================================================
 #  App đầy đủ: quyền và che trên đường HTTP thật
 # =====================================================================

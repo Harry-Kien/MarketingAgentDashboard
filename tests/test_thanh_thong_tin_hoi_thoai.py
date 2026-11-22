@@ -298,7 +298,7 @@ console.log(JSON.stringify(xenGhiChu(tin, ghi).map((x) => x.loai === "tin" ? x.m
     # Ai viết, lúc nào, và nói rõ khách không thấy.
     assert "g.nguoi" in ve and "gioTin(g.tao_luc)" in ve and "khách không thấy" in ve
     assert "esc(g.noi_dung)" in ve
-    assert "xenGhiChu(c.messages, ghiChu)" in HOI_THOAI
+    assert "xenGhiChu(c.messages, ghiChu, deXuat)" in HOI_THOAI
 
 
 # ============================================================ 9.5 danh sách: nhóm, người gửi tin cuối

@@ -624,8 +624,9 @@ def test_quan_ly_nhan_dang_ky_mo_dun_va_khung_tab_co_khe():
 
 def test_dau_hoi_thoai_chi_co_nhan_hoi_thoai():
     """Mục 6.3/6.4: nhãn khách KHÔNG nằm ở đầu hội thoại, chỉ ở Customer 360."""
-    ht = _src("03-hoi-thoai.js")
-    assert "${nhanHoiThoaiHtml(c)}" in ht
+    # Thanh thông tin hội thoại tách sang 03b (phiếu việc mục 6).
+    ht = _src("03-hoi-thoai.js") + _src("03b-thanh-hoi-thoai.js")
+    assert "${nhanHoiThoaiHtml(c)}" in _src("03b-thanh-hoi-thoai.js")
     assert "nhanKhachHtml" not in ht
     assert "${nhanKhachHtml(contact)}" in _src("04-khach-hang.js")
     nhan = _src("21-nhan.js")

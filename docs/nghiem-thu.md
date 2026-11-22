@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-22 08:58 UTC trên commit `cb6c324`. **20/20 kịch bản đạt.**
+Chạy lúc 2026-11-22 14:29 UTC trên commit `8211cf3`. **21/21 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -28,6 +28,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 18 | Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025) | đạt |
 | 19 | Đổi ưu tiên hội thoại và xem màn Phân tích | đạt |
 | 20 | Quản lý nhãn: hai loại độc lập, gắn đúng màn, ngừng thay vì xoá | đạt |
+| 21 | Hệ thống giao việc: phân công theo ca trực, chuyển việc, tiến độ, kết quả, lịch sử, chuông | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -231,3 +232,14 @@ Kết quả: **đạt** · `test_20_quan_ly_nhan_va_gan_nhan_hai_loai`
 4. Customer 360: quản trị gắn «Khách sỉ» cho khách; danh sách khách lọc theo nhãn ra đúng khách ấy.
 5. Xoá «Khách sỉ» đang dùng → 409; Ngừng sử dụng → biến khỏi ô chọn, khách vẫn mang nhãn (đã ngừng).
 6. Nhân viên không có quyền cấu hình không sửa được danh mục (403); mọi thao tác nằm trong nhật ký.
+
+## 21. Hệ thống giao việc: phân công theo ca trực, chuyển việc, tiến độ, kết quả, lịch sử, chuông
+
+Kết quả: **đạt** · `test_21_he_thong_giao_viec_theo_ca_chuyen_viec_va_lich_su`
+
+1. Chưa ai có lịch ca → tạo việc "phân công tự động" → Chưa phân công, kèm lý do (không đoán người).
+2. Quản trị xếp ca 24/7 cho "lan" và "minh" → hai việc tự động chia lần lượt cho hai người; mỗi người có chuông "Được giao việc".
+3. "lan" (không có cong_viec.giao) đẩy việc của mình sang "minh" → 403; quản trị chuyển kèm ghi chú → "minh" có chuông "Bạn được chuyển một việc".
+4. "minh" ghi tiến độ rồi hoàn thành kèm kết quả → chi tiết việc có đủ lịch sử: tạo, phân công tự động, chuyển, tiến độ, đổi trạng thái, kết quả.
+5. Quản trị hủy việc còn lại của "minh" → "minh" có chuông "Việc bị hủy".
+6. Tổng quan ca trực đếm đúng (1 chưa phân công, 1 hoàn thành hôm nay); lọc "Chưa phân công" ra đúng việc ở bước 1.

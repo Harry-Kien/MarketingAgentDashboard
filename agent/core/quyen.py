@@ -130,6 +130,12 @@ QUYEN: dict[str, str] = {
     # quyền, khoá tài khoản, xoá dữ liệu khách — không phải thứ mọi nhân
     # viên đọc hội thoại cần thấy.
     "nhat_ky.doc": "Xem nhật ký kiểm toán",
+    # GHI vào nhật ký (22.11.2026, phiếu việc mục 18): đánh dấu một hành
+    # động AI là sự cố, ghi bước can thiệp, kết quả, lời giải trình. Tách
+    # khỏi `nhat_ky.doc` vì đọc và ghi là hai trách nhiệm khác nhau — và
+    # mọi dòng ghi ra là vĩnh viễn (bảng chỉ thêm, migration 0064). Migration
+    # 0064 cấp nó cho mọi vai trò đang có `nhat_ky.doc`.
+    "nhat_ky.su_co": "Đánh dấu sự cố AI, ghi bước can thiệp và giải trình",
 
     # PHÊ DUYỆT AI tách khỏi `hoi_thoai.tra_loi` (22.11.2026, phiếu việc mục
     # 12). Duyệt bản nháp là CHO PHÉP lời AI viết đi tới khách — trách nhiệm
@@ -180,7 +186,7 @@ NHOM_QUYEN: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     )),
     ("nhan_su", "Nhân sự & Phân quyền", ("nguoi_dung.doc", "nguoi_dung.sua")),
     ("he_thong", "Hệ thống & Nhật ký", (
-        "nhat_ky.doc", "outbox.doc", "outbox.sua",
+        "nhat_ky.doc", "nhat_ky.su_co", "outbox.doc", "outbox.sua",
     )),
     ("phe_duyet_ai", "Phê duyệt AI", ("ai.duyet",)),
 )

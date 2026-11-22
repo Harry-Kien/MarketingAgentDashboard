@@ -48,6 +48,7 @@ from agent.api.contacts import router_vo_chu as khach_vo_chu_router
 from agent.api.cong_viec import router as cong_viec_router
 from agent.api.thong_bao_noi_bo import router as thong_bao_noi_bo_router
 from agent.api.ho_so_agent import router as ho_so_agent_router
+from agent.api.nhat_ky_api import router as nhat_ky_router
 from agent.api.erp import router as erp_router
 from agent.api.routing_admin import router as routing_admin_router
 from agent.api.retention import router as retention_router
@@ -984,6 +985,7 @@ app.include_router(sla_cau_hinh_router)
 app.include_router(thanh_toan_router)
 app.include_router(media_router)
 app.include_router(quan_sat.router)
+app.include_router(nhat_ky_router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một
 # đoạn. Đặt sớm hơn là nó nuốt cả /healthz, /mcp và trang dashboard.

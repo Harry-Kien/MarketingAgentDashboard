@@ -193,6 +193,7 @@ function veChiTietHoiThoai(c, laCuaToi) {
     ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
     ${dongCT("Version", esc(c.version || 1))}
     <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
+    ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
   </section>`;
 }
 

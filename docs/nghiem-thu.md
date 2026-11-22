@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-22 02:24 UTC trên commit `e9df6a8`. **20/20 kịch bản đạt.**
+Chạy lúc 2026-11-22 04:59 UTC trên commit `47a4262`. **20/20 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 

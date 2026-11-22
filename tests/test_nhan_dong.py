@@ -312,8 +312,10 @@ def _dung(url: str) -> dict:
     return asyncio.run(chay())
 
 
+# Gắn/gỡ nhãn hội thoại cần `hoi_thoai.ghi_chu` từ migration 0058 (phiếu việc
+# mục 12: "quản lý nhãn và ghi chú nội bộ" là quyền riêng trong nhóm Hội thoại).
 QT = ("cau_hinh.doc", "cau_hinh.sua", "hoi_thoai.doc", "hoi_thoai.tra_loi",
-      "khach.doc", "khach.sua")
+      "hoi_thoai.ghi_chu", "khach.doc", "khach.sua")
 
 
 def _tao(k, loai, ten, **them) -> str:

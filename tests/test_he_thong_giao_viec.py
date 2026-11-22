@@ -24,21 +24,122 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.setdefault("GCP_PROJECT_ID", "test")
 
 from conftest import nguoi_thu, toan_quyen  # noqa: E402
-from test_api_cong_viec import (  # noqa: E402
-    SEP_ID,
-    _app,
-    _dung_hoi_thoai,
-    _dung_luoc_do,
-    _sql,
-)
+
+# Dựng app/CSDL như tests/test_api_cong_viec.py. Chép chứ không import tệp
+# test kia: `test_requirements` coi import chéo giữa tệp test là import bên
+# thứ ba không khai — và nó đúng, tệp test không phải thư viện.
+LUOC_DO = ROOT / "agent" / "schema.sql"
+SEP_ID = "00000000-0000-0000-0000-0000000000aa"
+
+
+def _app(url: str, nguoi: dict) -> FastAPI:
+    import asyncpg
+
+    from agent import db
+    from agent.api.cong_viec import router
+    from agent.api.routes import nguoi_da_dang_nhap
+    from agent.migrations.runner import apply_all
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[nguoi_da_dang_nhap] = lambda: nguoi
+
+    async def _codec(conn):
+        await conn.set_type_codec("jsonb", encoder=json.dumps,
+                                  decoder=json.loads, schema="pg_catalog")
+
+    @app.on_event("startup")
+    async def _mo():
+        db._pool = await asyncpg.create_pool(url, min_size=1, max_size=3,
+                                             init=_codec)
+        async with db._pool.acquire() as conn:
+            await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
+            await apply_all(conn)
+            await conn.execute(
+                "INSERT INTO nguoi_dung (id, ten_dang_nhap, mat_khau_bam, ho_ten) "
+                "VALUES ($1,'sep','x','Sếp') ON CONFLICT DO NOTHING", SEP_ID)
+
+    @app.on_event("shutdown")
+    async def _dong():
+        if db._pool is not None:
+            await db._pool.close()
+            db._pool = None
+
+    return app
+
+
+def _sql(url: str, cau: str, *args):
+    import asyncpg
+
+    async def chay():
+        conn = await asyncpg.connect(url)
+        try:
+            return await conn.fetchval(cau, *args)
+        finally:
+            await conn.close()
+
+    return asyncio.run(chay())
+
+
+def _dung_luoc_do(url: str) -> None:
+    """
+    Dựng lược đồ TRƯỚC khi test chèn gì.
+
+    Fixture `csdl_kiem_thu` chỉ tạo một CSDL rỗng; lược đồ do startup của app
+    dựng. Nhưng vài test cần tạo nhân viên TRƯỚC khi dựng app (để truyền
+    người đăng nhập vào), nên phải dựng lược đồ ở đây. Startup chạy lại
+    cũng không sao: `schema.sql` dùng IF NOT EXISTS và runner bỏ qua
+    migration đã áp dụng.
+    """
+    import asyncpg
+
+    from agent.migrations.runner import apply_all
+
+    async def chay():
+        conn = await asyncpg.connect(url)
+        await conn.set_type_codec("jsonb", encoder=json.dumps,
+                                  decoder=json.loads, schema="pg_catalog")
+        try:
+            await conn.execute(LUOC_DO.read_text(encoding="utf-8"))
+            await apply_all(conn)
+        finally:
+            await conn.close()
+
+    asyncio.run(chay())
+
+
+async def _dung_hoi_thoai(conn, *, ext: str, ten_khach: str = "Khách"):
+    """
+    Dựng đủ chuỗi tài khoản kênh -> khách -> danh tính -> hội thoại.
+
+    `conversations` có ba khoá ngoại NOT NULL (`account_id`, `contact_id`,
+    `contact_point_id`). Chèn thiếu bất kỳ cái nào cũng ném — và ném ở đây
+    là ném trong test, may hơn nhiều so với ném trên đường xử lý tin khách.
+    """
+    tk = await conn.fetchval(
+        "INSERT INTO channel_accounts (channel, display_name, status) "
+        "VALUES ('webchat','Web','active') RETURNING id")
+    kh = await conn.fetchval(
+        "INSERT INTO contacts (display_name) VALUES ($1) RETURNING id",
+        ten_khach)
+    diem = await conn.fetchval(
+        "INSERT INTO contact_points (contact_id, channel_account_id, "
+        "external_user_id) VALUES ($1,$2,$3) RETURNING id", kh, tk, ext)
+    return await conn.fetchval(
+        "INSERT INTO conversations (account_id, channel, external_id, "
+        "customer_ref, customer_name, contact_id, contact_point_id) "
+        "VALUES ($1,'webchat',$2,$2,$3,$4,$5) RETURNING id",
+        tk, ext, ten_khach, kh, diem)
+
+
 
 MIG = ROOT / "agent" / "migrations" / "versions" / "0061_he_thong_giao_viec.sql"
 

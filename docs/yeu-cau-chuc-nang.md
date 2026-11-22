@@ -835,7 +835,7 @@ Toàn repo: **390+** tệp test, **3900+** hàm test (đếm `def test_` bằng 
 | 19. Thông báo nội bộ (chuông) | 2 | 49 |
 | 20. Kênh theo kiến trúc plugin | 5 | 48 |
 | 21. Bảng yêu cầu chức năng và phi chức năng | 1 | 9 |
-| Phi chức năng (Phần B) | 40 | 592 |
+| Phi chức năng (Phần B) | 40 | 594 |
 
 ## Tài liệu sinh ra và test canh tài liệu cũ
 

@@ -137,9 +137,12 @@ QUYEN: dict[str, str] = {
     # (ví dụ: nhân viên mới trả lời được nhưng chưa được duyệt lời AI).
     # Migration 0058 cấp nó cho mọi vai trò đang có `hoi_thoai.tra_loi`.
     #
-    # KHÔNG phải ba mức uỷ quyền của AI (AI được tự làm gì) — đó là chuyện
-    # của cấu hình AI, một giai đoạn khác. Đây là quyền của NGƯỜI.
-    "ai.duyet": "Duyệt câu trả lời AI soạn sẵn trước khi gửi khách",
+    # KHÔNG phải ba mức uỷ quyền của AI (AI được tự làm gì — bảng
+    # `ai_uy_quyen`, agent/core/uy_quyen.py). Đây là quyền của NGƯỜI: cho lời
+    # AI đi tới khách, và (mục 17) cho một HÀNH ĐỘNG AI đề xuất được thi hành.
+    # Duyệt hành động còn đòi thêm quyền nghiệp vụ của chính hành động ấy
+    # (`don.sua` cho tạo/huỷ đơn) — xem agent/api/uy_quyen_ai.py.
+    "ai.duyet": "Duyệt câu trả lời và đề xuất hành động do AI soạn sẵn",
 }
 
 # =====================================================================

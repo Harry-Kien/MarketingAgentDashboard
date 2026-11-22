@@ -336,6 +336,66 @@ async def bao_can_duyet_don(
         return 0
 
 
+async def nguoi_duyet_de_xuat(
+    conn: Any, conversation_id: UUID | str, quyen: Iterable[str],
+) -> list[UUID]:
+    """
+    Ai được báo về một đề xuất hành động của AI: người có ĐỦ các quyền duyệt
+    (`ai.duyet` + quyền nghiệp vụ của hành động) và THẤY được hội thoại.
+
+    Khác `nguoi_nhan_hoi_thoai`: người đang cầm hội thoại chưa chắc duyệt
+    được (nhân viên mới trả lời được nhưng chưa được huỷ đơn). Báo người
+    không bấm được Duyệt là dạy họ phớt lờ chuông — nên lọc theo quyền ở
+    MỌI nhánh, kể cả nhánh người được giao.
+    """
+    cid = _uuid(conversation_id)
+    co_du: set[UUID] | None = None
+    for q in quyen:
+        bo = set(await _nguoi_co_quyen(conn, q))
+        co_du = bo if co_du is None else co_du & bo
+    if not co_du:
+        return []
+    c = await conn.fetchrow(
+        "SELECT account_id, assigned_to FROM conversations WHERE id = $1", cid)
+    if c is None:
+        return []
+    thanh_vien = {r["user_id"] for r in await conn.fetch(
+        "SELECT user_id FROM account_memberships WHERE account_id = $1", c["account_id"])}
+    chinh = co_du & thanh_vien
+    if c["assigned_to"] in co_du:
+        chinh.add(c["assigned_to"])
+    if not chinh:
+        chinh = co_du & set(await _nguoi_co_quyen(conn, QUYEN_QUAN_LY))
+    return sorted(chinh, key=str)
+
+
+async def bao_can_duyet_de_xuat(
+    conversation_id: UUID | str, de_xuat_id: UUID | str, *, tieu_de: str,
+    quyen_thi_hanh: str | None, conn: Any = None,
+) -> int:
+    """
+    AI vừa chuẩn bị một hành động cần duyệt (mục 17). Chỉ gắn HỘI THOẠI, không
+    gắn đơn: bấm vào phải mở đúng hội thoại có thẻ đề xuất, không phải màn Đơn
+    hàng (`_lien_ket` ưu tiên đơn nếu có).
+    """
+    try:
+        async with _ket_noi(conn) as c:
+            quyen = ["ai.duyet", *([quyen_thi_hanh] if quyen_thi_hanh else [])]
+            nhan = await nguoi_duyet_de_xuat(c, conversation_id, quyen)
+            if not nhan:
+                _khong_ai_nhan("can_duyet_de_xuat", de_xuat_id)
+            return await _ghi(
+                c, nhan, loai="can_duyet",
+                tieu_de=f"AI đề xuất: {tieu_de}",
+                noi_dung="AI đã chuẩn bị một hành động, cần người có thẩm quyền duyệt.",
+                conversation_id=_uuid(conversation_id),
+                khoa=f"can_duyet_de_xuat:{_uuid(de_xuat_id)}",
+            )
+    except Exception as exc:  # noqa: BLE001
+        _loi("can_duyet_de_xuat", de_xuat_id, exc)
+        return 0
+
+
 async def bao_duoc_giao_viec(
     cong_viec_id: UUID | str, nguoi_nhan_id: UUID | str, *,
     boi: UUID | str | None, tieu_de_viec: str, conn: Any = None,

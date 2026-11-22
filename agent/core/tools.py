@@ -795,6 +795,36 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
         catalog = await _catalog_song()
         return await thu_nghiem.mo_phong(name, args, catalog.get("san_pham", []))
 
+    # ---------- CHỐT ỦY QUYỀN: chế độ AI × mức của hành động (mục 17) ----------
+    #
+    # Đặt SAU phòng thử (phòng thử không ghi gì, kể cả đề xuất) và TRƯỚC mọi
+    # nhánh thi hành, để không công cụ ghi nào — viết sẵn, plugin, MCP — đi
+    # vòng qua. Chế độ đọc TẠI ĐÂY (`uy_quyen.che_do_hieu_luc`), không nhận
+    # làm tham số: trước bản này AI lên đơn thật ở chế độ Gợi ý vì chế độ chỉ
+    # được xét ở tầng gửi tin, sau khi công cụ đã chạy xong.
+    from agent.core import uy_quyen
+
+    loai_cc = await uy_quyen.phan_loai_cong_cu(name)
+    quyet: uy_quyen.QuyetDinh | None = None
+    if loai_cc == "hanh_dong":
+        quyet = await uy_quyen.quyet_dinh(uy_quyen.CONG_CU_HANH_DONG[name], conversation_id)
+        # `xin_huy_don` tự xử lý mức Không sử dụng: nó vẫn GHI NHẬN yêu cầu
+        # của khách lên đơn (để người đóng gói dừng tay) rồi chuyển người.
+        if quyet.bi_cam and name != "xin_huy_don":
+            return await uy_quyen.chan_chuyen_nguoi(
+                name, f"Chính sách ủy quyền: AI không được «{uy_quyen.DANH_MUC[quyet.hanh_dong].ten}»",
+                conversation_id, hanh_dong=quyet.hanh_dong, muc_uy_quyen=quyet.muc)
+    elif loai_cc == "mcp_ghi":
+        che_do, ly_do = await uy_quyen.che_do_hieu_luc(conversation_id)
+        if che_do == "goi_y":
+            # Không có đường thi hành kiểm lại được cho công cụ ngoài, nên
+            # không đề xuất — chuyển người (xem docstring uy_quyen.py).
+            return await uy_quyen.chan_chuyen_nguoi(name, ly_do, conversation_id)
+    elif loai_cc == "la":
+        return await uy_quyen.chan_chuyen_nguoi(
+            name, f"Công cụ {name!r} chưa có trong danh mục ủy quyền — mặc định không sử dụng",
+            conversation_id)
+
     # ---------- plugin do người vận hành cấu hình ----------
     #
     # Đặt TRƯỚC mọi nhánh có sẵn: `doc_ban_mo_ta` đã chặn plugin trùng tên
@@ -877,14 +907,14 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
         return await _tra_cuu_van_chuyen(args, conversation_id)
 
     if name == "xin_huy_don":
-        return await _xin_huy_don(args, conversation_id)
+        return await _xin_huy_don(args, conversation_id, quyet=quyet)
 
     if name == "xin_doi_tra":
         return await _xin_doi_tra(args, conversation_id)
 
     # ---------- lên đơn: tool DUY NHẤT có hậu quả không đảo ngược ----------
     if name == "tao_don_hang":
-        return await _tao_don_hang(args, products, conversation_id)
+        return await _tao_don_hang(args, products, conversation_id, quyet=quyet)
 
     if name == "chuyen_nhan_vien":
         return {
@@ -1259,10 +1289,18 @@ async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
         }
 
 
-async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> dict:
+async def _tao_don_hang(args: dict, products: list[dict], conversation_id,
+                        quyet=None, *, ep_da_chot: bool = False,
+                        tong_phai_bang: int | None = None) -> dict:
     """
     Tool DUY NHẤT có hậu quả không đảo ngược. Mọi chốt chặn nằm ở đây, không
     nằm trong prompt — prompt có thể bị model bỏ qua, mã thì không.
+
+    `quyet` (uy_quyen.QuyetDinh) do chốt ủy quyền ở `_run_tool_that` truyền.
+    Gọi thẳng không có nó = đường cũ (tự chốt dưới ngưỡng) — chỉ test và
+    đường THI HÀNH đề xuất đã duyệt gọi thẳng; đường thi hành truyền
+    `ep_da_chot` (người có thẩm quyền đã duyệt) và `tong_phai_bang` (giá đổi
+    sau lúc đề xuất thì KHÔNG thi hành: người duyệt đã duyệt một con số khác).
     """
     from agent import db
 
@@ -1357,8 +1395,25 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
             "don_gia": int(sp["gia"]), "so_luong": sl, "thanh_tien": thanh_tien,
         })
 
-    # --- Chốt 5: vượt ngưỡng thì KHÔNG tự chốt, đưa vào hàng chờ duyệt ---
-    tu_chot = tong < settings.nguong_tu_chot_vnd
+    if tong_phai_bang is not None and tong != int(tong_phai_bang):
+        return {
+            "tao_duoc": False,
+            "ly_do": (f"Tổng tiền đã đổi so với lúc đề xuất ({int(tong_phai_bang):,}đ → "
+                      f"{tong:,}đ). Không thi hành — cần đề xuất lại.").replace(",", "."),
+        }
+
+    # --- Chốt 5: ủy quyền + ngưỡng giá trị ---
+    # Chế độ Gợi ý: đã kiểm đủ (xác nhận, thông tin, giá, tồn sống) nhưng
+    # KHÔNG ghi đơn, KHÔNG giữ hàng — chỉ đề xuất. Ở Tự động: ngưỡng (nay
+    # sửa được trên dashboard, mặc định `.env`) và mức "Có phê duyệt" đều
+    # đưa đơn vào `cho_duyet` như trước, kèm thẻ đề xuất trong hội thoại.
+    from agent.core import uy_quyen
+
+    if quyet is not None and quyet.che_do == "goi_y":
+        return await _de_xuat_tao_don(args, lines, tong, sdt, conversation_id, quyet)
+    nguong = await uy_quyen.nguong_tao_don()
+    phai_duyet = quyet is not None and quyet.muc == "co_phe_duyet"
+    tu_chot = ep_da_chot or (tong < nguong and not phai_duyet)
     trang_thai = "da_chot" if tu_chot else "cho_duyet"
 
     # --- Chốt 6: chống tạo trùng + lưu đơn, trong MỘT giao dịch có khoá ---
@@ -1392,13 +1447,25 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         "order.created", ref_id=row["id"], ma_don=row["ma_don"],
         tong_tien=tong, trang_thai=trang_thai,
     )
+    if quyet is not None and trang_thai == "da_chot":
+        # AI tự chốt theo ủy quyền — ghi MỨC đã cho phép, cho tra cứu kiểm toán.
+        await db.log_event(
+            "ai.hanh_dong.tu_dong", actor="agent", ref_id=_uuid_hoac_none(conversation_id),
+            hanh_dong="tao_don", muc_uy_quyen=quyet.muc, conversation_id=str(conversation_id),
+            order_id=str(row["id"]), ma_don=row["ma_don"], tong_tien=tong, nguong_vnd=nguong)
     if trang_thai == "cho_duyet":
-        # Đơn vượt ngưỡng nằm chờ người duyệt. Không báo thì nó chỉ được
-        # thấy khi có ai mở màn Đơn hàng — còn khách tưởng đã đặt xong.
-        from agent.core import thong_bao_noi_bo
+        # Đơn chờ duyệt thành THẺ ĐỀ XUẤT trong hội thoại (mục 17) — người
+        # duyệt thấy căn cứ ngay cạnh lời khách. Không tạo được thẻ (không
+        # có hội thoại, CSDL lỗi) thì lui về chuông "đơn chờ duyệt" cũ: đơn
+        # nằm chờ mà không ai được báo là khách tưởng đã đặt xong.
+        de_xuat_id = await _de_xuat_duyet_don_cho(
+            row, lines, tong, nguong, conversation_id, quyet,
+            khach=(str(args["khach_ten"]).strip(), sdt, str(args["khach_dia_chi"]).strip()))
+        if de_xuat_id is None:
+            from agent.core import thong_bao_noi_bo
 
-        await thong_bao_noi_bo.bao_can_duyet_don(
-            row["id"], conversation_id=conversation_id, ma_don=row["ma_don"])
+            await thong_bao_noi_bo.bao_can_duyet_don(
+                row["id"], conversation_id=conversation_id, ma_don=row["ma_don"])
 
     # --- Chốt 8: đẩy sang ERP (chỉ khi ERP_GHI_DON bật) ---
     # Đặt SAU chốt 7 có chủ ý: hàng phải được giữ trước đã. Đẩy sang ERP
@@ -1451,10 +1518,130 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id) -> di
         "ghi_chu_cho_agent": (
             "Đơn đã chốt. Báo mã đơn và tổng tiền cho khách."
             if tu_chot else
-            "Đơn giá trị lớn nên đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "
+            "Đơn đang CHỜ NHÂN VIÊN DUYỆT. Báo khách là đã ghi "
             "nhận và sẽ có người gọi xác nhận, KHÔNG nói là đã chốt xong."
         ),
     }
+
+
+def _khoa_van_tay(*phan) -> str:
+    import hashlib
+
+    return hashlib.md5(json.dumps(phan, sort_keys=True, ensure_ascii=False,
+                                  default=str).encode("utf-8")).hexdigest()
+
+
+def _ruiro_tao_don() -> list[str]:
+    return [
+        "Khách xác nhận đặt đơn là do AI nhận định từ hội thoại — đọc lại tin "
+        "khách ngay trên thẻ này trước khi duyệt.",
+        "Tồn kho và giá có thể đổi trước lúc duyệt — hệ thống kiểm lại lúc thi "
+        "hành và KHÔNG thi hành nếu tổng tiền khác.",
+    ]
+
+
+def _nguon_tao_don(lines: list[dict]) -> list[dict]:
+    return [
+        *({"ten": "Danh mục sản phẩm", "chi_tiet": f"{ln['ten']}: {ln['don_gia']:,}đ".replace(",", ".")}
+          for ln in lines),
+        {"ten": "Tồn kho đọc sống (bỏ qua bộ đệm)",
+         "chi_tiet": "đủ hàng cho " + ", ".join(f"{ln['so_luong']} × {ln['ten']}" for ln in lines)},
+        {"ten": "Kiểm địa giới hành chính", "chi_tiet": "không phát hiện mâu thuẫn phường/tỉnh"},
+        {"ten": "Thông tin giao hàng", "chi_tiet": "đủ họ tên, số điện thoại hợp lệ, địa chỉ đầy đủ"},
+    ]
+
+
+async def _de_xuat_tao_don(args: dict, lines: list[dict], tong: int, sdt: str,
+                           conversation_id, quyet) -> dict:
+    """
+    Chế độ Gợi ý: mọi điều kiện đã kiểm, nhưng đơn CHƯA ghi và hàng CHƯA giữ.
+    Thi hành lúc duyệt chạy lại toàn bộ `_tao_don_hang` từ đầu.
+    """
+    from agent.core import uy_quyen
+
+    if conversation_id is None:
+        return {
+            "tao_duoc": False, "can_chuyen_nhan_vien": True,
+            "ly_do": f"{quyet.ly_do_che_do}. Không có hội thoại để gửi đề xuất — chuyển nhân viên.",
+        }
+    ten, dia_chi = str(args["khach_ten"]).strip(), str(args["khach_dia_chi"]).strip()
+    tham_so = {
+        "items": [{"ten_san_pham": ln["ten"], "so_luong": ln["so_luong"]} for ln in lines],
+        "khach_ten": ten, "khach_sdt": sdt, "khach_dia_chi": dia_chi,
+        "khach_da_xac_nhan": True, "ghi_chu": str(args.get("ghi_chu") or "")[:500],
+        "tong_tien": tong,
+    }
+    try:
+        de_xuat_id, _moi = await uy_quyen.tao_de_xuat(
+            conversation_id=conversation_id, quyet=quyet,
+            ly_do_can_duyet=quyet.ly_do_duyet(), tham_so=tham_so,
+            de_xuat={
+                "tieu_de": f"Tạo đơn {tong:,}đ".replace(",", "."),
+                "ly_do": "Khách đã xác nhận đặt đơn với các sản phẩm dưới đây.",
+                "truoc": None,
+                "sau": {"items": lines, "tong_tien": tong, "nguoi_nhan": ten,
+                        "sdt": sdt, "dia_chi": dia_chi,
+                        "ghi_chu": tham_so["ghi_chu"], "trang_thai": "Đã chốt (sau khi duyệt)"},
+            },
+            can_cu={"nguon": _nguon_tao_don(lines), "rui_ro": _ruiro_tao_don(), "thieu": []},
+            khoa_trung=f"tao_don:{conversation_id}:{_khoa_van_tay(lines, sdt, dia_chi)}",
+        )
+    except Exception as exc:  # noqa: BLE001 — không tạo được đề xuất: chuyển người, không im
+        await db.log_event("ai.de_xuat.loi_tao", ref_id=_uuid_hoac_none(conversation_id),
+                           hanh_dong="tao_don", ly_do=f"{type(exc).__name__}: {exc}"[:200])
+        return {
+            "tao_duoc": False, "can_chuyen_nhan_vien": True,
+            "ly_do": "Chưa gửi được đề xuất lên đơn cho nhân viên — đã chuyển người.",
+        }
+    return {
+        "tao_duoc": False,
+        "da_de_xuat": True,
+        "de_xuat_id": str(de_xuat_id),
+        "items": lines,
+        "tong_tien": tong,
+        "ghi_chu_cho_agent": (
+            "Đơn CHƯA được tạo: đã gửi ĐỀ XUẤT lên đơn cho nhân viên duyệt. Báo "
+            "khách là đã ghi nhận đủ thông tin và nhân viên sẽ xác nhận đơn. "
+            "TUYỆT ĐỐI KHÔNG nói đã lên đơn, đã chốt, hay đọc mã đơn."
+        ),
+    }
+
+
+async def _de_xuat_duyet_don_cho(row: dict, lines: list[dict], tong: int, nguong: int,
+                                 conversation_id, quyet, *, khach: tuple) -> UUID | None:
+    """Thẻ đề xuất cho đơn đã ghi ở `cho_duyet`. None = không tạo được."""
+    from agent.core import uy_quyen
+
+    oid = row.get("id")
+    if conversation_id is None or not isinstance(oid, UUID):
+        return None
+    if quyet is None:
+        quyet = uy_quyen.QuyetDinh("tao_don", "tu_dong", await uy_quyen.muc_cua("tao_don"))
+    ly_do = (quyet.ly_do_duyet() if quyet.muc == "co_phe_duyet" else
+             f"Đơn {tong:,}đ từ ngưỡng {nguong:,}đ trở lên phải duyệt".replace(",", "."))
+    ten, sdt, dia_chi = khach
+    try:
+        de_xuat_id, _moi = await uy_quyen.tao_de_xuat(
+            conversation_id=conversation_id, quyet=quyet, ly_do_can_duyet=ly_do,
+            tham_so={"order_id": str(oid), "ma_don": row.get("ma_don"), "tong_tien": tong},
+            de_xuat={
+                "tieu_de": f"Duyệt đơn {row.get('ma_don')} — {tong:,}đ".replace(",", "."),
+                "ly_do": "Khách đã xác nhận đặt đơn; đơn đã ghi và đã giữ hàng, chờ duyệt.",
+                "truoc": {"trang_thai": "Chờ duyệt"},
+                "sau": {"trang_thai": "Đã chốt (đẩy sang ERP nếu bật)", "items": lines,
+                        "tong_tien": tong, "nguoi_nhan": ten, "sdt": sdt, "dia_chi": dia_chi},
+            },
+            can_cu={"nguon": _nguon_tao_don(lines),
+                    "rui_ro": _ruiro_tao_don()[:1]
+                    + ["Hàng đã được giữ cho đơn này. Từ chối = huỷ đơn chờ duyệt và trả hàng về kho."],
+                    "thieu": []},
+            khoa_trung=f"tao_don:don:{oid}", order_id=oid,
+        )
+        return de_xuat_id
+    except Exception as exc:  # noqa: BLE001
+        await db.log_event("ai.de_xuat.loi_tao", ref_id=_uuid_hoac_none(conversation_id),
+                           hanh_dong="tao_don", ly_do=f"{type(exc).__name__}: {exc}"[:200])
+        return None
 
 
 # Lời lẽ cho từng trạng thái giao hàng. Đặt ở đây, MỘT chỗ, để agent không
@@ -1594,7 +1781,119 @@ async def _danh_dau_xin_huy(
     return (row.get("id") or True) if row is not None else False
 
 
-async def _xin_huy_don(args: dict, conversation_id) -> dict:
+_NHAN_TRANG_THAI_DON = {
+    "cho_duyet": "Chờ duyệt", "da_chot": "Đã chốt", "cho_dong_bo": "Chờ đồng bộ kho",
+    "da_giao": "Đã giao", "da_huy": "Đã huỷ",
+}
+
+
+async def bang_chung_huy_don(order_id: UUID, ly_do: str = "") -> dict:
+    """
+    Căn cứ cho đề xuất huỷ: đọc từ SỔ CỦA CỬA HÀNG, không từ lời model.
+    Trả {truoc, sau, nguon, rui_ro, thieu, ma_don, huy_duoc}.
+    """
+    don = await db.fetchrow(
+        "SELECT ma_don, trang_thai, tong_tien, items, trang_thai_giao_hang, ma_van_don, "
+        "don_vi_van_chuyen, erp_ma_don, so_tien_da_thu, conversation_id "
+        "FROM orders WHERE id = $1", order_id)
+    if don is None:
+        return {"huy_duoc": False, "thieu": ["Không còn thấy đơn trong sổ"]}
+    items = don.get("items") or []
+    if isinstance(items, str):
+        items = json.loads(items)
+    tt = don["trang_thai"]
+    rui_ro, thieu = [], []
+    if don.get("erp_ma_don"):
+        rui_ro.append(f"Đơn đã có bên ERP ({don['erp_ma_don']}) — huỷ ở đây KHÔNG huỷ bên ERP, cần huỷ tay.")
+    elif tt == "cho_dong_bo":
+        rui_ro.append("Đơn đang chờ đồng bộ — có thể đã tới ERP; tra ERP theo mã đơn.")
+    if don.get("ma_van_don"):
+        rui_ro.append(f"Đã có vận đơn {don['ma_van_don']} ({don.get('don_vi_van_chuyen') or 'hãng'}) "
+                      "— cần huỷ tay bên hãng.")
+    if don.get("trang_thai_giao_hang") in ("delivering",):
+        rui_ro.append("Hàng đang trên đường giao.")
+    if int(don.get("so_tien_da_thu") or 0) > 0:
+        rui_ro.append(f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ — cần hoàn tiền "
+                      "(AI không hoàn tiền).".replace(",", "."))
+    if not ly_do:
+        thieu.append("Khách chưa nêu lý do huỷ")
+    huy_duoc = tt not in ("da_giao", "da_huy")
+    if not huy_duoc:
+        thieu.append(f"Đơn đang «{_NHAN_TRANG_THAI_DON.get(tt, tt)}» — không huỷ được")
+    return {
+        "ma_don": don["ma_don"], "huy_duoc": huy_duoc,
+        "truoc": {"trang_thai": _NHAN_TRANG_THAI_DON.get(tt, tt),
+                  "tong_tien": int(don.get("tong_tien") or 0), "items": items},
+        "sau": {"trang_thai": "Đã huỷ", "tra_kho": [
+            f"{it.get('so_luong')} × {it.get('ten')}" for it in items if isinstance(it, dict)]},
+        "nguon": [{"ten": "Sổ đơn của cửa hàng",
+                   "chi_tiet": f"đơn {don['ma_don']} thuộc đúng hội thoại này, trạng thái "
+                               f"«{_NHAN_TRANG_THAI_DON.get(tt, tt)}»"}],
+        "rui_ro": rui_ro, "thieu": thieu,
+    }
+
+
+async def _huy_don_theo_uy_quyen(order_id: UUID, ma: str, ly_do: str,
+                                 conversation_id, quyet) -> dict | None:
+    """Đề xuất huỷ (cần duyệt) hoặc huỷ thật (Tự động). None = rơi về chuyển người."""
+    from agent.core import thao_tac_don, uy_quyen
+
+    try:
+        bc = await bang_chung_huy_don(order_id, ly_do)
+        if not bc.get("huy_duoc"):
+            return None
+        if quyet.can_duyet:
+            de_xuat_id, _moi = await uy_quyen.tao_de_xuat(
+                conversation_id=conversation_id, quyet=quyet,
+                ly_do_can_duyet=quyet.ly_do_duyet(),
+                tham_so={"order_id": str(order_id), "ma_don": bc["ma_don"]},
+                de_xuat={"tieu_de": f"Huỷ đơn {bc['ma_don']}",
+                         "ly_do": f"Khách xin huỷ: {ly_do}" if ly_do else "Khách xin huỷ đơn.",
+                         "truoc": bc["truoc"], "sau": bc["sau"]},
+                can_cu={"nguon": bc["nguon"], "rui_ro": bc["rui_ro"], "thieu": bc["thieu"]},
+                khoa_trung=f"huy_don:{order_id}", order_id=order_id,
+            )
+            return {
+                "da_ghi_nhan": True, "da_huy": False, "da_de_xuat": True,
+                "de_xuat_id": str(de_xuat_id), "can_chuyen_nhan_vien": False,
+                "ghi_chu": (
+                    "Đã ghi nhận yêu cầu huỷ lên đơn và gửi ĐỀ XUẤT HUỶ cho nhân viên "
+                    "có thẩm quyền duyệt. TUYỆT ĐỐI KHÔNG nói với khách là đơn 'đã huỷ' "
+                    "— đơn CHƯA huỷ. Nói đúng: đã ghi nhận, nhân viên sẽ xác nhận việc "
+                    "huỷ và báo lại sớm."
+                ),
+            }
+        # Tự động: thi hành ngay, cùng luật với nút Huỷ của người.
+        kq = await thao_tac_don.huy_don(order_id, actor="agent", conversation_id=conversation_id)
+    except thao_tac_don.LoiThaoTacDon as exc:
+        await db.log_event("ai.hanh_dong.loi", actor="agent",
+                           ref_id=_uuid_hoac_none(conversation_id),
+                           hanh_dong="huy_don", ly_do=exc.thong_diep[:300])
+        return None
+    except Exception as exc:  # noqa: BLE001 — không làm được: chuyển người, không im
+        await db.log_event("ai.de_xuat.loi_tao", ref_id=_uuid_hoac_none(conversation_id),
+                           hanh_dong="huy_don", ly_do=f"{type(exc).__name__}: {exc}"[:200])
+        return None
+    if kq.get("da_huy_tu_truoc"):
+        return None
+    await db.log_event("ai.hanh_dong.tu_dong", actor="agent",
+                       ref_id=_uuid_hoac_none(conversation_id), hanh_dong="huy_don",
+                       muc_uy_quyen=quyet.muc, conversation_id=str(conversation_id),
+                       order_id=str(order_id), ma_don=ma, ket_qua=kq)
+    con_viec_tay = [x for x in (kq.get("can_huy_tay"), kq.get("can_hoan_tien")) if x]
+    return {
+        "da_ghi_nhan": True, "da_huy": True,
+        # Còn phần phải làm tay (ERP, hãng, hoàn tiền) thì vẫn cần người.
+        "can_chuyen_nhan_vien": bool(con_viec_tay),
+        "ghi_chu": (
+            f"Đơn {ma} ĐÃ HUỶ và hàng đã trả về kho. Báo khách đúng như vậy."
+            + (" Phần còn lại cần nhân viên làm tay: " + " ".join(con_viec_tay)
+               + " — KHÔNG hứa hoàn tiền thay nhân viên." if con_viec_tay else "")
+        ),
+    }
+
+
+async def _xin_huy_don(args: dict, conversation_id, quyet=None) -> dict:
     """
     Ghi nhận yêu cầu huỷ rồi chuyển người — không bao giờ tự huỷ.
 
@@ -1621,6 +1920,14 @@ async def _xin_huy_don(args: dict, conversation_id) -> dict:
             await db.log_event(
                 "order.xin_huy", actor="agent", ma_don=ma, ly_do=ly_do[:200],
             )
+            # ỦY QUYỀN (mục 17): mức "Có phê duyệt" (mặc định) hoặc chế độ
+            # Gợi ý -> thẻ đề xuất huỷ; "Tự động" -> huỷ thật khi đủ điều kiện.
+            # Không làm được (mock trả bool, CSDL lỗi, đơn không huỷ được)
+            # thì rơi xuống đường cũ: việc xử lý đơn + chuyển người.
+            if isinstance(order_id, UUID) and quyet is not None and not quyet.bi_cam:
+                kq_uq = await _huy_don_theo_uy_quyen(order_id, ma, ly_do, conversation_id, quyet)
+                if kq_uq is not None:
+                    return kq_uq
             # Mock cũ trong unit test trả bool; production trả UUID. Chỉ dữ
             # liệu thật mới được dùng để liên kết Pending Action với đơn.
             if isinstance(order_id, UUID):

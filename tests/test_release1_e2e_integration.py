@@ -286,6 +286,13 @@ def test_e2e_01_to_07_inbox_handover_pending_action_resolve_and_reopen(
     oid = uuid.UUID(oid_s)
 
     async def _ai_xin_huy():
+        # Pending Action (việc xử lý đơn) là đường của mức "Không sử dụng"
+        # (mục 17). Mặc định "Có phê duyệt" thay nó bằng thẻ đề xuất huỷ —
+        # tests/test_uy_quyen_ai_csdl.py. Đặt mức rõ ràng để luồng DEV-09
+        # vẫn được canh nguyên vẹn.
+        from agent.core import uy_quyen
+
+        await uy_quyen.luu_chinh_sach("huy_don", "khong_su_dung", boi="e2e")
         return await tools.run_tool(
             "xin_huy_don",
             {"ma_don": ma_don, "ly_do": "Khách đổi ý qua chat"},

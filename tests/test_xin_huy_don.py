@@ -89,6 +89,14 @@ def test_yeu_cau_huy_tao_pending_action_lien_ket_don(monkeypatch):
     async def bo_qua_log(*args, **kwargs):
         return None
 
+    async def khong_su_dung():
+        # Việc xử lý đơn là đường của mức "Không sử dụng" (mục 17); mức mặc
+        # định "Có phê duyệt" thay nó bằng thẻ đề xuất — tests/test_uy_quyen_ai.py.
+        return {"huy_don": {"muc": "khong_su_dung"}}
+
+    from agent.core import uy_quyen
+
+    monkeypatch.setattr(uy_quyen, "doc_chinh_sach", khong_su_dung)
     monkeypatch.setattr(tools, "_danh_dau_xin_huy", danh_dau)
     monkeypatch.setattr(cong_viec, "tao_tu_yeu_cau_xu_ly_don", tao_viec)
     monkeypatch.setattr(db, "log_event", bo_qua_log)

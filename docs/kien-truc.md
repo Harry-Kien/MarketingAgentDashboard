@@ -123,7 +123,7 @@ flowchart LR
 
 ## 4. Cơ sở dữ liệu
 
-79 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
+81 bảng, chia theo phần nghiệp vụ. `schema.sql` là baseline; mọi
 thay đổi mới đi qua migration có version và checksum:
 
 | Nhóm | Bảng |
@@ -137,7 +137,7 @@ thay đổi mới đi qua migration có version và checksum:
 | **Công việc và thông báo** | `cong_viec` · `cong_viec_lich_su` · `thong_bao` |
 | **Lịch ca** | `ca_truc` · `ca_nghi` |
 | **Dữ liệu cá nhân** | `yeu_cau_chu_the` |
-| **Hồ sơ agent** | `agent_ho_so` |
+| **Hồ sơ agent và ủy quyền AI** | `agent_ho_so` · `ai_uy_quyen` · `ai_de_xuat` |
 | **Vận hành** | `nguoi_dung` · `phien` · `events` · `zalo_oa_token` · `ky_nang_cai_dat` · `goi_ky_nang` · `goi_ky_nang_lich_su` · `ky_nang_lich_su` · `tich_hop_ung_dung` · `cau_hinh_agent` · `cau_hinh_bi_mat` · `mcp_may_chu` · `ket_noi_kiem_tra` · `lich_su_ket_noi` |
 | **Tài khoản kênh** | `channel_accounts` · `credential_secrets` · `account_memberships` · `account_health_events` |
 | **Inbox native** | `webhook_deliveries` · `webhook_nhan` · `tin_vao` · `attachments` · `outbox_jobs` · `inbox_events` · `conversation_reads` · `worker_heartbeats` |
@@ -852,9 +852,31 @@ erDiagram
         TIMESTAMPTZ vi_pham_luc
         _ con_8_cot_nua
     }
+    ai_uy_quyen {
+        TEXT hanh_dong
+        TEXT muc
+        BIGINT nguong_vnd
+        TEXT sua_boi
+        TIMESTAMPTZ sua_luc
+    }
+    ai_de_xuat {
+        UUID id
+        UUID conversation_id
+        TEXT hanh_dong
+        TEXT che_do_ai
+        TEXT muc_uy_quyen
+        TEXT ly_do_can_duyet
+        TEXT trang_thai
+        UUID order_id
+        _ con_16_cot_nua
+    }
     channel_accounts ||--o{ account_health_events : ""
     channel_accounts ||--o{ account_memberships : ""
     nguoi_dung ||--o{ account_memberships : ""
+    conversations ||--o{ ai_de_xuat : ""
+    messages ||--o{ ai_de_xuat : ""
+    nguoi_dung ||--o{ ai_de_xuat : ""
+    orders ||--o{ ai_de_xuat : ""
     messages ||--o{ attachments : ""
     nguoi_dung ||--o{ ca_nghi : ""
     nguoi_dung ||--o{ ca_truc : ""

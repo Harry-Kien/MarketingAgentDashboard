@@ -96,11 +96,11 @@ def test_mo_phong_don_hang_van_bat_xac_nhan_va_ma_hang():
 
 
 def test_ngoai_sandbox_run_tool_khong_re_nhanh(monkeypatch):
-    # Chữ ký khớp `_xin_huy_don(args, conversation_id)` thật —
+    # Chữ ký khớp `_xin_huy_don(args, conversation_id, quyet=None)` thật —
     # ghi tên qua closure vì tham số không mang tên công cụ.
     goi = []
 
-    async def gia(args, conversation_id):
+    async def gia(args, conversation_id, quyet=None):
         goi.append("xin_huy_don")
         return {"da_ghi_nhan": True}
 

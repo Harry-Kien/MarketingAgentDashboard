@@ -1057,3 +1057,94 @@ def test_21_he_thong_giao_viec_theo_ca_chuyen_viec_va_lich_su(app_that):
     assert d["dem"]["chua_phan_cong"] == 1 and d["dem"]["xong_hom_nay"] == 1
     ds = qt.get("/api/cong-viec?chua_phan_cong=true").json()["cong_viec"]
     assert [v["id"] for v in ds] == [v1["id"]]
+
+
+# ------------------------------------------------------------------ 22. ủy quyền thực thi của AI
+
+def test_22_uy_quyen_ai_de_xuat_va_phe_duyet(app_that, monkeypatch):
+    """
+    Ba mức ủy quyền thực thi của AI: chế độ Gợi ý không tự làm, phê duyệt có kiểm lại.
+
+    BƯỚC 1  Cấu hình AI Agent → Chính sách & Ủy quyền: tạo đơn mặc định «Tự động», huỷ đơn «Có phê duyệt», hoàn tiền «Chưa hỗ trợ»; nhân viên không sửa được (403).
+    BƯỚC 2  Chế độ Gợi ý: AI chốt đơn với khách → KHÔNG có đơn nào, kho không bị giữ; hội thoại có thẻ «Tạo đơn» chờ duyệt kèm căn cứ (giá danh mục, tồn sống) và rủi ro.
+    BƯỚC 3  Quản trị có chuông «AI đề xuất», bấm vào mở đúng hội thoại.
+    BƯỚC 4  Nhân viên thuộc kênh (có duyệt AI, KHÔNG có quyền sửa đơn) bấm Phê duyệt → 403.
+    BƯỚC 5  Quản trị Phê duyệt → hệ thống lên đơn lại từ đầu → đơn «Đã chốt»; bấm lần hai → 409, không có đơn thứ hai.
+    BƯỚC 6  Chế độ Tự động: khách xin huỷ → đơn KHÔNG bị huỷ, có thẻ «Huỷ đơn» chờ duyệt; quản trị Từ chối kèm lý do → đơn giữ nguyên.
+    BƯỚC 7  Nhật ký kiểm toán có đủ ai.de_xuat.tao / duyet / thuc_hien / tu_choi gắn với hội thoại.
+    """
+    from agent import db, runtime
+    from agent.config import settings
+    from agent.core import tools, uy_quyen
+    from agent.erp import nha_may
+    from agent.erp.hop_dong import TonKho
+    from tests.erp_gia import NguonGia
+
+    sp = {"ma": "SP1", "ten": "Kem dưỡng ẩm Aurora", "gia": 100000}
+    nha_may.dat_lai()
+    monkeypatch.setattr(nha_may, "tao_nguon", lambda: NguonGia(ton={"SP1": TonKho(ban_duoc=100)}))
+    monkeypatch.setattr(settings, "erp_ghi_don", False)
+
+    async def catalog():
+        return {"san_pham": [sp]}
+    monkeypatch.setattr(tools, "_catalog_song", catalog)
+    uy_quyen.xoa_dem()
+
+    qt = _quan_tri_vao(app_that)
+    tk = _kenh_webchat(qt)
+    _khach_nhan(app_that, tk, "Chị Lan", "em lấy 1 kem dưỡng ẩm nhé")
+    cid = _hoi_thoai_dau(app_that)["id"]
+    lan_id, lan = _nhan_vien_moi(qt, "lan")
+    _them_thanh_vien(app_that, tk, lan_id)
+
+    async def sql(cau, *a):
+        return [dict(r) for r in await db.fetch(cau, *a)]
+    _sql(app_that, sql, "INSERT INTO ton_kho (ma, so_luong) VALUES ('SP1', 100) "
+                        "ON CONFLICT (ma) DO UPDATE SET so_luong = 100 RETURNING ma")
+
+    cs = {h["ma"]: h for h in qt.get("/api/ai-uy-quyen").json()["hanh_dong"]}
+    assert (cs["tao_don"]["muc"], cs["huy_don"]["muc"]) == ("tu_dong", "co_phe_duyet")
+    assert cs["hoan_tien"]["ho_tro"] is False
+    assert lan.put("/api/ai-uy-quyen", json={"hanh_dong": {"tao_don": {"muc": "tu_dong"}}}).status_code == 403
+
+    async def cong_cu(ten, args):
+        return await tools.run_tool(ten, args, cid)
+    don = {"khach_da_xac_nhan": True, "khach_ten": "Chị Lan", "khach_sdt": "0912345678",
+           "khach_dia_chi": "12 Lê Lợi, Phường Bến Thành, TP Hồ Chí Minh",
+           "items": [{"ten_san_pham": sp["ten"], "so_luong": 1}]}
+    monkeypatch.setitem(runtime.STATE, "mode", "assist")
+    kq = _sql(app_that, cong_cu, "tao_don_hang", don)
+    assert kq["da_de_xuat"] is True and kq["tao_duoc"] is False
+    assert _sql(app_that, sql, "SELECT id FROM orders") == []
+    assert _sql(app_that, sql, "SELECT so_luong FROM ton_kho WHERE ma = 'SP1'")[0]["so_luong"] == 100
+    the = qt.get(f"/api/ai-de-xuat?hoi_thoai={cid}").json()["de_xuat"]
+    assert len(the) == 1 and the[0]["nhan_trang_thai"] == "Chờ duyệt"
+    assert the[0]["can_cu"]["nguon"] and the[0]["can_cu"]["rui_ro"]
+
+    chuong = [t for t in qt.get("/api/toi/thong-bao").json()["thong_bao"]
+              if t["tieu_de"].startswith("AI đề xuất")]
+    assert chuong and chuong[0]["lien_ket"] == {"loai": "hoi_thoai", "id": str(cid)}
+
+    did = the[0]["id"]
+    assert lan.post(f"/api/ai-de-xuat/{did}/duyet").status_code == 403
+    r = qt.post(f"/api/ai-de-xuat/{did}/duyet")
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+    assert [d["trang_thai"] for d in _sql(app_that, sql, "SELECT trang_thai FROM orders")] == ["da_chot"]
+    assert qt.post(f"/api/ai-de-xuat/{did}/duyet").status_code == 409
+    assert len(_sql(app_that, sql, "SELECT id FROM orders")) == 1
+
+    monkeypatch.setitem(runtime.STATE, "mode", "auto")
+    ma = _sql(app_that, sql, "SELECT ma_don FROM orders")[0]["ma_don"]
+    kq = _sql(app_that, cong_cu, "xin_huy_don", {"ma_don": ma, "ly_do": "đổi ý"})
+    assert kq["da_de_xuat"] is True and kq["da_huy"] is False
+    huy = [d for d in qt.get(f"/api/ai-de-xuat?hoi_thoai={cid}").json()["de_xuat"]
+           if d["hanh_dong"] == "huy_don"][0]
+    r = qt.post(f"/api/ai-de-xuat/{huy['id']}/tu-choi", json={"ly_do": "gọi lại giữ được đơn"})
+    assert r.status_code == 200, r.text
+    assert _sql(app_that, sql, "SELECT trang_thai FROM orders")[0]["trang_thai"] == "da_chot"
+
+    kinds = {r["kind"] for r in _sql(app_that, sql,
+                                     "SELECT kind FROM events WHERE ref_id = $1", cid)}
+    assert {"ai.de_xuat.tao", "ai.de_xuat.duyet", "ai.de_xuat.thuc_hien",
+            "ai.de_xuat.tu_choi"} <= kinds
+    nha_may.dat_lai()

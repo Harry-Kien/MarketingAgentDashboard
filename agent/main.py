@@ -40,6 +40,7 @@ from agent.api.phan_tich import router as phan_tich_router
 from agent.api.uu_tien import router as uu_tien_router
 from agent.api.sla_cau_hinh import router as sla_cau_hinh_router
 from agent.api.thanh_toan import router as thanh_toan_router
+from agent.api.uy_quyen_ai import router as uy_quyen_ai_router
 from agent.api.thanh_vien_kenh import router as thanh_vien_kenh_router
 from agent.api.channel_accounts import router as channel_accounts_router
 from agent.api.contacts import router as contacts_router
@@ -967,6 +968,7 @@ app.include_router(phan_tich_router)
 app.include_router(uu_tien_router)
 app.include_router(sla_cau_hinh_router)
 app.include_router(thanh_toan_router)
+app.include_router(uy_quyen_ai_router)
 app.include_router(quan_sat.router)
 
 # ĐĂNG KÝ CUỐI CÙNG, có chủ ý: mẫu `/{ten_file}` khớp MỌI đường một

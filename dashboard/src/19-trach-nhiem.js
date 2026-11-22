@@ -74,10 +74,47 @@ function ghiChuNguoiXuLy(m) {
 }
 
 function nhanCanCu(m) {
+  const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
+  if (cc && cc.nhan) return cc.nhan;
   if (m.grounded === true) return "Có căn cứ";
   if (m.grounded === false) return "Thiếu căn cứ";
   return "";
 }
+
+/* Bốn trạng thái căn cứ (mục 16) do MÁY CHỦ phân loại từ kết quả tra cứu
+ * thật của lượt — `agent/core/dau_vet_ai.py::phan_loai_can_cu`. Không phần
+ * trăm. Tin cũ chưa có phân loại thì lui về Có/Thiếu căn cứ như trước. */
+const TAG_CAN_CU = { du: "auto", chua_du: "assist", khong_co: "halt", mau_thuan: "halt" };
+
+function tagCanCu(m) {
+  const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
+  if (cc && cc.ma) return TAG_CAN_CU[cc.ma] || "plain";
+  return m.grounded ? "auto" : "assist";
+}
+
+function veCanCuPhanLoai(m) {
+  const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
+  if (!cc || !cc.ma || cc.ma === "du") return "";
+  const ds = (mang) => (mang || []).map((x) => `<li>${esc(x)}</li>`).join("");
+  return `<div class="ctt__canh">
+    ${cc.huong_dan ? `<p><b>${esc(cc.huong_dan)}</b></p>` : ""}
+    ${(cc.mau_thuan || []).length ? `<ul class="ctt__ds">${ds(cc.mau_thuan)}</ul>` : ""}
+    ${(cc.thieu || []).length ? `<ul class="ctt__ds">${ds(cc.thieu)}</ul>` : ""}
+    ${cc.cau_cho ? `<p class="hint">Câu chờ trung lập (KHÔNG phải câu trả lời nghiệp vụ):</p>
+      <blockquote class="ctt__trich">${esc(cc.cau_cho)}</blockquote>
+      <button type="button" class="btn btn--sm" data-dung-cau-cho="${esc(cc.cau_cho)}">Dùng câu chờ</button>` : ""}
+  </div>`;
+}
+
+/* "Dùng câu chờ": chỉ ĐIỀN vào ô soạn, không gửi — người trực vẫn là người bấm Gửi. */
+document.addEventListener("click", (e) => {
+  const nut = e.target.closest("[data-dung-cau-cho]");
+  if (!nut) return;
+  const o = $('#replyform [name="text"]');
+  if (!o) return;
+  o.value = nut.dataset.dungCauCho;
+  o.focus();
+});
 
 /* "Xem căn cứ" trên BẢN NHÁP AI (chế độ gợi ý) — người duyệt cần nó để quyết
  * gửi hay sửa. Tin khác: "Chi tiết" (cùng bảng, kèm thông tin kỹ thuật). */
@@ -87,7 +124,7 @@ function nutChiTietTin(m, draft) {
   const mo = state.chiTietTin && state.chiTietTin.has(String(m.id));
   const nhan = draft ? "Xem căn cứ" : "Chi tiết";
   const can = draft && nhanCanCu(m)
-    ? `<span class="tag tag--${m.grounded ? "auto" : "assist"}">${esc(nhanCanCu(m))}</span>` : "";
+    ? `<span class="tag tag--${tagCanCu(m)}">${esc(nhanCanCu(m))}</span>` : "";
   return `${can}<button type="button" class="msg__goc-nut" data-chi-tiet-tin="${esc(m.id)}"
     aria-expanded="${mo ? "true" : "false"}">${mo ? "Ẩn" : nhan}</button>`;
 }
@@ -128,6 +165,7 @@ function veChiTietTin(m, draft) {
     ].join("") : '<p class="hint">Tin AI này soạn trước khi hệ thống lưu dấu vết — chỉ còn tên tài liệu.</p>';
     canCu = `
       ${dongCT("Căn cứ", esc(nhanCanCu(m) || "—"))}
+      ${veCanCuPhanLoai(m)}
       <h4 class="ctt__dau">Tài liệu đã dùng</h4>
       ${triThuc ? `<ul class="ctt__ds">${triThuc}</ul>` : '<p class="hint">Không trích tài liệu nào.</p>'}
       <h4 class="ctt__dau">Dữ liệu nghiệp vụ công cụ trả về</h4>

@@ -68,7 +68,7 @@ NHOM = {
     "Công việc và thông báo": ["cong_viec", "cong_viec_lich_su", "thong_bao"],
     "Lịch ca": ["ca_truc", "ca_nghi"],
     "Dữ liệu cá nhân": ["yeu_cau_chu_the"],
-    "Hồ sơ agent": ["agent_ho_so"],
+    "Hồ sơ agent và ủy quyền AI": ["agent_ho_so", "ai_uy_quyen", "ai_de_xuat"],
     "Vận hành": [
         "nguoi_dung", "phien", "events", "zalo_oa_token", "ky_nang_cai_dat",
         "goi_ky_nang", "goi_ky_nang_lich_su", "ky_nang_lich_su",

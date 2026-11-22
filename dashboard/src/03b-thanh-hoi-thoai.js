@@ -248,9 +248,10 @@ document.addEventListener("click", (ev) => {
 /* Trộn ghi chú vào luồng tin theo THỜI GIAN. Ghi chú để riêng một hộp gấp
  * ở đầu hội thoại thì người đọc phải tự ghép "ghi chú này viết lúc khách
  * đang nói gì" — mà đó chính là ngữ cảnh làm ghi chú có nghĩa. */
-function xenGhiChu(tin, ghiChu) {
+function xenGhiChu(tin, ghiChu, deXuat) {
   const ds = (tin || []).map((m, i) => ({ loai: "tin", luc: m.created_at, thu_tu: i, m }));
   (ghiChu || []).forEach((g, i) => ds.push({ loai: "ghichu", luc: g.tao_luc, thu_tu: 1e6 + i, g }));
+  (deXuat || []).forEach((d, i) => ds.push({ loai: "dexuat", luc: d.tao_luc, thu_tu: 2e6 + i, d }));
   const ms = (x) => { const t = Date.parse(x.luc || ""); return Number.isNaN(t) ? 0 : t; };
   return ds.sort((a, b) => ms(a) - ms(b) || a.thu_tu - b.thu_tu);
 }

@@ -274,6 +274,11 @@ async def approve_order(order_id: str, nguoi: dict = Depends(can_quyen("don.sua"
                  "đơn đang chờ duyệt.")
     await db.log_event("order.approve", actor="staff", ref_id=oid, ma_don=don["ma_don"],
                        boi=nguoi.get("ten_dang_nhap"))
+    # Duyệt ở màn Đơn hàng thì thẻ đề xuất AI của đơn này đã xong việc.
+    # Duyệt QUA thẻ thì đề xuất đã ở `da_duyet`, câu này không chạm tới nó.
+    from agent.core import uy_quyen
+
+    await uy_quyen.dong_theo_don(oid, "duyet", boi=str(nguoi.get("ten_dang_nhap") or "staff"))
     kq = await day_don.day_don_da_luu(
         oid, ma_don=don["ma_don"], khach_ten=str(don.get("khach_ten") or ""),
         khach_sdt=str(don.get("khach_sdt") or ""),
@@ -288,63 +293,20 @@ async def approve_order(order_id: str, nguoi: dict = Depends(can_quyen("don.sua"
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"))) -> dict:
     """
-    Huỷ đơn và TRẢ HÀNG VỀ KHO.
-
-    Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
-    huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
-
-    KHÔNG huỷ đơn ĐÃ GIAO: hàng đang ở nhà khách, huỷ là cộng kho một món
-    không có trên kệ (rà soát 11.2026). Khách trả lại hàng là ĐỔI TRẢ —
-    nhận hàng về rồi nhập kho bằng tay.
+    Huỷ đơn và TRẢ HÀNG VỀ KHO — luật ở `agent/core/thao_tac_don.huy_don`,
+    dùng chung với đề xuất "Huỷ đơn" của AI đã được duyệt.
     """
-    oid = _uuid_don(order_id)
-    async with db.pool().acquire() as conn:
-        async with conn.transaction():
-            hien = await conn.fetchrow(
-                "SELECT trang_thai FROM orders WHERE id=$1 FOR UPDATE", oid)
-            if hien is None:
-                raise HTTPException(404, "Không có đơn này")
-            cu = hien["trang_thai"]
-            if cu == "da_giao":
-                raise HTTPException(
-                    409, "Đơn đã giao — không huỷ được: hàng đang ở chỗ khách, huỷ là "
-                         "cộng kho một món không có trên kệ. Xử lý như đổi trả: nhận "
-                         "hàng về rồi nhập kho (Kho → Nhập).")
-            don = await conn.fetchrow(
-                "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
-                "WHERE id=$1 AND trang_thai <> 'da_huy' "
-                "RETURNING ma_don, erp_ma_don, ma_van_don, so_tien_da_thu", oid,
-            )
-    if don is None:
-        return {"ok": True, "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
+    from agent.core import thao_tac_don, uy_quyen
 
-    so_dong = await kho.tra_hang(don["ma_don"])
-    await db.log_event("order.cancel", actor="staff", ref_id=oid, ma_don=don["ma_don"],
-                       so_mat_hang_tra_kho=so_dong, trang_thai_cu=cu)
-    kq: dict = {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
-    # Huỷ ở đây KHÔNG huỷ bên ERP hay bên hãng vận chuyển. Nói thẳng lúc
-    # bấm, để người huỷ tay bên đó — im là ERP vẫn xuất kho, hãng vẫn đi
-    # lấy hàng cho một đơn đã huỷ.
-    ben = []
-    if don.get("erp_ma_don"):
-        ben.append(f"ERP (đơn {don['erp_ma_don']})")
-    elif cu == "cho_dong_bo":
-        # Đang chờ đồng bộ = KHÔNG BIẾT ERP đã nhận chưa (lần đẩy trước có
-        # thể đã tới ERP rồi mới đứt mạng). Không có mã ERP để chỉ ra, nhưng
-        # im lặng là bỏ sót một đơn sống bên ERP.
-        ben.append(f"ERP (đơn đang chờ đồng bộ — tra ERP theo mã {don['ma_don']}, "
-                   "có thì huỷ)")
-    if don.get("ma_van_don"):
-        ben.append(f"hãng vận chuyển (vận đơn {don['ma_van_don']})")
-    if ben:
-        kq["can_huy_tay"] = ("Đơn đã có bên " + " và ".join(ben)
-                             + ": vào đó huỷ tay, hệ thống không tự huỷ hộ.")
-        await db.log_event("order.cancel_can_huy_tay", ref_id=oid, ma_don=don["ma_don"],
-                           erp_ma_don=don.get("erp_ma_don"), ma_van_don=don.get("ma_van_don"),
-                           trang_thai_cu=cu)
-    if int(don.get("so_tien_da_thu") or 0) > 0:
-        kq["can_hoan_tien"] = (f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ"
-                               .replace(",", ".") + " — nhớ hoàn tiền cho khách.")
+    oid = _uuid_don(order_id)
+    try:
+        kq = await thao_tac_don.huy_don(oid, actor="staff")
+    except thao_tac_don.LoiThaoTacDon as exc:
+        raise HTTPException(exc.ma, exc.thong_diep) from exc
+    if kq.pop("da_huy_tu_truoc", False):
+        return kq
+    # Huỷ ở màn này thì thẻ đề xuất AI của chính đơn không được còn nút Duyệt.
+    await uy_quyen.dong_theo_don(oid, "huy", boi=str(_quyen.get("ten_dang_nhap") or "staff"))
     return kq
 
 

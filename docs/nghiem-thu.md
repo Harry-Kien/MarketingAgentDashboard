@@ -2,7 +2,7 @@
 
 <!-- SINH TỰ ĐỘNG bởi scripts/sinh_nghiem_thu.py — đừng sửa tay. -->
 
-Chạy lúc 2026-11-21 17:44 UTC trên commit `c7b9968`. **18/18 kịch bản đạt.**
+Chạy lúc 2026-11-22 03:53 UTC trên commit `73edab9`. **19/19 kịch bản đạt.**
 
 Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + lifespan) và Postgres thật, không kho giả, không gọi model. Các bước dưới đây là docstring của chính test — bảng không mô tả luồng nào khác luồng đã kiểm.
 
@@ -14,7 +14,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 4 | Kênh thêm bằng cấu hình; agent là tuỳ chọn | đạt |
 | 5 | Khách hàng và người chịu trách nhiệm | đạt |
 | 6 | Trường thông tin khách thêm từ dashboard, kiểm kiểu ở máy chủ | đạt |
-| 7 | Phân task và quản lý task | đạt |
+| 7 | Phân task, quản lý task và thông báo nội bộ | đạt |
 | 8 | Tin KHÔNG gửi được | đạt |
 | 9 | Nhiều agent theo cấu hình; định tuyến theo cấu hình | đạt |
 | 10 | Gộp khách trùng | đạt |
@@ -26,6 +26,7 @@ Mỗi kịch bản chạy trên `agent.main.app` đầy đủ (middleware + life
 | 16 | "Gặp nhân viên" — lời hứa trong câu thông báo AI được giữ bằng mã | đạt |
 | 17 | Hãng vận chuyển GHTK báo trạng thái về (webhook DẠNG FORM) | đạt |
 | 18 | Địa chỉ chắc chắn sai thì không lên đơn (danh mục hành chính sau sáp nhập 2025) | đạt |
+| 19 | Đổi ưu tiên hội thoại và xem màn Phân tích | đạt |
 
 ## 1. Đăng nhập và phiên
 
@@ -64,7 +65,7 @@ Kết quả: **đạt** · `test_04_noi_kenh_va_tat_agent_theo_kenh`
 1. Quản trị tạo kênh webchat, credential vào vault, bật kênh.
 2. Kênh hiện trong danh sách.
 3. Tắt agent cho kênh, có lý do -> agent_bat=false.
-4. Khách nhắn -> hội thoại chuyển người, sinh việc, KHÔNG gọi model.
+4. Khách nhắn -> hội thoại chuyển người, chuông báo quản trị (không sinh việc), KHÔNG gọi model.
 5. Bật lại agent -> agent_bat=true.
 
 ## 5. Khách hàng và người chịu trách nhiệm
@@ -87,17 +88,18 @@ Kết quả: **đạt** · `test_06_truong_thong_tin_khach_them_tren_dashboard`
 4. Khoá lạ "chieu_cao" -> 422, không bị nuốt im.
 5. Xoá trường -> máy chủ nói rõ bao nhiêu hồ sơ mất giá trị.
 
-## 7. Phân task và quản lý task
+## 7. Phân task, quản lý task và thông báo nội bộ
 
-Kết quả: **đạt** · `test_07_cong_viec_tu_sinh_nhan_va_hoan_thanh`
+Kết quả: **đạt** · `test_07_chuyen_giao_bao_nguoi_va_giao_viec`
 
-1. Agent tắt -> khách nhắn -> việc tự sinh (nguồn agent, chưa ai nhận).
-2. Ca trực đếm 1 việc chưa giao.
-3. "lan" chưa thuộc kênh -> không thấy việc, tự nhận -> 404.
-4. "lan" vào kênh (không có cong_viec.giao) tự nhận việc -> 200.
-5. "lan" đẩy việc sang "minh" -> 403 (giao cần quyền).
-6. Quản trị giao cho minh, đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
-7. Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
+1. Agent tắt -> khách nhắn -> KHÔNG sinh công việc (mục 14.2); Ca trực đếm 0 việc chưa giao.
+2. "lan" chưa thuộc kênh -> chuông không có gì (không lộ khách kênh khác).
+3. "lan" vào kênh, khách khác nhắn -> chuông "AI chuyển giao" trỏ tới hội thoại.
+4. "lan" bấm đã đọc -> hội thoại KHÔNG đổi (đọc không phải là nhận).
+5. Quản trị tạo việc giao cho "minh" -> chuông của minh có "Được giao việc".
+6. "lan" (không có cong_viec.giao) đẩy việc sang mình -> 403.
+7. Quản trị đặt hạn, đánh dấu xong -> xong_luc có, qua_han=false.
+8. Quản trị tạo việc tay với hạn đã qua -> qua_han=true.
 
 ## 8. Tin KHÔNG gửi được
 
@@ -155,7 +157,7 @@ Kết quả: **đạt** · `test_13_quy_tac_tu_dong_chan_agent_va_chuyen_nguoi`
 1. Quản trị tạo mẫu /doitra; quy tắc gửi mẫu KHÔNG tồn tại bị từ chối lúc lưu (422).
 2. Tạo quy tắc «có từ đổi trả → gắn nhãn, gửi mẫu /doitra, chuyển người».
 3. Kênh BẬT agent; khách nhắn "em muốn DOI TRA" (không dấu) → khớp, agent không chạy.
-4. Hội thoại chuyển người, có nhãn "đổi trả", có MỘT việc, mẫu đã vào hàng gửi.
+4. Hội thoại chuyển người, có nhãn "đổi trả", MỘT thông báo chuyển giao (không sinh việc), mẫu đã vào hàng gửi.
 5. Nhật ký lần chạy ghi "đã làm"; khách nhắn tiếp không sinh mẫu thứ hai.
 6. Nhân viên XEM được quy tắc nhưng không sửa được — thiếu quyền sửa định tuyến (403).
 
@@ -186,7 +188,7 @@ Kết quả: **đạt** · `test_15_so_yeu_cau_cua_khach_dem_han_luat_dinh`
 Kết quả: **đạt** · `test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that`
 
 1. Kênh BẬT agent; khách nhắn "cho em gặp nhân viên!" → chuyển người NGAY, agent không chạy.
-2. Hội thoại ở chế độ người, có MỘT việc "Khách đòi gặp nhân viên".
+2. Hội thoại ở chế độ người, KHÔNG sinh việc, có MỘT thông báo "Khách đòi gặp nhân viên".
 3. Khách KHÔNG nhận câu "em là trợ lý AI" — người đang tiếp, không phải máy.
 4. Công tắc thông báo AI có trên Cấu hình (nhóm Bảo vệ dữ liệu cá nhân).
 
@@ -207,3 +209,13 @@ Kết quả: **đạt** · `test_18_dia_chi_mau_thuan_khong_len_don`
 1. Công cụ lên đơn nhận "Phường Ba Đình, TP Hồ Chí Minh" → không lên đơn, bảo hỏi lại khách.
 2. Không đơn nào được ghi vào CSDL.
 3. Địa chỉ cũ ba cấp ("Phường Bến Nghé, Quận 1, TP HCM") không bị chặn vì lý do địa chỉ.
+
+## 19. Đổi ưu tiên hội thoại và xem màn Phân tích
+
+Kết quả: **đạt** · `test_19_doi_uu_tien_rut_han_sla_va_man_phan_tich`
+
+1. Quản trị đặt SLA mức thường (60/1440 phút) và gấp (5/30 phút); khách web nhắn → hội thoại có hạn.
+2. Nhân viên KHÔNG thuộc kênh đổi ưu tiên → 404, không lộ hội thoại tồn tại.
+3. Quản trị nâng lên "gấp" kèm lý do → hạn phản hồi đầu rút còn tối đa 5 phút từ bây giờ.
+4. Hạ về "thấp" → hạn KHÔNG kéo dài lại; cả hai lần đổi nằm trong nhật ký kiểm toán.
+5. Màn Phân tích: quản trị thấy 1 hội thoại mới, 1 khách mới; nhân viên ngoài kênh thấy 0.

@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from agent import db
+from agent.omnichannel import phan_hoi_that, sla_chuyen_giao
 
 
 class OutboxStatus(StrEnum):
@@ -421,7 +422,10 @@ class PostgresOutboxRepository:
                         """,
                         link["conversation_id"],
                     )
-            if link.get("message_role") in {"agent", "staff"}:
+            # Chỉ PHẢN HỒI THẬT mới đạt phản hồi đầu: tin `system` (thông
+            # báo AI, câu báo chuyển người/ngoài giờ, tin mẫu tự động, CSAT)
+            # là xác nhận tự động — luật và lý do ở `phan_hoi_that.py`.
+            if phan_hoi_that.la_phan_hoi_that(link.get("message_role")):
                 await connection.execute(
                     """
                     WITH responded AS (
@@ -461,6 +465,11 @@ class PostgresOutboxRepository:
                     link["message_id"],
                     link["message_role"],
                 )
+            if phan_hoi_that.chot_chuyen_giao(link.get("message_role")):
+                # Tin nhân viên chốt lượt chuyển giao đang chờ — cùng giao
+                # dịch, cùng mốc "đã tới kênh" với phản hồi đầu.
+                await sla_chuyen_giao.ghi_phan_hoi_nhan_vien(
+                    connection, link["conversation_id"], link["message_id"])
             await connection.execute(
                         """
                         INSERT INTO inbox_events (account_id, topic, ref_id, payload)

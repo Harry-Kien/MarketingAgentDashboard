@@ -13,7 +13,8 @@ from agent import db
 from agent.channels.base import THREAD_NHOM, InboundMessage
 from agent.channels.ten_khach import la_ten_mac_dinh
 from agent.omnichannel.identity import PostgresIdentityTransaction
-from agent.omnichannel.sla_gio import bieu_thuc_han, gio_sla
+from agent.omnichannel import sla_muc_tieu
+from agent.omnichannel.sla_gio import bieu_thuc_han, tham_so_han
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,8 +301,8 @@ class PostgresInboxTransaction:
                 thread_type = coalesce(EXCLUDED.thread_type, conversations.thread_type),
                 updated_at = now()
             RETURNING id, status, mode, state, thread_type
-            """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9, 10))
-               .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 9, 10)),
+            """.replace("{han_dau}", bieu_thuc_han("first_response_minutes", 9))
+               .replace("{han_xong}", bieu_thuc_han("resolution_minutes", 10)),
             message.account_id,
             message.channel,
             message.conversation_ref,
@@ -310,7 +311,7 @@ class PostgresInboxTransaction:
             (message.meta or {}).get("nen_tang_goc"),
             identity["contact_id"],
             identity["id"],
-            *gio_sla(),
+            *tham_so_han(),
             _thread_type(message),
             la_ten_mac_dinh(message.customer_name),
         )
@@ -420,5 +421,9 @@ class PostgresInboxRepository:
     @asynccontextmanager
     async def transaction(self):
         async with self._pool_provider().acquire() as connection:
+            # Lịch/mục tiêu SLA đặt hạn cho hội thoại mới. Làm mới TRƯỚC khi
+            # mở giao dịch: tiến trình chỉ giữ vai `api` không chạy vòng
+            # canh SLA, nên đây là chỗ nó thấy lịch vừa sửa trên dashboard.
+            await sla_muc_tieu.lam_moi_neu_cu(conn=connection)
             async with connection.transaction():
                 yield PostgresInboxTransaction(connection)

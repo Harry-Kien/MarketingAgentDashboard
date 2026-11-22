@@ -127,13 +127,17 @@ def test_han_sla_24_7_khi_tat_gio_hoac_cau_hinh_vo_ly(csdl_kiem_thu):
 
 
 def test_moi_cho_dat_han_deu_dung_gio_lam_viec():
-    from agent.omnichannel import giai_quyet, inbox_service, sla_gio
+    from agent.api import uu_tien
+    from agent.core import gio_lam_viec
+    from agent.omnichannel import giai_quyet, inbox_service, sla_muc_tieu
 
-    assert "bieu_thuc_han(" in inspect.getsource(inbox_service.PostgresInboxTransaction.upsert_conversation)
-    assert "bieu_thuc_han(" in inspect.getsource(giai_quyet.mo_lai_neu_da_giai_quyet)
-    # Cùng cấu hình giờ với câu "ngoài giờ, mấy giờ có người".
-    src = inspect.getsource(sla_gio.gio_sla)
-    assert "gio_lam_viec_bat_dau" in src and "gio_lam_viec_ket_thuc" in src
+    for ham in (inbox_service.PostgresInboxTransaction.upsert_conversation,
+                giai_quyet.mo_lai_neu_da_giai_quyet, uu_tien.doi_uu_tien):
+        src = inspect.getsource(ham)
+        assert "bieu_thuc_han(" in src and "tham_so_han()" in src, ham.__qualname__
+    # Cùng LỊCH CHUNG với câu "ngoài giờ, mấy giờ có người" (mục 15, 0062).
+    assert "lich_lam_viec.hien_hanh()" in inspect.getsource(sla_muc_tieu.lich_cho)
+    assert "lich_lam_viec.hien_hanh()" in inspect.getsource(gio_lam_viec.dang_trong_gio)
 
 
 # ====================================================================== DEV-01
@@ -392,17 +396,29 @@ def test_dev_01_06_mac_dinh_tat_va_khai_trong_env_example():
 
 
 def test_tat_gio_lam_viec_thi_sla_tinh_24_7(monkeypatch):
-    from agent.config import settings
-    from agent.omnichannel import sla_gio
+    """
+    Chưa ai lưu mục tiêu / lịch trên dashboard: công tắc `.env` cũ quyết như
+    trước. Tắt → tham số lịch NULL (24/7) — giờ riêng của chính sách cũng bỏ
+    qua, vì `sla_lich_chinh_sach(NULL, …)` trả NULL. Bật → lịch `.env` mọi
+    ngày, cờ `gio_rieng` cho giờ riêng của chính sách còn tác dụng.
+    """
+    import json
 
+    from agent.config import settings
+    from agent.omnichannel import sla_gio, sla_muc_tieu
+
+    sla_muc_tieu.dat_lai_bo_nho()
     monkeypatch.setattr(settings, "sla_theo_gio_lam_viec", False)
     monkeypatch.setattr(settings, "gio_lam_viec_bat", True)
-    assert sla_gio.gio_sla() == (0, 24)
-    bt = sla_gio.bieu_thuc_han("first_response_minutes", 9, 10)
-    assert "business_hours" not in bt and "$9" in bt and "$10" in bt    # giờ riêng của chính sách cũng bỏ qua
+    assert sla_gio.tham_so_han() == (None, None)
+    bt = sla_gio.bieu_thuc_han("first_response_minutes", 9)
+    assert "sla_han_lich(" in bt and "$9::text::jsonb" in bt and "business_hours" in bt
     monkeypatch.setattr(settings, "sla_theo_gio_lam_viec", True)
-    assert sla_gio.gio_sla() == (settings.gio_lam_viec_bat_dau, settings.gio_lam_viec_ket_thuc)
-    assert "business_hours" in sla_gio.bieu_thuc_han("first_response_minutes", 9, 10)
+    dau, xong = sla_gio.tham_so_han()
+    assert dau == xong
+    lich = json.loads(dau)
+    khung = [settings.gio_lam_viec_bat_dau * 60, settings.gio_lam_viec_ket_thuc * 60]
+    assert lich["tuan"] == [khung] * 7 and lich["nghi"] == [] and lich["gio_rieng"] is True
 
 
 def test_tat_chu_ky_thi_mo_lai_giu_han_cu(csdl_kiem_thu, monkeypatch):

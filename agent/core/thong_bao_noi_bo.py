@@ -360,6 +360,15 @@ _SLA = {
     # Cảnh báo hạn giải quyết (migration 0054) — cùng loại "sắp trễ".
     "resolution_warning": ("sla_sap_tre", "SLA sắp trễ: gần hạn giải quyết"),
     "resolution_breached": ("sla_tre", "SLA đã trễ: quá hạn giải quyết"),
+    # Hạn phản hồi sau chuyển giao (migration 0062) — cùng hai loại, cùng
+    # người nhận: người đang cầm (hoặc thành viên kênh) CỘNG người quản lý.
+    # Khoá chống dội theo hội thoại như các mục tiêu khác: lượt chuyển giao
+    # sau mà thông báo lượt trước còn chưa đọc thì dòng ấy được đẩy lên đầu
+    # với nội dung mới, không thành hai dòng.
+    "handover_response_warning": (
+        "sla_sap_tre", "SLA sắp trễ: chưa nhân viên nào nhắn sau khi AI chuyển giao"),
+    "handover_response_breached": (
+        "sla_tre", "SLA đã trễ: quá hạn phản hồi sau chuyển giao"),
 }
 
 

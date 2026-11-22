@@ -1,44 +1,32 @@
 """
-Giờ làm việc dùng để TÍNH HẠN SLA (DEV-06).
+Giờ làm việc dùng để TÍNH HẠN SLA (DEV-06, mục 15 — 22.11.2026).
 
-Hạn được tính trong SQL bằng `sla_han()` (migration 0039) để mọi chỗ đặt hạn
-— tạo hội thoại, mở lại — dùng chung một phép tính. Mô-đun này chỉ quyết
-định GIỜ MỞ/ĐÓNG truyền vào: lấy từ cùng cấu hình `GIO_LAM_VIEC_*` mà câu
-"ngoài giờ, mấy giờ có người" (`agent/core/gio_lam_viec.py`) đang dùng. Hai
-nơi đọc hai cấu hình khác nhau là hai giờ mở cửa khác nhau cho cùng một shop.
+Hạn được tính trong SQL bằng `sla_han_lich()` (migration 0062) để mọi chỗ
+đặt hạn — tạo hội thoại, mở lại, đổi ưu tiên — dùng chung một phép tính.
+Mô-đun này chỉ dựng BIỂU THỨC; lịch truyền vào lấy từ
+`sla_muc_tieu.tham_so_han()`: lịch chung (`agent/core/lich_lam_viec.py`)
+cho mục tiêu chọn "giờ làm việc", NULL (24/7) cho mục tiêu chọn 24/7.
+Cùng lịch ấy trả lời câu "ngoài giờ, mấy giờ có người" — hai nơi đọc hai
+cấu hình là hai giờ mở cửa cho cùng một shop.
 
-Chính sách SLA có thể ghi đè bằng `business_hours` {"bat_dau", "ket_thuc"}.
+Giờ riêng của chính sách (`business_hours` {"bat_dau", "ket_thuc"}) chỉ
+còn tác dụng khi CHƯA có lịch chung trên dashboard — `sla_lich_chinh_sach`
+trong SQL quyết định, theo cờ `gio_rieng` của lịch.
 """
 from __future__ import annotations
 
-from agent.config import settings
+from agent.omnichannel.sla_muc_tieu import tham_so_han
+
+__all__ = ["bieu_thuc_han", "tham_so_han"]
 
 
-def gio_sla() -> tuple[int, int]:
+def bieu_thuc_han(cot_phut: str, so_lich: int, *, bang: str = "policy") -> str:
     """
-    (giờ mở, giờ đóng) theo giờ Việt Nam để tính hạn SLA.
+    Biểu thức SQL: hạn = bây giờ + `cot_phut` phút tính theo lịch `$so_lich`.
 
-    (0, 24) = đồng hồ chạy liên tục 24/7: khi tắt `SLA_THEO_GIO_LAM_VIEC`
-    (mặc định), hoặc khi tắt giờ làm việc nói chung.
+    `$so_lich` là CHUỖI JSON của `Lich.json_sql()` hoặc NULL (24/7) — lấy từ
+    `tham_so_han()`, mỗi mục tiêu một tham số vì mỗi mục tiêu chọn chế độ
+    riêng.
     """
-    if not settings.sla_theo_gio_lam_viec or not settings.gio_lam_viec_bat:
-        return 0, 24
-    return int(settings.gio_lam_viec_bat_dau), int(settings.gio_lam_viec_ket_thuc)
-
-
-def bieu_thuc_han(cot_phut: str, so_mo: int, so_dong: int, *, bang: str = "policy") -> str:
-    """
-    Biểu thức SQL: hạn = bây giờ + `cot_phut` phút GIỜ LÀM VIỆC.
-
-    `so_mo`, `so_dong` là SỐ THỨ TỰ tham số ($n) mang giờ mở/đóng chung.
-
-    Tắt `SLA_THEO_GIO_LAM_VIEC` thì bỏ qua cả giờ riêng của chính sách
-    (`business_hours`): công tắc tắt là tắt hẳn, không nửa vời theo từng
-    chính sách. Vẫn dùng đủ hai tham số — Postgres từ chối tham số không ai
-    dùng tới.
-    """
-    if not settings.sla_theo_gio_lam_viec:
-        return f"sla_han(now(), {bang}.{cot_phut}, ${so_mo}::int, ${so_dong}::int)"
-    return (f"sla_han(now(), {bang}.{cot_phut}, "
-            f"sla_gio({bang}.business_hours, 'bat_dau', ${so_mo}::int), "
-            f"sla_gio({bang}.business_hours, 'ket_thuc', ${so_dong}::int))")
+    return (f"sla_han_lich(now(), {bang}.{cot_phut}, "
+            f"sla_lich_chinh_sach(${so_lich}::text::jsonb, {bang}.business_hours))")

@@ -100,11 +100,24 @@ SLA
                  sau đó; `chua_phan_hoi` = chuyển rồi mà chưa ai nhắn.
   thoi_gian_giai_quyet  từ lúc bắt đầu lượt phục vụ (tạo hội thoại, hoặc
                  lần mở lại gần nhất) tới sự kiện `conversation.resolved`.
-  Cả ba đo theo CÙNG công tắc với hạn SLA (`SLA_THEO_GIO_LAM_VIEC`): bật thì
-  chỉ đếm giờ làm việc, tắt thì 24/7. Một công tắc chung cho mọi thước đo —
-  chọn riêng từng thước đo là đổi cả cách đặt hạn ở ba chỗ, chưa làm.
-  Mọi tin AI đều tính là đã phản hồi đầu (outbox.py) — giữ nguyên quy ước
-  ấy, nhưng tách AI khỏi nhân viên để lời chào tự động không che ca chờ lâu.
+  Mỗi thước đo theo CHẾ ĐỘ của mục tiêu SLA tương ứng (`sla_muc_tieu`,
+  mục 15 — 22.11.2026): giờ làm việc của lịch chung, hoặc 24/7 — cùng lịch
+  với hạn của chính mục tiêu ấy. `che_do_muc_tieu` trả kèm để màn hình nói
+  rõ con số đo theo cách nào.
+  Phản hồi đầu chỉ tính PHẢN HỒI THẬT (tin AI hoặc nhân viên); tin `system`
+  — thông báo AI, câu báo chuyển người/ngoài giờ, tin mẫu tự động — là xác
+  nhận tự động, không bao giờ đạt hạn (`phan_hoi_that.py`). Tách AI khỏi
+  nhân viên để câu trả lời AI 2 giây không che ca chờ người 40 phút.
+  chuyen_giao   MỤC TIÊU phản hồi sau chuyển giao (`sla_chuyen_giao`, 0062):
+                mỗi LƯỢT chuyển một hạn. dung_han / tre_han đếm lượt có hạn
+                chốt trong khoảng (trễ tính ở lúc vi phạm được ghi, hoặc lúc
+                nhân viên nhắn muộn); canh_bao theo lúc cảnh báo; khong_han =
+                chính sách không đặt số phút; thoi_gian = lúc chuyển → tin
+                nhân viên chốt lượt. Thước đo `phan_hoi_sau_chuyen_giao` cũ
+                (theo sự kiện, có cả dữ liệu trước 0062) giữ nguyên bên cạnh.
+  AI và nhân viên trong GIẢI QUYẾT: lượt giải quyết (và sự kiện đạt / trễ
+                hạn giải quyết) quy cho nhân viên nếu trong lượt phục vụ có
+                người can thiệp (`co_nguoi_can_thiep`), không thì cho AI.
 """
 from __future__ import annotations
 
@@ -116,7 +129,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agent import db
-from agent.config import settings
+from agent.omnichannel import sla_muc_tieu
 from agent.omnichannel.sla import thoi_gian_sla_da_tieu_thu
 
 from .bao_cao_nhan_vien import MUI_GIO, _khoang, dong_hieu_suat, sql_hieu_suat
@@ -433,16 +446,68 @@ FROM cg LEFT JOIN LATERAL (
 # Thời gian giải quyết: lượt phục vụ bắt đầu ở lúc tạo hội thoại, hoặc lần
 # mở lại gần nhất TRƯỚC lúc giải quyết — không thì hội thoại mở lại sau ba
 # tuần mang "thời gian giải quyết" ba tuần.
+# `co_nguoi`: ai lo lượt ấy — AI một mình, hay có người can thiệp (cùng
+# định nghĩa với phần AI). Cận trên +1 giây: tin nhân viên ghi cùng giây với
+# lúc giải quyết vẫn là can thiệp.
+_CO_NGUOI_LUOT = co_nguoi_can_thiep("x.cid", "x.bat_dau", "x.luc + interval '1 second'")
+
 _SQL_TG_GIAI_QUYET = _DAU + """
-SELECT e.created_at AS luc,
-       greatest(c.created_at, coalesce(
-           (SELECT max(r.created_at) FROM events r
-            WHERE r.ref_id = e.ref_id AND r.kind = 'conversation.reopened'
-              AND r.created_at < e.created_at), c.created_at)) AS bat_dau
-FROM events e JOIN hp ON hp.id = e.ref_id
-JOIN conversations c ON c.id = e.ref_id, khoang k
-WHERE e.kind = 'conversation.resolved'
-  AND e.created_at >= k.tu AND e.created_at < k.den
+SELECT x.luc, x.bat_dau, """ + _CO_NGUOI_LUOT + """ AS co_nguoi
+FROM (
+    SELECT e.ref_id AS cid, e.created_at AS luc,
+           greatest(c.created_at, coalesce(
+               (SELECT max(r.created_at) FROM events r
+                WHERE r.ref_id = e.ref_id AND r.kind = 'conversation.reopened'
+                  AND r.created_at < e.created_at), c.created_at)) AS bat_dau
+    FROM events e JOIN hp ON hp.id = e.ref_id
+    JOIN conversations c ON c.id = e.ref_id, khoang k
+    WHERE e.kind = 'conversation.resolved'
+      AND e.created_at >= k.tu AND e.created_at < k.den
+) x
+"""
+
+# Đạt / trễ hạn giải quyết theo AI hay nhân viên: cùng sự kiện với ô tổng
+# (`_SQL_SLA`), quy theo có người can thiệp từ đầu chu kỳ tới lúc ghi sự kiện.
+_SQL_XONG_THEO_VAI = _DAU + """
+SELECT x.kind, """ + _CO_NGUOI_LUOT + """ AS co_nguoi
+FROM (
+    SELECT s.conversation_id AS cid, s.kind, s.created_at AS luc,
+           coalesce((SELECT min(st.created_at) FROM sla_events st
+                     WHERE st.conversation_id = s.conversation_id
+                       AND st.chu_ky = s.chu_ky AND st.kind = 'started'),
+                    c.created_at) AS bat_dau
+    FROM sla_events s JOIN hp ON hp.id = s.conversation_id
+    JOIN conversations c ON c.id = s.conversation_id, khoang k
+    WHERE s.created_at >= k.tu AND s.created_at < k.den
+      AND (s.kind = 'resolution_breached'
+           OR (s.kind = 'resolution_met' AND s.due_at IS NOT NULL))
+) x
+"""
+
+# Mục tiêu phản hồi sau chuyển giao — mỗi lượt một dòng (`sla_chuyen_giao`).
+# Lượt đang chờ luôn được lấy (ảnh chụp "đang chờ / đang quá hạn").
+_SQL_CG = _DAU + """,
+g AS (
+    SELECT g.*, coalesce(g.vi_pham_luc,
+                         CASE WHEN g.ket_qua = 'tre' THEN g.ket_thuc_luc END) AS luc_tre
+    FROM sla_chuyen_giao g JOIN hp ON hp.id = g.conversation_id
+)
+SELECT g.ket_qua, g.bat_dau, g.due_at, g.phan_hoi_luc, g.phan_hoi_boi::text AS nv,
+       coalesce(g.ket_qua = 'dat' AND g.ket_thuc_luc >= k.tu AND g.ket_thuc_luc < k.den,
+                false) AS dat,
+       coalesce(g.luc_tre >= k.tu AND g.luc_tre < k.den, false) AS tre,
+       coalesce(g.canh_bao_luc >= k.tu AND g.canh_bao_luc < k.den, false) AS canh_bao,
+       coalesce(g.ket_qua = 'khong_han' AND g.ket_thuc_luc >= k.tu AND g.ket_thuc_luc < k.den,
+                false) AS khong_han,
+       coalesce(g.ket_thuc_ly_do = 'phan_hoi' AND g.phan_hoi_luc >= k.tu
+                AND g.phan_hoi_luc < k.den, false) AS do_duoc,
+       (g.ket_thuc_luc IS NULL) AS dang_cho,
+       coalesce(g.ket_thuc_luc IS NULL AND g.due_at < now(), false) AS qua_han
+FROM g, khoang k
+WHERE g.ket_thuc_luc IS NULL
+   OR (g.ket_thuc_luc >= k.tu AND g.ket_thuc_luc < k.den)
+   OR (g.luc_tre >= k.tu AND g.luc_tre < k.den)
+   OR (g.canh_bao_luc >= k.tu AND g.canh_bao_luc < k.den)
 """
 
 
@@ -473,16 +538,17 @@ def _ten_ho_so(khoa: str, ten: str | None) -> str:
     return ten or "Hồ sơ đã xoá"
 
 
-def _thong_ke(cap: list[tuple[Any, Any]]) -> dict[str, Any]:
+def _thong_ke(cap: list[tuple[Any, Any]], muc_tieu: str = "phan_hoi_dau") -> dict[str, Any]:
     """
     Số lượt, trung bình, trung vị (giây) của các cặp (bắt đầu, kết thúc).
 
-    Độ dài tính bằng `thoi_gian_sla_da_tieu_thu` — CÙNG công tắc
-    `SLA_THEO_GIO_LAM_VIEC` với hạn SLA: hạn đặt theo giờ làm việc mà thời
-    gian phản hồi đo 24/7 thì một tin tối hôm trước trả lời lúc 8 giờ sáng
-    bị tính "trễ 11 tiếng" trong khi hạn của nó vẫn còn.
+    Độ dài tính bằng `thoi_gian_sla_da_tieu_thu` theo CHẾ ĐỘ của mục tiêu
+    (giờ làm việc / 24/7) — cùng lịch với hạn SLA của mục tiêu ấy: hạn đặt
+    theo giờ làm việc mà thời gian phản hồi đo 24/7 thì một tin tối hôm
+    trước trả lời lúc 8 giờ sáng bị tính "trễ 11 tiếng" trong khi hạn của nó
+    vẫn còn.
     """
-    giay = sorted(thoi_gian_sla_da_tieu_thu(a, b).total_seconds() for a, b in cap)
+    giay = sorted(thoi_gian_sla_da_tieu_thu(a, b, muc_tieu).total_seconds() for a, b in cap)
     return {"so": len(giay),
             "tb_giay": _so(statistics.fmean(giay)) if giay else None,
             "trung_vi_giay": _so(statistics.median(giay)) if giay else None}
@@ -520,11 +586,56 @@ def _sau_chuyen_giao(rows: list, ten_nv: dict[str, str]) -> dict[str, Any]:
     for r in co:
         if r["nv"]:
             theo_nv.setdefault(r["nv"], []).append((r["bat_dau"], r["luc"]))
-    return {**_thong_ke([(r["bat_dau"], r["luc"]) for r in co]),
+    cg = "phan_hoi_sau_chuyen_giao"
+    return {**_thong_ke([(r["bat_dau"], r["luc"]) for r in co], cg),
             "chua_phan_hoi": len(rows) - len(co),
             "nhan_vien": sorted(
-                ({"id": k, "ten": ten_nv.get(k, "Nhân viên đã xoá"), **_thong_ke(v)}
+                ({"id": k, "ten": ten_nv.get(k, "Nhân viên đã xoá"), **_thong_ke(v, cg)}
                  for k, v in theo_nv.items()), key=lambda d: -d["so"])}
+
+
+def _muc_tieu_chuyen_giao(rows: list, ten_nv: dict[str, str]) -> dict[str, Any]:
+    """Mục tiêu phản hồi sau chuyển giao: đạt / trễ / cảnh báo theo LƯỢT."""
+    cg = "phan_hoi_sau_chuyen_giao"
+    dat = sum(1 for r in rows if r["dat"])
+    tre = sum(1 for r in rows if r["tre"])
+    do = [r for r in rows if r["do_duoc"]]
+    theo_nv: dict[str, list] = {}
+    for r in do:
+        if r["nv"]:
+            theo_nv.setdefault(r["nv"], []).append(r)
+
+    def _dong(nhom: list) -> dict[str, Any]:
+        d = sum(1 for r in nhom if r["ket_qua"] == "dat")
+        t = sum(1 for r in nhom if r["ket_qua"] == "tre")
+        return {**_thong_ke([(r["bat_dau"], r["phan_hoi_luc"]) for r in nhom], cg),
+                "dung_han": d, "tre_han": t, "ty_le_dung_han": _ti_le(d, d + t)}
+
+    return {
+        "che_do": sla_muc_tieu.che_do(cg),
+        "dung_han": dat, "tre_han": tre, "ty_le_dung_han": _ti_le(dat, dat + tre),
+        "canh_bao": sum(1 for r in rows if r["canh_bao"]),
+        "khong_han": sum(1 for r in rows if r["khong_han"]),
+        "dang_cho": sum(1 for r in rows if r["dang_cho"]),
+        "qua_han": sum(1 for r in rows if r["qua_han"]),
+        "thoi_gian": _thong_ke([(r["bat_dau"], r["phan_hoi_luc"]) for r in do], cg),
+        "nhan_vien": sorted(
+            ({"id": k, "ten": ten_nv.get(k, "Nhân viên đã xoá"), **_dong(v)}
+             for k, v in theo_nv.items()), key=lambda d: -d["so"]),
+    }
+
+
+def _giai_quyet_theo_vai(gq: list, xv: list) -> dict[str, Any]:
+    """Thời gian và đạt/trễ hạn giải quyết: AI một mình vs có nhân viên."""
+    ra: dict[str, Any] = {}
+    for vai, co in (("agent", False), ("staff", True)):
+        dat = sum(1 for r in xv if bool(r["co_nguoi"]) is co and r["kind"] == "resolution_met")
+        tre = sum(1 for r in xv if bool(r["co_nguoi"]) is co
+                  and r["kind"] == "resolution_breached")
+        ra[vai] = {**_thong_ke([(r["bat_dau"], r["luc"]) for r in gq
+                                if bool(r["co_nguoi"]) is co], "giai_quyet"),
+                   "dung_han": dat, "tre_han": tre, "ty_le_dung_han": _ti_le(dat, dat + tre)}
+    return ra
 
 
 async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
@@ -542,6 +653,8 @@ async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
     ph = await db.fetch(_SQL_PHAN_HOI, *ts)
     cg = await db.fetch(_SQL_CHUYEN_GIAO, *ts)
     gq = await db.fetch(_SQL_TG_GIAI_QUYET, *ts)
+    xv = await db.fetch(_SQL_XONG_THEO_VAI, *ts)
+    cgm = await db.fetch(_SQL_CG, *ts)
     nv = await db.fetch(sql_hieu_suat(pham_vi=_HP, loc_nguoi="AND ($7::uuid IS NULL OR id = $7)"), *ts)
 
     ten_nv = {str(r["id"]): r["ho_ten"] or r["ten_dang_nhap"]
@@ -550,6 +663,8 @@ async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
 
     def i(d, k) -> int:
         return int(d.get(k) or 0)
+
+    muc_tieu_cg = _muc_tieu_chuyen_giao(cgm, ten_nv)
 
     dau_dat, dau_tre = i(sla, "dau_dat"), i(sla, "dau_tre")
     xong_dat, xong_tre = i(sla, "xong_dat"), i(sla, "xong_tre")
@@ -578,7 +693,10 @@ async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
         "tu": tu.isoformat(), "den": den.isoformat(),
         "bo_loc": {"account_id": str(account_id) if account_id else None, "kenh": kenh or None,
                    "nhan_vien": str(nhan_vien) if nhan_vien else None, "ho_so": ho_so},
-        "theo_gio_lam_viec": bool(settings.sla_theo_gio_lam_viec and settings.gio_lam_viec_bat),
+        # Giữ cho dashboard cũ: chế độ của mục tiêu phản hồi đầu.
+        "theo_gio_lam_viec": sla_muc_tieu.lich_cho("phan_hoi_dau") is not None,
+        "che_do_muc_tieu": {m: ("gio_lam_viec" if sla_muc_tieu.lich_cho(m) is not None
+                                else "24_7") for m in sla_muc_tieu.MUC_TIEU},
         "hoi_thoai": hoi_thoai,
         "theo_ngay": [{
             "ngay": r["ngay"].isoformat(), "moi": int(r["moi"]), "giai_quyet": int(r["giai_quyet"]),
@@ -611,7 +729,11 @@ async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
             "qua_han_xong": i(sla, "qua_han_xong"),
             "phan_hoi_dau": _phan_hoi_dau(ph, ten_nv, ten_hs),
             "phan_hoi_sau_chuyen_giao": _sau_chuyen_giao(cg, ten_nv),
-            "thoi_gian_giai_quyet": _thong_ke([(r["bat_dau"], r["luc"]) for r in gq]),
+            "chuyen_giao": muc_tieu_cg,
+            "vi_pham_tat_ca": dau_tre + xong_tre + muc_tieu_cg["tre_han"],
+            "thoi_gian_giai_quyet": {
+                **_thong_ke([(r["bat_dau"], r["luc"]) for r in gq], "giai_quyet"),
+                "theo_vai": _giai_quyet_theo_vai(gq, xv)},
         },
     }
 

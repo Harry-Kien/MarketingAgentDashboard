@@ -232,7 +232,9 @@ def test_ten_man_cu_van_dan_toi_dung_tab():
     ("cc-nhan", ["truong-ds"]),
     ("cc-tu-dong", ["mauNhanhDs", "qtDs", "qtForm"]),
     ("cc-ket-noi", ["connectiongrid", "kn-dieukien", "kn-suckhoe", "api-panel", "erpthu", "tichhop-ds"]),
-    ("cc-sla", ["dtSla", "dtFormSla", "api-nhom-sla"]),
+    # Ngưỡng cảnh báo / khi trễ (`data-api-cac-nhom="sla"`) chuyển vào mô-đun
+    # 26-sla.js — test_sla_muc_tieu_lich canh nó ở đó.
+    ("cc-sla", ["dtSla", "dtFormSla"]),
     ("cc-dieu-phoi", ["dtDoi", "dtLuat", "dtFormNguoi"]),
     ("ai-co-ban", ["aiBat", "cauhinh-ds", "cauhinh-lichsu", "hsa-ds", "api-nhom-model"]),
     ("ai-tri-thuc", ["docform", "docs", "probeform"]),

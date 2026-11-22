@@ -81,12 +81,14 @@ function startInboxStream() {
   ["message.created", "message.sent", "conversation.updated", "conversation.takeover",
    "conversation.released", "conversation.priority_changed",
    "sla.first_response_warning", "sla.first_response_breached",
-   "sla.resolution_warning", "sla.resolution_breached"]
+   "sla.resolution_warning", "sla.resolution_breached",
+   "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
   /* Màn Phân tích không theo nhịp 6 giây; sự kiện SLA mới thì đánh dấu để
      lần tới mở màn (hoặc đang mở) tính lại. */
   ["sla.first_response_breached", "sla.resolution_breached",
-   "sla.first_response_warning", "sla.resolution_warning"]
+   "sla.first_response_warning", "sla.resolution_warning",
+   "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, () => {
       state.ptDaTai = false;
     }));

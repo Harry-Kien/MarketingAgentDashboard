@@ -121,7 +121,7 @@ function knttTaiKhoan(p, t) {
   const kiem = t.kiem
     ? `<span class="row__sub">Xác minh gần nhất ${esc(knttLuc(t.kiem.luc))}: ${esc(t.kiem.code || "")}${
       t.kiem.ly_do ? " — " + esc(t.kiem.ly_do) : ""}</span>` : '<span class="row__sub">Chưa xác minh lần nào.</span>';
-  return `<div class="kn-dong kntt-tk" data-kntt-tk="${esc(t.id)}">
+  return `<div class="kn-dong kntt-tk">
     ${knttCham(t.trang_thai, t.nhan_trang_thai)}
     <span><b>${esc(t.display_name)}</b><small>${esc(t.nhan_trang_thai)} · ${esc(t.status)}</small></span>
     <span>${kiem}<br>${knttThongKe(wh)}${t.url_webhook ? `<br><span class="row__sub">Webhook: <code>${esc(t.url_webhook)}</code></span>` : ""}${fb}</span>
@@ -136,7 +136,7 @@ function knttTaiKhoan(p, t) {
 
 function knttPlugin(p) {
   const wh = p.webhook;
-  return `<section class="kntt-the" data-kntt-plugin="${esc(p.ma)}">
+  return `<section class="kntt-the">
     <h3 class="kntt-the__dau"><b>${esc(p.ten)}</b>${p.ke_thua ? ' <span class="tag tag--plain">kênh cũ</span>' : ""}
       <span class="row__sub">${esc(p.tai_khoan.length)} tài khoản · nối: ${esc(p.cach_noi)}</span></h3>
     <p class="kntt-khanang">${p.kha_nang.map((k) =>

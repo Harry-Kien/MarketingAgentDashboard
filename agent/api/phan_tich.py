@@ -708,6 +708,9 @@ async def tinh(tu: date, den: date, *, xem_het: bool, nguoi_id: uuid.UUID,
             "xong_dat": int(r["xong_dat"]), "xong_tre": int(r["xong_tre"]),
             "vi_pham": int(r["dau_tre"]) + int(r["xong_tre"]),
             "ty_le_dung_han_dau": _ti_le(int(r["dau_dat"]), int(r["dau_dat"]) + int(r["dau_tre"])),
+            # Biểu đồ xu hướng SLA (UX-15-06) vẽ cả hạn giải quyết — tính ở
+            # đây cùng `_ti_le` với ô tổng, để màn hình không có phép chia riêng.
+            "ty_le_dung_han_xong": _ti_le(int(r["xong_dat"]), int(r["xong_dat"]) + int(r["xong_tre"])),
             "chi_phi_ai_usd": round(float(r["chi_phi"] or 0), 6),
         } for r in theo_ngay],
         "khach": {k: i(kh, k) for k in ("tong", "moi", "quay_lai")},

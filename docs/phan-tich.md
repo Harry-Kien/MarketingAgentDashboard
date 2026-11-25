@@ -130,6 +130,16 @@ câu báo khách khi chuyển người ngoài giờ (giờ mở của lần mở
 | Chế độ của mục tiêu | `sla_muc_tieu.che_do` | `.env` `SLA_THEO_GIO_LAM_VIEC` (cho cả ba) |
 | Ngưỡng cảnh báo | `sla_muc_tieu.nguong_canh_bao` | `SLA_NGUONG_CANH_BAO` (dashboard → `.env`) → 80 |
 
+Màn chia bốn khu (UX-15, 26.11.2026): **Mục tiêu & Thời hạn**, **Giờ làm
+việc**, **Cảnh báo** (ô khoá kỹ thuật `SLA_*` dời vào phần "Nâng cao"),
+**Thứ tự áp dụng & Thử tính**. Máy tính hạn gọi
+`GET /api/sla/xem-truoc-han?account_id=&uu_tien=&bat_dau=` (quyền
+`dinh_tuyen.doc`, chỉ đọc): máy chủ chạy CHÍNH biểu thức đặt hạn thật
+(`sla_gio.bieu_thuc_han` với mốc giả định thay `now()`) và CHÍNH luật chọn
+chính sách của đường đổi ưu tiên — test canh cả hai
+(`tests/test_sla_xem_truoc_han.py`). Màn Phân tích tách **Tổng quan SLA**
+(ô số + biểu đồ tỷ lệ đúng hạn theo ngày) khỏi bảng chi tiết thu gọn.
+
 Chưa ai lưu gì trên dashboard thì mọi thứ chạy y như trước bản này. Lịch và
 mục tiêu nạp vào bộ nhớ lúc khởi động, sau mỗi lần lưu, mỗi vòng canh SLA
 (15 giây) và tối đa 30 giây một lần ở đường nhận tin. Hội thoại đang chạy

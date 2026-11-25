@@ -2933,3 +2933,150 @@ svg { flex: none; }
   .knh-dl dd { margin-bottom: 6px; }
   .knh-moi-chan .btn { margin-left: 0; }
 }
+/* ================= SLA & Giờ làm việc (26-sla.js, 26b-sla-thu-tinh.js) — UX-15-01…05 =================
+   Bốn khu thay một trang dài: thanh chọn khu CHÉP dáng `.modeswitch` chứ
+   không mượn class của nó (lý do ở slaVeKhu). Chữ giải thích phải XUỐNG
+   DÒNG — `.row__sub` mặc định cắt một dòng bằng "…", nên mô tả và ví dụ
+   dùng class riêng. Không thêm màu mới: trạng thái đi qua `.tag--*`. */
+.sla-khu {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin: 0 0 14px; max-width: 100%;
+  border-radius: var(--radius); background: hsl(var(--muted));
+}
+.sla-khu__nut {
+  border: 0; background: transparent; border-radius: calc(var(--radius) - 3px);
+  padding: 5px 14px; font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  color: hsl(var(--muted-foreground)); transition: background .15s, color .15s;
+}
+.sla-khu__nut:hover { color: hsl(var(--foreground)); }
+.sla-khu__nut.is-on { background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: var(--shadow-sm); }
+.sla-khu__nut:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.sla-than { padding: 12px 16px 16px; display: grid; gap: 10px; }
+.sla-mo-ta { display: block; margin: 0; font-size: 12.5px; line-height: 1.5; color: hsl(var(--muted-foreground)); white-space: normal; }
+.sla-chu { margin: 0; padding: 10px 16px 0; font-size: 13px; line-height: 1.6; }
+.sla-than .sla-chu { padding: 0; }
+.sla-chu .btn { margin-left: 4px; }
+.sla-vd {
+  margin: 0; padding: 8px 10px; font-size: 12.5px; line-height: 1.5;
+  border-left: 3px solid hsl(var(--primary) / .5); background: hsl(var(--accent) / .5);
+  border-radius: 0 calc(var(--radius) - 4px) calc(var(--radius) - 4px) 0;
+}
+.sla-goi-y {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; cursor: help; vertical-align: 1px;
+  font-size: 11px; font-weight: 600; color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border)); background: hsl(var(--muted));
+}
+.sla-goi-y:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.sla-luoi { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 12px 16px; }
+.sla-mt {
+  display: grid; gap: 8px; align-content: start; padding: 12px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+}
+.sla-mt__dau { font-size: 13.5px; display: flex; align-items: center; gap: 6px; }
+.sla-mt__chon select { max-width: 100%; }
+.sla-nut { align-items: center; padding: 0 16px 14px; }
+.sla-than .sla-nut { padding: 0; }
+.sla-kq { font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.sla-kq.is-loi { color: hsl(var(--destructive)); }
+.sla-bang td { vertical-align: top; }
+.sla-bang td .sla-mo-ta { margin-top: 2px; }
+.sla-them { margin: 4px 16px 16px; }
+.sla-them .form { padding: 0 4px; }
+.sla-tom-tat { display: flex; flex-wrap: wrap; gap: 6px; }
+.sla-ngay {
+  display: inline-flex; gap: 6px; padding: 4px 10px; font-size: 12.5px;
+  border-radius: 99px; background: hsl(var(--accent)); color: hsl(var(--accent-foreground));
+}
+.sla-ngay--nghi { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+.sla-bat { max-width: 320px; }
+.sla-tuan { overflow-x: auto; }
+/* Bảng tuần GỌN, không kéo ngang hết khung (UX-15-04): bảy dòng bốn ô
+   không cần 1.100px, trải rộng ra là mắt phải chạy từ "Thứ Hai" sang tận
+   mép phải mới thấy giờ đóng. Ngày nghỉ thì ô giờ mờ đi. */
+.sla-tuan__bang { width: auto; }
+.sla-tuan__bang th, .sla-tuan__bang td { padding: 4px 12px 4px 0; text-align: left; }
+.sla-tuan__bang tr:has([data-sla-mo-cua]:not(:checked)) input[type="time"] { opacity: .4; }
+.sla-tuan__bang input[type="time"] {
+  font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) - 3px); background: hsl(var(--card)); color: hsl(var(--foreground));
+}
+.sla-o-mo { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.sla-ds-le { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.sla-ds-le .empty { grid-column: 1 / -1; padding: 12px; }
+.sla-le {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px;
+  padding: 8px 6px 8px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  border-left: 3px solid hsl(var(--warning) / .7);
+}
+.sla-le--qua { opacity: .65; border-left-color: hsl(var(--border)); }
+.sla-le__ngay { font-size: 13px; font-weight: 600; }
+.sla-le__ten { grid-column: 1; font-size: 12.5px; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.sla-le .btn { grid-column: 2; grid-row: 1 / span 2; }
+.sla-them-le { align-items: end; }
+.sla-nguong { max-width: 260px; }
+.sla-khi-tre { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 8px 12px 10px; margin: 0; display: grid; gap: 8px; }
+.sla-khi-tre legend { font-size: 13px; font-weight: 500; padding: 0 4px; }
+.sla-chon { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; cursor: pointer; }
+.sla-chon input { margin-top: 3px; }
+.sla-o-so {
+  width: 7em; font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid hsl(var(--input));
+  border-radius: calc(var(--radius) - 3px); background: hsl(var(--card)); color: hsl(var(--foreground));
+}
+.sla-bang-nho { width: auto; }
+.sla-nang-cao { margin: 6px 0 0; }
+/* Khối khoá kỹ thuật dời từ index.html vào đây: bỏ khung panel lồng panel. */
+.sla-nang-cao .panel { border: 0; box-shadow: none; margin: 0; }
+.sla-thu-tu { margin: 0; padding: 12px 16px 14px 36px; display: grid; gap: 10px; }
+.sla-thu-tu li { font-size: 13px; }
+.sla-thu-tu__dau { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 2px; }
+.sla-thu-kq { padding: 0 16px 16px; display: grid; gap: 8px; }
+@media (max-width: 640px) {
+  .sla-khu__nut { flex: 1 1 45%; padding: 6px 8px; white-space: normal; }
+  .sla-luoi { grid-template-columns: 1fr; }
+  /* Bảng tuần vừa 375px không cuộn ngang: bỏ chữ "mở" cạnh ô tick (ô
+     tick đã có aria-label), thu ô giờ. */
+  .sla-o-mo__chu { display: none; }
+  .sla-than { padding: 12px; }
+  .sla-tuan__bang th, .sla-tuan__bang td { padding-right: 4px; }
+  .sla-tuan__bang input[type="time"] { font-size: 12px; padding: 2px 3px; }
+  .sla-o-so { width: 5.5em; }
+  /* Bảng thời hạn và kết quả thử tính: mỗi dòng thành một thẻ, nhãn cột
+     hiện trước từng ô — sáu cột không vừa 375px, cuộn ngang thì mất cột Hạn. */
+  .sla-bang thead { display: none; }
+  .sla-bang, .sla-bang tbody, .sla-bang tr, .sla-bang td { display: block; width: 100%; }
+  .sla-bang tr { padding: 8px 0; border-bottom: 1px solid hsl(var(--border)); }
+  .sla-bang td { border: 0; padding: 2px 4px; text-align: left; }
+  .sla-bang td[data-nhan]::before {
+    content: attr(data-nhan) ": "; font-size: 12px; color: hsl(var(--muted-foreground));
+  }
+}
+
+/* ================= Phân tích → Tổng quan SLA (19-phan-tich.js) — UX-15-06 =================
+   Hai màu chuỗi lấy từ bảng màu dành cho biểu đồ (docs/design.md: màu preset
+   chỉ cho biểu đồ), đã qua bộ kiểm mù màu (ΔE ≥ 30, nền sáng lẫn tối). Không
+   dùng màu trạng thái: đỏ / xanh lá ở đây đọc thành "tốt / xấu" thay vì
+   "chuỗi nào". */
+.pt-khoang { align-items: center; gap: 6px; }
+.pt-khoang__nhan { font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.pt-khoang .chip { cursor: pointer; font: inherit; font-size: 12.5px; }
+.pt-xu-huong { --pt-xh-1: #2563EB; --pt-xh-2: #C2410C; padding: 0 16px 6px; min-height: 60px; }
+.pt-xh__chu-thich { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; margin: 4px 0 6px; }
+.pt-xh__ct { display: inline-flex; align-items: center; gap: 6px; }
+.pt-xh__khung { position: relative; }
+.pt-xh { display: block; overflow: visible; }
+.pt-xh__luoi { stroke: hsl(var(--border)); stroke-width: 1; }
+.pt-xh__muc { stroke: hsl(var(--muted-foreground)); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
+.pt-xh__truc { fill: hsl(var(--muted-foreground)); font-size: 11px; font-family: var(--sans); }
+.pt-xh__doc { stroke: hsl(var(--muted-foreground)); stroke-width: 1; opacity: .5; }
+.pt-xh__duong { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pt-xh__dau { stroke: hsl(var(--card)); stroke-width: 2; }
+.pt-xh__duong.pt-xh--dau { stroke: var(--pt-xh-1); }
+.pt-xh__duong.pt-xh--xong { stroke: var(--pt-xh-2); }
+.pt-xh__dau.pt-xh--dau { fill: var(--pt-xh-1); }
+.pt-xh__dau.pt-xh--xong { fill: var(--pt-xh-2); }
+.pt-xh__meo {
+  position: absolute; top: 4px; z-index: 2; display: grid; gap: 2px; pointer-events: none;
+  padding: 6px 8px; font-size: 12px; white-space: nowrap; border-radius: calc(var(--radius) - 3px);
+  background: hsl(var(--foreground) / .9); color: hsl(var(--background)); box-shadow: var(--shadow-md);
+}
+.pt-chi-tiet { margin: 12px 16px 16px; }

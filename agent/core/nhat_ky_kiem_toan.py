@@ -38,7 +38,7 @@ from typing import Any
 from uuid import UUID
 
 from agent import db
-from agent.core import che_du_lieu
+from agent.core import che_du_lieu, nhat_ky_lien_ket, nhat_ky_nhan
 
 CHE = "<đã che>"
 AN = "[đã ẩn]"
@@ -194,71 +194,9 @@ TRANG_THAI = {
     "thanh_cong": "Thành công",
 }
 
-# Nhãn cho người đọc của những hành động quan trọng; kind khác hiện nguyên.
-NHAN_HANH_DONG = {
-    "ai.tu_gui": "AI tự gửi trả lời",
-    "ai.soan_nhap": "AI soạn nháp chờ duyệt",
-    "agent.error": "AI lỗi, chuyển người",
-    "agent.superseded": "Bỏ câu trả lời lỗi thời",
-    "cong_cu.goi": "AI gọi công cụ",
-    "knowledge.retrieved": "AI tra tài liệu",
-    "conversation.escalated": "Chuyển cho người",
-    "conversation.takeover": "Nhân viên tiếp quản",
-    "conversation.released": "Trả hội thoại cho AI",
-    "conversation.che_do": "Đổi chế độ AI của hội thoại",
-    "conversation.resolved": "Giải quyết hội thoại",
-    "conversation.reopened": "Mở lại hội thoại",
-    "banGiao.trao_di": "Bàn giao sang hộp thư khác",
-    "banGiao.nhan_lai": "Nhận lại hội thoại",
-    "tin_nhan.duyet": "Duyệt bản nháp AI",
-    "tin_nhan.sua_ban_nhap": "Sửa bản nháp AI",
-    "tin_nhan.bo_qua_canh_bao_quang_cao": "Gửi dù có cụm cấm quảng cáo",
-    "order.created": "Lên đơn",
-    "order.approve": "Duyệt đơn",
-    "order.cancel": "Huỷ đơn",
-    "order.xin_huy": "Ghi yêu cầu huỷ đơn",
-    "order.xin_doi_tra": "Ghi yêu cầu đổi trả",
-    "shipping.created": "Tạo vận đơn",
-    "cong_viec.tao": "Tạo công việc",
-    "cong_viec.sua": "Sửa công việc",
-    "nhan.gan_hoi_thoai": "Gắn nhãn hội thoại",
-    "nhan.go_hoi_thoai": "Gỡ nhãn hội thoại",
-    "nhan.gan_khach": "Gắn nhãn khách",
-    "nhan.go_khach": "Gỡ nhãn khách",
-    "runtime.update": "Đổi cấu hình AI",
-    "nguoi_dung.vai_tro": "Đổi vai trò nhân viên",
-    "vai_tro.tao": "Tạo vai trò",
-    "auth.dang_nhap": "Đăng nhập",
-    "auth.that_bai": "Đăng nhập thất bại",
-    "su_co.danh_dau": "Đánh dấu sự cố",
-    "su_co.can_thiep": "Bước can thiệp sự cố",
-    "su_co.ket_thuc": "Kết thúc sự cố",
-    "nhat_ky.giai_trinh": "Giải trình / đính chính",
-    "nhat_ky.xuat": "Xuất nhật ký",
-    "channel_account.created": "Tạo tài khoản kênh",
-    "channel_account.status_changed": "Đổi trạng thái tài khoản kênh",
-    "channel_account.identity_bound": "Gắn định danh tài khoản kênh",
-    "channel_account.credentials_rotated": "Cập nhật thông tin xác thực kênh",
-    "channel_account.reconnected": "Kết nối lại tài khoản kênh",
-    "channel.dang_ky_webhook": "Đăng ký webhook kênh",
-    "channel.dang_ky_webhook_loi": "Đăng ký webhook kênh thất bại",
-    "zalo_personal.da_khoi_phuc": "Khôi phục phiên Zalo cá nhân",
-    "zalo_personal.can_quet_lai": "Zalo cá nhân mất phiên (cần quét QR)",
-    "zalo_personal.sidecar_khong_toi": "Sidecar Zalo cá nhân không phản hồi",
-    "zalo_personal.lech_bi_mat_sidecar": "Lệch bí mật sidecar Zalo cá nhân",
-    "zalo_personal.giu_phien.error": "Lỗi giữ phiên Zalo cá nhân",
-    "zalo_personal.bo_tin_nhom": "Bỏ qua tin nhóm Zalo cá nhân",
-    "zalo_personal.tin_bo_qua": "Bỏ qua tin Zalo cá nhân không đọc được",
-    "ai.de_xuat.tao": "AI tạo đề xuất chờ duyệt",
-    "ai.de_xuat.trung": "Gộp đề xuất AI trùng lặp",
-    "ai.de_xuat.duyet": "Duyệt đề xuất hành động AI",
-    "ai.de_xuat.thuc_hien": "Thực thi tự động đề xuất AI",
-    "ai.de_xuat.cho_xu_ly_thu_cong": "Chờ xử lý thủ công đề xuất sửa đơn",
-    "ai.de_xuat.xu_ly_thu_cong": "Xác nhận đã xử lý thủ công đề xuất sửa đơn",
-    "ai.de_xuat.tu_choi": "Từ chối đề xuất hành động AI",
-    "ai.de_xuat.het_han": "Đề xuất hành động AI hết hạn",
-    "ai.de_xuat.loi": "Thực thi đề xuất hành động AI bị lỗi",
-}
+# Nhãn tiếng Việt của MỌI kind nằm ở `nhat_ky_nhan.py` (UX-18-01) — bảng
+# này giữ tên cũ vì nơi khác và test vẫn tra `NHAN_HANH_DONG[kind]`.
+NHAN_HANH_DONG = {k: v[0] for k, v in nhat_ky_nhan.SU_KIEN.items()}
 
 BUOC_CAN_THIEP = {
     "tiep_quan": "Nhân viên tiếp quản hội thoại",
@@ -326,6 +264,31 @@ _SQL_HOI_THOAI = """COALESCE(
              THEN (e.detail ->> 'conversation_id')::uuid END,
         cv.id, tn.conversation_id)"""
 
+_UUID = "'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'"
+
+
+def _uuid_trong_detail(khoa: str) -> str:
+    return (f"CASE WHEN e.detail ->> {_sql_chuoi(khoa)} ~* {_UUID} "
+            f"THEN (e.detail ->> {_sql_chuoi(khoa)})::uuid END")
+
+
+def _sql_muc_do() -> str:
+    """
+    Mức quan trọng tính bằng SQL, cùng lý do với `nhom`: lọc "chỉ nghiệp vụ"
+    sau `LIMIT` ở Python là trang 1 có 3 dòng, trang 2 có 47.
+    """
+    nhanh = []
+    for muc in nhat_ky_nhan.MUC_DO:
+        ds = [k for k, (_, m) in nhat_ky_nhan.SU_KIEN.items() if m == muc]
+        if ds:
+            nhanh.append(f"WHEN e.kind IN ({', '.join(_sql_chuoi(k) for k in ds)}) "
+                         f"THEN {_sql_chuoi(muc)}")
+    return f"CASE {' '.join(nhanh)} ELSE {_sql_chuoi(nhat_ky_nhan.MUC_DO_MAC_DINH)} END"
+
+
+# Đối tượng bị tác động (UX-18-03) — xem `nhat_ky_lien_ket.py`. Nối theo
+# KHOÁ CHÍNH của bảng đích (ref_id hoặc khoá UUID trong detail), riêng đơn
+# còn theo `ma_don` (UNIQUE): vận đơn chỉ ghi mã đơn, không ghi id.
 _SQL_GOC = f"""
 SELECT e.id, e.kind, e.actor, e.ref_id, e.detail, e.created_at,
        nd.id AS nguoi_id,
@@ -333,26 +296,41 @@ SELECT e.id, e.kind, e.actor, e.ref_id, e.detail, e.created_at,
        ca.id AS kenh_tai_khoan_id,
        ca.display_name AS kenh_tai_khoan_ten,
        ca.channel AS kenh_tai_khoan_kenh,
-       {_SQL_HOI_THOAI} AS hoi_thoai_id,
+       ht.id AS hoi_thoai_id,
+       hv.account_id AS ht_account_id,
+       od.id AS dt_don_id, od.ma_don AS dt_don_ma,
+       cvj.id AS dt_cv_id, cvj.tieu_de AS dt_cv_tieu_de,
+       cvj.nguoi_nhan AS dt_cv_nguoi_nhan, cvj.nguoi_giao AS dt_cv_nguoi_giao,
+       dtnv.id AS dt_nv_id, dtnv.ten AS dt_nv_ten,
        {_sql_nhom()} AS nhom,
+       {_sql_muc_do()} AS muc_do,
        {_sql_loai_tac_nhan()} AS loai_tac_nhan,
        {_SQL_TRANG_THAI} AS trang_thai
   FROM events e
   LEFT JOIN LATERAL (
        SELECT id, ho_ten, ten_dang_nhap FROM nguoi_dung
         WHERE ten_dang_nhap = e.actor
-           OR id = CASE WHEN e.actor ~* '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$' THEN e.actor::uuid END
+           OR id = CASE WHEN e.actor ~* {_UUID} THEN e.actor::uuid END
         LIMIT 1) nd ON true
   LEFT JOIN conversations cv ON cv.id = e.ref_id
   LEFT JOIN messages tn ON tn.id = e.ref_id AND cv.id IS NULL
+  LEFT JOIN LATERAL (SELECT {_SQL_HOI_THOAI} AS id) ht ON true
+  LEFT JOIN conversations hv ON hv.id = ht.id
   LEFT JOIN channel_accounts ca
-    ON ca.id = COALESCE(
-         CASE WHEN e.detail ? 'account_id'
-               AND e.detail ->> 'account_id' ~* '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$'
-              THEN (e.detail ->> 'account_id')::uuid END,
-         cv.account_id,
-         e.ref_id
-       )
+    ON ca.id = COALESCE({_uuid_trong_detail('account_id')}, cv.account_id, e.ref_id)
+  LEFT JOIN LATERAL (
+       SELECT o.id, o.ma_don FROM orders o
+        WHERE o.id = e.ref_id OR o.id = {_uuid_trong_detail('order_id')}
+           OR o.ma_don = e.detail ->> 'ma_don'
+        LIMIT 1) od ON true
+  LEFT JOIN LATERAL (
+       SELECT c.id, c.tieu_de, c.nguoi_nhan, c.nguoi_giao FROM cong_viec c
+        WHERE c.id = e.ref_id OR c.id = {_uuid_trong_detail('cong_viec_id')}
+        LIMIT 1) cvj ON true
+  LEFT JOIN LATERAL (
+       SELECT n.id, COALESCE(NULLIF(n.ho_ten, ''), n.ten_dang_nhap) AS ten FROM nguoi_dung n
+        WHERE n.id = e.ref_id OR n.id = {_uuid_trong_detail('nguoi_dung_id')}
+        LIMIT 1) dtnv ON true
 """
 
 
@@ -404,8 +382,14 @@ def _thong_tin_tai_khoan(
     return None, None
 
 
-def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None) -> dict[str, Any]:
-    """Một dòng `events` (đã qua `_SQL_GOC`) -> bản ghi có cấu trúc, ĐÃ làm sạch."""
+def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None,
+            xem: nhat_ky_lien_ket.NguoiXem | None = None) -> dict[str, Any]:
+    """
+    Một dòng `events` (đã qua `_SQL_GOC`) -> bản ghi có cấu trúc, ĐÃ làm sạch.
+
+    `xem` là người đang xem: quyết liên kết nào trong `lien_ket` mở được.
+    Không truyền thì không liên kết nào mở được (hỏng-đóng).
+    """
     detail = _doc_json(r.get("detail")) or {}
     if not isinstance(detail, dict):
         detail = {"gia_tri": detail}
@@ -421,11 +405,18 @@ def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None) -> di
     tt = r.get("trang_thai") or "thanh_cong"
     nhom = r.get("nhom") or NHOM_MAC_DINH[0]
     tai_khoan, doi_tuong = _thong_tin_tai_khoan(r, str(r.get("kind") or ""), sach)
+    md = r.get("muc_do") or nhat_ky_nhan.muc_do(str(r.get("kind") or ""))
+    # Tiêu đề công việc là chữ người gõ — có thể chứa số điện thoại khách.
+    r_lk = {**r, "dt_cv_tieu_de": lam_sach(str(r.get("dt_cv_tieu_de") or ""), _mat_na=mat_na)}
     return {
         "id": int(r["id"]),
         "luc": r["created_at"].isoformat() if r.get("created_at") else None,
         "kind": r["kind"],
-        "hanh_dong": NHAN_HANH_DONG.get(r["kind"], r["kind"]),
+        "hanh_dong": nhat_ky_nhan.nhan(str(r.get("kind") or "")),
+        "muc_do": {"ma": md, "nhan": nhat_ky_nhan.MUC_DO.get(md, md)},
+        "lien_ket": nhat_ky_lien_ket.lien_ket(r_lk, tai_khoan, xem),
+        # Bản ghi GỘP (UX-18-02) điền khi `tim(gom=True)` gom nhiều dòng lặp.
+        "gom": None,
         "nhom": {"ma": nhom, "nhan": NHAN_NHOM.get(nhom, nhom)},
         "tac_nhan": {
             "loai": loai, "nhan": LOAI_TAC_NHAN.get(loai, loai), "ten": ten,
@@ -550,7 +541,7 @@ def ket_qua(kind: str, sach: dict[str, Any]) -> str:
         if sach.get("loi"):
             phan.append(str(sach["loi"]))
     elif kind == "ai.de_xuat.xu_ly_thu_cong":
-        kq_obj = sach.get("ket_qua") if isinstance(sach.get("ket_qua"), dict) else {}
+        kq_obj: dict[str, Any] = sach["ket_qua"] if isinstance(sach.get("ket_qua"), dict) else {}
         phan = ["đã xử lý thủ công"]
         if kq_obj.get("ma_don"):
             phan.append(f"đơn: {kq_obj['ma_don']}")
@@ -569,7 +560,11 @@ def ket_qua(kind: str, sach: dict[str, Any]) -> str:
                 da_co_trang_thai = True
                 phan.append(f"trạng thái: {_nhan_tt_chi_tiet(v)}")
             else:
-                phan.append(f"{k}: {v}" if not isinstance(v, (dict, list)) else f"{k}: …")
+                # Tên khoá và mã lý do bằng tiếng Việt (UX-18-01): "ly_do:
+                # khong_co_chu_va_khong_co_tep" là chữ của lập trình viên.
+                ten_k = nhat_ky_nhan.NHAN_KHOA.get(k, k)
+                phan.append(f"{ten_k}: {nhat_ky_nhan.gia_tri(k, v)}"
+                            if not isinstance(v, (dict, list)) else f"{ten_k}: …")
             if len(phan) >= 2:
                 break
     if sach.get("luoi"):
@@ -589,12 +584,18 @@ async def tim(*, tu: datetime | None = None, den: datetime | None = None,
               nguoi_id: UUID | None = None, nhom: str | None = None,
               kind: str | None = None, trang_thai: str | None = None,
               luot_id: str | None = None, truoc: int | None = None,
-              limit: int = 50) -> dict[str, Any]:
+              muc_do: list[str] | None = None, gom: bool = False,
+              nguoi: dict | None = None, limit: int = 50) -> dict[str, Any]:
     """
     Tìm theo bộ lọc, mới nhất trước, phân trang bằng con trỏ `id`.
 
     Con trỏ chứ không OFFSET: bảng chỉ thêm và thêm liên tục — OFFSET thì
     trang 2 lặp lại dòng cuối trang 1 mỗi khi có sự kiện mới chen vào.
+
+    `muc_do`: chỉ các mức này (nghiep_vu / van_hanh / ky_thuat) — dòng đã
+    đánh dấu sự cố LUÔN hiện, mức nào cũng vậy. `gom`: gộp dòng vận hành/kỹ
+    thuật lặp liền nhau thành một bản ghi có `gom.so_lan`, `gom.tu..den`.
+    `nguoi`: người đang xem — quyết liên kết đối tượng nào mở được.
     """
     limit = max(1, min(int(limit), TOI_DA_TRANG))
     dk: list[str] = []
@@ -629,30 +630,94 @@ async def tim(*, tu: datetime | None = None, den: datetime | None = None,
         them("x.kind = $?", kind)
     if trang_thai:
         them("x.trang_thai = $?", trang_thai)
+    if muc_do:
+        them("(x.muc_do = ANY($?::text[]) OR x.trang_thai = 'su_co')", list(muc_do))
     if luot_id:
         ts.append(luot_id)
         dk.append(f"x.id IN (SELECT id FROM events WHERE detail ? 'luot_id' "
                   f"AND detail ->> 'luot_id' = ${len(ts)})")
-    if truoc is not None:
-        them("x.id < $?", int(truoc))
-    ts.append(limit + 1)
-    sql = (f"SELECT * FROM ({_SQL_GOC}) x "
-           f"{'WHERE ' + ' AND '.join(dk) if dk else ''} "
-           f"ORDER BY x.id DESC LIMIT ${len(ts)}")
-    rows = await db.fetch(sql, *ts)
+
+    async def lay(con_tro: int | None, so: int) -> list[dict[str, Any]]:
+        dk2, ts2 = list(dk), list(ts)
+        if con_tro is not None:
+            ts2.append(int(con_tro))
+            dk2.append(f"x.id < ${len(ts2)}")
+        ts2.append(so)
+        return await db.fetch(
+            f"SELECT * FROM ({_SQL_GOC}) x {'WHERE ' + ' AND '.join(dk2) if dk2 else ''} "
+            f"ORDER BY x.id DESC LIMIT ${len(ts2)}", *ts2)
+
     mat_na = che_du_lieu.MatNa()
-    items = [ban_ghi(r, mat_na=mat_na) for r in rows[:limit]]
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    if not gom:
+        rows = await lay(truoc, limit + 1)
+        items = [ban_ghi(r, mat_na=mat_na, xem=xem) for r in rows[:limit]]
+        return {"items": items,
+                "next_cursor": items[-1]["id"] if len(rows) > limit and items else None}
+
+    # Mỗi nhóm: [khoá, dòng mới nhất, số dòng, dòng cũ nhất].
+    nhom_ds: list[list[Any]] = []
+    con_tro, da_quet, het = truoc, 0, False
+    while len(nhom_ds) <= limit and da_quet < _TRAN_QUET_GOM:
+        rows = await lay(con_tro, _KHUC_GOM)
+        for r in rows:
+            k = _khoa_gom(r)
+            if nhom_ds and k is not None and nhom_ds[-1][0] == k:
+                nhom_ds[-1][2] += 1
+                nhom_ds[-1][3] = r
+            else:
+                nhom_ds.append([k, r, 1, r])
+        da_quet += len(rows)
+        if len(rows) < _KHUC_GOM:
+            het = True
+            break
+        con_tro = rows[-1]["id"]
+    ra = nhom_ds[:limit]
+    items = []
+    for _, moi_nhat, so, cu_nhat in ra:
+        b = ban_ghi(moi_nhat, mat_na=mat_na, xem=xem)
+        if so > 1:
+            b["gom"] = {"so_lan": so, "id_cu_nhat": int(cu_nhat["id"]),
+                        "tu": cu_nhat["created_at"].isoformat() if cu_nhat.get("created_at") else None,
+                        "den": b["luc"]}
+        items.append(b)
+    con_nua = len(nhom_ds) > limit or not het
+    # Con trỏ = dòng CŨ NHẤT của nhóm cuối đã trả: trang sau bắt đầu ngay
+    # sau nó, không lặp và không sót dòng nào của nhóm kế.
     return {"items": items,
-            "next_cursor": items[-1]["id"] if len(rows) > limit and items else None}
+            "next_cursor": int(ra[-1][3]["id"]) if con_nua and ra else None}
 
 
-async def mot(event_id: int) -> dict[str, Any] | None:
+# Gom dòng lặp (UX-18-02): mỗi lượt quét lấy từng khúc, dừng khi đủ nhóm
+# hoặc chạm trần — một tràng 5.000 dòng `erp.ngat_mach` không được biến
+# một trang thành 5.000 lần `ban_ghi()`.
+_KHUC_GOM = 200
+_TRAN_QUET_GOM = 5000
+
+
+def _khoa_gom(r: dict[str, Any]) -> tuple[str, ...] | None:
+    """
+    Hai dòng LIỀN NHAU cùng khoá thì gộp làm một. Chỉ gộp vận hành/kỹ
+    thuật: mỗi việc nghiệp vụ (AI trả lời một khách, nhân viên duyệt một
+    nháp) là một trách nhiệm riêng, gộp là xoá dấu ai làm gì với ai. Dòng
+    đã đánh dấu sự cố cũng không gộp — nó phải đứng riêng để thấy.
+    Hội thoại không vào khoá: 30 lần "AI tra tài liệu" ở 30 hội thoại vẫn
+    là một tràng tiếng ồn; tài khoản kênh thì có, vì "Zalo A mất phiên" và
+    "Zalo B mất phiên" là hai chuyện.
+    """
+    if r.get("muc_do") == nhat_ky_nhan.NGHIEP_VU or r.get("trang_thai") == "su_co":
+        return None
+    return (str(r.get("kind")), str(r.get("trang_thai")), str(r.get("kenh_tai_khoan_id") or ""))
+
+
+async def mot(event_id: int, *, nguoi: dict | None = None) -> dict[str, Any] | None:
     """Một bản ghi + chuỗi sự cố/giải trình trỏ về nó (đều là dòng mới)."""
     rows = await db.fetch(f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1", int(event_id))
     if not rows:
         return None
     mat_na = che_du_lieu.MatNa()
-    goc = ban_ghi(rows[0], mat_na=mat_na)
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    goc = ban_ghi(rows[0], mat_na=mat_na, xem=xem)
     lien = await db.fetch(
         f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id IN ("
         "  SELECT id FROM events WHERE detail ? 'su_kien_goc' "
@@ -663,7 +728,7 @@ async def mot(event_id: int) -> dict[str, Any] | None:
         "    ON b.detail ->> 'su_co_id' = s.id::text "
         "   WHERE s.kind = 'su_co.danh_dau' AND s.detail ->> 'su_kien_goc' = $1::bigint::text"
         ") ORDER BY x.id", int(event_id))
-    goc["lien_quan"] = [ban_ghi(r, mat_na=mat_na) for r in lien]
+    goc["lien_quan"] = [ban_ghi(r, mat_na=mat_na, xem=xem) for r in lien]
     return goc
 
 

@@ -2771,3 +2771,119 @@ svg { flex: none; }
   overflow: visible;
   text-overflow: clip;
 }
+
+/* ============================================================
+   Nhật ký kiểm toán đọc được (UX-18-01/02/03, 25.11.2026)
+
+   Mỗi dòng là một câu "ai — với đối tượng nào — kết quả gì", nên phần
+   thân KHÔNG cắt một dòng như `.row__sub` mặc định: trên điện thoại câu
+   bị cắt còn "Nhân viên · Chị…" là mất đúng phần trả lời "với ai".
+   Đối tượng mở được là nút viền nhạt màu chính; không mở được là chữ
+   thường — cùng hình dạng chip để mắt đọc như một danh sách.
+   ============================================================ */
+.nk-hien { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px 0; }
+.nk-hien[hidden] { display: none; }
+.nk-hien .modeswitch { flex-wrap: wrap; }
+/* Cùng hình `.modeswitch__opt` nhưng lớp riêng — xem chú thích trong 27-nhat-ky.js. */
+.nk-hien__opt {
+  border: 0; background: transparent; cursor: pointer; font: inherit;
+  border-radius: calc(var(--radius) - 3px); padding: 5px 14px;
+  font-size: 13px; font-weight: 500; color: hsl(var(--muted-foreground));
+  transition: background .15s, color .15s;
+}
+.nk-hien__opt:hover { color: hsl(var(--foreground)); }
+.nk-hien__opt.is-on { background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: var(--shadow-sm); }
+.nk-hien__opt:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+.nk-gom { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: hsl(var(--foreground)); cursor: pointer; }
+.nk-hien__ghi { flex-basis: 100%; margin: 0; }
+.nk-loc-kind { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.nk-dong { cursor: pointer; align-items: start; }
+.nk-dong.is-mo { background: hsl(var(--accent)); }
+.nk-dong__dau { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; white-space: normal; }
+.nk-dong__viec { overflow-wrap: anywhere; }
+.nk-dem { font-variant-numeric: tabular-nums; }
+.nk-cau { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.nk-cau__ai { font-weight: 500; color: hsl(var(--foreground)); }
+.nk-cau__noi { color: hsl(var(--muted-foreground)); }
+.nk-cau__kq { color: hsl(var(--foreground) / .8); }
+.nk-hien__nhom { max-width: 100%; }
+.nk-dong .row__sub { white-space: normal; overflow-wrap: anywhere; }
+.nk-dt {
+  display: inline-flex; align-items: center; max-width: 100%;
+  padding: 1px 8px; border-radius: 4px; font: inherit; font-size: 12px; line-height: 20px;
+  color: hsl(var(--foreground)); background: hsl(var(--muted)); border: 1px solid transparent;
+  overflow-wrap: anywhere;
+}
+.nk-dt--mo { cursor: pointer; color: hsl(var(--primary)); background: hsl(var(--accent)); border-color: hsl(var(--primary) / .25); }
+.nk-dt--mo:hover { border-color: hsl(var(--primary) / .6); }
+.nk-dt--mo:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+.nk-tung { margin-left: 6px; padding-top: 0; padding-bottom: 0; }
+/* `.row__nut` là lớp HÀNG NÚT (flex) mà dòng nhật ký cũ đặt thẳng lên một
+   <button> — trình duyệt vẽ nó thành nút mặc định xám viền đen. */
+.nk-dong button.row__nut {
+  margin: 0; padding: 1px 8px; font: inherit; font-size: 11.5px; line-height: 20px; cursor: pointer;
+  color: hsl(var(--muted-foreground)); background: hsl(var(--card));
+  border: 1px solid hsl(var(--border)); border-radius: 4px;
+}
+.nk-dong button.row__nut:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground) / .5); }
+.ctt .nk-dt { margin: 0 4px 4px 0; }
+@media (max-width: 560px) {
+  /* Luật chung khổ hẹp cho `.modeswitch` là `flex: 1 1 0` — ở đây nó làm
+     ba nút chen chung hàng với ô "Gộp" và dựng đứng thành cột 113px. */
+  .nk-hien .modeswitch { flex: 1 1 100%; flex-wrap: nowrap; }
+  .nk-hien__opt { flex: 1 1 0; padding: 5px 6px; font-size: 12.5px; line-height: 1.3; }
+  .nk-dong { grid-template-columns: 3px minmax(0, 1fr); }
+  .nk-dong .row__side { grid-column: 2; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; }
+}
+
+/* ============================================================
+   Cấu hình AI Agent — một nhịp chung cho cả năm tab (UX-17-04)
+
+   Năm tab gộp từ bốn màn cũ, mỗi màn một thói quen: tab Cơ bản để khối
+   nhà cung cấp trơ trên nền, Kỹ năng dùng huy hiệu chữ HOA 10px trong khi
+   tab khác dùng `.tag`, hàng nút lúc sát mép lúc thụt vào, nhịp giữa các
+   khối 18px chỗ này 0px chỗ kia. CHỈ phạm vi màn này — các màn khác dùng
+   chung `.panel`/`.pill` không bị đụng tới.
+   ============================================================ */
+.ai-tab__dan {
+  margin: 0 0 12px; padding: 0 2px;
+  font-size: 13px; line-height: 1.5; color: hsl(var(--muted-foreground));
+}
+.view[data-view="cauhinhai"] .tabpanel .panel,
+.view[data-view="cauhinhai"] .tabpanel .split,
+.view[data-view="cauhinhai"] .tabpanel .nang-cao { margin-bottom: 16px; }
+.view[data-view="cauhinhai"] .tabpanel .split { gap: 16px; }
+.view[data-view="cauhinhai"] .tabpanel .split > .panel { margin-bottom: 0; }
+/* Tiêu đề khối: tên đậm + chú thích nhạt cùng hàng, nút (nếu có) dồn phải. */
+.view[data-view="cauhinhai"] h2.panel__head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+}
+.view[data-view="cauhinhai"] h2.panel__head > .panel__note { padding: 0; font-weight: 400; font-size: 12.5px; }
+.view[data-view="cauhinhai"] h2.panel__head > .btn { margin-left: auto; align-self: center; }
+/* Hàng nút là con trực tiếp của khối: cùng lề với chữ hướng dẫn. */
+.view[data-view="cauhinhai"] .panel > .rowbtns { padding: 12px 16px 16px; }
+.view[data-view="cauhinhai"] .panel > .chips { padding: 10px 16px 6px; }
+/* Tab Chính sách: đoạn mô tả, cảnh báo ERP, ba nhóm và ô hạn từng sát mép
+   khung — cùng lề 16px với chữ hướng dẫn các tab khác. */
+.dx-chinh-sach > p.row__sub { margin: 0; padding: 8px 16px 0; }
+.dx-chinh-sach > h2 + p.row__sub { padding-top: 12px; }
+.dx-chinh-sach > .dx-canh-bao, .dx-chinh-sach > .dx-nhom { margin-left: 16px; margin-right: 16px; }
+.dx-chinh-sach > .dx-han { margin: 14px 16px 0; }
+/* Dòng chính sách: mô tả ngắn luôn hiện, phần "Chi tiết ▾" mở ra bên dưới
+   có vạch ngăn — để thấy đâu là tóm tắt, đâu là phần vừa mở. */
+.dx-cs__mo-ta-ngan { color: hsl(var(--muted-foreground)); }
+.dx-cs__chi-tiet { margin-top: 6px; padding-top: 6px; border-top: 1px dashed hsl(var(--border)); }
+/* Khối nhà cung cấp: hai thẻ con nằm TRONG khung, cách đều mép. */
+.ai-ncc .kntt-the { margin: 12px 16px; }
+.ai-ncc .kntt-the:last-child { margin-bottom: 16px; }
+/* Huy hiệu nguồn kỹ năng cùng hình với `.tag` của các tab khác. */
+.view[data-view="cauhinhai"] .pill {
+  margin-left: 6px; padding: 2px 9px; border: 0; border-radius: 99px;
+  font-size: 11px; letter-spacing: 0; text-transform: none;
+}
+.view[data-view="cauhinhai"] .pill--halt { background: hsl(var(--destructive) / .12); color: hsl(var(--destructive)); }
+.view[data-view="cauhinhai"] .row__side { gap: 6px; }
+@media (max-width: 560px) {
+  .view[data-view="cauhinhai"] .tabpanel .split { gap: 12px; }
+  .ai-ncc .kntt-the { margin: 10px 12px; }
+}

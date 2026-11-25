@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from agent import db
 from agent.core import nhat_ky_kiem_toan as nk
+from agent.core import nhat_ky_nhan
 from agent.core.gio_lam_viec import VN
 
 from .phu_thuoc import can_quyen, chan_neu_ngoai_kenh
@@ -44,6 +45,20 @@ TrangThai = Literal["su_co", "loi", "cho_duyet", "chuyen_nguoi", "thanh_cong"]
 
 def _ten(nguoi: dict) -> str:
     return str(nguoi.get("ten_dang_nhap") or nguoi.get("id") or "?")
+
+
+def _muc_do(gia_tri: str | None) -> list[str] | None:
+    """
+    `muc_do=nghiep_vu,van_hanh` -> danh sách. Giá trị lạ là 422, không lờ
+    đi: lờ đi thì gõ sai một chữ là bộ lọc âm thầm thành "tất cả".
+    """
+    if not gia_tri:
+        return None
+    ds = [x.strip() for x in gia_tri.split(",") if x.strip()]
+    la = [x for x in ds if x not in nhat_ky_nhan.MUC_DO]
+    if la:
+        raise HTTPException(422, f"Mức quan trọng không hợp lệ: {', '.join(la)}")
+    return ds or None
 
 
 def _gio(t: datetime | None) -> datetime | None:
@@ -71,6 +86,7 @@ async def danh_muc(_q: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, An
         "nguoi": [{"id": str(r["id"]), "ten": r["ten"]} for r in nguoi],
         "buoc_can_thiep": [{"ma": m, "nhan": n} for m, n in nk.BUOC_CAN_THIEP.items()],
         "trang_thai_de_xuat": [{"ma": m, "nhan": n} for m, n in nk.TRANG_THAI_DE_XUAT.items()],
+        "muc_do": [{"ma": m, "nhan": n} for m, n in nhat_ky_nhan.MUC_DO.items()],
     }
 
 
@@ -85,10 +101,17 @@ async def tra_cuu(
     kind: str | None = Query(None, max_length=80),
     trang_thai: TrangThai | None = None,
     luot_id: str | None = Query(None, max_length=40),
+    muc_do: str | None = Query(None, max_length=60),
+    gom: bool = False,
     truoc: int | None = Query(None, ge=1),
     limit: int = Query(50, ge=1, le=nk.TOI_DA_TRANG),
-    _q: dict = Depends(can_quyen("nhat_ky.doc")),
+    nguoi: dict = Depends(can_quyen("nhat_ky.doc")),
 ) -> dict[str, Any]:
+    """
+    Không truyền `muc_do`/`gom` là MỌI dòng, không gộp — hành vi cũ cho
+    người gọi cũ. Màn Nhật ký tự gửi `muc_do=nghiep_vu&gom=true` làm mặc
+    định (UX-18-02).
+    """
     tu, den = _gio(tu), _gio(den)
     if tu and den and tu >= den:
         # Khoảng rỗng trả danh sách rỗng là để người tra tưởng "không có gì
@@ -97,10 +120,11 @@ async def tra_cuu(
     return await nk.tim(tu=tu, den=den, hoi_thoai_id=hoi_thoai_id,
                         loai_tac_nhan=loai_tac_nhan, nguoi_id=nguoi_id, nhom=nhom,
                         kind=kind, trang_thai=trang_thai, luot_id=luot_id,
+                        muc_do=_muc_do(muc_do), gom=gom, nguoi=nguoi,
                         truoc=truoc, limit=limit)
 
 
-_COT_CSV = ("id", "luc", "hanh_dong", "kind", "nhom", "tac_nhan", "ten_tac_nhan",
+_COT_CSV = ("id", "luc", "hanh_dong", "kind", "muc_do", "nhom", "tac_nhan", "ten_tac_nhan",
             "tai_khoan", "hoi_thoai_id", "luot_id", "che_do_ai", "muc_uy_quyen",
             "trang_thai", "ket_qua")
 
@@ -114,6 +138,7 @@ async def xuat_csv(
     nguoi_id: UUID | None = None,
     nhom: str | None = Query(None, max_length=40),
     trang_thai: TrangThai | None = None,
+    muc_do: str | None = Query(None, max_length=60),
     nguoi: dict = Depends(can_quyen("nhat_ky.doc")),
 ) -> StreamingResponse:
     """
@@ -124,12 +149,14 @@ async def xuat_csv(
     xuất cũng được ghi lại: ai đã mang nhật ký ra ngoài là câu hỏi kiểm toán.
     """
     tu, den = _gio(tu), _gio(den)
+    md = _muc_do(muc_do)
     dong: list[dict[str, Any]] = []
     truoc: int | None = None
     while len(dong) < 5000:
         kq = await nk.tim(tu=tu, den=den, hoi_thoai_id=hoi_thoai_id,
                           loai_tac_nhan=loai_tac_nhan, nguoi_id=nguoi_id, nhom=nhom,
-                          trang_thai=trang_thai, truoc=truoc, limit=nk.TOI_DA_TRANG)
+                          trang_thai=trang_thai, muc_do=md, truoc=truoc,
+                          limit=nk.TOI_DA_TRANG)
         dong.extend(kq["items"])
         truoc = kq["next_cursor"]
         if truoc is None:
@@ -141,7 +168,8 @@ async def xuat_csv(
     w.writerow(_COT_CSV)
     for b in dong:
         doi_tuong = (b.get("tai_khoan") or {}).get("ten") or b.get("doi_tuong") or ""
-        w.writerow([b["id"], b["luc"], b["hanh_dong"], b["kind"], b["nhom"]["nhan"],
+        w.writerow([b["id"], b["luc"], b["hanh_dong"], b["kind"], b["muc_do"]["nhan"],
+                    b["nhom"]["nhan"],
                     b["tac_nhan"]["nhan"], b["tac_nhan"]["ten"] or "", doi_tuong,
                     b["hoi_thoai_id"] or "",
                     b["luot_id"] or "", b["che_do_ai"] or "", b["muc_uy_quyen"] or "",
@@ -151,7 +179,7 @@ async def xuat_csv(
                             "den": den.isoformat() if den else None,
                             "hoi_thoai_id": str(hoi_thoai_id) if hoi_thoai_id else None,
                             "loai_tac_nhan": loai_tac_nhan, "nhom": nhom,
-                            "trang_thai": trang_thai})
+                            "trang_thai": trang_thai, "muc_do": md})
     return StreamingResponse(
         iter([buf.getvalue().encode("utf-8")]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="nhat-ky.csv"'})
@@ -190,7 +218,7 @@ async def nhat_ky_hoi_thoai(
 ) -> dict[str, Any]:
     """Nhật ký của MỘT hội thoại, cho người được xử lý hội thoại ấy."""
     await chan_neu_ngoai_kenh(cid, nguoi)
-    return await nk.tim(hoi_thoai_id=cid, truoc=truoc, limit=limit)
+    return await nk.tim(hoi_thoai_id=cid, truoc=truoc, limit=limit, nguoi=nguoi)
 
 
 @router.get("/hoi-thoai/{cid}/luot/{luot_id}")
@@ -266,8 +294,8 @@ async def giai_trinh(event_id: int, body: SuCoBody,
 
 @router.get("/{event_id}")
 async def mot_ban_ghi(event_id: int,
-                      _q: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
-    kq = await nk.mot(event_id)
+                      nguoi: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
+    kq = await nk.mot(event_id, nguoi=nguoi)
     if kq is None:
         raise HTTPException(404, "Không thấy sự kiện")
     if kq.get("luot_id"):

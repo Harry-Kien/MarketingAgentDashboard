@@ -546,6 +546,9 @@ function veDongKyNang(k) {
              data-plugin-xoa="${esc(k.ten)}">Xoá</button>`
       : "";
 
+  /* Trạng thái bằng CHỮ, cùng nhãn "Đang bật/Đang tắt" với công tắc AI và
+     thông báo AI ở tab Cấu hình cơ bản (UX-17-04): trước đây chỉ có vạch màu
+     mép trái và một nút "Tắt" đỏ — nút hành động bị đọc nhầm thành trạng thái. */
   return `<div class="row" data-nguon="${esc(nguon)}">
       <span class="row__flag ${bat ? "row__flag--auto" : "row__flag--halt"}"></span>
       <span class="row__body">
@@ -557,7 +560,8 @@ function veDongKyNang(k) {
         ${k.tat_thi_mat_gi ? `<span class="row__sub"><em>Tắt thì:</em> ${esc(k.tat_thi_mat_gi)}</span>` : ""}
         ${truot}
       </span>
-      <span class="row__side">${nut}</span>
+      <span class="row__side"><span class="tag ${bat ? "tag--auto" : "tag--halt"}">${
+        bat ? "Đang bật" : "Đang tắt"}</span>${nut}</span>
     </div>`;
 }
 

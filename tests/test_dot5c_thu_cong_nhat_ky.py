@@ -86,6 +86,12 @@ def test_dot5c_hoan_tat_thu_cong_va_dong_bo_nhat_ky_kiemthu(monkeypatch):
                     ref_id uuid, detail jsonb DEFAULT '{}'::jsonb,
                     created_at timestamptz DEFAULT now()
                 );
+                -- Mô hình đọc nhật ký phân giải đối tượng (công việc) và quyền mở
+                -- hội thoại theo kênh của người xem (UX-18-03).
+                CREATE TABLE cong_viec(
+                    id uuid PRIMARY KEY, tieu_de text, nguoi_nhan uuid, nguoi_giao uuid
+                );
+                CREATE TABLE account_memberships(account_id uuid, user_id uuid);
                 """
             )
             mig_dir = Path(__file__).parents[1] / "agent/migrations/versions"

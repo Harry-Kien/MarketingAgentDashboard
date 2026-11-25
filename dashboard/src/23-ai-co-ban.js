@@ -103,11 +103,15 @@ async function ganAiCoBan(goc) {
       goc.innerHTML = `<p class="empty">Không tải được cấu hình AI: ${esc(e.message)}</p>`;
       return;
     }
-    goc.innerHTML = `<h2 class="panel__head">Cấu hình AI cơ bản
+    /* Bọc trong `.panel` như mọi khối khác của màn (UX-17-04): trước đây
+       tiêu đề và hai thẻ nằm trơ trên nền trang, trông như một màn khác. */
+    goc.innerHTML = `<section class="panel ai-ncc">
+      <h2 class="panel__head">Nhà cung cấp và model
         <span class="panel__note">${duLieu.vault_san_sang ? "khoá mã hoá trong CSDL, chỉ hiện 4 ký tự cuối"
           : "vault chưa cấu hình — chỉ xem được"}</span></h2>
       ${aiTheNhaCungCap(duLieu)}
-      ${aiTheThongBao(duLieu)}`;
+      ${aiTheThongBao(duLieu)}
+    </section>`;
     aiHienTheoNhaCungCap(goc.querySelector('[data-kntt-dv="ai"]'), duLieu);
   };
   knttGanSuKien(goc, napLai);

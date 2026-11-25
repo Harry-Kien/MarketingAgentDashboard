@@ -184,10 +184,8 @@ _TU_DEM_CAN_CU = frozenset({
     "se", "la", "cua", "cho", "voi", "va", "hoac", "thi", "ma", "nhung", "de",
     "trong", "ngoai", "tren", "duoi", "khi", "neu", "theo", "ve", "tu", "den",
     "sau", "truoc", "lai", "nua", "nhieu", "it", "tot", "lam", "rat", "hoi",
-    "thong", "tin", "ho", "tro", "tu", "van", "kiem", "tra", "nhat", "nhieu",
-    "hien", "tai", "nay", "kia", "nay", "ay", "do", "day", "the", "nao", "sao",
-    "tai", "vi", "nen", "cung", "rat", "qua", "moi", "cu", "da", "dang", "se",
-    "phai", "can", "muon", "biet", "xem", "gui", "nhan", "san", "pham",
+    "thong", "tin", "ho", "tro", "van", "kiem", "tra", "nhat", "hien", "tai", "nay", "kia", "ay", "do", "day", "the", "nao", "sao",
+    "vi", "nen", "cung", "qua", "moi", "cu", "dang", "phai", "can", "muon", "biet", "xem", "gui", "nhan", "san", "pham",
 })
 
 

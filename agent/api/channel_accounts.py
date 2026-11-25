@@ -127,10 +127,14 @@ async def _lich_su(user: dict, account: Any, hanh_dong: str, truong: str) -> Non
 def _raise_public(exc: Exception) -> None:
     if isinstance(exc, AccountNotFound):
         raise HTTPException(404, str(exc)) from exc
+    # Lời gốc + CÁCH SỬA (UX-20-05): "tài khoản kênh này đã tồn tại" một mình
+    # không nói người dùng phải đi đâu tiếp — tạo lại lần nữa cũng 409.
+    from agent.omnichannel.giai_thich_loi_kenh import cau_loi
+
     if isinstance(exc, AccountAlreadyExists):
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, cau_loi("AccountAlreadyExists", str(exc))) from exc
     if isinstance(exc, AccountDisabled):
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, cau_loi("AccountDisabled", str(exc))) from exc
     if isinstance(exc, VuotHanMuc):
         # 402: yêu cầu hợp lệ, chỉ là gói không cho — nói rõ để nâng gói.
         raise HTTPException(402, str(exc)) from exc
@@ -289,8 +293,11 @@ async def suc_khoe_tong(
         UUID(str(user["id"])),
         is_admin="kenh.sua" in user.get("quyen", ()),
     )
+    from agent.omnichannel import giai_thich_loi_kenh as gtl
+
     ids = [a.id for a in accounts]
     ly_do: dict[str, str] = {}
+    ma_loi: dict[str, str] = {}
     tin_vao: dict[str, Any] = {}
     token: dict[str, dict[str, Any]] = {}
     if ids:
@@ -303,6 +310,7 @@ async def suc_khoe_tong(
             """, ids):
             ct = r["detail"] if isinstance(r["detail"], dict) else {}
             ly_do[str(r["account_id"])] = str(ct.get("ly_do") or r["code"] or "")[:200]
+            ma_loi[str(r["account_id"])] = str(r["code"] or "")
         for r in await db.fetch(
             """
             SELECT c.account_id, max(m.created_at) AS luc
@@ -335,10 +343,24 @@ async def suc_khoe_tong(
             ly_do_hong=ly_do.get(aid), tin_vao_gan_nhat=tin_vao.get(aid),
             token=token.get(aid))
         ngay = (token.get(aid) or {}).get("ngay_con_lai")
+        tt = skk.trang_thai_ket_noi(status=a.status.value, muc=d.muc, hanh_dong=d.hanh_dong)
+        # Mã để GIẢI THÍCH: chỉ khi không hoạt động bình thường. Tài khoản đang
+        # chạy mà vẫn kèm lỗi cũ của tuần trước là báo động giả.
+        # active mà hỏng chỉ có thể do quyền Meta -> mã của vòng canh token.
+        ma_token = str((token.get(aid) or {}).get("kind") or "") if a.status.value == "active" else ""
+        ma = ""
+        if tt in (skk.LOI, skk.CAN_XAC_THUC, skk.CHUA_KET_NOI):
+            ma = ma_token or ma_loi.get(aid) or a.status.value
+        elif tt == skk.HOAT_DONG and d.muc == skk.VANG:
+            ma = ma_token
         kenh.append({
             "id": aid, "channel": a.channel.value, "display_name": a.display_name,
             "status": a.status.value, "muc": d.muc, "viec": d.viec,
             "hanh_dong": d.hanh_dong,
+            "trang_thai": tt, "nhan_trang_thai": skk.NHAN_TRANG_THAI_KET_NOI[tt],
+            # Hoạt động nhưng cần để ý (token sắp hết, chưa thấy tin nào về).
+            "canh_bao": tt == skk.HOAT_DONG and d.muc == skk.VANG,
+            "giai_thich": gtl.giai_thich(ma, kenh=a.channel.value, ly_do=ly_do.get(aid)),
             "tin_vao_gan_nhat": tin_vao[aid].isoformat() if tin_vao.get(aid) else None,
             "token_con_ngay": round(float(ngay), 1) if ngay is not None else None,
         })
@@ -368,6 +390,9 @@ async def suc_khoe_tong(
         "dang_nhap": {"meta": co_meta, "zalo_oa": co_zalo},
         "dem": {m: sum(1 for k in kenh if k["muc"] == m)
                 for m in (skk.DO, skk.VANG, skk.XANH, skk.TAT)},
+        "dem_trang_thai": {t: sum(1 for k in kenh if k["trang_thai"] == t)
+                           for t in skk.NHAN_TRANG_THAI_KET_NOI},
+        "nhan_trang_thai": dict(skk.NHAN_TRANG_THAI_KET_NOI),
     }
 
 

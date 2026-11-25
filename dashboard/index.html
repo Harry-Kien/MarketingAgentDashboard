@@ -798,79 +798,124 @@
       </section>
       <section class="tabpanel" id="cc-ket-noi" data-gan="cc-ket-noi" role="tabpanel" hidden>
         <div class="connections-head">
-          <div><p class="eyebrow">MULTI-ACCOUNT CONNECTIONS</p><h2>Tất cả tài khoản kênh</h2>
-            <p>Mỗi tài khoản có credential, sức khỏe và luồng gửi riêng. Secret chỉ được nhập, không hiển thị lại.</p></div>
+          <div><p class="eyebrow">KẾT NỐI &amp; TÍCH HỢP</p><h2>Kênh khách hàng và hệ thống ngoài</h2>
+            <p>Mỗi tài khoản hiện <b>một</b> trạng thái, lấy từ sức khoẻ thật của kết nối. Thông tin bí mật chỉ nhập vào, không bao giờ hiện lại.</p></div>
           <button type="button" class="btn btn--primary" id="connection-add-toggle">Thêm tài khoản</button>
         </div>
-        <!-- KẾT NỐI KÊNH: điều kiện chung → nối kênh mới → sức khoẻ từng kênh.
-             Thứ tự ấy là thứ tự người vận hành cần: thiếu địa chỉ công khai thì
-             nối gì cũng vô ích; nối xong thì câu duy nhất còn lại là "tin có về
-             không". Xem agent/omnichannel/suc_khoe_kenh.py. -->
-        <section class="panel kn-dieukien" id="kn-dieukien" aria-live="polite">
-          <p class="empty">Đang kiểm điều kiện chung…</p></section>
-        <section class="panel kn-moi">
-          <h2 class="panel__head">Nối kênh mới <span class="panel__note">mỗi nền tảng một nút — không phải dán token</span></h2>
-          <div class="kn-o">
-            <button type="button" class="kn-the" data-noi="meta">
-              <b>Facebook + Instagram</b>
-              <span>Đăng nhập Facebook, chọn Trang. Instagram Business đã liên kết Trang được nối cùng lúc.</span></button>
-            <button type="button" class="kn-the" data-noi="zalo_oa">
-              <b>Zalo OA</b>
-              <span>Đăng nhập Zalo, chọn OA. Kênh chính thức, bền lâu dài.</span></button>
-            <button type="button" class="kn-the" data-noi="zalo_personal">
-              <b>Zalo cá nhân</b>
-              <span>Đặt tên rồi quét mã QR bằng app Zalo. Không chính thức — Zalo có thể khoá nick.</span></button>
-            <button type="button" class="kn-the" data-noi="webchat">
-              <b>Chat trên website</b>
-              <span>Nhập địa chỉ website, nhận một đoạn mã dán vào website là xong.</span></button>
-            <button type="button" class="kn-the kn-the--phu" data-noi="whatsapp">
-              <b>WhatsApp</b>
-              <span>Hiện còn nhập tay từ Meta (Phone number ID, token). Nối bằng đăng nhập: sắp có.</span></button>
-          </div>
-          <div id="kn-ketqua"></div>
-        </section>
-        <section class="panel kn-suckhoe">
-          <h2 class="panel__head">Sức khoẻ kênh <span class="panel__note" id="kn-dem"></span></h2>
-          <div id="kn-suckhoe" class="rows"><p class="empty">Đang tải…</p></div>
-        </section>
-        <section class="panel connection-create is-hidden" id="connection-create">
-          <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
-          <div class="oauth-row">
-            <button type="button" class="btn btn--primary" id="btn-oauth-meta">Kết nối Facebook / Instagram bằng đăng nhập</button>
-            <span class="oauth-row__note">Chọn Trang trên Meta, hệ thống tự nhận token. Không phải dán tay.</span>
-          </div>
-          <div class="oauth-row">
-            <button type="button" class="btn btn--primary" id="btn-oauth-zalo-oa">Kết nối Zalo OA bằng cấp quyền</button>
-            <span class="oauth-row__note">Zalo hỏi bạn chọn OA, hệ thống tự nhận khoá. Xong còn một bước dán địa chỉ webhook — cửa sổ sẽ chỉ chỗ.</span>
-          </div>
-          <form id="connectionform" class="form connection-form">
-            <label class="field"><span>Kênh</span><select name="channel" required>
-              <option value="zalo_personal">Zalo cá nhân</option><option value="zalo_oa">Zalo Official Account</option>
-              <option value="facebook">Facebook Page</option><option value="instagram">Instagram</option>
-              <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
-            </select></label>
-            <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
-            <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
-            <details class="nhap-tay" id="nhap-tay">
-              <summary>Nhập thủ công</summary>
-              <div class="nhap-tay__o">
-            <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
-            <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
-            <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
-            <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
-            <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
-            <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
-              </div>
-            </details>
-            <p class="form__ketiep" id="connection-ketiep"></p>
-            <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
-          </form>
-        </section>
-        <div id="connectiongrid" class="connection-grid"><p class="empty">Đang tải tài khoản kênh…</p></div>
-        <section class="panel connection-guide">
-          <h2 class="panel__head">Checklist kích hoạt</h2>
-          <div class="guide-steps"><span><b>1</b> Tạo tài khoản</span><span><b>2</b> Đăng nhập/cấp quyền</span><span><b>3</b> Gắn webhook</span><span><b>4</b> Test inbound + outbound + media</span></div>
-        </section>
+        <!-- BA KHU VỰC thay cho một trang dọc 2.500px (UX-08-01, MD-UX-20-01):
+             kênh nói chuyện với KHÁCH, hệ thống ngoài của CỬA HÀNG, và lịch sử.
+             Mỗi phần tử khai khu vực bằng data-kn-thuoc; 18-ket-noi-kenh.js
+             `knChonPhan` ẩn/hiện. .tab__goc ở cuối là nội dung mặc định khi
+             mô-đun 22-ket-noi-tich-hop.js không gắn được — giữ làm thân thứ
+             ganKhe() thay thế. -->
+        <div class="kn-phan-nav" role="tablist" aria-label="Khu vực Kết nối &amp; Tích hợp">
+          <button type="button" role="tab" class="kn-phan-nav__nut" data-kn-phan-nut="kenh" aria-controls="kn-phan-kenh" aria-selected="true">Kênh giao tiếp khách hàng
+            <span class="kn-phan-nav__dem" id="kn-nav-dem" title="Tài khoản cần xử lý" hidden></span></button>
+          <button type="button" role="tab" class="kn-phan-nav__nut" data-kn-phan-nut="tich-hop" aria-controls="kn-phan-tich-hop" aria-selected="false">Tích hợp hệ thống ngoài</button>
+          <button type="button" role="tab" class="kn-phan-nav__nut" data-kn-phan-nut="lich-su" aria-controls="kn-phan-lich-su" aria-selected="false">Lịch sử</button>
+        </div>
+        <div class="kn-phan" id="kn-phan-kenh" data-kn-thuoc="kenh" role="tabpanel" aria-label="Kênh giao tiếp khách hàng">
+          <!-- Thứ tự là thứ tự người vận hành cần: việc phải làm ngay → điều
+               kiện chung (thiếu địa chỉ công khai thì nối gì cũng vô ích) → nối
+               thêm → toàn bộ tài khoản. Xem agent/omnichannel/suc_khoe_kenh.py. -->
+          <section class="panel kn-suckhoe">
+            <h2 class="panel__head">Cần xử lý <span class="panel__note" id="kn-dem"></span></h2>
+            <div id="kn-suckhoe" class="rows" aria-live="polite"><p class="empty">Đang tải…</p></div>
+          </section>
+          <section class="panel kn-dieukien" id="kn-dieukien" aria-live="polite">
+            <p class="empty">Đang kiểm điều kiện chung…</p></section>
+          <details class="panel kn-moi" id="kn-moi">
+            <summary class="panel__head">Nối kênh mới <span class="panel__note">mỗi nền tảng một nút — không phải dán token</span></summary>
+            <div class="kn-o">
+              <button type="button" class="kn-the" data-noi="meta">
+                <b>Facebook + Instagram</b>
+                <span>Đăng nhập Facebook, chọn Trang. Instagram Business đã liên kết Trang được nối cùng lúc.</span></button>
+              <button type="button" class="kn-the" data-noi="zalo_oa">
+                <b>Zalo OA</b>
+                <span>Đăng nhập Zalo, chọn OA. Kênh chính thức, bền lâu dài.</span></button>
+              <button type="button" class="kn-the" data-noi="zalo_personal">
+                <b>Zalo cá nhân</b>
+                <span>Đặt tên rồi quét mã QR bằng app Zalo. Không chính thức — Zalo có thể khoá nick.</span></button>
+              <button type="button" class="kn-the" data-noi="webchat">
+                <b>Chat trên website</b>
+                <span>Nhập địa chỉ website, nhận một đoạn mã dán vào website là xong.</span></button>
+              <button type="button" class="kn-the kn-the--phu" data-noi="whatsapp">
+                <b>WhatsApp</b>
+                <span>Hiện còn nhập tay từ Meta (Phone number ID, token). Nối bằng đăng nhập: sắp có.</span></button>
+            </div>
+            <div id="kn-ketqua"></div>
+            <div class="knh-moi-chan">
+              <span class="knh-buoc"><b>1</b> Tạo tài khoản</span><span class="knh-buoc"><b>2</b> Đăng nhập / cấp quyền</span>
+              <span class="knh-buoc"><b>3</b> Gắn webhook</span><span class="knh-buoc"><b>4</b> Nhắn thử một tin</span>
+              <button type="button" class="btn btn--sm btn--ghost" id="kn-nhap-tay-mo">Nhập thông tin thủ công (nâng cao)</button>
+            </div>
+          </details>
+          <section class="panel connection-create is-hidden" id="connection-create">
+            <h2 class="panel__head">Kết nối tài khoản native <span class="panel__note">sẽ ở trạng thái chờ cho tới khi xác minh provider</span></h2>
+            <div class="oauth-row">
+              <button type="button" class="btn btn--primary" id="btn-oauth-meta">Kết nối Facebook / Instagram bằng đăng nhập</button>
+              <span class="oauth-row__note">Chọn Trang trên Meta, hệ thống tự nhận token. Không phải dán tay.</span>
+            </div>
+            <div class="oauth-row">
+              <button type="button" class="btn btn--primary" id="btn-oauth-zalo-oa">Kết nối Zalo OA bằng cấp quyền</button>
+              <span class="oauth-row__note">Zalo hỏi bạn chọn OA, hệ thống tự nhận khoá. Xong còn một bước dán địa chỉ webhook — cửa sổ sẽ chỉ chỗ.</span>
+            </div>
+            <form id="connectionform" class="form connection-form">
+              <label class="field"><span>Kênh</span><select name="channel" required>
+                <option value="zalo_personal">Zalo cá nhân</option><option value="zalo_oa">Zalo Official Account</option>
+                <option value="facebook">Facebook Page</option><option value="instagram">Instagram</option>
+                <option value="whatsapp">WhatsApp Cloud</option><option value="webchat">Website chat</option>
+              </select></label>
+              <label class="field"><span>Tên hiển thị</span><input name="display_name" required maxlength="120" placeholder="CSKH Hà Nội"></label>
+              <p class="khuyen-dang-nhap is-hidden" id="khuyen-dang-nhap"></p>
+              <details class="nhap-tay" id="nhap-tay">
+                <summary>Nhập thủ công</summary>
+                <div class="nhap-tay__o">
+              <label class="field"><span>ID tài khoản provider</span><input name="external_account_id" maxlength="240" placeholder="Page ID / OA ID / Phone number ID"></label>
+              <label class="field"><span>App / Client ID</span><input name="app_id" autocomplete="off" maxlength="240"></label>
+              <label class="field"><span>Access token</span><input name="access_token" type="password" autocomplete="new-password"></label>
+              <label class="field"><span>App secret</span><input name="app_secret" type="password" autocomplete="new-password"></label>
+              <label class="field"><span>Verify token</span><input name="verify_token" type="password" autocomplete="new-password"></label>
+              <label class="field"><span>Refresh token / sidecar secret / widget secret</span><input name="secondary_secret" type="password" autocomplete="new-password"></label>
+                </div>
+              </details>
+              <p class="form__ketiep" id="connection-ketiep"></p>
+              <button type="submit" class="btn btn--primary">Lưu kết nối mã hóa</button>
+            </form>
+          </section>
+          <div id="connectiongrid" class="connection-grid"><p class="empty">Đang tải tài khoản kênh…</p></div>
+          <div id="kn-kenh-cu"></div>
+        </div>
+        <div class="kn-phan" id="kn-phan-tich-hop" data-kn-thuoc="tich-hop" role="tabpanel" aria-label="Tích hợp hệ thống ngoài" hidden>
+          <p class="empty" id="kn-tich-hop-cho">Đang tải các dịch vụ tích hợp…</p>
+        </div>
+        <div class="kn-phan" id="kn-phan-lich-su" data-kn-thuoc="lich-su" role="tabpanel" aria-label="Lịch sử kết nối" hidden>
+          <section class="panel" id="kn-dtg-panel">
+            <h2 class="panel__head">Dòng thời gian tài khoản kênh
+              <span class="panel__note">trạng thái kết nối, sự kiện hệ thống và thay đổi cấu hình trên một trục</span></h2>
+            <form class="knh-loc" id="kn-dtg-loc">
+              <label class="field"><span>Tài khoản</span><select name="account_id" id="kn-dtg-tk"><option value="">Đang tải…</option></select></label>
+              <label class="field"><span>Loại sự kiện</span><select name="loai">
+                <option value="">Tất cả</option><option value="suc_khoe">Trạng thái kết nối</option>
+                <option value="su_kien">Sự kiện hệ thống</option><option value="cau_hinh">Thay đổi cấu hình</option></select></label>
+              <label class="field"><span>Thời gian</span><select name="ngay">
+                <option value="1">24 giờ qua</option><option value="7" selected>7 ngày qua</option>
+                <option value="30">30 ngày qua</option><option value="">Tất cả</option></select></label>
+            </form>
+            <div id="kn-dtg-o" class="rows" aria-live="polite"><p class="empty">Chọn một tài khoản để xem dòng thời gian.</p></div>
+          </section>
+          <section class="panel" id="kn-ls-panel">
+            <h2 class="panel__head">Lịch sử thay đổi cấu hình
+              <span class="panel__note">ai, lúc nào, trường nào — không bao giờ ghi giá trị</span></h2>
+            <form class="knh-loc" id="kn-ls-loc">
+              <label class="field"><span>Dịch vụ</span><select name="dich_vu" id="kn-ls-dv"><option value="">Tất cả</option></select></label>
+              <label class="field"><span>Thời gian</span><select name="ngay">
+                <option value="1">24 giờ qua</option><option value="7">7 ngày qua</option>
+                <option value="30" selected>30 ngày qua</option><option value="">Tất cả</option></select></label>
+            </form>
+            <div id="kn-ls-o" class="rows" aria-live="polite"><p class="empty">Đang tải…</p></div>
+          </section>
+        </div>
         <div class="tab__goc">
           <section class="panel" id="api-panel">
             <h2 class="panel__head">Khoá API tích hợp

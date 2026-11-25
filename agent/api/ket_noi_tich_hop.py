@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
@@ -28,10 +29,12 @@ from pydantic import BaseModel, Field
 from agent import cau_hinh_dong, db
 from agent import ket_noi_tich_hop as kn
 from agent.api.cai_dat_api import _che
+from agent.api.channel_accounts import get_account_repository
 from agent.channels import factory
 from agent.channels.base import KHA_NANG, ChannelAdapter
 from agent.config import Settings, settings
 from agent.core import llm
+from agent.omnichannel.account_repository import PostgresAccountRepository
 from agent.omnichannel.accounts import Channel
 from agent.shipping import ghn, ghtk
 
@@ -507,10 +510,54 @@ async def lich_su_webhook(
     return await kn.lich_su_webhook(dich_vu=dich_vu, account_id=account_id, gioi_han=gioi_han)
 
 
+def _co_mui_gio(t: datetime | None) -> datetime | None:
+    # Ô ngày của trình duyệt có thể gửi giờ không múi; coi là UTC thay vì để
+    # asyncpg đoán — hai cách đoán khác nhau là lệch bảy tiếng ở mép lọc.
+    return t.replace(tzinfo=timezone.utc) if t is not None and t.tzinfo is None else t
+
+
 @router.get("/lich-su")
 async def lich_su(dich_vu: str | None = None, gioi_han: int = 50,
+                  tu: datetime | None = None, den: datetime | None = None,
                   _: dict = Depends(can_quyen("cau_hinh.sua"))) -> list[dict[str, Any]]:
-    return await kn.doc_lich_su(dich_vu=dich_vu, gioi_han=gioi_han)
+    return await kn.doc_lich_su(dich_vu=dich_vu, gioi_han=gioi_han,
+                                tu=_co_mui_gio(tu), den=_co_mui_gio(den))
+
+
+@router.get("/kenh/{account_id}/dong-thoi-gian")
+async def dong_thoi_gian(
+    account_id: UUID, loai: str | None = None,
+    tu: datetime | None = None, den: datetime | None = None, gioi_han: int = 100,
+    user: dict = Depends(can_quyen("kenh.doc")),
+    repository: PostgresAccountRepository = Depends(get_account_repository),
+) -> dict[str, Any]:
+    """Dòng thời gian MỘT tài khoản kênh: sức khoẻ + sự kiện + đổi cấu hình (UX-08-09).
+
+    Quyền `kenh.doc` VÀ phạm vi kênh: người chỉ được giao vài kênh không đọc
+    được lịch sử kênh khác bằng cách đoán UUID — cùng luật với
+    GET /api/channel-accounts/{id}. Sổ cấu hình chỉ trả cho người có
+    `cau_hinh.sua` (luật số 2 đầu tệp).
+    """
+    quyen = set(user.get("quyen", ()))
+    thay = await repository.list_for_user(
+        UUID(str(user["id"])), is_admin="kenh.sua" in quyen)
+    tk = next((a for a in thay if a.id == account_id), None)
+    if tk is None:
+        raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+    chon = {x.strip() for x in (loai or "").split(",") if x.strip()} or None
+    la = sorted((chon or set()) - set(kn.LOAI_DONG_THOI_GIAN))
+    if la:
+        raise HTTPException(422, f"loại không có: {', '.join(la)}")
+    xem_cau_hinh = "cau_hinh.sua" in quyen
+    return {
+        "account_id": str(account_id), "display_name": tk.display_name,
+        "channel": tk.channel.value,
+        "loai": {k: v for k, v in kn.LOAI_DONG_THOI_GIAN.items()
+                 if xem_cau_hinh or k != "cau_hinh"},
+        "su_kien": await kn.dong_thoi_gian(
+            account_id, loai=chon, tu=_co_mui_gio(tu), den=_co_mui_gio(den),
+            gioi_han=gioi_han, xem_cau_hinh=xem_cau_hinh),
+    }
 
 
 class TuyChonKenhIn(BaseModel):

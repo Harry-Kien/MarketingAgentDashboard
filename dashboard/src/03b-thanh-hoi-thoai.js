@@ -140,7 +140,8 @@ const ICON_C360 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
  * một khối với tên, không phải một hàng riêng kéo dài cả khung.
  *
  * Customer 360 không hiện cho NHÓM (mục 9.7): nhóm không phải một khách
- * hàng, và máy chủ trả 404 cho hồ sơ của nhóm. */
+ * hàng, và máy chủ trả 404 cho hồ sơ của nhóm. Dấu "Nhóm" cũng KHÔNG lặp ở
+ * đây (UX-09-01) — lý do ở `nhomBadge` (03-hoi-thoai.js). */
 function veThanhThongTin(c, hd) {
   return `<div class="convo__title">
       <button type="button" class="btn btn--sm btn--ghost convo__back-btn" id="btn-convo-back"
@@ -148,7 +149,6 @@ function veThanhThongTin(c, hd) {
       <div class="convo__danh">
         <div class="convo__ten">
           <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
-          ${nhomBadge(c)}
         </div>
         <div class="nhanbar">${nhanHoiThoaiHtml(c)}
           ${state.toiQuyen && state.toiQuyen.has("cong_viec.sua")

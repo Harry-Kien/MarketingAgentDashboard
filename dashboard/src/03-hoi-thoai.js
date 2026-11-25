@@ -76,9 +76,19 @@ function laNhom(c) {
   return Number(c && c.thread_type) === 1;
 }
 
+/* Dấu NHÓM hiện MỘT chỗ mỗi ngữ cảnh (UX-09-01): ở DANH SÁCH, nơi người
+ * trực quét mắt chọn hội thoại. Đầu khung chi tiết không lặp lại — trên máy
+ * tính danh sách nằm ngay bên trái, trên điện thoại người trực vừa bấm vào
+ * từ chính dòng có dấu ấy. Điều duy nhất phải nói ĐÚNG lúc trong khung chi
+ * tiết là "gõ vào đây là gửi cho cả nhóm" — nên nó nằm ở ô soạn tin (xem
+ * placeholder trong `loadThread`), chỗ rủi ro thật sự xảy ra, cùng tên người
+ * gửi trên từng tin. */
 function nhomBadge(c) {
   return laNhom(c)
-    ? `<span class="tag tag--plain" title="Nhóm Zalo — chỉ nhân viên trả lời, AI không nói trong nhóm">Nhóm</span>`
+    ? `<span class="tag tag--plain tag--nhom" title="Nhóm Zalo — chỉ nhân viên trả lời, AI không nói trong nhóm"><svg
+        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path
+        d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.6a5 5 0 0 1 5.5 5.4"/></svg>Nhóm</span>`
     : "";
 }
 
@@ -332,6 +342,9 @@ async function loadThread(id) {
    * (quản trị, hoặc quản lý của KÊNH này). Hỏi MỘT lần mỗi kênh rồi nhớ —
    * không hỏi mỗi 6 giây. */
   state.convDangMo = c;
+  // Đề xuất AI của hội thoại đang mở — "Lịch sử xử lý" trong panel Chi tiết
+  // (19-trach-nhiem.js) gộp chúng vào cùng dòng thời gian, không tải lại.
+  state.deXuatDangMo = { id: String(c.id), ds: deXuat || [] };
   state.giaoDuoc = state.giaoDuoc || {};
   const giaoDuoc = state.giaoDuoc[c.account_id];
   if (giaoDuoc === undefined && state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan")) {
@@ -392,7 +405,8 @@ async function loadThread(id) {
       ${veCheDoSoan(id, ghiChuDuoc)}
       <div class="convo__soan">
         <textarea name="text" required aria-label="${ghi ? "Ghi chú nội bộ" : "Trả lời khách"}"
-          placeholder="${ghi ? "Ghi chú nội bộ — chỉ nhân viên thấy, KHÔNG gửi cho khách…" : "Nhắn trực tiếp cho khách…"}"></textarea>
+          placeholder="${ghi ? "Ghi chú nội bộ — chỉ nhân viên thấy, KHÔNG gửi cho khách…"
+          : nhom ? "Nhắn cho CẢ NHÓM — mọi thành viên đều thấy…" : "Nhắn trực tiếp cho khách…"}"></textarea>
         ${ghi ? "" : `<span class="convo__dinhkem">
           <button type="button" class="btn btn--sm" data-dinhkem title="Gửi ảnh hoặc tài liệu">📎</button>
           <input type="file" id="tep-dinhkem" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>

@@ -286,11 +286,12 @@ def test_handle_inbound_chan_nhom_TRUOC_moi_nhanh_khac():
 def test_dashboard_gan_nhan_nhom_va_ten_nguoi_gui():
     src = (ROOT / "dashboard/src/03-hoi-thoai.js").read_text(encoding="utf-8")
     assert "Number(c && c.thread_type) === 1" in src
-    # Nhãn ở CẢ danh sách lẫn đầu khung chi tiết.
+    # Dấu Nhóm ở DANH SÁCH, một chỗ (UX-09-01): đầu khung chi tiết không lặp
+    # lại; lời nhắc "gửi cho cả nhóm" nằm ở ô soạn tin, chỗ rủi ro xảy ra.
     assert "${nhomBadge(c)}${srcBadge(c.channel" in src
     thanh = (ROOT / "dashboard/src/03b-thanh-hoi-thoai.js").read_text(encoding="utf-8")
-    assert ('<span class="convo__name">${esc(c.customer_name || "Khách")}</span>\n'
-            '          ${nhomBadge(c)}') in thanh
+    assert "${nhomBadge(c)}" not in thanh
+    assert 'nhom ? "Nhắn cho CẢ NHÓM' in src
     assert "m.sender_name" in src and "msg__nguoi" in src
     # Không mời "Để agent tự trả lời" trong nhóm (bảng đầy đủ chạy bằng node ở
     # test_thanh_thong_tin_hoi_thoai.py).

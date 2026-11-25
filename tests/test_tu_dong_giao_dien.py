@@ -31,9 +31,10 @@ def _bieu_mau() -> str:
 def test_bieu_mau_quy_tac_ba_nhom_dung_thu_tu_va_du_o():
     f = _bieu_mau()
     nhom = re.findall(r'data-qt-nhom="([a-z-]+)"', f)
-    assert nhom == ["thong-tin", "neu", "thi"], nhom
+    # KHI (sự kiện, cố định "khách nhắn tin") đứng trước NẾU – THÌ (UX-07-01).
+    assert nhom == ["thong-tin", "khi", "neu", "thi"], nhom
     a, b = f.index('data-qt-nhom="neu"'), f.index('data-qt-nhom="thi"')
-    thong_tin, neu, thi = f[:a], f[a:b], f[b:]
+    thong_tin, neu, thi = f[:f.index('data-qt-nhom="khi"')], f[a:b], f[b:]
     for o in ("ten", "thu_tu", "bat", "dung_xet_sau"):
         assert f'name="{o}"' in thong_tin, o
     # Năm loại điều kiện của mục 7.3: kênh, từ khoá, giờ làm việc, tin đầu, nhãn.

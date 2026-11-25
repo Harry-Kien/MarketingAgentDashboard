@@ -541,7 +541,14 @@
             <label class="field"><span>Nhân viên</span><select name="nhan_vien"></select></label>
             <label class="field"><span>Hồ sơ AI</span><select name="ho_so"></select></label>
           </div>
-          <div class="row__nut">
+          <div class="row__nut pt-khoang">
+            <!-- Khoảng nhanh (UX-15-06): đặt Từ/Đến rồi tải lại ngay — chọn
+                 "30 ngày" không bắt người ta tính ngày bắt đầu bằng tay. -->
+            <span class="pt-khoang__nhan">Nhanh:</span>
+            <button type="button" class="chip" data-pt-khoang="0">Hôm nay</button>
+            <button type="button" class="chip" data-pt-khoang="6">7 ngày</button>
+            <button type="button" class="chip" data-pt-khoang="29">30 ngày</button>
+            <button type="button" class="chip" data-pt-khoang="thang">Tháng này</button>
             <button type="submit" class="btn btn--sm btn--primary">Xem</button>
           </div>
         </form>
@@ -570,14 +577,23 @@
         <div class="bang-cuon"><table class="bang" id="ptNhanVien"></table></div>
       </section>
 
+      <!-- SLA (UX-15-06): TỔNG QUAN trước — ba tỷ lệ đúng hạn, số vi phạm,
+           đang quá hạn, biểu đồ xu hướng — rồi mới tới bảng chi tiết, thu
+           gọn trong một khối mở ra được. Trước đây năm ô số và hai bảng dài
+           xếp ngang hàng, mắt không biết đọc gì trước. -->
       <section class="panel">
-        <h2 class="panel__head">Chỉ số SLA
+        <h2 class="panel__head">Tổng quan SLA
           <span class="panel__note" id="ptSlaNote">tỷ lệ đáp ứng tính trên mục tiêu có hạn · "quá hạn" là ảnh chụp bây giờ</span></h2>
         <div id="ptSla" class="readout"></div>
-        <h3 class="subhead">Thời gian phản hồi và giải quyết</h3>
-        <div class="bang-cuon"><table class="bang" id="ptThoiGian"></table></div>
-        <h3 class="subhead">Xu hướng theo ngày</h3>
-        <div class="bang-cuon"><table class="bang" id="ptNgay"></table></div>
+        <h3 class="subhead">Tỷ lệ đúng hạn theo ngày</h3>
+        <div id="ptSlaXuHuong" class="pt-xu-huong"></div>
+        <details class="nang-cao pt-chi-tiet">
+          <summary>Phân tích chi tiết — thời gian theo AI / nhân viên, bảng theo ngày</summary>
+          <h3 class="subhead">Thời gian phản hồi và giải quyết</h3>
+          <div class="bang-cuon"><table class="bang" id="ptThoiGian"></table></div>
+          <h3 class="subhead">Xu hướng theo ngày</h3>
+          <div class="bang-cuon"><table class="bang" id="ptNgay"></table></div>
+        </details>
       </section>
 
       <section class="panel">

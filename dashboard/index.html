@@ -55,8 +55,14 @@
       <div class="chuong__khung" id="chuongKhung" role="dialog" aria-label="Thông báo" hidden>
         <div class="chuong__dau">
           <b>Thông báo</b>
-          <label class="chuong__loc"><input type="checkbox" id="chuongChuaDoc"> Chỉ chưa đọc</label>
           <button type="button" class="btn btn--sm btn--ghost" id="chuongDocHet">Đã đọc hết</button>
+          <!-- Ba bộ lọc (UX-19-04): "Cần xử lý" là thứ CÒN phải làm, đọc hay
+               chưa — đọc một thông báo không làm xong việc nó nhắc. -->
+          <div class="chuong__loc" id="chuongLoc" role="group" aria-label="Lọc thông báo">
+            <button type="button" class="chip is-on" data-chuong-loc="" aria-pressed="true">Tất cả</button>
+            <button type="button" class="chip" data-chuong-loc="can_xu_ly" aria-pressed="false">Cần xử lý <b class="chuong__dem" data-chuong-so="can_xu_ly" hidden></b></button>
+            <button type="button" class="chip" data-chuong-loc="chua_doc" aria-pressed="false">Chưa đọc <b class="chuong__dem" data-chuong-so="chua_doc" hidden></b></button>
+          </div>
         </div>
         <div class="chuong__ds" id="chuongDs" role="list"></div>
         <button type="button" class="btn btn--sm btn--ghost chuong__them" id="chuongThem" hidden>Xem thêm</button>

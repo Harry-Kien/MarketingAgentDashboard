@@ -53,7 +53,8 @@ _CHON = (
     "don.trang_thai AS order_trang_thai, "
     "don.erp_ma_don AS order_erp_ma_don, "
     "nhan.ho_ten AS nguoi_nhan_ten, giao.ho_ten AS nguoi_giao_ten, "
-    "xu_ly.ho_ten AS xu_ly_boi_ten, khach.display_name AS khach_ten"
+    "xu_ly.ho_ten AS xu_ly_boi_ten, khach.display_name AS khach_ten, "
+    "td.so_tien_do, td.tien_do_luc, td.tien_do_cuoi"
 )
 _JOIN = (
     "FROM cong_viec "
@@ -61,7 +62,16 @@ _JOIN = (
     "LEFT JOIN nguoi_dung giao ON giao.id = cong_viec.nguoi_giao "
     "LEFT JOIN nguoi_dung xu_ly ON xu_ly.id = cong_viec.xu_ly_boi "
     "LEFT JOIN orders don ON don.id = cong_viec.order_id "
-    "LEFT JOIN contacts khach ON khach.id = cong_viec.contact_id"
+    "LEFT JOIN contacts khach ON khach.id = cong_viec.contact_id "
+    # TIẾN ĐỘ trên dòng việc (UX-14-01): đếm và dòng tiến độ mới nhất, đọc từ
+    # chính lịch sử — không có cột "phần trăm" nào để người ta điền 80% cho
+    # một việc chưa ai gọi khách. Chỉ mục (cong_viec_id, tao_luc) của 0061
+    # làm câu này rẻ.
+    "LEFT JOIN LATERAL (SELECT count(*)::int AS so_tien_do, "
+    "       max(l.tao_luc) AS tien_do_luc, "
+    "       (array_agg(l.ghi_chu ORDER BY l.tao_luc DESC))[1] AS tien_do_cuoi "
+    "  FROM cong_viec_lich_su l "
+    "  WHERE l.cong_viec_id = cong_viec.id AND l.loai = 'tien_do') td ON true"
 )
 
 
@@ -109,7 +119,7 @@ def _sach(d: dict) -> dict:
     ):
         if d.get(k) is not None:
             d[k] = str(d[k])
-    for k in ("han", "tao_luc", "xong_luc", "xu_ly_luc", "sua_luc"):
+    for k in ("han", "tao_luc", "xong_luc", "xu_ly_luc", "sua_luc", "tien_do_luc"):
         if d.get(k) is not None:
             d[k] = d[k].isoformat()
     d["qua_han"] = cv.qua_han(d)
@@ -126,6 +136,13 @@ def _danh_muc() -> dict[str, Any]:
         "nguon": [{"ma": m, "nhan": cv.NHAN_NGUON[m]} for m in cv.NGUON],
         "nhan_chua_phan_cong": cv.NHAN_CHUA_PHAN_CONG,
     }
+
+
+# Cùng định nghĩa với `cv.qua_han`: việc đã xong/hủy không bao giờ quá hạn —
+# con số phải giảm được khi người ta làm xong.
+_QUA_HAN = "(cong_viec.han < now() AND cong_viec.trang_thai IN ('moi', 'dang_lam'))"
+_CHUA_PHAN_CONG = ("(cong_viec.nguoi_nhan IS NULL "
+                   "AND cong_viec.trang_thai IN ('moi', 'dang_lam'))")
 
 
 def _co(nguoi: dict, quyen: str) -> bool:
@@ -153,15 +170,21 @@ async def liet_ke(
     nguoi: dict = Depends(can_quyen("cong_viec.doc")),
 ) -> dict[str, Any]:
     loc, ts = cv.dieu_kien_pham_vi(nguoi=nguoi, so_tham_so=0)
-    dieu_kien = [loc]
+    # Hai nhóm điều kiện (UX-14-02): `co_so` là phạm vi + bộ lọc phụ (tìm,
+    # ưu tiên, nguồn, của tôi...); `chip` là bộ lọc NHANH theo tình trạng.
+    # Số đếm trên từng chip tính trên `co_so` — chip "Quá hạn (3)" phải nói
+    # đúng số việc quá hạn trong những gì người ta đang tìm, bất kể chip nào
+    # đang bật; tính trên cả `chip` thì mọi chip khác luôn hiện 0.
+    co_so = [loc]
+    chip: list[str] = []
 
-    def them(menh_de: str, gia_tri: Any) -> None:
+    def them(menh_de: str, gia_tri: Any, vao: list[str] = co_so) -> None:
         ts.append(gia_tri)
-        dieu_kien.append(menh_de.replace("$?", f"${len(ts)}"))
+        vao.append(menh_de.replace("$?", f"${len(ts)}"))
 
     try:
         if trang_thai:
-            them("cong_viec.trang_thai = $?", cv.kiem_trang_thai(trang_thai))
+            them("cong_viec.trang_thai = $?", cv.kiem_trang_thai(trang_thai), chip)
         if uu_tien:
             them("cong_viec.uu_tien = $?", cv.kiem_uu_tien(uu_tien))
     except cv.CongViecHong as exc:
@@ -175,13 +198,9 @@ async def liet_ke(
     if nguoi_nhan:
         them("cong_viec.nguoi_nhan = $?", nguoi_nhan)
     if chua_phan_cong:
-        dieu_kien.append("(cong_viec.nguoi_nhan IS NULL "
-                         "AND cong_viec.trang_thai IN ('moi', 'dang_lam'))")
+        chip.append(_CHUA_PHAN_CONG)
     if qua_han:
-        # Cùng định nghĩa với `cv.qua_han`: việc đã xong/hủy không bao giờ
-        # quá hạn — con số phải giảm được khi người ta làm xong.
-        dieu_kien.append("(cong_viec.han < now() "
-                         "AND cong_viec.trang_thai IN ('moi', 'dang_lam'))")
+        chip.append(_QUA_HAN)
     if conversation_id:
         them("cong_viec.conversation_id = $?", conversation_id)
     if contact_id:
@@ -196,10 +215,13 @@ async def liet_ke(
              " OR coalesce(cong_viec.ket_qua, '') ILIKE '%' || $? || '%' "
              " OR coalesce(khach.display_name, '') ILIKE '%' || $? || '%' "
              " OR coalesce(don.ma_don, '') ILIKE '%' || $? || '%')", tu)
+    tham_so_dem = list(ts)
     ts.append(limit)
 
+    where_co_so = " AND ".join(co_so)
+    where_chip = " AND ".join(chip) or "TRUE"
     ds = await db.fetch(
-        f"SELECT {_CHON} {_JOIN} WHERE {' AND '.join(dieu_kien)} "   # noqa: S608
+        f"SELECT {_CHON} {_JOIN} WHERE {where_co_so} AND {where_chip} "   # noqa: S608
         # Việc chưa xong lên trước; trong đó việc có hạn gần lên trước.
         # `NULLS LAST` để việc không hạn không chen lên đầu — nó không gấp
         # hơn một việc phải xong chiều nay.
@@ -207,7 +229,23 @@ async def liet_ke(
         f"         cong_viec.han NULLS LAST, cong_viec.tao_luc DESC "
         f"LIMIT ${len(ts)}",
         *ts)
-    return {"cong_viec": [_sach(d) for d in ds], **_danh_muc()}
+    # Đếm bằng SQL, không đếm `ds`: danh sách cắt ở `limit`, và "Hiển thị 100"
+    # khi thật ra có 240 việc là một con số nói dối.
+    dem = await db.fetchrow(
+        "SELECT count(*)::int AS tat_ca, "
+        "  count(*) FILTER (WHERE cong_viec.trang_thai = 'moi')::int AS cho_xu_ly, "
+        "  count(*) FILTER (WHERE cong_viec.trang_thai = 'dang_lam')::int AS dang_lam, "
+        f" count(*) FILTER (WHERE {_QUA_HAN})::int AS qua_han, "
+        "  count(*) FILTER (WHERE cong_viec.trang_thai = 'xong')::int AS hoan_thanh, "
+        "  count(*) FILTER (WHERE cong_viec.trang_thai = 'huy')::int AS da_huy, "
+        f" count(*) FILTER (WHERE {_CHUA_PHAN_CONG})::int AS chua_phan_cong, "
+        f" count(*) FILTER (WHERE {where_chip})::int AS ket_qua "
+        f"{_JOIN} WHERE {where_co_so}",   # noqa: S608
+        *tham_so_dem)
+    dem_dict = dict(dem) if dem else {}
+    return {"cong_viec": [_sach(d) for d in ds],
+            "tong": dem_dict.pop("ket_qua", len(ds)),
+            "dem": dem_dict, **_danh_muc()}
 
 
 def _kiem_loi_check_cong_viec(exc: asyncpg.CheckViolationError) -> None:
@@ -226,6 +264,10 @@ _SQL_NHAN_VIEN = cv.SQL_VIEC_VA_QUYEN + f"""
     SELECT n.id, coalesce(n.ho_ten, n.ten_dang_nhap) AS ten,
            dang_trong_ca(n.id, now()) AS trong_ca,
            EXISTS (SELECT 1 FROM ca_truc ct WHERE ct.nguoi_dung_id = n.id) AS co_lich,
+           -- Lịch nghỉ (0034) — để ô chọn người nói "Đang nghỉ" thay vì "Ngoài
+           -- ca" (MD-UX-14-05): hai chuyện khác nhau với người điều phối.
+           EXISTS (SELECT 1 FROM ca_nghi cn WHERE cn.nguoi_dung_id = n.id
+                   AND now() >= cn.tu_luc AND now() < cn.den_luc) AS dang_nghi,
            NOT EXISTS (SELECT 1 FROM team_members tm
                        WHERE tm.user_id = n.id AND NOT tm.is_available) AS san_sang,
            q.sua,
@@ -324,6 +366,140 @@ async def nguoi_nhan_duoc(
         return {"nguoi": await _nhan_vien(conn, cong_viec_id)}
 
 
+# ------------------------------------------------------------ gợi ý khi tạo việc
+
+def _xem_moi_don(nguoi: dict) -> bool:
+    """Cùng luật với `GET /api/orders` (don_kho.list_orders) — xem chú thích ở đó."""
+    return _co(nguoi, "khach.xem_tat_ca") or _co(nguoi, "hoi_thoai.xem_tat_ca")
+
+
+def _don_thay_duoc(bi_danh: str, n_moi: int, n_uid: int) -> str:
+    """
+    Đơn `bi_danh` người hỏi thấy được: xem mọi kênh, hoặc là thành viên kênh
+    của hội thoại sinh ra đơn. Đơn mồ côi chỉ người xem-mọi-kênh thấy.
+
+    MỘT luật cho cả gợi ý mã đơn lẫn lúc tạo việc bằng mã đơn: chặn ở gợi ý
+    mà không chặn lúc tạo thì gõ tay mã đơn kênh khác vẫn gắn được — rồi tên
+    khách kênh ấy hiện trên màn Công việc.
+    """
+    return (f"(${n_moi}::bool OR EXISTS (SELECT 1 FROM conversations dk "
+            f"JOIN account_memberships dm ON dm.account_id = dk.account_id "
+            f"WHERE dk.id = {bi_danh}.conversation_id AND dm.user_id = ${n_uid}::uuid))")
+
+
+async def _goi_y_don(nguoi: dict, *, q: str = "", contact_id: UUID | None = None,
+                     limit: int = 8) -> list[dict[str, Any]]:
+    ts: list[Any] = [_xem_moi_don(nguoi), str(nguoi["id"])]
+    dk = [_don_thay_duoc("o", 1, 2)]
+    if contact_id is not None:
+        ts.append(contact_id)
+        dk.append(f"EXISTS (SELECT 1 FROM conversations kk WHERE kk.id = o.conversation_id "
+                  f"AND kk.contact_id = ${len(ts)})")
+    tu = q.strip()
+    if tu:
+        thuong = tu.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        ts.append(thuong)
+        menh_de = f"o.ma_don ILIKE '%' || ${len(ts)} || '%'"
+        so = "".join(ch for ch in tu if ch.isdigit())
+        # Tra bằng SĐT chỉ khi gõ đủ dài: ba chữ số trùng trong gần như mọi
+        # số điện thoại, gợi ý ra cả danh bạ. SĐT chỉ dùng để KHỚP, không
+        # trả về — ô gợi ý không cần nó để người ta chọn đúng đơn.
+        if len(so) >= 6:
+            ts.append(so)
+            menh_de += f" OR regexp_replace(o.khach_sdt, '\\D', '', 'g') LIKE '%' || ${len(ts)} || '%'"
+        dk.append(f"({menh_de})")
+    ts.append(limit)
+    rows = await db.fetch(
+        "SELECT o.id, o.ma_don, o.trang_thai, o.tong_tien, o.created_at, o.khach_ten, "
+        "       o.conversation_id "
+        f"FROM orders o WHERE {' AND '.join(dk)} "   # noqa: S608
+        f"ORDER BY o.created_at DESC LIMIT ${len(ts)}", *ts)
+    return [{"id": str(r["id"]), "ma_don": r["ma_don"], "trang_thai": r["trang_thai"],
+             "tong_tien": int(r["tong_tien"] or 0), "khach_ten": r["khach_ten"],
+             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
+             "tao_luc": r["created_at"].isoformat()} for r in rows]
+
+
+@router.get("/goi-y-don")
+async def goi_y_don(
+    q: str = Query("", max_length=60),
+    contact_id: UUID | None = Query(None),
+    conversation_id: UUID | None = Query(None),
+    limit: int = Query(8, ge=1, le=20),
+    nguoi: dict = Depends(can_quyen("don.doc")),
+) -> dict[str, Any]:
+    """
+    Gợi ý mã đơn cho ô "Đơn liên quan" lúc tạo việc (UX-14-04).
+
+    Quyền `don.doc` và phạm vi KÊNH như màn Đơn hàng: ô gợi ý không được là
+    cửa sau để đọc đơn (tên khách, giá trị) của kênh mình không thuộc. Có
+    khách (hoặc hội thoại) thì CHỈ đơn của khách ấy — gắn nhầm đơn của người
+    khác vào việc là người nhận việc gọi nhầm khách.
+    """
+    if conversation_id is not None and contact_id is None:
+        contact_id = await db.pool().fetchval(
+            "SELECT contact_id FROM conversations WHERE id = $1", conversation_id)
+        if contact_id is None:
+            return {"don": []}
+    return {"don": await _goi_y_don(nguoi, q=q, contact_id=contact_id, limit=limit)}
+
+
+@router.get("/ngu-canh-tao")
+async def ngu_canh_tao(
+    conversation_id: UUID = Query(...),
+    nguoi: dict = Depends(can_quyen("cong_viec.sua")),
+) -> dict[str, Any]:
+    """
+    Ngữ cảnh để tạo việc TỪ một hội thoại (UX-14-04): khách, kênh, vài tin
+    khách gần nhất làm mô tả gợi ý (không gọi mô hình — xem
+    `cv.tom_tat_tin_khach`), việc đang mở của hội thoại này (để không tạo
+    trùng) và đơn gần đây của khách nếu người hỏi có `don.doc`.
+
+    Cùng phạm vi kênh với `tao`: 404 chứ không 403 — không xác nhận hội
+    thoại ấy tồn tại.
+    """
+    moi_kenh = _co(nguoi, "hoi_thoai.xem_tat_ca") or _co(nguoi, "cong_viec.xem_tat_ca")
+    hk = await db.fetchrow(
+        "SELECT c.id, c.contact_id, c.customer_name, c.channel, c.nen_tang, c.state, "
+        "       ct.display_name AS khach_ten, ca.display_name AS kenh_ten, ca.channel AS kenh "
+        "FROM conversations c "
+        "LEFT JOIN contacts ct ON ct.id = c.contact_id "
+        "LEFT JOIN channel_accounts ca ON ca.id = c.account_id "
+        "WHERE c.id = $1 AND ($2::bool OR EXISTS ("
+        " SELECT 1 FROM account_memberships m WHERE m.account_id = c.account_id "
+        " AND m.user_id = $3::uuid))",
+        conversation_id, moi_kenh, str(nguoi["id"]))
+    if hk is None:
+        raise HTTPException(404, "Không tìm thấy hội thoại")
+    tin = await db.fetch(
+        "SELECT content, created_at FROM messages "
+        "WHERE conversation_id = $1 AND role = 'customer' "
+        "ORDER BY created_at DESC LIMIT $2", conversation_id, cv.SO_TIN_GOI_Y)
+    tin_khach = [{"noi_dung": r["content"], "luc": r["created_at"]} for r in reversed(tin)]
+    kenh = thong_bao_noi_bo.TEN_KENH.get(hk["kenh"] or "", hk["kenh_ten"] or hk["channel"])
+    loc, ts = cv.dieu_kien_pham_vi(nguoi=nguoi, so_tham_so=1)
+    viec_mo = await db.fetch(
+        f"SELECT cong_viec.id, cong_viec.tieu_de, cong_viec.trang_thai FROM cong_viec "  # noqa: S608
+        f"WHERE cong_viec.conversation_id = $1 AND cong_viec.trang_thai IN ('moi','dang_lam') "
+        f"AND {loc} ORDER BY cong_viec.tao_luc DESC LIMIT 5", conversation_id, *ts)
+    return {
+        "hoi_thoai": {"id": str(hk["id"]), "kenh": kenh,
+                      "trang_thai": hk["state"] or "open"},
+        "khach": ({"id": str(hk["contact_id"]),
+                   "ten": hk["khach_ten"] or hk["customer_name"] or "Khách"}
+                  if hk["contact_id"] else None),
+        "tin_khach": [{"noi_dung": t["noi_dung"], "luc": t["luc"].isoformat()} for t in tin_khach],
+        "mo_ta_goi_y": cv.tom_tat_tin_khach(tin_khach, kenh=kenh),
+        "viec_mo": [{"id": str(r["id"]), "tieu_de": r["tieu_de"],
+                     "nhan_trang_thai": cv.NHAN_TRANG_THAI.get(r["trang_thai"], r["trang_thai"])}
+                    for r in viec_mo],
+        # None = không có quyền xem đơn (khác [] = khách chưa có đơn nào):
+        # màn hình nói đúng câu nào, không để người ta tưởng khách chưa mua.
+        "don_gan_day": (await _goi_y_don(nguoi, contact_id=hk["contact_id"], limit=5)
+                        if _co(nguoi, "don.doc") and hk["contact_id"] else None),
+    }
+
+
 @router.post("", status_code=201)
 async def tao(
     body: TaoIn,
@@ -347,9 +523,16 @@ async def tao(
     if body.loai_xu_ly_don is not None and order_id is None:
         raise HTTPException(422, "Công việc xử lý đơn phải gắn với một đơn hàng (order_id)")
     if order_id is not None:
+        # Đơn phải nằm trong phạm vi kênh của người tạo — cùng luật với ô gợi
+        # ý mã đơn (`_don_thay_duoc`). Cùng câu trả lời với đơn không tồn tại:
+        # không xác nhận mã đơn kênh khác là có thật.
         order = await db.fetchrow(
-            "SELECT conversation_id FROM orders WHERE id = $1", order_id)
+            f"SELECT o.conversation_id FROM orders o WHERE o.id = $1 "  # noqa: S608
+            f"AND {_don_thay_duoc('o', 2, 3)}",
+            order_id, _xem_moi_don(nguoi), str(nguoi["id"]))
         if order is None:
+            if body.ma_don and body.order_id is None:
+                raise HTTPException(422, f"Không tìm thấy đơn {body.ma_don.strip()}.")
             raise HTTPException(422, "Đơn hàng liên kết không tồn tại")
         if (
             body.loai_xu_ly_don is not None
@@ -454,6 +637,7 @@ async def chi_tiet(
         lich_su.append({
             "loai": r["loai"],
             "nhan_loai": cv.LOAI_LICH_SU.get(r["loai"], r["loai"]),
+            "nhom": cv.NHOM_LICH_SU.get(r["loai"], "khac"),
             # NULL = hệ thống: AI, quy tắc tự động, vòng nền, đường cũ.
             "nguoi": r["nguoi_ten"] or ("Hệ thống" if r["nguoi_id"] is None else "—"),
             "tu_nguoi": r["tu_nguoi_ten"], "den_nguoi": r["den_nguoi_ten"],
@@ -462,7 +646,9 @@ async def chi_tiet(
             "ghi_chu": ghi_chu,
             "tao_luc": r["tao_luc"].isoformat(),
         })
-    return {"cong_viec": _sach(dict(d)), "lich_su": lich_su, **_danh_muc()}
+    return {"cong_viec": _sach(dict(d)), "lich_su": lich_su,
+            "nhom_lich_su": [{"ma": m, "nhan": n} for m, n in cv.NHAN_NHOM_LICH_SU.items()],
+            **_danh_muc()}
 
 
 @router.put("/{cong_viec_id}")

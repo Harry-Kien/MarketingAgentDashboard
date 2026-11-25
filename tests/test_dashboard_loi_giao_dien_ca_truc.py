@@ -376,8 +376,11 @@ def test_o_verify_token_muc_kenh_khong_trung_o_suc_khoe():
     Ô token mức kênh từng mang `data-tokenslot` TRÙNG id với ô Sức khoẻ của
     Trang đầu tiên, và chuỗi vừa hiện bị vòng 6 giây xoá.
     """
-    than = _than_ham("loadKetNoi")
+    # Ô token mức kênh nay nằm trong "Chi tiết nâng cao của kênh" (UX-08-03),
+    # dựng ở knNangCaoKenh — loadKetNoi chỉ ghép thẻ.
+    than = _than_ham("knNangCaoKenh") + _than_ham("loadKetNoi")
     assert 'data-tokenslot="${items[0].id}"' not in than
     assert "data-tokenslot-kenh=" in than and "oTokenDaHien(channel)" in than
+    assert "knNangCaoKenh(channel, items, p)" in _than_ham("loadKetNoi")
     assert "state.tokenHien" in _than_ham("oTokenDaHien")
     assert "het" in _than_ham("oTokenDaHien"), "token phải tự ẩn, không nằm mãi trên màn"

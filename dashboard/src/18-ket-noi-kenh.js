@@ -5,12 +5,12 @@
  */
 
 /* =====================================================================
- * KẾT NỐI KÊNH: điều kiện chung → nối kênh mới → sức khoẻ từng kênh.
+ * KẾT NỐI KÊNH: tình trạng (hàng đợi cần xử lý) → điều kiện chung → nối
+ * kênh mới → danh sách tài khoản (18a-ket-noi-tai-khoan.js).
  *
- * Luật xanh/vàng/đỏ nằm ở MÁY CHỦ (agent/omnichannel/suc_khoe_kenh.py),
+ * Luật trạng thái nằm ở MÁY CHỦ (agent/omnichannel/suc_khoe_kenh.py),
  * không ở đây: giao diện chỉ vẽ. Hai nơi cùng giữ luật là hai nơi lệch nhau.
  * ===================================================================== */
-const KN_MUC = { xanh: "Tốt", vang: "Cần để ý", do: "Hỏng", tat: "Đang tắt" };
 const KN_NUT = {
   dang_nhap_meta: "Đăng nhập Facebook",
   quet_qr: "Quét QR",
@@ -20,18 +20,40 @@ const KN_NUT = {
   bat_lai: "Bật lại",
 };
 
+/* Chỉ gán innerHTML khi nội dung ĐỔI: vòng làm mới 6 giây dựng lại mà
+ * không đổi gì là đóng `<details>` người dùng vừa mở và cướp tiêu điểm. */
+function knVe(o, html) {
+  if (!o || o._knHtml === html) return;
+  o._knHtml = html;
+  o.innerHTML = html;
+}
+
+/* Những tài khoản CẦN NGƯỜI làm gì đó. Tạm ngắt là người ta chủ động — không
+ * cần xử lý; hoạt động mà có cảnh báo (token sắp hết, chưa thấy tin nào về)
+ * thì có. */
+function knCanXuLy(k) {
+  return ["loi", "can_xac_thuc", "chua_ket_noi"].includes(k.trang_thai) || Boolean(k.canh_bao);
+}
+
 async function loadSucKhoeKenh() {
   let d;
   try {
     d = await api("/channel-accounts/suc-khoe-tong");
   } catch (e) {
-    $("#kn-suckhoe").innerHTML = `<p class="empty">Không tải được sức khoẻ kênh: ${esc(e.message)}</p>`;
+    knVe($("#kn-suckhoe"), `<p class="empty">Không tải được tình trạng kết nối: ${esc(e.message)}</p>`);
     return;
   }
   state.knDangNhap = d.dang_nhap || {};
-  $("#kn-dieukien").innerHTML = `<h2 class="panel__head">Điều kiện chung</h2>` + d.dieu_kien.map((k) =>
-    `<div class="kn-dk"><span class="kn-cham kn-cham--${esc(k.muc)}" aria-hidden="true"></span>
-      <b>${esc(k.ten)}</b><span>${esc(k.viec)}</span></div>`).join("");
+  state.knNhanTT = d.nhan_trang_thai || {};
+  state.knSucKhoe = Object.fromEntries(d.kenh.map((k) => [k.id, k]));
+
+  /* Điều kiện chung thu gọn khi đã đủ: ba dòng xanh mỗi lần mở màn là ba
+     dòng người ta học cách bỏ qua — và rồi bỏ qua luôn lúc nó đỏ. */
+  const dat = d.dieu_kien.filter((k) => k.muc === "xanh").length;
+  knVe($("#kn-dieukien"), `<details data-kn-mo="dieukien"${knMo("dieukien", dat < d.dieu_kien.length)}>
+    <summary class="panel__head">Điều kiện chung <span class="panel__note">${dat}/${d.dieu_kien.length} đạt</span></summary>
+    ${d.dieu_kien.map((k) => `<div class="kn-dk"><span class="kn-cham kn-cham--${esc(k.muc)}" aria-hidden="true"></span>
+      <b>${esc(k.ten)}</b><span>${esc(k.viec)}</span></div>`).join("")}</details>`);
 
   /* Nút đăng nhập mà ứng dụng chưa khai thì bấm vào chỉ ra một lỗi 503 —
      khoá sẵn và nói lý do ngay trên thẻ. */
@@ -39,25 +61,55 @@ async function loadSucKhoeKenh() {
   if (meta) { meta.disabled = !state.knDangNhap.meta; meta.title = meta.disabled ? "Chưa khai ứng dụng Meta trong .env" : ""; }
   if (zoa) { zoa.disabled = !state.knDangNhap.zalo_oa; zoa.title = zoa.disabled ? "Chưa khai ứng dụng Zalo OA trong .env" : ""; }
 
-  const dem = d.dem || {};
-  $("#kn-dem").textContent = `${dem.do || 0} hỏng · ${dem.vang || 0} cần để ý · ${dem.xanh || 0} tốt`
-    + (dem.tat ? ` · ${dem.tat} đang tắt` : "");
-  $("#kn-suckhoe").innerHTML = d.kenh.length ? d.kenh.map((k) => `<div class="kn-dong">
-      <span class="kn-cham kn-cham--${esc(k.muc)}" title="${esc(KN_MUC[k.muc] || k.muc)}"></span>
+  const dem = d.dem_trang_thai || {};
+  const canXuLy = d.kenh.filter(knCanXuLy);
+  $("#kn-dem").textContent = Object.entries(dem).filter(([, n]) => n)
+    .map(([tt, n]) => `${n} ${String(state.knNhanTT[tt] || tt).toLowerCase()}`).join(" · ");
+  const nav = $("#kn-nav-dem");
+  if (nav) { nav.textContent = canXuLy.length ? String(canXuLy.length) : ""; nav.hidden = !canXuLy.length; }
+
+  /* "Cần xử lý" chỉ là HÀNG ĐỢI việc — tên, việc cần làm, một nút — không
+     phải bản sao thứ hai của danh sách tài khoản (UX-08-02). Chi tiết ở
+     đúng dòng tài khoản bên dưới; nút "Xem" đưa tới đó. */
+  knVe($("#kn-suckhoe"), !d.kenh.length
+    ? '<p class="empty">Chưa nối kênh nào — bắt đầu ở mục Nối kênh mới bên dưới.</p>'
+    : !canXuLy.length
+      ? '<p class="knh-tot">✓ Mọi tài khoản đang hoạt động bình thường.</p>'
+      : canXuLy.map((k) => `<div class="kn-dong knh-can">
+      <span class="knh-tt knh-tt--${esc(k.canh_bao ? "canh-bao" : k.trang_thai)}">${esc(k.canh_bao ? "Cần để ý" : k.nhan_trang_thai)}</span>
       <span><b>${esc(k.display_name)}</b><small>${esc(CHANNEL_LABEL[k.channel] || k.channel)}</small></span>
-      <span>${esc(k.viec)}<small>${k.tin_vao_gan_nhat
+      <span>${esc(knViecDeDoc(k) || (k.giai_thich && k.giai_thich.tieu_de) || k.viec)}<small>${k.tin_vao_gan_nhat
         ? "Tin khách gần nhất: " + esc(clock(k.tin_vao_gan_nhat)) : "Chưa có tin khách nào"}${
         k.token_con_ngay != null ? ` · quyền Meta còn ${Math.max(0, Math.floor(k.token_con_ngay))} ngày` : ""}</small></span>
-      <span>${k.hanh_dong && KN_NUT[k.hanh_dong]
+      <span class="knh-can__nut">${k.hanh_dong && KN_NUT[k.hanh_dong]
         ? `<button type="button" class="btn btn--sm${k.muc === "do" ? " btn--primary" : ""}"
-             data-kn-lam="${esc(k.hanh_dong)}" data-kn-id="${esc(k.id)}">${esc(KN_NUT[k.hanh_dong])}</button>` : ""}</span>
-    </div>`).join("")
-    : '<p class="empty">Chưa nối kênh nào — bắt đầu ở mục Nối kênh mới phía trên.</p>';
+             data-kn-lam="${esc(k.hanh_dong)}" data-kn-id="${esc(k.id)}">${esc(KN_NUT[k.hanh_dong])}</button>` : ""}
+        <button type="button" class="btn btn--sm btn--ghost" data-kn-den="${esc(k.id)}">Xem</button></span>
+    </div>`).join(""));
+}
+
+/* Đưa mắt tới đúng dòng tài khoản và mở phần Quản lý của nó. */
+function knDenTaiKhoan(id) {
+  knChonPhan("kenh");
+  const dong = document.getElementById("kn-tk-" + id);
+  if (!dong) return;
+  dong.closest(".channel-card__body")?.classList.remove("is-thu-gon");
+  const ql = dong.querySelector(".knh-quanly");
+  if (ql) ql.open = true;
+  dong.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 $("#kn-suckhoe")?.addEventListener("click", async (e) => {
+  const den = e.target.closest("[data-kn-den]");
+  if (den) { knDenTaiKhoan(den.dataset.knDen); return; }
   const b = e.target.closest("[data-kn-lam]");
-  if (!b) return;
+  if (b) await knLam(b);
+});
+
+/* Nút chính theo sức khoẻ — dùng chung cho hàng đợi "Cần xử lý" và dòng tài
+ * khoản (18a-ket-noi-tai-khoan.js), để hai chỗ không bao giờ làm hai việc khác
+ * nhau cho cùng một nhãn nút. */
+async function knLam(b) {
   const id = b.dataset.knId, lam = b.dataset.knLam;
   b.disabled = true;
   try {
@@ -88,6 +140,65 @@ $("#kn-suckhoe")?.addEventListener("click", async (e) => {
   } finally {
     b.disabled = false;
   }
+}
+
+/* ---------------- ba khu vực của tab ----------------
+ *
+ * Tab từng là MỘT trang dọc hơn 2.500px: điều kiện chung, nối kênh, sức khoẻ,
+ * lưới tài khoản, checklist, rồi ERPNext/GHN/GHTK, rồi plugin kênh, rồi lịch
+ * sử ở tận đáy (UX-08-01). Kênh nói chuyện với KHÁCH và hệ thống ngoài của
+ * CỬA HÀNG là hai việc của hai lúc khác nhau (MD-UX-20-01) — tách thành khu
+ * vực riêng, mỗi lúc chỉ hiện một.
+ *
+ * Phần tử thuộc khu vực nào khai bằng `data-kn-thuoc`; khối mô-đun gắn vào
+ * (22-ket-noi-tich-hop.js) cũng tự khai, nên một hàm ẩn/hiện được hết. */
+const KN_PHAN = ["kenh", "tich-hop", "lich-su"];
+
+function knChonPhan(phan) {
+  const tab = $("#cc-ket-noi");
+  if (!tab || !KN_PHAN.includes(phan)) return;
+  state.knPhan = phan;
+  $$("[data-kn-phan-nut]", tab).forEach((b) => {
+    const on = b.dataset.knPhanNut === phan;
+    b.classList.toggle("is-on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    b.tabIndex = on ? 0 : -1;
+  });
+  $$("[data-kn-thuoc]", tab).forEach((o) => { o.hidden = o.dataset.knThuoc !== phan; });
+  // Nhớ khu vực theo từng người xem — tiện, không phải dữ liệu.
+  try { localStorage.setItem("kn.phan", phan); } catch { /* chế độ riêng tư: bỏ qua */ }
+  if (phan === "lich-su" && typeof knLsMo === "function") knLsMo();
+}
+
+$(".kn-phan-nav")?.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-kn-phan-nut]");
+  if (b) knChonPhan(b.dataset.knPhanNut);
+});
+// Phím mũi tên giữa các khu vực, như thanh tab chuẩn (role="tablist").
+$(".kn-phan-nav")?.addEventListener("keydown", (e) => {
+  if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  const i = KN_PHAN.indexOf(state.knPhan || "kenh");
+  const moi = KN_PHAN[(i + (e.key === "ArrowRight" ? 1 : KN_PHAN.length - 1)) % KN_PHAN.length];
+  knChonPhan(moi);
+  $(`[data-kn-phan-nut="${moi}"]`)?.focus();
+});
+{
+  let nho = "kenh";
+  try { nho = localStorage.getItem("kn.phan") || "kenh"; } catch { /* không có bộ nhớ: mặc định */ }
+  knChonPhan(KN_PHAN.includes(nho) ? nho : "kenh");
+}
+
+/* "Thêm tài khoản" mở mục Nối kênh mới — đường một-nút — chứ không mở thẳng
+ * form dán token: form ấy là đường phụ, chỉ khi không đăng nhập được. */
+$("#connection-add-toggle")?.addEventListener("click", () => {
+  knChonPhan("kenh");
+  const moi = $("#kn-moi");
+  if (moi) { moi.open = true; moi.scrollIntoView({ behavior: "smooth", block: "start" }); }
+});
+$("#kn-nhap-tay-mo")?.addEventListener("click", () => {
+  const f = $("#connection-create");
+  f.classList.toggle("is-hidden");
+  if (!f.classList.contains("is-hidden")) f.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 /* Bí mật ký phiên của widget: máy sinh, người không phải nghĩ ra chuỗi 32

@@ -2771,3 +2771,165 @@ svg { flex: none; }
   overflow: visible;
   text-overflow: clip;
 }
+
+/* =====================================================================
+   KẾT NỐI & TÍCH HỢP — bố cục lại (UX-08-01…09, UX-20-01…06, MD-UX-20-01/02)
+   Khối của khu vực Kết nối (dashboard/src/18-, 18a-, 22-, 22b-*.js). Tiền tố
+   `knh-` (kết nối hợp nhất) + vài khoá `#cc-ket-noi` để không đụng màn khác.
+   Chỉ dùng biến màu sẵn có — không thêm màu mới (.agents/rules).
+   ===================================================================== */
+
+/* Ba khu vực — thanh tab thứ cấp: gạch chân màu primary như tab chuẩn,
+   không nền; xuống dòng thay vì tràn ngang ở 375px. */
+.kn-phan-nav { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 16px;
+  border-bottom: 1px solid hsl(var(--border)); }
+.kn-phan-nav__nut { display: inline-flex; align-items: center; gap: 6px; padding: 8px 2px 10px;
+  border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none;
+  font: inherit; font-size: 13.5px; font-weight: 500; color: hsl(var(--muted-foreground)); cursor: pointer; }
+.kn-phan-nav__nut:hover { color: hsl(var(--foreground)); }
+.kn-phan-nav__nut.is-on { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+.kn-phan-nav__nut:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.kn-phan-nav__dem { min-width: 18px; padding: 1px 6px; border-radius: 99px; font-size: 11px; font-weight: 600;
+  text-align: center; color: hsl(var(--primary-foreground)); background: hsl(var(--destructive)); }
+.kn-phan { display: block; min-width: 0; }
+
+/* Panel gập: tiêu đề panel chính là nút mở. */
+#cc-ket-noi summary.panel__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  cursor: pointer; list-style: none; border-bottom-color: transparent; }
+#cc-ket-noi summary.panel__head::-webkit-details-marker { display: none; }
+#cc-ket-noi summary.panel__head::before { content: "▸"; color: hsl(var(--muted-foreground));
+  transition: transform .2s; }
+#cc-ket-noi details[open] > summary.panel__head { border-bottom-color: hsl(var(--border)); }
+#cc-ket-noi details[open] > summary.panel__head::before { transform: rotate(90deg); }
+.kn-dieukien { gap: 0; }
+.kn-dieukien .kn-dk { padding: 8px 16px; font-size: 13px; }
+.kn-moi { display: block; }
+.kn-moi > .kn-o, .kn-moi > #kn-ketqua { padding: 14px 16px 0; }
+.knh-moi-chan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 16px 14px;
+  font-size: 12px; color: hsl(var(--muted-foreground)); }
+.knh-buoc { display: inline-flex; align-items: center; gap: 6px; }
+.knh-buoc b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px;
+  background: hsl(var(--primary) / .1); color: hsl(var(--primary)); font-size: 11px; }
+.knh-moi-chan .btn { margin-left: auto; }
+
+/* MỘT nhãn trạng thái, cùng bảng màu cho kênh lẫn dịch vụ (UX-08-06, UX-20-01). */
+.knh-tt { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11.5px;
+  font-weight: 600; white-space: nowrap; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); }
+.knh-tt--hoat_dong { color: hsl(var(--success)); background: hsl(var(--success) / .12); }
+.knh-tt--loi { color: hsl(var(--destructive)); background: hsl(var(--destructive) / .1); }
+.knh-tt--can_xac_thuc { color: hsl(var(--warning)); background: hsl(var(--warning) / .14);
+  box-shadow: inset 0 0 0 1px hsl(var(--warning) / .45); }
+.knh-tt--canh-bao { color: hsl(var(--warning)); background: hsl(var(--warning) / .12); }
+.knh-tt--tam_ngat { background: transparent; box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.knh-tt--ai-tat { color: hsl(var(--warning)); background: transparent; box-shadow: inset 0 0 0 1px hsl(var(--warning) / .5); }
+.knh-cham { width: 9px; height: 9px; border-radius: 99px; background: hsl(var(--muted-foreground) / .5); box-shadow: none; }
+.knh-cham--hoat_dong, .knh-cham--xanh { background: hsl(var(--success)); }
+.knh-cham--loi, .knh-cham--do { background: hsl(var(--destructive)); }
+.knh-cham--can_xac_thuc, .knh-cham--vang { background: hsl(var(--warning)); }
+
+/* Hàng đợi "Cần xử lý": cột đầu là nhãn trạng thái, không phải chấm 14px. */
+.kn-dong.knh-can { grid-template-columns: auto minmax(140px, 1.2fr) minmax(180px, 2.5fr) auto; padding: 10px 16px; }
+.knh-can__nut { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.knh-tot { margin: 12px 16px; padding: 10px 12px; border-radius: var(--radius); font-size: 13px;
+  color: hsl(var(--success)); background: hsl(var(--success) / .08); }
+
+/* Danh sách tài khoản: một cột — mỗi dòng có đủ chỗ cho trạng thái, việc
+   cần làm và nút chính mà không phải bẻ dòng giữa chừng. */
+#cc-ket-noi .connection-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 18px; }
+.knh-kenh .channel-card__head p { font-size: 11.5px; }
+.knh-tk { grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; padding: 12px 4px; }
+.knh-tk > .health-dot { margin-top: 6px; }
+.knh-tk b { display: inline; font-size: 13.5px; }
+.knh-tk__than { display: grid; gap: 4px; min-width: 0; }
+.knh-tk__dau { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.account-line .knh-tk__viec { font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.knh-tk__chinh { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.knh-loi { display: grid; gap: 2px; margin-top: 2px; padding: 8px 10px; border-left: 3px solid hsl(var(--destructive));
+  border-radius: 0 var(--radius) var(--radius) 0; background: hsl(var(--destructive) / .06); font-size: 12.5px; line-height: 1.45; }
+.knh-tk--can_xac_thuc .knh-loi, .knh-tk--hoat_dong .knh-loi { border-left-color: hsl(var(--warning)); background: hsl(var(--warning) / .08); }
+.knh-loi em { font-style: normal; color: hsl(var(--muted-foreground)); }
+
+/* "Quản lý tài khoản": nút chia nhóm theo mục đích, nhóm nguy hiểm tách màu. */
+.knh-quanly { grid-column: 1 / -1; min-width: 0; }
+.knh-quanly > summary, .knh-nangcao > summary, .knh-khanang > summary { cursor: pointer; width: fit-content;
+  font-size: 12.5px; font-weight: 500; color: hsl(var(--primary)); padding: 2px 0; }
+.knh-quanly[open] > summary { margin-bottom: 8px; }
+.knh-nhom-ds { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.knh-nhom { display: grid; align-content: start; gap: 6px; padding: 10px; min-width: 0;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); }
+.knh-nhom--nguy { border-color: hsl(var(--destructive) / .35); background: hsl(var(--destructive) / .03); }
+.knh-nhom__ten { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  color: hsl(var(--muted-foreground)); }
+.knh-nhom--nguy .knh-nhom__ten { color: hsl(var(--destructive)); }
+.knh-nhom__nut { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.knh-nhom__nut .hsa-chon { max-width: 100%; }
+.knh-nhom__ghi { margin: 0; font-size: 12px; line-height: 1.45; color: hsl(var(--muted-foreground)); }
+.knh-nhom .kntt-fb { margin: 0; }
+
+/* Chi tiết nâng cao: mã kỹ thuật ở đây, không ở dòng chính (UX-08-03). */
+.knh-nangcao { margin-top: 8px; min-width: 0; }
+.knh-dl { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 4px 12px;
+  margin: 8px 0; font-size: 12.5px; }
+.knh-dl dt { color: hsl(var(--muted-foreground)); }
+.knh-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.knh-dl .callback { font-size: 11px; margin-top: 0; }
+
+/* Khả năng nền tảng: bảng gọn, ghi rõ KHÔNG phải trạng thái (MD-UX-20-02). */
+.knh-kenh__chan { display: grid; gap: 4px; padding: 8px 12px 12px; border-top: 1px solid hsl(var(--border)); }
+.knh-ghi { margin: 4px 0 8px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.knh-khanang__ds { list-style: none; margin: 0 0 6px; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 14px; font-size: 12.5px; }
+.knh-khanang__ds li.is-co span { color: hsl(var(--success)); }
+.knh-khanang__ds li.is-khong { color: hsl(var(--muted-foreground)); }
+
+/* Kênh chưa có tài khoản: một dòng mỗi kênh (UX-20-04). */
+.knh-chua-noi { border: 1px dashed hsl(var(--border)); border-radius: var(--radius); padding: 10px 12px; }
+.knh-chua-noi__dau { margin: 0 0 6px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.knh-chua-noi__ds { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.knh-chua-noi__ds li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0;
+  border-top: 1px solid hsl(var(--border)); }
+.knh-chua-noi__ds li:first-child { border-top: 0; }
+.knh-chua-noi__goi-y { flex: 1 1 220px; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+
+/* Dịch vụ ngoài: mỗi dịch vụ một bảng gập (UX-08-04). */
+.knh-th .knh-dv-ds { padding: 4px 16px 12px; }
+.kntt-the.knh-dv { padding: 0; overflow: hidden; }
+.knh-dv.is-mo { border-color: hsl(var(--primary) / .45); }
+.knh-dv__dau { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; width: 100%; padding: 12px 14px;
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.knh-dv__dau:hover { background: hsl(var(--muted) / .5); }
+.knh-dv__ten { display: grid; gap: 2px; flex: 1 1 260px; min-width: 0; }
+.knh-dv__ten small { font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.knh-dv__mo { font-size: 12.5px; font-weight: 500; color: hsl(var(--primary)); }
+.knh-dv__than { padding: 4px 14px 14px; border-top: 1px solid hsl(var(--border)); }
+.knh-ghi-chu { margin: 10px 0; padding: 8px 12px 8px 28px; border-left: 3px solid hsl(var(--warning));
+  border-radius: 0 var(--radius) var(--radius) 0; background: hsl(var(--warning) / .08); font-size: 12.5px; line-height: 1.5; }
+.knh-thieu { margin: 6px 0; font-size: 12.5px; color: hsl(var(--destructive)); }
+.knh-nhom-ds--ngang { margin: 10px 0 6px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.knh-kenh-cu .rows { padding: 4px 0; }
+
+/* Lịch sử: bộ lọc + dòng thời gian (UX-08-08, UX-08-09). */
+.knh-loc { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 12px 16px 4px; }
+.knh-loc .field { flex: 1 1 180px; }
+.knh-dtg { list-style: none; margin: 0; padding: 4px 16px 14px; }
+.knh-dtg__muc { display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid hsl(var(--border)); }
+.knh-dtg__muc > .knh-cham { margin-top: 6px; }
+.knh-dtg__than { display: grid; gap: 2px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.knh-dtg__than small { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.knh-dtg__loai { display: inline-block; padding: 0 7px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); }
+.knh-dtg__mo-ta { color: hsl(var(--muted-foreground)); }
+
+@media (max-width: 720px) {
+  .kn-dong.knh-can { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .kn-dong.knh-can > * { grid-column: 1; }
+  .knh-can__nut { justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .knh-tk { grid-template-columns: auto minmax(0, 1fr); }
+  .knh-tk__chinh { grid-column: 2; justify-content: flex-start; }
+  .knh-dl { grid-template-columns: minmax(0, 1fr); }
+  .knh-dl dd { margin-bottom: 6px; }
+  .knh-moi-chan .btn { margin-left: 0; }
+}

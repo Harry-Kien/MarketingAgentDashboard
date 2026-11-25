@@ -133,3 +133,53 @@ def danh_gia_dia_chi_cong_khai(url: str | None) -> DongKenh:
                               "lần đổi phải khai lại webhook ở Meta/Zalo. Dùng tên miền cố định.",
                         "")
     return DongKenh(XANH, "Địa chỉ cố định — khai webhook một lần là xong.", "")
+
+
+# ------------------------------------------------------------------ một trạng thái
+#
+# VÌ SAO CẦN MỘT TRẠNG THÁI HỢP NHẤT
+# --------------------------------
+# Màn Kết nối từng hiện BA nhãn cho cùng một tài khoản: pill "Sẵn sàng" lấy từ
+# `status`, chấm đỏ ở Sức khoẻ kênh lấy từ `danh_gia()`, và "Kết nối thành
+# công" ở thẻ plugin. Zalo cá nhân hiện "Sẵn sàng" trong khi Sức khoẻ ghi lỗi
+# kết nối — người vận hành tin dòng xanh, vì nó to hơn (UX-20-01).
+#
+# Nay chỉ còn MỘT nhãn, suy ra từ đúng thứ `danh_gia()` đã kết luận, nên hai
+# chỗ không thể nói ngược nhau. "Nền tảng hỗ trợ" (khả năng của adapter) và
+# "đã cấu hình" KHÔNG phải trạng thái — chúng nằm ở phần chi tiết.
+
+CHUA_KET_NOI, HOAT_DONG, TAM_NGAT, CAN_XAC_THUC, LOI = (
+    "chua_ket_noi", "hoat_dong", "tam_ngat", "can_xac_thuc", "loi")
+NHAN_TRANG_THAI_KET_NOI = {
+    CHUA_KET_NOI: "Chưa kết nối",
+    HOAT_DONG: "Hoạt động",
+    TAM_NGAT: "Tạm ngắt",
+    CAN_XAC_THUC: "Cần xác thực lại",
+    LOI: "Lỗi",
+}
+# Nút đưa người dùng đi ĐĂNG NHẬP / QUÉT LẠI — tức là mất quyền, không phải hỏng.
+_HANH_DONG_XAC_THUC = frozenset({"dang_nhap_meta", "quet_qr"})
+
+
+def trang_thai_ket_noi(*, status: str, muc: str, hanh_dong: str) -> str:
+    """Trạng thái DUY NHẤT hiện cho người vận hành, suy từ kết luận của `danh_gia()`.
+
+    Trạng thái lạ rơi về LỖI chứ không về "Chưa kết nối": xanh giả nguy hiểm
+    hơn đỏ giả — đỏ thì người ta đi kiểm.
+    """
+    st = str(status or "")
+    if st == "disabled":
+        return TAM_NGAT
+    if st == "reauth_required":
+        return CAN_XAC_THUC
+    if st == "pending":
+        return CHUA_KET_NOI
+    if st == "degraded":
+        return LOI
+    if st == "active":
+        if muc == DO:
+            # active mà đỏ: quyền Meta đã/sắp hết -> phải đăng nhập lại; còn
+            # lại là hỏng thật.
+            return CAN_XAC_THUC if hanh_dong in _HANH_DONG_XAC_THUC else LOI
+        return HOAT_DONG
+    return LOI

@@ -20,13 +20,19 @@ from agent.omnichannel.sla_muc_tieu import tham_so_han
 __all__ = ["bieu_thuc_han", "tham_so_han"]
 
 
-def bieu_thuc_han(cot_phut: str, so_lich: int, *, bang: str = "policy") -> str:
+def bieu_thuc_han(cot_phut: str, so_lich: int, *, bang: str = "policy",
+                  moc: str = "now()") -> str:
     """
-    Biểu thức SQL: hạn = bây giờ + `cot_phut` phút tính theo lịch `$so_lich`.
+    Biểu thức SQL: hạn = `moc` (mặc định bây giờ) + `cot_phut` phút tính
+    theo lịch `$so_lich`.
 
     `$so_lich` là CHUỖI JSON của `Lich.json_sql()` hoặc NULL (24/7) — lấy từ
     `tham_so_han()`, mỗi mục tiêu một tham số vì mỗi mục tiêu chọn chế độ
     riêng.
+
+    `moc` chỉ để màn "Thử tính hạn" (`/api/sla/xem-truoc-han`) đặt mốc giả
+    định: nó phải đi qua ĐÚNG biểu thức này chứ không chép lại công thức —
+    bản chép là bản sẽ lệch khi ai đó sửa luật lịch ở đây.
     """
-    return (f"sla_han_lich(now(), {bang}.{cot_phut}, "
+    return (f"sla_han_lich({moc}, {bang}.{cot_phut}, "
             f"sla_lich_chinh_sach(${so_lich}::text::jsonb, {bang}.business_hours))")

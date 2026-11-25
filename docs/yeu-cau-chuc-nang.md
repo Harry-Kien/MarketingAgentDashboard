@@ -742,9 +742,9 @@ Test canh nêu tên: **6**; các tệp test ấy (1 tệp) có tổng **9** hàm
 
 Số liệu đếm từ mã lúc sinh:
 
-- Route `/api` và `/tich-hop` trên app thật: **291** — **275** khai quyền bằng `can_quyen`, **16** nằm trong `MIEN_TRU` có lý do; còn lại **0** (phải bằng 0, nếu không máy chủ không khởi động).
+- Route `/api` và `/tich-hop` trên app thật: **293** — **277** khai quyền bằng `can_quyen`, **16** nằm trong `MIEN_TRU` có lý do; còn lại **0** (phải bằng 0, nếu không máy chủ không khởi động).
 - Outbox thử tối đa **8** lần (mặc định cột `max_attempts`, migration 0002) rồi vào dead-letter và kêu người.
-- Migration SQL đã chốt checksum: **63** tệp.
+- Migration SQL đã chốt checksum: **64** tệp.
 - Hạn lưu hội thoại mặc định: **180 ngày**; media khách gửi: **180 ngày**.
 
 ## Bảo mật
@@ -811,7 +811,7 @@ Số liệu đếm từ mã lúc sinh:
 
 ## Số test theo vùng
 
-Toàn repo: **390+** tệp test, **3900+** hàm test (đếm `def test_` bằng `ast`, làm tròn xuống để bảng không cũ mỗi lần thêm một test ở chỗ không liên quan; một hàm `parametrize` sinh nhiều ca, nên số ca pytest chạy lớn hơn).
+Toàn repo: **400+** tệp test, **4000+** hàm test (đếm `def test_` bằng `ast`, làm tròn xuống để bảng không cũ mỗi lần thêm một test ở chỗ không liên quan; một hàm `parametrize` sinh nhiều ca, nên số ca pytest chạy lớn hơn).
 
 | Mục | Tệp test canh | Hàm test trong các tệp ấy |
 |---|---|---|

@@ -1060,7 +1060,8 @@ async def respond(
                         "ghi_chu": "Hành động đã được thực thi trong cùng lượt, bỏ qua lần gọi lặp.",
                     }
                 else:
-                    out = await tools.run_tool(ten_tool, tham_so, conversation_id)
+                    # Model có thể gọi công cụ không kèm `input` — công cụ nhận {}.
+                    out = await tools.run_tool(ten_tool, tham_so or {}, conversation_id)
                     if (
                         la_tac_dung_phu
                         and isinstance(out, dict)
@@ -1083,7 +1084,7 @@ async def respond(
                 if customer_ref:
                     await _ghi_ho_so(
                         ho_so_khach.tu_tool(
-                            customer_ref, channel, call["name"], tham_so
+                            customer_ref, channel, call["name"], tham_so or {}
                         ),
                         conversation_id, "tu_tool",
                     )

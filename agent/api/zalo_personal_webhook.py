@@ -252,7 +252,8 @@ async def _ghi_su_kien_ket_noi_lai(
         dedup_key = f"epoch:{epoch}:{own_id}"
         co_id_rieng = True
     elif sau_session:
-        dedup_key = f"session:{int(session_ts)}"
+        # `sau_session` đúng chỉ khi session_ts khác None — viết rõ cho mypy.
+        dedup_key = f"session:{int(session_ts or 0)}"
         co_id_rieng = False
     else:
         dedup_key = f"health:{own_id}:{trigger}:{status_truoc.value}"

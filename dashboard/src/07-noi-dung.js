@@ -8,21 +8,70 @@
  * thoại. Trả Promise<obj|null>: null là người dùng thôi.
  *
  *   hoiHop({ tieu_de, phu, truong: [{ name, label, type, value, required,
- *            placeholder, hint, min, max, step, maxlength, options, rows }],
- *            nut, nguy_hiem })
+ *            placeholder, hint, min, max, step, maxlength, minlength,
+ *            options, rows }],
+ *            nut, nguy_hiem,
+ *            // --- hộp XÁC NHẬN (thêm 25.11.2026, UX-12-04 / UX-13-05) ---
+ *            anh_huong,     // [chuỗi] — "Điều sẽ xảy ra", liệt kê từng dòng
+ *            canh_bao,      // chuỗi | { tieu_de, muc: [chuỗi] } — khung đỏ nổi bật
+ *            go_xac_nhan,   // chuỗi phải GÕ LẠI đúng mới bấm được nút chính
+ *            bi_mat,        // chuỗi hiện MỘT lần (mật khẩu tạm) kèm nút Chép
+ *            nut_huy,       // chữ nút thôi (mặc định "← Quay lại")
+ *            an_huy })      // không có lối thôi (hộp chỉ để đọc bí mật)
+ *
+ * Mọi tham số mới đều tuỳ chọn: lời gọi cũ (30+ chỗ) giữ đúng hành vi cũ.
+ *
+ * VÌ SAO CÓ "ĐIỀU SẼ XẢY RA" THAY CHO "BẠN CÓ CHẮC KHÔNG": câu hỏi có/không
+ * không mang thông tin, người ta bấm OK theo phản xạ. "3 người mất các quyền
+ * này ngay" thì họ dừng lại. Gõ lại tên chỉ dành cho việc rất khó đảo
+ * ngược — dùng ở mọi nơi là thành nghi thức gõ cho xong.
+ *
+ * Chuỗi nào cũng qua esc(): nội dung cảnh báo hay mang tên người, tên vai
+ * trò — thứ người dùng tự đặt.
  */
 let hoiDangMo = null;
 
-function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = false }) {
+function hoiVeKhoi({ anh_huong, canh_bao, bi_mat }) {
+  const ds = (xs) => `<ul class="cong__ds">${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  let h = "";
+  if (canh_bao) {
+    const cb = typeof canh_bao === "string" ? { tieu_de: canh_bao } : canh_bao;
+    h += `<div class="cong__canh-bao" role="alert"><b>${esc(cb.tieu_de || "")}</b>${
+      (cb.muc || []).length ? ds(cb.muc) : ""}</div>`;
+  }
+  if ((anh_huong || []).length) {
+    h += `<div class="cong__anh-huong"><span>Điều sẽ xảy ra</span>${ds(anh_huong)}</div>`;
+  }
+  if (bi_mat) {
+    h += `<div class="cong__bi-mat"><code>${esc(bi_mat)}</code>
+      <button type="button" class="btn btn--sm btn--ghost" data-hoi-chep>Chép</button></div>`;
+  }
+  return h;
+}
+
+function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = false,
+                  anh_huong = null, canh_bao = null, go_xac_nhan = "", bi_mat = "",
+                  nut_huy = "← Quay lại", an_huy = false }) {
   if (hoiDangMo) hoiDong(null);           // hộp mới thay hộp cũ, không chồng
   $("#hoiTen").textContent = tieu_de;
   $("#hoiPhu").textContent = phu;
   $("#hoiPhu").hidden = !phu;
   $("#hoiLoi").textContent = "";
-  $("#hoiTruong").innerHTML = truong.map((t) => {
+  const khoi = $("#hoiKhoi");
+  if (khoi) {
+    khoi.innerHTML = hoiVeKhoi({ anh_huong, canh_bao, bi_mat });
+    khoi.hidden = !khoi.innerHTML;
+  }
+  const cacO = [...truong];
+  if (go_xac_nhan) {
+    cacO.push({ name: "_go_xac_nhan", label: `Gõ “${go_xac_nhan}” để xác nhận`,
+             required: true, placeholder: go_xac_nhan });
+  }
+  $("#hoiTruong").innerHTML = cacO.map((t) => {
     const chung = `name="${esc(t.name)}"${t.required ? " required" : ""}`
       + (t.placeholder ? ` placeholder="${esc(t.placeholder)}"` : "")
-      + (t.maxlength ? ` maxlength="${t.maxlength}"` : "");
+      + (t.maxlength ? ` maxlength="${t.maxlength}"` : "")
+      + (t.minlength ? ` minlength="${t.minlength}"` : "");
     let o;
     if (t.type === "textarea") {
       o = `<textarea ${chung} rows="${t.rows || 3}">${esc(t.value ?? "")}</textarea>`;
@@ -32,7 +81,8 @@ function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = fals
     } else {
       o = `<input type="${esc(t.type || "text")}" ${chung} value="${esc(t.value ?? "")}"`
         + (t.min != null ? ` min="${t.min}"` : "") + (t.max != null ? ` max="${t.max}"` : "")
-        + (t.step != null ? ` step="${t.step}"` : "") + ` autocomplete="off">`;
+        + (t.step != null ? ` step="${t.step}"` : "")
+        + ` autocomplete="${t.type === "password" ? "new-password" : "off"}">`;
     }
     return `<label class="field"><span>${esc(t.label)}${
       t.hint ? ` <em class="hint">${esc(t.hint)}</em>` : ""}</span>${o}</label>`;
@@ -41,23 +91,53 @@ function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = fals
   nutGui.textContent = nut;
   nutGui.classList.toggle("btn--halt", nguy_hiem);
   nutGui.classList.toggle("btn--primary", !nguy_hiem);
+  // Nút chính KHOÁ tới khi gõ đúng — khoá ở đây chứ không chỉ kiểm lúc gửi:
+  // nút trông bấm được mà bấm không ăn là nút dạy người ta bấm nhiều lần.
+  nutGui.disabled = !!go_xac_nhan;
+  $("#hoiform").dataset.goXacNhan = go_xac_nhan || "";
+  $("#hoiform").classList.toggle("is-nguy", !!nguy_hiem);
+  const huy = $("#hoiHuy");
+  if (huy) { huy.textContent = nut_huy; huy.closest(".cong__note").hidden = !!an_huy; }
   $("#congHoi").classList.remove("is-off");
-  const dau = $("#hoiTruong").querySelector("input, textarea, select");
+  const dau = $("#hoiTruong").querySelector("input, textarea, select") || nutGui;
   if (dau) setTimeout(() => dau.focus(), 0);
   return new Promise((resolve) => { hoiDangMo = resolve; });
 }
 
 function hoiDong(gia_tri) {
   $("#congHoi").classList.add("is-off");
+  // Bí mật (mật khẩu tạm) không được nằm lại trong DOM sau khi đóng hộp.
+  if ($("#hoiKhoi")) $("#hoiKhoi").innerHTML = "";
+  $("#hoiNut").disabled = false;
   const tra = hoiDangMo;
   hoiDangMo = null;
   if (tra) tra(gia_tri);
 }
 
+$("#hoiform")?.addEventListener("input", (e) => {
+  const can = e.currentTarget.dataset.goXacNhan;
+  if (can && e.target.name === "_go_xac_nhan") {
+    $("#hoiNut").disabled = e.target.value.trim() !== can;
+  }
+});
+$("#hoiform")?.addEventListener("click", async (e) => {
+  if (!e.target.closest("[data-hoi-chep]")) return;
+  const ma = $("#hoiKhoi code");
+  try {
+    await navigator.clipboard.writeText(ma ? ma.textContent : "");
+    toast("Đã chép.");
+  } catch { toast("Trình duyệt không cho chép — bôi đen rồi chép tay.", true); }
+});
 $("#hoiform")?.addEventListener("submit", (e) => {
   e.preventDefault();
   const d = Object.fromEntries(new FormData(e.currentTarget).entries());
   for (const k of Object.keys(d)) if (typeof d[k] === "string") d[k] = d[k].trim();
+  const can = e.currentTarget.dataset.goXacNhan;
+  if (can && d._go_xac_nhan !== can) {
+    $("#hoiLoi").textContent = `Gõ đúng “${can}” để xác nhận.`;
+    return;
+  }
+  delete d._go_xac_nhan;
   hoiDong(d);
 });
 $("#hoiHuy")?.addEventListener("click", (e) => { e.preventDefault(); hoiDong(null); });

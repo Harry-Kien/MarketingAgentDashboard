@@ -3659,4 +3659,212 @@ body.cvx-khoa-cuon { overflow: hidden; }
 .qt-form__nut {
   position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 12px 16px;
   background: hsl(var(--card)); border-top: 1px solid hsl(var(--border));
+/* ================= HỘP XÁC NHẬN CHUNG (#congHoi, hoiHop — 07-noi-dung.js) =================
+   Hộp dùng lại lớp phủ `.cong` của màn đăng nhập nhưng là HỘP NỔI trên màn
+   đang làm, không phải một trang mới: nền mờ cho người ta còn thấy mình
+   đang thao tác trên dòng nào. Cảnh báo, "điều sẽ xảy ra", gõ lại tên và bí
+   mật hiện một lần (UX-12-04, UX-13-05, UX-13-07, SEC-13-01). */
+.cong--hop {
+  background: hsl(222 47% 11% / .45);
+  overflow-y: auto;
+  align-items: flex-start;
+  padding: 48px 16px;
+}
+.cong--hop .cong__form {
+  max-width: 480px;
+  margin: auto;
+  box-shadow: var(--shadow-md);
+  padding: 24px;
+}
+.cong--hop .cong__form.is-nguy { border-top: 3px solid hsl(var(--destructive)); }
+.cong--hop .cong__form select,
+.cong--hop .cong__form textarea {
+  font-size: 14px; padding: 8px 12px; border: 1px solid hsl(var(--border));
+  border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.cong__khoi { display: flex; flex-direction: column; gap: 12px; }
+.cong__ds { margin: 4px 0 0; padding-left: 20px; }
+.cong__ds li { margin: 2px 0; overflow-wrap: anywhere; }
+.cong__canh-bao {
+  padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  border: 1px solid hsl(var(--destructive) / .3);
+  background: hsl(var(--destructive) / .08);
+  color: hsl(var(--foreground));
+}
+.cong__canh-bao > b { color: hsl(var(--destructive)); }
+.cong__anh-huong { font-size: 13px; color: hsl(var(--foreground)); }
+.cong__anh-huong > span {
+  font-size: 12px; font-weight: 600; color: hsl(var(--muted-foreground));
+}
+.cong__bi-mat {
+  display: flex; align-items: center; gap: 8px; padding: 12px;
+  border: 1px dashed hsl(var(--primary) / .5); border-radius: 8px;
+  background: hsl(var(--accent));
+}
+.cong__bi-mat code {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: 18px;
+  letter-spacing: .04em; overflow-wrap: anywhere; user-select: all;
+}
+#hoiNut:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ================= NHÂN SỰ & PHÂN QUYỀN (24-nhan-su.js, 24b, 24c) =================
+   Danh sách tách khỏi form (ngăn kéo), bảng quyền thu gọn theo nhóm, menu
+   "⋯" cho thao tác phụ. Màu chỉ lấy từ token sẵn có: đỏ = quyền nhạy cảm /
+   thao tác khó đảo ngược, không dùng để trang trí. */
+
+/* `.panel` cắt tràn (`overflow: hidden`) để bo góc — cũng cắt luôn menu "⋯"
+   của dòng cuối. Bảng này không có nền riêng ở mép nên mở tràn không lộ gì. */
+.nsv-panel { overflow: visible; }
+.nsv-dau {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid hsl(var(--border));
+}
+.nsv-dau .panel__head { padding: 0; border: 0; }
+.nsv-ghi { padding: 8px 16px 0; }
+
+/* --- tìm và lọc --- */
+.nsv-loc {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 12px 16px;
+}
+.nsv-tim, .nsv-loc select {
+  font: inherit; font-size: 13px; padding: 6px 12px; min-height: 32px;
+  border: 1px solid hsl(var(--border)); border-radius: 6px;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+}
+.nsv-loc .nsv-tim { flex: 1 1 240px; min-width: 0; }
+.nsv-loc select { flex: 0 1 180px; min-width: 0; }
+.nsv-loc__dem { font-size: 12px; color: hsl(var(--muted-foreground)); }
+
+/* --- một dòng: vai trò DƯỚI thông tin, nút ở bên (UX-13-06) --- */
+.nsv-dong .row__main { min-width: 0; }
+/* `.row__main` là cột flex: nhãn trạng thái đứng riêng thì giãn hết bề ngang.
+   Tên và nhãn chung một hàng, nhãn co về đúng cỡ chữ. */
+.nsv-ten { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.nsv-ten b { overflow-wrap: anywhere; }
+.nsv-vai { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.nsv-vai .pill { margin-left: 0; }
+.nsv-dong .row__nut { margin-top: 0; align-items: center; flex-wrap: nowrap; }
+
+.nsv-menu { position: relative; }
+.nsv-menu > summary { list-style: none; cursor: pointer; min-width: 32px; justify-content: center; }
+.nsv-menu > summary::-webkit-details-marker { display: none; }
+.nsv-menu__ds {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  display: flex; flex-direction: column; min-width: 208px; padding: 4px;
+  border: 1px solid hsl(var(--border)); border-radius: 8px;
+  background: hsl(var(--card)); box-shadow: var(--shadow-md);
+}
+.nsv-menu__muc {
+  border: 0; background: transparent; text-align: left; font: inherit; font-size: 13px;
+  padding: 8px 12px; border-radius: 4px; color: hsl(var(--foreground));
+}
+.nsv-menu__muc:hover:not(:disabled) { background: hsl(var(--muted)); }
+.nsv-menu__muc.is-nguy { color: hsl(var(--destructive)); }
+.nsv-menu__muc:disabled { opacity: .45; cursor: not-allowed; }
+
+/* --- ngăn kéo chi tiết / sửa (UX-13-01) --- */
+.nsv-ngan { position: fixed; inset: 0; z-index: 90; }
+.nsv-ngan__nen { position: absolute; inset: 0; background: hsl(222 47% 11% / .35); }
+.nsv-ngan__than {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(640px, 100vw);
+  display: flex; flex-direction: column;
+  background: hsl(var(--card)); box-shadow: var(--shadow-md);
+  border-left: 1px solid hsl(var(--border));
+}
+.nsv-ngan__dau {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid hsl(var(--border));
+}
+.nsv-ngan__dau h2 { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.nsv-ngan__noi { flex: 1; overflow-y: auto; }
+body.is-ngan-mo { overflow: hidden; }
+.nsv-form { grid-template-columns: 1fr; }
+.nsv-ct { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.nsv-ct__muc { margin: 8px 0 0; font-size: 13px; font-weight: 600; }
+.nsv-ct__nut { flex-wrap: wrap; }
+.nsv-ct .rows { border-top: 1px solid hsl(var(--border)); }
+.nsv-tt {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px; margin: 0; font-size: 13px;
+}
+.nsv-tt dt { color: hsl(var(--muted-foreground)); }
+.nsv-tt dd { margin: 0; overflow-wrap: anywhere; }
+
+/* --- bảng quyền thu gọn theo nhóm (UX-12-03, UX-13-02) --- */
+.nsv-mt { display: grid; gap: 8px; }
+.nsv-mt__cong-cu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.nsv-mt__cong-cu .nsv-tim { flex: 1 1 200px; min-width: 0; }
+.nsv-mt__dem { font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: auto; }
+.nsv-nhom { padding: 0; }
+.nsv-nhom > summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer; list-style: none;
+}
+.nsv-nhom > summary::-webkit-details-marker { display: none; }
+.nsv-nhom > summary::before {
+  content: "▸"; color: hsl(var(--muted-foreground)); transition: transform .2s;
+}
+.nsv-nhom[open] > summary::before { transform: rotate(90deg); }
+.nsv-nhom[open] > summary { border-bottom: 1px solid hsl(var(--border)); }
+.nsv-nhom > .quyen__o { padding: 4px 12px; }
+.nsv-nhom > .quyen__o:first-of-type { padding-top: 8px; }
+.nsv-nhom > .quyen__o:last-child { padding-bottom: 8px; }
+.nsv-nhom__ten { font-weight: 600; font-size: 13.5px; }
+.nsv-nhom__dem {
+  font-family: var(--mono); font-size: 12px; color: hsl(var(--muted-foreground));
+}
+.nsv-nhom__ca { margin-left: auto; }
+.nsv-nhom .pill { margin-left: 0; }
+.quyen__o.is-nhay-cam > span:first-of-type { color: hsl(var(--destructive)); }
+.quyen__o.is-chua { color: hsl(var(--muted-foreground)); }
+.quyen__o small { color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.nsv-ky { width: 16px; flex: none; text-align: center; color: hsl(var(--muted-foreground)); }
+.nsv-ky--co { color: hsl(var(--success)); font-weight: 600; }
+.nsv-xq { display: grid; gap: 8px; }
+.nsv-xq__dau {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px; font-size: 13px;
+}
+.nsv-bat { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px; }
+
+/* --- tóm tắt quyền hiệu lực khi gán vai trò (UX-13-04) --- */
+.nsv-tt-quyen {
+  display: grid; gap: 8px; padding: 12px; font-size: 13px;
+  border: 1px solid hsl(var(--border)); border-radius: 8px;
+  background: hsl(var(--muted) / .5);
+}
+.nsv-tt-quyen.is-trong { border-color: hsl(var(--warning) / .45); background: hsl(var(--warning) / .08); }
+.nsv-tt-quyen__nhom { display: flex; flex-wrap: wrap; gap: 4px; }
+.nsv-chip {
+  font-size: 12px; padding: 2px 8px; border-radius: 4px;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--card));
+}
+.nsv-canh {
+  padding: 8px 12px; border-radius: 8px;
+  border: 1px solid hsl(var(--destructive) / .3); background: hsl(var(--destructive) / .08);
+}
+.nsv-canh > b { color: hsl(var(--destructive)); }
+.nsv-canh ul { margin: 4px 0 0; padding-left: 20px; }
+
+/* --- hướng dẫn bàn giao sau khi tạo, nằm yên tới khi đóng (UX-13-07) --- */
+.nsv-ban-giao {
+  margin: 12px 16px 0; padding: 12px 16px; border-radius: 8px; font-size: 13px;
+  border: 1px solid hsl(var(--success) / .35); background: hsl(var(--success) / .08);
+}
+.nsv-ban-giao__dau { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nsv-ban-giao ol { margin: 8px 0 0; padding-left: 20px; }
+.nsv-ban-giao li { margin: 4px 0; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .nsv-dong { grid-template-columns: 3px minmax(0, 1fr); }
+  /* Nút xuống hàng riêng dưới thông tin, vẫn neo phải: menu "⋯" mở về bên
+     trái từ mép phải nên không bao giờ tràn ra ngoài màn hình. */
+  .nsv-dong .row__side { grid-column: 2; max-width: none; justify-content: flex-end; }
+  .nsv-loc select { flex: 1 1 45%; }
+  .nsv-menu__ds { max-width: calc(100vw - 32px); }
+  .nsv-tt { grid-template-columns: 1fr; }
+  .nsv-tt dd { margin-bottom: 4px; }
+  .cong--hop { padding: 16px; }
+  .cong--hop .cong__form { padding: 20px 16px; }
 }

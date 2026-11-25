@@ -180,6 +180,9 @@ async function kiemPhien() {
     // khách cho bạn", nên không ai nhận ra là nó hỏng.
     state.toiId = nguoi.id;
     state.toiQuyen = new Set(nguoi.quyen || []);
+    // Quản trị vừa đặt mật khẩu tạm (0068): máy chủ chặn mọi màn tới khi đổi.
+    // Không dựng dashboard — chỉ hộp đặt mật khẩu mới (24c-nhan-su-vai-tro.js).
+    if (nguoi.phai_doi_mat_khau) { nsvBatDoiMatKhau(); return false; }
     $("#cong").classList.add("is-off");
     const nhan = $("#rail-nguoi");
     if (nhan) nhan.innerHTML =
@@ -207,8 +210,13 @@ async function kiemPhien() {
   }
 }
 
-$("#mkhuy")?.addEventListener("click", (e) => {
+$("#mkhuy")?.addEventListener("click", async (e) => {
   e.preventDefault();
+  if ($("#mkform").dataset.batBuoc) {         // bị bắt đổi: lối ra là đăng xuất
+    await api("/dang-xuat", { method: "POST" });
+    location.reload();
+    return;
+  }
   $("#mkform").reset();
   $("#congMk").classList.add("is-off");
 });

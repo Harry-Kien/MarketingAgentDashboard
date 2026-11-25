@@ -739,6 +739,25 @@ _MO = (
 # đi đúng lối có canh, không chế lối riêng.
 _MO_MAU: tuple[re.Pattern[str], ...] = ()
 
+# Người mang cờ "phải đổi mật khẩu" (0068) chỉ đi được ĐÚNG hai đường: biết
+# mình là ai (dashboard cần để hiện hộp đổi mật khẩu) và đổi mật khẩu. Đăng
+# xuất nằm trong `_MO` nên vốn không qua chốt này.
+#
+# Chặn ở MÁY CHỦ chứ không chỉ che màn hình: mật khẩu tạm là thứ quản trị
+# biết. Chỉ che màn hình thì ai cầm mật khẩu tạm gọi thẳng API là dùng được
+# tài khoản mà không bao giờ phải đổi — cờ thành trang trí.
+_MO_KHI_PHAI_DOI_MK = frozenset({"/api/toi", "/api/toi/doi-mat-khau"})
+
+
+def _tu_choi_vi_phai_doi_mat_khau() -> JSONResponse:
+    # 403 chứ không 401: phiên vẫn hợp lệ — trả 401 là dashboard tưởng hết
+    # phiên, đưa về màn đăng nhập, và người dùng đăng nhập lại mãi trong vòng.
+    return JSONResponse({
+        "detail": "Bạn cần đặt mật khẩu mới trước khi dùng dashboard "
+                  "(quản trị vừa đặt mật khẩu tạm cho tài khoản này).",
+        "phai_doi_mat_khau": True,
+    }, status_code=403)
+
 
 HANG_VAN_CHUYEN = ("ghn", "ghtk", "mock")
 
@@ -877,6 +896,8 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
             # cấu hình. Nên đòi `cau_hinh.sua`: người sửa được cấu hình (kể
             # cả đặt token ấy) mới được dùng nó qua phiên.
             nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
+            if nguoi is not None and nguoi.get("phai_doi_mat_khau"):
+                return _tu_choi_vi_phai_doi_mat_khau()
             if nguoi is not None and not xac_thuc.duoc_phep(nguoi, "cau_hinh.sua"):
                 return JSONResponse({"error": "Thiếu quyền: cau_hinh.sua"}, status_code=403)
             cho_phep = nguoi is not None
@@ -890,6 +911,8 @@ async def chan_neu_chua_dang_nhap(request: Request, call_next):
         nguoi = await xac_thuc.doc_phien(request.cookies.get(TEN_COOKIE, ""))
         if nguoi is None:
             return JSONResponse({"error": "Chưa đăng nhập"}, status_code=401)
+        if nguoi.get("phai_doi_mat_khau") and duong not in _MO_KHI_PHAI_DOI_MK:
+            return _tu_choi_vi_phai_doi_mat_khau()
         # Gắn vào request để endpoint biết AI đang thao tác — nhật ký ghi
         # tên thật thay vì "nguoi" hay "staff" chung chung.
         request.state.nguoi = nguoi

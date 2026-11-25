@@ -161,8 +161,11 @@ async def co_nguoi_dung_nao_chua() -> bool:
 async def doi_mat_khau(ten_dang_nhap: str, mat_khau_moi: str) -> bool:
     if len(mat_khau_moi) < 8:
         raise ValueError("Mật khẩu phải từ 8 ký tự")
+    # Tắt luôn cờ "phải đổi mật khẩu" (0068): mật khẩu giờ chỉ CHÍNH người
+    # này biết, lý do của cờ đã hết.
     r = await db.fetchrow(
-        "UPDATE nguoi_dung SET mat_khau_bam = $2 WHERE ten_dang_nhap = $1 "
+        "UPDATE nguoi_dung SET mat_khau_bam = $2, phai_doi_mat_khau = false "
+        "WHERE ten_dang_nhap = $1 "
         "RETURNING id", ten_dang_nhap.strip().lower(), bam_mat_khau(mat_khau_moi),
     )
     if r:
@@ -170,6 +173,24 @@ async def doi_mat_khau(ten_dang_nhap: str, mat_khau_moi: str) -> bool:
         # chiếm được tài khoản vẫn ngồi trong đó sau khi chủ đã đổi mật khẩu.
         await db.execute("DELETE FROM phien WHERE nguoi_dung_id = $1", r["id"])
     return r is not None
+
+
+# Bảng chữ cho mật khẩu tạm: bỏ các ký tự đọc nhầm nhau khi quản trị đọc
+# qua điện thoại hay chép tay (0/O, 1/l/I). Mật khẩu này sống tới lần đăng
+# nhập kế tiếp — người nhận phải gõ lại được nó ngay lần đầu.
+_CHU_MAT_KHAU_TAM = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def sinh_mat_khau_tam() -> str:
+    """
+    Mật khẩu tạm 12 ký tự ngẫu nhiên, chia ba cụm cho dễ đọc: `abcd-efgh-jkmn`.
+
+    `secrets`, không `random`: đây là thứ mở được tài khoản. 12 ký tự trên
+    bảng 55 chữ là ~69 bit — thừa cho một mật khẩu sống vài giờ và bị bộ
+    đếm sai chặn sau 8 lần.
+    """
+    chu = "".join(secrets.choice(_CHU_MAT_KHAU_TAM) for _ in range(12))
+    return f"{chu[:4]}-{chu[4:8]}-{chu[8:]}"
 
 
 # ---------------------------------------------------------------
@@ -414,6 +435,10 @@ async def doc_phien(token: str) -> dict | None:
         return None
     r = await db.fetchrow(
         "SELECT n.id, n.ten_dang_nhap, n.ho_ten, n.vai_tro, n.khoa, "
+        # Cờ 0068: middleware đọc nó ở MỖI request để chặn mọi màn tới khi
+        # người này đổi mật khẩu quản trị vừa đặt — cùng lý do không cache
+        # quyền: đặt cờ lúc 9 giờ thì 9 giờ 01 phải có hiệu lực.
+        "       n.phai_doi_mat_khau, "
         "       COALESCE(array_agg(DISTINCT vq.quyen) "
         "                FILTER (WHERE vq.quyen IS NOT NULL), "
         "                ARRAY[]::text[]) AS quyen, "

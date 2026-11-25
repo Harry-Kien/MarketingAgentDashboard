@@ -21,7 +21,7 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from agent import db
@@ -65,6 +65,7 @@ LOAI_LICH_SU: dict[str, str] = {
     "nguoi_dung.sua": "Sửa thông tin nhân viên",
     "auth.khoa_nguoi_dung": "Khoá / mở khoá tài khoản",
     "nguoi_dung.chuyen_viec": "Chuyển việc sang người khác",
+    "nguoi_dung.dat_lai_mat_khau": "Đặt lại mật khẩu",
 }
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -101,6 +102,11 @@ async def viec_dang_giu(conn, nguoi_dung_id: UUID) -> dict[str, Any]:
 class SuaNguoiDungIn(BaseModel):
     ho_ten: str = Field(min_length=1, max_length=120)
     email: str | None = Field(None, max_length=200)
+
+
+class DatLaiMatKhauIn(BaseModel):
+    # Để trống (None) = máy chủ tự sinh và trả về MỘT lần trong phản hồi.
+    mat_khau_tam: str | None = Field(None, min_length=8, max_length=200)
 
 
 class ChuyenViecIn(BaseModel):
@@ -144,6 +150,72 @@ async def sua_nguoi_dung(
                                   ten_dang_nhap=cu["ten_dang_nhap"],
                                   truoc=truoc, sau=sau)
     return {"id": str(nguoi_dung_id), "ten_dang_nhap": cu["ten_dang_nhap"], **sau}
+
+
+@router.post("/nguoi-dung/{nguoi_dung_id}/dat-lai-mat-khau")
+async def dat_lai_mat_khau(
+    nguoi_dung_id: UUID,
+    body: DatLaiMatKhauIn,
+    response: Response,
+    nguoi: dict = Depends(can_quyen("nguoi_dung.sua")),
+) -> dict[str, Any]:
+    """
+    Quản trị đặt lại mật khẩu cho nhân viên quên mật khẩu (UX-13-07).
+
+    Bốn việc, cùng một giao dịch, thiếu việc nào cũng là lỗ:
+      - `chan_cap_vuot`: đặt lại mật khẩu của cấp trên = đăng nhập được
+        bằng tài khoản cấp trên. Đó là leo thang quyền đi đường vòng, nên
+        cùng luật với gán vai trò và khoá;
+      - thu hồi MỌI phiên: ai đang ngồi trong tài khoản bằng mật khẩu cũ
+        (người chiếm được nó — lý do hay gặp nhất của việc đặt lại) phải ra;
+      - bật cờ `phai_doi_mat_khau`: mật khẩu tạm là thứ quản trị biết; máy
+        chủ chặn mọi màn tới khi chủ tài khoản đổi;
+      - lịch sử KHÔNG chứa mật khẩu, kể cả bản tự sinh: bảng `events` đọc
+        được bởi mọi ai có `nhat_ky.doc`.
+
+    Không tự đặt lại cho mình ở đây: đường đó bỏ qua bước gõ lại mật khẩu
+    hiện tại của `/api/toi/doi-mat-khau` — phiên bị chiếm sẽ tự đổi mật khẩu
+    rồi đá chủ thật ra.
+    """
+    if str(nguoi_dung_id) == str(nguoi.get("id")):
+        raise HTTPException(422, (
+            "Không đặt lại mật khẩu của chính mình ở đây — dùng “đổi mật khẩu” "
+            "(cần mật khẩu hiện tại)."))
+    tu_sinh = not body.mat_khau_tam
+    mat_khau = body.mat_khau_tam or xac_thuc.sinh_mat_khau_tam()
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            cu = await conn.fetchrow(
+                "SELECT ten_dang_nhap FROM nguoi_dung WHERE id = $1 FOR UPDATE",
+                nguoi_dung_id)
+            if cu is None:
+                raise HTTPException(404, "Không tìm thấy nhân viên")
+            chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, nguoi_dung_id),
+                          "đặt lại mật khẩu của người này")
+            await conn.execute(
+                "UPDATE nguoi_dung SET mat_khau_bam = $2, phai_doi_mat_khau = true "
+                "WHERE id = $1", nguoi_dung_id, xac_thuc.bam_mat_khau(mat_khau))
+            so_phien = len(await conn.fetch(
+                "DELETE FROM phien WHERE nguoi_dung_id = $1 RETURNING 1",
+                nguoi_dung_id))
+            await ghi_lich_su(
+                conn, "nguoi_dung.dat_lai_mat_khau", nguoi=nguoi,
+                ref_id=nguoi_dung_id, ten_dang_nhap=cu["ten_dang_nhap"],
+                tu_sinh=tu_sinh, so_phien_thu_hoi=so_phien,
+                phai_doi_mat_khau=True)
+    # Người quên mật khẩu thường đã gõ sai vài lần: bộ đếm sai còn giữ thì
+    # mật khẩu tạm đúng vẫn bị "Sai quá nhiều lần" — quản trị tưởng đặt lại
+    # hỏng.
+    xac_thuc.xoa_that_bai(cu["ten_dang_nhap"])
+    # Phản hồi mang mật khẩu: không cho trình duyệt hay proxy nào giữ bản sao.
+    response.headers["Cache-Control"] = "no-store"
+    ra: dict[str, Any] = {
+        "ok": True, "ten_dang_nhap": cu["ten_dang_nhap"],
+        "so_phien_thu_hoi": so_phien, "phai_doi_mat_khau": True,
+    }
+    if tu_sinh:
+        ra["mat_khau_tam"] = mat_khau
+    return ra
 
 
 @router.get("/nguoi-dung/{nguoi_dung_id}/viec-dang-giu")

@@ -67,7 +67,7 @@ async function refresh() {
     if (dangMo("ai-ky-nang")) await loadKyNang();
     if (dangMo("ai-phong-thu") && !state.phongThuDaTai) await loadPhongThu();
     if (dangMo("ns-nhan-vien") || dangMo("ns-vai-tro")) await loadNhanSu();
-    if (tabDangHien("ns-nhan-vien")) await loadLichCa();
+    if (tabDangHien("ns-lich-ca")) await loadLichCa();
     if (tabDangHien("ns-vai-tro")) await loadTamNhin();
     if (dangMo("ht-suc-khoe")) await loadHeThong();
     if (dangMo("ht-sao-luu")) {

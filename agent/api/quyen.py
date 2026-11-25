@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from agent import db
-from agent.core.quyen import NHOM_QUYEN, QUYEN
+from agent.core.quyen import NHOM_QUYEN, QUYEN, QUYEN_NHAY_CAM
 
 from .routes import can_quyen
 
@@ -91,6 +91,29 @@ async def quyen_cua_nguoi(conn, nguoi_dung_id) -> set[str]:
         "SELECT vai_tro_id FROM nguoi_dung_vai_tro WHERE nguoi_dung_id = $1",
         nguoi_dung_id)]
     return await quyen_cua_vai_tro(conn, ids, chi_dang_dung=True)
+
+
+async def vai_tro_nhay_cam_cua(conn, nguoi_dung_id) -> dict[str, list[str]]:
+    """
+    Vai trò ĐANG DÙNG của một người -> các quyền NHẠY CẢM nó cấp (SEC-13-01).
+
+    Theo VAI TRÒ chứ không chỉ theo quyền: người mở khoá cần biết phải gỡ
+    vai trò nào ("Quản trị") trước khi mở, không phải đọc lại 10 mã quyền.
+    Vai trò ngừng dùng không cấp gì nên không tính — cảnh báo về thứ không
+    có hiệu lực là dạy người ta bấm qua cảnh báo.
+    """
+    rows = await conn.fetch(
+        "SELECT vt.id, vt.ten FROM nguoi_dung_vai_tro x "
+        "JOIN vai_tro vt ON vt.id = x.vai_tro_id "
+        "WHERE x.nguoi_dung_id = $1 AND vt.dang_dung ORDER BY vt.ten",
+        nguoi_dung_id)
+    ra: dict[str, list[str]] = {}
+    for r in rows:
+        nc = await quyen_cua_vai_tro(conn, [r["id"]], chi_dang_dung=True)
+        nc &= set(QUYEN_NHAY_CAM)
+        if nc:
+            ra[r["ten"]] = sorted(nc)
+    return ra
 
 
 def chan_cap_vuot(nguoi: dict, can: set[str], viec: str) -> None:
@@ -204,6 +227,9 @@ async def danh_muc_quyen(
              "quyen": [{"ma": q, "nhan": QUYEN[q]} for q in ds]}
             for ma_nhom, ten, ds in NHOM_QUYEN
         ],
+        # Mã -> LÝ DO nhạy cảm. Màn cấp quyền tô đỏ và nói lý do, màn mở khoá
+        # cảnh báo theo đúng danh sách này — một danh sách, ở mã.
+        "nhay_cam": dict(QUYEN_NHAY_CAM),
     }
 
 

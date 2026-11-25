@@ -194,6 +194,35 @@ NHOM_QUYEN: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("phe_duyet_ai", "Phê duyệt AI", ("ai.duyet",)),
 )
 
+# =====================================================================
+#  QUYỀN NHẠY CẢM (UX-12-03, UX-13-04, SEC-13-01)
+# =====================================================================
+# Quyền mà cấp nhầm một lần là hậu quả lớn hoặc không đảo ngược được: chiếm
+# được cả hệ thống, mất dữ liệu khách vĩnh viễn, đổi lời AI nói với MỌI
+# khách, đọc khách của mọi kênh. Màn cấp quyền tô đỏ chúng và nói LÝ DO;
+# mở khoá một tài khoản đang mang chúng thì máy chủ đòi xác nhận riêng.
+#
+# Lý do nằm cạnh mã chứ không trong JS: màn hình chỉ đọc từ `/api/quyen`, nên
+# một danh sách ở mã là danh sách duy nhất — hai bản (mã + JS) là hai chỗ để
+# một quyền mới nguy hiểm được tô đỏ ở chỗ này mà không ở chỗ kia.
+#
+# CỐ Ý KHÔNG có quyền nào của vai trò dựng sẵn `Nhân viên` (0019): tô đỏ thứ
+# ai cũng có là màu đỏ mất nghĩa, và mở khoá một nhân viên thường không được
+# biến thành một hộp cảnh báo người ta bấm qua theo phản xạ. Có test canh.
+QUYEN_NHAY_CAM: dict[str, str] = {
+    "nguoi_dung.sua": "Cấp, thu quyền và khoá người khác — người có quyền này "
+                      "tự nâng mình lên được tới mức quyền họ đang có",
+    "cau_hinh.sua": "Đổi cấu hình và kho tri thức mà AI dùng để trả lời MỌI khách",
+    "agent.dieu_khien": "Bật tắt agent, đổi chế độ tự trả lời cho mọi kênh",
+    "khach.xoa": "Xoá vĩnh viễn dữ liệu cá nhân của khách — không hoàn tác được",
+    "khach.xem_tat_ca": "Thấy khách của mọi kênh, kể cả kênh không được giao",
+    "hoi_thoai.xem_tat_ca": "Đọc hội thoại của mọi kênh, kể cả kênh không được giao",
+    "kenh.noi": "Nối kênh mới nói chuyện với khách nhân danh cửa hàng",
+    "ky_nang.sua": "Cài kỹ năng, plugin chạy bên trong agent",
+    "mcp.sua": "Nối máy chủ MCP bên ngoài vào agent",
+    "tich_hop.sua": "Nối và gỡ ứng dụng ngoài có quyền vào dữ liệu",
+}
+
 # Quyền ĐÃ GỠ khỏi danh mục. Không bao giờ được dùng lại tên này.
 #
 # `noi_dung.*` canh màn video và đăng bài — gỡ ngày 19.11.2026 khi chủ dự án

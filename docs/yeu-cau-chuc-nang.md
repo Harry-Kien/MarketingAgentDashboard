@@ -157,7 +157,7 @@ Test canh nêu tên: **20**; các tệp test ấy (4 tệp) có tổng **89** h�
 7. Cài đặt & Quản trị (thu gọn được)
     - Cấu hình chung (`cauhinhchung`) — tab: Quản lý nhãn (`cc-nhan`), Tin nhắn & Quy tắc tự động (`cc-tu-dong`), Kết nối & Tích hợp (`cc-ket-noi`), SLA & Giờ làm việc (`cc-sla`), Điều phối hội thoại (`cc-dieu-phoi`)
     - Cấu hình AI Agent (`cauhinhai`) — tab: Cấu hình cơ bản (`ai-co-ban`), Tri thức (RAG) (`ai-tri-thuc`), Kỹ năng & Công cụ (`ai-ky-nang`), Chính sách & Ủy quyền (`ai-chinh-sach`), Phòng thử (`ai-phong-thu`)
-    - Nhân sự & Phân quyền (`nhansu`) — tab: Nhân viên (`ns-nhan-vien`), Vai trò & Quyền (`ns-vai-tro`)
+    - Nhân sự & Phân quyền (`nhansu`) — tab: Nhân viên (`ns-nhan-vien`), Vai trò & Quyền (`ns-vai-tro`), Lịch sử (`ns-lich-su`), Lịch ca (`ns-lich-ca`)
     - Hệ thống & Nhật ký (`hethong`) — tab: Sức khoẻ hệ thống (`ht-suc-khoe`), Sao lưu & Bảo trì (`ht-sao-luu`), Nhật ký hoạt động (`ht-nhat-ky`)
 
 **Nơi hiện thực**
@@ -744,7 +744,7 @@ Số liệu đếm từ mã lúc sinh:
 
 - Route `/api` và `/tich-hop` trên app thật: **293** — **277** khai quyền bằng `can_quyen`, **16** nằm trong `MIEN_TRU` có lý do; còn lại **0** (phải bằng 0, nếu không máy chủ không khởi động).
 - Outbox thử tối đa **8** lần (mặc định cột `max_attempts`, migration 0002) rồi vào dead-letter và kêu người.
-- Migration SQL đã chốt checksum: **64** tệp.
+- Migration SQL đã chốt checksum: **65** tệp.
 - Hạn lưu hội thoại mặc định: **180 ngày**; media khách gửi: **180 ngày**.
 
 ## Bảo mật

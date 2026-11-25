@@ -97,6 +97,7 @@ async function loadNhanSu() {
   nsv.nguoi = ds;
   nsv.vaiTro = vt.vai_tro;
   nsv.nhom = dm.nhom_hien_thi || [];
+  nsv.nhayCam = dm.nhay_cam || {};
   nsvVeLichSu($("#nsLichSu"));
   /* Vòng làm mới 6 giây gọi lại hàm này. Dựng lại danh sách khi một bảng
      tick (vai trò, kênh) đang mở là XOÁ bảng ấy giữa lúc người ta đang tick
@@ -193,16 +194,9 @@ $("#nsVaiTro")?.addEventListener("click", async (e) => {
   const xoa = e.target.closest("[data-xoavai]");
   if (!xoa) return;
   const v = nhanSu.vaiTro.find((x) => x.id === xoa.dataset.xoavai);
-  /* Nói SỐ NGƯỜI bị ảnh hưởng, không hỏi "bạn có chắc không".
-   * "Có chắc không" là câu hỏi không mang thông tin nào — người ta bấm OK
-   * theo phản xạ. "3 người sẽ mất các quyền này" thì họ dừng lại. */
-  const loi = `Xoá hẳn vai trò “${v.ten}”? Chưa ai từng được gán vai trò này nên không mất lịch sử nào.`;
-  if (!confirm(loi)) return;
-  try {
-    await api(`/vai-tro/${v.id}`, { method: "DELETE" });
-    toast("Đã xoá vai trò.");
-    await loadNhanSu();
-  } catch (err) { toast(err.message, true); }
+  // Cùng hộp xác nhận với tab Vai trò mới (24c): nói điều sẽ xảy ra, không
+  // dùng confirm() của trình duyệt (UX-12-04).
+  if (await nsvXoaVaiTro(v)) await loadNhanSu();
 });
 
 $("#nsNguoi")?.addEventListener("click", async (e) => {
@@ -224,8 +218,10 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
     /* Khoá người đang giữ hội thoại/việc: hỏi chuyển việc trước — cùng một
        hàm với tab Nhân viên mới (24-nhan-su.js). */
     const n = nsv.nguoi.find((x) => x.ten_dang_nhap === ten);
-    if (!dangKhoa && n) { await nsvKhoa(n, loadNhanSu); return; }
-    if (!confirm(loi)) return;
+    // Mở khoá cũng đi qua nsvKhoa: tài khoản mang quyền nhạy cảm phải gặp
+    // đúng hộp cảnh báo ấy ở mọi màn (SEC-13-01).
+    if (n) { await nsvKhoa(n, loadNhanSu); return; }
+    if (!(await hoiHop({ tieu_de: loi, nut: dangKhoa ? "Mở khoá" : "Khoá", nguy_hiem: !dangKhoa }))) return;
     try {
       await api(`/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=${!dangKhoa}`,
                 { method: "POST" });

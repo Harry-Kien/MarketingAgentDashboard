@@ -591,3 +591,20 @@ def test_quyen_va_che_tren_app_that(app_that):
                   ).status_code == 422
     # Xuất CSV cũng để lại dấu.
     assert any(b["kind"] == "nhat_ky.xuat" for b in qt.get("/api/nhat-ky").json()["items"])
+
+
+def test_thao_tac_cua_nguoi_tren_de_xuat_ai_xep_la_nhan_vien(csdl):
+    """`ai.ban_nhap.tu_choi` do nhân viên bấm — không được ghi là AI làm."""
+    from agent import db
+    from agent.core import nhat_ky_kiem_toan as nk
+
+    async def kiem():
+        cid = await _hoi_thoai()
+        await db.log_event("ai.ban_nhap.tu_choi", actor="lan", ref_id=cid)
+        await db.log_event("ai.tu_gui", actor="system", ref_id=cid)
+        kq = await nk.tim(hoi_thoai_id=cid)
+        theo_kind = {i["kind"]: i for i in kq["items"]}
+        assert theo_kind["ai.ban_nhap.tu_choi"]["tac_nhan"]["loai"] == "nhan_vien"
+        assert theo_kind["ai.tu_gui"]["tac_nhan"]["loai"] == "ai"
+
+    _chay(kiem)

@@ -21,7 +21,7 @@ Nghiệm thu (`docs/nghiem-thu.md`, sinh từ lượt chạy thật): **22/22** 
 | 5 | Cấu hình AI Agent: 5 tab, bật/tắt AI, chế độ chung mọi kênh | Đạt một phần | 6/7 | 15 | 4, 9 |
 | 6 | Thanh thông tin hội thoại gọn; ghi chú nội bộ trong ô soạn tin | Đạt | 6/6 | 14 | — |
 | 7 | Mẫu trả lời và quy tắc tự động: ưu tiên, xung đột, chống trùng với AI | Đạt | 11/11 | 25 | 13 |
-| 8 | Kết nối & Tích hợp: kênh, ERPNext, GHN, GHTK, webhook, nhà cung cấp AI, thông báo minh bạch AI | Đạt | 10/10 (+2 ngoài phạm vi) | 27 | 4, 16, 17 |
+| 8 | Kết nối & Tích hợp: kênh, ERPNext, GHN, GHTK, webhook, nhà cung cấp AI, thông báo minh bạch AI | Đạt | 12/12 (+2 ngoài phạm vi) | 33 | 4, 16, 17 |
 | 9 | Phân biệt hội thoại nhóm và cá nhân | Đạt | 7/7 (+1 ngoài phạm vi) | 17 | — |
 | 10 | Media khách gửi | Đạt | 8/8 | 26 | — |
 | 12 | Phân quyền RBAC theo chức năng | Đạt | 7/7 (+1 ngoài phạm vi) | 22 | 2 |
@@ -279,15 +279,17 @@ Nghiệm thu trên app đầy đủ + Postgres thật: kịch bản 4 — Kênh 
 | 8.7 | Nhà cung cấp AI: nhà cung cấp, khoá, endpoint (OpenAI), model; chỉ khai nhà cung cấp gọi được thật; cảnh báo model khác họ | Đạt | `test_ket_noi_tich_hop::test_ai_chi_khai_nha_cung_cap_llm_that_su_goi_duoc`<br>`test_ket_noi_tich_hop::test_canh_bao_model_khac_ho_nha_cung_cap` |
 | 8.8 | Thông báo minh bạch AI sửa được, bốn luật giữ lời hứa "gặp nhân viên"; một lần mỗi hội thoại | Đạt | `test_ket_noi_tich_hop::test_noi_dung_sai_bi_chan`<br>`test_ket_noi_tich_hop::test_luu_noi_dung_sai_bi_422_va_dung_thi_khach_nhan_cau_moi`<br>`test_ket_noi_tich_hop::test_noi_dung_env_hong_thi_lui_ve_mac_dinh_khong_im`<br>`test_ket_noi_tich_hop_pg::test_hai_tin_toi_cung_luc_chi_mot_thong_bao` |
 | 8.9 | Kênh: danh sách plugin kênh, nhiều tài khoản mỗi nền tảng, trạng thái từng tài khoản (chi tiết ở mục 20) | Đạt | `test_ket_noi_tich_hop_pg::test_tuy_chon_an_binh_luan_theo_trang_va_danh_sach_plugin` |
-| 8.10 | Ẩn bình luận có SĐT: tuỳ chọn riêng từng Trang thắng cấu hình chung | Đạt | `test_ket_noi_tich_hop::test_tuy_chon_rieng_cua_trang_thang_cau_hinh_chung`<br>`test_ket_noi_tich_hop::test_tuy_chon_trang_can_quyen_kenh_sua` |
-| 8.11 (bảng 8.10–8.11) | Cấu hình VietQR không hiện trên giao diện (mã giữ nguyên) | Ngoài phạm vi theo bảng | `test_cay_menu::test_csat_va_vietqr_khong_hien_nhung_ma_con` |
-| 8.12 (bảng 8.10–8.11) | CSAT tạm hoãn, mặc định tắt | Ngoài phạm vi theo bảng | `test_cay_menu::test_csat_mac_dinh_tat` |
+| 8.10 | Mỗi tài khoản kênh MỘT trạng thái suy từ sức khoẻ thật (Chưa kết nối / Hoạt động / Tạm ngắt / Cần xác thực lại / Lỗi); mã kỹ thuật dịch thành nguyên nhân + cách sửa | Đạt | `test_ket_noi_hop_nhat::test_trang_thai_hop_nhat`<br>`test_ket_noi_hop_nhat::test_moi_trang_thai_tai_khoan_deu_co_loi_giai_thich`<br>`test_ket_noi_hop_nhat_pg::test_suc_khoe_tong_tra_mot_trang_thai_va_giai_thich` |
+| 8.11 | Dòng thời gian từng tài khoản kênh (sức khoẻ, sự kiện, cấu hình) và lịch sử cấu hình lọc theo dịch vụ, thời gian; theo quyền và phạm vi kênh | Đạt | `test_ket_noi_hop_nhat_pg::test_dong_thoi_gian_gop_ba_so_va_bo_nhip_tim`<br>`test_ket_noi_hop_nhat::test_dong_thoi_gian_ngoai_pham_vi_kenh_la_404`<br>`test_ket_noi_hop_nhat_pg::test_lich_su_cau_hinh_loc_thoi_gian_o_may_chu` |
+| 8.12 | Ẩn bình luận có SĐT: tuỳ chọn riêng từng Trang thắng cấu hình chung | Đạt | `test_ket_noi_tich_hop::test_tuy_chon_rieng_cua_trang_thang_cau_hinh_chung`<br>`test_ket_noi_tich_hop::test_tuy_chon_trang_can_quyen_kenh_sua` |
+| 8.13 (bảng 8.10–8.11) | Cấu hình VietQR không hiện trên giao diện (mã giữ nguyên) | Ngoài phạm vi theo bảng | `test_cay_menu::test_csat_va_vietqr_khong_hien_nhung_ma_con` |
+| 8.14 (bảng 8.10–8.11) | CSAT tạm hoãn, mặc định tắt | Ngoài phạm vi theo bảng | `test_cay_menu::test_csat_mac_dinh_tat` |
 
-Test canh nêu tên: **27**; các tệp test ấy (3 tệp) có tổng **62** hàm test.
+Test canh nêu tên: **33**; các tệp test ấy (5 tệp) có tổng **91** hàm test.
 
 **Nơi hiện thực**
 
-- Mã: `agent/ket_noi_tich_hop.py`, `agent/api/ket_noi_tich_hop.py`, `agent/omnichannel/thong_bao_ai.py`, `agent/migrations/versions/0057_ket_noi_tich_hop.sql`, `dashboard/src/22-ket-noi-tich-hop.js`, `dashboard/src/23-ai-co-ban.js`
+- Mã: `agent/ket_noi_tich_hop.py`, `agent/api/ket_noi_tich_hop.py`, `agent/omnichannel/thong_bao_ai.py`, `agent/migrations/versions/0057_ket_noi_tich_hop.sql`, `dashboard/src/22-ket-noi-tich-hop.js`, `dashboard/src/23-ai-co-ban.js`, `agent/omnichannel/giai_thich_loi_kenh.py`, `dashboard/src/18a-ket-noi-tai-khoan.js`, `dashboard/src/22b-ket-noi-lich-su.js`
 - API (quyền đọc từ route thật):
     - `GET /api/ket-noi` — `cau_hinh.sua`
     - `GET /api/ket-noi/ai` — `cau_hinh.sua`
@@ -296,6 +298,7 @@ Test canh nêu tên: **27**; các tệp test ấy (3 tệp) có tổng **62** h�
     - `GET /api/ket-noi/webhook` — `cau_hinh.sua`
     - `GET /api/ket-noi/lich-su` — `cau_hinh.sua`
     - `PUT /api/ket-noi/kenh/{account_id}/tuy-chon` — `kenh.sua`
+    - `GET /api/ket-noi/kenh/{account_id}/dong-thoi-gian` — `kenh.doc`
 - Giao diện: tab `cc-ket-noi`, tab `ai-co-ban`
 
 **Lệch so với bảng / ghi chú**
@@ -619,7 +622,7 @@ Test canh nêu tên: **26**; các tệp test ấy (2 tệp) có tổng **39** h�
 | 18.7 | Lịch sử đề xuất / phê duyệt cùng một hình dạng | Đạt | `test_nhat_ky_kiem_toan::test_de_xuat_co_hinh_dang_on_dinh`<br>`test_nhat_ky_kiem_toan::test_de_xuat_gom_ca_hanh_dong_ai_cung_hinh_dang` |
 | 18.8 | Giao diện: tab Nhật ký ở Hệ thống & Nhật ký; "Nhật ký hội thoại" trong panel Chi tiết hội thoại; người sửa/duyệt ghi tên | Đạt | `test_nhat_ky_kiem_toan::test_dashboard_gan_tab_nhat_ky_va_nhat_ky_hoi_thoai`<br>`test_trach_nhiem_hoi_thoai::test_chi_tiet_hoi_thoai_noi_ten_nguoi_gui_nguoi_sua_nguoi_duyet` |
 
-Test canh nêu tên: **22**; các tệp test ấy (3 tệp) có tổng **31** hàm test.
+Test canh nêu tên: **22**; các tệp test ấy (3 tệp) có tổng **32** hàm test.
 
 **Nơi hiện thực**
 
@@ -742,7 +745,7 @@ Test canh nêu tên: **6**; các tệp test ấy (1 tệp) có tổng **9** hàm
 
 Số liệu đếm từ mã lúc sinh:
 
-- Route `/api` và `/tich-hop` trên app thật: **293** — **277** khai quyền bằng `can_quyen`, **16** nằm trong `MIEN_TRU` có lý do; còn lại **0** (phải bằng 0, nếu không máy chủ không khởi động).
+- Route `/api` và `/tich-hop` trên app thật: **298** — **282** khai quyền bằng `can_quyen`, **16** nằm trong `MIEN_TRU` có lý do; còn lại **0** (phải bằng 0, nếu không máy chủ không khởi động).
 - Outbox thử tối đa **8** lần (mặc định cột `max_attempts`, migration 0002) rồi vào dead-letter và kêu người.
 - Migration SQL đã chốt checksum: **65** tệp.
 - Hạn lưu hội thoại mặc định: **180 ngày**; media khách gửi: **180 ngày**.
@@ -811,7 +814,7 @@ Số liệu đếm từ mã lúc sinh:
 
 ## Số test theo vùng
 
-Toàn repo: **400+** tệp test, **4000+** hàm test (đếm `def test_` bằng `ast`, làm tròn xuống để bảng không cũ mỗi lần thêm một test ở chỗ không liên quan; một hàm `parametrize` sinh nhiều ca, nên số ca pytest chạy lớn hơn).
+Toàn repo: **400+** tệp test, **4100+** hàm test (đếm `def test_` bằng `ast`, làm tròn xuống để bảng không cũ mỗi lần thêm một test ở chỗ không liên quan; một hàm `parametrize` sinh nhiều ca, nên số ca pytest chạy lớn hơn).
 
 | Mục | Tệp test canh | Hàm test trong các tệp ấy |
 |---|---|---|
@@ -822,7 +825,7 @@ Toàn repo: **400+** tệp test, **4000+** hàm test (đếm `def test_` bằng 
 | 5. Cấu hình AI Agent: 5 tab, bật/tắt AI, chế độ chung mọi kênh | 6 | 86 |
 | 6. Thanh thông tin hội thoại gọn; ghi chú nội bộ trong ô soạn tin | 2 | 24 |
 | 7. Mẫu trả lời và quy tắc tự động: ưu tiên, xung đột, chống trùng với AI | 4 | 52 |
-| 8. Kết nối & Tích hợp: kênh, ERPNext, GHN, GHTK, webhook, nhà cung cấp AI, thông báo minh bạch AI | 3 | 62 |
+| 8. Kết nối & Tích hợp: kênh, ERPNext, GHN, GHTK, webhook, nhà cung cấp AI, thông báo minh bạch AI | 5 | 91 |
 | 9. Phân biệt hội thoại nhóm và cá nhân | 4 | 59 |
 | 10. Media khách gửi | 1 | 39 |
 | 12. Phân quyền RBAC theo chức năng | 4 | 54 |
@@ -831,11 +834,11 @@ Toàn repo: **400+** tệp test, **4000+** hàm test (đếm `def test_` bằng 
 | 15. SLA | 3 | 59 |
 | 16. Gợi ý có căn cứ và "Xem căn cứ" | 4 | 53 |
 | 17. Ba cấp ủy quyền hành động của AI | 2 | 39 |
-| 18. Trách nhiệm giải trình của AI | 3 | 31 |
+| 18. Trách nhiệm giải trình của AI | 3 | 32 |
 | 19. Thông báo nội bộ (chuông) | 2 | 49 |
 | 20. Kênh theo kiến trúc plugin | 5 | 48 |
 | 21. Bảng yêu cầu chức năng và phi chức năng | 1 | 9 |
-| Phi chức năng (Phần B) | 40 | 594 |
+| Phi chức năng (Phần B) | 40 | 595 |
 
 ## Tài liệu sinh ra và test canh tài liệu cũ
 

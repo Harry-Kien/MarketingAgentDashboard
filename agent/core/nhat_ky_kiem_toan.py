@@ -231,8 +231,13 @@ def _sql_actor_he_thong() -> str:
 
 def _sql_loai_tac_nhan() -> str:
     he_thong = _sql_actor_he_thong()
-    return (f"CASE WHEN e.actor IN ('agent', 'ai') OR {_like_bat_ky('e.kind', _MAU_AI)} "
-            f"OR (e.detail ? 'luot_id' AND {he_thong}) THEN 'ai' "
+    # Kind dạng `ai.%` chỉ là AI khi actor KHÔNG phải một người: nhân viên
+    # từ chối bản nháp (`ai.ban_nhap.tu_choi`), duyệt/từ chối đề xuất
+    # (`ai.de_xuat.duyet`), sửa chính sách (`ai.uy_quyen.sua`) đều mang tên
+    # người bấm — xếp chúng là "AI" là ghi sai ai chịu trách nhiệm.
+    return (f"CASE WHEN e.actor IN ('agent', 'ai') THEN 'ai' "
+            f"WHEN {he_thong} AND ({_like_bat_ky('e.kind', _MAU_AI)} "
+            f"OR e.detail ? 'luot_id') THEN 'ai' "
             f"WHEN {he_thong} THEN 'he_thong' ELSE 'nhan_vien' END")
 
 

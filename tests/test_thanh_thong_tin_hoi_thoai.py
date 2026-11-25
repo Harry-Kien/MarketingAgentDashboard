@@ -209,7 +209,8 @@ def test_nhom_khong_co_nut_customer_360():
     html = _ve_thanh({"id": "c1", "customer_name": "Nhóm Sỉ", "contact_id": "k1",
                       "thread_type": 1, "mode": "auto", "status": "auto"}, QL)
     assert 'id="open-contact"' not in html, "nhóm không phải một khách hàng (mục 9.7)"
-    assert ">Nhóm<" in html, "nhãn Nhóm phải còn cạnh tên"
+    # Dấu Nhóm chỉ ở danh sách (UX-09-01) — đầu khung không lặp lại.
+    assert ">Nhóm<" not in html and "tag--nhom" not in html
 
 
 def test_load_thread_khong_ve_lai_nhung_thu_da_go():

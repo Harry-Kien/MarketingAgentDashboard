@@ -216,6 +216,42 @@ async def sua(quy_tac_id: UUID, body: QuyTacIn,
     return _dong(r)
 
 
+class SapXepIn(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=1000)
+
+
+@router.post("/sap-xep")
+async def sap_xep(body: SapXepIn,
+                  nguoi: dict = Depends(can_quyen("dinh_tuyen.sua"))) -> dict[str, Any]:
+    """
+    Đổi thứ tự chạy bằng nút ↑ ↓ trên danh sách (UX-07-02).
+
+    Đi đường RIÊNG, không qua PUT từng quy tắc, vì ba lẽ:
+      · PUT kiểm lại cả quy tắc — quy tắc đang bật mà mẫu đã bị xoá thì đổi
+        chỗ cũng 422, người vận hành không dời được quy tắc hỏng xuống dưới;
+      · PUT đặt `sua_luc = now()`, và dòng "lỗi gần nhất" ẩn đi khi quy tắc
+        được sửa SAU lỗi — đổi chỗ không sửa lỗi nào, không được giấu lỗi;
+      · hai quy tắc cùng số ưu tiên thì thứ tự do giờ tạo quyết định, nên
+        hoán đổi hai số không đủ: phải đánh số lại cả danh sách 10, 20, 30…
+
+    Danh sách gửi lên phải là ĐÚNG tập quy tắc hiện có. Lệch (người khác vừa
+    thêm hay xoá) thì 409 chứ không đoán — sắp theo một danh sách cũ là quy
+    tắc mới tạo rơi vào chỗ không ai chọn.
+    """
+    if len(set(body.ids)) != len(body.ids):
+        raise HTTPException(422, "Danh sách có quy tắc lặp lại.")
+    async with db.pool().acquire() as conn, conn.transaction():
+        co = {r["id"] for r in await conn.fetch("SELECT id FROM quy_tac_tu_dong FOR UPDATE")}
+        if co != set(body.ids):
+            raise HTTPException(409, "Danh sách quy tắc vừa thay đổi — tải lại trang rồi sắp lại.")
+        await conn.executemany(
+            "UPDATE quy_tac_tu_dong SET thu_tu = $2 WHERE id = $1",
+            [(qid, (i + 1) * 10) for i, qid in enumerate(body.ids)])
+    await db.log_event("tu_dong.sap_xep", actor=nguoi.get("ten_dang_nhap") or "?",
+                       so_quy_tac=len(body.ids))
+    return {"ok": True, "thu_tu": {str(qid): (i + 1) * 10 for i, qid in enumerate(body.ids)}}
+
+
 @router.delete("/{quy_tac_id}", status_code=204)
 async def xoa(quy_tac_id: UUID, nguoi: dict = Depends(can_quyen("dinh_tuyen.sua"))) -> None:
     r = await db.fetchrow("DELETE FROM quy_tac_tu_dong WHERE id = $1 RETURNING ten", quy_tac_id)

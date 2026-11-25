@@ -2189,10 +2189,9 @@ svg { flex: none; }
 }
 .nhan__go { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; }
 /* Nhãn từ danh mục (0056): nền là màu người quản trị chọn, chữ trắng hoặc
- * đậm do mauChuNhan() tính cho đủ tương phản. Nhãn đã ngừng vẫn hiện ở chỗ
- * đã gắn nhưng xám đi — ngừng là thôi gắn mới, không phải biến mất. */
+ * đậm do mauChuNhan() tính cho đủ tương phản. Nhãn đã ngừng: xem khối
+ * "UX hội thoại, nhãn, quy tắc" ở CUỐI tệp (UX-06-01, bỏ gạch ngang). */
 .nhan--mau { background: var(--nhan-nen); color: var(--nhan-chu); }
-.nhan.is-ngung { opacity: .55; filter: grayscale(1); text-decoration: line-through; }
 .filterbar__chon { margin: 0 0 8px; padding: 5px 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-size: 12px; max-width: 100%; }
 .quan-ly-nhan { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .quan-ly-nhan__loai { min-width: 0; }
@@ -2770,4 +2769,182 @@ svg { flex: none; }
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+}
+
+/* ================= UX hội thoại, nhãn, quy tắc (đợt UX-06-01 … MD-UX-18-02) =================
+ * Theo docs/design.md: phẳng, viền và tông màu mang thứ bậc; bóng chỉ cho
+ * thứ thật sự nổi lên (ngăn bên, menu); thẻ nhỏ bo 4px; khoảng cách theo
+ * lưới 4px; màu đọc từ token, không mã màu cứng. */
+
+/* --- Nhãn ngừng dùng (UX-06-01): MỘT kiểu ở hội thoại, Customer 360, danh
+ * mục và chip lọc. Nền xám, viền đứt, chữ "Ngừng dùng" — KHÔNG gạch ngang:
+ * gạch ngang đọc như "đã gỡ", trong khi nhãn vẫn gắn và vẫn lọc được. */
+.nhan.is-ngung {
+  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  border: 1px dashed hsl(var(--muted-foreground) / .45); text-decoration: none;
+}
+.nhan__ngung {
+  margin-left: 4px; padding: 0 4px; border-radius: 4px;
+  font-size: 10px; line-height: 16px; font-weight: 600; white-space: nowrap;
+  background: hsl(var(--background)); color: hsl(var(--muted-foreground));
+}
+
+/* --- Dấu nhóm ở danh sách (UX-09-01): biểu tượng + chữ, một chỗ. */
+.tag--nhom { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.tag--nhom svg { flex: none; }
+
+/* --- Ngăn bên dùng chung: căn cứ đầy đủ, lượt xử lý, sửa quy tắc. Khung
+ * cố định theo cửa sổ (không theo khung hội thoại dựng lại mỗi 6 giây). */
+.ngan-phu-nen { position: fixed; inset: 0; z-index: 104; background: rgba(0, 0, 0, .25); }
+.ngan-phu {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 105;
+  width: min(520px, 100vw); display: flex; flex-direction: column;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  border-left: 1px solid hsl(var(--border));
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12), 0 9px 28px 8px rgba(0, 0, 0, .05);
+  animation: nganPhuVao .2s ease-out;
+}
+@keyframes nganPhuVao { from { transform: translateX(100%); } to { transform: none; } }
+.ngan-phu__dau {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid hsl(var(--border)); flex: none;
+}
+.ngan-phu__chu { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ngan-phu__tieu { margin: 0; font-size: 16px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; }
+.ngan-phu__phu { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.ngan-phu__than { flex: 1 1 auto; overflow-y: auto; padding: 16px; font-size: 13px; }
+.ngan-phu .ctt { margin: 0; padding: 0; border: 0; background: transparent; }
+.ngan-phu .ctt .pre { max-height: 320px; }
+@media (max-width: 640px) {
+  /* Điện thoại: tấm trượt từ dưới, như panel Chi tiết hội thoại. */
+  .ngan-phu {
+    top: auto; left: 0; width: 100%; max-height: 88vh;
+    border-left: 0; border-top: 1px solid hsl(var(--border)); border-radius: 8px 8px 0 0;
+    animation-name: nganPhuLen;
+  }
+  @keyframes nganPhuLen { from { transform: translateY(100%); } to { transform: none; } }
+}
+
+/* --- Căn cứ: bản tóm trong luồng tin, bản đầy đủ trong ngăn (UX-16-01/02). */
+.ctt--gon { display: flex; flex-direction: column; gap: 2px; }
+.ctt--day { display: flex; flex-direction: column; gap: 4px; }
+.ctt__nut { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ctt__toan summary { cursor: pointer; color: hsl(var(--primary)); font-size: 12px; margin: 2px 0 4px; }
+.ctt__toan[open] > summary { color: hsl(var(--muted-foreground)); }
+.nguon-ds { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.nguon { padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--background)); }
+.nguon__dau { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.nguon__dau b { overflow-wrap: anywhere; }
+.nguon__hang {
+  flex: none; width: 20px; height: 20px; border-radius: 4px; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+  background: hsl(var(--primary) / .1); color: hsl(var(--primary));
+}
+.nguon .ctt__trich { margin: 4px 0 0; }
+
+/* --- Lượt xử lý: năm bước theo thứ tự (MD-UX-18-02). */
+.luot { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.luot__buoc { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; padding-bottom: 16px; position: relative; }
+.luot__buoc:not(:last-child)::before {
+  content: ""; position: absolute; left: 11px; top: 24px; bottom: 0; width: 2px; background: hsl(var(--border));
+}
+.luot__so {
+  width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+}
+.luot__buoc--xong .luot__so { background: hsl(var(--success) / .14); color: hsl(var(--success)); }
+.luot__buoc--canh .luot__so { background: hsl(var(--warning) / .16); color: hsl(var(--warning)); }
+.luot__buoc--loi .luot__so { background: hsl(var(--destructive) / .12); color: hsl(var(--destructive)); }
+.luot__noi { min-width: 0; }
+.luot__ten { margin: 2px 0 4px; font-size: 14px; font-weight: 600; }
+.luot__chu { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.luot__tra-loi + .luot__tra-loi { margin-top: 8px; padding-top: 8px; border-top: 1px dashed hsl(var(--border)); }
+.luot__ket { margin: 0 0 8px; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.luot__nhat-ky { margin-top: 4px; }
+.luot__nhat-ky .lichsu__dong::before { display: none; }
+
+/* --- Lịch sử xử lý trong panel Chi tiết (UX-18-04): màu chấm theo loại. */
+.lichsu__chu { margin: 8px 0 0; }
+.lichsu__dong--duyet::before, .lichsu__dong--de_xuat_duyet::before { background: hsl(var(--success)); }
+.lichsu__dong--tu_choi::before, .lichsu__dong--de_xuat_tu_choi::before { background: hsl(var(--destructive)); }
+.lichsu__dong--sua::before { background: hsl(var(--primary)); }
+.lichsu__dong--de_xuat::before { background: hsl(var(--warning)); }
+
+/* --- Quy tắc tự động: danh sách (UX-07-02). */
+.qt-dau { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.qt-dau #qtTaoMoi { margin-left: auto; }
+.qt-dong { align-items: start; }
+.qt-dong.is-tat .row__body { opacity: .75; }
+.qt-dong__dau { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.qt-dong__dau .row__title { white-space: normal; }
+.qt-dong__dau .pill { margin-left: 0; }
+.qt-dong__so {
+  flex: none; min-width: 22px; height: 22px; padding: 0 4px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground));
+}
+.qt-dong__vi { font-size: 12.5px; color: hsl(var(--foreground)); white-space: normal; overflow-wrap: anywhere; }
+.qt-dong__nhan {
+  display: inline-block; min-width: 32px; margin-right: 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--primary));
+}
+.qt-dong__nut { gap: 8px; }
+.qt-dong__hang { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.qt-dong__hang .btn--icon { line-height: 1; min-width: 32px; }
+.qt-dong__hang .btn:disabled { opacity: .35; cursor: default; }
+@media (max-width: 640px) {
+  .qt-dong { grid-template-columns: 3px minmax(0, 1fr); }
+  .qt-dong__nut { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+}
+
+/* --- Quy tắc tự động: biểu mẫu KHI – NẾU – THÌ trong ngăn (UX-07-01). */
+/* `.form` canh mép cuối (align-items: end) cho hàng nút dưới các biểu mẫu
+ * khác — trong ngăn, mọi khối phải trải đủ chiều ngang. */
+.qt-form { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.qt-form .qt__muc { margin: 0; padding: 0; border: 0; font-size: 14px; }
+.qt-bat { align-self: end; padding-bottom: 8px; }
+.qt-nang-cao summary { cursor: pointer; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.qt-nang-cao[open] { display: flex; flex-direction: column; gap: 8px; }
+.qt-khoi {
+  border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px; background: hsl(var(--background));
+}
+.qt-khoi--khi { background: hsl(var(--muted) / .5); }
+.qt-khoi__dau { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; font-weight: 600; }
+.qt-khoi__dau .hint { font-weight: 400; }
+.qt-khoi__nhan {
+  padding: 0 8px; border-radius: 4px; font-size: 11px; line-height: 20px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em;
+  background: hsl(var(--primary) / .1); color: hsl(var(--primary));
+}
+.qt-khoi .hint { margin: 0; }
+.qt-trong { font-size: 12.5px; }
+.qt-o {
+  position: relative; display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 36px 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--card));
+}
+.qt-o .field--wide { grid-column: auto; }
+.qt-o__bo {
+  position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border: 0; border-radius: 6px;
+  background: transparent; color: hsl(var(--muted-foreground)); font-size: 18px; line-height: 1; cursor: pointer;
+}
+.qt-o__bo:hover { background: hsl(var(--muted)); color: hsl(var(--destructive)); }
+.qt-them { position: relative; align-self: flex-start; }
+.qt-them > summary { list-style: none; }
+.qt-them > summary::-webkit-details-marker { display: none; }
+.qt-them__menu {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 2; min-width: 240px;
+  display: flex; flex-direction: column; padding: 4px; border: 1px solid hsl(var(--border)); border-radius: 8px;
+  background: hsl(var(--card));
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12);
+}
+.qt-them__menu button {
+  text-align: left; padding: 8px 12px; border: 0; border-radius: 4px; background: transparent;
+  color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.qt-them__menu button:hover { background: hsl(var(--muted)); }
+.qt-form__nut {
+  position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 12px 16px;
+  background: hsl(var(--card)); border-top: 1px solid hsl(var(--border));
 }

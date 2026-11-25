@@ -3,7 +3,8 @@
  *   nhãn KHÁCH     mô tả con người, gắn ở Customer 360, đi theo hồ sơ.
  *   nhãn HỘI THOẠI mô tả một vụ việc, gắn bằng nút "+ Nhãn" dưới tên khách
  *                  trên đầu hội thoại; KHÔNG thay trạng thái xử lý.
- * Nhãn đã ngừng không có trong ô chọn, nhưng chỗ đã gắn vẫn hiện (xám) —
+ * Nhãn đã ngừng không có trong ô chọn, nhưng chỗ đã gắn vẫn hiện (chip xám
+ * "Ngừng dùng", xem `chipNhan`) —
  * ngừng dùng là thôi gắn MỚI, không phải xoá khỏi lịch sử.
  *
  * Mọi hộp nhập đi qua `hoiHop` chứ không là ô trong panel: vòng làm mới 6
@@ -39,6 +40,13 @@ function mauChuNhan(nen) {
   return tp(m, "#ffffff") >= tp(m, "#111827") ? "#ffffff" : "#111827";
 }
 
+/* Nhãn đã ngừng hiện MỘT kiểu ở mọi nơi (UX-06-01): chip nền xám viền
+ * đứt, kèm chữ "Ngừng dùng" — không gạch ngang. Gạch ngang đọc như "đã gỡ"
+ * hay "sai", trong khi nhãn vẫn GẮN đó và vẫn lọc được; chỉ là không gắn
+ * MỚI được. Màu gốc bỏ đi vì chính màu là thứ người ta quét mắt tìm — nhãn
+ * ngừng không được trông y hệt nhãn đang dùng. */
+const GOI_Y_NGUNG = "Ngừng dùng — không gắn mới được; chỗ đã gắn giữ nguyên và vẫn lọc được";
+
 /* Một chip nhãn. `go` = { loai, dich } thì có nút × gỡ. */
 function chipNhan(n, go) {
   const mau = _mauNhan(n.mau);
@@ -47,9 +55,12 @@ function chipNhan(n, go) {
     ? `<button type="button" class="nhan__go" data-nhan-go="${esc(n.id)}" data-nhan-loai="${esc(go.loai)}"
         data-nhan-dich="${esc(go.dich)}" aria-label="Gỡ nhãn ${esc(n.ten)}">×</button>`
     : "";
-  return `<span class="nhan nhan--mau${ngung ? " is-ngung" : ""}"
-    style="--nhan-nen:${mau};--nhan-chu:${mauChuNhan(mau)}"
-    title="${esc(n.ten)}${ngung ? " — đã ngừng sử dụng" : ""}">${esc(n.ten)}${nut}</span>`;
+  if (ngung) {
+    return `<span class="nhan is-ngung" title="${esc(n.ten)} — ${esc(GOI_Y_NGUNG)}">${esc(n.ten)}<span
+      class="nhan__ngung">Ngừng dùng</span>${nut}</span>`;
+  }
+  return `<span class="nhan nhan--mau" style="--nhan-nen:${mau};--nhan-chu:${mauChuNhan(mau)}"
+    title="${esc(n.ten)}">${esc(n.ten)}${nut}</span>`;
 }
 
 /* Chip ở dòng danh sách hội thoại. Phản hồi cũ chỉ có `nhan` (tên). */
@@ -185,7 +196,7 @@ async function _veQuanLyNhan(el) {
       const noi = loai === "khach" ? `${n.so_khach} khách` : `${n.so_hoi_thoai} hội thoại`;
       return `<div class="row${n.dang_dung ? "" : " is-ngung"}">
         <span class="row__body">
-          <span class="row__title">${chipNhan(n)}${n.dang_dung ? "" : ' <em class="hint">đã ngừng sử dụng</em>'}</span>
+          <span class="row__title">${chipNhan(n)}</span>
           ${n.mo_ta ? `<span class="row__sub">${esc(n.mo_ta)}</span>` : ""}
           <span class="row__sub">Đang gắn: ${esc(noi)}${n.so_quy_tac ? ` · ${n.so_quy_tac} quy tắc tự động` : ""}</span>
         </span>
@@ -253,7 +264,7 @@ async function _bamQuanLyNhan(el, ev) {
       if (!n) return;
       if (b.dataset.dangDung) {
         const ok = await hoiHop({ tieu_de: `Ngừng sử dụng «${n.ten}»?`,
-          phu: "Nhãn biến khỏi ô chọn, không gắn mới được. Chỗ đã gắn GIỮ NGUYÊN (hiện xám), lịch sử vẫn đọc được tên. Bật lại lúc nào cũng được.",
+          phu: "Nhãn biến khỏi ô chọn, không gắn mới được. Chỗ đã gắn GIỮ NGUYÊN (chip xám ghi «Ngừng dùng»), lịch sử vẫn đọc được tên. Bật lại lúc nào cũng được.",
           nut: "Ngừng sử dụng", nguy_hiem: true });
         if (!ok) return;
         const r = await api(`/nhan/${n.id}/ngung`, { method: "POST" });
@@ -306,12 +317,12 @@ function _datONhan(o, id) {
   if (![...o.options].some((x) => x.value === id)) {
     const x = document.createElement("option");
     x.value = id;
-    x.textContent = `${tenNhanTheoId(id)} (đã ngừng)`;
+    x.textContent = `${tenNhanTheoId(id)} (ngừng dùng)`;
     o.appendChild(x);
   }
   o.value = id;
 }
 
 function tenNhanTheoId(id) {
-  return (state.tenNhan && state.tenNhan[id]) || "nhãn đã ngừng";
+  return (state.tenNhan && state.tenNhan[id]) || "(nhãn ngừng dùng)";
 }

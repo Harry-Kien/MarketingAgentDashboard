@@ -700,8 +700,9 @@
                gọi URL, không chạy mã. Gửi tin CHỈ bằng mẫu trả lời nhanh ở trên,
                nên mọi câu tự động gửi đều đã qua bộ soi cụm cấm quảng cáo. -->
           <section class="panel">
-            <h2 class="panel__head">Quy tắc tự động
-              <span class="panel__note">khi khách nhắn → nếu … → thì …</span></h2>
+            <h2 class="panel__head qt-dau">Quy tắc tự động
+              <span class="panel__note">khi khách nhắn → nếu … → thì …</span>
+              <button type="button" class="btn btn--sm btn--primary" id="qtTaoMoi" hidden>+ Tạo quy tắc</button></h2>
             <!-- Chính sách chạy viết ở agent/omnichannel/tu_dong.py (đầu mô-đun);
                  đoạn dưới là bản cho người vận hành — đổi một bên thì đổi cả hai. -->
             <p class="panel__note" id="qtChinhSach">
@@ -714,83 +715,160 @@
               nhân viên.
             </p>
             <div id="qtDs" class="rows"></div>
-            <form id="qtForm" class="form" hidden>
+            <!-- NGĂN SỬA QUY TẮC (UX-07-01/02): biểu mẫu KHI – NẾU – THÌ. Mỗi
+                 điều kiện / hành động là một khối `data-qt-o` ẩn sẵn, hiện ra
+                 khi chọn trong "+ Thêm…". Khối ẩn không bao giờ vào quy tắc
+                 (15-tu-dong.js `quyTacTuGiaTri`). -->
+            <div class="ngan-phu-nen" id="qtNganNen" hidden></div>
+            <aside class="ngan-phu" id="qtNgan" role="dialog" aria-modal="true" aria-labelledby="qtNganTieuDe" hidden>
+              <div class="ngan-phu__dau">
+                <h3 class="ngan-phu__tieu" id="qtNganTieuDe">Tạo quy tắc</h3>
+                <button type="button" class="btn btn--sm btn--ghost" id="qtNganDong" aria-label="Đóng ngăn sửa quy tắc">✕ Đóng</button>
+              </div>
+            <form id="qtForm" class="form ngan-phu__than qt-form" hidden>
               <input type="hidden" name="qt_id">
-              <!-- BA NHÓM (mục 7.3): Thông tin quy tắc · Nếu · Thì. -->
-              <h3 class="panel__head qt__muc" data-qt-nhom="thong-tin">1 · Thông tin quy tắc</h3>
+              <h3 class="panel__head qt__muc" data-qt-nhom="thong-tin">Thông tin quy tắc</h3>
               <div class="form__row">
                 <label class="field"><span>Tên quy tắc</span>
                   <input name="ten" maxlength="80" required placeholder="Chào khách ngoài giờ"></label>
-                <label class="field"><span>Thứ tự ưu tiên <em class="hint">số nhỏ chạy trước</em></span>
-                  <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
-                <label class="quyen__o"><input name="bat" type="checkbox" checked> Đang bật</label>
+                <label class="switch qt-bat"><input name="bat" type="checkbox" role="switch" checked> Đang bật</label>
               </div>
-              <div class="form__row">
+              <details class="qt-nang-cao">
+                <summary>Thứ tự chạy</summary>
+                <div class="form__row">
+                  <label class="field"><span>Thứ tự ưu tiên <em class="hint">số nhỏ chạy trước — đổi nhanh bằng ↑ ↓ ở danh sách</em></span>
+                    <input name="thu_tu" type="number" min="0" max="10000" value="100"></label>
+                </div>
                 <label class="quyen__o"><input name="dung_xet_sau" type="checkbox">
                   Khớp quy tắc này thì <b>dừng xét các quy tắc sau</b></label>
-              </div>
-              <h3 class="panel__head qt__muc" data-qt-nhom="neu">2 · Nếu — điều kiện kích hoạt <span class="panel__note">bỏ trống ô nào là không xét ô đó; mọi ô đã điền phải cùng đúng</span></h3>
-              <div class="field field--wide"><span>Kênh <em class="hint">không chọn = mọi kênh</em></span>
-                <span class="tk__nhieu" id="qtKenh"></span></div>
-              <div class="form__row">
-                <label class="field"><span>Tin có chứa một trong các từ <em class="hint">cách nhau bằng dấu phẩy, không phân biệt dấu</em></span>
-                  <input name="chua_tu" placeholder="đổi trả, hoàn tiền, khiếu nại"></label>
-              </div>
-              <div class="form__row">
-                <label class="field"><span>Giờ làm việc</span>
-                  <select name="ngoai_gio">
-                    <option value="">bất kỳ lúc nào</option>
-                    <option value="true">chỉ NGOÀI giờ làm việc</option>
-                    <option value="false">chỉ TRONG giờ làm việc</option>
-                  </select></label>
-                <label class="field"><span>Tin đầu tiên</span>
-                  <select name="lan_dau">
-                    <option value="">bất kỳ tin nào</option>
-                    <option value="true">chỉ tin ĐẦU TIÊN của khách</option>
-                    <option value="false">không phải tin đầu tiên</option>
-                  </select></label>
-              </div>
-              <!-- Nhãn chọn từ DANH MỤC (Quản lý nhãn), hai loại tách riêng
-                   (mục 7.8): nhãn hội thoại phân loại vụ việc, nhãn khách đi
-                   theo hồ sơ. Gõ chữ tự do là quy tắc không bao giờ khớp. -->
-              <div class="form__row">
-                <label class="field"><span>Hội thoại CÓ nhãn hội thoại</span>
-                  <select name="nhan_hoi_thoai_co" data-qt-nhan="hoi_thoai"></select></label>
-                <label class="field"><span>Hội thoại CHƯA có nhãn hội thoại</span>
-                  <select name="nhan_hoi_thoai_khong" data-qt-nhan="hoi_thoai"></select></label>
-              </div>
-              <div class="form__row">
-                <label class="field"><span>Khách CÓ nhãn khách hàng</span>
-                  <select name="nhan_khach_co" data-qt-nhan="khach"></select></label>
-                <label class="field"><span>Khách CHƯA có nhãn khách hàng</span>
-                  <select name="nhan_khach_khong" data-qt-nhan="khach"></select></label>
-              </div>
-              <h3 class="panel__head qt__muc" data-qt-nhom="thi">3 · Thì — hành động <span class="panel__note">điền ít nhất một; điền nhiều ô thì làm tất cả</span></h3>
-              <div class="form__row">
-                <label class="field"><span>Gắn nhãn hội thoại</span>
-                  <select name="hd_gan_nhan_hoi_thoai" data-qt-nhan="hoi_thoai"></select></label>
-                <label class="field"><span>Gắn nhãn khách hàng <em class="hint">lên hồ sơ khách</em></span>
-                  <select name="hd_gan_nhan_khach" data-qt-nhan="khach"></select></label>
-              </div>
-              <div class="form__row">
-                <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt, chọn từ «Mẫu trả lời nhanh» ở trên</em></span>
-                  <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
-                <datalist id="qtMauDs"></datalist>
-                <label class="quyen__o"><input name="cho_ai_tra_loi" type="checkbox">
-                  Cho AI trả lời thêm tin đó</label>
-              </div>
-              <div class="form__row">
-                <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
-                  <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả">
-                  <span class="hint"><input type="checkbox" name="hd_tao_viec_tu_giao"> tự phân công cho người đang trong ca (không ai thì để Chưa phân công)</span></label>
-                <label class="field"><span>Chuyển hội thoại cho nhân viên, AI dừng <em class="hint">lý do</em></span>
-                  <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
-              </div>
-              <div class="row__nut">
+              </details>
+
+              <section class="qt-khoi qt-khoi--khi" data-qt-nhom="khi">
+                <h4 class="qt-khoi__dau"><span class="qt-khoi__nhan">Khi</span> Khách nhắn tin</h4>
+                <p class="hint">Quy tắc xét mỗi tin khách mới, trước khi AI trả lời.</p>
+              </section>
+
+              <section class="qt-khoi" data-qt-nhom="neu">
+                <h4 class="qt-khoi__dau"><span class="qt-khoi__nhan">Nếu</span> Điều kiện
+                  <em class="hint">mọi điều kiện đã thêm phải cùng đúng</em></h4>
+                <p class="hint qt-trong" data-qt-trong="neu">Chưa có điều kiện — quy tắc áp cho <b>mọi</b> tin khách.</p>
+                <div class="qt-o" data-qt-o="kenh" hidden>
+                  <div class="field field--wide"><span>Kênh nhận tin</span>
+                    <span class="tk__nhieu" id="qtKenh"></span></div>
+                  <button type="button" class="qt-o__bo" data-qt-bo="kenh" aria-label="Bỏ điều kiện kênh" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="chua_tu" hidden>
+                  <label class="field"><span>Tin có chứa một trong các từ <em class="hint">cách nhau bằng dấu phẩy, không phân biệt dấu</em></span>
+                    <input name="chua_tu" placeholder="đổi trả, hoàn tiền, khiếu nại"></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="chua_tu" aria-label="Bỏ điều kiện từ khoá" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="ngoai_gio" hidden>
+                  <label class="field"><span>Giờ làm việc</span>
+                    <select name="ngoai_gio">
+                      <option value="">bất kỳ lúc nào</option>
+                      <option value="true">chỉ NGOÀI giờ làm việc</option>
+                      <option value="false">chỉ TRONG giờ làm việc</option>
+                    </select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="ngoai_gio" aria-label="Bỏ điều kiện giờ làm việc" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="lan_dau" hidden>
+                  <label class="field"><span>Tin đầu tiên</span>
+                    <select name="lan_dau">
+                      <option value="">bất kỳ tin nào</option>
+                      <option value="true">chỉ tin ĐẦU TIÊN của khách</option>
+                      <option value="false">không phải tin đầu tiên</option>
+                    </select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="lan_dau" aria-label="Bỏ điều kiện tin đầu tiên" title="Bỏ điều kiện">×</button>
+                </div>
+                <!-- Nhãn chọn từ DANH MỤC (Quản lý nhãn), hai loại tách riêng
+                     (mục 7.8): nhãn hội thoại phân loại vụ việc, nhãn khách đi
+                     theo hồ sơ. Gõ chữ tự do là quy tắc không bao giờ khớp. -->
+                <div class="qt-o" data-qt-o="nhan_hoi_thoai_co" hidden>
+                  <label class="field"><span>Hội thoại CÓ nhãn hội thoại</span>
+                    <select name="nhan_hoi_thoai_co" data-qt-nhan="hoi_thoai"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="nhan_hoi_thoai_co" aria-label="Bỏ điều kiện" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="nhan_hoi_thoai_khong" hidden>
+                  <label class="field"><span>Hội thoại CHƯA có nhãn hội thoại</span>
+                    <select name="nhan_hoi_thoai_khong" data-qt-nhan="hoi_thoai"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="nhan_hoi_thoai_khong" aria-label="Bỏ điều kiện" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="nhan_khach_co" hidden>
+                  <label class="field"><span>Khách CÓ nhãn khách hàng</span>
+                    <select name="nhan_khach_co" data-qt-nhan="khach"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="nhan_khach_co" aria-label="Bỏ điều kiện" title="Bỏ điều kiện">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="nhan_khach_khong" hidden>
+                  <label class="field"><span>Khách CHƯA có nhãn khách hàng</span>
+                    <select name="nhan_khach_khong" data-qt-nhan="khach"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="nhan_khach_khong" aria-label="Bỏ điều kiện" title="Bỏ điều kiện">×</button>
+                </div>
+                <details class="qt-them" data-qt-them="neu">
+                  <summary class="btn btn--sm">+ Thêm điều kiện</summary>
+                  <div class="qt-them__menu" role="menu">
+                    <button type="button" role="menuitem" data-qt-mo="kenh">Kênh nhận tin</button>
+                    <button type="button" role="menuitem" data-qt-mo="chua_tu">Tin có chứa từ khoá</button>
+                    <button type="button" role="menuitem" data-qt-mo="ngoai_gio">Trong / ngoài giờ làm việc</button>
+                    <button type="button" role="menuitem" data-qt-mo="lan_dau">Tin đầu tiên của khách</button>
+                    <button type="button" role="menuitem" data-qt-mo="nhan_hoi_thoai_co">Hội thoại CÓ nhãn…</button>
+                    <button type="button" role="menuitem" data-qt-mo="nhan_hoi_thoai_khong">Hội thoại CHƯA có nhãn…</button>
+                    <button type="button" role="menuitem" data-qt-mo="nhan_khach_co">Khách CÓ nhãn…</button>
+                    <button type="button" role="menuitem" data-qt-mo="nhan_khach_khong">Khách CHƯA có nhãn…</button>
+                  </div>
+                </details>
+              </section>
+
+              <section class="qt-khoi" data-qt-nhom="thi">
+                <h4 class="qt-khoi__dau"><span class="qt-khoi__nhan">Thì</span> Hành động
+                  <em class="hint">ít nhất một; thêm nhiều thì làm tất cả</em></h4>
+                <p class="hint qt-trong" data-qt-trong="thi">Chưa có hành động — thêm ít nhất một.</p>
+                <div class="qt-o" data-qt-o="hd_gui_mau" hidden>
+                  <label class="field"><span>Gửi mẫu trả lời nhanh <em class="hint">mã tắt, chọn từ «Mẫu trả lời nhanh» ở trên</em></span>
+                    <input name="hd_gui_mau" maxlength="32" list="qtMauDs" placeholder="ngoaigio"></label>
+                  <datalist id="qtMauDs"></datalist>
+                  <label class="quyen__o"><input name="cho_ai_tra_loi" type="checkbox">
+                    Cho AI trả lời thêm tin đó</label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="hd_gui_mau" aria-label="Bỏ hành động gửi mẫu" title="Bỏ hành động">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="hd_gan_nhan_hoi_thoai" hidden>
+                  <label class="field"><span>Gắn nhãn hội thoại</span>
+                    <select name="hd_gan_nhan_hoi_thoai" data-qt-nhan="hoi_thoai"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="hd_gan_nhan_hoi_thoai" aria-label="Bỏ hành động" title="Bỏ hành động">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="hd_gan_nhan_khach" hidden>
+                  <label class="field"><span>Gắn nhãn khách hàng <em class="hint">lên hồ sơ khách</em></span>
+                    <select name="hd_gan_nhan_khach" data-qt-nhan="khach"></select></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="hd_gan_nhan_khach" aria-label="Bỏ hành động" title="Bỏ hành động">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="hd_tao_viec" hidden>
+                  <label class="field"><span>Tạo công việc <em class="hint">tiêu đề</em></span>
+                    <input name="hd_tao_viec" maxlength="120" placeholder="Gọi lại khách hỏi đổi trả">
+                    <span class="hint"><input type="checkbox" name="hd_tao_viec_tu_giao"> tự phân công cho người đang trong ca (không ai thì để Chưa phân công)</span></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="hd_tao_viec" aria-label="Bỏ hành động tạo việc" title="Bỏ hành động">×</button>
+                </div>
+                <div class="qt-o" data-qt-o="hd_chuyen_nguoi" hidden>
+                  <label class="field"><span>Chuyển hội thoại cho nhân viên, AI dừng <em class="hint">lý do</em></span>
+                    <input name="hd_chuyen_nguoi" maxlength="200" placeholder="khách hỏi đổi trả"></label>
+                  <button type="button" class="qt-o__bo" data-qt-bo="hd_chuyen_nguoi" aria-label="Bỏ hành động chuyển người" title="Bỏ hành động">×</button>
+                </div>
+                <details class="qt-them" data-qt-them="thi">
+                  <summary class="btn btn--sm">+ Thêm hành động</summary>
+                  <div class="qt-them__menu" role="menu">
+                    <button type="button" role="menuitem" data-qt-mo="hd_gui_mau">Gửi mẫu trả lời nhanh</button>
+                    <button type="button" role="menuitem" data-qt-mo="hd_gan_nhan_hoi_thoai">Gắn nhãn hội thoại</button>
+                    <button type="button" role="menuitem" data-qt-mo="hd_gan_nhan_khach">Gắn nhãn khách hàng</button>
+                    <button type="button" role="menuitem" data-qt-mo="hd_tao_viec">Tạo công việc</button>
+                    <button type="button" role="menuitem" data-qt-mo="hd_chuyen_nguoi">Chuyển cho nhân viên</button>
+                  </div>
+                </details>
+              </section>
+
+              <div class="row__nut qt-form__nut">
                 <button type="submit" class="btn btn--sm btn--primary">Lưu quy tắc</button>
-                <button type="button" class="btn btn--sm" id="qtHuy">Bỏ sửa</button>
+                <button type="button" class="btn btn--sm" id="qtHuy">Huỷ</button>
               </div>
             </form>
+            </aside>
             <h3 class="panel__head" id="qtLanChayTieuDe">Lần chạy gần đây</h3>
             <div id="qtLanChay" class="rows"></div>
           </section>

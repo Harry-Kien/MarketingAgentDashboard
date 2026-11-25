@@ -345,8 +345,11 @@ console.log(JSON.stringify(ds.map((x) => [x.loai, x.nguoi, x.chi_tiet]).concat([
 def test_sap_xep_quy_tac_danh_so_lai_khong_dong_sua_luc(csdl_kiem_thu):
     from fastapi.testclient import TestClient
 
+    import sys
+
+    sys.path.insert(0, str(ROOT))
     from conftest import nguoi_thu
-    from test_api_tu_dong import QL, _app
+    from tests.test_api_tu_dong import QL, _app
 
     mau = {"ten": "A", "dieu_kien": {}, "hanh_dong": [{"loai": "tao_viec", "tieu_de": "Gọi lại khách"}]}
     with TestClient(_app(csdl_kiem_thu, nguoi_thu(*QL))) as k:

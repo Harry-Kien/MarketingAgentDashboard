@@ -808,7 +808,9 @@ def test_16_khach_doi_gap_nhan_vien_thi_chuyen_nguoi_that(app_that):
             "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'system'", cid)]
         return viec, tin
     viec, tin = _sql(app_that, doc, c["id"])
-    assert viec == ["Khách đòi gặp nhân viên."]
+    # Nội dung chuông đi qua `chuan_hoa_noi_dung_thong_bao` (UX-19-03): bỏ dấu
+    # chấm cuối cho đồng bộ với các thông báo khác.
+    assert viec == ["Khách đòi gặp nhân viên"]
     assert not any("trợ lý AI" in t for t in tin)
 
     muc = {m["khoa"]: m for m in qt.get("/api/cai-dat-api").json()["muc"]}

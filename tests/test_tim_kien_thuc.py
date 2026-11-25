@@ -181,6 +181,10 @@ def test_moi_tool_khac_deu_la_tool_du_lieu():
         # `agent.respond` bật cờ escalate ngay khi thấy khoá đó — không đi
         # qua đường độ tin cậy.
         "xin_doi_tra",
+        # de_xuat_sua_don: `da_de_xuat` là kết quả một câu INSERT có thật vào
+        # ai_de_xuat (thẻ chờ duyệt), lỗi thì `can_chuyen_nhan_vien` — cùng
+        # loại với xin_huy_don, không phải một lời hứa.
+        "de_xuat_sua_don",
     }, "danh sách tool đổi — hãy xác nhận tool mới có trả về DỮ LIỆU THẬT không"
 
 

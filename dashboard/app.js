@@ -9196,7 +9196,7 @@ function knPillTT(h) {
 }
 
 /* Câu "việc cần làm" của sức khoẻ — trừ khi nó chính là lý do THÔ của nền
- * tảng ("ECONNREFUSED 127.0.0.1:3210"): khi ấy lời giải thích đã nói thay,
+ * tảng (kiểu "ECONNREFUSED <địa chỉ sidecar>"): khi ấy lời giải thích đã nói thay,
  * còn bản thô nằm ở Chi tiết nâng cao (UX-20-05). */
 function knViecDeDoc(h) {
   const g = h.giai_thich;

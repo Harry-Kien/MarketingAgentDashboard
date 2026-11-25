@@ -76,7 +76,7 @@ tham số mô hình, và cũng không nên nằm trong kho tri thức tĩnh.
 dữ liệu, nó phát ra lời gọi hàm thay vì tự trả lời, hệ thống thực thi rồi
 trả kết quả vào vòng hội thoại (Schick và cộng sự, 2023).
 
-**Trong hệ thống này.** 10 công cụ trong
+**Trong hệ thống này.** 11 công cụ trong
 [`agent/core/tools.py`](../agent/core/tools.py). Nguyên tắc kiến trúc: *giá,
 tồn kho, tình trạng đơn CHỈ đến từ công cụ* — thiếu căn cứ thì chuyển
 người, không suy đoán.
@@ -86,7 +86,8 @@ người, không suy đoán.
 
 `xin_huy_don` và `xin_doi_tra` cho thấy một ranh giới khác: agent **ghi
 nhận** yêu cầu lên chính đơn rồi chuyển người, chứ không tự huỷ và không tự
-duyệt đổi trả. Không phải vì huỷ khó làm
+duyệt đổi trả (`de_xuat_sua_don` cùng ranh giới ấy: nó tạo một đề xuất
+chờ người có quyền duyệt, không tự sửa đơn). Không phải vì huỷ khó làm
 — câu SQL ngắn hơn — mà vì xin huỷ hầu như luôn là lúc khách đang không hài
 lòng, và đó là lúc còn cứu được đơn. Việc agent làm trọn ở đây là *bắt lấy
 yêu cầu và đặt nó vào chỗ người sẽ nhìn thấy*, không phải tự quyết.

@@ -216,7 +216,7 @@ function veBenTrongPhongThu(d) {
       <span class="row__sub">${v.tokens_in} vào / ${v.tokens_out} ra token · ${v.so_cong_cu} công cụ</span></span></div>`).join("");
   $("#phongthu-bentrong").innerHTML = `${luoi}
     <div class="row"><span class="row__flag"></span>
-      <span class="row__body"><span class="row__title">${d.grounded ? "Có căn cứ" : "Thiếu căn cứ"} · điểm khớp ${d.confidence == null ? "—" : Number(d.confidence).toFixed(2)}</span>
+      <span class="row__body"><span class="row__title">${esc((d.can_cu && d.can_cu.nhan) || (d.grounded ? "Có căn cứ" : "Thiếu căn cứ"))} · điểm khớp ${d.confidence == null ? "—" : Number(d.confidence).toFixed(2)}</span>
       <span class="row__sub">${nguon.length ? esc(nguon.join(" · ")) : "không trích tài liệu nào"}</span></span></div>
     ${(d.goi_ky_nang || []).length ? `<div class="row"><span class="row__flag row__flag--spend"></span><span class="row__body"><span class="row__title">Gói kỹ năng kích hoạt</span><span class="row__sub">${esc(d.goi_ky_nang.join(" · "))}</span></span></div>` : ""}
     <h3 class="panel__head">Công cụ đã gọi</h3>${congCu}

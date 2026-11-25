@@ -87,7 +87,7 @@ def test_moi_cong_cu_viet_san_deu_duoc_xep_loai():
     """
     for t in tools.TOOLS:
         loai = chay(uy_quyen.phan_loai_cong_cu(t["name"]))
-        assert loai in ("doc", "chuyen_nguoi", "hanh_dong"), (t["name"], loai)
+        assert loai in ("doc", "chuyen_nguoi", "hanh_dong", "de_xuat_thu_cong"), (t["name"], loai)
 
 
 def test_cong_cu_hanh_dong_tro_vao_hanh_dong_co_duong_thi_hanh():
@@ -394,8 +394,8 @@ def _mig() -> str:
 
 
 def test_check_trang_thai_khop_ma():
-    khoi = re.search(r"trang_thai\s+TEXT NOT NULL DEFAULT 'cho_duyet' CHECK \(trang_thai IN \((.*?)\)\)",
-                     _mig(), re.S).group(1)
+    migration = (ROOT / "agent/migrations/versions/0066_de_xuat_sua_don_thu_cong.sql").read_text()
+    khoi = re.search(r"CHECK \(\s*trang_thai IN \((.*?)\)", migration, re.S).group(1)
     assert set(re.findall(r"'(\w+)'", khoi)) == set(uy_quyen.TRANG_THAI)
     assert set(uy_quyen.TRANG_THAI) == set(uy_quyen.NHAN_TRANG_THAI)
 

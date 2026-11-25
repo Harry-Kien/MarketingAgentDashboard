@@ -174,6 +174,26 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "de_xuat_sua_don",
+        "description": (
+            "Khách yêu cầu sửa số lượng sản phẩm trong đơn đã xác nhận. Tra cứu đơn trước; "
+            "hỏi lại nếu thiếu mã đơn, mã sản phẩm, số lượng mới hoặc lý do; không suy đoán. "
+            "Chỉ tạo đề xuất chờ nhân viên duyệt, KHÔNG sửa đơn hay hứa đã sửa. "
+            "Các thay đổi giá, sản phẩm, địa chỉ phải chuyển nhân viên."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ma_don": {"type": "string"},
+                "ma_san_pham": {"type": "string"},
+                "so_luong": {"type": "integer", "minimum": 1, "maximum": 999},
+                "ly_do": {"type": "string"},
+            },
+            "required": ["ma_don", "ma_san_pham", "so_luong", "ly_do"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "xin_huy_don",
         "description": (
             "Khách muốn HUỶ một đơn đã đặt. Ghi nhận yêu cầu lên đơn rồi "
@@ -726,6 +746,7 @@ _DANH_MUC_CHUA_NAP = _DanhMucChuaNap()
 # Công cụ chạy xong mà không đọc danh mục sản phẩm lần nào. Xem lý do kê
 # theo chiều phủ định ở chỗ dùng, trong `_run_tool_that`.
 _KHONG_CAN_DANH_MUC = frozenset({
+    "de_xuat_sua_don",
     "tra_cuu_don_hang",
     "tra_cuu_van_chuyen",
     "xin_huy_don",
@@ -909,6 +930,11 @@ async def _run_tool_that(name: str, args: dict, conversation_id=None) -> dict:
 
     if name == "xin_huy_don":
         return await _xin_huy_don(args, conversation_id, quyet=quyet)
+
+    if name == "de_xuat_sua_don":
+        from agent.core.thao_tac_don import de_xuat_sua_don
+
+        return await de_xuat_sua_don(args, conversation_id)
 
     if name == "xin_doi_tra":
         return await _xin_doi_tra(args, conversation_id)

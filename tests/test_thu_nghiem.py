@@ -61,6 +61,8 @@ def test_trong_sandbox_khong_cham_csdl(monkeypatch, ten):
             "items": [{"ten_san_pham": "Sữa rửa mặt dịu nhẹ", "so_luong": 2}],
         },
         "xin_huy_don": {"ma_don": "DH-1", "ly_do": "đổi ý"},
+        "de_xuat_sua_don": {"ma_don": "DH-1", "ma_san_pham": "SP1",
+                            "so_luong": 2, "ly_do": "thêm hàng"},
         "xin_doi_tra": {"ma_don": "DH-1", "ly_do": "lỗi", "loai": "doi"},
     }[ten]
     with thu_nghiem.bat_thu():

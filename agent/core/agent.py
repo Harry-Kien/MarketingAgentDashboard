@@ -11,6 +11,7 @@ Ba cơ chế an toàn nằm ở đây, không nằm trong prompt:
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 import unicodedata
@@ -618,9 +619,11 @@ def _co_du_lieu_that(out) -> bool:
 
 
 # Lý do dừng BÌNH THƯỜNG của model (viết thường). Gemini: STOP; Claude:
-# end_turn / tool_use / stop_sequence. Rỗng = lớp giả trong test hoặc nhà
-# cung cấp không báo — không đủ căn cứ để chuyển người.
-_DUNG_BINH_THUONG = frozenset({"", "stop", "end_turn", "tool_use", "stop_sequence"})
+# end_turn / tool_use / stop_sequence; OpenAI-compatible: stop / tool_calls.
+# Rỗng = lớp giả trong test hoặc nhà cung cấp không báo — không đủ căn cứ để chuyển người.
+_DUNG_BINH_THUONG = frozenset({
+    "", "stop", "end_turn", "tool_use", "tool_calls", "stop_sequence",
+})
 
 # Trần token ĐẦU RA mỗi vòng. Với Gemini 2.5, token SUY NGHĨ (effort
 # "medium" = 1024, xem llm.THINKING_BUDGET) đếm VÀO trần này. Bản trước đặt
@@ -868,6 +871,8 @@ async def respond(
     tok_in = tok_out = cache_read = latency = 0
     used_tool = False      # đã gọi tool nào chưa — dùng cho lưới "hứa mà không làm"
     co_du_lieu = False     # tool đã trả về DỮ LIỆU THẬT chưa — dùng cho độ tin cậy
+    vong_truoc_khoa: list[tuple[tuple[str, str], ...]] = []
+    da_thuc_thi_tac_dung_phu: dict[tuple[str, str], dict] = {}
     da_thuc = False   # đã nhắc model gọi công cụ chưa (chỉ nhắc một lần)
     escalate = False
     escalate_reason = ""
@@ -944,7 +949,11 @@ async def respond(
             # câu cụt được gửi nguyên cho khách. Không cách nào trong hai cách ấy
             # để lại dấu vết: nhìn từ dashboard, đó là một lượt trả lời bình thường.
             ly_do_dung = (result.stop_reason or "").strip()
-            if ly_do_dung.lower() not in _DUNG_BINH_THUONG:
+            dung_loi_goi_tool = (
+                ly_do_dung.lower() in ("tool_calls", "tool_use")
+                and not result.tool_calls
+            )
+            if ly_do_dung.lower() not in _DUNG_BINH_THUONG or dung_loi_goi_tool:
                 final_text = result.text or final_text
                 escalate = True
                 escalate_reason = escalate_reason or f"Model dừng bất thường ({ly_do_dung})"
@@ -973,6 +982,26 @@ async def respond(
                 break
 
             used_tool = True
+            khoa_vong = tuple(
+                (
+                    str(call.get("name") or ""),
+                    json.dumps(
+                        call.get("input") or {},
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
+                for call in result.tool_calls
+            )
+            if vong_truoc_khoa and khoa_vong == vong_truoc_khoa[-1]:
+                escalate = True
+                escalate_reason = escalate_reason or "Vượt số vòng gọi công cụ cho phép"
+                luoi_bat = luoi_bat or "het_vong"
+                final_text = final_text or "Em cần kiểm tra thêm, chuyển anh/chị cho nhân viên nhé."
+                break
+            vong_truoc_khoa.append(khoa_vong)
+
             # Định dạng TRUNG LẬP — lớp llm dịch sang Gemini hay Claude tuỳ provider.
             messages.append(
                 {
@@ -990,12 +1019,40 @@ async def respond(
                 # Công cụ tra TÀI LIỆU giữ nguyên mã: tham số của nó (câu tìm) đi
                 # tiếp vào API embedding ở nước ngoài, và tài liệu cửa hàng không
                 # cần số của khách để tìm.
-                la_tai_lieu = _la_tra_tai_lieu(call["name"])
-                tham_so = (mat_na.mo_obj(call["input"])
-                           if mat_na and not la_tai_lieu else call["input"])
-                out = await tools.run_tool(call["name"], tham_so, conversation_id)
+                ten_tool = str(call.get("name") or "")
+                la_tai_lieu = _la_tra_tai_lieu(ten_tool)
+                tham_so = (mat_na.mo_obj(call.get("input"))
+                           if mat_na and not la_tai_lieu else call.get("input"))
+                la_tac_dung_phu = (
+                    ten_tool in thu_nghiem.CO_TAC_DUNG_PHU
+                    or ten_tool == "chuyen_nhan_vien"
+                )
+                if not la_tac_dung_phu:
+                    try:
+                        la_tac_dung_phu = tools._loai_cua(ten_tool) == "ghi"
+                    except Exception:  # noqa: BLE001
+                        la_tac_dung_phu = False
+                khoa_tdp = (
+                    ten_tool,
+                    json.dumps(tham_so or {}, sort_keys=True, ensure_ascii=False, default=str),
+                )
+                if la_tac_dung_phu and khoa_tdp in da_thuc_thi_tac_dung_phu:
+                    out = {
+                        **da_thuc_thi_tac_dung_phu[khoa_tdp],
+                        "da_chan_lap": True,
+                        "ghi_chu": "Hành động đã được thực thi trong cùng lượt, bỏ qua lần gọi lặp.",
+                    }
+                else:
+                    out = await tools.run_tool(ten_tool, tham_so, conversation_id)
+                    if (
+                        la_tac_dung_phu
+                        and isinstance(out, dict)
+                        and "loi" not in out
+                        and not out.get("chan")
+                    ):
+                        da_thuc_thi_tac_dung_phu[khoa_tdp] = out
                 cong_cu_da_goi.append({
-                    "ten": call["name"], "tham_so": tham_so,
+                    "ten": ten_tool, "tham_so": tham_so,
                     "ket_qua": cat_ket_qua(out),
                     "ms": int((time.perf_counter() - bat_dau_tool) * 1000),
                     "vong": len(cac_vong),
@@ -1018,7 +1075,7 @@ async def respond(
                 # đoạn tra sẵn đầu lượt. Không nhập thì `sources` thiếu trích
                 # dẫn, `grounded` sai, và độ tin cậy không phản ánh việc agent
                 # vừa tìm ra đúng tài liệu cần — tức là nó tra xong rồi bị phạt.
-                if la_tai_lieu and out.get("tim_thay"):
+                if la_tai_lieu and isinstance(out, dict) and out.get("tim_thay"):
                     for d in out.get("doan") or []:
                         passages.append(rag.Passage(
                             doc_title=d.get("tai_lieu", ""),
@@ -1040,9 +1097,9 @@ async def respond(
                 elif not la_tai_lieu and _co_du_lieu_that(out):
                     co_du_lieu = True
 
-                if call["name"] == "chuyen_nhan_vien":
+                if ten_tool == "chuyen_nhan_vien":
                     escalate = True
-                    escalate_reason = tham_so.get("ly_do", "")
+                    escalate_reason = tham_so.get("ly_do", "") if isinstance(tham_so, dict) else ""
                     luoi_bat = luoi_bat or "cong_cu_chuyen_nguoi"
 
                 # TOOL NÓI CẦN NGƯỜI THÌ CHUYỂN NGƯỜI THẬT — không chờ model
@@ -1056,14 +1113,14 @@ async def respond(
                 # trả, cờ ĐÃ được ghi lên đơn, mà hội thoại không tới tay ai. Đơn
                 # nằm im mang một yêu cầu chưa ai nhận, và chính sách đổi trả thì
                 # có hạn số ngày.
-                elif out.get("can_chuyen_nhan_vien"):
+                elif isinstance(out, dict) and out.get("can_chuyen_nhan_vien"):
                     escalate = True
                     escalate_reason = escalate_reason or (
-                        f"Công cụ {call['name']} yêu cầu người xử lý"
+                        f"Công cụ {ten_tool} yêu cầu người xử lý"
                     )
                     luoi_bat = luoi_bat or "cong_cu_yeu_cau"
 
-                if call["name"] == "gui_anh_san_pham" and out.get("gui_duoc"):
+                if ten_tool == "gui_anh_san_pham" and isinstance(out, dict) and out.get("gui_duoc"):
                     anh_can_gui.append(
                         {"duong_dan": out["duong_dan"], "ten": out["ten"]}
                     )
@@ -1074,7 +1131,7 @@ async def respond(
                 # Kết quả công cụ đi NGƯỢC về model (tra đơn trả về SĐT, địa chỉ):
                 # che bản gửi đi, giữ `out` gốc cho mọi logic phía trên.
                 tool_results.append(
-                    {"id": call["id"], "name": call["name"],
+                    {"id": call["id"], "name": ten_tool,
                      "output": (mat_na.che_obj(out)
                                 if mat_na and not la_tai_lieu else out)}
                 )
@@ -1109,10 +1166,29 @@ async def respond(
     # ĐỌC:
     # ĐỌC: Ba cách trượt khác nhau, ba lưới khác nhau. Không lớp nào bắt được
     # ĐỌC: cả ba — đó là lý do phải xếp chồng chứ không gộp làm một.
+    from agent.core import dau_vet_ai
+
+    tri_thuc_luot = _tri_thuc_cho_dau_vet(passages)
+    van_ban_luot = re.sub(
+        r"!\[[^\]]*\]\([^)]*\)", "",
+        mat_na.mo(final_text) if mat_na else final_text,
+    ).strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé."
+    la_giao_tiep = (not co_du_lieu) and dau_vet_ai.la_cau_giao_tiep(van_ban_luot)
+    ho_tro_du, _ = dau_vet_ai.can_cu_ho_tro_cau_tra_loi(
+        van_ban_luot, tri_thuc_luot, cong_cu_da_goi, co_du_lieu=co_du_lieu,
+    )
+
     confidence = _confidence(passages, co_du_lieu)
-    if confidence < hs.nguong_tu_tin and not co_du_lieu and _bat("tin_cay_thap"):
+    thieu_can_cu_tra_loi = (not la_giao_tiep) and (
+        (confidence < hs.nguong_tu_tin and not co_du_lieu)
+        or (not co_du_lieu and not ho_tro_du)
+    )
+    if thieu_can_cu_tra_loi and _bat("tin_cay_thap"):
         escalate = True
-        escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
+        if confidence < hs.nguong_tu_tin and not co_du_lieu:
+            escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
+        else:
+            escalate_reason = escalate_reason or "Tài liệu truy xuất không đủ căn cứ hỗ trợ câu trả lời"
         luoi_bat = luoi_bat or "tin_cay_thap"
 
     # Chốt chặn cứng: luật tuân thủ không được phụ thuộc vào việc model
@@ -1175,14 +1251,20 @@ async def respond(
             sources=knowledge_refs,
         )
 
+    grounded_that = bool(
+        (not la_giao_tiep)
+        and ((passages and confidence >= hs.nguong_tu_tin and ho_tro_du) or (co_du_lieu and ho_tro_du))
+    )
+    sources_that = list(dict.fromkeys(p.doc_title for p in passages)) if grounded_that else []
+
     return Reply(
         text=final_text.strip() or "Em chưa rõ ý anh/chị, anh/chị nói thêm giúp em nhé.",
         escalate=escalate,
         escalate_reason=escalate_reason,
         anh_can_gui=anh_can_gui,
-        grounded=bool(passages) or co_du_lieu,
+        grounded=grounded_that,
         confidence=confidence,
-        sources=list(dict.fromkeys(p.doc_title for p in passages)),
+        sources=sources_that,
         cost_usd=total_cost,
         tokens_in=tok_in,
         tokens_out=tok_out,
@@ -1191,7 +1273,7 @@ async def respond(
         model=_model_chat(),
         luoi_bat=luoi_bat, cong_cu=cong_cu_da_goi, vong=cac_vong,
         goi_ky_nang=[ten for ten, _ in goi_kich_hoat],
-        tri_thuc=_tri_thuc_cho_dau_vet(passages),
+        tri_thuc=tri_thuc_luot,
     )
 
 

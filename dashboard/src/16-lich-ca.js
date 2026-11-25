@@ -15,6 +15,7 @@ function _tomTatCa(ca) {
 async function loadCaCuaToi() {
   const o = $("#caCuaToi");
   if (!o) return;
+  if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.doc")) { o.hidden = true; return; }
   let r;
   try { r = await api("/lich-ca/cua-toi"); } catch { o.hidden = true; return; }
   // Chưa xếp ca và không nghỉ: luôn trực, không có gì để nói.
@@ -157,6 +158,12 @@ async function loadTongQuanCa() {
       }
     }
   }
+  const docHt = !state.toiQuyen || state.toiQuyen.has("hoi_thoai.doc");
+  const pnChuaGiao = $("#cvChuaGiaoPanel");
+  const pnSla = $("#cvSlaPanel");
+  if (pnChuaGiao) pnChuaGiao.hidden = !docHt;
+  if (pnSla) pnSla.hidden = !docHt;
+  if (!docHt) return;
   await _tqDanhSach("#cvChuaGiao", "chua_giao=true",
     "Không có hội thoại nào chưa ai nhận.");
   await _tqDanhSach("#cvSla", "qua_han_sla=true",

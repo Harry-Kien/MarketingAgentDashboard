@@ -502,6 +502,13 @@ function veNutThongBao() {
 veNutThongBao();
 
 async function loadOverview() {
+  if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.doc")) {
+    const ro = $("#readout");
+    if (ro) ro.hidden = true;
+    const pnQueue = $("#queue")?.closest(".panel");
+    if (pnQueue) pnQueue.hidden = true;
+    return;
+  }
   const o = await api("/overview");
   applyRuntime(o.runtime);
   if (o.public_base_url) PUBLIC_BASE = o.public_base_url;

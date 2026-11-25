@@ -1,11 +1,32 @@
 /* ---------------- vòng làm mới ---------------- */
 
+async function dongBoQuyen() {
+  try {
+    const nguoi = await api("/toi");
+    const moi = new Set(nguoi.quyen || []);
+    const cu = state.toiQuyen;
+    const khac = !cu || cu.size !== moi.size || [...moi].some((q) => !cu.has(q));
+    if (khac) {
+      state.toiId = nguoi.id;
+      state.toiQuyen = moi;
+      if (!coQuyen("hoi_thoai.doc") && state.stream) {
+        state.stream.close();
+        state.stream = null;
+      } else if (coQuyen("hoi_thoai.doc") && !state.stream) {
+        startInboxStream();
+      }
+      apDungQuyenMenu();
+    }
+  } catch { /* bỏ qua khi mất mạng tạm thời; api() đã tự xử lý 401 */ }
+}
+
 async function refresh() {
   // Chuông chạy RIÊNG, không await: nó tự nuốt lỗi của mình, và một màn
   // hỏng ở dưới không được làm chuông đứng (19-thong-bao.js).
   taiSoThongBao();
   try {
-    await loadOverview();
+    await dongBoQuyen();
+    if (coQuyen("hoi_thoai.doc")) await loadOverview();
     // Mô-đun đăng ký SAU lần đầu tab hiện vẫn được gắn ở nhịp kế tiếp.
     ganTabDangHien();
     if (state.view === "hoithoai") await loadConversations();
@@ -61,7 +82,7 @@ async function refresh() {
 }
 
 function startInboxStream() {
-  if (!("EventSource" in window)) return;
+  if (!("EventSource" in window) || !coQuyen("hoi_thoai.doc") || state.stream) return;
   const stream = new EventSource("/api/inbox/events");
   state.stream = stream;      // để api() đóng được khi phiên hết
   const schedule = () => {
@@ -69,7 +90,7 @@ function startInboxStream() {
     inboxRefreshTimer = setTimeout(async () => {
       taiSoThongBao();
       try {
-        await loadOverview();
+        if (coQuyen("hoi_thoai.doc")) await loadOverview();
         if (state.view === "hoithoai") await loadConversations();
         if (state.view === "khachhang") await loadContacts();
       } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
@@ -79,16 +100,16 @@ function startInboxStream() {
      thiếu `sla.resolution_breached` là hội thoại trễ hạn giải quyết chỉ hiện
      ra ở nhịp 6 giây sau — hoặc không bao giờ, khi tab đang ở màn khác. */
   ["message.created", "message.sent", "conversation.updated", "conversation.takeover",
-   "conversation.released", "conversation.priority_changed",
-   "sla.first_response_warning", "sla.first_response_breached",
-   "sla.resolution_warning", "sla.resolution_breached",
-   "sla.handover_response_warning", "sla.handover_response_breached"]
+    "conversation.released", "conversation.priority_changed",
+    "sla.first_response_warning", "sla.first_response_breached",
+    "sla.resolution_warning", "sla.resolution_breached",
+    "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
   /* Màn Phân tích không theo nhịp 6 giây; sự kiện SLA mới thì đánh dấu để
      lần tới mở màn (hoặc đang mở) tính lại. */
   ["sla.first_response_breached", "sla.resolution_breached",
-   "sla.first_response_warning", "sla.resolution_warning",
-   "sla.handover_response_warning", "sla.handover_response_breached"]
+    "sla.first_response_warning", "sla.resolution_warning",
+    "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, () => {
       state.ptDaTai = false;
     }));
@@ -271,11 +292,11 @@ async function loadKetNoi() {
           <span class="health-dot health-dot--${esc(account.status)}"></span>
           <div><b>${esc(account.display_name)}</b><small>${esc(account.external_account_id || "Chưa có provider ID")}</small>
             ${account.ly_do_hong
-              /* Lý do NẰM LẠI trên thẻ. Toast báo xong là biến mất, nên
-                 người mở dashboard sáng hôm sau chỉ thấy một chữ vàng
-                 trống rỗng và không biết phải làm gì. */
-              ? `<span class="row__sub row__sub--loi">${esc(account.ly_do_hong)}</span>`
-              : ""}
+            /* Lý do NẰM LẠI trên thẻ. Toast báo xong là biến mất, nên
+               người mở dashboard sáng hôm sau chỉ thấy một chữ vàng
+               trống rỗng và không biết phải làm gì. */
+            ? `<span class="row__sub row__sub--loi">${esc(account.ly_do_hong)}</span>`
+            : ""}
             ${callback ? `<code class="callback" title="Callback URL">${esc(callback)}</code>` : ""}</div>
           <span class="status-pill status-pill--${esc(account.status)}">${esc(ACCOUNT_STATUS_LABEL[account.status] || account.status)}</span>
           ${account.agent_bat === false
@@ -288,23 +309,21 @@ async function loadKetNoi() {
             ? `<span class="status-pill status-pill--degraded" title="${esc(account.agent_tat_ly_do || "không ghi lý do")}">agent TẮT</span>`
             : ""}
           <div class="token-slot" data-tokenslot="${account.id}">${
-            /* Kết quả Sức khoẻ phải SỐNG QUA vòng làm mới 6 giây: thẻ được
-               dựng lại innerHTML mỗi vòng, ghi thẳng vào ô là mất sau vài
-               giây và người bấm tưởng nút không làm gì. */
-            (state.sucKhoeKenh || {})[account.id] || ""}</div>
+          /* Kết quả Sức khoẻ phải SỐNG QUA vòng làm mới 6 giây: thẻ được
+             dựng lại innerHTML mỗi vòng, ghi thẳng vào ô là mất sau vài
+             giây và người bấm tưởng nút không làm gì. */
+          (state.sucKhoeKenh || {})[account.id] || ""}</div>
           <div class="account-actions">
             ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
             ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
             ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
             <button class="btn btn--sm btn--ghost" data-health="${account.id}">Sức khoẻ</button>
             <button class="btn btn--sm btn--ghost" data-agentbat="${account.id}"
-              data-bat="${account.agent_bat === false ? "1" : "0"}">${
-              account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
+              data-bat="${account.agent_bat === false ? "1" : "0"}">${account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
             ${hoSoAgent.ds.length ? `<select class="hsa-chon" data-hsagan="${account.id}"
               title="Hồ sơ agent trả lời kênh này" aria-label="Hồ sơ agent cho ${esc(account.display_name)}">
               <option value="">Mặc định</option>
-              ${hoSoAgent.ds.map((h) => `<option value="${esc(h.id)}"${
-                h.id === account.agent_ho_so_id ? " selected" : ""}>${esc(h.ten)}</option>`).join("")}
+              ${hoSoAgent.ds.map((h) => `<option value="${esc(h.id)}"${h.id === account.agent_ho_so_id ? " selected" : ""}>${esc(h.ten)}</option>`).join("")}
             </select>` : ""}
             <button class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
               data-ten-tk="${esc(account.display_name)}">Xoá</button>
@@ -317,36 +336,36 @@ async function loadKetNoi() {
     </section>`;
     }).join("");
 
-/* Mã lỗi một mình KHÔNG hành động được.
- *
- * `provider.unreachable` đúng cho cả "sidecar chưa bật" lẫn "mạng chết"
- * lẫn "token hết hạn" — ba việc phải làm hoàn toàn khác nhau. Máy chủ đã
- * trả kèm `detail.ly_do` từ bản vá trước; giao diện thì vứt đi và chỉ hiện
- * cái mã.
- *
- * Hậu quả đo được: người dùng thấy "provider.unreachable", không biết làm
- * gì, phải hỏi — trong khi câu trả lời "sidecar không phản hồi" đã nằm sẵn
- * trong chính phản hồi ấy. */
-const GOI_Y_LOI = {
-  "provider.unreachable": "Kiểm tra dịch vụ đó đã chạy chưa.",
-  "provider.unauthorized": "Credential sai hoặc đã hết hạn — nhập lại.",
-  "provider.rejected": "Provider từ chối. Xem lý do bên dưới.",
-  "provider.invalid_response": "Provider trả về dữ liệu lạ.",
-};
+  /* Mã lỗi một mình KHÔNG hành động được.
+   *
+   * `provider.unreachable` đúng cho cả "sidecar chưa bật" lẫn "mạng chết"
+   * lẫn "token hết hạn" — ba việc phải làm hoàn toàn khác nhau. Máy chủ đã
+   * trả kèm `detail.ly_do` từ bản vá trước; giao diện thì vứt đi và chỉ hiện
+   * cái mã.
+   *
+   * Hậu quả đo được: người dùng thấy "provider.unreachable", không biết làm
+   * gì, phải hỏi — trong khi câu trả lời "sidecar không phản hồi" đã nằm sẵn
+   * trong chính phản hồi ấy. */
+  const GOI_Y_LOI = {
+    "provider.unreachable": "Kiểm tra dịch vụ đó đã chạy chưa.",
+    "provider.unauthorized": "Credential sai hoặc đã hết hạn — nhập lại.",
+    "provider.rejected": "Provider từ chối. Xem lý do bên dưới.",
+    "provider.invalid_response": "Provider trả về dữ liệu lạ.",
+  };
 
-function lyDoKetNoi(kq) {
-  const ly_do = kq && kq.detail && kq.detail.ly_do;
-  const goi_y = GOI_Y_LOI[kq && kq.code] || "";
-  /* Giữ CẢ mã: người vận hành đọc lý do, còn mã là thứ tra được trong tài
-     liệu và nhắn cho người khác. Bỏ mã đi là mất đường tra cứu. */
-  return [kq && kq.code, ly_do, goi_y].filter(Boolean).join(" — ");
-}
+  function lyDoKetNoi(kq) {
+    const ly_do = kq && kq.detail && kq.detail.ly_do;
+    const goi_y = GOI_Y_LOI[kq && kq.code] || "";
+    /* Giữ CẢ mã: người vận hành đọc lý do, còn mã là thứ tra được trong tài
+       liệu và nhắn cho người khác. Bỏ mã đi là mất đường tra cứu. */
+    return [kq && kq.code, ly_do, goi_y].filter(Boolean).join(" — ");
+  }
 
   $$('[data-verify]').forEach((button) => button.addEventListener("click", async () => {
     try {
       const result = await api(`/channel-accounts/${button.dataset.verify}/verify`, { method: "POST" });
       toast(result.ok ? "Provider đã xác minh; tài khoản sẵn sàng."
-                      : `Chưa xác minh được: ${lyDoKetNoi(result)}`, !result.ok);
+        : `Chưa xác minh được: ${lyDoKetNoi(result)}`, !result.ok);
       loadKetNoi();
     } catch (e) { toast(e.message, true); }
   }));
@@ -382,8 +401,10 @@ function lyDoKetNoi(kq) {
       const d = await hoiHop({
         tieu_de: "Tắt agent cho kênh này",
         phu: "Tin khách vẫn vào và vẫn chuyển cho người — hệ thống tự tạo một công việc cho mỗi hội thoại.",
-        truong: [{ name: "ly_do", label: "Lý do", hint: "hiện trên thẻ kênh và trong nhật ký",
-                   placeholder: "Ví dụ: Trang không phải shop mỹ phẩm", maxlength: 300 }],
+        truong: [{
+          name: "ly_do", label: "Lý do", hint: "hiện trên thẻ kênh và trong nhật ký",
+          placeholder: "Ví dụ: Trang không phải shop mỹ phẩm", maxlength: 300
+        }],
         nut: "Tắt agent", nguy_hiem: true,
       });
       if (!d) return;
@@ -425,9 +446,9 @@ function lyDoKetNoi(kq) {
       return;
     }
     if (!confirm(
-        `Xoá hẳn "${ten}" khỏi hệ thống?\n\n` +
-        "Credential đã lưu sẽ bị xoá theo và không khôi phục được.\n" +
-        "Tài khoản này chưa có hội thoại nào nên không mất lịch sử.")) return;
+      `Xoá hẳn "${ten}" khỏi hệ thống?\n\n` +
+      "Credential đã lưu sẽ bị xoá theo và không khôi phục được.\n" +
+      "Tài khoản này chưa có hội thoại nào nên không mất lịch sử.")) return;
 
     try {
       await api("/channel-accounts/" + id, { method: "DELETE" });
@@ -517,7 +538,7 @@ function lyDoKetNoi(kq) {
     button.textContent = "Đang đăng ký...";
     try {
       const r = await api(`/channel-accounts/${button.dataset.subwebhook}/dang-ky-webhook`,
-                          { method: "POST" });
+        { method: "POST" });
       toast(`${r.trang} đã đăng ký webhook — tin khách sẽ về từ giờ.`);
     } catch (e) {
       toast(e.message, true);
@@ -677,64 +698,100 @@ const KENH_TRUONG = {
   },
   zalo_oa: {
     truong: [
-      { o: "external_account_id", nhan: "OA ID", bat_buoc: true,
-        goi_y: "Zalo OA Console → Thông tin OA → OA ID" },
-      { o: "app_id", nhan: "App ID", bat_buoc: true,
-        goi_y: "Zalo Developers → Ứng dụng của bạn → App ID" },
-      { o: "app_secret", nhan: "Secret key", bat_buoc: true,
-        goi_y: "Zalo Developers → Ứng dụng → Secret Key" },
-      { o: "secondary_secret", nhan: "Refresh token", bat_buoc: true,
-        goi_y: "Zalo OA Console → sau khi cấp quyền cho ứng dụng, lấy Refresh Token" },
+      {
+        o: "external_account_id", nhan: "OA ID", bat_buoc: true,
+        goi_y: "Zalo OA Console → Thông tin OA → OA ID"
+      },
+      {
+        o: "app_id", nhan: "App ID", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng của bạn → App ID"
+      },
+      {
+        o: "app_secret", nhan: "Secret key", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng → Secret Key"
+      },
+      {
+        o: "secondary_secret", nhan: "Refresh token", bat_buoc: true,
+        goi_y: "Zalo OA Console → sau khi cấp quyền cho ứng dụng, lấy Refresh Token"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai để Zalo gọi webhook vào.",
   },
   facebook: {
     dang_nhap: true,
     truong: [
-      { o: "external_account_id", nhan: "Page ID", bat_buoc: true,
-        goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang" },
-      { o: "access_token", nhan: "Page access token", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Messenger → Settings → Generate Token cho đúng Trang" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT. Phải dán đúng chuỗi này vào Meta khi đăng ký webhook" },
+      {
+        o: "external_account_id", nhan: "Page ID", bat_buoc: true,
+        goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang"
+      },
+      {
+        o: "access_token", nhan: "Page access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Messenger → Settings → Generate Token cho đúng Trang"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT. Phải dán đúng chuỗi này vào Meta khi đăng ký webhook"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai, rồi đăng ký webhook trong Meta App Dashboard.",
   },
   instagram: {
     dang_nhap: true,
     truong: [
-      { o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID" },
-      { o: "access_token", nhan: "Access token", bat_buoc: true,
-        goi_y: "Cùng token với Trang Facebook đã liên kết Instagram" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+      {
+        o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID"
+      },
+      {
+        o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Cùng token với Trang Facebook đã liên kết Instagram"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta"
+      },
     ],
     ke_tiep: "Instagram phải là tài khoản Business và đã liên kết một Trang Facebook.",
   },
   whatsapp: {
     truong: [
-      { o: "external_account_id", nhan: "Phone number ID", bat_buoc: true,
-        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Phone number ID (KHÔNG phải số điện thoại)" },
-      { o: "access_token", nhan: "Access token", bat_buoc: true,
-        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Temporary/Permanent token" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+      {
+        o: "external_account_id", nhan: "Phone number ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Phone number ID (KHÔNG phải số điện thoại)"
+      },
+      {
+        o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Temporary/Permanent token"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai để Meta gọi webhook vào.",
   },
   webchat: {
     truong: [
-      { o: "external_account_id", nhan: "Khoá website", bat_buoc: true,
-        goi_y: "Tên ngắn không dấu để phân biệt từng website, ví dụ: web-chinh" },
-      { o: "secondary_secret", nhan: "Widget secret", bat_buoc: true,
-        goi_y: "Bạn tự đặt — chuỗi ngẫu nhiên từ 32 ký tự. Dùng để ký phiên của widget" },
+      {
+        o: "external_account_id", nhan: "Khoá website", bat_buoc: true,
+        goi_y: "Tên ngắn không dấu để phân biệt từng website, ví dụ: web-chinh"
+      },
+      {
+        o: "secondary_secret", nhan: "Widget secret", bat_buoc: true,
+        goi_y: "Bạn tự đặt — chuỗi ngẫu nhiên từ 32 ký tự. Dùng để ký phiên của widget"
+      },
     ],
     ke_tiep: "Chạy được ngay, không cần HTTPS công khai khi thử tại chỗ.",
   },
@@ -871,11 +928,13 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
 
   let account;
   try {
-    account = await api("/channel-accounts", { method: "POST", body: JSON.stringify({
-      channel: form.channel, display_name: form.display_name,
-      external_account_id: form.external_account_id || null,
-      capabilities: { send_text: true, receive_message: true }, metadata: {}, credentials,
-    }) });
+    account = await api("/channel-accounts", {
+      method: "POST", body: JSON.stringify({
+        channel: form.channel, display_name: form.display_name,
+        external_account_id: form.external_account_id || null,
+        capabilities: { send_text: true, receive_message: true }, metadata: {}, credentials,
+      })
+    });
   } catch (e) { toast(e.message, true); return; }
 
   ev.target.reset();
@@ -901,8 +960,8 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
      * cách đọc với nút "Xác minh provider" trên thẻ tài khoản. */
     const kq = await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
     toast(kq && kq.ok ? "Đã lưu và xác minh xong với provider."
-                      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
-          !(kq && kq.ok));
+      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
+      !(kq && kq.ok));
   } catch (e) {
     toast("Đã lưu, nhưng provider từ chối: " + e.message + " — kiểm lại credential.", true);
   }

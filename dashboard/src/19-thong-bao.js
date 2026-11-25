@@ -81,6 +81,7 @@ async function diToiLienKet(lk) {
   if (!lk) return;
   if (lk.loai === "hoi_thoai") {
     state.openConv = lk.id;
+    state.mobileViewingChat = true;
     state.cuonToiChiTiet = true;
     doiMan("hoithoai");
     return;

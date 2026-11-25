@@ -123,6 +123,24 @@ async def _thi_hanh(dx: dict, nguoi: dict) -> tuple[bool, dict, str | None, Any]
     hanh_dong = dx["hanh_dong"]
     ts = dx.get("tham_so") or {}
     cid = dx["conversation_id"]
+    if hanh_dong == "sua_don":
+        thu_cong = {"can_xu_ly_thu_cong": True, "da_sua": False}
+        try:
+            hien_tai = await thao_tac_don.bang_chung_sua_don(ts.get("ma_don", ""), cid)
+        except thao_tac_don.LoiThaoTacDon as exc:
+            return False, ({} if exc.ma >= 500 else thu_cong), str(exc), None
+        except ValueError:
+            return False, thu_cong, "Dữ liệu đề xuất không hợp lệ; cần nhân viên kiểm tra.", None
+        truoc = (dx.get("de_xuat") or {}).get("truoc")
+        if hien_tai != truoc or str(dx.get("order_id")) != hien_tai["order_id"]:
+            return False, thu_cong, "Đơn đã thay đổi; cần kiểm tra và tạo đề xuất mới.", None
+        erp = hien_tai.get("erp") or {}
+        huong = ("Đơn Draft cần cập nhật qua API có validation. " if erp.get("docstatus") == 0
+                 else "Đơn Submit cần nghiệp vụ Update Items; nếu cần amendment phải có quy trình riêng. ")
+        return (False, thu_cong, "CHƯA sửa đơn. " + huong
+                + "Chưa xác minh môi trường ERP test, quyền API, Delivery Note, Sales Invoice, "
+                "Payment, Stock Reservation và vận chuyển. Không tự PUT, hủy hoặc tạo đơn mới; "
+                "nhân viên cần xử lý và đối soát thủ công.", None)
     if hanh_dong == "tao_don" and dx.get("order_id"):
         # Đơn đã ghi ở `cho_duyet` (Tự động vượt ngưỡng / Có phê duyệt):
         # duyệt = chính nút Duyệt của màn Đơn hàng, đủ chốt trạng thái + ERP.
@@ -170,6 +188,11 @@ class TuChoiIn(BaseModel):
     ly_do: str = Field(default="", max_length=500)
 
 
+class HoanTatThuCongIn(BaseModel):
+    ghi_chu: str = Field(min_length=3, max_length=1000)
+    ma_tham_chieu: str = Field(default="", max_length=120)
+
+
 @router.post("/ai-de-xuat/{de_xuat_id}/duyet")
 async def duyet_de_xuat(de_xuat_id: str,
                         nguoi: dict = Depends(can_quyen("ai.duyet"))) -> dict:
@@ -195,7 +218,9 @@ async def duyet_de_xuat(de_xuat_id: str,
 async def tu_choi_de_xuat(de_xuat_id: str, body: TuChoiIn | None = None,
                           nguoi: dict = Depends(can_quyen("ai.duyet"))) -> dict:
     did = _uuid(de_xuat_id, "đề xuất")
-    await _kiem_quyen_de_xuat(did, nguoi)
+    thong_tin = await _kiem_quyen_de_xuat(did, nguoi)
+    if thong_tin["hanh_dong"] == "sua_don" and (body is None or not body.ly_do.strip()):
+        raise HTTPException(422, "Cần lý do từ chối đề xuất sửa đơn.")
     try:
         dx = await uy_quyen.tu_choi(did, nguoi, body.ly_do if body else "")
     except uy_quyen.LoiDeXuat as exc:
@@ -213,6 +238,68 @@ async def tu_choi_de_xuat(de_xuat_id: str, body: TuChoiIn | None = None,
             except thao_tac_don.LoiThaoTacDon as exc:
                 kq["canh_bao"] = f"Chưa huỷ được đơn chờ duyệt: {exc.thong_diep}"
     return kq
+
+
+@router.post("/ai-de-xuat/{de_xuat_id}/hoan-tat-thu-cong")
+async def hoan_tat_thu_cong_de_xuat(
+    de_xuat_id: str,
+    body: HoanTatThuCongIn,
+    nguoi: dict = Depends(can_quyen("ai.duyet")),
+) -> dict:
+    """
+    Xác nhận một đề xuất `cho_xu_ly_thu_cong` đã được nhân viên xử lý tay xong.
+    Chỉ ĐỌC đơn hàng & ERP để kiểm bằng chứng; KHÔNG tự động sửa ERPNext.
+    """
+    from agent.core import thao_tac_don
+
+    did = _uuid(de_xuat_id, "đề xuất")
+    await _kiem_quyen_de_xuat(did, nguoi)
+    ghi_chu = body.ghi_chu.strip()
+    if len(ghi_chu) < 3:
+        raise HTTPException(422, "Cần ghi chú xác nhận xử lý thủ công tối thiểu 3 ký tự.")
+    dx = await db.fetchrow("SELECT * FROM ai_de_xuat WHERE id = $1", did)
+    if dx is None:
+        raise HTTPException(404, "Không có đề xuất này")
+    if dx["hanh_dong"] != "sua_don":
+        raise HTTPException(409, "Chỉ đề xuất sửa đơn mới dùng xác nhận xử lý thủ công.")
+    if dx["trang_thai"] != "cho_xu_ly_thu_cong":
+        raise HTTPException(
+            409,
+            "Đề xuất không ở trạng thái chờ xử lý thủ công: "
+            + uy_quyen.NHAN_TRANG_THAI.get(dx["trang_thai"], dx["trang_thai"]),
+        )
+    try:
+        bang_chung = await thao_tac_don.kiem_tra_bang_chung_thu_cong(
+            dict(dx), ma_tham_chieu=body.ma_tham_chieu
+        )
+    except thao_tac_don.LoiThaoTacDon as exc:
+        raise HTTPException(exc.ma, exc.thong_diep) from exc
+
+    ma_ref = body.ma_tham_chieu.strip()[:120] or None
+    ket_qua = {
+        "qua": "xu_ly_thu_cong",
+        "xu_ly_thu_cong": True,
+        "tu_dong": False,
+        "can_xu_ly_thu_cong": False,
+        "da_sua": True,
+        "ma_don": bang_chung.get("ma_don"),
+        "boi": _ten(nguoi),
+        "ghi_chu": ghi_chu,
+        "ma_tham_chieu": ma_ref,
+        "bang_chung": bang_chung,
+    }
+    try:
+        sau = await uy_quyen.hoan_tat_thu_cong(
+            did, nguoi=nguoi, ket_qua=ket_qua, ghi_chu=ghi_chu
+        )
+    except uy_quyen.LoiDeXuat as exc:
+        raise HTTPException(exc.ma, exc.thong_diep) from exc
+    return {
+        "ok": True,
+        "trang_thai": sau["trang_thai"],
+        "nhan_trang_thai": "Đã xử lý thủ công",
+        "ket_qua": ket_qua,
+    }
 
 
 # ---------------------------------------------------- từ chối BẢN NHÁP AI

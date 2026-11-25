@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any
 
 from agent.core import che_du_lieu
@@ -103,6 +104,7 @@ TRANG_THAI_CAN_CU = {
     "chua_du": "Căn cứ chưa đầy đủ",
     "khong_co": "Không có căn cứ",
     "mau_thuan": "Nguồn mâu thuẫn",
+    "khong_can": "Không yêu cầu căn cứ",
 }
 CAU_CHO_TRUNG_LAP = (
     "Dạ em đã nhận được câu hỏi của anh/chị. Em kiểm tra lại thông tin chính "
@@ -121,6 +123,180 @@ _NHAN_CONG_CU = {
 _KHOA_SO_SANH = ("gia", "con_hang", "ton_kho", "trang_thai", "tong_tien")
 _SO_TIEN = re.compile(
     r"(\d{1,3}(?:[.,]\d{3})+|\d{4,})\s*(?:đ|₫|vnđ|vnd|đồng|k\b|nghìn|ngàn)", re.IGNORECASE)
+_SO_THOI_HAN = re.compile(
+    r"\b(\d+)\s*(ngày|tháng|tuần|giờ|năm|%)\b", re.IGNORECASE)
+_DON_VI_KHANG_DINH = re.compile(
+    r"\b\d+\s*(?:ngày|tháng|tuần|giờ|năm|%|đ|₫|vnđ|vnd|đồng|k|nghìn|ngàn|ml|mg|kg|g|hộp|chai|lọ|cái|chiếc)\b",
+    re.IGNORECASE,
+)
+
+# Cụm giao tiếp / làm rõ / chào hỏi không phải khẳng định nghiệp vụ.
+_CUM_GIAO_TIEP = (
+    "em chua ro y",
+    "chua ro y",
+    "noi them giup",
+    "noi ro hon giup",
+    "chia se them giup",
+    "cho em hoi them",
+    "cho em xin them thong tin",
+    "cho em xin ma don",
+    "cho em xin so dien thoai",
+    "anh chi can ho tro gi",
+    "anh/chi can ho tro gi",
+    "anh chi dang quan tam",
+    "ban can ho tro gi",
+    "can tim san pham nao",
+    "vui long cung cap",
+    "xin chao",
+    "chao anh",
+    "chao chi",
+    "chao ban",
+    "chao quy khach",
+    "em chao",
+    "shop chao",
+    "cam on",
+    "rat vui duoc ho tro",
+    "hen gap lai",
+    "chuc anh",
+    "chuc chi",
+    "chuc ban",
+    "em da nhan duoc cau hoi",
+    "em kiem tra lai thong tin",
+)
+_TU_NGHIEP_VU_KHANG_DINH = (
+    "chinh sach", "bao hanh", "doi tra", "hoan tien", "ton kho",
+    "con hang", "het hang", "phi ship", "mien phi", "giao hang",
+    "thanh phan", "cong dung", "cach dung", "huong dan su dung",
+    "duoc doi", "khong duoc", "ma don", "trang thai don", "tong tien",
+    "dang giao", "da giao", "da huy", "gia ban", "khuyen mai",
+    "giam gia", "chi nhanh", "dia chi",
+)
+_TU_CHAO_HOI_DON_THUAN = frozenset({
+    "xin", "chao", "hi", "hello", "hey", "alo", "cam", "on", "thanks", "thank",
+    "ok", "oke", "okay", "vang", "da", "a", "em", "anh", "chi", "ban", "shop",
+    "ad", "admin", "nha", "nhe", "hen", "gap", "lai", "chuc", "ngu", "ngon",
+    "buoi", "sang", "trua", "chieu", "toi",
+})
+_TU_DEM_CAN_CU = frozenset({
+    "da", "vang", "a", "nha", "nhe", "em", "anh", "chi", "ban", "shop", "ben",
+    "minh", "khach", "hang", "quy", "vui", "long", "giup", "xin", "chao", "cam",
+    "on", "duoc", "co", "khong", "chua", "ro", "y", "noi", "them", "bi", "gio",
+    "se", "la", "cua", "cho", "voi", "va", "hoac", "thi", "ma", "nhung", "de",
+    "trong", "ngoai", "tren", "duoi", "khi", "neu", "theo", "ve", "tu", "den",
+    "sau", "truoc", "lai", "nua", "nhieu", "it", "tot", "lam", "rat", "hoi",
+    "thong", "tin", "ho", "tro", "tu", "van", "kiem", "tra", "nhat", "nhieu",
+    "hien", "tai", "nay", "kia", "nay", "ay", "do", "day", "the", "nao", "sao",
+    "tai", "vi", "nen", "cung", "rat", "qua", "moi", "cu", "da", "dang", "se",
+    "phai", "can", "muon", "biet", "xem", "gui", "nhan", "san", "pham",
+})
+
+
+def _fold_vi(chuoi: str) -> str:
+    """Bỏ dấu tiếng Việt và chuẩn hoá khoảng trắng để so khớp deterministic."""
+    s = unicodedata.normalize("NFD", str(chuoi or "").lower().replace("đ", "d").replace("Đ", "d"))
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _trich_tu_khoa_nghia(chuoi: str) -> list[str]:
+    """Tách các từ nội dung (bỏ từ đệm giao tiếp) theo thứ tự xuất hiện."""
+    folded = _fold_vi(chuoi)
+    tokens = re.findall(r"[a-z0-9]{2,}", folded)
+    return [t for t in tokens if t not in _TU_DEM_CAN_CU]
+
+
+_TU_MO_DAU_GIAO_TIEP = frozenset({"chao", "hi", "hello", "hey", "cam", "thanks", "thank", "hen", "chuc"})
+
+
+def la_cau_giao_tiep(van_ban: str) -> bool:
+    """
+    Trả True khi câu trả lời thuần giao tiếp / chào hỏi / làm rõ ý khách,
+    không đưa ra khẳng định nghiệp vụ về giá, đơn hàng, chính sách hay công dụng.
+    """
+    raw = str(van_ban or "").strip()
+    if not raw:
+        return False
+    if _SO_TIEN.search(raw) or _DON_VI_KHANG_DINH.search(raw):
+        return False
+    folded = _fold_vi(raw)
+    if any(k in folded for k in _TU_NGHIEP_VU_KHANG_DINH):
+        return False
+    if any(c in folded for c in _CUM_GIAO_TIEP):
+        return True
+    tokens = re.findall(r"[a-z0-9]+", folded)
+    return (
+        bool(tokens)
+        and len(tokens) <= 10
+        and any(t in _TU_MO_DAU_GIAO_TIEP for t in tokens)
+        and all(t in _TU_CHAO_HOI_DON_THUAN for t in tokens)
+    )
+
+
+def la_cau_hoi_nghiep_vu(cau_hoi: str) -> bool:
+    """
+    Trả True khi câu hỏi khách KHÔNG chỉ là chào hỏi/cảm ơn đơn thuần mà là
+    câu hỏi sản phẩm, giá, đơn hàng, vận chuyển hoặc chính sách.
+    """
+    raw = str(cau_hoi or "").strip()
+    if not raw:
+        return False
+    folded = _fold_vi(raw)
+    tokens = re.findall(r"[a-z0-9]+", folded)
+    if not tokens:
+        return False
+    if all(t in _TU_CHAO_HOI_DON_THUAN for t in tokens):
+        return False
+    return True
+
+
+def can_cu_ho_tro_cau_tra_loi(
+    van_ban: str,
+    tri_thuc: list[dict],
+    cong_cu: list[dict],
+    *,
+    co_du_lieu: bool = False,
+) -> tuple[bool, list[str]]:
+    """
+    Kiểm tra xem `tri_thuc` / dữ liệu công cụ có THỰC SỰ hỗ trợ nội dung
+    trong `van_ban` hay không — tránh gắn `Đủ căn cứ` chỉ vì `bool(passages)`.
+    """
+    du_lieu_that = co_du_lieu or any(
+        c.get("ten") != "tim_kien_thuc" and _co_du_lieu(c.get("ket_qua"))
+        for c in cong_cu
+    )
+    if du_lieu_that:
+        return True, []
+    if not tri_thuc:
+        return False, ["Không có đoạn tài liệu hoặc dữ liệu công cụ nào"]
+
+    kho_tai_lieu = " ".join(
+        f"{t.get('title') or ''} {t.get('trich') or t.get('content') or ''}"
+        for t in tri_thuc
+    )
+    kho_folded = _fold_vi(kho_tai_lieu)
+    kho_tokens = set(_trich_tu_khoa_nghia(kho_tai_lieu))
+
+    # 1) Kiểm số liệu thời hạn / tỷ lệ (VD: 7 ngày, 30 ngày, 10%) nêu trong câu trả lời
+    for so_luong, don_vi in _SO_THOI_HAN.findall(str(van_ban or "")):
+        dv_fold = _fold_vi(don_vi)
+        if f"{so_luong} {dv_fold}" not in kho_folded and so_luong not in kho_folded:
+            return False, [
+                f"Số liệu «{so_luong} {don_vi}» trong câu trả lời không có trong tài liệu truy xuất"
+            ]
+
+    # 2) So khớp từ nội dung giữa câu trả lời và đoạn tài liệu đã truy xuất
+    tu_tra_loi = list(dict.fromkeys(_trich_tu_khoa_nghia(van_ban)))
+    if not tu_tra_loi:
+        # Câu khẳng định quá chung ("Dạ được ạ", "Dạ có ạ") không tự chứng minh được bằng từ khoá
+        return False, ["Câu trả lời ngắn/khẳng định chung chưa thể hiện đối chiếu với tài liệu"]
+
+    khop = [t for t in tu_tra_loi if t in kho_tokens]
+    ty_le = len(khop) / len(tu_tra_loi)
+    if len(tu_tra_loi) >= 3 and (len(khop) < 2 or ty_le < 0.25):
+        return False, ["Nội dung tài liệu truy xuất không liên quan hoặc không đủ hỗ trợ câu trả lời"]
+    if len(tu_tra_loi) < 3 and len(khop) < 1:
+        return False, ["Nội dung tài liệu truy xuất không hỗ trợ trực tiếp câu trả lời"]
+    return True, []
 
 
 def _so(chuoi: str) -> int:
@@ -195,6 +371,9 @@ def phan_loai_can_cu(reply: Any, *, nguong: float) -> dict[str, Any]:
         return {"ma": "mau_thuan", "nhan": TRANG_THAI_CAN_CU["mau_thuan"], "mau_thuan": mt,
                 "thieu": [], "huong_dan": "Không chọn giùm nguồn nào — kiểm lại hai nguồn "
                                            "rồi mới trả lời khách."}
+    if not du_lieu and la_cau_giao_tiep(van_ban):
+        return {"ma": "khong_can", "nhan": TRANG_THAI_CAN_CU["khong_can"], "mau_thuan": [],
+                "thieu": [], "huong_dan": "Câu chào hỏi hoặc làm rõ ý khách — không yêu cầu trích căn cứ."}
     if not tri_thuc and not du_lieu:
         return {"ma": "khong_co", "nhan": TRANG_THAI_CAN_CU["khong_co"], "mau_thuan": [],
                 "thieu": ["Không có đoạn tài liệu nào và không công cụ nào trả dữ liệu"],
@@ -203,8 +382,14 @@ def phan_loai_can_cu(reply: Any, *, nguong: float) -> dict[str, Any]:
                 "cau_cho": CAU_CHO_TRUNG_LAP}
     thieu: list[str] = []
     diem = float(getattr(reply, "confidence", 0.0) or 0.0)
-    if tri_thuc and not du_lieu and diem < nguong:
-        thieu.append("Đoạn tài liệu tìm được khớp yếu với câu hỏi")
+    if tri_thuc and not du_lieu:
+        if diem < nguong:
+            thieu.append("Đoạn tài liệu tìm được khớp yếu với câu hỏi")
+        ho_tro_du, ly_do_ho_tro = can_cu_ho_tro_cau_tra_loi(
+            van_ban, tri_thuc, cong_cu, co_du_lieu=False
+        )
+        if not ho_tro_du:
+            thieu.extend(ly_do_ho_tro)
     for c in cong_cu:
         if c.get("ten") in _CONG_CU_TRA and not _co_du_lieu(c.get("ket_qua")):
             thieu.append(f"Tra «{_NHAN_CONG_CU[c['ten']]}» không ra dữ liệu")

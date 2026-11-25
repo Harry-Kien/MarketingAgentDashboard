@@ -100,6 +100,212 @@ def verify_sidecar_callback(
 _DA_GHI_NHOM: dict[tuple[str, str], float] = {}
 GHI_BO_NHOM_MOI_GIAY = 3600
 
+# Chống ghi trùng sự kiện `channel_account.reconnected` do heartbeat hoặc callback retry.
+_DA_GHI_KET_NOI_LAI: dict[str, tuple[str, float]] = {}
+_PHIEN_MOI_LAM_MOI: dict[str, float] = {}
+KET_NOI_LAI_CHONG_TRUNG_GIAY = 300
+_TRIGGER_KET_NOI_LAI = frozenset({"qr", "restore", "reauth", "reconnect", "session_refresh", "manual"})
+
+
+def _la_heartbeat(payload: Mapping[str, Any], data: Mapping[str, Any]) -> bool:
+    """Phân biệt ping sức khoẻ định kỳ (heartbeat) với sự kiện kết nối lại thật."""
+    if bool(data.get("heartbeat") or payload.get("heartbeat")):
+        return True
+    for k in ("kind", "type", "reason", "trigger", "subtype"):
+        val = str(data.get(k) or payload.get(k) or "").strip().lower()
+        if val == "heartbeat":
+            return True
+    return False
+
+
+def _trich_actor_callback(
+    payload: Mapping[str, Any],
+    data: Mapping[str, Any],
+) -> tuple[str, str | None]:
+    """Lấy actor hợp lệ từ metadata không nhạy cảm; mặc định là hệ thống."""
+    raw_actor = str(
+        data.get("actor_id")
+        or payload.get("actor_id")
+        or data.get("actor")
+        or payload.get("actor")
+        or ""
+    ).strip()
+    actor_name = str(
+        data.get("nguoi_thuc_hien")
+        or payload.get("nguoi_thuc_hien")
+        or ""
+    ).strip()[:120]
+    if raw_actor and raw_actor.lower() not in {"system", "sidecar"}:
+        return raw_actor[:80], (actor_name or raw_actor[:80])
+    return str(SYSTEM_ACTOR_ID), (actor_name or None)
+
+
+def _trich_event_id(
+    payload: Mapping[str, Any],
+    data: Mapping[str, Any],
+    headers: Mapping[str, str],
+) -> str:
+    for val in (
+        headers.get("x-sidecar-event-id"),
+        payload.get("event_id"),
+        data.get("event_id"),
+        payload.get("callback_id"),
+        data.get("callback_id"),
+        payload.get("idempotency_key"),
+        data.get("idempotency_key"),
+    ):
+        s = str(val or "").strip()
+        if s:
+            return s[:120]
+    return ""
+
+
+async def _da_ghi_su_kien_ket_noi_lai(
+    account_id: UUID,
+    dedup_key: str,
+    *,
+    event_id: str,
+    co_id_rieng: bool,
+    bay_gio: float | None = None,
+) -> bool:
+    """Trả True nếu callback này là bản retry/heartbeat trùng, không cần ghi thêm."""
+    nay = time.monotonic() if bay_gio is None else bay_gio
+    acc_key = str(account_id)
+    if event_id:
+        try:
+            row = await db.fetchrow(
+                "SELECT 1 FROM events "
+                "WHERE kind = 'channel_account.reconnected' "
+                "AND ref_id = $1 AND detail ->> 'event_id' = $2 LIMIT 1",
+                account_id,
+                event_id,
+            )
+            if row is not None:
+                return True
+        except Exception:  # noqa: BLE001 — unit test không mở pool CSDL dùng cache RAM
+            pass
+    truoc = _DA_GHI_KET_NOI_LAI.get(acc_key)
+    if truoc is not None:
+        khoa_cu, luc_cu = truoc
+        if co_id_rieng:
+            if khoa_cu == dedup_key:
+                return True
+        else:
+            if nay - luc_cu < KET_NOI_LAI_CHONG_TRUNG_GIAY:
+                return True
+    return False
+
+
+def _danh_dau_da_ghi_ket_noi_lai(
+    account_id: UUID,
+    dedup_key: str,
+    *,
+    bay_gio: float | None = None,
+) -> None:
+    nay = time.monotonic() if bay_gio is None else bay_gio
+    if len(_DA_GHI_KET_NOI_LAI) > 5000:
+        _DA_GHI_KET_NOI_LAI.clear()
+    _DA_GHI_KET_NOI_LAI[str(account_id)] = (dedup_key, nay)
+
+
+async def _ghi_su_kien_ket_noi_lai(
+    account: Any,
+    *,
+    status_truoc: AccountStatus,
+    status_sau: AccountStatus,
+    payload: Mapping[str, Any],
+    data: Mapping[str, Any],
+    headers: Mapping[str, str],
+    bay_gio: float | None = None,
+) -> bool:
+    """
+    Ghi nhận `channel_account.reconnected` khi kết nối lại / xác thực lại thành công,
+    kể cả khi `status_truoc == status_sau == AccountStatus.ACTIVE`, đồng thời chặn trùng
+    lặp do heartbeat hoặc callback retry và KHÔNG lưu token/session secret/QR.
+    """
+    nay = time.monotonic() if bay_gio is None else bay_gio
+    acc_key = str(account.id)
+    is_heartbeat = _la_heartbeat(payload, data)
+    session_ts = _PHIEN_MOI_LAM_MOI.get(acc_key)
+    sau_session = session_ts is not None and (nay - session_ts) <= 120
+
+    if is_heartbeat and status_truoc == AccountStatus.ACTIVE and not sau_session:
+        return False
+
+    event_id = _trich_event_id(payload, data, headers)
+    epoch = str(data.get("epoch") or payload.get("epoch") or "").strip()
+    trigger = str(
+        data.get("trigger")
+        or data.get("reason")
+        or payload.get("trigger")
+        or ("session_refresh" if sau_session else ("status_recovery" if status_truoc != status_sau else "reconnect"))
+    ).strip()[:60]
+    own_id = str(data.get("own_id") or "").strip()[:80]
+    explicit_reconnect = bool(data.get("reconnected") or payload.get("reconnected")) or (
+        trigger.lower() in _TRIGGER_KET_NOI_LAI
+    ) or str(payload.get("event") or "") == "reconnected"
+
+    if event_id:
+        dedup_key = f"id:{event_id}"
+        co_id_rieng = True
+    elif epoch:
+        dedup_key = f"epoch:{epoch}:{own_id}"
+        co_id_rieng = True
+    elif sau_session:
+        dedup_key = f"session:{int(session_ts)}"
+        co_id_rieng = False
+    else:
+        dedup_key = f"health:{own_id}:{trigger}:{status_truoc.value}"
+        co_id_rieng = False
+
+    if status_truoc == status_sau and not explicit_reconnect and not sau_session:
+        # Không có cờ reconnect/session rõ ràng: vẫn ghi lần đầu (như callback từ attach),
+        # nhưng chặn các lần lặp/heartbeat kế tiếp trong cửa sổ chống trùng.
+        if await _da_ghi_su_kien_ket_noi_lai(
+            account.id, dedup_key, event_id=event_id, co_id_rieng=False, bay_gio=nay
+        ):
+            return False
+    else:
+        # Đã có sự kiện chuyển trạng thái / reconnect tường minh / session refresh:
+        # vẫn chống trùng nếu cùng event_id hoặc cùng retry giống hệt ngay sát nhau.
+        if status_truoc == status_sau and await _da_ghi_su_kien_ket_noi_lai(
+            account.id, dedup_key, event_id=event_id, co_id_rieng=co_id_rieng, bay_gio=nay
+        ):
+            return False
+        if status_truoc != status_sau and event_id and await _da_ghi_su_kien_ket_noi_lai(
+            account.id, dedup_key, event_id=event_id, co_id_rieng=True, bay_gio=nay
+        ):
+            return False
+
+    actor_str, actor_name = _trich_actor_callback(payload, data)
+    chi_tiet: dict[str, Any] = {
+        "account_id": acc_key,
+        "channel": account.channel.value,
+        "status": status_sau.value,
+        "previous_status": status_truoc.value,
+        "ket_qua": "thanh_cong",
+        "trigger": trigger,
+        "reconnected": True,
+    }
+    if own_id:
+        chi_tiet["own_id"] = own_id
+    if event_id:
+        chi_tiet["event_id"] = event_id
+    if epoch:
+        chi_tiet["epoch"] = epoch[:40]
+    if actor_name:
+        chi_tiet["nguoi_thuc_hien"] = actor_name
+
+    await db.log_event(
+        "channel_account.reconnected",
+        actor=actor_str,
+        ref_id=account.id,
+        **chi_tiet,
+    )
+    _danh_dau_da_ghi_ket_noi_lai(account.id, dedup_key, bay_gio=nay)
+    _PHIEN_MOI_LAM_MOI.pop(acc_key, None)
+    return True
+
 
 async def _ghi_bo_tin_nhom(account_id: UUID, nhom: str, *,
                            bay_gio: float | None = None) -> bool:
@@ -183,12 +389,21 @@ async def zalo_personal_callback(
         updated = dict(credentials)
         updated["session"] = data
         await loader.store_rotated(account_id, updated)
+        if len(_PHIEN_MOI_LAM_MOI) > 5000:
+            _PHIEN_MOI_LAM_MOI.clear()
+        _PHIEN_MOI_LAM_MOI[str(account_id)] = time.monotonic()
         return {"ok": True, "stored": "session"}
-    if event == "health":
-        connected = data.get("status") == "connected"
+    if event in {"health", "reconnected"}:
+        connected = (
+            data.get("status", "connected") == "connected"
+            if event == "reconnected"
+            else data.get("status") == "connected"
+        )
         status = AccountStatus.ACTIVE if connected else AccountStatus.DEGRADED
-        provider_identity = provider_identity_from_health(data)
-        if provider_identity:
+        provider_identity = provider_identity_from_health(
+            {"status": "connected" if connected else data.get("status"), "own_id": data.get("own_id")}
+        )
+        if provider_identity and account.external_account_id != provider_identity:
             await repository.bind_external_identity(
                 account_id,
                 provider_identity,
@@ -197,16 +412,27 @@ async def zalo_personal_callback(
         await repository.record_health(
             account_id,
             status=status,
-            code=f"zalo_personal.{data.get('status') or 'unknown'}",
+            code=f"zalo_personal.{data.get('status') or ('connected' if connected else 'unknown')}",
             detail={"own_id": str(data.get("own_id") or "")},
         )
-        if account.status != status:
+        status_truoc = account.status
+        if status_truoc != status:
             await repository.update_status(
                 account_id,
                 status,
                 actor_id=SYSTEM_ACTOR_ID,
             )
-        return {"ok": True, "health": status.value}
+        da_ghi_kn = False
+        if connected:
+            da_ghi_kn = await _ghi_su_kien_ket_noi_lai(
+                account,
+                status_truoc=status_truoc,
+                status_sau=status,
+                payload=payload,
+                data=data,
+                headers=request.headers,
+            )
+        return {"ok": True, "health": status.value, "reconnected_logged": da_ghi_kn}
     if event == "message":
         adapter = ZaloPersonalAdapter(
             account_id=account_id,

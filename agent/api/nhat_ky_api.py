@@ -101,7 +101,8 @@ async def tra_cuu(
 
 
 _COT_CSV = ("id", "luc", "hanh_dong", "kind", "nhom", "tac_nhan", "ten_tac_nhan",
-            "hoi_thoai_id", "luot_id", "che_do_ai", "muc_uy_quyen", "trang_thai", "ket_qua")
+            "tai_khoan", "hoi_thoai_id", "luot_id", "che_do_ai", "muc_uy_quyen",
+            "trang_thai", "ket_qua")
 
 
 @router.get("/xuat.csv")
@@ -139,8 +140,10 @@ async def xuat_csv(
     w = csv.writer(buf)
     w.writerow(_COT_CSV)
     for b in dong:
+        doi_tuong = (b.get("tai_khoan") or {}).get("ten") or b.get("doi_tuong") or ""
         w.writerow([b["id"], b["luc"], b["hanh_dong"], b["kind"], b["nhom"]["nhan"],
-                    b["tac_nhan"]["nhan"], b["tac_nhan"]["ten"] or "", b["hoi_thoai_id"] or "",
+                    b["tac_nhan"]["nhan"], b["tac_nhan"]["ten"] or "", doi_tuong,
+                    b["hoi_thoai_id"] or "",
                     b["luot_id"] or "", b["che_do_ai"] or "", b["muc_uy_quyen"] or "",
                     b["trang_thai"]["nhan"], b["ket_qua"]])
     await db.log_event("nhat_ky.xuat", actor=_ten(nguoi), so_dong=len(dong),

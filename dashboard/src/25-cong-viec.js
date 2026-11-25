@@ -103,6 +103,7 @@ async function cvxTaiDs() {
 }
 
 async function cvxTaiDem() {
+  if (!cvxCo("cong_viec.doc")) return null;
   try {
     const t = await api("/cong-viec/tong-quan");
     $("#c-congviec").textContent = (t.dem.cho_xu_ly + t.dem.dang_thuc_hien) || "";
@@ -111,7 +112,7 @@ async function cvxTaiDem() {
 }
 
 async function cvxLamMoi() {
-  if (!cvx.el || cvx.dangTai) return;
+  if (!cvx.el || cvx.dangTai || !cvxCo("cong_viec.doc")) return;
   cvx.dangTai = true;
   try {
     await cvxTaiDs();
@@ -388,6 +389,10 @@ function cvxBatSuKienLienKet(o) {
 
 GAN_TAB["cv-danh-sach"] = (el) => {
   cvx.el = el;
+  if (!cvxCo("cong_viec.doc")) {
+    el.innerHTML = '<section class="panel"><p class="empty">Bạn không có quyền xem công việc.</p></section>';
+    return;
+  }
   const opt = (ds) => ds.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
   el.innerHTML = `
     <section class="panel">
@@ -460,7 +465,8 @@ document.addEventListener("congviec:doi", () => { if (cvx.el) cvxLamMoi(); });
 
 /* Chuông "việc" và mọi lối khác mở thẳng chi tiết một việc. */
 window.moCongViec = async (id) => {
-  doiMan("cv-danh-sach");
+  if (!cvxCo("cong_viec.doc")) return false;
+  if (doiMan("cv-danh-sach") === false) return false;
   if (!cvx.el) return false;
   await cvxTaiChiTiet(id);
   return cvx.moId === id;
@@ -490,6 +496,7 @@ function cvxO(nhan, so, loc, mau) {
 async function cvxCaTai() {
   const o = cvxCa.el;
   if (!o) return;
+  if (!cvxCo("cong_viec.doc")) { o.innerHTML = ""; return; }
   const t = await cvxTaiDem();
   if (!t) { o.innerHTML = '<p class="empty">Không tải được tổng quan công việc.</p>'; return; }
   const d = t.dem;

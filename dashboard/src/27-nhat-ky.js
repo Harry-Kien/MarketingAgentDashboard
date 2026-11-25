@@ -88,13 +88,15 @@ function nkVeKhung(el) {
 
 function nkDong(b) {
   const tt = b.trang_thai || {};
+  const doiTuong = (b.tai_khoan && b.tai_khoan.ten) || b.doi_tuong || "";
   return `<div class="row${nk.moId === b.id ? " is-mo" : ""}" data-nk-dong="${b.id}" role="button" tabindex="0">
     <span class="row__flag row__flag--${NK_TONE[tt.ma] || "plain"}"></span>
     <span class="row__body">
       <span class="row__title">${esc(b.hanh_dong)}
         <span class="tag tag--plain">${esc((b.nhom || {}).nhan || "")}</span>
         <span class="tag tag--${NK_TAG[tt.ma] || "plain"}">${esc(tt.nhan || "")}</span></span>
-      <span class="row__sub">${esc(nkTacNhan(b))}${b.che_do_ai ? " · chế độ " + esc(b.che_do_ai) : ""}${
+      <span class="row__sub">${esc(nkTacNhan(b))}${doiTuong ? " · " + esc(doiTuong) : ""}${
+        b.che_do_ai ? " · chế độ " + esc(b.che_do_ai) : ""}${
         b.ket_qua ? " · " + esc(b.ket_qua) : ""}</span>
     </span>
     <span class="row__side">
@@ -134,8 +136,13 @@ async function nkTai() {
 
 function nkDongDeXuat(d) {
   const tt = d.trang_thai || {};
-  const tone = tt.ma === "cho_duyet" ? "assist" : tt.ma === "tu_choi" ? "halt" : "auto";
-  const quyet = d.nguoi_quyet ? `duyệt bởi ${d.nguoi_quyet}${d.luc_quyet ? " lúc " + nkGio(d.luc_quyet) : ""}` : "";
+  const tone = (tt.ma === "cho_duyet" || tt.ma === "cho_xu_ly_thu_cong" || tt.ma === "dang_thuc_thi")
+    ? "assist"
+    : (tt.ma === "tu_choi" || tt.ma === "loi") ? "halt" : "auto";
+  const quyet = d.nguoi_quyet
+    ? `${tt.ma === "da_xu_ly_thu_cong" ? "xử lý thủ công" : "duyệt"} bởi ${d.nguoi_quyet}${
+        d.luc_quyet ? " lúc " + nkGio(d.luc_quyet) : ""}`
+    : "";
   const sua = d.nguoi_sua ? `sửa bởi ${d.nguoi_sua}` : "";
   return `<div class="row">
     <span class="row__flag row__flag--${tone}"></span>
@@ -220,6 +227,7 @@ function nkVeChiTiet(b) {
       ${nkCT("Thời gian", esc(new Date(b.luc).toLocaleString("vi-VN")))}
       ${nkCT("Tác nhân", esc(nkTacNhan(b)))}
       ${nkCT("Loại hành động", esc((b.nhom || {}).nhan || ""))}
+      ${nkCT("Tài khoản / đối tượng", esc((b.tai_khoan && b.tai_khoan.ten) || b.doi_tuong || "—"))}
       ${nkCT("Hội thoại", b.hoi_thoai_id ? `<span class="mono">${esc(b.hoi_thoai_id)}</span>` : "—")}
       ${nkCT("Chế độ AI", esc(b.che_do_ai || "—"))}
       ${nkCT("Mức uỷ quyền", esc(b.muc_uy_quyen || "chưa áp dụng"))}

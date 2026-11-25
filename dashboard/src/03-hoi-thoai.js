@@ -122,6 +122,8 @@ function wireConvRows(scope) {
   $$(`${scope} [data-conv]`).forEach((el) =>
     el.addEventListener("click", () => {
       state.openConv = el.dataset.conv;
+      state.mobileViewingChat = true;
+      $(".convo")?.classList.add("is-chat-active");
       // Đánh dấu do NGƯỜI bấm, không phải do vòng làm mới vẽ lại: chỉ cú
       // bấm mới được kéo màn hình xuống khung chi tiết (xem loadThread).
       state.cuonToiChiTiet = true;
@@ -341,6 +343,7 @@ async function loadThread(id) {
   }
   /* Nhãn và ghi chú nội bộ có quyền riêng từ 0058 (`hoi_thoai.ghi_chu`).
    * Vẽ nút cho người không có quyền là mời một 403 mỗi lần bấm. */
+  const traLoiDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.tra_loi"));
   const ghiChuDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.ghi_chu"));
   const ghi = ghiChuDuoc && dangGhiChu(id);
   const hd = hanhDongXuLy(c, { toiId: state.toiId, quyen: state.toiQuyen, giaoDuoc: !!giaoDuoc });
@@ -372,16 +375,19 @@ async function loadThread(id) {
   const dang_o_day = !thread_cu
     || thread_cu.scrollHeight - thread_cu.scrollTop - thread_cu.clientHeight < 40;
   const cuon_cu = thread_cu ? thread_cu.scrollTop : 0;
+  const drawer_cu = $("#convo-drawer");
+  const backdrop_cu = $("#convo-drawer-backdrop");
+  const giuDrawer = !!(drawer_cu && backdrop_cu && state.moChiTietHT === String(c.id));
+  const drawer_cuon_cu = giuDrawer ? ($(".convo-drawer__content")?.scrollTop || 0) : 0;
+  if (giuDrawer) {
+    drawer_cu.remove();
+    backdrop_cu.remove();
+  }
 
   /* Thanh thông tin: Tên | Nhãn | Customer 360 | Hành động | Chi tiết
    * (03b). Trạng thái, kênh, Mode, ưu tiên, Version, SLA KHÔNG ở đây —
    * ưu tiên/Version/chế độ AI vào panel "Chi tiết" khi người trực mở. */
-  $("#convdetail").innerHTML = `
-    ${veThanhThongTin(c, hd)}
-    ${veChiTietHoiThoai(c, laCuaToi)}
-    <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
-      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
-    </div>
+  const formSoan = (traLoiDuoc || ghiChuDuoc) ? `
     <form class="convo__bar${ghi ? " convo__bar--ghichu" : ""}" id="replyform">
       ${veCheDoSoan(id, ghiChuDuoc)}
       <div class="convo__soan">
@@ -393,12 +399,40 @@ async function loadThread(id) {
         </span>`}
         <button type="submit" class="btn ${ghi ? "btn--ghichu" : "btn--primary"}">${ghi ? "Lưu ghi chú" : "Gửi"}</button>
       </div>
-    </form>`;
+    </form>` : "";
+
+  $("#convdetail").innerHTML = `
+    ${veThanhThongTin(c, hd)}
+    ${giuDrawer ? "" : veChiTietHoiThoai(c, laCuaToi)}
+    <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
+      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
+    </div>
+    ${formSoan}`;
+
+  if (giuDrawer) {
+    $("#convdetail").appendChild(backdrop_cu);
+    $("#convdetail").appendChild(drawer_cu);
+    if (typeof capNhatChiTietHoiThoai === "function") capNhatChiTietHoiThoai(drawer_cu, c, laCuaToi);
+    const content = $(".convo-drawer__content");
+    if (content && drawer_cuon_cu > 0) content.scrollTop = drawer_cuon_cu;
+  } else {
+    const d = $("#convo-drawer");
+    if (d && d.classList.contains("is-animating")) {
+      d.addEventListener("animationend", () => d.classList.remove("is-animating"), { once: true });
+    }
+  }
+
+  state.vuaMoChiTietHT = null;
 
   const thread = $("#thread");
   if (thread) thread.scrollTop = dang_o_day ? thread.scrollHeight : cuon_cu;
   danhDauDaDoc(id, c.messages);
   cuonToiChiTietNeuHep();
+  if (state.mobileViewingChat) {
+    $(".convo")?.classList.add("is-chat-active");
+  } else if (!state.openConv) {
+    $(".convo")?.classList.remove("is-chat-active");
+  }
 
   /* Trả lại bản nháp.
    *
@@ -547,7 +581,10 @@ async function loadThread(id) {
   );
 
   const openContact = $("#open-contact");
-  if (openContact) openContact.addEventListener("click", () => openCustomer(openContact.dataset.contact));
+  if (openContact) openContact.addEventListener("click", () => {
+    if (state.toiQuyen && !state.toiQuyen.has("khach.doc")) return;
+    openCustomer(openContact.dataset.contact);
+  });
 
   // Tiếp quản / Kết thúc / Đổi chế độ / Mở lại: trình nghe ủy quyền ở
   // 03b-thanh-hoi-thoai.js — nút nằm trong menu "⋯" dựng lại liên tục.
@@ -571,6 +608,10 @@ async function loadThread(id) {
       // Kiểu ghi chú không vẽ nút đính kèm; chặn thêm ở đây vì tệp đi thẳng
       // tới KHÁCH — ghi chú nội bộ không bao giờ được đi đường này.
       if (!f || dangGhiChu(id)) return;
+      if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.tra_loi")) {
+        toast("Bạn không có quyền gửi tệp cho khách.", true);
+        return;
+      }
       nutKem.disabled = true;
       const chu = nutKem.textContent;
       nutKem.textContent = "⏳";
@@ -607,25 +648,36 @@ async function loadThread(id) {
     });
   }
 
-  $("#replyform").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const text = new FormData(ev.target).get("text").trim();
-    if (!text) return;
-    // Đọc kiểu soạn MỘT lần, trước mọi await: người bấm đổi thẻ trong lúc
-    // chờ mạng không được làm ghi chú đổi đường thành tin gửi khách.
-    const laGhiChu = dangGhiChu(id);
-    try {
-      const r = await guiTuKhungSoan(id, text, laGhiChu);
-      if (laGhiChu) toast("Đã lưu ghi chú nội bộ — khách không thấy.");
-      else toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
-      ev.target.reset();
-      // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
-      // trở vào khung và người trực tưởng tin chưa gửi đi.
-      if (state.nhapTheoHoiThoai) {
-        delete state.nhapTheoHoiThoai[laGhiChu ? `${id}:ghichu` : String(id)];
-      }
-      refresh();
-    } catch (e) { toast(e.message, true); }
-  });
+  if ($("#replyform")) {
+    $("#replyform").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const text = new FormData(ev.target).get("text").trim();
+      if (!text) return;
+      // Đọc kiểu soạn MỘT lần, trước mọi await: người bấm đổi thẻ trong lúc
+      // chờ mạng không được làm ghi chú đổi đường thành tin gửi khách.
+      const laGhiChu = dangGhiChu(id);
+      try {
+        const r = await guiTuKhungSoan(id, text, laGhiChu);
+        if (laGhiChu) toast("Đã lưu ghi chú nội bộ — khách không thấy.");
+        else toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
+        ev.target.reset();
+        // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
+        // trở vào khung và người trực tưởng tin chưa gửi đi.
+        if (state.nhapTheoHoiThoai) {
+          delete state.nhapTheoHoiThoai[laGhiChu ? `${id}:ghichu` : String(id)];
+        }
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    });
+  }
 }
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#btn-convo-back")) {
+    state.mobileViewingChat = false;
+    state.moChiTietHT = null;
+    $(".convo")?.classList.remove("is-chat-active");
+    $$("#convlist .row.is-on").forEach((r) => r.classList.remove("is-on"));
+  }
+});
 

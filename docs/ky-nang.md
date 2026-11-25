@@ -7,12 +7,13 @@
 
 ## Kỹ năng viết sẵn
 
-10 công cụ, viết bằng Python trong `agent/core/tools.py`.
+11 công cụ, viết bằng Python trong `agent/core/tools.py`.
 Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 
 
 | Kỹ năng | Nhóm | Rủi ro | Việc | Cần |
 |---|---|---|---|---|
+| `de_xuat_sua_don` | Sau bán | ghi nhận | Đề xuất sửa số lượng, chờ duyệt và xử lý thủ công; KHÔNG sửa đơn. | — |
 | `tim_kien_thuc` | Tư vấn | đọc | Tra kho tài liệu công ty để trả lời có căn cứ. | kho tri thức |
 | `tra_cuu_san_pham` | Tư vấn | đọc | Giá, tồn kho, thành phần của một mã hàng. | ERP |
 | `goi_y_san_pham` | Tư vấn | đọc | Lọc sản phẩm theo loại da, nhu cầu và ngân sách. | ERP |
@@ -28,6 +29,9 @@ Bật/tắt được từ dashboard; nội dung thì phải sửa mã.
 
 
 ## Tắt một kỹ năng thì mất gì
+
+
+**`de_xuat_sua_don`** — Yêu cầu sửa đơn chuyển nhân viên, không tạo thẻ đề xuất.
 
 
 **`tim_kien_thuc`** — Agent mất đường tra chính sách giữa chừng. Nó vẫn còn đoạn tài liệu nạp sẵn đầu lượt, nhưng khách hỏi lệch sang chuyện khác thì không tra thêm được — và sẽ chuyển người nhiều hơn hẳn.

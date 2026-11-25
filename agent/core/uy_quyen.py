@@ -58,11 +58,14 @@ NHAN_MUC = {
     "co_phe_duyet": "Có phê duyệt",
     "tu_dong": "Tự động",
 }
-# Khớp CHECK của migration 0065 — có test canh hai nơi không lệch.
-TRANG_THAI = ("cho_duyet", "da_duyet", "da_thuc_hien", "loi", "tu_choi", "het_han")
+# 0066 bổ sung trạng thái; giữ da_duyet cho tạo/hủy đơn và lịch sử.
+TRANG_THAI = ("cho_duyet", "da_duyet", "dang_thuc_thi", "da_thuc_hien",
+              "cho_xu_ly_thu_cong", "loi", "tu_choi", "het_han")
 NHAN_TRANG_THAI = {
     "cho_duyet": "Chờ duyệt",
     "da_duyet": "Đã duyệt — đang thực hiện",
+    "dang_thuc_thi": "Đang kiểm tra và xử lý yêu cầu",
+    "cho_xu_ly_thu_cong": "Chờ xử lý thủ công — chưa sửa đơn",
     "da_thuc_hien": "Đã thực hiện",
     "loi": "Duyệt nhưng không thực hiện được",
     "tu_choi": "Đã từ chối",
@@ -121,8 +124,9 @@ DANH_MUC: dict[str, HanhDong] = {
     "sua_don": HanhDong(
         "sua_don", "Sửa đơn đã xác nhận",
         "Đổi sản phẩm, số lượng, giá trị hay thông tin giao hàng quan trọng.",
-        ho_tro=False, mac_dinh="co_phe_duyet",
-        ghi_chu="AI không có công cụ sửa đơn — chuyển nhân viên."),
+        ho_tro=False, mac_dinh="co_phe_duyet", quyen_thi_hanh="don.sua",
+        ghi_chu="AI chỉ đề xuất sửa số lượng để nhân viên duyệt. Chưa có API sửa "
+                "Sales Order tương thích; sau duyệt vẫn cần xử lý thủ công."),
     "hoan_tien": HanhDong(
         "hoan_tien", "Hoàn tiền", "Trả lại tiền khách đã thanh toán.",
         ho_tro=False, mac_dinh="co_phe_duyet",
@@ -262,6 +266,7 @@ async def mo_ta_chinh_sach() -> dict[str, Any]:
         ds.append({
             "ma": hd.ma, "ten": hd.ten, "mo_ta": hd.mo_ta, "ghi_chu": hd.ghi_chu,
             "ho_tro": hd.ho_tro, "cau_hinh_duoc": hd.ho_tro and hd.cau_hinh_duoc,
+            "ho_tro_de_xuat": hd.ho_tro or hd.ma == "sua_don",
             "muc": muc, "nhan_muc": NHAN_MUC[muc],
             "mac_dinh": hd.mac_dinh if hd.ho_tro else "khong_su_dung",
             "da_doi": bool(dong) and hd.ho_tro and hd.cau_hinh_duoc,
@@ -354,6 +359,8 @@ async def che_do_hieu_luc(conversation_id: Any) -> tuple[str, str]:
 
 
 async def phan_loai_cong_cu(ten: str) -> str:
+    if ten == "de_xuat_sua_don":
+        return "de_xuat_thu_cong"
     """`doc` | `chuyen_nguoi` | `hanh_dong` | `mcp_ghi` | `la`."""
     if ten in CONG_CU_DOC:
         return "doc"
@@ -461,8 +468,10 @@ async def tao_de_xuat(
     if cid is None:
         raise ValueError("Đề xuất phải thuộc một hội thoại (phiếu việc 17.14).")
     hd = DANH_MUC.get(quyet.hanh_dong)
-    if hd is None or not hd.ho_tro:
-        # Không có đường thi hành thì không có gì để duyệt — xem docstring đầu tệp.
+    chi_de_xuat = (quyet.hanh_dong == "sua_don" and quyet.muc == "co_phe_duyet"
+                  and quyet.che_do == "goi_y")
+    if hd is None or (not hd.ho_tro and not chi_de_xuat):
+        # Ngoại lệ sửa đơn chỉ duyệt yêu cầu xử lý thủ công, không thi hành ERP.
         raise ValueError(f"Hành động {quyet.hanh_dong!r} không có đường thi hành.")
     gio = await han_gio()
     dong = await db.fetchrow(
@@ -470,7 +479,8 @@ async def tao_de_xuat(
         INSERT INTO ai_de_xuat (conversation_id, hanh_dong, che_do_ai, muc_uy_quyen,
             ly_do_can_duyet, order_id, tham_so, de_xuat, can_cu, khoa_trung, het_han_luc)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + $11::interval)
-        ON CONFLICT (khoa_trung) WHERE trang_thai IN ('cho_duyet', 'da_duyet')
+        ON CONFLICT (khoa_trung) WHERE trang_thai IN
+            ('cho_duyet', 'da_duyet', 'dang_thuc_thi', 'cho_xu_ly_thu_cong')
         DO NOTHING
         RETURNING id, conversation_id, hanh_dong, muc_uy_quyen
         """,
@@ -480,7 +490,8 @@ async def tao_de_xuat(
     if dong is None:
         cu = await db.fetchrow(
             "SELECT id, conversation_id, hanh_dong, muc_uy_quyen FROM ai_de_xuat WHERE khoa_trung = $1 "
-            "AND trang_thai IN ('cho_duyet', 'da_duyet')", khoa_trung[:300])
+            "AND trang_thai IN ('cho_duyet', 'da_duyet', 'dang_thuc_thi', 'cho_xu_ly_thu_cong')",
+            khoa_trung[:300])
         if cu is None:   # vừa được xử lý giữa hai câu — thử lại một lần là đủ
             return await tao_de_xuat(
                 conversation_id=cid, quyet=quyet, ly_do_can_duyet=ly_do_can_duyet,
@@ -543,11 +554,14 @@ async def nhan_duyet(de_xuat_id: UUID, nguoi: dict) -> dict:
                                 + NHAN_TRANG_THAI.get(dong["trang_thai"], dong["trang_thai"]))
             # Chính sách đổi SAU khi đề xuất ra đời: quản trị đã nói AI không
             # được làm việc này nữa, thì đề xuất cũ cũng không chạy.
-            if await muc_cua(dong["hanh_dong"]) == "khong_su_dung":
+            # Sửa đơn là duyệt yêu cầu thủ công; ho_tro=False vẫn khóa thực thi.
+            if (dong["hanh_dong"] != "sua_don"
+                    and await muc_cua(dong["hanh_dong"]) == "khong_su_dung"):
                 raise LoiDeXuat(409, "Chính sách hiện tại không cho AI làm việc này "
                                      "(Không sử dụng) — đề xuất không còn hiệu lực.")
             dong = await conn.fetchrow(
-                "UPDATE ai_de_xuat SET trang_thai='da_duyet', duyet_boi=$2, duyet_luc=now(), "
+                "UPDATE ai_de_xuat SET trang_thai=CASE WHEN hanh_dong='sua_don' "
+                "THEN 'dang_thuc_thi' ELSE 'da_duyet' END, duyet_boi=$2, duyet_luc=now(), "
                 "cap_nhat_luc=now() WHERE id=$1 RETURNING *", de_xuat_id, nguoi_id)
     await _su_kien("ai.de_xuat.duyet", dong, actor=str(nguoi.get("ten_dang_nhap") or "?"),
                    nguoi_duyet_id=str(nguoi_id) if nguoi_id else None)
@@ -556,17 +570,73 @@ async def nhan_duyet(de_xuat_id: UUID, nguoi: dict) -> dict:
 
 async def ghi_ket_qua(de_xuat_id: UUID, *, ok: bool, ket_qua: dict | None,
                       loi: str | None, actor: str) -> dict:
-    """`da_duyet` -> `da_thuc_hien` | `loi`. Chỉ từ `da_duyet`."""
+    """Finalize a claimed proposal; manual review is never execution success."""
+    thu_cong = not ok and bool((ket_qua or {}).get("can_xu_ly_thu_cong"))
+    trang_thai = "da_thuc_hien" if ok else "cho_xu_ly_thu_cong" if thu_cong else "loi"
     dong = await db.fetchrow(
         """
-        UPDATE ai_de_xuat SET trang_thai = $2, thuc_hien_luc = now(), ket_qua = $3,
+        UPDATE ai_de_xuat SET trang_thai = $2,
+               thuc_hien_luc = CASE WHEN $2 = 'cho_xu_ly_thu_cong' THEN NULL ELSE now() END,
+               ket_qua = $3,
                loi = $4, cap_nhat_luc = now()
-        WHERE id = $1 AND trang_thai = 'da_duyet' RETURNING *
-        """, de_xuat_id, "da_thuc_hien" if ok else "loi", ket_qua, (loi or None))
+        WHERE id = $1 AND trang_thai IN ('da_duyet', 'dang_thuc_thi') RETURNING *
+        """, de_xuat_id, trang_thai, ket_qua, (loi or None))
     if dong is None:
         raise LoiDeXuat(409, "Đề xuất không ở trạng thái Đã duyệt.")
-    await _su_kien("ai.de_xuat.thuc_hien" if ok else "ai.de_xuat.loi", dong, actor=actor,
+    su_kien = "thuc_hien" if ok else "cho_xu_ly_thu_cong" if thu_cong else "loi"
+    await _su_kien("ai.de_xuat." + su_kien, dong, actor=actor,
                    ket_qua=ket_qua, loi=(loi or None))
+    return dict(dong)
+
+
+async def hoan_tat_thu_cong(
+    de_xuat_id: UUID,
+    *,
+    nguoi: dict,
+    ket_qua: dict,
+    ghi_chu: str,
+) -> dict:
+    """Chốt đề xuất `cho_xu_ly_thu_cong` -> `da_thuc_hien` với khoá dòng chống xác nhận trùng."""
+    nguoi_id = _uuid(nguoi.get("id"))
+    actor = str(nguoi.get("ten_dang_nhap") or "?")
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            hien = await conn.fetchrow(
+                "SELECT * FROM ai_de_xuat WHERE id = $1 FOR UPDATE", de_xuat_id)
+            if hien is None:
+                raise LoiDeXuat(404, "Không có đề xuất này")
+            if hien["hanh_dong"] != "sua_don":
+                raise LoiDeXuat(409, "Chỉ đề xuất sửa đơn mới dùng xác nhận xử lý thủ công.")
+            if hien["trang_thai"] != "cho_xu_ly_thu_cong":
+                raise LoiDeXuat(
+                    409,
+                    "Đề xuất không ở trạng thái chờ xử lý thủ công: "
+                    + NHAN_TRANG_THAI.get(hien["trang_thai"], hien["trang_thai"]),
+                )
+            dong = await conn.fetchrow(
+                """
+                UPDATE ai_de_xuat
+                   SET trang_thai = 'da_thuc_hien',
+                       thuc_hien_luc = now(),
+                       ket_qua = $2,
+                       loi = NULL,
+                       cap_nhat_luc = now()
+                 WHERE id = $1 AND trang_thai = 'cho_xu_ly_thu_cong'
+                 RETURNING *
+                """,
+                de_xuat_id,
+                ket_qua,
+            )
+    await _su_kien(
+        "ai.de_xuat.xu_ly_thu_cong",
+        dong,
+        actor=actor,
+        nguoi_xu_ly_id=str(nguoi_id) if nguoi_id else None,
+        qua="xu_ly_thu_cong",
+        order_id=str(dong["order_id"]) if dong.get("order_id") else None,
+        ket_qua=ket_qua,
+        ghi_chu=ghi_chu[:500],
+    )
     return dict(dong)
 
 
@@ -684,6 +754,16 @@ async def liet_ke(conversation_id: UUID, *, nguoi: dict | None = None) -> list[d
         hd = DANH_MUC.get(r["hanh_dong"])
         can = ["ai.duyet", *([hd.quyen_thi_hanh] if hd and hd.quyen_thi_hanh else [])]
         thieu = [q for q in can if nguoi is None or not xac_thuc.duoc_phep(nguoi, q)]
+        kq_obj = r["ket_qua"] if isinstance(r["ket_qua"], dict) else {}
+        da_thu_cong = (
+            r["trang_thai"] == "da_thuc_hien"
+            and kq_obj.get("qua") == "xu_ly_thu_cong"
+        )
+        nhan_tt = (
+            "Đã xử lý thủ công"
+            if da_thu_cong
+            else NHAN_TRANG_THAI.get(r["trang_thai"], r["trang_thai"])
+        )
         ra.append({
             "id": str(r["id"]),
             "hanh_dong": r["hanh_dong"],
@@ -693,7 +773,7 @@ async def liet_ke(conversation_id: UUID, *, nguoi: dict | None = None) -> list[d
             "nhan_muc": NHAN_MUC.get(r["muc_uy_quyen"], r["muc_uy_quyen"]),
             "ly_do_can_duyet": r["ly_do_can_duyet"],
             "trang_thai": r["trang_thai"],
-            "nhan_trang_thai": NHAN_TRANG_THAI.get(r["trang_thai"], r["trang_thai"]),
+            "nhan_trang_thai": nhan_tt,
             "order_id": str(r["order_id"]) if r["order_id"] else None,
             "message_id": str(r["message_id"]) if r["message_id"] else None,
             "de_xuat": r["de_xuat"] or {},
@@ -706,6 +786,15 @@ async def liet_ke(conversation_id: UUID, *, nguoi: dict | None = None) -> list[d
             "thuc_hien_luc": _iso(r["thuc_hien_luc"]),
             "ket_qua": r["ket_qua"], "loi": r["loi"],
             "duoc_duyet": r["trang_thai"] == "cho_duyet" and not thieu,
-            "thieu_quyen": thieu if r["trang_thai"] == "cho_duyet" else [],
+            "duoc_hoan_tat_thu_cong": (
+                r["trang_thai"] == "cho_xu_ly_thu_cong"
+                and r["hanh_dong"] == "sua_don"
+                and not thieu
+            ),
+            "thieu_quyen": (
+                thieu
+                if r["trang_thai"] in ("cho_duyet", "cho_xu_ly_thu_cong")
+                else []
+            ),
         })
     return ra

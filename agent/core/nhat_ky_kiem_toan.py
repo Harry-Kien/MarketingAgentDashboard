@@ -52,7 +52,8 @@ AN = "[đã ẩn]"
 # soát chi phí cần đọc).
 _KHOA_BI_MAT = re.compile(
     r"(?i)(?:^|_)(token|secret|password|passwd|pwd|mat_khau|bi_mat|apikey|key|"
-    r"credential|credentials|signature|authorization|cookie|private)(?:$|_)")
+    r"credential|credentials|signature|authorization|cookie|private|"
+    r"qr|qr_image|qr_code|imei|session_data|session_cookie)(?:$|_)")
 
 # Suy luận nội bộ của model: không phải căn cứ, không được lưu, không được
 # hiện. Hệ thống hiện không ghi nó — danh sách này canh ngày có ai lỡ ghi.
@@ -234,6 +235,29 @@ NHAN_HANH_DONG = {
     "su_co.ket_thuc": "Kết thúc sự cố",
     "nhat_ky.giai_trinh": "Giải trình / đính chính",
     "nhat_ky.xuat": "Xuất nhật ký",
+    "channel_account.created": "Tạo tài khoản kênh",
+    "channel_account.status_changed": "Đổi trạng thái tài khoản kênh",
+    "channel_account.identity_bound": "Gắn định danh tài khoản kênh",
+    "channel_account.credentials_rotated": "Cập nhật thông tin xác thực kênh",
+    "channel_account.reconnected": "Kết nối lại tài khoản kênh",
+    "channel.dang_ky_webhook": "Đăng ký webhook kênh",
+    "channel.dang_ky_webhook_loi": "Đăng ký webhook kênh thất bại",
+    "zalo_personal.da_khoi_phuc": "Khôi phục phiên Zalo cá nhân",
+    "zalo_personal.can_quet_lai": "Zalo cá nhân mất phiên (cần quét QR)",
+    "zalo_personal.sidecar_khong_toi": "Sidecar Zalo cá nhân không phản hồi",
+    "zalo_personal.lech_bi_mat_sidecar": "Lệch bí mật sidecar Zalo cá nhân",
+    "zalo_personal.giu_phien.error": "Lỗi giữ phiên Zalo cá nhân",
+    "zalo_personal.bo_tin_nhom": "Bỏ qua tin nhóm Zalo cá nhân",
+    "zalo_personal.tin_bo_qua": "Bỏ qua tin Zalo cá nhân không đọc được",
+    "ai.de_xuat.tao": "AI tạo đề xuất chờ duyệt",
+    "ai.de_xuat.trung": "Gộp đề xuất AI trùng lặp",
+    "ai.de_xuat.duyet": "Duyệt đề xuất hành động AI",
+    "ai.de_xuat.thuc_hien": "Thực thi tự động đề xuất AI",
+    "ai.de_xuat.cho_xu_ly_thu_cong": "Chờ xử lý thủ công đề xuất sửa đơn",
+    "ai.de_xuat.xu_ly_thu_cong": "Xác nhận đã xử lý thủ công đề xuất sửa đơn",
+    "ai.de_xuat.tu_choi": "Từ chối đề xuất hành động AI",
+    "ai.de_xuat.het_han": "Đề xuất hành động AI hết hạn",
+    "ai.de_xuat.loi": "Thực thi đề xuất hành động AI bị lỗi",
 }
 
 BUOC_CAN_THIEP = {
@@ -284,8 +308,11 @@ _SQL_TRANG_THAI = f"""CASE
       WHEN EXISTS (SELECT 1 FROM events s WHERE s.kind = 'su_co.danh_dau'
                      AND s.detail ? 'su_kien_goc'
                      AND s.detail ->> 'su_kien_goc' = e.id::text) THEN 'su_co'
-      WHEN e.kind ~ '{_MAU_LOI}' OR e.detail ->> 'ok' = 'false' THEN 'loi'
-      WHEN e.kind = 'ai.soan_nhap' OR e.detail ->> 'trang_thai' = 'cho_duyet' THEN 'cho_duyet'
+      WHEN e.kind ~ '{_MAU_LOI}' OR e.detail ->> 'ok' = 'false'
+           OR COALESCE(NULLIF(e.detail ->> 'trang_thai', ''), e.detail ->> 'status')
+              IN ('loi', 'failed', 'error', 'that_bai', 'degraded', 'reauth_required') THEN 'loi'
+      WHEN e.kind = 'ai.soan_nhap'
+           OR COALESCE(NULLIF(e.detail ->> 'trang_thai', ''), e.detail ->> 'status') = 'cho_duyet' THEN 'cho_duyet'
       WHEN e.kind = 'conversation.escalated' THEN 'chuyen_nguoi'
       ELSE 'thanh_cong' END"""
 
@@ -303,6 +330,9 @@ _SQL_GOC = f"""
 SELECT e.id, e.kind, e.actor, e.ref_id, e.detail, e.created_at,
        nd.id AS nguoi_id,
        COALESCE(NULLIF(nd.ho_ten, ''), nd.ten_dang_nhap) AS nguoi_ten,
+       ca.id AS kenh_tai_khoan_id,
+       ca.display_name AS kenh_tai_khoan_ten,
+       ca.channel AS kenh_tai_khoan_kenh,
        {_SQL_HOI_THOAI} AS hoi_thoai_id,
        {_sql_nhom()} AS nhom,
        {_sql_loai_tac_nhan()} AS loai_tac_nhan,
@@ -315,7 +345,63 @@ SELECT e.id, e.kind, e.actor, e.ref_id, e.detail, e.created_at,
         LIMIT 1) nd ON true
   LEFT JOIN conversations cv ON cv.id = e.ref_id
   LEFT JOIN messages tn ON tn.id = e.ref_id AND cv.id IS NULL
+  LEFT JOIN channel_accounts ca
+    ON ca.id = COALESCE(
+         CASE WHEN e.detail ? 'account_id'
+               AND e.detail ->> 'account_id' ~* '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$'
+              THEN (e.detail ->> 'account_id')::uuid END,
+         cv.account_id,
+         e.ref_id
+       )
 """
+
+
+def _la_su_kien_tai_khoan_kenh(kind: str, detail: dict[str, Any]) -> bool:
+    return kind.startswith(("channel_account.", "zalo_personal.")) or bool(
+        detail.get("account_id")
+    )
+
+
+def _thong_tin_tai_khoan(
+    r: dict[str, Any],
+    kind: str,
+    sach: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Phân giải tên tài khoản từ `channel_accounts` hoặc giá trị dự phòng an toàn."""
+    tk_id = (
+        str(r["kenh_tai_khoan_id"])
+        if r.get("kenh_tai_khoan_id")
+        else (
+            str(sach["account_id"]).strip()
+            if isinstance(sach.get("account_id"), str) and sach["account_id"].strip()
+            else (
+                str(r["ref_id"])
+                if _la_su_kien_tai_khoan_kenh(kind, sach) and r.get("ref_id")
+                else None
+            )
+        )
+    )
+    tk_ten_goc = r.get("kenh_tai_khoan_ten")
+    kenh = r.get("kenh_tai_khoan_kenh") or (
+        sach.get("channel") if isinstance(sach.get("channel"), str) else None
+    )
+    if tk_ten_goc:
+        ten = str(tk_ten_goc)
+        return {"id": tk_id, "ten": ten, "kenh": kenh, "ton_tai": True}, ten
+    if _la_su_kien_tai_khoan_kenh(kind, sach):
+        du_phong = sach.get("display_name") or sach.get("tai_khoan")
+        if isinstance(du_phong, str) and du_phong.strip():
+            ten = f"{du_phong.strip()} (tài khoản đã xoá)"
+        elif tk_id:
+            ten = f"Tài khoản kênh đã xoá ({tk_id[:8]})"
+        else:
+            ten = "Tài khoản kênh không xác định"
+        return {"id": tk_id, "ten": ten, "kenh": kenh, "ton_tai": False}, ten
+    if r.get("hoi_thoai_id"):
+        return None, f"Hội thoại {str(r['hoi_thoai_id'])[:8]}"
+    if r.get("ref_id"):
+        return None, str(r["ref_id"])
+    return None, None
 
 
 def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None) -> dict[str, Any]:
@@ -330,8 +416,11 @@ def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None) -> di
         ten = r.get("nguoi_ten") or r.get("actor")
     elif loai == "ai":
         ten = detail.get("ho_so") if isinstance(detail.get("ho_so"), str) else None
+    elif loai == "he_thong" and isinstance(sach.get("nguoi_thuc_hien"), str) and sach["nguoi_thuc_hien"].strip():
+        ten = sach["nguoi_thuc_hien"].strip()
     tt = r.get("trang_thai") or "thanh_cong"
     nhom = r.get("nhom") or NHOM_MAC_DINH[0]
+    tai_khoan, doi_tuong = _thong_tin_tai_khoan(r, str(r.get("kind") or ""), sach)
     return {
         "id": int(r["id"]),
         "luc": r["created_at"].isoformat() if r.get("created_at") else None,
@@ -342,6 +431,8 @@ def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None) -> di
             "loai": loai, "nhan": LOAI_TAC_NHAN.get(loai, loai), "ten": ten,
             "id": str(r["nguoi_id"]) if r.get("nguoi_id") else None,
         },
+        "tai_khoan": tai_khoan,
+        "doi_tuong": doi_tuong,
         "hoi_thoai_id": str(r["hoi_thoai_id"]) if r.get("hoi_thoai_id") else None,
         "ref_id": str(r["ref_id"]) if r.get("ref_id") else None,
         "luot_id": detail.get("luot_id") if isinstance(detail.get("luot_id"), str) else None,
@@ -377,8 +468,38 @@ def _so_nguyen(x: Any) -> int | None:
 
 
 # Khoá nói lên KẾT QUẢ, theo thứ tự ưu tiên khi tóm một dòng.
-_KHOA_KET_QUA = ("ket_qua", "ly_do", "reason", "loi", "error", "ghi_chu", "ma_don",
-                 "tieu_de", "trang_thai", "ten", "tag", "che_do")
+_KHOA_KET_QUA = (
+    "ket_qua", "ly_do", "reason", "loi", "error", "ghi_chu", "ma_don",
+    "tieu_de", "trang_thai", "status", "ten", "tag", "che_do", "external_account_id",
+)
+
+_NHAN_TRANG_THAI_CHI_TIET = {
+    "active": "Đang hoạt động (active)",
+    "pending": "Chờ kết nối (pending)",
+    "degraded": "Kết nối gián đoạn (degraded)",
+    "reauth_required": "Cần xác thực lại (reauth_required)",
+    "disabled": "Đã tắt (disabled)",
+    "connected": "Đã kết nối (connected)",
+    "disconnected": "Mất kết nối (disconnected)",
+    "thanh_cong": "Thành công",
+    "success": "Thành công",
+    "that_bai": "Thất bại",
+    "failed": "Thất bại",
+    "loi": "Lỗi",
+    "error": "Lỗi",
+    "cho_duyet": "Chờ duyệt",
+}
+
+
+def _nhan_tt_chi_tiet(gia_tri: Any) -> str:
+    s = str(gia_tri or "").strip()
+    if not s:
+        return ""
+    return _NHAN_TRANG_THAI_NGHIEP_VU(s)
+
+
+def _NHAN_TRANG_THAI_NGHIEP_VU(s: str) -> str:
+    return _NHAN_TRANG_THAI_CHI_TIET.get(s.lower(), s)
 
 
 def ket_qua(kind: str, sach: dict[str, Any]) -> str:
@@ -396,11 +517,58 @@ def ket_qua(kind: str, sach: dict[str, Any]) -> str:
     elif kind == "knowledge.retrieved":
         nguon = sach.get("sources") or []
         phan = [f"{len(nguon) if isinstance(nguon, list) else 0} đoạn tài liệu"]
+    elif kind == "channel_account.status_changed":
+        st = sach.get("trang_thai") or sach.get("status")
+        prev = sach.get("previous_status")
+        if prev and st:
+            phan = [f"{_nhan_tt_chi_tiet(prev)} → {_nhan_tt_chi_tiet(st)}"]
+        elif st:
+            phan = [f"trạng thái: {_nhan_tt_chi_tiet(st)}"]
+        else:
+            phan = ["đã đổi trạng thái tài khoản kênh"]
+    elif kind == "channel_account.reconnected":
+        st = sach.get("trang_thai") or sach.get("status") or "active"
+        kq_tt = sach.get("ket_qua") or "thanh_cong"
+        phan = [f"kết nối lại: {_nhan_tt_chi_tiet(kq_tt)}", f"trạng thái: {_nhan_tt_chi_tiet(st)}"]
+        if sach.get("trigger"):
+            phan.append(f"nguồn: {sach['trigger']}")
+    elif kind == "channel_account.identity_bound":
+        ext = sach.get("external_account_id")
+        phan = [f"gắn định danh: {ext}" if ext else "đã gắn định danh tài khoản"]
+    elif kind == "channel_account.credentials_rotated":
+        st = sach.get("trang_thai") or sach.get("status")
+        phan = ["đã làm mới thông tin xác thực"]
+        if st:
+            phan.append(f"trạng thái: {_nhan_tt_chi_tiet(st)}")
+    elif kind == "channel_account.created":
+        st = sach.get("trang_thai") or sach.get("status")
+        kenh = sach.get("channel")
+        phan = [f"kênh: {kenh}" if kenh else "tạo tài khoản kênh"]
+        phan.append(f"trạng thái: {_nhan_tt_chi_tiet(st)}" if st else "thành công")
+    elif kind == "ai.de_xuat.cho_xu_ly_thu_cong":
+        phan = ["chờ xử lý thủ công — chưa sửa đơn"]
+        if sach.get("loi"):
+            phan.append(str(sach["loi"]))
+    elif kind == "ai.de_xuat.xu_ly_thu_cong":
+        kq_obj = sach.get("ket_qua") if isinstance(sach.get("ket_qua"), dict) else {}
+        phan = ["đã xử lý thủ công"]
+        if kq_obj.get("ma_don"):
+            phan.append(f"đơn: {kq_obj['ma_don']}")
+        if sach.get("ghi_chu"):
+            phan.append(f"ghi chú: {sach['ghi_chu']}")
     else:
         phan = []
+        da_co_trang_thai = False
         for k in _KHOA_KET_QUA:
             v = sach.get(k)
-            if v not in (None, "", [], {}):
+            if v in (None, "", [], {}):
+                continue
+            if k in ("trang_thai", "status"):
+                if da_co_trang_thai:
+                    continue
+                da_co_trang_thai = True
+                phan.append(f"trạng thái: {_nhan_tt_chi_tiet(v)}")
+            else:
                 phan.append(f"{k}: {v}" if not isinstance(v, (dict, list)) else f"{k}: …")
             if len(phan) >= 2:
                 break
@@ -585,7 +753,10 @@ TRANG_THAI_DE_XUAT = {
     "da_sua_va_duyet": "Đã sửa rồi duyệt",
     "da_sua": "Đã sửa",
     "tu_choi": "Từ chối",
-    # Vòng đời đề xuất HÀNH ĐỘNG AI (bảng ai_de_xuat, 0065).
+    # Vòng đời đề xuất HÀNH ĐỘNG AI (bảng ai_de_xuat, 0065/0066).
+    "dang_thuc_thi": "Đang kiểm tra và xử lý yêu cầu",
+    "cho_xu_ly_thu_cong": "Chờ xử lý thủ công — chưa sửa đơn",
+    "da_xu_ly_thu_cong": "Đã xử lý thủ công",
     "da_thuc_hien": "Đã thực hiện",
     "loi": "Duyệt nhưng thực hiện lỗi",
     "het_han": "Hết hạn",
@@ -669,8 +840,13 @@ async def _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, gioi_han: int,
         ts.append(hoi_thoai_id)
         dk.append(f"d.conversation_id = ${len(ts)}")
     if trang_thai:
-        ts.append(trang_thai)
-        dk.append(f"d.trang_thai = ${len(ts)}")
+        if trang_thai == "da_xu_ly_thu_cong":
+            dk.append("d.trang_thai = 'da_thuc_hien' AND d.ket_qua ->> 'qua' = 'xu_ly_thu_cong'")
+        elif trang_thai == "da_thuc_hien":
+            dk.append("d.trang_thai = 'da_thuc_hien' AND COALESCE(d.ket_qua ->> 'qua', '') <> 'xu_ly_thu_cong'")
+        else:
+            ts.append(trang_thai)
+            dk.append(f"d.trang_thai = ${len(ts)}")
     if truoc is not None:
         ts.append(truoc)
         dk.append(f"d.tao_luc < ${len(ts)}")
@@ -678,29 +854,50 @@ async def _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, gioi_han: int,
     rows = await db.fetch(
         "SELECT d.id, d.conversation_id, d.hanh_dong, d.trang_thai, d.muc_uy_quyen, "
         "       d.tao_luc, d.de_xuat ->> 'tieu_de' AS tieu_de, "
+        "       d.ket_qua ->> 'qua' AS ket_qua_qua, "
+        "       d.ket_qua ->> 'boi' AS ket_qua_boi, "
+        "       d.thuc_hien_luc, "
         "       COALESCE(d.duyet_luc, d.tu_choi_luc) AS luc_quyet, "
         "       m.dau_vet_ai ->> 'luot_id' AS luot_id, "
         "       (SELECT COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) FROM nguoi_dung "
         "         WHERE id = COALESCE(d.duyet_boi, d.tu_choi_boi)) AS nguoi_quyet "
         "  FROM ai_de_xuat d LEFT JOIN messages m ON m.id = d.message_id "
         f" WHERE {' AND '.join(dk)} ORDER BY d.tao_luc DESC, d.id DESC LIMIT ${len(ts)}", *ts)
-    return [{
-        "id": str(r["id"]),
-        "nguon": "hanh_dong_ai",
-        "loai": r["hanh_dong"],
-        "hoi_thoai_id": str(r["conversation_id"]),
-        "luot_id": r.get("luot_id"),
-        "de_xuat_boi": {"loai": "ai", "ten": "AI"},
-        "tom_tat": lam_sach((r.get("tieu_de") or r["hanh_dong"])[:200], _mat_na=mat_na),
-        "luc_de_xuat": r["tao_luc"].isoformat(),
-        "trang_thai": {"ma": r["trang_thai"],
-                       "nhan": TRANG_THAI_DE_XUAT.get(r["trang_thai"], r["trang_thai"])},
-        "nguoi_quyet": r.get("nguoi_quyet"),
-        "luc_quyet": r["luc_quyet"].isoformat() if r.get("luc_quyet") else None,
-        "nguoi_sua": None,
-        "luc_sua": None,
-        "muc_uy_quyen": r["muc_uy_quyen"],
-    } for r in rows]
+    ra: list[dict[str, Any]] = []
+    for r in rows:
+        ma_tt = (
+            "da_xu_ly_thu_cong"
+            if r["trang_thai"] == "da_thuc_hien" and r.get("ket_qua_qua") == "xu_ly_thu_cong"
+            else r["trang_thai"]
+        )
+        luc_quyet = (
+            r["thuc_hien_luc"].isoformat()
+            if ma_tt == "da_xu_ly_thu_cong" and r.get("thuc_hien_luc")
+            else (r["luc_quyet"].isoformat() if r.get("luc_quyet") else None)
+        )
+        nguoi_quyet = (
+            r.get("ket_qua_boi") or r.get("nguoi_quyet")
+            if ma_tt == "da_xu_ly_thu_cong"
+            else r.get("nguoi_quyet")
+        )
+        ra.append({
+            "id": str(r["id"]),
+            "nguon": "hanh_dong_ai",
+            "loai": r["hanh_dong"],
+            "hoi_thoai_id": str(r["conversation_id"]),
+            "luot_id": r.get("luot_id"),
+            "de_xuat_boi": {"loai": "ai", "ten": "AI"},
+            "tom_tat": lam_sach((r.get("tieu_de") or r["hanh_dong"])[:200], _mat_na=mat_na),
+            "luc_de_xuat": r["tao_luc"].isoformat(),
+            "trang_thai": {"ma": ma_tt,
+                           "nhan": TRANG_THAI_DE_XUAT.get(ma_tt, ma_tt)},
+            "nguoi_quyet": nguoi_quyet,
+            "luc_quyet": luc_quyet,
+            "nguoi_sua": None,
+            "luc_sua": None,
+            "muc_uy_quyen": r["muc_uy_quyen"],
+        })
+    return ra
 
 
 # =====================================================================

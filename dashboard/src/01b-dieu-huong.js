@@ -24,7 +24,7 @@ const MAN_CU = {
  * không mời người ta vào một màn toàn lỗi 403; chốt thật là `can_quyen`
  * ở máy chủ (agent/core/quyen.py), giấu ở đây không bảo vệ được gì. */
 const QUYEN_TAB = {
-  "cv-ca-truc": ["hoi_thoai.doc"],
+  "cv-ca-truc": ["cong_viec.doc"],
   "cv-danh-sach": ["cong_viec.doc"],
   "cc-nhan": ["cau_hinh.doc", "khach.sua"],
   "cc-tu-dong": ["tra_loi_nhanh.sua", "dinh_tuyen.doc"],
@@ -171,6 +171,18 @@ function veTab(man) {
 function doiMan(ten, tab, lamMoi = true) {
   ten = MAN_CU[ten] || ten;
   if (manCuaTab(ten)) { tab = ten; ten = manCuaTab(ten); }
+  if (state.toiQuyen) {
+    if (tab && !tabDuocThay(tab)) {
+      if (!manDuocThay(ten)) {
+        toast("Bạn không có quyền truy cập chức năng này.", true);
+        return false;
+      }
+      tab = null;
+    } else if (!manDuocThay(ten)) {
+      toast("Bạn không có quyền truy cập chức năng này.", true);
+      return false;
+    }
+  }
   state.view = ten;
   if (tab) state.tab[ten] = tab;
   $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
@@ -179,10 +191,17 @@ function doiMan(ten, tab, lamMoi = true) {
   if ($(`#railCaiDatCon [data-view="${ten}"]`)) moNhomCaiDat(true);
   dongMenuDiDong();
   if (lamMoi) refresh();
+  return true;
 }
 
 $$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => doiMan(btn.dataset.view))
+  btn.addEventListener("click", () => {
+    if (btn.dataset.view === "hoithoai") {
+      state.mobileViewingChat = false;
+      $(".convo")?.classList.remove("is-chat-active");
+    }
+    doiMan(btn.dataset.view);
+  })
 );
 
 /* Nối nút tab với khung tab cho trình đọc màn hình (aria-labelledby). Dựng
@@ -241,6 +260,15 @@ function apDungQuyenMenu() {
   const nhom = $("#railCaiDat");
   if (nhom) nhom.hidden = !$$(".rail__item", nhom).some((b) => !b.hidden);
   $$(".tabbar__nut").forEach((b) => { b.hidden = !tabDuocThay(b.dataset.tab); });
+  const docHt = coQuyen("hoi_thoai.doc");
+  const ro = $("#readout");
+  if (ro) ro.hidden = !docHt;
+  const pnChuaGiao = $("#cvChuaGiaoPanel");
+  if (pnChuaGiao) pnChuaGiao.hidden = !docHt;
+  const pnSla = $("#cvSlaPanel");
+  if (pnSla) pnSla.hidden = !docHt;
+  const pnQueue = $("#queue")?.closest(".panel");
+  if (pnQueue) pnQueue.hidden = !docHt;
   if (!manDuocThay(state.view)) {
     const dau = $$(".rail__item").find((b) => !b.hidden);
     if (dau) { doiMan(dau.dataset.view, undefined, false); return; }

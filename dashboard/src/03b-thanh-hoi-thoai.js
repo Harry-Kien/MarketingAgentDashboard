@@ -127,6 +127,8 @@ const ICON_C360 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
  * hàng, và máy chủ trả 404 cho hồ sơ của nhóm. */
 function veThanhThongTin(c, hd) {
   return `<div class="convo__title">
+      <button type="button" class="btn btn--sm btn--ghost convo__back-btn" id="btn-convo-back"
+        title="Quay lại danh sách hội thoại" aria-label="Quay lại danh sách hội thoại">← Quay lại</button>
       <div class="convo__danh">
         <div class="convo__ten">
           <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
@@ -138,7 +140,7 @@ function veThanhThongTin(c, hd) {
                 title="Tạo công việc gắn với hội thoại và khách này">+ Việc</button>` : ""}</div>
       </div>
       <span class="convo__spacer"></span>
-      ${c.contact_id && !laNhom(c) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"
+      ${c.contact_id && !laNhom(c) && (!state.toiQuyen || state.toiQuyen.has("khach.doc")) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"
         data-contact="${c.contact_id}" title="Customer 360" aria-label="Mở Customer 360">${ICON_C360}</button>` : ""}
       ${veHanhDongXuLy(c, hd)}
       <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
@@ -216,6 +218,10 @@ document.addEventListener("click", (ev) => {
  * "khách này hay bom hàng", lỡ bấm sang "Trả lời khách", Enter — câu ấy đi
  * thẳng tới khách. */
 function dangGhiChu(id) {
+  if (typeof state !== "undefined" && state.toiQuyen) {
+    if (!state.toiQuyen.has("hoi_thoai.ghi_chu")) return false;
+    if (!state.toiQuyen.has("hoi_thoai.tra_loi")) return true;
+  }
   return !!(state.soanGhiChu && state.soanGhiChu[id]);
 }
 
@@ -224,6 +230,14 @@ function khoaNhap(id) {
 }
 
 async function guiTuKhungSoan(id, text, laGhiChu) {
+  if (typeof state !== "undefined" && state.toiQuyen) {
+    if (laGhiChu && !state.toiQuyen.has("hoi_thoai.ghi_chu")) {
+      throw new Error("Bạn không có quyền ghi chú nội bộ.");
+    }
+    if (!laGhiChu && !state.toiQuyen.has("hoi_thoai.tra_loi")) {
+      throw new Error("Bạn không có quyền trả lời khách.");
+    }
+  }
   if (laGhiChu) {
     await api(`/inbox/conversations/${id}/ghi-chu`, {
       method: "POST", body: JSON.stringify({ noi_dung: text }),
@@ -238,6 +252,10 @@ async function guiTuKhungSoan(id, text, laGhiChu) {
 document.addEventListener("click", (ev) => {
   const nut = ev.target.closest("[data-soan]");
   if (!nut || !state.openConv) return;
+  if (state.toiQuyen) {
+    if (nut.dataset.soan === "ghichu" && !state.toiQuyen.has("hoi_thoai.ghi_chu")) return;
+    if (nut.dataset.soan === "tra_loi" && !state.toiQuyen.has("hoi_thoai.tra_loi")) return;
+  }
   const id = state.openConv;
   state.soanGhiChu = state.soanGhiChu || {};
   state.soanGhiChu[id] = nut.dataset.soan === "ghichu";
@@ -267,9 +285,15 @@ function veGhiChuTrongLuong(g) {
  * kiểu — không vẽ thẻ nào, để khỏi mời một 403. */
 function veCheDoSoan(id, ghiChuDuoc) {
   if (!ghiChuDuoc) return "";
+  const traLoiDuoc = !(typeof state !== "undefined" && state.toiQuyen) || state.toiQuyen.has("hoi_thoai.tra_loi");
   const ghi = dangGhiChu(id);
   const the = (ma, nhan, bat) => `<button type="button" role="tab" class="soan__tab${bat ? " is-on" : ""}"
     aria-selected="${bat ? "true" : "false"}" data-soan="${ma}">${nhan}</button>`;
+  if (!traLoiDuoc) {
+    return `<div class="soan__che-do" role="tablist" aria-label="Kiểu soạn">
+      ${the("ghichu", "Ghi chú nội bộ", true)}
+    </div>`;
+  }
   return `<div class="soan__che-do" role="tablist" aria-label="Kiểu soạn">
     ${the("tra_loi", "Trả lời khách", !ghi)}${the("ghichu", "Ghi chú nội bộ", ghi)}
   </div>`;

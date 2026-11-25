@@ -238,6 +238,7 @@ $("#aiBat")?.addEventListener("change", async (e) => {
 
 function drawTape(tape) {
   const strip = $("#tape");
+  if (!strip) return;
   const SLOTS = 72;
   const pad = Math.max(0, SLOTS - tape.length);
   strip.innerHTML =
@@ -303,7 +304,7 @@ const MAN_CU = {
  * không mời người ta vào một màn toàn lỗi 403; chốt thật là `can_quyen`
  * ở máy chủ (agent/core/quyen.py), giấu ở đây không bảo vệ được gì. */
 const QUYEN_TAB = {
-  "cv-ca-truc": ["hoi_thoai.doc"],
+  "cv-ca-truc": ["cong_viec.doc"],
   "cv-danh-sach": ["cong_viec.doc"],
   "cc-nhan": ["cau_hinh.doc", "khach.sua"],
   "cc-tu-dong": ["tra_loi_nhanh.sua", "dinh_tuyen.doc"],
@@ -450,6 +451,18 @@ function veTab(man) {
 function doiMan(ten, tab, lamMoi = true) {
   ten = MAN_CU[ten] || ten;
   if (manCuaTab(ten)) { tab = ten; ten = manCuaTab(ten); }
+  if (state.toiQuyen) {
+    if (tab && !tabDuocThay(tab)) {
+      if (!manDuocThay(ten)) {
+        toast("Bạn không có quyền truy cập chức năng này.", true);
+        return false;
+      }
+      tab = null;
+    } else if (!manDuocThay(ten)) {
+      toast("Bạn không có quyền truy cập chức năng này.", true);
+      return false;
+    }
+  }
   state.view = ten;
   if (tab) state.tab[ten] = tab;
   $$(".rail__item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === ten));
@@ -458,10 +471,17 @@ function doiMan(ten, tab, lamMoi = true) {
   if ($(`#railCaiDatCon [data-view="${ten}"]`)) moNhomCaiDat(true);
   dongMenuDiDong();
   if (lamMoi) refresh();
+  return true;
 }
 
 $$(".rail__item").forEach((btn) =>
-  btn.addEventListener("click", () => doiMan(btn.dataset.view))
+  btn.addEventListener("click", () => {
+    if (btn.dataset.view === "hoithoai") {
+      state.mobileViewingChat = false;
+      $(".convo")?.classList.remove("is-chat-active");
+    }
+    doiMan(btn.dataset.view);
+  })
 );
 
 /* Nối nút tab với khung tab cho trình đọc màn hình (aria-labelledby). Dựng
@@ -520,6 +540,15 @@ function apDungQuyenMenu() {
   const nhom = $("#railCaiDat");
   if (nhom) nhom.hidden = !$$(".rail__item", nhom).some((b) => !b.hidden);
   $$(".tabbar__nut").forEach((b) => { b.hidden = !tabDuocThay(b.dataset.tab); });
+  const docHt = coQuyen("hoi_thoai.doc");
+  const ro = $("#readout");
+  if (ro) ro.hidden = !docHt;
+  const pnChuaGiao = $("#cvChuaGiaoPanel");
+  if (pnChuaGiao) pnChuaGiao.hidden = !docHt;
+  const pnSla = $("#cvSlaPanel");
+  if (pnSla) pnSla.hidden = !docHt;
+  const pnQueue = $("#queue")?.closest(".panel");
+  if (pnQueue) pnQueue.hidden = !docHt;
   if (!manDuocThay(state.view)) {
     const dau = $$(".rail__item").find((b) => !b.hidden);
     if (dau) { doiMan(dau.dataset.view, undefined, false); return; }
@@ -1030,6 +1059,13 @@ function veNutThongBao() {
 veNutThongBao();
 
 async function loadOverview() {
+  if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.doc")) {
+    const ro = $("#readout");
+    if (ro) ro.hidden = true;
+    const pnQueue = $("#queue")?.closest(".panel");
+    if (pnQueue) pnQueue.hidden = true;
+    return;
+  }
   const o = await api("/overview");
   applyRuntime(o.runtime);
   if (o.public_base_url) PUBLIC_BASE = o.public_base_url;
@@ -1251,6 +1287,8 @@ function wireConvRows(scope) {
   $$(`${scope} [data-conv]`).forEach((el) =>
     el.addEventListener("click", () => {
       state.openConv = el.dataset.conv;
+      state.mobileViewingChat = true;
+      $(".convo")?.classList.add("is-chat-active");
       // Đánh dấu do NGƯỜI bấm, không phải do vòng làm mới vẽ lại: chỉ cú
       // bấm mới được kéo màn hình xuống khung chi tiết (xem loadThread).
       state.cuonToiChiTiet = true;
@@ -1470,6 +1508,7 @@ async function loadThread(id) {
   }
   /* Nhãn và ghi chú nội bộ có quyền riêng từ 0058 (`hoi_thoai.ghi_chu`).
    * Vẽ nút cho người không có quyền là mời một 403 mỗi lần bấm. */
+  const traLoiDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.tra_loi"));
   const ghiChuDuoc = !!(state.toiQuyen && state.toiQuyen.has("hoi_thoai.ghi_chu"));
   const ghi = ghiChuDuoc && dangGhiChu(id);
   const hd = hanhDongXuLy(c, { toiId: state.toiId, quyen: state.toiQuyen, giaoDuoc: !!giaoDuoc });
@@ -1501,16 +1540,19 @@ async function loadThread(id) {
   const dang_o_day = !thread_cu
     || thread_cu.scrollHeight - thread_cu.scrollTop - thread_cu.clientHeight < 40;
   const cuon_cu = thread_cu ? thread_cu.scrollTop : 0;
+  const drawer_cu = $("#convo-drawer");
+  const backdrop_cu = $("#convo-drawer-backdrop");
+  const giuDrawer = !!(drawer_cu && backdrop_cu && state.moChiTietHT === String(c.id));
+  const drawer_cuon_cu = giuDrawer ? ($(".convo-drawer__content")?.scrollTop || 0) : 0;
+  if (giuDrawer) {
+    drawer_cu.remove();
+    backdrop_cu.remove();
+  }
 
   /* Thanh thông tin: Tên | Nhãn | Customer 360 | Hành động | Chi tiết
    * (03b). Trạng thái, kênh, Mode, ưu tiên, Version, SLA KHÔNG ở đây —
    * ưu tiên/Version/chế độ AI vào panel "Chi tiết" khi người trực mở. */
-  $("#convdetail").innerHTML = `
-    ${veThanhThongTin(c, hd)}
-    ${veChiTietHoiThoai(c, laCuaToi)}
-    <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
-      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
-    </div>
+  const formSoan = (traLoiDuoc || ghiChuDuoc) ? `
     <form class="convo__bar${ghi ? " convo__bar--ghichu" : ""}" id="replyform">
       ${veCheDoSoan(id, ghiChuDuoc)}
       <div class="convo__soan">
@@ -1522,12 +1564,40 @@ async function loadThread(id) {
         </span>`}
         <button type="submit" class="btn ${ghi ? "btn--ghichu" : "btn--primary"}">${ghi ? "Lưu ghi chú" : "Gửi"}</button>
       </div>
-    </form>`;
+    </form>` : "";
+
+  $("#convdetail").innerHTML = `
+    ${veThanhThongTin(c, hd)}
+    ${giuDrawer ? "" : veChiTietHoiThoai(c, laCuaToi)}
+    <div class="thread" id="thread">${msgs || '<p class="empty">Chưa có tin nhắn.</p>'}
+      ${c.typing ? '<div class="msg msg--agent"><div class="typing"><i></i><i></i><i></i></div></div>' : ""}
+    </div>
+    ${formSoan}`;
+
+  if (giuDrawer) {
+    $("#convdetail").appendChild(backdrop_cu);
+    $("#convdetail").appendChild(drawer_cu);
+    if (typeof capNhatChiTietHoiThoai === "function") capNhatChiTietHoiThoai(drawer_cu, c, laCuaToi);
+    const content = $(".convo-drawer__content");
+    if (content && drawer_cuon_cu > 0) content.scrollTop = drawer_cuon_cu;
+  } else {
+    const d = $("#convo-drawer");
+    if (d && d.classList.contains("is-animating")) {
+      d.addEventListener("animationend", () => d.classList.remove("is-animating"), { once: true });
+    }
+  }
+
+  state.vuaMoChiTietHT = null;
 
   const thread = $("#thread");
   if (thread) thread.scrollTop = dang_o_day ? thread.scrollHeight : cuon_cu;
   danhDauDaDoc(id, c.messages);
   cuonToiChiTietNeuHep();
+  if (state.mobileViewingChat) {
+    $(".convo")?.classList.add("is-chat-active");
+  } else if (!state.openConv) {
+    $(".convo")?.classList.remove("is-chat-active");
+  }
 
   /* Trả lại bản nháp.
    *
@@ -1676,7 +1746,10 @@ async function loadThread(id) {
   );
 
   const openContact = $("#open-contact");
-  if (openContact) openContact.addEventListener("click", () => openCustomer(openContact.dataset.contact));
+  if (openContact) openContact.addEventListener("click", () => {
+    if (state.toiQuyen && !state.toiQuyen.has("khach.doc")) return;
+    openCustomer(openContact.dataset.contact);
+  });
 
   // Tiếp quản / Kết thúc / Đổi chế độ / Mở lại: trình nghe ủy quyền ở
   // 03b-thanh-hoi-thoai.js — nút nằm trong menu "⋯" dựng lại liên tục.
@@ -1700,6 +1773,10 @@ async function loadThread(id) {
       // Kiểu ghi chú không vẽ nút đính kèm; chặn thêm ở đây vì tệp đi thẳng
       // tới KHÁCH — ghi chú nội bộ không bao giờ được đi đường này.
       if (!f || dangGhiChu(id)) return;
+      if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.tra_loi")) {
+        toast("Bạn không có quyền gửi tệp cho khách.", true);
+        return;
+      }
       nutKem.disabled = true;
       const chu = nutKem.textContent;
       nutKem.textContent = "⏳";
@@ -1736,27 +1813,38 @@ async function loadThread(id) {
     });
   }
 
-  $("#replyform").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const text = new FormData(ev.target).get("text").trim();
-    if (!text) return;
-    // Đọc kiểu soạn MỘT lần, trước mọi await: người bấm đổi thẻ trong lúc
-    // chờ mạng không được làm ghi chú đổi đường thành tin gửi khách.
-    const laGhiChu = dangGhiChu(id);
-    try {
-      const r = await guiTuKhungSoan(id, text, laGhiChu);
-      if (laGhiChu) toast("Đã lưu ghi chú nội bộ — khách không thấy.");
-      else toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
-      ev.target.reset();
-      // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
-      // trở vào khung và người trực tưởng tin chưa gửi đi.
-      if (state.nhapTheoHoiThoai) {
-        delete state.nhapTheoHoiThoai[laGhiChu ? `${id}:ghichu` : String(id)];
-      }
-      refresh();
-    } catch (e) { toast(e.message, true); }
-  });
+  if ($("#replyform")) {
+    $("#replyform").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const text = new FormData(ev.target).get("text").trim();
+      if (!text) return;
+      // Đọc kiểu soạn MỘT lần, trước mọi await: người bấm đổi thẻ trong lúc
+      // chờ mạng không được làm ghi chú đổi đường thành tin gửi khách.
+      const laGhiChu = dangGhiChu(id);
+      try {
+        const r = await guiTuKhungSoan(id, text, laGhiChu);
+        if (laGhiChu) toast("Đã lưu ghi chú nội bộ — khách không thấy.");
+        else toast(r.ok ? "Đã gửi." : "Không gửi được: " + r.detail, !r.ok);
+        ev.target.reset();
+        // Xoá bản nháp đã lưu, nếu không lần dựng lại kế tiếp sẽ chép nó
+        // trở vào khung và người trực tưởng tin chưa gửi đi.
+        if (state.nhapTheoHoiThoai) {
+          delete state.nhapTheoHoiThoai[laGhiChu ? `${id}:ghichu` : String(id)];
+        }
+        refresh();
+      } catch (e) { toast(e.message, true); }
+    });
+  }
 }
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#btn-convo-back")) {
+    state.mobileViewingChat = false;
+    state.moChiTietHT = null;
+    $(".convo")?.classList.remove("is-chat-active");
+    $$("#convlist .row.is-on").forEach((r) => r.classList.remove("is-on"));
+  }
+});
 
 /* ---------------- Thanh thông tin hội thoại (mục 6 của bảng việc) ----------------
  *
@@ -1887,6 +1975,8 @@ const ICON_C360 = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
  * hàng, và máy chủ trả 404 cho hồ sơ của nhóm. */
 function veThanhThongTin(c, hd) {
   return `<div class="convo__title">
+      <button type="button" class="btn btn--sm btn--ghost convo__back-btn" id="btn-convo-back"
+        title="Quay lại danh sách hội thoại" aria-label="Quay lại danh sách hội thoại">← Quay lại</button>
       <div class="convo__danh">
         <div class="convo__ten">
           <span class="convo__name">${esc(c.customer_name || "Khách")}</span>
@@ -1898,7 +1988,7 @@ function veThanhThongTin(c, hd) {
                 title="Tạo công việc gắn với hội thoại và khách này">+ Việc</button>` : ""}</div>
       </div>
       <span class="convo__spacer"></span>
-      ${c.contact_id && !laNhom(c) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"
+      ${c.contact_id && !laNhom(c) && (!state.toiQuyen || state.toiQuyen.has("khach.doc")) ? `<button type="button" class="btn btn--sm btn--icon" id="open-contact"
         data-contact="${c.contact_id}" title="Customer 360" aria-label="Mở Customer 360">${ICON_C360}</button>` : ""}
       ${veHanhDongXuLy(c, hd)}
       <button type="button" class="btn btn--sm btn--ghost" id="btn-chitiet-ht"
@@ -1976,6 +2066,10 @@ document.addEventListener("click", (ev) => {
  * "khách này hay bom hàng", lỡ bấm sang "Trả lời khách", Enter — câu ấy đi
  * thẳng tới khách. */
 function dangGhiChu(id) {
+  if (typeof state !== "undefined" && state.toiQuyen) {
+    if (!state.toiQuyen.has("hoi_thoai.ghi_chu")) return false;
+    if (!state.toiQuyen.has("hoi_thoai.tra_loi")) return true;
+  }
   return !!(state.soanGhiChu && state.soanGhiChu[id]);
 }
 
@@ -1984,6 +2078,14 @@ function khoaNhap(id) {
 }
 
 async function guiTuKhungSoan(id, text, laGhiChu) {
+  if (typeof state !== "undefined" && state.toiQuyen) {
+    if (laGhiChu && !state.toiQuyen.has("hoi_thoai.ghi_chu")) {
+      throw new Error("Bạn không có quyền ghi chú nội bộ.");
+    }
+    if (!laGhiChu && !state.toiQuyen.has("hoi_thoai.tra_loi")) {
+      throw new Error("Bạn không có quyền trả lời khách.");
+    }
+  }
   if (laGhiChu) {
     await api(`/inbox/conversations/${id}/ghi-chu`, {
       method: "POST", body: JSON.stringify({ noi_dung: text }),
@@ -1998,6 +2100,10 @@ async function guiTuKhungSoan(id, text, laGhiChu) {
 document.addEventListener("click", (ev) => {
   const nut = ev.target.closest("[data-soan]");
   if (!nut || !state.openConv) return;
+  if (state.toiQuyen) {
+    if (nut.dataset.soan === "ghichu" && !state.toiQuyen.has("hoi_thoai.ghi_chu")) return;
+    if (nut.dataset.soan === "tra_loi" && !state.toiQuyen.has("hoi_thoai.tra_loi")) return;
+  }
   const id = state.openConv;
   state.soanGhiChu = state.soanGhiChu || {};
   state.soanGhiChu[id] = nut.dataset.soan === "ghichu";
@@ -2027,9 +2133,15 @@ function veGhiChuTrongLuong(g) {
  * kiểu — không vẽ thẻ nào, để khỏi mời một 403. */
 function veCheDoSoan(id, ghiChuDuoc) {
   if (!ghiChuDuoc) return "";
+  const traLoiDuoc = !(typeof state !== "undefined" && state.toiQuyen) || state.toiQuyen.has("hoi_thoai.tra_loi");
   const ghi = dangGhiChu(id);
   const the = (ma, nhan, bat) => `<button type="button" role="tab" class="soan__tab${bat ? " is-on" : ""}"
     aria-selected="${bat ? "true" : "false"}" data-soan="${ma}">${nhan}</button>`;
+  if (!traLoiDuoc) {
+    return `<div class="soan__che-do" role="tablist" aria-label="Kiểu soạn">
+      ${the("ghichu", "Ghi chú nội bộ", true)}
+    </div>`;
+  }
   return `<div class="soan__che-do" role="tablist" aria-label="Kiểu soạn">
     ${the("tra_loi", "Trả lời khách", !ghi)}${the("ghichu", "Ghi chú nội bộ", ghi)}
   </div>`;
@@ -5007,12 +5119,33 @@ $("#nsNguoi")?.addEventListener("click", async (e) => {
 
 /* ---------------- vòng làm mới ---------------- */
 
+async function dongBoQuyen() {
+  try {
+    const nguoi = await api("/toi");
+    const moi = new Set(nguoi.quyen || []);
+    const cu = state.toiQuyen;
+    const khac = !cu || cu.size !== moi.size || [...moi].some((q) => !cu.has(q));
+    if (khac) {
+      state.toiId = nguoi.id;
+      state.toiQuyen = moi;
+      if (!coQuyen("hoi_thoai.doc") && state.stream) {
+        state.stream.close();
+        state.stream = null;
+      } else if (coQuyen("hoi_thoai.doc") && !state.stream) {
+        startInboxStream();
+      }
+      apDungQuyenMenu();
+    }
+  } catch { /* bỏ qua khi mất mạng tạm thời; api() đã tự xử lý 401 */ }
+}
+
 async function refresh() {
   // Chuông chạy RIÊNG, không await: nó tự nuốt lỗi của mình, và một màn
   // hỏng ở dưới không được làm chuông đứng (19-thong-bao.js).
   taiSoThongBao();
   try {
-    await loadOverview();
+    await dongBoQuyen();
+    if (coQuyen("hoi_thoai.doc")) await loadOverview();
     // Mô-đun đăng ký SAU lần đầu tab hiện vẫn được gắn ở nhịp kế tiếp.
     ganTabDangHien();
     if (state.view === "hoithoai") await loadConversations();
@@ -5068,7 +5201,7 @@ async function refresh() {
 }
 
 function startInboxStream() {
-  if (!("EventSource" in window)) return;
+  if (!("EventSource" in window) || !coQuyen("hoi_thoai.doc") || state.stream) return;
   const stream = new EventSource("/api/inbox/events");
   state.stream = stream;      // để api() đóng được khi phiên hết
   const schedule = () => {
@@ -5076,7 +5209,7 @@ function startInboxStream() {
     inboxRefreshTimer = setTimeout(async () => {
       taiSoThongBao();
       try {
-        await loadOverview();
+        if (coQuyen("hoi_thoai.doc")) await loadOverview();
         if (state.view === "hoithoai") await loadConversations();
         if (state.view === "khachhang") await loadContacts();
       } catch { /* EventSource tự nối lại; polling 6 giây vẫn là fallback. */ }
@@ -5086,16 +5219,16 @@ function startInboxStream() {
      thiếu `sla.resolution_breached` là hội thoại trễ hạn giải quyết chỉ hiện
      ra ở nhịp 6 giây sau — hoặc không bao giờ, khi tab đang ở màn khác. */
   ["message.created", "message.sent", "conversation.updated", "conversation.takeover",
-   "conversation.released", "conversation.priority_changed",
-   "sla.first_response_warning", "sla.first_response_breached",
-   "sla.resolution_warning", "sla.resolution_breached",
-   "sla.handover_response_warning", "sla.handover_response_breached"]
+    "conversation.released", "conversation.priority_changed",
+    "sla.first_response_warning", "sla.first_response_breached",
+    "sla.resolution_warning", "sla.resolution_breached",
+    "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, schedule));
   /* Màn Phân tích không theo nhịp 6 giây; sự kiện SLA mới thì đánh dấu để
      lần tới mở màn (hoặc đang mở) tính lại. */
   ["sla.first_response_breached", "sla.resolution_breached",
-   "sla.first_response_warning", "sla.resolution_warning",
-   "sla.handover_response_warning", "sla.handover_response_breached"]
+    "sla.first_response_warning", "sla.resolution_warning",
+    "sla.handover_response_warning", "sla.handover_response_breached"]
     .forEach((topic) => stream.addEventListener(topic, () => {
       state.ptDaTai = false;
     }));
@@ -5278,11 +5411,11 @@ async function loadKetNoi() {
           <span class="health-dot health-dot--${esc(account.status)}"></span>
           <div><b>${esc(account.display_name)}</b><small>${esc(account.external_account_id || "Chưa có provider ID")}</small>
             ${account.ly_do_hong
-              /* Lý do NẰM LẠI trên thẻ. Toast báo xong là biến mất, nên
-                 người mở dashboard sáng hôm sau chỉ thấy một chữ vàng
-                 trống rỗng và không biết phải làm gì. */
-              ? `<span class="row__sub row__sub--loi">${esc(account.ly_do_hong)}</span>`
-              : ""}
+            /* Lý do NẰM LẠI trên thẻ. Toast báo xong là biến mất, nên
+               người mở dashboard sáng hôm sau chỉ thấy một chữ vàng
+               trống rỗng và không biết phải làm gì. */
+            ? `<span class="row__sub row__sub--loi">${esc(account.ly_do_hong)}</span>`
+            : ""}
             ${callback ? `<code class="callback" title="Callback URL">${esc(callback)}</code>` : ""}</div>
           <span class="status-pill status-pill--${esc(account.status)}">${esc(ACCOUNT_STATUS_LABEL[account.status] || account.status)}</span>
           ${account.agent_bat === false
@@ -5295,23 +5428,21 @@ async function loadKetNoi() {
             ? `<span class="status-pill status-pill--degraded" title="${esc(account.agent_tat_ly_do || "không ghi lý do")}">agent TẮT</span>`
             : ""}
           <div class="token-slot" data-tokenslot="${account.id}">${
-            /* Kết quả Sức khoẻ phải SỐNG QUA vòng làm mới 6 giây: thẻ được
-               dựng lại innerHTML mỗi vòng, ghi thẳng vào ô là mất sau vài
-               giây và người bấm tưởng nút không làm gì. */
-            (state.sucKhoeKenh || {})[account.id] || ""}</div>
+          /* Kết quả Sức khoẻ phải SỐNG QUA vòng làm mới 6 giây: thẻ được
+             dựng lại innerHTML mỗi vòng, ghi thẳng vào ô là mất sau vài
+             giây và người bấm tưởng nút không làm gì. */
+          (state.sucKhoeKenh || {})[account.id] || ""}</div>
           <div class="account-actions">
             ${account.channel === "zalo_personal" ? `<button class="btn btn--sm" data-qr="${account.id}">Quét QR</button>` : ""}
             ${["facebook", "instagram"].includes(account.channel) && account.status === "pending" ? `<button class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : ""}
             ${account.status !== "active" ? `<button class="btn btn--sm" data-verify="${account.id}">Xác minh provider</button>` : `<button class="btn btn--sm" data-disable="${account.id}">Tạm ngắt</button>`}
             <button class="btn btn--sm btn--ghost" data-health="${account.id}">Sức khoẻ</button>
             <button class="btn btn--sm btn--ghost" data-agentbat="${account.id}"
-              data-bat="${account.agent_bat === false ? "1" : "0"}">${
-              account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
+              data-bat="${account.agent_bat === false ? "1" : "0"}">${account.agent_bat === false ? "Bật agent" : "Tắt agent"}</button>
             ${hoSoAgent.ds.length ? `<select class="hsa-chon" data-hsagan="${account.id}"
               title="Hồ sơ agent trả lời kênh này" aria-label="Hồ sơ agent cho ${esc(account.display_name)}">
               <option value="">Mặc định</option>
-              ${hoSoAgent.ds.map((h) => `<option value="${esc(h.id)}"${
-                h.id === account.agent_ho_so_id ? " selected" : ""}>${esc(h.ten)}</option>`).join("")}
+              ${hoSoAgent.ds.map((h) => `<option value="${esc(h.id)}"${h.id === account.agent_ho_so_id ? " selected" : ""}>${esc(h.ten)}</option>`).join("")}
             </select>` : ""}
             <button class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
               data-ten-tk="${esc(account.display_name)}">Xoá</button>
@@ -5324,36 +5455,36 @@ async function loadKetNoi() {
     </section>`;
     }).join("");
 
-/* Mã lỗi một mình KHÔNG hành động được.
- *
- * `provider.unreachable` đúng cho cả "sidecar chưa bật" lẫn "mạng chết"
- * lẫn "token hết hạn" — ba việc phải làm hoàn toàn khác nhau. Máy chủ đã
- * trả kèm `detail.ly_do` từ bản vá trước; giao diện thì vứt đi và chỉ hiện
- * cái mã.
- *
- * Hậu quả đo được: người dùng thấy "provider.unreachable", không biết làm
- * gì, phải hỏi — trong khi câu trả lời "sidecar không phản hồi" đã nằm sẵn
- * trong chính phản hồi ấy. */
-const GOI_Y_LOI = {
-  "provider.unreachable": "Kiểm tra dịch vụ đó đã chạy chưa.",
-  "provider.unauthorized": "Credential sai hoặc đã hết hạn — nhập lại.",
-  "provider.rejected": "Provider từ chối. Xem lý do bên dưới.",
-  "provider.invalid_response": "Provider trả về dữ liệu lạ.",
-};
+  /* Mã lỗi một mình KHÔNG hành động được.
+   *
+   * `provider.unreachable` đúng cho cả "sidecar chưa bật" lẫn "mạng chết"
+   * lẫn "token hết hạn" — ba việc phải làm hoàn toàn khác nhau. Máy chủ đã
+   * trả kèm `detail.ly_do` từ bản vá trước; giao diện thì vứt đi và chỉ hiện
+   * cái mã.
+   *
+   * Hậu quả đo được: người dùng thấy "provider.unreachable", không biết làm
+   * gì, phải hỏi — trong khi câu trả lời "sidecar không phản hồi" đã nằm sẵn
+   * trong chính phản hồi ấy. */
+  const GOI_Y_LOI = {
+    "provider.unreachable": "Kiểm tra dịch vụ đó đã chạy chưa.",
+    "provider.unauthorized": "Credential sai hoặc đã hết hạn — nhập lại.",
+    "provider.rejected": "Provider từ chối. Xem lý do bên dưới.",
+    "provider.invalid_response": "Provider trả về dữ liệu lạ.",
+  };
 
-function lyDoKetNoi(kq) {
-  const ly_do = kq && kq.detail && kq.detail.ly_do;
-  const goi_y = GOI_Y_LOI[kq && kq.code] || "";
-  /* Giữ CẢ mã: người vận hành đọc lý do, còn mã là thứ tra được trong tài
-     liệu và nhắn cho người khác. Bỏ mã đi là mất đường tra cứu. */
-  return [kq && kq.code, ly_do, goi_y].filter(Boolean).join(" — ");
-}
+  function lyDoKetNoi(kq) {
+    const ly_do = kq && kq.detail && kq.detail.ly_do;
+    const goi_y = GOI_Y_LOI[kq && kq.code] || "";
+    /* Giữ CẢ mã: người vận hành đọc lý do, còn mã là thứ tra được trong tài
+       liệu và nhắn cho người khác. Bỏ mã đi là mất đường tra cứu. */
+    return [kq && kq.code, ly_do, goi_y].filter(Boolean).join(" — ");
+  }
 
   $$('[data-verify]').forEach((button) => button.addEventListener("click", async () => {
     try {
       const result = await api(`/channel-accounts/${button.dataset.verify}/verify`, { method: "POST" });
       toast(result.ok ? "Provider đã xác minh; tài khoản sẵn sàng."
-                      : `Chưa xác minh được: ${lyDoKetNoi(result)}`, !result.ok);
+        : `Chưa xác minh được: ${lyDoKetNoi(result)}`, !result.ok);
       loadKetNoi();
     } catch (e) { toast(e.message, true); }
   }));
@@ -5389,8 +5520,10 @@ function lyDoKetNoi(kq) {
       const d = await hoiHop({
         tieu_de: "Tắt agent cho kênh này",
         phu: "Tin khách vẫn vào và vẫn chuyển cho người — hệ thống tự tạo một công việc cho mỗi hội thoại.",
-        truong: [{ name: "ly_do", label: "Lý do", hint: "hiện trên thẻ kênh và trong nhật ký",
-                   placeholder: "Ví dụ: Trang không phải shop mỹ phẩm", maxlength: 300 }],
+        truong: [{
+          name: "ly_do", label: "Lý do", hint: "hiện trên thẻ kênh và trong nhật ký",
+          placeholder: "Ví dụ: Trang không phải shop mỹ phẩm", maxlength: 300
+        }],
         nut: "Tắt agent", nguy_hiem: true,
       });
       if (!d) return;
@@ -5432,9 +5565,9 @@ function lyDoKetNoi(kq) {
       return;
     }
     if (!confirm(
-        `Xoá hẳn "${ten}" khỏi hệ thống?\n\n` +
-        "Credential đã lưu sẽ bị xoá theo và không khôi phục được.\n" +
-        "Tài khoản này chưa có hội thoại nào nên không mất lịch sử.")) return;
+      `Xoá hẳn "${ten}" khỏi hệ thống?\n\n` +
+      "Credential đã lưu sẽ bị xoá theo và không khôi phục được.\n" +
+      "Tài khoản này chưa có hội thoại nào nên không mất lịch sử.")) return;
 
     try {
       await api("/channel-accounts/" + id, { method: "DELETE" });
@@ -5524,7 +5657,7 @@ function lyDoKetNoi(kq) {
     button.textContent = "Đang đăng ký...";
     try {
       const r = await api(`/channel-accounts/${button.dataset.subwebhook}/dang-ky-webhook`,
-                          { method: "POST" });
+        { method: "POST" });
       toast(`${r.trang} đã đăng ký webhook — tin khách sẽ về từ giờ.`);
     } catch (e) {
       toast(e.message, true);
@@ -5684,64 +5817,100 @@ const KENH_TRUONG = {
   },
   zalo_oa: {
     truong: [
-      { o: "external_account_id", nhan: "OA ID", bat_buoc: true,
-        goi_y: "Zalo OA Console → Thông tin OA → OA ID" },
-      { o: "app_id", nhan: "App ID", bat_buoc: true,
-        goi_y: "Zalo Developers → Ứng dụng của bạn → App ID" },
-      { o: "app_secret", nhan: "Secret key", bat_buoc: true,
-        goi_y: "Zalo Developers → Ứng dụng → Secret Key" },
-      { o: "secondary_secret", nhan: "Refresh token", bat_buoc: true,
-        goi_y: "Zalo OA Console → sau khi cấp quyền cho ứng dụng, lấy Refresh Token" },
+      {
+        o: "external_account_id", nhan: "OA ID", bat_buoc: true,
+        goi_y: "Zalo OA Console → Thông tin OA → OA ID"
+      },
+      {
+        o: "app_id", nhan: "App ID", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng của bạn → App ID"
+      },
+      {
+        o: "app_secret", nhan: "Secret key", bat_buoc: true,
+        goi_y: "Zalo Developers → Ứng dụng → Secret Key"
+      },
+      {
+        o: "secondary_secret", nhan: "Refresh token", bat_buoc: true,
+        goi_y: "Zalo OA Console → sau khi cấp quyền cho ứng dụng, lấy Refresh Token"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai để Zalo gọi webhook vào.",
   },
   facebook: {
     dang_nhap: true,
     truong: [
-      { o: "external_account_id", nhan: "Page ID", bat_buoc: true,
-        goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang" },
-      { o: "access_token", nhan: "Page access token", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Messenger → Settings → Generate Token cho đúng Trang" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT. Phải dán đúng chuỗi này vào Meta khi đăng ký webhook" },
+      {
+        o: "external_account_id", nhan: "Page ID", bat_buoc: true,
+        goi_y: "Meta Business → Trang của bạn → Giới thiệu → ID trang"
+      },
+      {
+        o: "access_token", nhan: "Page access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Messenger → Settings → Generate Token cho đúng Trang"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT. Phải dán đúng chuỗi này vào Meta khi đăng ký webhook"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai, rồi đăng ký webhook trong Meta App Dashboard.",
   },
   instagram: {
     dang_nhap: true,
     truong: [
-      { o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID" },
-      { o: "access_token", nhan: "Access token", bat_buoc: true,
-        goi_y: "Cùng token với Trang Facebook đã liên kết Instagram" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+      {
+        o: "external_account_id", nhan: "Instagram business ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Instagram → Instagram Business Account ID"
+      },
+      {
+        o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Cùng token với Trang Facebook đã liên kết Instagram"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta"
+      },
     ],
     ke_tiep: "Instagram phải là tài khoản Business và đã liên kết một Trang Facebook.",
   },
   whatsapp: {
     truong: [
-      { o: "external_account_id", nhan: "Phone number ID", bat_buoc: true,
-        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Phone number ID (KHÔNG phải số điện thoại)" },
-      { o: "access_token", nhan: "Access token", bat_buoc: true,
-        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Temporary/Permanent token" },
-      { o: "app_secret", nhan: "App secret", bat_buoc: true,
-        goi_y: "Meta App Dashboard → Settings → Basic → App Secret" },
-      { o: "verify_token", nhan: "Verify token", bat_buoc: true,
-        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta" },
+      {
+        o: "external_account_id", nhan: "Phone number ID", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Phone number ID (KHÔNG phải số điện thoại)"
+      },
+      {
+        o: "access_token", nhan: "Access token", bat_buoc: true,
+        goi_y: "Meta App Dashboard → WhatsApp → API Setup → Temporary/Permanent token"
+      },
+      {
+        o: "app_secret", nhan: "App secret", bat_buoc: true,
+        goi_y: "Meta App Dashboard → Settings → Basic → App Secret"
+      },
+      {
+        o: "verify_token", nhan: "Verify token", bat_buoc: true,
+        goi_y: "Chuỗi bạn TỰ ĐẶT, dùng chung với webhook Meta"
+      },
     ],
     ke_tiep: "Cần URL HTTPS công khai để Meta gọi webhook vào.",
   },
   webchat: {
     truong: [
-      { o: "external_account_id", nhan: "Khoá website", bat_buoc: true,
-        goi_y: "Tên ngắn không dấu để phân biệt từng website, ví dụ: web-chinh" },
-      { o: "secondary_secret", nhan: "Widget secret", bat_buoc: true,
-        goi_y: "Bạn tự đặt — chuỗi ngẫu nhiên từ 32 ký tự. Dùng để ký phiên của widget" },
+      {
+        o: "external_account_id", nhan: "Khoá website", bat_buoc: true,
+        goi_y: "Tên ngắn không dấu để phân biệt từng website, ví dụ: web-chinh"
+      },
+      {
+        o: "secondary_secret", nhan: "Widget secret", bat_buoc: true,
+        goi_y: "Bạn tự đặt — chuỗi ngẫu nhiên từ 32 ký tự. Dùng để ký phiên của widget"
+      },
     ],
     ke_tiep: "Chạy được ngay, không cần HTTPS công khai khi thử tại chỗ.",
   },
@@ -5878,11 +6047,13 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
 
   let account;
   try {
-    account = await api("/channel-accounts", { method: "POST", body: JSON.stringify({
-      channel: form.channel, display_name: form.display_name,
-      external_account_id: form.external_account_id || null,
-      capabilities: { send_text: true, receive_message: true }, metadata: {}, credentials,
-    }) });
+    account = await api("/channel-accounts", {
+      method: "POST", body: JSON.stringify({
+        channel: form.channel, display_name: form.display_name,
+        external_account_id: form.external_account_id || null,
+        capabilities: { send_text: true, receive_message: true }, metadata: {}, credentials,
+      })
+    });
   } catch (e) { toast(e.message, true); return; }
 
   ev.target.reset();
@@ -5908,8 +6079,8 @@ $("#connectionform")?.addEventListener("submit", async (ev) => {
      * cách đọc với nút "Xác minh provider" trên thẻ tài khoản. */
     const kq = await api(`/channel-accounts/${account.id}/verify`, { method: "POST" });
     toast(kq && kq.ok ? "Đã lưu và xác minh xong với provider."
-                      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
-          !(kq && kq.ok));
+      : `Đã lưu, nhưng chưa xác minh được: ${lyDoKetNoi(kq || {})} — kiểm lại credential.`,
+      !(kq && kq.ok));
   } catch (e) {
     toast("Đã lưu, nhưng provider từ chối: " + e.message + " — kiểm lại credential.", true);
   }
@@ -7352,7 +7523,7 @@ function veBenTrongPhongThu(d) {
       <span class="row__sub">${v.tokens_in} vào / ${v.tokens_out} ra token · ${v.so_cong_cu} công cụ</span></span></div>`).join("");
   $("#phongthu-bentrong").innerHTML = `${luoi}
     <div class="row"><span class="row__flag"></span>
-      <span class="row__body"><span class="row__title">${d.grounded ? "Có căn cứ" : "Thiếu căn cứ"} · điểm khớp ${d.confidence == null ? "—" : Number(d.confidence).toFixed(2)}</span>
+      <span class="row__body"><span class="row__title">${esc((d.can_cu && d.can_cu.nhan) || (d.grounded ? "Có căn cứ" : "Thiếu căn cứ"))} · điểm khớp ${d.confidence == null ? "—" : Number(d.confidence).toFixed(2)}</span>
       <span class="row__sub">${nguon.length ? esc(nguon.join(" · ")) : "không trích tài liệu nào"}</span></span></div>
     ${(d.goi_ky_nang || []).length ? `<div class="row"><span class="row__flag row__flag--spend"></span><span class="row__body"><span class="row__title">Gói kỹ năng kích hoạt</span><span class="row__sub">${esc(d.goi_ky_nang.join(" · "))}</span></span></div>` : ""}
     <h3 class="panel__head">Công cụ đã gọi</h3>${congCu}
@@ -8286,6 +8457,7 @@ function _tomTatCa(ca) {
 async function loadCaCuaToi() {
   const o = $("#caCuaToi");
   if (!o) return;
+  if (state.toiQuyen && !state.toiQuyen.has("hoi_thoai.doc")) { o.hidden = true; return; }
   let r;
   try { r = await api("/lich-ca/cua-toi"); } catch { o.hidden = true; return; }
   // Chưa xếp ca và không nghỉ: luôn trực, không có gì để nói.
@@ -8428,6 +8600,12 @@ async function loadTongQuanCa() {
       }
     }
   }
+  const docHt = !state.toiQuyen || state.toiQuyen.has("hoi_thoai.doc");
+  const pnChuaGiao = $("#cvChuaGiaoPanel");
+  const pnSla = $("#cvSlaPanel");
+  if (pnChuaGiao) pnChuaGiao.hidden = !docHt;
+  if (pnSla) pnSla.hidden = !docHt;
+  if (!docHt) return;
   await _tqDanhSach("#cvChuaGiao", "chua_giao=true",
     "Không có hội thoại nào chưa ai nhận.");
   await _tqDanhSach("#cvSla", "qua_han_sla=true",
@@ -9039,6 +9217,7 @@ async function diToiLienKet(lk) {
   if (!lk) return;
   if (lk.loai === "hoi_thoai") {
     state.openConv = lk.id;
+    state.mobileViewingChat = true;
     state.cuonToiChiTiet = true;
     doiMan("hoithoai");
     return;
@@ -9183,10 +9362,16 @@ function nhanCanCu(m) {
   return "";
 }
 
-/* Bốn trạng thái căn cứ (mục 16) do MÁY CHỦ phân loại từ kết quả tra cứu
+/* Năm trạng thái căn cứ (mục 16) do MÁY CHỦ phân loại từ kết quả tra cứu
  * thật của lượt — `agent/core/dau_vet_ai.py::phan_loai_can_cu`. Không phần
  * trăm. Tin cũ chưa có phân loại thì lui về Có/Thiếu căn cứ như trước. */
-const TAG_CAN_CU = { du: "auto", chua_du: "assist", khong_co: "halt", mau_thuan: "halt" };
+const TAG_CAN_CU = {
+  du: "auto",
+  chua_du: "assist",
+  khong_co: "halt",
+  mau_thuan: "halt",
+  khong_can: "plain",
+};
 
 function tagCanCu(m) {
   const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
@@ -9196,7 +9381,7 @@ function tagCanCu(m) {
 
 function veCanCuPhanLoai(m) {
   const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
-  if (!cc || !cc.ma || cc.ma === "du") return "";
+  if (!cc || !cc.ma || cc.ma === "du" || cc.ma === "khong_can") return "";
   const ds = (mang) => (mang || []).map((x) => `<li>${esc(x)}</li>`).join("");
   return `<div class="ctt__canh">
     ${cc.huong_dan ? `<p><b>${esc(cc.huong_dan)}</b></p>` : ""}
@@ -9293,6 +9478,80 @@ function veChiTietTin(m, draft) {
   </div>`;
 }
 
+function veLichSuBanGiaoHtml(bo) {
+  if (!bo) return '<p class="hint">Đang tải…</p>';
+  if (bo.loi) return `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
+  if (bo.items) {
+    return bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
+        <b>${esc(m.tieu_de)}</b>
+        <span class="msg__meta">${esc(gioTin(m.luc))}${m.nguoi_lam ? " · bởi " + esc(m.nguoi_lam) : ""}${
+          m.ket_thuc ? " · kết thúc " + esc(gioTin(m.ket_thuc)) : ""}</span>
+        ${m.chi_tiet ? `<p>${esc(m.chi_tiet)}</p>` : ""}
+      </div>`).join("") : '<p class="hint">Chưa có lần bàn giao nào.</p>';
+  }
+  return '<p class="hint">Đang tải…</p>';
+}
+
+function capNhatChiTietHoiThoai(drawerEl, c, laCuaToi) {
+  if (!drawerEl || !c) return;
+  const content = drawerEl.querySelector(".convo-drawer__content");
+  if (!content) return;
+  const id = String(c.id);
+  const bo = state.lichSuPC && state.lichSuPC[id];
+  if (!bo || bo.version !== c.version) taiLichSuPhanCong(c);
+  const lichSu = veLichSuBanGiaoHtml(bo);
+  let giu;
+  if (c.mode !== "human") giu = c.assigned_to_ten ? `AI đang xử lý · theo dõi: ${esc(c.assigned_to_ten)}` : "AI đang xử lý";
+  else if (!c.assigned_to) giu = "Chưa ai nhận";
+  else giu = `${esc(laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp"))}${
+    c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}`;
+
+  const doiUuTien = state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan") && c.state !== "resolved"
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
+        data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
+  const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
+  const soLanBanGiao = bo && bo.items ? bo.items.length : 0;
+  const moBanGiao = !!(state.moBanGiao && state.moBanGiao[id]);
+
+  content.innerHTML = `
+      <!-- 1. Thông tin xử lý -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin xử lý</h4>
+        ${dongCT("Người đang giữ", giu)}
+        ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+        ${dongCT("Chế độ AI", esc(cheDo))}
+        <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+      </section>
+
+      <!-- 2. Thông tin hội thoại -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin hội thoại</h4>
+        ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+        ${dongCT("Thời gian tạo", esc(gioTin(c.created_at) || "—"))}
+        ${dongCT("Cập nhật", esc(gioTin(c.updated_at) || "—"))}
+        ${dongCT("Version", esc(c.version || 1))}
+      </section>
+
+      <!-- 3. Lịch sử bàn giao (timeline, thu gọn mặc định) -->
+      <section class="convo-drawer__sec">
+        <details class="convo-drawer__details" id="accordion-ban-giao" data-bg-id="${esc(id)}" ${moBanGiao ? "open" : ""}>
+          <summary class="convo-drawer__summary">
+            <span class="ctt__dau convo-drawer__sec-title" style="margin:0">Lịch sử bàn giao</span>
+            <span class="convo-drawer__count" id="convo-drawer-count">${soLanBanGiao} lần</span>
+          </summary>
+          <div class="lichsu__timeline" id="convo-drawer-timeline">
+            ${lichSu}
+          </div>
+        </details>
+      </section>
+
+      <!-- 4. Nhật ký liên quan -->
+      <section class="convo-drawer__sec convo-drawer__sec--nhatky">
+        <h4 class="ctt__dau convo-drawer__sec-title" style="margin-bottom:6px">Nhật ký liên quan</h4>
+        ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
+      </section>`;
+}
+
 /* ---------------- Chi tiết hội thoại ----------------
  * Người đang giữ, nhóm, và lịch sử bàn giao — trong MỘT panel mở bằng nút
  * "Chi tiết" ở đầu hội thoại. Tải lịch sử khi MỞ, tải lại khi version đổi;
@@ -9302,16 +9561,7 @@ function veChiTietHoiThoai(c, laCuaToi) {
   if (state.moChiTietHT !== id) return "";
   const bo = state.lichSuPC && state.lichSuPC[id];
   if (!bo || bo.version !== c.version) taiLichSuPhanCong(c);
-  let lichSu = '<p class="hint">Đang tải…</p>';
-  if (bo && bo.loi) lichSu = `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
-  else if (bo && bo.items) {
-    lichSu = bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
-        <b>${esc(m.tieu_de)}</b>
-        <span class="msg__meta">${esc(gioTin(m.luc))}${m.nguoi_lam ? " · bởi " + esc(m.nguoi_lam) : ""}${
-          m.ket_thuc ? " · kết thúc " + esc(gioTin(m.ket_thuc)) : ""}</span>
-        ${m.chi_tiet ? `<p>${esc(m.chi_tiet)}</p>` : ""}
-      </div>`).join("") : '<p class="hint">Chưa có lần bàn giao nào.</p>';
-  }
+  let lichSu = veLichSuBanGiaoHtml(bo);
   let giu;
   if (c.mode !== "human") giu = c.assigned_to_ten ? `AI đang xử lý · theo dõi: ${esc(c.assigned_to_ten)}` : "AI đang xử lý";
   else if (!c.assigned_to) giu = "Chưa ai nhận";
@@ -9325,16 +9575,59 @@ function veChiTietHoiThoai(c, laCuaToi) {
     ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
         data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
   const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
-  return `<section class="lichsu" aria-label="Chi tiết hội thoại">
-    ${dongCT("Người đang giữ", giu)}
-    ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
-    ${dongCT("Chế độ AI", esc(cheDo))}
-    <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
-    ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
-    ${dongCT("Version", esc(c.version || 1))}
-    <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
-    ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
-  </section>`;
+  const soLanBanGiao = bo && bo.items ? bo.items.length : 0;
+  const moBanGiao = !!(state.moBanGiao && state.moBanGiao[id]);
+  const anim = state.vuaMoChiTietHT === id ? " is-animating" : "";
+
+  return `<div class="convo-drawer-backdrop" id="convo-drawer-backdrop"></div>
+  <aside class="convo-drawer is-open${anim}" id="convo-drawer" aria-label="Chi tiết hội thoại">
+    <div class="convo-drawer__header">
+      <div class="convo-drawer__header-left">
+        <h3 class="convo-drawer__title">Chi tiết hội thoại</h3>
+        <span class="convo-drawer__id">#${esc(c.id)}</span>
+      </div>
+      <button type="button" class="btn btn--sm btn--ghost convo-drawer__close" id="btn-dong-chitiet-ht"
+        aria-label="Đóng chi tiết hội thoại" title="Đóng (Esc)">✕ Đóng</button>
+    </div>
+    <div class="convo-drawer__content">
+      <!-- 1. Thông tin xử lý -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin xử lý</h4>
+        ${dongCT("Người đang giữ", giu)}
+        ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+        ${dongCT("Chế độ AI", esc(cheDo))}
+        <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+      </section>
+
+      <!-- 2. Thông tin hội thoại -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin hội thoại</h4>
+        ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+        ${dongCT("Thời gian tạo", esc(gioTin(c.created_at) || "—"))}
+        ${dongCT("Cập nhật", esc(gioTin(c.updated_at) || "—"))}
+        ${dongCT("Version", esc(c.version || 1))}
+      </section>
+
+      <!-- 3. Lịch sử bàn giao (timeline, thu gọn mặc định) -->
+      <section class="convo-drawer__sec">
+        <details class="convo-drawer__details" id="accordion-ban-giao" data-bg-id="${esc(id)}" ${moBanGiao ? "open" : ""}>
+          <summary class="convo-drawer__summary">
+            <span class="ctt__dau convo-drawer__sec-title" style="margin:0">Lịch sử bàn giao</span>
+            <span class="convo-drawer__count" id="convo-drawer-count">${soLanBanGiao} lần</span>
+          </summary>
+          <div class="lichsu__timeline" id="convo-drawer-timeline">
+            ${lichSu}
+          </div>
+        </details>
+      </section>
+
+      <!-- 4. Nhật ký liên quan -->
+      <section class="convo-drawer__sec convo-drawer__sec--nhatky">
+        <h4 class="ctt__dau convo-drawer__sec-title" style="margin-bottom:6px">Nhật ký liên quan</h4>
+        ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
+      </section>
+    </div>
+  </aside>`;
 }
 
 async function taiLichSuPhanCong(c) {
@@ -9349,7 +9642,14 @@ async function taiLichSuPhanCong(c) {
     // Hỏng thì NÓI trong panel, không toast: vòng 6 giây sẽ bắn toast mãi.
     state.lichSuPC[id] = { loi: e.message, version: c.version };
   }
-  if (state.openConv === id) loadThread(id);
+  const tl = $("#convo-drawer-timeline");
+  if (tl) {
+    tl.innerHTML = veLichSuBanGiaoHtml(state.lichSuPC[id]);
+    const cnt = $("#convo-drawer-count");
+    if (cnt && state.lichSuPC[id].items) cnt.textContent = `${state.lichSuPC[id].items.length} lần`;
+  } else if (state.openConv === id) {
+    loadThread(id);
+  }
 }
 
 /* "Giao cho…" — chọn người (và nhóm) trong danh sách máy chủ trả về, theo
@@ -9396,6 +9696,41 @@ async function giaoHoiThoai(c) {
   } catch (e) { toast(e.message, true); }
 }
 
+function dongChiTietHT() {
+  state.moChiTietHT = null;
+  state.vuaMoChiTietHT = null;
+  const d = $("#convo-drawer");
+  const b = $("#convo-drawer-backdrop");
+  if (d) d.remove();
+  if (b) b.remove();
+}
+
+function moChiTietHT(id) {
+  dongChiTietHT();
+  state.moChiTietHT = id;
+  state.vuaMoChiTietHT = id;
+  const c = state.convDangMo;
+  if (c && String(c.id) === id && $("#convdetail")) {
+    const nguoiGiu = c.mode === "human" ? (c.assigned_to ? String(c.assigned_to) : "") : "";
+    const laCuaToi = !!nguoiGiu && nguoiGiu === String(state.toiId || "");
+    const html = veChiTietHoiThoai(c, laCuaToi);
+    state.vuaMoChiTietHT = null;
+    if (html) {
+      const t = document.createElement("div");
+      t.innerHTML = html;
+      while (t.firstChild) {
+        $("#convdetail").appendChild(t.firstChild);
+      }
+      const d = $("#convo-drawer");
+      if (d) {
+        d.addEventListener("animationend", () => d.classList.remove("is-animating"), { once: true });
+      }
+      return;
+    }
+  }
+  loadThread(id);
+}
+
 document.addEventListener("click", (ev) => {
   const nut = ev.target.closest("[data-chi-tiet-tin]");
   if (nut) {
@@ -9407,13 +9742,33 @@ document.addEventListener("click", (ev) => {
   }
   if (ev.target.closest("#btn-chitiet-ht") && state.openConv) {
     const id = String(state.openConv);
-    state.moChiTietHT = state.moChiTietHT === id ? null : id;
-    loadThread(state.openConv);
+    if (state.moChiTietHT === id) {
+      dongChiTietHT();
+    } else {
+      moChiTietHT(id);
+    }
+    return;
+  }
+  if (ev.target.closest("#btn-dong-chitiet-ht") || ev.target.closest("#convo-drawer-backdrop")) {
+    dongChiTietHT();
     return;
   }
   if (ev.target.closest("#btn-giao") && state.convDangMo) {
     state.moHanhDong = null;   // nút nằm trong menu "⋯" — đóng nó lại
     giaoHoiThoai(state.convDangMo);
+  }
+});
+
+document.addEventListener("toggle", (ev) => {
+  const d = ev.target;
+  if (!d || !d.dataset || !d.dataset.bgId) return;
+  state.moBanGiao = state.moBanGiao || {};
+  state.moBanGiao[d.dataset.bgId] = d.open;
+}, true);
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && state.moChiTietHT) {
+    dongChiTietHT();
   }
 });
 
@@ -10910,6 +11265,7 @@ async function cvxTaiDs() {
 }
 
 async function cvxTaiDem() {
+  if (!cvxCo("cong_viec.doc")) return null;
   try {
     const t = await api("/cong-viec/tong-quan");
     $("#c-congviec").textContent = (t.dem.cho_xu_ly + t.dem.dang_thuc_hien) || "";
@@ -10918,7 +11274,7 @@ async function cvxTaiDem() {
 }
 
 async function cvxLamMoi() {
-  if (!cvx.el || cvx.dangTai) return;
+  if (!cvx.el || cvx.dangTai || !cvxCo("cong_viec.doc")) return;
   cvx.dangTai = true;
   try {
     await cvxTaiDs();
@@ -11195,6 +11551,10 @@ function cvxBatSuKienLienKet(o) {
 
 GAN_TAB["cv-danh-sach"] = (el) => {
   cvx.el = el;
+  if (!cvxCo("cong_viec.doc")) {
+    el.innerHTML = '<section class="panel"><p class="empty">Bạn không có quyền xem công việc.</p></section>';
+    return;
+  }
   const opt = (ds) => ds.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
   el.innerHTML = `
     <section class="panel">
@@ -11267,7 +11627,8 @@ document.addEventListener("congviec:doi", () => { if (cvx.el) cvxLamMoi(); });
 
 /* Chuông "việc" và mọi lối khác mở thẳng chi tiết một việc. */
 window.moCongViec = async (id) => {
-  doiMan("cv-danh-sach");
+  if (!cvxCo("cong_viec.doc")) return false;
+  if (doiMan("cv-danh-sach") === false) return false;
   if (!cvx.el) return false;
   await cvxTaiChiTiet(id);
   return cvx.moId === id;
@@ -11297,6 +11658,7 @@ function cvxO(nhan, so, loc, mau) {
 async function cvxCaTai() {
   const o = cvxCa.el;
   if (!o) return;
+  if (!cvxCo("cong_viec.doc")) { o.innerHTML = ""; return; }
   const t = await cvxTaiDem();
   if (!t) { o.innerHTML = '<p class="empty">Không tải được tổng quan công việc.</p>'; return; }
   const d = t.dem;
@@ -11880,13 +12242,15 @@ function nkVeKhung(el) {
 
 function nkDong(b) {
   const tt = b.trang_thai || {};
+  const doiTuong = (b.tai_khoan && b.tai_khoan.ten) || b.doi_tuong || "";
   return `<div class="row${nk.moId === b.id ? " is-mo" : ""}" data-nk-dong="${b.id}" role="button" tabindex="0">
     <span class="row__flag row__flag--${NK_TONE[tt.ma] || "plain"}"></span>
     <span class="row__body">
       <span class="row__title">${esc(b.hanh_dong)}
         <span class="tag tag--plain">${esc((b.nhom || {}).nhan || "")}</span>
         <span class="tag tag--${NK_TAG[tt.ma] || "plain"}">${esc(tt.nhan || "")}</span></span>
-      <span class="row__sub">${esc(nkTacNhan(b))}${b.che_do_ai ? " · chế độ " + esc(b.che_do_ai) : ""}${
+      <span class="row__sub">${esc(nkTacNhan(b))}${doiTuong ? " · " + esc(doiTuong) : ""}${
+        b.che_do_ai ? " · chế độ " + esc(b.che_do_ai) : ""}${
         b.ket_qua ? " · " + esc(b.ket_qua) : ""}</span>
     </span>
     <span class="row__side">
@@ -11926,8 +12290,13 @@ async function nkTai() {
 
 function nkDongDeXuat(d) {
   const tt = d.trang_thai || {};
-  const tone = tt.ma === "cho_duyet" ? "assist" : tt.ma === "tu_choi" ? "halt" : "auto";
-  const quyet = d.nguoi_quyet ? `duyệt bởi ${d.nguoi_quyet}${d.luc_quyet ? " lúc " + nkGio(d.luc_quyet) : ""}` : "";
+  const tone = (tt.ma === "cho_duyet" || tt.ma === "cho_xu_ly_thu_cong" || tt.ma === "dang_thuc_thi")
+    ? "assist"
+    : (tt.ma === "tu_choi" || tt.ma === "loi") ? "halt" : "auto";
+  const quyet = d.nguoi_quyet
+    ? `${tt.ma === "da_xu_ly_thu_cong" ? "xử lý thủ công" : "duyệt"} bởi ${d.nguoi_quyet}${
+        d.luc_quyet ? " lúc " + nkGio(d.luc_quyet) : ""}`
+    : "";
   const sua = d.nguoi_sua ? `sửa bởi ${d.nguoi_sua}` : "";
   return `<div class="row">
     <span class="row__flag row__flag--${tone}"></span>
@@ -12012,6 +12381,7 @@ function nkVeChiTiet(b) {
       ${nkCT("Thời gian", esc(new Date(b.luc).toLocaleString("vi-VN")))}
       ${nkCT("Tác nhân", esc(nkTacNhan(b)))}
       ${nkCT("Loại hành động", esc((b.nhom || {}).nhan || ""))}
+      ${nkCT("Tài khoản / đối tượng", esc((b.tai_khoan && b.tai_khoan.ten) || b.doi_tuong || "—"))}
       ${nkCT("Hội thoại", b.hoi_thoai_id ? `<span class="mono">${esc(b.hoi_thoai_id)}</span>` : "—")}
       ${nkCT("Chế độ AI", esc(b.che_do_ai || "—"))}
       ${nkCT("Mức uỷ quyền", esc(b.muc_uy_quyen || "chưa áp dụng"))}
@@ -12241,6 +12611,7 @@ const dxTien = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 const DX_TAG = {
   cho_duyet: "assist", da_duyet: "assist", da_thuc_hien: "auto",
+  dang_thuc_thi: "assist", cho_xu_ly_thu_cong: "assist",
   loi: "halt", tu_choi: "plain", het_han: "plain",
 };
 
@@ -12253,7 +12624,7 @@ function dxCoQuyen(q) {
 function dxDongChinhSach(h, sua) {
   let o;
   if (!h.ho_tro) {
-    o = '<span class="tag tag--plain">Chưa hỗ trợ — chuyển nhân viên</span>';
+    o = `<span class="tag tag--plain">${h.ho_tro_de_xuat ? "Chỉ đề xuất — xử lý thủ công" : "Chưa hỗ trợ — chuyển nhân viên"}</span>`;
   } else if (!h.cau_hinh_duoc) {
     o = `<span class="tag tag--auto">${esc(h.nhan_muc)} · luôn bật</span>`;
   } else {
@@ -12361,8 +12732,20 @@ function dxTrangThaiDon(x) {
 }
 
 function dxKetQua(d) {
+  if (d.trang_thai === "cho_xu_ly_thu_cong") {
+    return `<p class="row__sub"><b>Chờ xử lý thủ công — chưa sửa đơn:</b> ${esc(d.loi || "")}</p>`;
+  }
   if (d.trang_thai === "da_thuc_hien" && d.ket_qua) {
     const k = d.ket_qua;
+    if (k.qua === "xu_ly_thu_cong") {
+      const dongTC = [
+        `<b>Đã xử lý thủ công bởi ${esc(k.boi || "?")}</b> (không tự động sửa ERPNext)`,
+        k.ma_don ? `Mã đơn ${esc(k.ma_don)}` : "",
+        k.ghi_chu ? `Ghi chú: ${esc(k.ghi_chu)}` : "",
+        k.ma_tham_chieu ? `Mã tham chiếu: ${esc(k.ma_tham_chieu)}` : "",
+      ].filter(Boolean);
+      return `<p class="row__sub">${dongTC.join("<br>")}</p>`;
+    }
     const dong = [
       k.ma_don ? `Mã đơn ${esc(k.ma_don)}` : "",
       k.qua === "man_don_hang" ? `Đã ${esc(k.viec || "xử lý")} ở màn Đơn hàng bởi ${esc(k.boi || "?")}` : "",
@@ -12388,9 +12771,13 @@ function veTheDeXuat(d) {
   const nut = d.trang_thai === "cho_duyet"
     ? (d.duoc_duyet
       ? `<button type="button" class="btn btn--sm btn--go" data-dx-duyet="${esc(d.id)}">Phê duyệt</button>
-         <button type="button" class="btn btn--sm btn--halt" data-dx-tu-choi="${esc(d.id)}">Từ chối</button>`
+         <button type="button" class="btn btn--sm btn--halt" data-dx-tu-choi="${esc(d.id)}" data-dx-loai="${esc(d.hanh_dong)}">Từ chối</button>`
       : `<span class="row__sub hint">Cần quyền ${esc((d.thieu_quyen || []).join(" + "))} để duyệt.</span>`)
-    : "";
+    : d.trang_thai === "cho_xu_ly_thu_cong"
+      ? (d.duoc_hoan_tat_thu_cong
+        ? `<button type="button" class="btn btn--sm btn--go" data-dx-thu-cong="${esc(d.id)}">Xác nhận đã xử lý thủ công</button>`
+        : `<span class="row__sub hint">Cần quyền ${esc((d.thieu_quyen || []).join(" + "))} để xác nhận xử lý thủ công.</span>`)
+      : "";
   return `<div class="msg msg--dexuat" role="note" aria-label="Đề xuất hành động của AI — nội bộ">
     <div class="dx-the">
       <div class="dx-the__dau">
@@ -12402,7 +12789,7 @@ function veTheDeXuat(d) {
       <p class="row__sub"><b>Vì sao cần duyệt:</b> ${esc(d.ly_do_can_duyet)}</p>
       <div class="dx-the__hai">
         <div><h4 class="ctt__dau">Trước</h4>${dxTrangThaiDon(dx.truoc)}</div>
-        <div><h4 class="ctt__dau">Sau khi thực hiện</h4>${dxTrangThaiDon(dx.sau)}</div>
+        <div><h4 class="ctt__dau">${d.hanh_dong === "sua_don" ? "Khách yêu cầu — chưa sửa đơn" : "Sau khi thực hiện"}</h4>${dxTrangThaiDon(dx.sau)}</div>
       </div>
       <h4 class="ctt__dau">Căn cứ hệ thống đã kiểm</h4>
       ${(cc.nguon || []).length ? `<ul class="ctt__ds">${ds(cc.nguon)}</ul>` : '<p class="hint">Không có.</p>'}
@@ -12443,6 +12830,7 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("click", async (e) => {
   const duyet = e.target.closest("[data-dx-duyet]");
   const tuChoi = e.target.closest("[data-dx-tu-choi]");
+  const thuCong = e.target.closest("[data-dx-thu-cong]");
   const canCu = e.target.closest("[data-dx-can-cu]");
   if (canCu) {
     state.chiTietTin = state.chiTietTin || new Set();
@@ -12450,19 +12838,42 @@ document.addEventListener("click", async (e) => {
     if (state.openConv) await loadThread(state.openConv);
     return;
   }
-  if (!duyet && !tuChoi) return;
-  const nut = duyet || tuChoi;
+  if (!duyet && !tuChoi && !thuCong) return;
+  const nut = duyet || tuChoi || thuCong;
   try {
     if (duyet) {
       nut.disabled = true;
       const r = await api(`/ai-de-xuat/${duyet.dataset.dxDuyet}/duyet`, { method: "POST" });
-      toast(r.ok ? "Đã duyệt và thực hiện" : `Đã duyệt nhưng không thực hiện được: ${r.loi || ""}`, !r.ok);
-    } else {
+      const choThuCong = r.trang_thai === "cho_xu_ly_thu_cong";
+      toast(choThuCong ? `Chờ xử lý thủ công — chưa sửa đơn: ${r.loi || ""}`
+        : r.ok ? "Đã duyệt và thực hiện" : `Đã duyệt nhưng không thực hiện được: ${r.loi || ""}`, !r.ok && !choThuCong);
+    } else if (thuCong) {
       const v = await hoiHop({
-        tieu_de: "Từ chối đề xuất của AI", nut: "Từ chối", nguy_hiem: true,
-        truong: [{ name: "ly_do", label: "Lý do (không bắt buộc)", type: "textarea", maxlength: 500 }],
+        tieu_de: "Xác nhận đã xử lý thủ công",
+        nut: "Xác nhận hoàn tất",
+        phu: "Chỉ xác nhận sau khi bạn đã tự kiểm tra và sửa đơn trên sổ đơn / ERPNext. Hệ thống sẽ đối soát lại đơn nhưng KHÔNG tự sửa ERPNext.",
+        truong: [
+          { name: "ghi_chu", label: "Ghi chú kết quả đã xử lý (bắt buộc)", type: "textarea", required: true, maxlength: 1000 },
+          { name: "ma_tham_chieu", label: "Mã tham chiếu / chứng từ ERP (nếu có)", maxlength: 120 },
+        ],
       });
       if (v === null) return;
+      const ghiChu = (v.ghi_chu || "").trim();
+      if (ghiChu.length < 3) { toast("Cần ghi chú kết quả xử lý (tối thiểu 3 ký tự).", true); return; }
+      nut.disabled = true;
+      await api(`/ai-de-xuat/${thuCong.dataset.dxThuCong}/hoan-tat-thu-cong`, {
+        method: "POST",
+        body: JSON.stringify({ ghi_chu: ghiChu, ma_tham_chieu: (v.ma_tham_chieu || "").trim() }),
+      });
+      toast("Đã ghi nhận hoàn tất xử lý thủ công");
+    } else {
+      const canLyDo = tuChoi.dataset.dxLoai === "sua_don";
+      const v = await hoiHop({
+        tieu_de: "Từ chối đề xuất của AI", nut: "Từ chối", nguy_hiem: true,
+        truong: [{ name: "ly_do", label: canLyDo ? "Lý do từ chối (bắt buộc)" : "Lý do (không bắt buộc)", type: "textarea", maxlength: 500 }],
+      });
+      if (v === null) return;
+      if (canLyDo && !(v.ly_do || "").trim()) { toast("Cần lý do từ chối đề xuất sửa đơn.", true); return; }
       const r = await api(`/ai-de-xuat/${tuChoi.dataset.dxTuChoi}/tu-choi`, {
         method: "POST", body: JSON.stringify({ ly_do: v.ly_do || "" }) });
       toast(r.canh_bao || "Đã từ chối đề xuất", !!r.canh_bao);

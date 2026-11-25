@@ -18,7 +18,10 @@ from pydantic import BaseModel, Field
 
 from agent.api.routes import can_quyen
 from agent.core import agent as brain
-from agent.core import cham_mot_luot, cham_nhieu_luot, phong_thu_phien as pp, thu_nghiem
+from agent.core import (
+    agent_ho_so, cham_mot_luot, cham_nhieu_luot, dau_vet_ai,
+    phong_thu_phien as pp, thu_nghiem,
+)
 
 router = APIRouter(prefix="/api/phong-thu", tags=["phong-thu"])
 GOC = Path(__file__).resolve().parents[2]
@@ -72,6 +75,7 @@ def reply_thanh_dict(r: brain.Reply) -> dict:
         "tra_loi": r.text, "escalate": r.escalate, "escalate_reason": r.escalate_reason,
         "luoi_bat": r.luoi_bat, "nhan_luoi": NHAN_LUOI.get(r.luoi_bat or "", ""),
         "grounded": r.grounded, "confidence": r.confidence, "sources": r.sources,
+        "can_cu": dau_vet_ai._phan_loai_an_toan(r, agent_ho_so.mac_dinh()),
         "cong_cu": r.cong_cu, "vong": r.vong, "cost_usd": r.cost_usd,
         "latency_ms": r.latency_ms, "model": r.model,
         "tokens_in": r.tokens_in, "tokens_out": r.tokens_out,

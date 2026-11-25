@@ -66,6 +66,11 @@ KHONG_TAT_DUOC = frozenset({"chuyen_nhan_vien"})
 # ĐỌC: Đếm theo rủi ro: 6 `doc` · 4 `ghi_nhan` · ĐÚNG MỘT `hanh_dong` (tao_don_hang)
 SO_DANG_KY: tuple[KyNang, ...] = (
     KyNang(
+        ten="de_xuat_sua_don", nhom="sau_ban", muc_rui_ro="ghi_nhan",
+        tom_tat="Đề xuất sửa số lượng, chờ duyệt và xử lý thủ công; KHÔNG sửa đơn.",
+        tat_thi_mat_gi="Yêu cầu sửa đơn chuyển nhân viên, không tạo thẻ đề xuất.",
+    ),
+    KyNang(
         ten="tim_kien_thuc",
         nhom="tu_van",
         muc_rui_ro="doc",

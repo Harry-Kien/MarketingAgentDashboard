@@ -217,6 +217,7 @@ $("#aiBat")?.addEventListener("change", async (e) => {
 
 function drawTape(tape) {
   const strip = $("#tape");
+  if (!strip) return;
   const SLOTS = 72;
   const pad = Math.max(0, SLOTS - tape.length);
   strip.innerHTML =

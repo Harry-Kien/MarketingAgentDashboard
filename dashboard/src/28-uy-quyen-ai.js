@@ -16,6 +16,7 @@ const dxTien = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 const DX_TAG = {
   cho_duyet: "assist", da_duyet: "assist", da_thuc_hien: "auto",
+  dang_thuc_thi: "assist", cho_xu_ly_thu_cong: "assist",
   loi: "halt", tu_choi: "plain", het_han: "plain",
 };
 
@@ -28,7 +29,7 @@ function dxCoQuyen(q) {
 function dxDongChinhSach(h, sua) {
   let o;
   if (!h.ho_tro) {
-    o = '<span class="tag tag--plain">Chưa hỗ trợ — chuyển nhân viên</span>';
+    o = `<span class="tag tag--plain">${h.ho_tro_de_xuat ? "Chỉ đề xuất — xử lý thủ công" : "Chưa hỗ trợ — chuyển nhân viên"}</span>`;
   } else if (!h.cau_hinh_duoc) {
     o = `<span class="tag tag--auto">${esc(h.nhan_muc)} · luôn bật</span>`;
   } else {
@@ -136,8 +137,20 @@ function dxTrangThaiDon(x) {
 }
 
 function dxKetQua(d) {
+  if (d.trang_thai === "cho_xu_ly_thu_cong") {
+    return `<p class="row__sub"><b>Chờ xử lý thủ công — chưa sửa đơn:</b> ${esc(d.loi || "")}</p>`;
+  }
   if (d.trang_thai === "da_thuc_hien" && d.ket_qua) {
     const k = d.ket_qua;
+    if (k.qua === "xu_ly_thu_cong") {
+      const dongTC = [
+        `<b>Đã xử lý thủ công bởi ${esc(k.boi || "?")}</b> (không tự động sửa ERPNext)`,
+        k.ma_don ? `Mã đơn ${esc(k.ma_don)}` : "",
+        k.ghi_chu ? `Ghi chú: ${esc(k.ghi_chu)}` : "",
+        k.ma_tham_chieu ? `Mã tham chiếu: ${esc(k.ma_tham_chieu)}` : "",
+      ].filter(Boolean);
+      return `<p class="row__sub">${dongTC.join("<br>")}</p>`;
+    }
     const dong = [
       k.ma_don ? `Mã đơn ${esc(k.ma_don)}` : "",
       k.qua === "man_don_hang" ? `Đã ${esc(k.viec || "xử lý")} ở màn Đơn hàng bởi ${esc(k.boi || "?")}` : "",
@@ -163,9 +176,13 @@ function veTheDeXuat(d) {
   const nut = d.trang_thai === "cho_duyet"
     ? (d.duoc_duyet
       ? `<button type="button" class="btn btn--sm btn--go" data-dx-duyet="${esc(d.id)}">Phê duyệt</button>
-         <button type="button" class="btn btn--sm btn--halt" data-dx-tu-choi="${esc(d.id)}">Từ chối</button>`
+         <button type="button" class="btn btn--sm btn--halt" data-dx-tu-choi="${esc(d.id)}" data-dx-loai="${esc(d.hanh_dong)}">Từ chối</button>`
       : `<span class="row__sub hint">Cần quyền ${esc((d.thieu_quyen || []).join(" + "))} để duyệt.</span>`)
-    : "";
+    : d.trang_thai === "cho_xu_ly_thu_cong"
+      ? (d.duoc_hoan_tat_thu_cong
+        ? `<button type="button" class="btn btn--sm btn--go" data-dx-thu-cong="${esc(d.id)}">Xác nhận đã xử lý thủ công</button>`
+        : `<span class="row__sub hint">Cần quyền ${esc((d.thieu_quyen || []).join(" + "))} để xác nhận xử lý thủ công.</span>`)
+      : "";
   return `<div class="msg msg--dexuat" role="note" aria-label="Đề xuất hành động của AI — nội bộ">
     <div class="dx-the">
       <div class="dx-the__dau">
@@ -177,7 +194,7 @@ function veTheDeXuat(d) {
       <p class="row__sub"><b>Vì sao cần duyệt:</b> ${esc(d.ly_do_can_duyet)}</p>
       <div class="dx-the__hai">
         <div><h4 class="ctt__dau">Trước</h4>${dxTrangThaiDon(dx.truoc)}</div>
-        <div><h4 class="ctt__dau">Sau khi thực hiện</h4>${dxTrangThaiDon(dx.sau)}</div>
+        <div><h4 class="ctt__dau">${d.hanh_dong === "sua_don" ? "Khách yêu cầu — chưa sửa đơn" : "Sau khi thực hiện"}</h4>${dxTrangThaiDon(dx.sau)}</div>
       </div>
       <h4 class="ctt__dau">Căn cứ hệ thống đã kiểm</h4>
       ${(cc.nguon || []).length ? `<ul class="ctt__ds">${ds(cc.nguon)}</ul>` : '<p class="hint">Không có.</p>'}
@@ -218,6 +235,7 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("click", async (e) => {
   const duyet = e.target.closest("[data-dx-duyet]");
   const tuChoi = e.target.closest("[data-dx-tu-choi]");
+  const thuCong = e.target.closest("[data-dx-thu-cong]");
   const canCu = e.target.closest("[data-dx-can-cu]");
   if (canCu) {
     state.chiTietTin = state.chiTietTin || new Set();
@@ -225,19 +243,42 @@ document.addEventListener("click", async (e) => {
     if (state.openConv) await loadThread(state.openConv);
     return;
   }
-  if (!duyet && !tuChoi) return;
-  const nut = duyet || tuChoi;
+  if (!duyet && !tuChoi && !thuCong) return;
+  const nut = duyet || tuChoi || thuCong;
   try {
     if (duyet) {
       nut.disabled = true;
       const r = await api(`/ai-de-xuat/${duyet.dataset.dxDuyet}/duyet`, { method: "POST" });
-      toast(r.ok ? "Đã duyệt và thực hiện" : `Đã duyệt nhưng không thực hiện được: ${r.loi || ""}`, !r.ok);
-    } else {
+      const choThuCong = r.trang_thai === "cho_xu_ly_thu_cong";
+      toast(choThuCong ? `Chờ xử lý thủ công — chưa sửa đơn: ${r.loi || ""}`
+        : r.ok ? "Đã duyệt và thực hiện" : `Đã duyệt nhưng không thực hiện được: ${r.loi || ""}`, !r.ok && !choThuCong);
+    } else if (thuCong) {
       const v = await hoiHop({
-        tieu_de: "Từ chối đề xuất của AI", nut: "Từ chối", nguy_hiem: true,
-        truong: [{ name: "ly_do", label: "Lý do (không bắt buộc)", type: "textarea", maxlength: 500 }],
+        tieu_de: "Xác nhận đã xử lý thủ công",
+        nut: "Xác nhận hoàn tất",
+        phu: "Chỉ xác nhận sau khi bạn đã tự kiểm tra và sửa đơn trên sổ đơn / ERPNext. Hệ thống sẽ đối soát lại đơn nhưng KHÔNG tự sửa ERPNext.",
+        truong: [
+          { name: "ghi_chu", label: "Ghi chú kết quả đã xử lý (bắt buộc)", type: "textarea", required: true, maxlength: 1000 },
+          { name: "ma_tham_chieu", label: "Mã tham chiếu / chứng từ ERP (nếu có)", maxlength: 120 },
+        ],
       });
       if (v === null) return;
+      const ghiChu = (v.ghi_chu || "").trim();
+      if (ghiChu.length < 3) { toast("Cần ghi chú kết quả xử lý (tối thiểu 3 ký tự).", true); return; }
+      nut.disabled = true;
+      await api(`/ai-de-xuat/${thuCong.dataset.dxThuCong}/hoan-tat-thu-cong`, {
+        method: "POST",
+        body: JSON.stringify({ ghi_chu: ghiChu, ma_tham_chieu: (v.ma_tham_chieu || "").trim() }),
+      });
+      toast("Đã ghi nhận hoàn tất xử lý thủ công");
+    } else {
+      const canLyDo = tuChoi.dataset.dxLoai === "sua_don";
+      const v = await hoiHop({
+        tieu_de: "Từ chối đề xuất của AI", nut: "Từ chối", nguy_hiem: true,
+        truong: [{ name: "ly_do", label: canLyDo ? "Lý do từ chối (bắt buộc)" : "Lý do (không bắt buộc)", type: "textarea", maxlength: 500 }],
+      });
+      if (v === null) return;
+      if (canLyDo && !(v.ly_do || "").trim()) { toast("Cần lý do từ chối đề xuất sửa đơn.", true); return; }
       const r = await api(`/ai-de-xuat/${tuChoi.dataset.dxTuChoi}/tu-choi`, {
         method: "POST", body: JSON.stringify({ ly_do: v.ly_do || "" }) });
       toast(r.canh_bao || "Đã từ chối đề xuất", !!r.canh_bao);

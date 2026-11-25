@@ -41,6 +41,7 @@
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   --rail-w: 232px;
+  --masthead-h: 59px;
   --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / .05);
   --shadow: 0 1px 3px 0 hsl(222 47% 11% / .07), 0 1px 2px -1px hsl(222 47% 11% / .05);
   --shadow-md: 0 4px 12px -2px hsl(222 47% 11% / .08), 0 2px 4px -2px hsl(222 47% 11% / .04);
@@ -72,6 +73,13 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+
+/* Thuộc tính HTML `hidden` là hợp đồng ẩn/hiện dùng xuyên suốt dashboard.
+   Các component như `.btn`, `.field`, `.tabpanel` tự đặt `display`, nên
+   author CSS có thể thắng quy tắc mặc định của trình duyệt và làm phần tử
+   mang `hidden` vẫn hiện. Giữ ngữ nghĩa này ở một chỗ, thay vì vá riêng
+   từng component. */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -108,12 +116,15 @@ svg { flex: none; }
 .masthead {
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-areas: "id controls" "tape tape";
+  grid-template-areas: "id controls";
   gap: 12px 24px;
   align-items: center;
-  padding: 14px 24px 0;
+  padding: 12px 24px;
   background: hsl(var(--card));
   border-bottom: 1px solid hsl(var(--border));
+  position: sticky;
+  top: 0;
+  z-index: 60;
 }
 
 .masthead__id { grid-area: id; display: flex; align-items: center; gap: 11px; }
@@ -273,20 +284,23 @@ svg { flex: none; }
   display: grid;
   grid-template-columns: var(--rail-w) 1fr;
   align-items: start;
-  min-height: calc(100vh - 128px);
+  min-height: calc(100vh - var(--masthead-h, 59px));
 }
 
 .rail {
   position: sticky;
-  top: 0;
-  align-self: stretch;
+  top: var(--masthead-h, 59px);
+  align-self: start;
   background: hsl(var(--sidebar));
   border-right: 1px solid hsl(var(--border));
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-height: calc(100vh - 128px);
+  height: calc(100vh - var(--masthead-h, 59px));
+  max-height: calc(100vh - var(--masthead-h, 59px));
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .rail__item {
@@ -336,6 +350,7 @@ svg { flex: none; }
 
 .rail__foot {
   margin-top: auto;
+  flex-shrink: 0;
   padding: 14px 12px 4px;
   border-top: 1px solid hsl(var(--border));
   display: flex;
@@ -553,7 +568,12 @@ svg { flex: none; }
   overflow: hidden;
 }
 
-.convo__detail { display: flex; flex-direction: column; min-height: 520px; }
+.convo__detail { display: flex; flex-direction: column; min-height: 520px; position: relative; }
+
+.convo__back-btn,
+.btn.convo__back-btn {
+  display: none !important;
+}
 
 .filterbar {
   display: flex;
@@ -618,7 +638,7 @@ svg { flex: none; }
  * trái — menu neo phải sẽ thò ra ngoài màn hình bên trái (đo 375px: -40px),
  * nên neo trái. */
 @media (max-width: 600px) {
-  .convo__danh { flex-basis: 100%; }
+  .convo__danh { flex: 1 1 140px; min-width: 0; }
   .convo__spacer { display: none; }
   .hd-them__menu { right: auto; left: 0; }
 }
@@ -983,6 +1003,8 @@ svg { flex: none; }
   .rail {
     position: static;
     flex-direction: row;
+    height: auto;
+    max-height: none;
     min-height: 0;
     overflow-x: auto;
     padding: 10px;
@@ -991,9 +1013,143 @@ svg { flex: none; }
   }
   .rail__item { white-space: nowrap; }
   .rail__foot { display: none; }
-  .masthead { grid-template-areas: "id controls" "tape tape"; padding: 12px 16px 0; }
+  .masthead { grid-template-areas: "id controls"; padding: 12px 16px; }
   .stage { padding: 16px; }
   .msg { max-width: 88%; }
+
+  /* Nút quay lại danh sách trên mobile */
+  .convo__back-btn,
+  .btn.convo__back-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  /* Mô hình 2 màn hình cho Hội thoại trên mobile */
+  .convo {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 120px);
+    position: relative;
+    gap: 0;
+  }
+  .convo__list {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: calc(100vh - 120px);
+  }
+  .convo__detail {
+    display: none;
+    width: 100%;
+  }
+
+  /* Khi mở chat trên mobile: ẩn danh sách, hiển thị khung chat */
+  .convo.is-chat-active .convo__list {
+    display: none !important;
+  }
+  .convo.is-chat-active .convo__detail {
+    display: flex !important;
+    flex-direction: column;
+    width: 100%;
+    height: calc(100dvh - 110px);
+    min-height: calc(100vh - 110px);
+    max-height: calc(100dvh - 110px);
+    position: relative;
+    overflow: hidden;
+  }
+  .convo.is-chat-active .convo__title {
+    flex-shrink: 0;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .convo.is-chat-active #thread {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+  }
+  .convo.is-chat-active .convo__bar {
+    flex-shrink: 0;
+    margin-top: auto;
+    padding: 8px 12px;
+  }
+
+  /* Mobile Bottom Sheet cho Chi tiết hội thoại */
+  .convo-drawer-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 90;
+    backdrop-filter: blur(2px);
+  }
+
+  .convo-drawer {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 84vh;
+    height: auto;
+    z-index: 100;
+    border-left: none;
+    border-top: 1px solid hsl(var(--border));
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .convo-drawer.is-animating {
+    animation: convoSheetSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes convoSheetSlideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  .convo-drawer__header {
+    border-radius: 16px 16px 0 0;
+    padding: 14px 16px;
+  }
+
+  .convo-drawer__content {
+    max-height: calc(84vh - 54px);
+    padding: 12px 14px 24px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .convo.is-chat-active .convo__title {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .convo__name {
+    max-width: 130px;
+    font-size: 14px;
+  }
+  .convo__back-btn {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  .hd > .btn, #btn-chitiet-ht, .btn--icon {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  .convo__soan textarea {
+    font-size: 13px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1283,9 +1439,9 @@ svg { flex: none; }
   html, body { overflow-x: hidden; }
   .masthead {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "id" "controls" "tape";
+    grid-template-areas: "id" "controls";
     gap: 9px;
-    padding: 11px 12px 0;
+    padding: 11px 12px;
   }
   .masthead__id { min-width: 0; }.masthead__title { white-space: nowrap; }.masthead__sub { margin-left: auto; font-size: 9.5px; }
   .masthead__controls { min-width: 0; justify-content: flex-start; gap: 7px; }
@@ -2038,6 +2194,8 @@ svg { flex: none; }
 .quan-ly-nhan { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .quan-ly-nhan__loai { min-width: 0; }
 .quan-ly-nhan .subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quan-ly-nhan .row { grid-template-columns: minmax(0, 1fr) auto; padding-left: 14px; }
+.quan-ly-nhan .row__title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
 .quan-ly-nhan .row.is-ngung .row__body { opacity: .7; }
 /* Ghi chú nội bộ trong luồng tin: GIỮA khung (không phía khách, không phía
  * shop), nền vàng, viền đứt — người trực liếc qua là biết đây là chữ nội
@@ -2100,14 +2258,188 @@ svg { flex: none; }
   color: hsl(var(--muted-foreground)); white-space: pre-wrap;
 }
 .ctt__kt summary { cursor: pointer; color: hsl(var(--muted-foreground)); margin-top: 6px; }
+/* ---------------- Chi tiết hội thoại (Drawer / Bottom Sheet) ---------------- */
+.convo-drawer-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 40;
+  backdrop-filter: blur(1px);
+}
+
+.convo-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 380px;
+  max-width: 90%;
+  height: 100%;
+  z-index: 50;
+  background: hsl(var(--card));
+  border-left: 1px solid hsl(var(--border));
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.convo-drawer.is-animating {
+  animation: convoDrawerSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes convoDrawerSlideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.convo-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / .25);
+  flex-shrink: 0;
+}
+
+.convo-drawer__header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.convo-drawer__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.convo-drawer__id {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.convo-drawer__close {
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.convo-drawer__content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.convo-drawer__sec {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: hsl(var(--background));
+}
+
+.convo-drawer__sec--nhatky {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.convo-drawer__sec-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+.convo-drawer__details {
+  border: none;
+}
+
+.convo-drawer__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.convo-drawer__summary::-webkit-details-marker {
+  display: none;
+}
+
+.convo-drawer__summary::after {
+  content: "▾";
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  transition: transform .15s ease;
+}
+
+.convo-drawer__details[open] .convo-drawer__summary::after {
+  transform: rotate(180deg);
+}
+
+.convo-drawer__count {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  margin-left: auto;
+  margin-right: 8px;
+}
+
 .lichsu {
   margin: 8px 16px; padding: 8px 12px; border-left: 3px solid hsl(var(--muted-foreground) / .5);
   background: hsl(var(--muted) / .4); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;
 }
-.lichsu__dong { padding: 6px 0 0; }
+
+.lichsu__timeline {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 2px solid hsl(var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lichsu__dong {
+  position: relative;
+  padding: 0 0 4px 6px;
+}
+
+.lichsu__dong::before {
+  content: "";
+  position: absolute;
+  left: -17px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+  border: 2px solid hsl(var(--card));
+}
+
 .lichsu__dong p { margin: 2px 0 0; white-space: pre-wrap; color: hsl(var(--muted-foreground)); }
 .lichsu__dong--chuyen_nguoi b, .lichsu__dong--khach_doi_nguoi b { color: hsl(var(--warning)); }
+.lichsu__dong--chuyen_nguoi::before, .lichsu__dong--khach_doi_nguoi::before { background: hsl(var(--warning)); }
 .lichsu__dong--giai_quyet b { color: hsl(var(--success)); }
+.lichsu__dong--giai_quyet::before { background: hsl(var(--success)); }
 
 /* ---------------- Bảng báo cáo ---------------- */
 /* Bảng rộng cuộn NGANG trong khung của nó, không đẩy cả trang tràn ở 375px. */
@@ -2332,6 +2664,7 @@ svg { flex: none; }
   .rail { display: none; }
   .rail.is-mo {
     display: flex; flex-direction: column; overflow: visible;
+    height: auto; max-height: none;
     padding: 10px 12px; border-bottom: 1px solid hsl(var(--border));
     scroll-snap-type: none;
   }

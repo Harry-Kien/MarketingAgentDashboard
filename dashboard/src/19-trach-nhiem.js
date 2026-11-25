@@ -81,10 +81,16 @@ function nhanCanCu(m) {
   return "";
 }
 
-/* Bốn trạng thái căn cứ (mục 16) do MÁY CHỦ phân loại từ kết quả tra cứu
+/* Năm trạng thái căn cứ (mục 16) do MÁY CHỦ phân loại từ kết quả tra cứu
  * thật của lượt — `agent/core/dau_vet_ai.py::phan_loai_can_cu`. Không phần
  * trăm. Tin cũ chưa có phân loại thì lui về Có/Thiếu căn cứ như trước. */
-const TAG_CAN_CU = { du: "auto", chua_du: "assist", khong_co: "halt", mau_thuan: "halt" };
+const TAG_CAN_CU = {
+  du: "auto",
+  chua_du: "assist",
+  khong_co: "halt",
+  mau_thuan: "halt",
+  khong_can: "plain",
+};
 
 function tagCanCu(m) {
   const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
@@ -94,7 +100,7 @@ function tagCanCu(m) {
 
 function veCanCuPhanLoai(m) {
   const cc = m.dau_vet_ai && m.dau_vet_ai.can_cu;
-  if (!cc || !cc.ma || cc.ma === "du") return "";
+  if (!cc || !cc.ma || cc.ma === "du" || cc.ma === "khong_can") return "";
   const ds = (mang) => (mang || []).map((x) => `<li>${esc(x)}</li>`).join("");
   return `<div class="ctt__canh">
     ${cc.huong_dan ? `<p><b>${esc(cc.huong_dan)}</b></p>` : ""}
@@ -191,6 +197,80 @@ function veChiTietTin(m, draft) {
   </div>`;
 }
 
+function veLichSuBanGiaoHtml(bo) {
+  if (!bo) return '<p class="hint">Đang tải…</p>';
+  if (bo.loi) return `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
+  if (bo.items) {
+    return bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
+        <b>${esc(m.tieu_de)}</b>
+        <span class="msg__meta">${esc(gioTin(m.luc))}${m.nguoi_lam ? " · bởi " + esc(m.nguoi_lam) : ""}${
+          m.ket_thuc ? " · kết thúc " + esc(gioTin(m.ket_thuc)) : ""}</span>
+        ${m.chi_tiet ? `<p>${esc(m.chi_tiet)}</p>` : ""}
+      </div>`).join("") : '<p class="hint">Chưa có lần bàn giao nào.</p>';
+  }
+  return '<p class="hint">Đang tải…</p>';
+}
+
+function capNhatChiTietHoiThoai(drawerEl, c, laCuaToi) {
+  if (!drawerEl || !c) return;
+  const content = drawerEl.querySelector(".convo-drawer__content");
+  if (!content) return;
+  const id = String(c.id);
+  const bo = state.lichSuPC && state.lichSuPC[id];
+  if (!bo || bo.version !== c.version) taiLichSuPhanCong(c);
+  const lichSu = veLichSuBanGiaoHtml(bo);
+  let giu;
+  if (c.mode !== "human") giu = c.assigned_to_ten ? `AI đang xử lý · theo dõi: ${esc(c.assigned_to_ten)}` : "AI đang xử lý";
+  else if (!c.assigned_to) giu = "Chưa ai nhận";
+  else giu = `${esc(laCuaToi ? "Bạn" : (c.assigned_to_ten || "Đồng nghiệp"))}${
+    c.assigned_team_ten ? " · nhóm " + esc(c.assigned_team_ten) : ""}`;
+
+  const doiUuTien = state.toiQuyen && state.toiQuyen.has("hoi_thoai.nhan") && c.state !== "resolved"
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
+        data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
+  const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
+  const soLanBanGiao = bo && bo.items ? bo.items.length : 0;
+  const moBanGiao = !!(state.moBanGiao && state.moBanGiao[id]);
+
+  content.innerHTML = `
+      <!-- 1. Thông tin xử lý -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin xử lý</h4>
+        ${dongCT("Người đang giữ", giu)}
+        ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+        ${dongCT("Chế độ AI", esc(cheDo))}
+        <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+      </section>
+
+      <!-- 2. Thông tin hội thoại -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin hội thoại</h4>
+        ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+        ${dongCT("Thời gian tạo", esc(gioTin(c.created_at) || "—"))}
+        ${dongCT("Cập nhật", esc(gioTin(c.updated_at) || "—"))}
+        ${dongCT("Version", esc(c.version || 1))}
+      </section>
+
+      <!-- 3. Lịch sử bàn giao (timeline, thu gọn mặc định) -->
+      <section class="convo-drawer__sec">
+        <details class="convo-drawer__details" id="accordion-ban-giao" data-bg-id="${esc(id)}" ${moBanGiao ? "open" : ""}>
+          <summary class="convo-drawer__summary">
+            <span class="ctt__dau convo-drawer__sec-title" style="margin:0">Lịch sử bàn giao</span>
+            <span class="convo-drawer__count" id="convo-drawer-count">${soLanBanGiao} lần</span>
+          </summary>
+          <div class="lichsu__timeline" id="convo-drawer-timeline">
+            ${lichSu}
+          </div>
+        </details>
+      </section>
+
+      <!-- 4. Nhật ký liên quan -->
+      <section class="convo-drawer__sec convo-drawer__sec--nhatky">
+        <h4 class="ctt__dau convo-drawer__sec-title" style="margin-bottom:6px">Nhật ký liên quan</h4>
+        ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
+      </section>`;
+}
+
 /* ---------------- Chi tiết hội thoại ----------------
  * Người đang giữ, nhóm, và lịch sử bàn giao — trong MỘT panel mở bằng nút
  * "Chi tiết" ở đầu hội thoại. Tải lịch sử khi MỞ, tải lại khi version đổi;
@@ -200,16 +280,7 @@ function veChiTietHoiThoai(c, laCuaToi) {
   if (state.moChiTietHT !== id) return "";
   const bo = state.lichSuPC && state.lichSuPC[id];
   if (!bo || bo.version !== c.version) taiLichSuPhanCong(c);
-  let lichSu = '<p class="hint">Đang tải…</p>';
-  if (bo && bo.loi) lichSu = `<p class="hint">Không tải được: ${esc(bo.loi)}</p>`;
-  else if (bo && bo.items) {
-    lichSu = bo.items.length ? bo.items.slice().reverse().map((m) => `<div class="lichsu__dong lichsu__dong--${esc(m.loai)}">
-        <b>${esc(m.tieu_de)}</b>
-        <span class="msg__meta">${esc(gioTin(m.luc))}${m.nguoi_lam ? " · bởi " + esc(m.nguoi_lam) : ""}${
-          m.ket_thuc ? " · kết thúc " + esc(gioTin(m.ket_thuc)) : ""}</span>
-        ${m.chi_tiet ? `<p>${esc(m.chi_tiet)}</p>` : ""}
-      </div>`).join("") : '<p class="hint">Chưa có lần bàn giao nào.</p>';
-  }
+  let lichSu = veLichSuBanGiaoHtml(bo);
   let giu;
   if (c.mode !== "human") giu = c.assigned_to_ten ? `AI đang xử lý · theo dõi: ${esc(c.assigned_to_ten)}` : "AI đang xử lý";
   else if (!c.assigned_to) giu = "Chưa ai nhận";
@@ -223,16 +294,59 @@ function veChiTietHoiThoai(c, laCuaToi) {
     ? ` <button type="button" class="btn btn--sm btn--ghost" data-doi-uu-tien="${esc(c.id)}"
         data-uu-tien="${esc(c.priority || "normal")}" data-version="${c.version || ""}">Đổi</button>` : "";
   const cheDo = { auto: "AI tự gửi", assist: "AI soạn, người duyệt", human: "Nhân viên xử lý" }[c.mode] || c.mode || "—";
-  return `<section class="lichsu" aria-label="Chi tiết hội thoại">
-    ${dongCT("Người đang giữ", giu)}
-    ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
-    ${dongCT("Chế độ AI", esc(cheDo))}
-    <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
-    ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
-    ${dongCT("Version", esc(c.version || 1))}
-    <h4 class="ctt__dau">Lịch sử bàn giao</h4>${lichSu}
-    ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
-  </section>`;
+  const soLanBanGiao = bo && bo.items ? bo.items.length : 0;
+  const moBanGiao = !!(state.moBanGiao && state.moBanGiao[id]);
+  const anim = state.vuaMoChiTietHT === id ? " is-animating" : "";
+
+  return `<div class="convo-drawer-backdrop" id="convo-drawer-backdrop"></div>
+  <aside class="convo-drawer is-open${anim}" id="convo-drawer" aria-label="Chi tiết hội thoại">
+    <div class="convo-drawer__header">
+      <div class="convo-drawer__header-left">
+        <h3 class="convo-drawer__title">Chi tiết hội thoại</h3>
+        <span class="convo-drawer__id">#${esc(c.id)}</span>
+      </div>
+      <button type="button" class="btn btn--sm btn--ghost convo-drawer__close" id="btn-dong-chitiet-ht"
+        aria-label="Đóng chi tiết hội thoại" title="Đóng (Esc)">✕ Đóng</button>
+    </div>
+    <div class="convo-drawer__content">
+      <!-- 1. Thông tin xử lý -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin xử lý</h4>
+        ${dongCT("Người đang giữ", giu)}
+        ${dongCT("Trạng thái", esc(c.state === "resolved" ? "Đã giải quyết" : (SIGNAL_LABEL[c.status] || c.status || "—")))}
+        ${dongCT("Chế độ AI", esc(cheDo))}
+        <div class="ctt__dong"><b>Ưu tiên</b><span>${esc(UU_TIEN_NHAN[c.priority] || c.priority || "thường")}</span>${doiUuTien}</div>
+      </section>
+
+      <!-- 2. Thông tin hội thoại -->
+      <section class="convo-drawer__sec">
+        <h4 class="ctt__dau convo-drawer__sec-title">Thông tin hội thoại</h4>
+        ${dongCT("Kênh", `${esc(c.account_name || "—")} · ${esc(CHANNEL_LABEL[c.account_channel] || c.account_channel || "")}`)}
+        ${dongCT("Thời gian tạo", esc(gioTin(c.created_at) || "—"))}
+        ${dongCT("Cập nhật", esc(gioTin(c.updated_at) || "—"))}
+        ${dongCT("Version", esc(c.version || 1))}
+      </section>
+
+      <!-- 3. Lịch sử bàn giao (timeline, thu gọn mặc định) -->
+      <section class="convo-drawer__sec">
+        <details class="convo-drawer__details" id="accordion-ban-giao" data-bg-id="${esc(id)}" ${moBanGiao ? "open" : ""}>
+          <summary class="convo-drawer__summary">
+            <span class="ctt__dau convo-drawer__sec-title" style="margin:0">Lịch sử bàn giao</span>
+            <span class="convo-drawer__count" id="convo-drawer-count">${soLanBanGiao} lần</span>
+          </summary>
+          <div class="lichsu__timeline" id="convo-drawer-timeline">
+            ${lichSu}
+          </div>
+        </details>
+      </section>
+
+      <!-- 4. Nhật ký liên quan -->
+      <section class="convo-drawer__sec convo-drawer__sec--nhatky">
+        <h4 class="ctt__dau convo-drawer__sec-title" style="margin-bottom:6px">Nhật ký liên quan</h4>
+        ${typeof veNhatKyHoiThoai === "function" ? veNhatKyHoiThoai(c) : ""}
+      </section>
+    </div>
+  </aside>`;
 }
 
 async function taiLichSuPhanCong(c) {
@@ -247,7 +361,14 @@ async function taiLichSuPhanCong(c) {
     // Hỏng thì NÓI trong panel, không toast: vòng 6 giây sẽ bắn toast mãi.
     state.lichSuPC[id] = { loi: e.message, version: c.version };
   }
-  if (state.openConv === id) loadThread(id);
+  const tl = $("#convo-drawer-timeline");
+  if (tl) {
+    tl.innerHTML = veLichSuBanGiaoHtml(state.lichSuPC[id]);
+    const cnt = $("#convo-drawer-count");
+    if (cnt && state.lichSuPC[id].items) cnt.textContent = `${state.lichSuPC[id].items.length} lần`;
+  } else if (state.openConv === id) {
+    loadThread(id);
+  }
 }
 
 /* "Giao cho…" — chọn người (và nhóm) trong danh sách máy chủ trả về, theo
@@ -294,6 +415,41 @@ async function giaoHoiThoai(c) {
   } catch (e) { toast(e.message, true); }
 }
 
+function dongChiTietHT() {
+  state.moChiTietHT = null;
+  state.vuaMoChiTietHT = null;
+  const d = $("#convo-drawer");
+  const b = $("#convo-drawer-backdrop");
+  if (d) d.remove();
+  if (b) b.remove();
+}
+
+function moChiTietHT(id) {
+  dongChiTietHT();
+  state.moChiTietHT = id;
+  state.vuaMoChiTietHT = id;
+  const c = state.convDangMo;
+  if (c && String(c.id) === id && $("#convdetail")) {
+    const nguoiGiu = c.mode === "human" ? (c.assigned_to ? String(c.assigned_to) : "") : "";
+    const laCuaToi = !!nguoiGiu && nguoiGiu === String(state.toiId || "");
+    const html = veChiTietHoiThoai(c, laCuaToi);
+    state.vuaMoChiTietHT = null;
+    if (html) {
+      const t = document.createElement("div");
+      t.innerHTML = html;
+      while (t.firstChild) {
+        $("#convdetail").appendChild(t.firstChild);
+      }
+      const d = $("#convo-drawer");
+      if (d) {
+        d.addEventListener("animationend", () => d.classList.remove("is-animating"), { once: true });
+      }
+      return;
+    }
+  }
+  loadThread(id);
+}
+
 document.addEventListener("click", (ev) => {
   const nut = ev.target.closest("[data-chi-tiet-tin]");
   if (nut) {
@@ -305,13 +461,33 @@ document.addEventListener("click", (ev) => {
   }
   if (ev.target.closest("#btn-chitiet-ht") && state.openConv) {
     const id = String(state.openConv);
-    state.moChiTietHT = state.moChiTietHT === id ? null : id;
-    loadThread(state.openConv);
+    if (state.moChiTietHT === id) {
+      dongChiTietHT();
+    } else {
+      moChiTietHT(id);
+    }
+    return;
+  }
+  if (ev.target.closest("#btn-dong-chitiet-ht") || ev.target.closest("#convo-drawer-backdrop")) {
+    dongChiTietHT();
     return;
   }
   if (ev.target.closest("#btn-giao") && state.convDangMo) {
     state.moHanhDong = null;   // nút nằm trong menu "⋯" — đóng nó lại
     giaoHoiThoai(state.convDangMo);
+  }
+});
+
+document.addEventListener("toggle", (ev) => {
+  const d = ev.target;
+  if (!d || !d.dataset || !d.dataset.bgId) return;
+  state.moBanGiao = state.moBanGiao || {};
+  state.moBanGiao[d.dataset.bgId] = d.open;
+}, true);
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && state.moChiTietHT) {
+    dongChiTietHT();
   }
 });
 

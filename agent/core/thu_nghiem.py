@@ -36,7 +36,7 @@ dang_thu: ContextVar[bool] = ContextVar("dang_thu", default=False)
 
 # Ba công cụ ghi CSDL/ERP. Thêm công cụ ghi mới là phải thêm vào
 # đây — tests/test_thu_nghiem.py đọc AST của `run_tool` để bắt chỗ quên.
-CO_TAC_DUNG_PHU = frozenset({"tao_don_hang", "xin_huy_don", "xin_doi_tra"})
+CO_TAC_DUNG_PHU = frozenset({"tao_don_hang", "xin_huy_don", "xin_doi_tra", "de_xuat_sua_don"})
 
 _VN = timezone(timedelta(hours=7))
 _da_tieu = 0.0

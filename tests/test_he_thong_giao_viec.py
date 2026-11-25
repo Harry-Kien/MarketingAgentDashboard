@@ -571,15 +571,21 @@ def test_tong_quan_nhan_vien_thuong_khong_thay_tai_dong_nghiep(csdl_kiem_thu):
 # ------------------------------------------------------------------ giao diện (tĩnh)
 
 JS = (ROOT / "dashboard" / "app.js").read_text(encoding="utf-8")
-SRC = (ROOT / "dashboard" / "src" / "25-cong-viec.js").read_text(encoding="utf-8")
+# Màn Công việc tách ba tệp (danh sách / ngăn chi tiết / ngăn Việc mới) để
+# không tệp nào vượt 1000 dòng — canh trên cả ba như một.
+_TEP_CV = sorted((ROOT / "dashboard" / "src").glob("25*cong-viec*.js"))
+SRC = "".join(p.read_text(encoding="utf-8") for p in _TEP_CV)
 HTML = (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
 
 
 def test_man_danh_sach_cong_viec_gan_vao_tab():
+    assert [p.name for p in _TEP_CV] == [
+        "25-cong-viec.js", "25b-cong-viec-chi-tiet.js", "25c-cong-viec-tao.js"]
     assert 'GAN_TAB["cv-danh-sach"]' in SRC
     assert 'GAN_TAB["cv-ca-truc-viec"]' in SRC
     assert 'data-gan="cv-ca-truc-viec"' in HTML
-    assert SRC in JS, "app.js chưa đóng gói lại"
+    for p in _TEP_CV:
+        assert p.read_text(encoding="utf-8") in JS, f"app.js chưa đóng gói lại {p.name}"
 
 
 def test_man_cong_viec_goi_du_cac_duong_api():

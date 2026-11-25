@@ -34,15 +34,19 @@ def _toi(nguoi: dict) -> UUID:
 @router.get("")
 async def danh_sach(
     chua_doc: bool = False,
+    # Bộ lọc "Cần xử lý" của chuông (UX-19-04) — xem `tb.LOAI_HANH_DONG`.
+    can_xu_ly: bool = False,
     gioi_han: int = Query(20, ge=1, le=100),
     bo_qua: int = Query(0, ge=0, le=10_000),
     nguoi: dict = Depends(bat_buoc_dang_nhap),
 ) -> dict:
     uid = _toi(nguoi)
-    ds = await tb.liet_ke(uid, chi_chua_doc=chua_doc, gioi_han=gioi_han, bo_qua=bo_qua)
+    ds = await tb.liet_ke(uid, chi_chua_doc=chua_doc, chi_can_xu_ly=can_xu_ly,
+                          gioi_han=gioi_han, bo_qua=bo_qua)
     return {
         "thong_bao": ds,
         "chua_doc": await tb.dem_chua_doc(uid),
+        "can_xu_ly": await tb.dem_can_xu_ly(uid),
         "con_nua": len(ds) == gioi_han,
         "loai": [{"ma": k, "nhan": v} for k, v in tb.LOAI.items()],
     }

@@ -27,7 +27,7 @@ không thành ba việc huỷ (`tao_tu_yeu_cau_xu_ly_don`).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -77,6 +77,63 @@ LOAI_LICH_SU = {
 }
 # Trigger ghi MÃ trường vào dòng "sua"; đây là nhãn để hiện.
 NHAN_TRUONG = {"tieu_de": "tiêu đề", "mo_ta": "mô tả", "uu_tien": "ưu tiên", "han": "hạn"}
+
+# Nhóm lọc lịch sử hoạt động ở màn chi tiết (MD-UX-14-06). Đặt ở máy chủ, cạnh
+# LOAI_LICH_SU, chứ không chép một bảng nữa vào JavaScript: thêm một loại
+# lịch sử mà quên xếp nhóm thì test đỏ ở đây — còn bảng trong JS thì dòng
+# mới lặng lẽ rơi khỏi mọi bộ lọc trừ "Tất cả", không ai biết.
+NHOM_LICH_SU = {
+    "tao": "khac",
+    "giao": "phan_cong",
+    "nhan": "phan_cong",
+    "chuyen": "phan_cong",
+    "bo_giao": "phan_cong",
+    "tu_dong_giao": "phan_cong",
+    "trang_thai": "trang_thai",
+    "ket_qua": "trang_thai",
+    "tien_do": "tien_do",
+    "sua": "khac",
+}
+NHAN_NHOM_LICH_SU = {
+    "phan_cong": "Phân công",
+    "tien_do": "Tiến độ",
+    "trang_thai": "Trạng thái & kết quả",
+}
+
+# Gợi ý mô tả khi tạo việc từ hội thoại (UX-14-04): trích NGUYÊN VĂN vài tin
+# khách gần nhất, không gọi mô hình. Tóm tắt bằng mô hình là một câu do máy
+# viết lại lời khách — sai một chữ ("đổi" thành "huỷ") là người nhận việc làm
+# sai việc, và không ai đối chiếu được vì câu gốc không nằm cạnh nó.
+SO_TIN_GOI_Y = 3
+_DAI_MOT_TIN = 280
+
+
+def tom_tat_tin_khach(tin: list[dict[str, Any]], *, kenh: str | None = None) -> str:
+    """
+    Đoạn mô tả gợi ý từ các tin KHÁCH gần nhất (cũ trước, mới sau).
+
+    Tin rỗng (khách chỉ gửi ảnh/tệp) vẫn được nêu: bỏ nó đi là mô tả nói
+    khách "không nhắn gì" trong khi khách vừa gửi ảnh vùng da — đúng kiểu
+    mất tin im lặng ở bảng đầu CLAUDE.md.
+    """
+    if not tin:
+        return ""
+    dong = []
+    for t in tin[-SO_TIN_GOI_Y:]:
+        chu = " ".join(str(t.get("noi_dung") or "").split())
+        if not chu:
+            chu = "(khách gửi ảnh/tệp đính kèm)"
+        elif len(chu) > _DAI_MOT_TIN:
+            chu = chu[: _DAI_MOT_TIN - 1].rstrip() + "…"
+        luc = t.get("luc")
+        nhan_gio = ""
+        if isinstance(luc, datetime):
+            # Giờ Việt Nam cộng tay: cùng lý do với agent/core/gio_lam_viec.py.
+            vn = luc.astimezone(timezone.utc) + timedelta(hours=7)
+            nhan_gio = vn.strftime("%H:%M %d/%m") + ": "
+        dong.append(f"• {nhan_gio}{chu}")
+    dau = "Khách nhắn gần nhất" + (f" ({kenh})" if kenh else "") + ":"
+    return "\n".join([dau, *dong])
 
 CHUA_XONG = ("moi", "dang_lam")
 LOAI_XU_LY_DON = ("sua", "huy")

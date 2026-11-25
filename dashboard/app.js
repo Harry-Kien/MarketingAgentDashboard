@@ -9693,7 +9693,11 @@ document.addEventListener("click", async (ev) => {
  * Hỏng thì KHÔNG toast — vòng 6 giây sẽ bắn toast mãi — mà giữ số cũ và ghi
  * console; danh sách mở ra thì báo lỗi ngay trong khung. */
 
-const chuong = { mo: false, chiChuaDoc: false, ds: [], conNua: false, dangTai: false };
+/* `loc`: "" (tất cả) | "can_xu_ly" | "chua_doc" — UX-19-04. Lọc ở máy chủ,
+   không ở đây: danh sách phân trang 20 dòng, lọc sau khi cắt trang thì "Xem
+   thêm" ra trang rỗng dù trang sau còn việc cần xử lý. */
+const chuong = { mo: false, loc: "", ds: [], conNua: false, dangTai: false,
+                 soChuaDoc: 0, soCanXuLy: 0 };
 
 function veSoChuong(n) {
   const o = $("#chuongSo");
@@ -9745,19 +9749,61 @@ function tbLamSachNoiDung(t) {
   return goc.replace(/\s*\((?:tool_calls|tool_use|\d+(?:\.\d+)?)\)\s*/gi, " ").trim();
 }
 
+/* Nhóm hiển thị (UX-19-04), do máy chủ tính từ TÌNH TRẠNG THẬT của thứ được
+   trỏ tới (`agent/core/thong_bao_noi_bo.py::LOAI_HANH_DONG`): việc đã xong thì
+   "Được giao việc" không còn là "cần xử lý". Thiếu trường (bản máy chủ cũ)
+   thì coi là cần xử lý — giấu nhầm một việc cần làm tệ hơn hiện thừa. */
+const CHUONG_NHOM = {
+  can_xu_ly: "Cần xử lý",
+  da_xu_ly: "Đã xử lý",
+  thong_tin: "Thông tin",
+};
+
+/* Mô tả NGẮN: một câu, tối đa ~110 ký tự. Phần dài vẫn còn trong `title`
+   để rê chuột đọc; danh sách là để quét, không phải để đọc từng dòng. */
+function tbNgan(chu, toiDa = 110) {
+  const s = String(chu || "").trim();
+  return s.length > toiDa ? s.slice(0, toiDa - 1).trimEnd() + "…" : s;
+}
+
 function dongThongBao(t) {
   const ai = [t.ten_khach, t.kenh].filter(Boolean).map(esc).join(" · ");
   const noiDung = tbLamSachNoiDung(t);
-  const huongDan = (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim();
-  return `<button type="button" class="chuong__dong${t.da_doc ? "" : " is-moi"}" role="listitem"
-      data-tb="${esc(t.id)}">
-    <span class="chuong__loai chuong__loai--${esc(t.loai)}">${esc(t.nhan_loai)}</span>
+  const nhom = t.nhom || (t.can_xu_ly === false ? "da_xu_ly" : "can_xu_ly");
+  // Hướng dẫn "bấm để làm gì" chỉ có nghĩa khi CÒN việc để làm.
+  const huongDan = nhom === "can_xu_ly" ? (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim() : "";
+  return `<button type="button" class="chuong__dong chuong__dong--${esc(nhom)}${t.da_doc ? "" : " is-moi"}" role="listitem"
+      data-tb="${esc(t.id)}" title="${esc(noiDung)}">
+    <span class="chuong__hang">
+      <span class="chuong__loai chuong__loai--${esc(t.loai)}">${esc(t.nhan_loai)}</span>
+      <span class="chuong__nhom chuong__nhom--${esc(nhom)}">${esc(CHUONG_NHOM[nhom] || "")}</span>
+      <time class="chuong__gio" datetime="${esc(t.tao_luc)}">${esc(clock(t.tao_luc))}${t.da_doc ? "" : " · chưa đọc"}</time>
+    </span>
     <b class="chuong__tieude">${esc(t.tieu_de)}</b>
-    ${ai ? `<span class="chuong__phu">${ai}</span>` : ""}
-    ${noiDung ? `<span class="chuong__phu">${esc(noiDung)}</span>` : ""}
+    ${noiDung ? `<span class="chuong__phu chuong__mota">${esc(tbNgan(noiDung))}</span>` : ""}
+    ${ai ? `<span class="chuong__phu chuong__ai">${ai}</span>` : ""}
     ${huongDan ? `<span class="chuong__huongdan">${esc(huongDan)}</span>` : ""}
-    <time class="chuong__gio" datetime="${esc(t.tao_luc)}">${esc(clock(t.tao_luc))}${t.da_doc ? "" : " · chưa đọc"}</time>
   </button>`;
+}
+
+const CHUONG_RONG = {
+  "": "Chưa có thông báo nào.",
+  can_xu_ly: "Không còn thông báo nào cần xử lý.",
+  chua_doc: "Không có thông báo chưa đọc.",
+};
+
+function veLocChuong() {
+  $$("[data-chuong-loc]").forEach((b) => {
+    const bat = b.dataset.chuongLoc === chuong.loc;
+    b.classList.toggle("is-on", bat);
+    b.setAttribute("aria-pressed", String(bat));
+  });
+  const so = { can_xu_ly: chuong.soCanXuLy, chua_doc: chuong.soChuaDoc };
+  $$("[data-chuong-so]").forEach((o) => {
+    const n = so[o.dataset.chuongSo] || 0;
+    o.textContent = n > 99 ? "99+" : String(n || "");
+    o.hidden = !n;
+  });
 }
 
 function veDanhSachChuong() {
@@ -9765,23 +9811,53 @@ function veDanhSachChuong() {
   if (!ds) return;
   ds.innerHTML = chuong.ds.length
     ? chuong.ds.map(dongThongBao).join("")
-    : `<p class="empty">${chuong.chiChuaDoc ? "Không có thông báo chưa đọc." : "Chưa có thông báo nào."}</p>`;
+    : `<p class="empty">${CHUONG_RONG[chuong.loc] || CHUONG_RONG[""]}</p>`;
   $("#chuongThem").hidden = !chuong.conNua;
+  veLocChuong();
+}
+
+/* "Xem thêm" (UX-19-02): khoá nút + chữ "Đang tải…" trong lúc gọi, rồi cuộn
+   tới dòng MỚI đầu tiên và đưa focus vào nó. Trước đây 20 dòng mới nối vào
+   bên dưới tầm nhìn, nút đứng im — người dùng tưởng nút chết và bấm lại. */
+function nutThemChuong(dangTai) {
+  const nut = $("#chuongThem");
+  if (!nut) return;
+  nut.disabled = dangTai;
+  nut.setAttribute("aria-busy", String(dangTai));
+  nut.innerHTML = dangTai
+    ? '<span class="chuong__xoay" aria-hidden="true"></span>Đang tải…' : "Xem thêm";
 }
 
 async function taiDanhSachChuong(them = false) {
   if (chuong.dangTai) return;
   chuong.dangTai = true;
+  const soCu = them ? chuong.ds.length : 0;
+  if (them) nutThemChuong(true);
   try {
-    const q = new URLSearchParams({ gioi_han: "20", bo_qua: String(them ? chuong.ds.length : 0) });
-    if (chuong.chiChuaDoc) q.set("chua_doc", "true");
+    const q = new URLSearchParams({ gioi_han: "20", bo_qua: String(soCu) });
+    if (chuong.loc === "chua_doc") q.set("chua_doc", "true");
+    if (chuong.loc === "can_xu_ly") q.set("can_xu_ly", "true");
     const d = await api(`/toi/thong-bao?${q}`);
     chuong.ds = them ? chuong.ds.concat(d.thong_bao) : d.thong_bao;
     chuong.conNua = d.con_nua;
+    chuong.soChuaDoc = d.chua_doc || 0;
+    chuong.soCanXuLy = d.can_xu_ly || 0;
     veSoChuong(d.chua_doc);
+    nutThemChuong(false);
     veDanhSachChuong();
+    if (them) {
+      const moi = $$("#chuongDs [data-tb]")[soCu];
+      if (moi) {
+        moi.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        moi.focus({ preventScroll: true });
+      }
+    }
   } catch (e) {
-    $("#chuongDs").innerHTML = `<p class="empty">Không tải được thông báo: ${esc(e.message)}</p>`;
+    nutThemChuong(false);
+    /* Hỏng lúc "Xem thêm" thì GIỮ những dòng đã có — xoá cả danh sách để
+       báo một lỗi trang 2 là đổi một sự cố nhỏ lấy một màn trống. */
+    if (them) toast(`Không tải thêm được thông báo: ${e.message}`, true);
+    else $("#chuongDs").innerHTML = `<p class="empty">Không tải được thông báo: ${esc(e.message)}</p>`;
   } finally {
     chuong.dangTai = false;
   }
@@ -9825,8 +9901,11 @@ $("#chuongNut")?.addEventListener("click", (e) => {
   moDongChuong(!chuong.mo);
 });
 
-$("#chuongChuaDoc")?.addEventListener("change", (e) => {
-  chuong.chiChuaDoc = e.target.checked;
+$("#chuongLoc")?.addEventListener("click", (e) => {
+  const nut = e.target.closest("[data-chuong-loc]");
+  if (!nut || nut.dataset.chuongLoc === chuong.loc) return;
+  chuong.loc = nut.dataset.chuongLoc;
+  veLocChuong();
   taiDanhSachChuong();
 });
 
@@ -11863,13 +11942,19 @@ GAN_TAB["ns-vai-tro"] = async (el) => {
 };
 /* ================= CÔNG VIỆC (phiếu việc mục 14) =================
  *
- * Hai điểm gắn vào khung tab (01b-dieu-huong.js `ganKhe`):
+ * Ba tệp, một màn (mỗi tệp một phần, để không tệp nào vượt 1000 dòng):
  *
- *   GAN_TAB["cv-danh-sach"]     Danh sách công việc: xem, tạo, tìm, lọc,
- *                               giao, chuyển, đổi trạng thái, ghi tiến độ,
- *                               ghi kết quả, xem lịch sử hoạt động.
- *   GAN_TAB["cv-ca-truc-viec"]  Khối "Công việc" trong Tổng quan ca trực:
- *                               tồn đọng, chưa phân công, ai đang trong ca.
+ *   25-cong-viec.js        danh sách: dòng việc, bộ lọc nhanh có số đếm,
+ *                          dải cảnh báo quá hạn, gắn tab, khối Tổng quan ca.
+ *   25b-cong-viec-chi-tiet.js  ngăn chi tiết bên phải (điện thoại: tấm phủ
+ *                          toàn màn): hành động theo trạng thái, hoàn thành
+ *                          nhanh, chọn người nhận kèm ca/tải, lịch sử có lọc.
+ *   25c-cong-viec-tao.js   ngăn "Việc mới": liên kết dạng thẻ, gợi ý mã đơn
+ *                          theo khách, mô tả trích tin khách gần nhất.
+ *
+ * Hai điểm gắn vào khung tab (01b-dieu-huong.js `ganKhe`):
+ *   GAN_TAB["cv-danh-sach"]     Danh sách công việc.
+ *   GAN_TAB["cv-ca-truc-viec"]  Khối "Công việc" trong Tổng quan ca trực.
  *
  * Danh sách cũ (08-tai-khoan.js) vẫn nằm trong `.tab__goc`: mô-đun này hỏng
  * thì ganKhe trả nó lại — màn không trắng. Hộp xác nhận kết quả ĐƠN (đối
@@ -11885,6 +11970,9 @@ const cvx = {
   el: null, ds: [], dm: null, moId: null, chiTiet: null,
   loc: { trang_thai: "", uu_tien: "", nguon: "", q: "", cua_toi: false,
          chua_phan_cong: false, qua_han: false },
+  nhanh: "", dem: null, tong: 0, quaHan: 0,
+  // Việc mở từ chuông mà bộ lọc đang chọn giấu đi (UX-19-01) — ghim lên đầu.
+  ghim: null,
   nguoiNhan: null, dangTai: false, hen: null,
 };
 
@@ -11912,38 +12000,166 @@ function cvxCo_mau(v) {
   return "auto";
 }
 
-/* Liên kết NGỮ CẢNH (mục 14.8): hội thoại, hồ sơ khách, đơn — bấm là tới. */
-function cvxLienKet(v) {
-  return [
-    v.conversation_id ? `<button type="button" class="btn btn--sm btn--ghost" data-cvx-ht="${esc(v.conversation_id)}">Hội thoại</button>` : "",
-    v.contact_id ? `<button type="button" class="btn btn--sm btn--ghost" data-cvx-kh="${esc(v.contact_id)}">Khách${v.khach_ten ? ": " + esc(v.khach_ten) : ""}</button>` : "",
-    v.order_id ? `<button type="button" class="btn btn--sm btn--ghost" data-cvx-don="${esc(v.ma_don || "")}">Đơn ${esc(v.ma_don || "")}</button>` : "",
-  ].join("");
+/* Nhãn trạng thái NGẮN cho thẻ (UX-14-01). Quá hạn thắng mọi trạng thái mở:
+   "Đang làm" mà quá hạn hai ngày thì điều cần thấy là quá hạn. */
+function cvxTrangThai(v) {
+  if (v.qua_han) return `<span class="cvx-tt cvx-tt--qua">Quá hạn</span>`;
+  const nhan = { moi: "Chờ xử lý", dang_lam: "Đang làm", xong: "Hoàn thành", huy: "Đã hủy" };
+  return `<span class="cvx-tt cvx-tt--${esc(v.trang_thai)}">${esc(nhan[v.trang_thai] || v.nhan_trang_thai)}</span>`;
 }
 
-function cvxDong(v) {
-  const nguoi = v.chua_phan_cong
-    ? `<span class="pill pill--warn">${esc((cvx.dm && cvx.dm.nhan_chua_phan_cong) || "Chưa phân công")}</span>`
-    : v.nguoi_nhan_ten ? `<span class="pill">${esc(v.nguoi_nhan_ten)}</span>` : "";
-  const han = v.han
-    ? `<span class="pill${v.qua_han ? " pill--warn" : ""}">${v.qua_han ? "quá hạn " : "hạn "}${esc(hanDoc(v.han))}</span>` : "";
+function cvxUuTienTag(v) {
+  if (v.uu_tien !== "gap" && v.uu_tien !== "cao") return "";
+  return `<span class="cvx-ut cvx-ut--${esc(v.uu_tien)}">${esc(cvxNhan(v.uu_tien, cvx.dm && cvx.dm.uu_tien))}</span>`;
+}
+
+/* Chữ cái đầu của tên — avatar chữ, không ảnh (dashboard không giữ ảnh nhân viên). */
+function cvxChuDau(ten) {
+  const p = String(ten || "?").trim().split(/\s+/);
+  return ((p.length > 1 ? p[p.length - 2][0] : "") + (p[p.length - 1][0] || "?")).toUpperCase();
+}
+
+function cvxNguoiPhuTrach(v) {
+  if (v.chua_phan_cong) {
+    return `<span class="cvx-nguoi cvx-nguoi--trong">${esc((cvx.dm && cvx.dm.nhan_chua_phan_cong) || "Chưa phân công")}</span>`;
+  }
+  if (!v.nguoi_nhan_ten) return `<span class="cvx-nguoi cvx-nguoi--trong">Không có người nhận</span>`;
+  return `<span class="cvx-nguoi"><span class="cvx-avatar" aria-hidden="true">${esc(cvxChuDau(v.nguoi_nhan_ten))}</span>${esc(v.nguoi_nhan_ten)}</span>`;
+}
+
+/* "Quá hạn 2 ngày", không "Quá hạn 24-11": `clock()` đổi sang ngày tháng sau
+   một ngày, và "quá hạn 24-11" đọc như một mã chứ không như một khoảng trễ. */
+function cvxTre(iso) {
+  const giay = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (giay < 3600) return Math.max(1, Math.floor(giay / 60)) + " phút";
+  if (giay < 86400) return Math.floor(giay / 3600) + " giờ";
+  return Math.floor(giay / 86400) + " ngày";
+}
+
+/* Hạn đọc được: "trong 3 giờ", "quá hạn 2 ngày" — không phải ISO. */
+function cvxHanChu(v) {
+  if (!v.han) return `<span class="cvx-han cvx-han--khong">Không hạn</span>`;
+  if (v.qua_han) return `<span class="cvx-han cvx-han--qua">Quá hạn ${esc(cvxTre(v.han))}</span>`;
+  if (v.trang_thai === "xong" || v.trang_thai === "huy") {
+    return `<span class="cvx-han">Hạn ${esc(cvxNgay(v.han))}</span>`;
+  }
+  const gap = new Date(v.han) - Date.now() < 86400000;
+  return `<span class="cvx-han${gap ? " cvx-han--gan" : ""}">Hạn ${esc(hanDoc(v.han))}</span>`;
+}
+
+/* Tiến độ THẬT: bước trạng thái + số lần cập nhật tiến độ + dòng mới nhất.
+   Không có ô "phần trăm" — một con số người ta tự điền không phải tiến độ. */
+function cvxTienDo(v) {
+  const buoc = { moi: 1, dang_lam: 2, xong: 3 }[v.trang_thai] || 0;
+  const thanh = [1, 2, 3].map((i) => `<i class="${i <= buoc ? "is-xong" : ""}"></i>`).join("");
+  const so = Number(v.so_tien_do || 0);
+  const cuoi = v.tien_do_cuoi ? String(v.tien_do_cuoi) : "";
+  const chu = so
+    ? `${so} cập nhật · ${esc(clock(v.tien_do_luc))}: ${esc(cuoi.length > 80 ? cuoi.slice(0, 79) + "…" : cuoi)}`
+    : (v.trang_thai === "huy" ? "Đã hủy" : "Chưa cập nhật tiến độ");
+  return `<span class="cvx-tien" title="${esc(cuoi)}">
+    <span class="cvx-tien__thanh cvx-tien__thanh--${esc(v.trang_thai)}" aria-hidden="true">${thanh}</span>
+    <span class="cvx-tien__chu">${chu}</span></span>`;
+}
+
+function cvxDong(v, ghim = false) {
   const nhanDuoc = v.chua_phan_cong && cvxCo("cong_viec.sua");
-  return `<div class="row${cvx.moId === v.id ? " is-on" : ""}" data-cv="${esc(v.id)}">
+  const ngu = [
+    v.khach_ten ? "Khách: " + esc(v.khach_ten) : "",
+    v.ma_don ? "Đơn " + esc(v.ma_don) : "",
+    esc(v.nhan_nguon),
+  ].filter(Boolean).join(" · ");
+  return `<div class="row cvx-dong${cvx.moId === v.id ? " is-on" : ""}${ghim ? " cvx-dong--ghim" : ""}"
+      data-cv="${esc(v.id)}" data-cvx-mo="${esc(v.id)}" role="button" tabindex="0"
+      aria-label="${esc(v.tieu_de)} — mở chi tiết">
     <span class="row__flag row__flag--${cvxCo_mau(v)}"></span>
-    <div class="row__main">
-      <b>${esc(v.tieu_de)}</b>
-      <span class="row__sub">${esc(v.nhan_trang_thai)} · ${esc(cvxNhan(v.uu_tien, cvx.dm && cvx.dm.uu_tien))} · ${
-        esc(v.nhan_nguon)}${v.khach_ten ? " · " + esc(v.khach_ten) : ""}${
-        v.ma_don ? " · đơn " + esc(v.ma_don) : ""} · tạo ${esc(clock(v.tao_luc))}</span>
+    <div class="cvx-dong__chinh">
+      ${ghim ? `<span class="cvx-ghim">Mở từ thông báo — không khớp bộ lọc đang chọn</span>` : ""}
+      <div class="cvx-dong__dau"><b class="cvx-dong__ten">${esc(v.tieu_de)}</b>${cvxTrangThai(v)}${cvxUuTienTag(v)}</div>
+      <div class="cvx-dong__meta">${cvxNguoiPhuTrach(v)}${cvxHanChu(v)}<span class="cvx-dong__ngu">${ngu}</span></div>
+      ${cvxTienDo(v)}
     </div>
     <div class="row__side">
-      <span>${nguoi} ${han}</span>
-      <span class="row__nut">
-        ${nhanDuoc ? `<button type="button" class="btn btn--sm" data-cvx-nhan="${esc(v.id)}">Nhận</button>` : ""}
-        <button type="button" class="btn btn--sm btn--ghost" data-cvx-mo="${esc(v.id)}">Chi tiết</button>
-      </span>
+      ${nhanDuoc ? `<button type="button" class="btn btn--sm" data-cvx-nhan="${esc(v.id)}">Nhận</button>` : ""}
+      <span class="cvx-dong__tao">tạo ${esc(clock(v.tao_luc))}</span>
     </div>
   </div>`;
+}
+
+/* ---------------- bộ lọc nhanh ---------------- */
+
+/* [mã chip, nhãn, khoá trong `dem` của máy chủ]. Một chip một lúc: "Quá hạn"
+   VÀ "Hoàn thành" cùng bật là một bộ lọc luôn rỗng. */
+const CVX_NHANH = [
+  ["", "Tất cả", "tat_ca"],
+  ["moi", "Chờ xử lý", "cho_xu_ly"],
+  ["dang_lam", "Đang làm", "dang_lam"],
+  ["qua_han", "Quá hạn", "qua_han"],
+  ["chua_phan_cong", "Chưa phân công", "chua_phan_cong"],
+  ["xong", "Hoàn thành", "hoan_thanh"],
+  ["huy", "Đã hủy", "da_huy"],
+];
+
+function cvxDatNhanh(k) {
+  cvx.nhanh = k;
+  cvx.loc.trang_thai = ["moi", "dang_lam", "xong", "huy"].includes(k) ? k : "";
+  cvx.loc.qua_han = k === "qua_han";
+  cvx.loc.chua_phan_cong = k === "chua_phan_cong";
+}
+
+function cvxXoaLoc() {
+  cvx.loc = { trang_thai: "", uu_tien: "", nguon: "", q: "", cua_toi: false,
+              chua_phan_cong: false, qua_han: false };
+  cvx.nhanh = "";
+  if (!cvx.el) return;
+  $("#cvxTim", cvx.el).value = "";
+  $("#cvxUuTien", cvx.el).value = "";
+  $("#cvxNguon", cvx.el).value = "";
+}
+
+function cvxVeChip() {
+  const o = cvx.el && $("#cvxNhanh", cvx.el);
+  if (!o) return;
+  const dem = cvx.dem || {};
+  o.innerHTML = CVX_NHANH.map(([k, nhan, khoa]) => {
+    const so = dem[khoa];
+    const bat = cvx.nhanh === k;
+    const canh = (k === "qua_han" && so) ? " cvx-chip--qua" : "";
+    return `<button type="button" class="chip cvx-chip${bat ? " is-on" : ""}${canh}" data-cvx-nhanh="${k}"
+      aria-pressed="${bat}">${esc(nhan)}${so != null ? ` <span class="cvx-chip__so">${so}</span>` : ""}</button>`;
+  }).join("");
+}
+
+/* Điều kiện đang lọc, nói thành chữ (UX-14-02): người ta phải biết VÌ SAO
+   danh sách chỉ còn 3 dòng trước khi kết luận "mất việc". */
+function cvxVeTomTat() {
+  const o = cvx.el && $("#cvxTomTat", cvx.el);
+  if (!o) return;
+  const l = cvx.loc;
+  const dk = [];
+  const chip = CVX_NHANH.find(([k]) => k === cvx.nhanh);
+  if (cvx.nhanh && chip) dk.push(chip[1]);
+  if (l.cua_toi) dk.push("Việc của tôi");
+  if (l.uu_tien) dk.push("Ưu tiên " + cvxNhan(l.uu_tien, cvx.dm && cvx.dm.uu_tien));
+  if (l.nguon) dk.push("Nguồn: " + cvxNhan(l.nguon, cvx.dm && cvx.dm.nguon));
+  if (l.q) dk.push(`Tìm “${l.q}”`);
+  const hien = cvx.ds.length;
+  const tong = cvx.tong;
+  o.innerHTML = `<span class="cvx-tomtat__so"><b>${tong}</b> việc${hien < tong ? ` · hiện ${hien} đầu tiên` : ""}</span>
+    ${dk.length ? `<span class="cvx-tomtat__dk">Đang lọc: ${dk.map((x) => `<span class="cvx-tomtat__the">${esc(x)}</span>`).join("")}</span>
+      <button type="button" class="btn btn--sm btn--ghost" data-cvx-xoa-loc>Xoá bộ lọc</button>` : ""}`;
+}
+
+/* Dải cảnh báo quá hạn (MD-UX-14-07): đếm trên TOÀN phạm vi người xem, không
+   trên bộ lọc đang chọn — đang lọc "Hoàn thành" thì càng phải biết còn việc
+   quá hạn ở chỗ khác. */
+function cvxVeCanhBao() {
+  const o = cvx.el && $("#cvxCanhBao", cvx.el);
+  if (!o) return;
+  const n = cvx.quaHan;
+  o.hidden = !n || cvx.nhanh === "qua_han";
+  o.innerHTML = n ? `<span class="cvx-canh-bao__chu"><b>${n} việc đã quá hạn</b> — cần ưu tiên xử lý hoặc cập nhật hạn.</span>
+    <button type="button" class="btn btn--sm btn--halt" data-cvx-xem-qua-han>Xem ngay</button>` : "";
 }
 
 /* ---------------- tải ---------------- */
@@ -11958,6 +12174,10 @@ async function cvxTaiDs() {
   cvx.dm = { trang_thai: d.trang_thai, uu_tien: d.uu_tien, nguon: d.nguon,
              nhan_chua_phan_cong: d.nhan_chua_phan_cong };
   cvx.ds = d.cong_viec;
+  cvx.dem = d.dem || null;
+  cvx.tong = d.tong != null ? d.tong : d.cong_viec.length;
+  /* Việc ghim đã hiện trong danh sách (người ta đổi bộ lọc) thì thôi ghim. */
+  if (cvx.ghim && cvx.ds.some((x) => x.id === cvx.ghim.id)) cvx.ghim = null;
   /* Hộp xác nhận kết quả ĐƠN của 08-tai-khoan.js tìm việc trong
      `congViec.ds` — giữ cùng danh sách để nó mở được từ màn này. */
   congViec.ds = d.cong_viec;
@@ -11970,17 +12190,26 @@ async function cvxTaiDem() {
   try {
     const t = await api("/cong-viec/tong-quan");
     $("#c-congviec").textContent = (t.dem.cho_xu_ly + t.dem.dang_thuc_hien) || "";
+    cvx.quaHan = t.dem.qua_han || 0;
+    cvxVeCanhBao();
     return t;
   } catch (e) { console.warn("Không tải được tổng quan công việc", e); return null; }
 }
 
-async function cvxLamMoi() {
+/* `ep` = vừa thao tác trong ngăn chi tiết, PHẢI vẽ lại ngăn dù focus đang ở
+   trong đó (nút vừa bấm giữ focus — bỏ qua là toast "Đã giao" hiện ra mà
+   ngăn vẫn ghi người cũ). */
+async function cvxLamMoi(ep = false) {
   if (!cvx.el || cvx.dangTai || !cvxCo("cong_viec.doc")) return;
   cvx.dangTai = true;
   try {
     await cvxTaiDs();
     cvxVeDs();
-    if (cvx.moId) await cvxTaiChiTiet(cvx.moId, false);
+    /* Không vẽ lại ngăn chi tiết khi người ta đang GÕ trong đó: vẽ lại là
+       mất chỗ con trỏ, và vòng 20 giây sẽ cắt ngang câu kết quả đang viết. */
+    const o = document.activeElement;
+    const dangGo = o && o.matches && o.matches("#cvxCt input, #cvxCt textarea, #cvxCt select");
+    if (cvx.moId && (ep || !dangGo)) await cvxTaiChiTiet(cvx.moId, false);
     cvxTaiDem();
   } catch (e) {
     $("#cvxDs", cvx.el).innerHTML = `<p class="empty">Không tải được công việc: ${esc(e.message)}</p>`;
@@ -11989,240 +12218,14 @@ async function cvxLamMoi() {
 
 function cvxVeDs() {
   const o = $("#cvxDs", cvx.el);
-  o.innerHTML = cvx.ds.length ? cvx.ds.map(cvxDong).join("")
-    : '<p class="empty">Không có việc nào trong bộ lọc này.</p>';
-}
-
-/* ---------------- chi tiết + lịch sử ---------------- */
-
-async function cvxTaiChiTiet(id, cuon = true) {
-  let d;
-  try { d = await api(`/cong-viec/${encodeURIComponent(id)}`); }
-  catch (e) {
-    cvx.moId = null; cvx.chiTiet = null;
-    $("#cvxCt", cvx.el).innerHTML = "";
-    if (e.ma === 404) toast("Việc này không còn hoặc bạn không có quyền xem.", true);
-    else toast(e.message, true);
-    return;
-  }
-  cvx.moId = id;
-  cvx.chiTiet = d;
-  cvx.dm = cvx.dm || { trang_thai: d.trang_thai, uu_tien: d.uu_tien, nguon: d.nguon };
-  /* Việc mở từ chuông có thể không nằm trong bộ lọc đang chọn: thêm vào
-     `congViec.ds` để hộp xác nhận đơn vẫn tìm thấy nó. */
-  if (!congViec.ds.some((x) => x.id === id)) congViec.ds = congViec.ds.concat([d.cong_viec]);
-  cvxVeChiTiet();
-  $$("#cvxDs .row", cvx.el).forEach((r) => r.classList.toggle("is-on", r.dataset.cv === id));
-  if (cuon) $("#cvxCt", cvx.el).scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function cvxNutChiTiet(v) {
-  const sua = cvxCo("cong_viec.sua");
-  const giao = cvxCo("cong_viec.giao");
-  const mo = v.trang_thai === "moi" || v.trang_thai === "dang_lam";
-  const laCuaToi = v.nguoi_nhan && String(v.nguoi_nhan) === String(state.toiId || "");
-  const xuLyDon = typeof cvLaXuLyDon === "function" && cvLaXuLyDon(v);
-  const nut = [];
-  if (mo && v.chua_phan_cong && sua) nut.push(["nhan", "Nhận việc", ""]);
-  if (mo && v.trang_thai === "moi" && sua && (laCuaToi || giao)) nut.push(["bat-dau", "Bắt đầu", ""]);
-  if (mo && sua && !xuLyDon) nut.push(["xong", "Hoàn thành…", "btn--go"]);
-  if (mo && xuLyDon && typeof cvDuocXacNhan === "function" && cvDuocXacNhan())
-    nut.push(["don", "Xác nhận kết quả đơn…", "btn--go"]);
-  if (mo && sua) nut.push(["tien-do", "Cập nhật tiến độ…", ""]);
-  if (mo && giao) nut.push(["giao", v.nguoi_nhan ? "Chuyển cho…" : "Giao cho…", ""]);
-  if (mo && giao && v.chua_phan_cong) nut.push(["tu-dong", "Tự phân công", ""]);
-  if (sua) nut.push(["sua", "Sửa…", "btn--ghost"]);
-  if (!mo && sua && !xuLyDon) nut.push(["mo-lai", "Mở lại", "btn--ghost"]);
-  if (mo && sua) nut.push(["huy", "Hủy việc…", "btn--halt"]);
-  return nut.map(([ma, nhan, lop]) =>
-    `<button type="button" class="btn btn--sm ${lop}" data-cvx-lam="${ma}">${esc(nhan)}</button>`).join("");
-}
-
-function cvxVeChiTiet() {
-  const o = $("#cvxCt", cvx.el);
-  const d = cvx.chiTiet;
-  if (!d) { o.innerHTML = ""; return; }
-  const v = d.cong_viec;
-  const truong = [
-    ["Trạng thái", v.nhan_trang_thai + (v.chua_phan_cong ? " · Chưa phân công" : "")],
-    ["Ưu tiên", cvxNhan(v.uu_tien, d.uu_tien)],
-    ["Người phụ trách", v.nguoi_nhan_ten || "—"],
-    ["Người tạo", v.nguoi_giao_ten || v.nhan_nguon],
-    ["Nguồn", v.nhan_nguon],
-    ["Hạn", v.han ? cvxNgay(v.han) + (v.qua_han ? " (quá hạn)" : "") : "Không có"],
-    ["Tạo lúc", cvxNgay(v.tao_luc)],
-    ["Cập nhật lúc", cvxNgay(v.sua_luc)],
-    ["Hoàn thành lúc", v.xong_luc ? cvxNgay(v.xong_luc) : "—"],
-    ["Mô tả", v.mo_ta || "Không có mô tả"],
-    ["Kết quả", v.ket_qua || (v.ket_qua_xu_ly_don
-      ? `${v.ket_qua_xu_ly_don}${v.ly_do_ket_qua ? " — " + v.ly_do_ket_qua : ""}` : "Chưa có")],
-  ];
-  const lichSu = (d.lich_su || []).map((l) => {
-    const chiTiet = [
-      l.tu_nguoi || l.den_nguoi ? `${esc(l.tu_nguoi || "—")} → ${esc(l.den_nguoi || "—")}` : "",
-      l.tu_trang_thai || l.den_trang_thai ? `${esc(l.tu_trang_thai || "—")} → ${esc(l.den_trang_thai || "—")}` : "",
-      l.ghi_chu ? esc(l.ghi_chu) : "",
-    ].filter(Boolean).join(" · ");
-    return `<li class="cvx__ls-dong"><time>${esc(cvxNgay(l.tao_luc))}</time>
-      <b>${esc(l.nhan_loai)}</b> <span class="cvx__ls-ai">${esc(l.nguoi)}</span>
-      ${chiTiet ? `<span class="cvx__ls-ct">${chiTiet}</span>` : ""}</li>`;
-  }).join("");
-  o.innerHTML = `<section class="panel cvx__ct" aria-label="Chi tiết công việc">
-    <h2 class="panel__head">${esc(v.tieu_de)}
-      <button type="button" class="btn btn--sm btn--ghost" data-cvx-dong>Đóng</button></h2>
-    <div class="cvk__detail">${truong.map(([nhan, gt], i) => `<div class="cvk__item${i >= 9 ? " cvk__item--wide" : ""}">
-      <span class="cvk__label">${esc(nhan)}</span><span class="cvk__value">${esc(gt)}</span></div>`).join("")}</div>
-    <div class="row__nut cvx__lienket">${cvxLienKet(v)}</div>
-    <div class="row__nut cvx__nut">${cvxNutChiTiet(v)}</div>
-    <h3 class="cvx__ls-tieu">Lịch sử hoạt động</h3>
-    <ol class="cvx__ls">${lichSu || '<li class="empty">Chưa có hoạt động.</li>'}</ol>
-  </section>`;
-}
-
-/* ---------------- thao tác ---------------- */
-
-async function cvxNguoiNhan(congViecId) {
-  /* Danh sách người nhận lấy từ /cong-viec/nguoi-nhan-duoc (chỉ cần
-     `cong_viec.giao`), không từ /nguoi-dung (cần `nguoi_dung.doc`): người
-     điều phối việc không nhất thiết quản lý nhân sự. */
-  const q = congViecId ? `?cong_viec_id=${encodeURIComponent(congViecId)}` : "";
-  const d = await api(`/cong-viec/nguoi-nhan-duoc${q}`);
-  return d.nguoi.map((n) => ({
-    value: n.id,
-    label: `${n.ten}${n.trong_ca_that ? " · đang trong ca" : n.co_lich ? " · ngoài ca" : " · chưa xếp ca"}${
-      n.san_sang ? "" : " · tắt sẵn sàng"}${n.cung_kenh ? "" : " · KHÔNG thuộc kênh của việc"} · ${n.so_mo} việc mở`,
-  }));
-}
-
-async function cvxPut(id, than, xong) {
-  try {
-    await api(`/cong-viec/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(than) });
-    if (xong) toast(xong);
-    await cvxLamMoi();
-  } catch (e) { toast(e.message, true); }
-}
-
-async function cvxLam(ma) {
-  const d = cvx.chiTiet;
-  if (!d) return;
-  const v = d.cong_viec;
-  const id = v.id;
-  if (ma === "nhan") return cvxPut(id, { nguoi_nhan: state.toiId, trang_thai: "dang_lam" }, "Bạn đã nhận việc này.");
-  if (ma === "bat-dau") return cvxPut(id, { trang_thai: "dang_lam" }, "Đã chuyển sang Đang thực hiện.");
-  if (ma === "mo-lai") return cvxPut(id, { trang_thai: "dang_lam" }, "Đã mở lại việc.");
-  if (ma === "don") { await cvMoKetQua(id, true); return; }
-  if (ma === "xong") {
-    const r = await hoiHop({ tieu_de: "Hoàn thành việc", phu: v.tieu_de, nut: "Hoàn thành",
-      truong: [{ name: "ket_qua", label: "Kết quả", type: "textarea", rows: 4, maxlength: 2000,
-                 value: v.ket_qua || "", placeholder: "Đã gọi, khách đồng ý nhận hàng chiều mai" }] });
-    if (!r) return;
-    return cvxPut(id, { trang_thai: "xong", ...(r.ket_qua ? { ket_qua: r.ket_qua } : {}) }, "Đã hoàn thành.");
-  }
-  if (ma === "huy") {
-    const r = await hoiHop({ tieu_de: "Hủy việc này?", phu: v.tieu_de, nut: "Hủy việc", nguy_hiem: true,
-      truong: [{ name: "ghi_chu", label: "Lý do", maxlength: 500, required: true,
-                 placeholder: "Khách đã tự xử lý" }] });
-    if (!r) return;
-    return cvxPut(id, { trang_thai: "huy", ghi_chu: r.ghi_chu }, "Đã hủy việc — người liên quan được báo.");
-  }
-  if (ma === "tien-do") {
-    const r = await hoiHop({ tieu_de: "Cập nhật tiến độ", phu: v.tieu_de, nut: "Ghi",
-      truong: [{ name: "noi_dung", label: "Tiến độ", type: "textarea", rows: 3, maxlength: 2000,
-                 required: true, placeholder: "Đã gọi lần 1, khách hẹn gọi lại 15h" }] });
-    if (!r || !r.noi_dung) return;
-    try {
-      await api(`/cong-viec/${encodeURIComponent(id)}/tien-do`,
-        { method: "POST", body: JSON.stringify({ noi_dung: r.noi_dung }) });
-      toast("Đã ghi tiến độ.");
-      await cvxTaiChiTiet(id, false);
-    } catch (e) { toast(e.message, true); }
-    return;
-  }
-  if (ma === "tu-dong") {
-    try {
-      const r = await api(`/cong-viec/${encodeURIComponent(id)}/tu-dong-giao`, { method: "POST" });
-      toast(r.nguoi_nhan ? `Đã giao cho ${r.nguoi_nhan_ten}.` : `Không phân công được: ${r.ly_do}`, !r.nguoi_nhan);
-      await cvxLamMoi();
-    } catch (e) { toast(e.message, true); }
-    return;
-  }
-  if (ma === "giao") {
-    let chon;
-    try { chon = await cvxNguoiNhan(id); } catch (e) { toast(e.message, true); return; }
-    const r = await hoiHop({
-      tieu_de: v.nguoi_nhan ? "Chuyển việc cho người khác" : "Giao việc", phu: v.tieu_de,
-      nut: v.nguoi_nhan ? "Chuyển" : "Giao",
-      truong: [
-        { name: "nguoi_nhan", label: "Người nhận", type: "select", value: v.nguoi_nhan || "",
-          options: [{ value: "", label: "— Thu hồi, để Chưa phân công —" }].concat(chon) },
-        { name: "ghi_chu", label: "Ghi chú bàn giao", maxlength: 500,
-          placeholder: "Đã gọi một lần, khách hẹn chiều" },
-      ] });
-    if (!r) return;
-    const than = r.nguoi_nhan ? { nguoi_nhan: r.nguoi_nhan } : { xoa_nguoi_nhan: true };
-    if (r.ghi_chu) than.ghi_chu = r.ghi_chu;
-    return cvxPut(id, than, r.nguoi_nhan ? "Đã giao — người nhận được báo." : "Đã thu hồi người nhận.");
-  }
-  if (ma === "sua") {
-    const r = await hoiHop({ tieu_de: "Sửa việc", nut: "Lưu", truong: [
-      { name: "tieu_de", label: "Việc cần làm", required: true, maxlength: 200, value: v.tieu_de },
-      { name: "mo_ta", label: "Mô tả", type: "textarea", rows: 3, maxlength: 5000, value: v.mo_ta || "" },
-      { name: "uu_tien", label: "Mức ưu tiên", type: "select", value: v.uu_tien,
-        options: (d.uu_tien || []).map((u) => ({ value: u.ma, label: u.nhan })) },
-      { name: "han", label: "Hạn", type: "date", hint: "để trống là bỏ hạn",
-        value: v.han ? String(v.han).slice(0, 10) : "" },
-    ] });
-    if (!r) return;
-    const than = { tieu_de: r.tieu_de, mo_ta: r.mo_ta, uu_tien: r.uu_tien };
-    if (r.han) than.han = cvxHan(r.han); else than.xoa_han = true;
-    return cvxPut(id, than, "Đã lưu việc.");
-  }
-}
-
-/* Tạo việc — từ màn Công việc, hoặc từ một hội thoại (`ngu_canh` mang sẵn
- * hội thoại + khách). Phân công: tự nhận, chưa phân công, tự động, hay
- * một người cụ thể — hai lựa chọn sau chỉ hiện khi có `cong_viec.giao`. */
-async function cvxTaoViec(ngu_canh = {}) {
-  const giao = cvxCo("cong_viec.giao");
-  let nguoi = [];
-  if (giao) { try { nguoi = await cvxNguoiNhan(null); } catch { nguoi = []; } }
-  const chon = [
-    { value: "", label: "— Chưa phân công —" },
-    { value: "__toi", label: "Tôi làm" },
-  ].concat(giao ? [{ value: "__tu_dong", label: "Tự động: người đang trong ca, xoay vòng" }].concat(nguoi) : []);
-  const r = await hoiHop({
-    tieu_de: ngu_canh.ten_khach ? `Việc mới — ${ngu_canh.ten_khach}` : "Việc mới",
-    phu: ngu_canh.conversation_id ? "Việc gắn với hội thoại đang mở — bấm vào việc là mở lại đúng hội thoại này." : "",
-    nut: "Tạo việc",
-    truong: [
-      { name: "tieu_de", label: "Việc cần làm", required: true, maxlength: 200,
-        placeholder: "Gọi lại chị Hoa xác nhận đơn" },
-      { name: "mo_ta", label: "Mô tả", type: "textarea", rows: 3, maxlength: 5000 },
-      { name: "phan_cong", label: "Phân công", type: "select", value: giao ? "" : "__toi", options: chon },
-      { name: "uu_tien", label: "Mức ưu tiên", type: "select", value: "thuong",
-        options: ((cvx.dm && cvx.dm.uu_tien) || [{ ma: "thuong", nhan: "Thường" }])
-          .map((u) => ({ value: u.ma, label: u.nhan })) },
-      { name: "han", label: "Hạn", type: "date", hint: "để trống nếu không có" },
-      { name: "ma_don", label: "Mã đơn liên quan", maxlength: 60, hint: "không bắt buộc",
-        placeholder: "ĐH-…" },
-    ],
-  });
-  if (!r || !r.tieu_de) return;
-  const than = { tieu_de: r.tieu_de, mo_ta: r.mo_ta || "", uu_tien: r.uu_tien || "thuong",
-                 han: cvxHan(r.han) };
-  if (r.ma_don) than.ma_don = r.ma_don;
-  if (ngu_canh.conversation_id) than.conversation_id = ngu_canh.conversation_id;
-  if (ngu_canh.contact_id) than.contact_id = ngu_canh.contact_id;
-  if (r.phan_cong === "__toi") than.nguoi_nhan = state.toiId;
-  else if (r.phan_cong === "__tu_dong") than.giao_tu_dong = true;
-  else if (r.phan_cong) than.nguoi_nhan = r.phan_cong;
-  try {
-    const kq = await api("/cong-viec", { method: "POST", body: JSON.stringify(than) });
-    if (than.giao_tu_dong && !kq.nguoi_nhan) toast(`Đã tạo, nhưng chưa phân công được: ${kq.ly_do_khong_giao}`, true);
-    else toast("Đã tạo việc.");
-    if (cvx.el) { cvx.moId = kq.id; await cvxLamMoi(); }
-    return kq.id;
-  } catch (e) { toast(e.message, true); }
+  const ghim = cvx.ghim ? cvxDong(cvx.ghim, true) : "";
+  o.innerHTML = ghim + (cvx.ds.length ? cvx.ds.map((v) => cvxDong(v)).join("")
+    : `<div class="empty">Không có việc nào khớp bộ lọc này.${
+        cvx.nhanh || cvx.loc.q || cvx.loc.uu_tien || cvx.loc.nguon || cvx.loc.cua_toi
+          ? ` <button type="button" class="btn btn--sm btn--ghost" data-cvx-xoa-loc>Xoá bộ lọc</button>` : ""}</div>`);
+  cvxVeChip();
+  cvxVeTomTat();
+  cvxVeCanhBao();
 }
 
 /* Mở ngữ cảnh của việc (mục 14.8). */
@@ -12258,25 +12261,26 @@ GAN_TAB["cv-danh-sach"] = (el) => {
   }
   const opt = (ds) => ds.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
   el.innerHTML = `
-    <section class="panel">
-      <h2 class="panel__head">Công việc
-        <span class="panel__note">việc nội bộ cần người theo dõi — chuyển hội thoại cho người KHÔNG sinh việc</span>
-        ${cvxCo("cong_viec.sua") ? '<button type="button" class="btn btn--sm btn--primary" id="cvxThem">Tạo việc</button>' : ""}</h2>
-      <div class="filterbar cvx__loc" role="group" aria-label="Lọc công việc">
-        <input type="search" id="cvxTim" class="cvx__tim" placeholder="Tìm tiêu đề, khách, mã đơn…" maxlength="100" aria-label="Tìm công việc">
-        <select id="cvxTrangThai" aria-label="Trạng thái">${opt([["", "Mọi trạng thái"],
-          ["moi", "Chờ xử lý"], ["dang_lam", "Đang thực hiện"], ["xong", "Hoàn thành"], ["huy", "Đã hủy"]])}</select>
-        <select id="cvxUuTien" aria-label="Ưu tiên">${opt([["", "Mọi ưu tiên"], ["gap", "Gấp"],
-          ["cao", "Cao"], ["thuong", "Thường"], ["thap", "Thấp"]])}</select>
-        <select id="cvxNguon" aria-label="Nguồn">${opt([["", "Mọi nguồn"], ["nguoi", "Nhân viên tạo"],
-          ["agent", "AI đề xuất"], ["tu_dong", "Tự động"], ["van_chuyen", "Vận chuyển"], ["don_hang", "Đơn hàng"]])}</select>
-        <button type="button" class="chip" data-cvx-loc="cua_toi">Việc của tôi</button>
-        <button type="button" class="chip" data-cvx-loc="chua_phan_cong">Chưa phân công</button>
-        <button type="button" class="chip" data-cvx-loc="qua_han">Quá hạn</button>
-      </div>
-      <div id="cvxDs" class="rows"><p class="empty">Đang tải…</p></div>
-    </section>
-    <div id="cvxCt"></div>`;
+    <div class="cvx-bo">
+      <section class="panel cvx-khung">
+        <h2 class="panel__head cvx-khung__dau">Công việc
+          <span class="panel__note">việc nội bộ cần người theo dõi — chuyển hội thoại cho người KHÔNG sinh việc</span>
+          ${cvxCo("cong_viec.sua") ? '<button type="button" class="btn btn--sm btn--primary" id="cvxThem">+ Tạo việc</button>' : ""}</h2>
+        <div class="cvx-canh-bao" id="cvxCanhBao" role="status" hidden></div>
+        <div class="filterbar cvx__loc" role="group" aria-label="Lọc công việc">
+          <input type="search" id="cvxTim" class="cvx__tim" placeholder="Tìm tiêu đề, khách, mã đơn…" maxlength="100" aria-label="Tìm công việc">
+          <select id="cvxUuTien" aria-label="Ưu tiên">${opt([["", "Mọi ưu tiên"], ["gap", "Gấp"],
+            ["cao", "Cao"], ["thuong", "Thường"], ["thap", "Thấp"]])}</select>
+          <select id="cvxNguon" aria-label="Nguồn">${opt([["", "Mọi nguồn"], ["nguoi", "Nhân viên tạo"],
+            ["agent", "AI đề xuất"], ["tu_dong", "Tự động"], ["van_chuyen", "Vận chuyển"], ["don_hang", "Đơn hàng"]])}</select>
+          <button type="button" class="chip" data-cvx-loc="cua_toi" aria-pressed="false">Việc của tôi</button>
+        </div>
+        <div class="cvx-nhanh" id="cvxNhanh" role="group" aria-label="Lọc nhanh theo tình trạng"></div>
+        <div class="cvx-tomtat" id="cvxTomTat" aria-live="polite"></div>
+        <div id="cvxDs" class="rows"><p class="empty">Đang tải…</p></div>
+      </section>
+      <aside id="cvxCt" class="cvx-ngan" aria-label="Chi tiết công việc" hidden></aside>
+    </div>`;
 
   $("#cvxThem", el)?.addEventListener("click", () => cvxTaoViec());
   let hoan = null;
@@ -12284,15 +12288,33 @@ GAN_TAB["cv-danh-sach"] = (el) => {
     clearTimeout(hoan);
     hoan = setTimeout(() => { cvx.loc.q = e.target.value.trim(); cvxLamMoi(); }, 300);
   });
-  for (const [sel, k] of [["#cvxTrangThai", "trang_thai"], ["#cvxUuTien", "uu_tien"], ["#cvxNguon", "nguon"]]) {
+  for (const [sel, k] of [["#cvxUuTien", "uu_tien"], ["#cvxNguon", "nguon"]]) {
     $(sel, el).addEventListener("change", (e) => { cvx.loc[k] = e.target.value; cvxLamMoi(); });
   }
+  el.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".cvx-dong")) {
+      e.preventDefault();
+      cvxTaiChiTiet(e.target.dataset.cvxMo);
+    }
+  });
   el.addEventListener("click", async (e) => {
     const loc = e.target.closest("[data-cvx-loc]");
     if (loc) {
       const k = loc.dataset.cvxLoc;
       cvx.loc[k] = !cvx.loc[k];
       loc.classList.toggle("is-on", cvx.loc[k]);
+      loc.setAttribute("aria-pressed", String(cvx.loc[k]));
+      cvxLamMoi();
+      return;
+    }
+    const nhanh = e.target.closest("[data-cvx-nhanh]");
+    if (nhanh) { cvxDatNhanh(nhanh.dataset.cvxNhanh); cvxVeChip(); cvxLamMoi(); return; }
+    if (e.target.closest("[data-cvx-xem-qua-han]")) {
+      cvxDatNhanh("qua_han"); cvxVeChip(); cvxLamMoi(); return;
+    }
+    if (e.target.closest("[data-cvx-xoa-loc]")) {
+      cvxXoaLoc();
+      $$("[data-cvx-loc]", el).forEach((c) => { c.classList.remove("is-on"); c.setAttribute("aria-pressed", "false"); });
       cvxLamMoi();
       return;
     }
@@ -12301,18 +12323,15 @@ GAN_TAB["cv-danh-sach"] = (el) => {
       await cvxPut(nhan.dataset.cvxNhan, { nguoi_nhan: state.toiId, trang_thai: "dang_lam" }, "Bạn đã nhận việc này.");
       return;
     }
+    /* Bấm trong ngăn chi tiết do 25b lo; ở đây chỉ bắt dòng danh sách. */
+    if (e.target.closest("#cvxCt")) return;
     const mo = e.target.closest("[data-cvx-mo]");
-    if (mo) { await cvxTaiChiTiet(mo.dataset.cvxMo); return; }
-    if (e.target.closest("[data-cvx-dong]")) {
-      cvx.moId = null; cvx.chiTiet = null; cvxVeChiTiet();
-      $$("#cvxDs .row", el).forEach((r) => r.classList.remove("is-on"));
-      return;
-    }
-    const lam = e.target.closest("[data-cvx-lam]");
-    if (lam) await cvxLam(lam.dataset.cvxLam);
+    if (mo) await cvxTaiChiTiet(mo.dataset.cvxMo);
   });
   cvxBatSuKienLienKet(el);
+  cvxBatSuKienNgan(el);
   el.addEventListener("tab:hien", () => cvxLamMoi());
+  cvxVeChip();
   cvxLamMoi();
 };
 
@@ -12326,13 +12345,23 @@ setInterval(() => {
 }, 20000);
 document.addEventListener("congviec:doi", () => { if (cvx.el) cvxLamMoi(); });
 
-/* Chuông "việc" và mọi lối khác mở thẳng chi tiết một việc. */
+/* Chuông "việc" và mọi lối khác mở thẳng chi tiết một việc. Việc không nằm
+ * trong bộ lọc đang chọn thì GHIM lên đầu danh sách kèm lý do (UX-19-01) —
+ * không âm thầm xoá bộ lọc người ta vừa chọn, cũng không để chi tiết mở ra
+ * cho một việc không thấy đâu trong danh sách. */
 window.moCongViec = async (id) => {
   if (!cvxCo("cong_viec.doc")) return false;
   if (doiMan("cv-danh-sach") === false) return false;
   if (!cvx.el) return false;
   await cvxTaiChiTiet(id);
-  return cvx.moId === id;
+  if (cvx.moId !== id) return false;
+  const dong = $(`#cvxDs [data-cv="${CSS.escape(id)}"]`, cvx.el);
+  if (dong) {
+    dong.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    dong.classList.add("is-chuong");
+    setTimeout(() => dong.classList.remove("is-chuong"), 2400);
+  }
+  return true;
 };
 
 /* Nút "+ Tạo công việc" trong hội thoại (03-hoi-thoai.js vẽ lại khung mỗi
@@ -12396,7 +12425,7 @@ async function cvxCaTai() {
         <div class="rows">${nv.length ? nv.map((n) => `<div class="row">
           <span class="row__flag row__flag--${n.trong_ca_that && n.san_sang ? "auto" : "assist"}"></span>
           <div class="row__main"><b>${esc(n.ten)}</b>
-            <span class="row__sub">${n.trong_ca_that ? "đang trong ca" : n.co_lich ? "ngoài ca" : "chưa xếp ca"}${
+            <span class="row__sub">${n.dang_nghi ? "đang nghỉ" : n.trong_ca_that ? "đang trong ca" : n.co_lich ? "ngoài ca" : "chưa xếp ca"}${
               n.san_sang ? "" : " · tắt sẵn sàng"}</span></div>
           <div class="row__side"><span><span class="pill">${n.so_mo} việc mở</span>${
             n.so_qua_han ? ` <span class="pill pill--warn">${n.so_qua_han} quá hạn</span>` : ""}</span></div>
@@ -12411,14 +12440,12 @@ GAN_TAB["cv-ca-truc-viec"] = (el) => {
   el.addEventListener("click", async (e) => {
     const di = e.target.closest("[data-cvx-di]");
     if (di) {
-      const k = di.dataset.cvxDi;
-      cvx.loc = { trang_thai: "", uu_tien: "", nguon: "", q: "", cua_toi: false,
-                  chua_phan_cong: k === "chua_phan_cong", qua_han: k === "qua_han" };
-      if (k === "moi" || k === "dang_lam" || k === "xong") cvx.loc.trang_thai = k;
+      cvxXoaLoc();
+      cvxDatNhanh(di.dataset.cvxDi);
       doiMan("cv-danh-sach");
       if (cvx.el) {
-        $("#cvxTrangThai", cvx.el).value = cvx.loc.trang_thai;
-        $$("[data-cvx-loc]", cvx.el).forEach((c) => c.classList.toggle("is-on", !!cvx.loc[c.dataset.cvxLoc]));
+        $$("[data-cvx-loc]", cvx.el).forEach((c) => { c.classList.remove("is-on"); c.setAttribute("aria-pressed", "false"); });
+        cvxVeChip();
         cvxLamMoi();
       }
       return;
@@ -12572,6 +12599,820 @@ async function ganMedia(goc, ctx) {
 
 window.GAN_TAB = window.GAN_TAB || {};
 GAN_TAB["ht-sao-luu-media"] = (o, ctx) => { ganMedia(o, ctx); };
+/* ================= CÔNG VIỆC — ngăn chi tiết (UX-14-05/06/07) =================
+ *
+ * Chi tiết mở ở NGĂN BÊN PHẢI cạnh danh sách (máy tính) hoặc tấm phủ TOÀN
+ * MÀN (điện thoại, ≤1180px). Trước đây nó nằm DƯỚI cả danh sách: bấm "Chi
+ * tiết" ở dòng đầu là trang cuộn mất danh sách, đóng lại là mất chỗ đang
+ * đọc — đo được ở danh sách 40 việc.
+ *
+ * Hành động theo TRẠNG THÁI: một nút chính + menu "⋯" (cùng khuôn với thanh
+ * hội thoại, 03b). Mười nút ngang nhau cắt chữ trên điện thoại và không nói
+ * bước tiếp theo là gì.
+ */
+
+const cvxCt = {
+  locLs: "",            // nhóm lịch sử đang lọc: "" = tất cả (MD-UX-14-06)
+  ketQua: "",           // nháp ô hoàn thành nhanh — sống qua vòng làm mới
+  chon: null,           // ô chọn người nhận đang mở: { ds, gia_tri, ghi_chu }
+  quayVe: null,         // phần tử để trả focus khi đóng ngăn
+};
+
+/* ---------------- ngăn ---------------- */
+
+function cvxNganHep() { return window.matchMedia("(max-width: 1180px)").matches; }
+
+function cvxMoNgan() {
+  const o = cvx.el && $("#cvxCt", cvx.el);
+  if (!o) return;
+  if (o.hidden) cvxCt.quayVe = document.activeElement;
+  o.hidden = false;
+  $(".cvx-bo", cvx.el)?.classList.add("is-ngan");
+  /* Tấm phủ toàn màn: khoá cuộn trang phía sau, không thì vuốt trong tấm
+     phủ cuộn luôn danh sách bên dưới. */
+  document.body.classList.toggle("cvx-khoa-cuon", cvxNganHep());
+}
+
+function cvxDongNgan() {
+  const o = cvx.el && $("#cvxCt", cvx.el);
+  cvx.moId = null; cvx.chiTiet = null; cvxCt.chon = null; cvxCt.ketQua = ""; cvxCt.locLs = "";
+  if (o) { o.hidden = true; o.innerHTML = ""; }
+  $(".cvx-bo", cvx.el)?.classList.remove("is-ngan");
+  document.body.classList.remove("cvx-khoa-cuon");
+  $$("#cvxDs .row", cvx.el).forEach((r) => r.classList.remove("is-on"));
+  const ve = cvxCt.quayVe;
+  cvxCt.quayVe = null;
+  if (ve && document.contains(ve)) ve.focus({ preventScroll: true });
+}
+
+/* ---------------- tải ---------------- */
+
+async function cvxTaiChiTiet(id, cuon = true) {
+  if (!id) return;
+  let d;
+  try { d = await api(`/cong-viec/${encodeURIComponent(id)}`); }
+  catch (e) {
+    if (cvx.moId === id || cuon) cvxDongNgan();
+    if (e.ma === 404) toast("Việc này không còn hoặc bạn không có quyền xem.", true);
+    else toast(e.message, true);
+    return;
+  }
+  const doiViec = cvx.moId !== id;
+  cvx.moId = id;
+  cvx.chiTiet = d;
+  if (doiViec) { cvxCt.chon = null; cvxCt.ketQua = ""; cvxCt.locLs = ""; }
+  cvx.dm = cvx.dm || { trang_thai: d.trang_thai, uu_tien: d.uu_tien, nguon: d.nguon };
+  /* Việc mở từ chuông có thể không nằm trong bộ lọc đang chọn: thêm vào
+     `congViec.ds` để hộp xác nhận đơn vẫn tìm thấy nó, và ghim lên đầu
+     danh sách (UX-19-01). */
+  if (!congViec.ds.some((x) => x.id === id)) congViec.ds = congViec.ds.concat([d.cong_viec]);
+  const trongDs = cvx.ds.some((x) => x.id === id);
+  const ghimCu = cvx.ghim && cvx.ghim.id;
+  cvx.ghim = trongDs ? null : d.cong_viec;
+  if (cvx.ghim || ghimCu) cvxVeDs();
+  cvxMoNgan();
+  cvxVeChiTiet();
+  $$("#cvxDs .row", cvx.el).forEach((r) => r.classList.toggle("is-on", r.dataset.cv === id));
+  if (cuon) {
+    const tieu = $("#cvxCtTen", cvx.el);
+    if (tieu) tieu.focus({ preventScroll: true });
+    if (!cvxNganHep()) $("#cvxCt", cvx.el).scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+/* ---------------- hành động theo trạng thái ---------------- */
+
+/* Một nút CHÍNH (bước tiếp theo hiển nhiên) + phần còn lại vào menu. Trả
+   { chinh: [ma, nhan, lop] | null, them: [[ma, nhan, goi_y, nguy_hiem]], xongNhanh }. */
+function cvxHanhDong(v) {
+  const sua = cvxCo("cong_viec.sua");
+  const giao = cvxCo("cong_viec.giao");
+  const mo = v.trang_thai === "moi" || v.trang_thai === "dang_lam";
+  const laCuaToi = v.nguoi_nhan && String(v.nguoi_nhan) === String(state.toiId || "");
+  const xuLyDon = typeof cvLaXuLyDon === "function" && cvLaXuLyDon(v);
+  const xacNhanDon = mo && xuLyDon && typeof cvDuocXacNhan === "function" && cvDuocXacNhan();
+  const batDau = mo && v.trang_thai === "moi" && sua && (laCuaToi || giao) && !v.chua_phan_cong;
+  const xongNhanh = mo && sua && !xuLyDon;
+  let chinh = null;
+  if (mo && v.chua_phan_cong && sua) chinh = ["nhan", "Nhận việc", "btn--primary"];
+  else if (xacNhanDon) chinh = ["don", "Xác nhận kết quả đơn…", "btn--primary"];
+  else if (batDau) chinh = ["bat-dau", "Bắt đầu làm", "btn--primary"];
+  else if (xongNhanh) chinh = ["xong-nhanh", "Hoàn thành", "btn--go"];
+  else if (!mo && sua && !xuLyDon) chinh = ["mo-lai", "Mở lại", ""];
+  const them = [];
+  const co = (ma) => chinh && chinh[0] === ma;
+  if (batDau && !co("bat-dau")) them.push(["bat-dau", "Bắt đầu làm", "Chuyển sang Đang thực hiện"]);
+  if (xongNhanh && !co("xong-nhanh")) them.push(["xong-nhanh", "Hoàn thành", "Ghi kết quả rồi đóng việc"]);
+  if (mo && sua) them.push(["tien-do", "Cập nhật tiến độ…", "Ghi một dòng vào lịch sử, không đổi trạng thái"]);
+  if (mo && giao) them.push(["giao", v.nguoi_nhan ? "Chuyển cho người khác…" : "Giao cho…",
+    "Xem ai đang trong ca và đang giữ bao nhiêu việc"]);
+  if (mo && giao && v.chua_phan_cong) them.push(["tu-dong", "Tự phân công", "Người trong ca, lâu nhất chưa được giao"]);
+  if (sua) them.push(["sua", "Sửa thông tin…", "Tiêu đề, mô tả, ưu tiên, hạn"]);
+  if (!mo && sua && !xuLyDon && !co("mo-lai")) them.push(["mo-lai", "Mở lại", "Đưa về Đang thực hiện"]);
+  if (mo && sua) them.push(["huy", "Hủy việc…", "Cần ghi lý do; người liên quan được báo", true]);
+  return { chinh, them, xongNhanh };
+}
+
+function cvxVeHanhDong(v) {
+  const hd = cvxHanhDong(v);
+  /* "Hoàn thành" là chính ô hoàn thành nhanh ngay dưới đầu ngăn — vẽ thêm
+     một nút cùng tên ở đầu là hai nút chính cho một việc. */
+  const chinh = hd.chinh && hd.chinh[0] !== "xong-nhanh"
+    ? `<button type="button" class="btn btn--sm ${hd.chinh[2]}" data-cvx-lam="${hd.chinh[0]}">${esc(hd.chinh[1])}</button>` : "";
+  const them = hd.them.length ? `<details class="hd-them cvx-them">
+      <summary class="btn btn--sm btn--ghost" aria-label="Hành động khác" title="Hành động khác">⋯</summary>
+      <div class="hd-them__menu" role="menu">${hd.them.map(([ma, nhan, goiY, nguy]) =>
+        `<button type="button" class="hd-them__muc${nguy ? " cvx-them__nguy" : ""}" role="menuitem" data-cvx-lam="${ma}">
+          <span class="hd-them__ten">${esc(nhan)}</span><span class="hd-them__goiy">${esc(goiY)}</span></button>`).join("")}</div>
+    </details>` : "";
+  return `${chinh}${them}`;
+}
+
+/* ---------------- chọn người nhận (MD-UX-14-05) ---------------- */
+
+/* Tình trạng ca từ DỮ LIỆU THẬT (`/cong-viec/nguoi-nhan-duoc` đọc `ca_truc`
+   và `ca_nghi`). Không suy đoán gì thêm: một nhãn đoán là một nhãn sai đúng
+   lúc người điều phối tin nó. Đang nghỉ đứng trước mọi thứ khác — người có
+   lịch nghỉ hôm nay mà hiện "Ngoài ca" là bị giao việc lúc vắng mặt. */
+function cvxTinhCa(n) {
+  if (n.dang_nghi) return { lop: "nghi", nhan: "Đang nghỉ" };
+  if (n.trong_ca_that) return { lop: "trong", nhan: "Đang trong ca" };
+  if (n.co_lich) return { lop: "ngoai", nhan: "Ngoài ca" };
+  return { lop: "chua", nhan: "Chưa xếp ca" };
+}
+
+async function cvxNguoiNhan(congViecId) {
+  /* Danh sách người nhận lấy từ /cong-viec/nguoi-nhan-duoc (chỉ cần
+     `cong_viec.giao`), không từ /nguoi-dung (cần `nguoi_dung.doc`): người
+     điều phối việc không nhất thiết quản lý nhân sự. */
+  const q = congViecId ? `?cong_viec_id=${encodeURIComponent(congViecId)}` : "";
+  const d = await api(`/cong-viec/nguoi-nhan-duoc${q}`);
+  return d.nguoi;
+}
+
+/* Danh sách chọn người: mỗi người một thẻ radio với chấm ca, chữ ca, số việc
+   mở/quá hạn. `dau` = các lựa chọn đặc biệt đặt trước ([value, nhan, phu]). */
+function cvxVeDsNguoi(ten, ds, giaTri, dau = []) {
+  const muc = dau.map(([val, nhan, phu]) => `<label class="cvx-ng${String(giaTri) === String(val) ? " is-on" : ""}">
+      <input type="radio" name="${ten}" value="${esc(val)}"${String(giaTri) === String(val) ? " checked" : ""}>
+      <span class="cvx-ng__ten">${esc(nhan)}</span>${phu ? `<span class="cvx-ng__phu">${esc(phu)}</span>` : ""}</label>`)
+    .concat((ds || []).map((n) => {
+      const ca = cvxTinhCa(n);
+      const bat = String(giaTri) === String(n.id);
+      return `<label class="cvx-ng${bat ? " is-on" : ""}${n.cung_kenh === false ? " cvx-ng--khac-kenh" : ""}">
+        <input type="radio" name="${ten}" value="${esc(n.id)}"${bat ? " checked" : ""}>
+        <span class="cvx-ng__ten"><span class="cvx-cham cvx-cham--${ca.lop}" aria-hidden="true"></span>${esc(n.ten)}</span>
+        <span class="cvx-ng__phu">${ca.nhan}${n.san_sang === false ? " · tắt sẵn sàng" : ""}${
+          n.cung_kenh === false ? " · KHÔNG thuộc kênh của việc" : ""}</span>
+        <span class="cvx-ng__tai${n.so_qua_han ? " cvx-ng__tai--qua" : ""}">${n.so_mo} việc mở${
+          n.so_qua_han ? ` · ${n.so_qua_han} quá hạn` : ""}</span>
+      </label>`;
+    }));
+  return `<div class="cvx-ds-ng" role="radiogroup">${muc.join("")}</div>`;
+}
+
+function cvxVeChon(v) {
+  const c = cvxCt.chon;
+  if (!c) return "";
+  const dau = v.nguoi_nhan ? [["", "Thu hồi — để Chưa phân công", "người đang giữ được báo"]] : [];
+  return `<section class="cvx-muc cvx-muc--chon" aria-label="Chọn người nhận">
+    <h3 class="cvx-muc__tieu">${v.nguoi_nhan ? "Chuyển cho người khác" : "Giao việc"}</h3>
+    ${c.ds.length || dau.length ? cvxVeDsNguoi("cvx_nguoi", c.ds, c.gia_tri, dau)
+      : '<p class="cvx-muc__trong">Chưa có nhân viên nào nhận được việc.</p>'}
+    <label class="field"><span>Ghi chú bàn giao <em class="hint">không bắt buộc</em></span>
+      <input name="cvx_ghi_chu" maxlength="500" placeholder="Đã gọi một lần, khách hẹn chiều" value="${esc(c.ghi_chu)}"></label>
+    <div class="cvx-muc__nut">
+      <button type="button" class="btn btn--sm btn--primary" data-cvx-chon-luu>${v.nguoi_nhan ? "Chuyển" : "Giao"}</button>
+      <button type="button" class="btn btn--sm btn--ghost" data-cvx-chon-thoi>Thôi</button>
+    </div>
+  </section>`;
+}
+
+/* ---------------- vẽ ---------------- */
+
+function cvxVeLienKet(v) {
+  const the = [];
+  if (v.conversation_id) {
+    the.push(`<button type="button" class="cvx-lk" data-cvx-ht="${esc(v.conversation_id)}">
+      <span class="cvx-lk__loai">Hội thoại</span><span class="cvx-lk__ten">Mở hội thoại gốc</span></button>`);
+  }
+  if (v.contact_id) {
+    the.push(`<button type="button" class="cvx-lk" data-cvx-kh="${esc(v.contact_id)}">
+      <span class="cvx-lk__loai">Khách hàng</span><span class="cvx-lk__ten">${esc(v.khach_ten || "Hồ sơ khách")}</span></button>`);
+  }
+  if (v.order_id) {
+    const nhanDon = (typeof ORDER_LABEL !== "undefined" && ORDER_LABEL[v.order_trang_thai]) || v.order_trang_thai || "";
+    the.push(`<button type="button" class="cvx-lk" data-cvx-don="${esc(v.ma_don || "")}">
+      <span class="cvx-lk__loai">Đơn hàng</span><span class="cvx-lk__ten">${esc(v.ma_don || "")}${
+        nhanDon ? ` · ${esc(nhanDon)}` : ""}</span></button>`);
+  }
+  return the.length ? `<div class="cvx-lk-ds">${the.join("")}</div>`
+    : '<p class="cvx-muc__trong">Việc này không gắn hội thoại, khách hay đơn nào.</p>';
+}
+
+function cvxVeLichSu(d) {
+  const ds = (d.lich_su || []).slice().reverse();   // mới nhất lên đầu
+  const nhom = d.nhom_lich_su || [];
+  const dem = (ma) => ds.filter((l) => l.nhom === ma).length;
+  const loc = cvxCt.locLs;
+  const hien = loc ? ds.filter((l) => l.nhom === loc) : ds;
+  const chip = [["", "Tất cả", ds.length]].concat(nhom.map((n) => [n.ma, n.nhan, dem(n.ma)]))
+    .map(([ma, nhan, so]) => `<button type="button" class="chip cvx-chip${loc === ma ? " is-on" : ""}"
+      data-cvx-ls="${ma}" aria-pressed="${loc === ma}">${esc(nhan)} <span class="cvx-chip__so">${so}</span></button>`).join("");
+  const dong = hien.map((l) => {
+    const chiTiet = [
+      l.tu_nguoi || l.den_nguoi ? `${esc(l.tu_nguoi || "—")} → ${esc(l.den_nguoi || "—")}` : "",
+      l.tu_trang_thai || l.den_trang_thai ? `${esc(l.tu_trang_thai || "—")} → ${esc(l.den_trang_thai || "—")}` : "",
+      l.ghi_chu ? esc(l.ghi_chu) : "",
+    ].filter(Boolean).join(" · ");
+    return `<li class="cvx__ls-dong cvx__ls-dong--${esc(l.nhom || "khac")}"><time>${esc(cvxNgay(l.tao_luc))}</time>
+      <b>${esc(l.nhan_loai)}</b> <span class="cvx__ls-ai">${esc(l.nguoi)}</span>
+      ${chiTiet ? `<span class="cvx__ls-ct">${chiTiet}</span>` : ""}</li>`;
+  }).join("");
+  return `<div class="cvx-nhanh cvx-nhanh--ls" role="group" aria-label="Lọc lịch sử">${chip}</div>
+    <ol class="cvx__ls">${dong || `<li class="cvx-muc__trong">${loc ? "Không có hoạt động loại này." : "Chưa có hoạt động."}</li>`}</ol>`;
+}
+
+function cvxVeChiTiet() {
+  const o = cvx.el && $("#cvxCt", cvx.el);
+  if (!o) return;
+  const d = cvx.chiTiet;
+  if (!d) { o.innerHTML = ""; return; }
+  const v = d.cong_viec;
+  const hd = cvxHanhDong(v);
+  const tongQuan = [
+    ["Người phụ trách", v.nguoi_nhan_ten || (v.chua_phan_cong ? "Chưa phân công" : "—")],
+    ["Hạn", v.han ? cvxNgay(v.han) + (v.qua_han ? " — quá hạn" : "") : "Không có"],
+    ["Ưu tiên", cvxNhan(v.uu_tien, d.uu_tien)],
+    ["Nguồn", v.nhan_nguon],
+    ["Người tạo", v.nguoi_giao_ten || v.nhan_nguon],
+    ["Tạo lúc", cvxNgay(v.tao_luc)],
+    ["Cập nhật", cvxNgay(v.sua_luc)],
+  ].concat(v.xong_luc ? [["Hoàn thành lúc", cvxNgay(v.xong_luc)]] : []);
+  const ketQua = v.ket_qua || (v.ket_qua_xu_ly_don
+    ? `${v.ket_qua_xu_ly_don}${v.ly_do_ket_qua ? " — " + v.ly_do_ket_qua : ""}` : "");
+  /* Hoàn thành nhanh (MD-UX-14-04): ngay trong ngăn, không qua hộp thoại.
+     Vẫn BẮT BUỘC ghi kết quả — "Hoàn thành" không kèm một chữ nào là việc
+     không ai kiểm lại được. Mẫu nhanh chỉ điền sẵn, người ta vẫn sửa được. */
+  const xong = hd.xongNhanh ? `<form class="cvx-muc cvx-xong" data-cvx-xong-form novalidate>
+      <label class="field"><span>Kết quả xử lý <em class="hint">bắt buộc để hoàn thành</em></span>
+        <textarea name="ket_qua" rows="2" maxlength="2000" required
+          placeholder="Đã gọi, khách đồng ý nhận hàng chiều mai">${esc(cvxCt.ketQua || v.ket_qua || "")}</textarea></label>
+      <div class="cvx-muc__nut">
+        <button type="submit" class="btn btn--sm btn--go">Hoàn thành</button>
+        <span class="cvx-xong__mau">Mẫu nhanh:
+          <button type="button" class="chip" data-cvx-mau="Đã liên hệ khách, xử lý xong.">Đã xử lý xong</button>
+          <button type="button" class="chip" data-cvx-mau="Khách không cần hỗ trợ thêm.">Khách không cần nữa</button>
+        </span>
+      </div>
+      <p class="cvx-xong__loi" role="alert"></p>
+    </form>` : "";
+  o.innerHTML = `<div class="cvx-ngan__dau">
+      <div class="cvx-ngan__hang">
+        ${cvxTrangThai(v)}${cvxUuTienTag(v)}${v.chua_phan_cong ? '<span class="cvx-tt cvx-tt--trong">Chưa phân công</span>' : ""}
+        <button type="button" class="btn btn--sm btn--ghost cvx-ngan__dong" data-cvx-dong aria-label="Đóng chi tiết">✕</button>
+      </div>
+      <h2 class="cvx-ngan__ten" id="cvxCtTen" tabindex="-1">${esc(v.tieu_de)}</h2>
+      <div class="cvx-ngan__hd hd">${cvxVeHanhDong(v)}</div>
+    </div>
+    <div class="cvx-ngan__than">
+      ${cvxVeChon(v)}
+      ${xong}
+      <section class="cvx-muc"><h3 class="cvx-muc__tieu">Tổng quan</h3>
+        <dl class="cvx-tq">${tongQuan.map(([n, g]) => `<div><dt>${esc(n)}</dt><dd>${esc(g)}</dd></div>`).join("")}</dl>
+        <div class="cvx-tq__tien">${cvxTienDo(v)}</div>
+      </section>
+      <section class="cvx-muc"><h3 class="cvx-muc__tieu">Nội dung</h3>
+        <p class="cvx-noidung">${v.mo_ta ? esc(v.mo_ta) : '<span class="cvx-muc__trong">Không có mô tả.</span>'}</p>
+        ${ketQua ? `<p class="cvx-ketqua"><b>Kết quả:</b> ${esc(ketQua)}</p>` : ""}
+      </section>
+      <section class="cvx-muc"><h3 class="cvx-muc__tieu">Liên kết</h3>${cvxVeLienKet(v)}</section>
+      <section class="cvx-muc"><h3 class="cvx-muc__tieu">Lịch sử hoạt động</h3>${cvxVeLichSu(d)}</section>
+    </div>`;
+}
+
+/* ---------------- thao tác ---------------- */
+
+async function cvxPut(id, than, xong) {
+  try {
+    await api(`/cong-viec/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(than) });
+    if (xong) toast(xong);
+    await cvxLamMoi(true);
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
+}
+
+async function cvxLam(ma) {
+  const d = cvx.chiTiet;
+  if (!d) return;
+  const v = d.cong_viec;
+  const id = v.id;
+  if (ma === "nhan") return cvxPut(id, { nguoi_nhan: state.toiId, trang_thai: "dang_lam" }, "Bạn đã nhận việc này.");
+  if (ma === "bat-dau") return cvxPut(id, { trang_thai: "dang_lam" }, "Đã chuyển sang Đang thực hiện.");
+  if (ma === "mo-lai") return cvxPut(id, { trang_thai: "dang_lam" }, "Đã mở lại việc.");
+  if (ma === "don") { await cvMoKetQua(id, true); return; }
+  if (ma === "xong-nhanh") {
+    const o = $("[data-cvx-xong-form] textarea", cvx.el);
+    if (o) { o.focus(); o.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    return;
+  }
+  if (ma === "huy") {
+    const r = await hoiHop({ tieu_de: "Hủy việc này?", phu: v.tieu_de, nut: "Hủy việc", nguy_hiem: true,
+      truong: [{ name: "ghi_chu", label: "Lý do", maxlength: 500, required: true,
+                 placeholder: "Khách đã tự xử lý" }] });
+    if (!r) return;
+    return cvxPut(id, { trang_thai: "huy", ghi_chu: r.ghi_chu }, "Đã hủy việc — người liên quan được báo.");
+  }
+  if (ma === "tien-do") {
+    const r = await hoiHop({ tieu_de: "Cập nhật tiến độ", phu: v.tieu_de, nut: "Ghi",
+      truong: [{ name: "noi_dung", label: "Tiến độ", type: "textarea", rows: 3, maxlength: 2000,
+                 required: true, placeholder: "Đã gọi lần 1, khách hẹn gọi lại 15h" }] });
+    if (!r || !r.noi_dung) return;
+    try {
+      await api(`/cong-viec/${encodeURIComponent(id)}/tien-do`,
+        { method: "POST", body: JSON.stringify({ noi_dung: r.noi_dung }) });
+      toast("Đã ghi tiến độ.");
+      await cvxLamMoi(true);
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
+  if (ma === "tu-dong") {
+    try {
+      const r = await api(`/cong-viec/${encodeURIComponent(id)}/tu-dong-giao`, { method: "POST" });
+      toast(r.nguoi_nhan ? `Đã giao cho ${r.nguoi_nhan_ten}.` : `Không phân công được: ${r.ly_do}`, !r.nguoi_nhan);
+      await cvxLamMoi(true);
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
+  if (ma === "giao") {
+    let ds;
+    try { ds = await cvxNguoiNhan(id); } catch (e) { toast(e.message, true); return; }
+    cvxCt.chon = { ds, gia_tri: v.nguoi_nhan || "", ghi_chu: "" };
+    cvxVeChiTiet();
+    $(".cvx-muc--chon", cvx.el)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    $(".cvx-muc--chon input[type=radio]:checked, .cvx-muc--chon input[type=radio]", cvx.el)?.focus();
+    return;
+  }
+  if (ma === "sua") {
+    const r = await hoiHop({ tieu_de: "Sửa việc", nut: "Lưu", truong: [
+      { name: "tieu_de", label: "Việc cần làm", required: true, maxlength: 200, value: v.tieu_de },
+      { name: "mo_ta", label: "Mô tả", type: "textarea", rows: 3, maxlength: 5000, value: v.mo_ta || "" },
+      { name: "uu_tien", label: "Mức ưu tiên", type: "select", value: v.uu_tien,
+        options: (d.uu_tien || []).map((u) => ({ value: u.ma, label: u.nhan })) },
+      { name: "han", label: "Hạn", type: "date", hint: "để trống là bỏ hạn",
+        value: v.han ? String(v.han).slice(0, 10) : "" },
+    ] });
+    if (!r) return;
+    const than = { tieu_de: r.tieu_de, mo_ta: r.mo_ta, uu_tien: r.uu_tien };
+    if (r.han) than.han = cvxHan(r.han); else than.xoa_han = true;
+    return cvxPut(id, than, "Đã lưu việc.");
+  }
+}
+
+async function cvxLuuChon() {
+  const d = cvx.chiTiet;
+  const c = cvxCt.chon;
+  if (!d || !c) return;
+  const v = d.cong_viec;
+  const chon = $(".cvx-muc--chon input[type=radio]:checked", cvx.el);
+  const giaTri = chon ? chon.value : "";
+  if (!chon || (giaTri === "" && !v.nguoi_nhan)) { toast("Chọn một người nhận.", true); return; }
+  if (String(giaTri) === String(v.nguoi_nhan || "")) { toast("Việc đang ở đúng người này rồi.", true); return; }
+  const than = giaTri ? { nguoi_nhan: giaTri } : { xoa_nguoi_nhan: true };
+  const ghiChu = ($(".cvx-muc--chon [name=cvx_ghi_chu]", cvx.el)?.value || "").trim();
+  if (ghiChu) than.ghi_chu = ghiChu;
+  cvxCt.chon = null;
+  const ok = await cvxPut(v.id, than, giaTri ? "Đã giao — người nhận được báo." : "Đã thu hồi người nhận.");
+  if (!ok) { cvxCt.chon = c; cvxVeChiTiet(); }
+}
+
+async function cvxXongNhanh(form) {
+  const d = cvx.chiTiet;
+  if (!d) return;
+  const o = form.querySelector("textarea[name=ket_qua]");
+  const loi = form.querySelector(".cvx-xong__loi");
+  const kq = (o.value || "").trim();
+  if (!kq) {
+    loi.textContent = "Ghi một câu kết quả trước khi hoàn thành — người sau cần biết đã làm gì.";
+    o.focus();
+    return;
+  }
+  const nut = form.querySelector("button[type=submit]");
+  nut.disabled = true;
+  const ok = await cvxPut(d.cong_viec.id, { trang_thai: "xong", ket_qua: kq }, "Đã hoàn thành.");
+  if (ok) cvxCt.ketQua = "";
+  else nut.disabled = false;
+}
+
+/* Sự kiện của ngăn — gắn MỘT lần lên khung tab (ngăn vẽ lại liên tục). */
+function cvxBatSuKienNgan(el) {
+  el.addEventListener("click", async (e) => {
+    if (!e.target.closest("#cvxCt")) return;
+    if (e.target.closest("[data-cvx-dong]")) { cvxDongNgan(); return; }
+    const ls = e.target.closest("[data-cvx-ls]");
+    if (ls) { cvxCt.locLs = ls.dataset.cvxLs; cvxVeChiTiet(); return; }
+    const mau = e.target.closest("[data-cvx-mau]");
+    if (mau) {
+      const o = $("[data-cvx-xong-form] textarea", el);
+      if (o) { o.value = mau.dataset.cvxMau; cvxCt.ketQua = o.value; o.focus(); }
+      return;
+    }
+    if (e.target.closest("[data-cvx-chon-thoi]")) { cvxCt.chon = null; cvxVeChiTiet(); return; }
+    if (e.target.closest("[data-cvx-chon-luu]")) { await cvxLuuChon(); return; }
+    const lam = e.target.closest("[data-cvx-lam]");
+    if (lam) {
+      const menu = lam.closest("details");
+      if (menu) menu.open = false;
+      await cvxLam(lam.dataset.cvxLam);
+    }
+  });
+  el.addEventListener("submit", (e) => {
+    const f = e.target.closest("[data-cvx-xong-form]");
+    if (!f) return;
+    e.preventDefault();
+    cvxXongNhanh(f);
+  });
+  el.addEventListener("input", (e) => {
+    if (e.target.matches("[data-cvx-xong-form] textarea")) cvxCt.ketQua = e.target.value;
+    if (e.target.matches("[name=cvx_ghi_chu]") && cvxCt.chon) cvxCt.chon.ghi_chu = e.target.value;
+  });
+  el.addEventListener("change", (e) => {
+    if (e.target.matches("[name=cvx_nguoi]") && cvxCt.chon) {
+      cvxCt.chon.gia_tri = e.target.value;
+      $$(".cvx-muc--chon .cvx-ng", el).forEach((l) => l.classList.toggle("is-on", l.contains(e.target)));
+    }
+  });
+}
+
+/* Esc đóng ngăn — trừ khi hộp hỏi chung hay chuông đang mở: Esc là của chúng. */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !cvx.chiTiet || hoiDangMo) return;
+  if (typeof chuong !== "undefined" && chuong.mo) return;
+  if (document.querySelector(".cvx-tao:not([hidden])")) return;
+  if (!tabDangHien("cv-danh-sach")) return;
+  cvxDongNgan();
+});
+/* Khổ màn đổi (xoay máy, kéo cửa sổ): ngăn đang mở phải đổi theo kiểu
+   tấm phủ ↔ cột phải, kể cả khoá cuộn. */
+window.matchMedia("(max-width: 1180px)").addEventListener?.("change", () => {
+  if (cvx.chiTiet) document.body.classList.toggle("cvx-khoa-cuon", cvxNganHep());
+});
+/* ================= CÔNG VIỆC — ngăn "Việc mới" (UX-14-03, UX-14-04) =================
+ *
+ * Tạo việc trong một NGĂN KÉO bên phải (điện thoại: toàn màn), không trong
+ * hộp hỏi chung `hoiHop`. Hộp ấy là lớp phủ của màn đăng nhập: một cột hẹp
+ * giữa hai vùng trắng lớn, không chỗ cho thẻ liên kết hay danh sách gợi ý —
+ * đo được 1366px: ô nhập rộng 320px, hai bên trống hơn 500px mỗi bên.
+ *
+ * Ngăn nằm ở <body>, không trong màn Công việc: nút "+ Tạo việc" của hội
+ * thoại mở nó ngay trên hội thoại, người trực không phải rời khách đang chat.
+ *
+ * Ba thứ trước đây phải gõ tay hoặc không thấy:
+ *   · liên kết (hội thoại, khách, đơn) hiện thành THẺ, không phải câu phụ;
+ *   · mã đơn có GỢI Ý theo khách (`/cong-viec/goi-y-don`, quyền `don.doc`,
+ *     phạm vi kênh) — gõ tay vẫn được, máy chủ kiểm cùng luật phạm vi;
+ *   · tạo từ hội thoại thì mô tả điền sẵn vài tin khách gần nhất NGUYÊN
+ *     VĂN (`/cong-viec/ngu-canh-tao`, không gọi mô hình), sửa được trước khi lưu.
+ */
+
+const cvxTao = {
+  nguCanh: {}, khach: null, hoiThoai: null, don: null, goiY: [], chonGoiY: -1,
+  ganDay: null, viecMo: [], quayVe: null, hen: null, dangGui: false, moTaGoiY: "",
+};
+
+function cvxTaoKhung() {
+  let o = $("#cvxTao");
+  if (o) return o;
+  o = document.createElement("div");
+  o.id = "cvxTao";
+  o.className = "cvx-tao";
+  o.hidden = true;
+  o.innerHTML = `<div class="cvx-tao__nen" data-cvx-tao-dong></div>
+    <section class="cvx-tao__ngan" role="dialog" aria-modal="true" aria-labelledby="cvxTaoTen">
+      <form class="cvx-tao__form" id="cvxTaoForm" novalidate></form>
+    </section>`;
+  document.body.append(o);
+  cvxTaoBatSuKien(o);
+  return o;
+}
+
+function cvxTaoDong() {
+  const o = $("#cvxTao");
+  if (!o || o.hidden) return;
+  o.hidden = true;
+  document.body.classList.remove("cvx-khoa-cuon");
+  clearTimeout(cvxTao.hen);
+  const ve = cvxTao.quayVe;
+  cvxTao.quayVe = null;
+  if (ve && document.contains(ve)) ve.focus({ preventScroll: true });
+}
+
+/* ---------------- vẽ ---------------- */
+
+function cvxTaoVeLienKet() {
+  const the = [];
+  if (cvxTao.hoiThoai) {
+    the.push(`<span class="cvx-the"><span class="cvx-the__loai">Hội thoại</span>${
+      esc(cvxTao.hoiThoai.kenh || "đang mở")}</span>`);
+  }
+  if (cvxTao.khach) {
+    the.push(`<span class="cvx-the"><span class="cvx-the__loai">Khách</span>${esc(cvxTao.khach.ten)}</span>`);
+  }
+  if (cvxTao.don) {
+    const nhan = (typeof ORDER_LABEL !== "undefined" && ORDER_LABEL[cvxTao.don.trang_thai]) || "";
+    the.push(`<span class="cvx-the cvx-the--don"><span class="cvx-the__loai">Đơn</span>${esc(cvxTao.don.ma_don)}${
+      nhan ? ` · ${esc(nhan)}` : ""}<button type="button" class="cvx-the__bo" data-cvx-tao-bo-don
+      aria-label="Bỏ gắn đơn ${esc(cvxTao.don.ma_don)}">✕</button></span>`);
+  }
+  const o = $("#cvxTaoLienKet");
+  if (!o) return;
+  o.innerHTML = the.length ? the.join("")
+    : '<span class="cvx-muc__trong">Việc độc lập — chưa gắn hội thoại hay khách. Gắn đơn ở ô bên dưới nếu có.</span>';
+}
+
+function cvxTaoVeGanDay() {
+  const o = $("#cvxTaoGanDay");
+  if (!o) return;
+  const ds = cvxTao.ganDay;
+  if (ds === null || !cvxTao.khach) { o.innerHTML = ""; return; }
+  o.innerHTML = ds.length
+    ? `<span class="cvx-tao__nho">Đơn gần đây của khách:</span>${ds.map((d, i) =>
+        `<button type="button" class="chip" data-cvx-tao-gan-day="${i}">${esc(d.ma_don)}${
+          ORDER_LABEL && ORDER_LABEL[d.trang_thai] ? ` · ${esc(ORDER_LABEL[d.trang_thai])}` : ""}</button>`).join("")}`
+    : '<span class="cvx-tao__nho">Khách này chưa có đơn nào.</span>';
+}
+
+function cvxTaoVeGoiY() {
+  const ds = $("#cvxTaoGoiY");
+  const o = $("#cvxTaoDon");
+  if (!ds || !o) return;
+  const mo = cvxTao.goiY.length > 0 && document.activeElement === o;
+  ds.hidden = !mo;
+  o.setAttribute("aria-expanded", String(mo));
+  ds.innerHTML = cvxTao.goiY.map((d, i) => `<li role="option" id="cvxGoiY${i}" class="cvx-goi-y${
+      i === cvxTao.chonGoiY ? " is-on" : ""}" data-cvx-tao-goi-y="${i}" aria-selected="${i === cvxTao.chonGoiY}">
+      <b>${esc(d.ma_don)}</b><span>${esc((ORDER_LABEL && ORDER_LABEL[d.trang_thai]) || d.trang_thai)} · ${
+        num(d.tong_tien)}đ · ${esc(d.khach_ten || "")} · ${esc(clock(d.tao_luc))}</span></li>`).join("");
+  if (cvxTao.chonGoiY >= 0) o.setAttribute("aria-activedescendant", `cvxGoiY${cvxTao.chonGoiY}`);
+  else o.removeAttribute("aria-activedescendant");
+}
+
+function cvxTaoVeViecMo() {
+  const o = $("#cvxTaoViecMo");
+  if (!o) return;
+  const ds = cvxTao.viecMo || [];
+  o.hidden = !ds.length;
+  o.innerHTML = ds.length ? `<b>Hội thoại này đang có ${ds.length} việc chưa xong</b> — kiểm tra trước khi tạo trùng:
+    ${ds.map((v) => `<button type="button" class="btn btn--sm btn--ghost" data-cvx-tao-mo-viec="${esc(v.id)}">${
+      esc(v.tieu_de)} · ${esc(v.nhan_trang_thai)}</button>`).join("")}` : "";
+}
+
+function cvxTaoVe(nguoi) {
+  const giao = cvxCo("cong_viec.giao");
+  const xemDon = cvxCo("don.doc");
+  const ten = cvxTao.nguCanh.ten_khach;
+  const uuTien = ((cvx.dm && cvx.dm.uu_tien) || [{ ma: "thap", nhan: "Thấp" }, { ma: "thuong", nhan: "Thường" },
+    { ma: "cao", nhan: "Cao" }, { ma: "gap", nhan: "Gấp" }]);
+  const dau = [["", "Chưa phân công", "người điều phối được báo"], ["__toi", "Tôi làm", ""]]
+    .concat(giao ? [["__tu_dong", "Tự động", "người đang trong ca, lâu nhất chưa được giao"]] : []);
+  $("#cvxTaoForm").innerHTML = `
+    <div class="cvx-tao__dau">
+      <h2 class="cvx-tao__ten" id="cvxTaoTen">Việc mới${ten ? ` — ${esc(ten)}` : ""}</h2>
+      <button type="button" class="btn btn--sm btn--ghost" data-cvx-tao-dong aria-label="Đóng">✕</button>
+    </div>
+    <div class="cvx-tao__than">
+      <div class="cvx-tao__lk" id="cvxTaoLienKet" aria-label="Liên kết của việc"></div>
+      <div class="cvx-tao__canh" id="cvxTaoViecMo" role="status" hidden></div>
+      <label class="field"><span>Việc cần làm</span>
+        <input name="tieu_de" required maxlength="200" minlength="3" autocomplete="off"
+          placeholder="Gọi lại chị Hoa xác nhận đơn"></label>
+      <label class="field"><span>Mô tả <em class="hint" id="cvxTaoMoTaGoiY"></em></span>
+        <textarea name="mo_ta" rows="5" maxlength="5000"
+          placeholder="${cvxTao.nguCanh.conversation_id ? "Đang lấy tin khách gần nhất…" : "Chi tiết cần biết để làm việc này"}"></textarea></label>
+      <div class="cvx-tao__hai">
+        <fieldset class="cvx-tao__ut"><legend>Mức ưu tiên</legend>
+          ${uuTien.map((u) => `<label class="cvx-ut-chon"><input type="radio" name="uu_tien" value="${esc(u.ma)}"${
+            u.ma === "thuong" ? " checked" : ""}><span>${esc(u.nhan)}</span></label>`).join("")}
+        </fieldset>
+        <label class="field"><span>Hạn <em class="hint">để trống nếu không có</em></span>
+          <input type="date" name="han"></label>
+      </div>
+      <div class="field cvx-tao__don"><span id="cvxTaoDonNhan">Đơn liên quan <em class="hint">${
+        xemDon ? (cvxTao.khach ? "gợi ý theo khách này" : "gõ từ 2 ký tự mã đơn") : "gõ đúng mã đơn — không có quyền xem danh sách đơn"}</em></span>
+        <div class="cvx-tao__hop">
+          <input id="cvxTaoDon" maxlength="60" autocomplete="off" placeholder="ĐH-…" aria-labelledby="cvxTaoDonNhan"
+            ${xemDon ? 'role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cvxTaoGoiY"' : ""}>
+          <ul class="cvx-goi-y-ds" id="cvxTaoGoiY" role="listbox" hidden></ul>
+        </div>
+        <div class="cvx-tao__gan-day" id="cvxTaoGanDay"></div>
+      </div>
+      <fieldset class="cvx-tao__pc"><legend>Phân công</legend>
+        ${cvxVeDsNguoi("phan_cong", giao ? nguoi : [], giao ? "" : "__toi", dau)}
+      </fieldset>
+    </div>
+    <div class="cvx-tao__chan">
+      <p class="cvx-tao__loi" id="cvxTaoLoi" role="alert"></p>
+      <button type="button" class="btn btn--ghost" data-cvx-tao-dong>Hủy</button>
+      <button type="submit" class="btn btn--primary" id="cvxTaoGui">Tạo việc</button>
+    </div>`;
+  cvxTaoVeLienKet();
+  cvxTaoVeGanDay();
+  cvxTaoVeViecMo();
+}
+
+/* ---------------- dữ liệu ---------------- */
+
+async function cvxTaoNapNguCanh() {
+  const cid = cvxTao.nguCanh.conversation_id;
+  if (!cid) return;
+  const o = $("#cvxTaoForm [name=mo_ta]");
+  try {
+    const d = await api(`/cong-viec/ngu-canh-tao?conversation_id=${encodeURIComponent(cid)}`);
+    if ($("#cvxTao").hidden || cvxTao.nguCanh.conversation_id !== cid) return;
+    cvxTao.hoiThoai = d.hoi_thoai;
+    if (d.khach) cvxTao.khach = d.khach;
+    cvxTao.viecMo = d.viec_mo || [];
+    cvxTao.ganDay = d.don_gan_day;   // null = không có quyền xem đơn
+    cvxTao.moTaGoiY = d.mo_ta_goi_y || "";
+    /* Chỉ điền khi ô còn trống: người ta gõ nhanh hơn mạng thì không đè. */
+    if (o && !o.value.trim() && cvxTao.moTaGoiY) {
+      o.value = cvxTao.moTaGoiY;
+      $("#cvxTaoMoTaGoiY").innerHTML = `trích nguyên văn tin khách — sửa lại cho gọn
+        <button type="button" class="cvx-tao__bo-trich" data-cvx-tao-bo-trich>Bỏ trích dẫn</button>`;
+    }
+    if (o) o.placeholder = "Chi tiết cần biết để làm việc này";
+    cvxTaoVeLienKet();
+    cvxTaoVeGanDay();
+    cvxTaoVeViecMo();
+  } catch (e) {
+    /* Không lấy được ngữ cảnh thì vẫn tạo được việc — nhưng nói ra, không
+       để ô mô tả trống như thể khách chưa nhắn gì. */
+    if (o) o.placeholder = "Không lấy được tin khách gần nhất — gõ mô tả tay.";
+    console.warn("Không tải được ngữ cảnh tạo việc", e);
+  }
+}
+
+async function cvxTaoTimDon(q) {
+  if (!cvxCo("don.doc")) return;
+  const tham = new URLSearchParams({ q, limit: "8" });
+  if (cvxTao.khach) tham.set("contact_id", cvxTao.khach.id);
+  try {
+    const d = await api(`/cong-viec/goi-y-don?${tham}`);
+    cvxTao.goiY = d.don || [];
+  } catch (e) { cvxTao.goiY = []; console.warn("Không tải được gợi ý đơn", e); }
+  cvxTao.chonGoiY = cvxTao.goiY.length ? 0 : -1;
+  cvxTaoVeGoiY();
+}
+
+function cvxTaoChonDon(d) {
+  if (!d) return;
+  cvxTao.don = { id: d.id, ma_don: d.ma_don, trang_thai: d.trang_thai };
+  cvxTao.goiY = [];
+  const o = $("#cvxTaoDon");
+  if (o) o.value = "";
+  cvxTaoVeGoiY();
+  cvxTaoVeLienKet();
+}
+
+/* ---------------- mở / gửi ---------------- */
+
+/* Tạo việc — từ màn Công việc, hoặc từ một hội thoại (`ngu_canh` mang sẵn
+ * hội thoại + khách). Phân công: tự nhận, chưa phân công, tự động, hay
+ * một người cụ thể — hai lựa chọn sau chỉ hiện khi có `cong_viec.giao`. */
+async function cvxTaoViec(ngu_canh = {}) {
+  const o = cvxTaoKhung();
+  cvxTao.nguCanh = ngu_canh;
+  cvxTao.khach = ngu_canh.contact_id ? { id: ngu_canh.contact_id, ten: ngu_canh.ten_khach || "Khách" } : null;
+  cvxTao.hoiThoai = ngu_canh.conversation_id ? { id: ngu_canh.conversation_id, kenh: "" } : null;
+  cvxTao.don = null; cvxTao.goiY = []; cvxTao.chonGoiY = -1;
+  cvxTao.ganDay = null; cvxTao.viecMo = []; cvxTao.moTaGoiY = ""; cvxTao.dangGui = false;
+  cvxTao.quayVe = document.activeElement;
+  let nguoi = [];
+  if (cvxCo("cong_viec.giao")) {
+    try { nguoi = await cvxNguoiNhan(null); }
+    catch (e) { console.warn("Không tải được danh sách người nhận", e); }
+  }
+  cvxTaoVe(nguoi);
+  o.hidden = false;
+  document.body.classList.add("cvx-khoa-cuon");
+  setTimeout(() => $("#cvxTaoForm [name=tieu_de]")?.focus(), 0);
+  cvxTaoNapNguCanh();
+}
+
+async function cvxTaoGui() {
+  if (cvxTao.dangGui) return;
+  const f = $("#cvxTaoForm");
+  const loi = $("#cvxTaoLoi");
+  const r = Object.fromEntries(new FormData(f).entries());
+  for (const k of Object.keys(r)) if (typeof r[k] === "string") r[k] = r[k].trim();
+  if (!r.tieu_de || r.tieu_de.length < 3) {
+    loi.textContent = "Ghi việc cần làm (ít nhất 3 ký tự).";
+    f.querySelector("[name=tieu_de]").focus();
+    return;
+  }
+  const than = { tieu_de: r.tieu_de, mo_ta: r.mo_ta || "", uu_tien: r.uu_tien || "thuong",
+                 han: cvxHan(r.han) };
+  const maGo = ($("#cvxTaoDon")?.value || "").trim();
+  if (cvxTao.don) than.order_id = cvxTao.don.id;
+  else if (maGo) than.ma_don = maGo;
+  if (cvxTao.nguCanh.conversation_id) than.conversation_id = cvxTao.nguCanh.conversation_id;
+  if (cvxTao.khach) than.contact_id = cvxTao.khach.id;
+  if (r.phan_cong === "__toi") than.nguoi_nhan = state.toiId;
+  else if (r.phan_cong === "__tu_dong") than.giao_tu_dong = true;
+  else if (r.phan_cong) than.nguoi_nhan = r.phan_cong;
+  const nut = $("#cvxTaoGui");
+  cvxTao.dangGui = true;
+  nut.disabled = true;
+  nut.textContent = "Đang tạo…";
+  loi.textContent = "";
+  try {
+    const kq = await api("/cong-viec", { method: "POST", body: JSON.stringify(than) });
+    if (than.giao_tu_dong && !kq.nguoi_nhan) toast(`Đã tạo, nhưng chưa phân công được: ${kq.ly_do_khong_giao}`, true);
+    else toast("Đã tạo việc.");
+    cvxTaoDong();
+    if (cvx.el && tabDangHien("cv-danh-sach")) { await cvxLamMoi(); await cvxTaiChiTiet(kq.id); }
+    return kq.id;
+  } catch (e) {
+    /* Lỗi nằm NGAY trong ngăn, cạnh nút: toast biến mất sau vài giây và
+       người ta không biết phải sửa ô nào. */
+    loi.textContent = e.message;
+  } finally {
+    cvxTao.dangGui = false;
+    nut.disabled = false;
+    nut.textContent = "Tạo việc";
+  }
+}
+
+/* ---------------- sự kiện ---------------- */
+
+function cvxTaoBatSuKien(o) {
+  o.addEventListener("submit", (e) => { e.preventDefault(); cvxTaoGui(); });
+  o.addEventListener("click", (e) => {
+    if (e.target.closest("[data-cvx-tao-dong]")) { cvxTaoDong(); return; }
+    if (e.target.closest("[data-cvx-tao-bo-don]")) {
+      cvxTao.don = null; cvxTaoVeLienKet(); $("#cvxTaoDon")?.focus(); return;
+    }
+    if (e.target.closest("[data-cvx-tao-bo-trich]")) {
+      const m = $("#cvxTaoForm [name=mo_ta]");
+      if (m && m.value === cvxTao.moTaGoiY) m.value = "";
+      $("#cvxTaoMoTaGoiY").textContent = "";
+      m?.focus();
+      return;
+    }
+    const gy = e.target.closest("[data-cvx-tao-goi-y]");
+    if (gy) { cvxTaoChonDon(cvxTao.goiY[Number(gy.dataset.cvxTaoGoiY)]); return; }
+    const gd = e.target.closest("[data-cvx-tao-gan-day]");
+    if (gd) { cvxTaoChonDon((cvxTao.ganDay || [])[Number(gd.dataset.cvxTaoGanDay)]); return; }
+    const mv = e.target.closest("[data-cvx-tao-mo-viec]");
+    if (mv) { cvxTaoDong(); window.moCongViec(mv.dataset.cvxTaoMoViec); }
+  });
+  o.addEventListener("change", (e) => {
+    if (e.target.matches("[name=phan_cong]")) {
+      $$(".cvx-tao__pc .cvx-ng", o).forEach((l) => l.classList.toggle("is-on", l.contains(e.target)));
+    }
+  });
+  o.addEventListener("input", (e) => {
+    if (e.target.id !== "cvxTaoDon" || !cvxCo("don.doc")) return;
+    clearTimeout(cvxTao.hen);
+    const q = e.target.value.trim();
+    if (q.length < 2 && !cvxTao.khach) { cvxTao.goiY = []; cvxTaoVeGoiY(); return; }
+    cvxTao.hen = setTimeout(() => cvxTaoTimDon(q), 250);
+  });
+  o.addEventListener("focusin", (e) => {
+    if (e.target.id === "cvxTaoDon" && cvxCo("don.doc") && cvxTao.khach && !cvxTao.goiY.length) {
+      cvxTaoTimDon(e.target.value.trim());
+    }
+  });
+  o.addEventListener("focusout", (e) => {
+    if (e.target.id !== "cvxTaoDon") return;
+    /* Trễ một nhịp: bấm chuột vào một gợi ý làm ô mất focus TRƯỚC khi sự
+       kiện click tới — ẩn ngay là gợi ý biến mất dưới ngón tay. */
+    setTimeout(() => { if (document.activeElement !== e.target) cvxTaoVeGoiY(); }, 150);
+  });
+  o.addEventListener("keydown", (e) => {
+    if (e.target.id !== "cvxTaoDon" || !cvxTao.goiY.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = cvxTao.goiY.length;
+      cvxTao.chonGoiY = (cvxTao.chonGoiY + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+      cvxTaoVeGoiY();
+    } else if (e.key === "Enter" && cvxTao.chonGoiY >= 0) {
+      e.preventDefault();
+      cvxTaoChonDon(cvxTao.goiY[cvxTao.chonGoiY]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      cvxTao.goiY = [];
+      cvxTaoVeGoiY();
+    }
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || hoiDangMo) return;
+  const o = $("#cvxTao");
+  if (o && !o.hidden) cvxTaoDong();
+});
 /* ---------------- SLA & Giờ làm việc (Cấu hình chung → tab cc-sla) ----------------
  *
  * Gắn qua `GAN_TAB['cc-sla']`. Màn này từng là MỘT trang dài bốn khối liền

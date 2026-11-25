@@ -81,6 +81,42 @@ _HUONG_DAN: dict[str, str] = {
     "viec_qua_han": "Mở công việc để xử lý hoặc cập nhật tiến độ.",
 }
 
+# "CẦN XỬ LÝ" hay "THÔNG TIN" (UX-19-04). Phân theo LOẠI chưa đủ: "Được giao
+# việc" là cần làm khi việc còn mở, nhưng việc đã Hoàn thành thì dòng ấy chỉ
+# còn là lịch sử — để nó đứng chung nhóm với việc chưa ai đụng là dạy người
+# trực bỏ qua cả nhóm. Nên mỗi loại hành động mang một điều kiện TÌNH TRẠNG
+# THẬT, đọc lúc hiển thị từ chính việc/hội thoại/đơn nó trỏ tới.
+#
+# Thêm một loại mới vào LOAI mà quên xếp vào một trong hai nhóm thì test đỏ
+# (test_thong_bao_noi_bo) — không xếp là loại ấy lặng lẽ thành "Thông tin".
+LOAI_HANH_DONG: dict[str, str] = {
+    # Việc còn mở và VẪN của mình — bị chuyển sang người khác thì hết phần mình.
+    "duoc_giao_viec": "v.trang_thai IN ('moi','dang_lam') AND v.nguoi_nhan = t.nguoi_nhan_id",
+    "viec_qua_han": "v.trang_thai IN ('moi','dang_lam')",
+    "viec_chua_giao": "v.trang_thai IN ('moi','dang_lam') AND v.nguoi_nhan IS NULL",
+    # Đơn chờ duyệt: còn ở `cho_duyet`. Bản nháp / đề xuất trên hội thoại:
+    # hội thoại còn mở (không lần được tới từng bản nháp từ dòng thông báo).
+    "can_duyet": ("CASE WHEN t.order_id IS NOT NULL THEN o.trang_thai = 'cho_duyet' "
+                  "ELSE coalesce(c.state, 'open') IN ('open','pending') END"),
+    "ai_chuyen_giao": "coalesce(c.state, 'open') IN ('open','pending')",
+    "duoc_giao_hoi_thoai": "coalesce(c.state, 'open') IN ('open','pending')",
+    "sla_sap_tre": "coalesce(c.state, 'open') IN ('open','pending')",
+    "sla_tre": "coalesce(c.state, 'open') IN ('open','pending')",
+}
+LOAI_THONG_TIN = frozenset({"viec_huy"})
+
+# Một biểu thức cho cả cột `can_xu_ly`, bộ lọc và số đếm — ba bản là ba định
+# nghĩa "cần xử lý" lệch nhau. `coalesce(..., false)`: thứ được trỏ tới đã bị
+# xoá (LEFT JOIN ra NULL) thì không còn gì để xử lý.
+_SQL_CAN_XU_LY = "coalesce(CASE t.loai " + " ".join(
+    f"WHEN '{loai}' THEN ({dk})" for loai, dk in LOAI_HANH_DONG.items()
+) + " ELSE false END, false)"
+_JOIN_TINH_TRANG = (
+    "LEFT JOIN conversations c ON c.id = t.conversation_id "
+    "LEFT JOIN cong_viec v ON v.id = t.cong_viec_id "
+    "LEFT JOIN orders o ON o.id = t.order_id "
+)
+
 _MA_KY_THUAT_RE = re.compile(
     r"\s*\((?:tool_calls|tool_use|malformed_function_call|max_tokens|length|safety|recitation|content_filter|refusal|\d+(?:\.\d+)?)\)\s*",
     re.IGNORECASE,
@@ -641,25 +677,41 @@ def _lien_ket(r: dict) -> dict | None:
     return None
 
 
+def nhom_thong_bao(loai: str, can_xu_ly: bool) -> str:
+    """`can_xu_ly` | `da_xu_ly` (loại hành động nhưng thứ ấy đã xong) | `thong_tin`."""
+    if loai in LOAI_THONG_TIN or loai not in LOAI_HANH_DONG:
+        return "thong_tin"
+    return "can_xu_ly" if can_xu_ly else "da_xu_ly"
+
+
 async def liet_ke(nguoi_id: UUID, *, chi_chua_doc: bool = False,
+                  chi_can_xu_ly: bool = False,
                   gioi_han: int = 20, bo_qua: int = 0) -> list[dict]:
     """
     Tên khách đọc qua hội thoại lúc hiển thị, không chép vào bảng — xem
     migration 0055.
+
+    `chi_can_xu_ly` lọc ở SQL chứ không ở trình duyệt: danh sách phân trang
+    20 dòng một, lọc sau khi cắt trang thì "Xem thêm" ra trang rỗng dù còn
+    việc cần xử lý ở trang sau.
     """
     rows = await db.fetch(
         "SELECT t.id, t.loai, t.tieu_de, t.noi_dung, t.conversation_id, "
         "       t.cong_viec_id, t.order_id, t.tao_luc, t.da_doc_luc, "
-        "       c.customer_name AS ten_khach, ca.channel AS kenh "
+        "       c.customer_name AS ten_khach, ca.channel AS kenh, "
+        f"      {_SQL_CAN_XU_LY} AS can_xu_ly "
         "FROM thong_bao t "
-        "LEFT JOIN conversations c ON c.id = t.conversation_id "
+        f"{_JOIN_TINH_TRANG}"
         "LEFT JOIN channel_accounts ca ON ca.id = c.account_id "
         "WHERE t.nguoi_nhan_id = $1 AND ($2::bool IS FALSE OR t.da_doc_luc IS NULL) "
+        f"  AND ($5::bool IS FALSE OR {_SQL_CAN_XU_LY}) "
         "ORDER BY t.tao_luc DESC, t.id DESC LIMIT $3 OFFSET $4",
-        nguoi_id, chi_chua_doc, gioi_han, bo_qua)
+        nguoi_id, chi_chua_doc, gioi_han, bo_qua, chi_can_xu_ly)
     ra = []
     for r in rows:
         ra.append({
+            "can_xu_ly": bool(r["can_xu_ly"]),
+            "nhom": nhom_thong_bao(r["loai"], bool(r["can_xu_ly"])),
             "id": str(r["id"]),
             "loai": r["loai"],
             "nhan_loai": LOAI.get(r["loai"], r["loai"]),
@@ -679,6 +731,13 @@ async def dem_chua_doc(nguoi_id: UUID) -> int:
     return int(await db.pool().fetchval(
         "SELECT count(*) FROM thong_bao WHERE nguoi_nhan_id = $1 AND da_doc_luc IS NULL",
         nguoi_id) or 0)
+
+
+async def dem_can_xu_ly(nguoi_id: UUID) -> int:
+    """Số thông báo CÒN cần hành động, đọc hay chưa — đọc không phải làm xong."""
+    return int(await db.pool().fetchval(
+        f"SELECT count(*) FROM thong_bao t {_JOIN_TINH_TRANG}"  # noqa: S608
+        f"WHERE t.nguoi_nhan_id = $1 AND {_SQL_CAN_XU_LY}", nguoi_id) or 0)
 
 
 async def danh_dau_da_doc(nguoi_id: UUID, thong_bao_id: UUID) -> bool:

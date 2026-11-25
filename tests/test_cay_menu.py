@@ -31,7 +31,8 @@ TAB = {
     "congviec": ["cv-ca-truc", "cv-danh-sach"],
     "cauhinhchung": ["cc-nhan", "cc-tu-dong", "cc-ket-noi", "cc-sla", "cc-dieu-phoi"],
     "cauhinhai": ["ai-co-ban", "ai-tri-thuc", "ai-ky-nang", "ai-chinh-sach", "ai-phong-thu"],
-    "nhansu": ["ns-nhan-vien", "ns-vai-tro"],
+    # Bốn khu (UX-13-08): tài khoản, vai trò, lịch sử, lịch ca.
+    "nhansu": ["ns-nhan-vien", "ns-vai-tro", "ns-lich-su", "ns-lich-ca"],
     "hethong": ["ht-suc-khoe", "ht-sao-luu", "ht-nhat-ky"],
 }
 
@@ -238,7 +239,8 @@ def test_ten_man_cu_van_dan_toi_dung_tab():
     ("ai-tri-thuc", ["docform", "docs", "probeform"]),
     ("ai-ky-nang", ["kynang-tatca", "pluginform", "mcpform"]),
     ("ai-phong-thu", ["phongthu-form", "phongthu-chat"]),
-    ("ns-nhan-vien", ["nsNguoi", "nsFormNguoi", "lcPanel", "nsPanelGiaiThich"]),
+    ("ns-nhan-vien", ["nsNguoi", "nsFormNguoi", "nsPanelGiaiThich"]),
+    ("ns-lich-ca", ["lcPanel", "lcNguoi", "lcNghi"]),
     ("ns-vai-tro", ["nsVaiTro", "nsFormVaiTro", "tamnhin"]),
     ("ht-suc-khoe", ["hethong", "health", "healthrun"]),
     ("ht-sao-luu", ["ycPanel", "pdpdform", "dsRetention", "api-nhom-bvdlcn"]),
@@ -256,7 +258,7 @@ def test_khoi_luon_o_lai_nam_ngoai_phan_bi_thay():
     trường thông tin khách KHÔNG được nằm trong đó — gắn mô-đun Tích hợp
     hay Nhân sự vào là chúng biến mất mà không ai thay.
     """
-    for tid, oid in [("cc-ket-noi", "connectiongrid"), ("ns-nhan-vien", "lcPanel"),
+    for tid, oid in [("cc-ket-noi", "connectiongrid"), ("ns-lich-ca", "lcPanel"),
                      ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat"),
                      # Ngưỡng SLA chung / khi trễ: mô-đun 26-sla.js thay .tab__goc.
                      ("cc-sla", "api-nhom-sla")]:

@@ -1,22 +1,25 @@
 /* ================= NHÂN SỰ & PHÂN QUYỀN (phiếu việc mục 12–13) =================
  *
- * Hai tab gắn vào khung tab của dashboard:
+ * Bốn tab gắn vào khung tab của dashboard (UX-13-08 — trước đây danh sách
+ * người, lịch ca, lịch sử và vai trò dồn trên hai trang dài):
  *
- *   GAN_TAB["ns-nhan-vien"](el)  tài khoản, thông tin, trạng thái, vai trò,
- *                                khoá kèm chuyển việc
- *   GAN_TAB["ns-vai-tro"](el)    vai trò: tạo, sửa, ngừng dùng, cấp quyền
- *                                theo nhóm chức năng; lịch sử đổi quyền
+ *   GAN_TAB["ns-nhan-vien"]  24b — tài khoản: tìm, lọc, xem chi tiết, sửa,
+ *                            đặt lại mật khẩu, khoá kèm chuyển việc
+ *   GAN_TAB["ns-vai-tro"]    24c — vai trò và bảng cấp quyền
+ *   GAN_TAB["ns-lich-su"]    24c — lịch sử nhân sự & phân quyền
+ *   tab "ns-lich-ca"         lịch ca (16-lich-ca.js, nội dung sẵn trong HTML)
  *
- * Màn "Nhân sự" cũ (09-nhan-su.js) dùng CHUNG các hàm ở đây cho ba việc
- * khó làm đúng hai lần: bảng tick quyền theo nhóm, khoá kèm chuyển việc,
- * và lịch sử. Hai bản chép là hai chỗ để một luật lệch nhau.
+ * Tệp này giữ phần DÙNG CHUNG: dữ liệu, bảng tick quyền, khung xem quyền một
+ * người, ngăn kéo chi tiết, lịch sử, khoá / mở khoá / chuyển việc / đặt lại
+ * mật khẩu. Màn "Nhân sự" cũ (09-nhan-su.js) cũng gọi các hàm ở đây: hai bản
+ * chép của một luật là hai chỗ để luật ấy lệch nhau.
  *
  * MỌI NÚT Ở ĐÂY ĐỀU CÓ CHỐT Ở MÁY CHỦ. Ẩn nút theo quyền chỉ để màn hình
  * không mời một 403 mỗi lần bấm — không phải để bảo vệ gì.
  */
 window.GAN_TAB = window.GAN_TAB || {};
 
-const nsv = { nguoi: [], vaiTro: [], nhom: [] };
+const nsv = { nguoi: [], vaiTro: [], nhom: [], nhayCam: {}, xemQuyen: null };
 
 function nsvCo(quyen) {
   return !!(state.toiQuyen && state.toiQuyen.has(quyen));
@@ -29,6 +32,7 @@ async function nsvTaiDuLieu() {
   nsv.nguoi = nd.nguoi_dung || [];
   nsv.vaiTro = vt.vai_tro || [];
   nsv.nhom = dm.nhom_hien_thi || [];
+  nsv.nhayCam = dm.nhay_cam || {};
 }
 
 /* Nhãn tiếng Việt của một mã quyền — lịch sử lưu MÃ (bền qua các lần đổi
@@ -47,32 +51,247 @@ function nsvNgay(iso) {
   }) : "—";
 }
 
-/* ---------------- dùng chung: bảng tick quyền theo nhóm ---------------- */
+/* Bỏ dấu để tìm: người gõ "xoa" phải thấy "Xoá vĩnh viễn…". Gõ tiếng Việt có
+   dấu trên điện thoại chậm, và một ô tìm bắt gõ đúng dấu là ô tìm hỏng. */
+function nsvBoDau(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d").replace(/Đ/g, "d").toLowerCase();
+}
+
+/* ---------------- quyền nhạy cảm (danh sách ở máy chủ: QUYEN_NHAY_CAM) ---------------- */
+
+function nsvLaNhayCam(ma) {
+  return Object.prototype.hasOwnProperty.call(nsv.nhayCam, ma);
+}
+
+function nsvTheNhayCam(ma) {
+  return nsvLaNhayCam(ma)
+    ? `<span class="pill pill--halt" title="${esc(nsv.nhayCam[ma])}">nhạy cảm</span>` : "";
+}
+
+function nsvTatCaMa() {
+  return nsv.nhom.flatMap((g) => g.quyen.map((q) => q.ma));
+}
+
+/* Quyền một vai trò THẬT SỰ cấp. Ngừng dùng thì không cấp gì — cùng luật với
+   `doc_phien` ở máy chủ; tính khác là màn hình nói một người có quyền mà
+   thật ra không có. */
+function nsvQuyenCuaVai(v) {
+  if (!v || v.dang_dung === false) return [];
+  return v.toan_quyen ? nsvTatCaMa() : (v.quyen || []);
+}
+
+function nsvVaiCuaNguoi(n) {
+  return (n.vai_tro_id || []).map((id) => nsv.vaiTro.find((v) => v.id === id)).filter(Boolean);
+}
+
+/* Vai trò đang dùng của một người -> quyền nhạy cảm nó cấp. Cùng hình với
+   `vai_tro_nhay_cam_cua` ở máy chủ (SEC-13-01). */
+function nsvVaiNhayCam(n) {
+  const ra = {};
+  for (const v of nsvVaiCuaNguoi(n)) {
+    const nc = nsvQuyenCuaVai(v).filter(nsvLaNhayCam);
+    if (nc.length) ra[v.ten] = nc;
+  }
+  return ra;
+}
+
+/* Quyền người này có mà NGƯỜI ĐANG THAO TÁC không có. Khác rỗng thì máy chủ
+   sẽ từ chối sửa/khoá/đặt lại mật khẩu (`chan_cap_vuot`) — khoá nút trước,
+   kèm lý do, thay vì để người ta bấm rồi đọc 403. */
+function nsvVuotQuyen(n) {
+  if (!state.toiQuyen) return [];
+  const co = new Set(nsvVaiCuaNguoi(n).flatMap(nsvQuyenCuaVai));
+  return [...co].filter((q) => !state.toiQuyen.has(q));
+}
+
+/* ---------------- dùng chung: bảng tick quyền theo nhóm (UX-12-03) ---------------- */
 
 /* Nhóm theo CHỨC NĂNG dashboard (máy chủ trả `nhom_hien_thi`, đúng thứ tự
-   phiếu việc), không theo tiền tố mã. `khoa` cho vai trò Quản trị: nó lấy
-   quyền từ mã, tick/bỏ tick ở đó không có tác dụng gì. */
+ * phiếu việc), không theo tiền tố mã. Mỗi nhóm THU GỌN được và nói sẵn
+ * "đã chọn 3/5" — 46 ô tick phẳng là thứ người ta tick theo linh cảm.
+ *
+ * Mã quyền (`khach.xoa`) chỉ còn trong `title`: người quản trị đọc nhãn;
+ * mã chỉ cần khi đối chiếu thông báo 403 ("Thiếu quyền: khach.xoa"), và rê
+ * chuột / ô tìm (tìm được cả theo mã) là đủ cho việc đó.
+ *
+ * `khoa` = chỉ xem (vai trò Quản trị lấy quyền từ mã, tick ở đó vô tác dụng). */
 function nsvBangQuyen(dangCo, khoa = false) {
   const co = new Set(dangCo || []);
   if (!nsv.nhom.length) return '<p class="empty">Chưa tải được danh mục quyền.</p>';
-  return nsv.nhom.map((g) => `
-    <fieldset class="quyen__nhom">
-      <legend>${esc(g.ten)}${khoa ? "" : ` <button type="button" class="btn btn--sm btn--ghost"
-        data-nsv-ca-nhom="${esc(g.ma)}">chọn / bỏ cả nhóm</button>`}</legend>
-      ${g.quyen.map((q) => `<label class="quyen__o">
+  const tong = nsv.nhom.reduce((n, g) => n + g.quyen.length, 0);
+  const nhom = nsv.nhom.map((g) => {
+    const chon = g.quyen.filter((q) => co.has(q.ma)).length;
+    const nc = g.quyen.filter((q) => nsvLaNhayCam(q.ma)).length;
+    return `<details class="quyen__nhom nsv-nhom" data-nsv-nhom="${esc(g.ma)}">
+      <summary><span class="nsv-nhom__ten">${esc(g.ten)}</span>
+        <span class="nsv-nhom__dem" data-nsv-dem-nhom>${chon}/${g.quyen.length}</span>
+        ${nc ? `<span class="pill pill--halt">${nc} nhạy cảm</span>` : ""}
+        ${khoa ? "" : `<button type="button" class="btn btn--sm btn--ghost nsv-nhom__ca"
+          data-nsv-ca-nhom="${esc(g.ma)}">chọn / bỏ cả nhóm</button>`}</summary>
+      ${g.quyen.map((q) => `<label class="quyen__o${nsvLaNhayCam(q.ma) ? " is-nhay-cam" : ""}"
+          title="Mã: ${esc(q.ma)}" data-nsv-tim="${esc(nsvBoDau(`${q.nhan} ${q.ma} ${g.ten}`))}">
         <input type="checkbox" name="quyen" value="${esc(q.ma)}"${co.has(q.ma) ? " checked" : ""}${khoa ? " disabled" : ""}>
-        <span>${esc(q.nhan)}</span><code>${esc(q.ma)}</code>
-      </label>`).join("")}
-    </fieldset>`).join("");
+        <span>${esc(q.nhan)}</span>${nsvTheNhayCam(q.ma)}</label>`).join("")}
+    </details>`;
+  }).join("");
+  return `<div class="nsv-mt" data-nsv-ma-tran>
+    <div class="nsv-mt__cong-cu">
+      <input type="search" class="nsv-tim" data-nsv-tim-quyen autocomplete="off"
+             placeholder="Tìm quyền: xoá, cấu hình, khach.pii…" aria-label="Tìm quyền">
+      <button type="button" class="btn btn--sm btn--ghost" data-nsv-mo-nhom="1">Mở hết</button>
+      <button type="button" class="btn btn--sm btn--ghost" data-nsv-mo-nhom="0">Thu gọn</button>
+      <span class="nsv-mt__dem" data-nsv-dem-chon>${co.size}/${tong} quyền</span>
+    </div>
+    ${nhom}
+    <p class="empty" data-nsv-khong-thay hidden>Không có quyền nào khớp.</p>
+  </div>`;
+}
+
+function nsvDemLai(mt) {
+  if (!mt) return;
+  $$("[data-nsv-nhom]", mt).forEach((g) => {
+    const o = $$('input[name="quyen"]', g);
+    const d = g.querySelector("[data-nsv-dem-nhom]");
+    if (d) d.textContent = `${o.filter((i) => i.checked).length}/${o.length}`;
+  });
+  const tong = $$('input[name="quyen"]', mt);
+  const d = mt.querySelector("[data-nsv-dem-chon]");
+  if (d) d.textContent = `${tong.filter((i) => i.checked).length}/${tong.length} quyền`;
+}
+
+function nsvLocQuyen(mt, chu) {
+  const k = nsvBoDau(chu).trim();
+  let thay = 0;
+  $$("[data-nsv-nhom]", mt).forEach((g) => {
+    let co = 0;
+    $$("[data-nsv-tim]", g).forEach((o) => {
+      const hop = !k || o.dataset.nsvTim.includes(k);
+      o.hidden = !hop;
+      if (hop) co += 1;
+    });
+    g.hidden = !co;
+    if (k) g.open = co > 0;
+    thay += co;
+  });
+  const kt = mt.querySelector("[data-nsv-khong-thay]");
+  if (kt) kt.hidden = thay > 0;
+}
+
+/* Lắng nghe ở `document`: bảng tick vẽ ở cả màn cũ (#nsQuyen) lẫn ngăn kéo
+   của tab Vai trò — một bộ bắt cho mọi chỗ, không gắn lại mỗi lần vẽ. */
+document.addEventListener("click", (e) => {
+  const ca = e.target.closest("[data-nsv-ca-nhom]");
+  if (ca) {
+    e.preventDefault();                       // nút nằm trong <summary>: đừng gập nhóm
+    const o = $$('input[name="quyen"]:not(:disabled)', ca.closest("[data-nsv-nhom]"));
+    const batHet = o.some((i) => !i.checked);
+    o.forEach((i) => { i.checked = batHet; });
+    nsvDemLai(ca.closest("[data-nsv-ma-tran]"));
+    return;
+  }
+  const mo = e.target.closest("[data-nsv-mo-nhom]");
+  if (mo) {
+    $$("[data-nsv-nhom]", mo.closest("[data-nsv-ma-tran]"))
+      .forEach((g) => { g.open = mo.dataset.nsvMoNhom === "1"; });
+  }
+});
+document.addEventListener("input", (e) => {
+  if (e.target.matches("[data-nsv-tim-quyen]")) {
+    nsvLocQuyen(e.target.closest("[data-nsv-ma-tran]"), e.target.value);
+  }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.name === "quyen") nsvDemLai(e.target.closest("[data-nsv-ma-tran]"));
+  if (e.target.matches("[data-nsv-hien-ca]") && nsv.xemQuyen) {
+    const khung = e.target.closest("[data-nsv-xem-quyen]");
+    if (khung) khung.outerHTML = nsvVeQuyenNguoi(nsv.xemQuyen, e.target.checked);
+  }
+});
+
+/* ---------------- dùng chung: quyền THỰC TẾ của một người (UX-13-02, MD-UX-13-04) ---------------- */
+
+/* Tóm tắt theo nhóm ("Hội thoại 3/5"), mở từng nhóm để xem chi tiết và vai
+ * trò nào cấp. "Hiển thị cả quyền chưa cấp" để đối chiếu — câu hỏi người ta
+ * mang tới màn này thường là "vì sao người này KHÔNG vào được màn X". */
+function nsvVeQuyenNguoi(d, hienCa = false) {
+  nsv.xemQuyen = d;
+  const co = d.quyen || {};
+  const tong = Object.keys(co).length;
+  const nhom = nsv.nhom.map((g) => {
+    const coNhom = g.quyen.filter((q) => co[q.ma]);
+    const dong = hienCa ? g.quyen : coNhom;
+    if (!dong.length) return "";
+    const nc = coNhom.filter((q) => nsvLaNhayCam(q.ma)).length;
+    return `<details class="quyen__nhom nsv-nhom">
+      <summary><span class="nsv-nhom__ten">${esc(g.ten)}</span>
+        <span class="nsv-nhom__dem">${coNhom.length}/${g.quyen.length}</span>
+        ${nc ? `<span class="pill pill--halt">${nc} nhạy cảm</span>` : ""}</summary>
+      ${dong.map((q) => co[q.ma]
+        ? `<div class="quyen__o" title="Mã: ${esc(q.ma)}"><span class="nsv-ky nsv-ky--co">✓</span>
+            <span>${esc(q.nhan)}</span>${nsvTheNhayCam(q.ma)}<small>${esc(co[q.ma].join(", "))}</small></div>`
+        : `<div class="quyen__o is-chua" title="Mã: ${esc(q.ma)}"><span class="nsv-ky">–</span>
+            <span>${esc(q.nhan)}</span><small>chưa cấp</small></div>`).join("")}
+    </details>`;
+  }).join("");
+  return `<div class="nsv-xq" data-nsv-xem-quyen>
+    <div class="nsv-xq__dau">
+      <span><b>${tong}</b> quyền hiệu lực${(d.vai_tro || []).length ? ` · từ ${esc(d.vai_tro.join(", "))}` : ""}</span>
+      <label class="nsv-bat"><input type="checkbox" data-nsv-hien-ca${hienCa ? " checked" : ""}>
+        Hiển thị cả quyền chưa cấp</label>
+    </div>
+    ${nhom || '<p class="empty">Chưa được cấp quyền nào. Người này đăng nhập được nhưng mọi màn đều trống.</p>'}
+    ${(d.vai_tro_ngung || []).length ? `<p class="panel__note">Vai trò đã ngừng dùng (không cấp gì): ${esc(d.vai_tro_ngung.join(", "))}</p>` : ""}
+  </div>`;
+}
+
+/* ---------------- dùng chung: ngăn kéo chi tiết (UX-13-01) ---------------- */
+
+/* Sửa người, sửa vai trò, xem chi tiết mở trong NGĂN KÉO bên phải thay vì
+ * chèn form vào giữa danh sách: chèn giữa danh sách là cả trang nhảy, và
+ * form dài đẩy danh sách đi mất — người ta sửa mà không còn thấy mình đang
+ * sửa ai. Ngăn kéo nằm TRONG tab (bộ bắt sự kiện của tab bắt được nút
+ * trong nó), `position: fixed` nên vẫn phủ cả màn hình. */
+function nsvKhungNgan() {
+  return `<div class="nsv-ngan" data-nsv-ngan hidden role="dialog" aria-modal="true">
+    <div class="nsv-ngan__nen" data-nsv-ngan-dong></div>
+    <aside class="nsv-ngan__than">
+      <header class="nsv-ngan__dau"><h2 data-nsv-ngan-ten></h2>
+        <button type="button" class="btn btn--sm btn--ghost" data-nsv-ngan-dong aria-label="Đóng">Đóng</button></header>
+      <div class="nsv-ngan__noi" data-nsv-ngan-noi></div>
+    </aside>
+  </div>`;
+}
+
+function nsvMoNgan(el, tieuDe, html) {
+  const n = el.querySelector("[data-nsv-ngan]");
+  n.querySelector("[data-nsv-ngan-ten]").textContent = tieuDe;
+  n.querySelector("[data-nsv-ngan-noi]").innerHTML = html;
+  n.hidden = false;
+  document.body.classList.add("is-ngan-mo");
+  setTimeout(() => {
+    const dau = n.querySelector("[data-nsv-ngan-noi] input:not([disabled]), [data-nsv-ngan-noi] select");
+    (dau || n.querySelector("[data-nsv-ngan-dong].btn")).focus();
+  }, 0);
+}
+
+function nsvDongNgan(n) {
+  if (!n || n.hidden) return;
+  n.hidden = true;
+  n.querySelector("[data-nsv-ngan-noi]").innerHTML = "";
+  if (!$$("[data-nsv-ngan]").some((x) => !x.hidden)) document.body.classList.remove("is-ngan-mo");
 }
 
 document.addEventListener("click", (e) => {
-  const nut = e.target.closest("[data-nsv-ca-nhom]");
-  if (!nut) return;
-  const o = $$('input[name="quyen"]:not(:disabled)', nut.closest("fieldset"));
-  const batHet = o.some((i) => !i.checked);
-  o.forEach((i) => { i.checked = batHet; });
+  const d = e.target.closest("[data-nsv-ngan-dong]");
+  if (d) nsvDongNgan(d.closest("[data-nsv-ngan]"));
 });
+// Bắt ở pha CAPTURE: hộp hỏi (hoiHop) đang mở thì Esc là của nó — chạy sau
+// nó là Esc đóng cả hộp lẫn ngăn kéo, mất form đang sửa dở.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || hoiDangMo) return;
+  $$("[data-nsv-ngan]").filter((x) => !x.hidden).forEach(nsvDongNgan);
+}, true);
 
 /* ---------------- dùng chung: lịch sử ---------------- */
 
@@ -98,15 +317,22 @@ function nsvDongLichSu(d) {
       `<span class="pill">${k === "ho_ten" ? "Họ tên" : "Email"}: ${esc(truoc[k] || "—")} → ${esc(sau[k] || "—")}</span>`).join(" ");
   } else if (d.loai === "auth.khoa_nguoi_dung") {
     them = `<span class="pill${sau.khoa ? " pill--warn" : ""}">${sau.khoa ? "Khoá" : "Mở khoá"}</span>`
-      + (ct.de_lai_viec ? ` <span class="pill pill--warn">để lại ${ct.de_lai_viec.so_hoi_thoai} hội thoại, ${ct.de_lai_viec.so_cong_viec} việc</span>` : "");
+      + (ct.de_lai_viec ? ` <span class="pill pill--warn">để lại ${ct.de_lai_viec.so_hoi_thoai} hội thoại, ${ct.de_lai_viec.so_cong_viec} việc</span>` : "")
+      + (ct.vai_tro_nhay_cam ? ` <span class="pill pill--halt">mở kèm quyền nhạy cảm: ${esc(Object.keys(ct.vai_tro_nhay_cam).join(", "))}</span>` : "");
   } else if (d.loai === "nguoi_dung.chuyen_viec") {
     them = `<span class="pill">${ct.so_hoi_thoai || 0} hội thoại, ${ct.so_cong_viec || 0} việc → ${esc(sau.nguoi || "")}</span>`
       + (ct.khong_chuyen_duoc ? ` <span class="pill pill--warn">${ct.khong_chuyen_duoc} hội thoại không chuyển được</span>` : "");
+  } else if (d.loai === "nguoi_dung.dat_lai_mat_khau") {
+    // Không bao giờ có mật khẩu ở đây — máy chủ không ghi nó (có test canh).
+    them = `<span class="pill pill--warn">${ct.tu_sinh ? "hệ thống tạo mật khẩu tạm" : "quản trị tự đặt mật khẩu tạm"}</span>`
+      + ` <span class="pill">đăng xuất ${ct.so_phien_thu_hoi || 0} phiên</span>`
+      + ' <span class="pill">phải đổi ở lần đăng nhập tới</span>';
   } else {
     if (truoc.ten && sau.ten && truoc.ten !== sau.ten) {
       them += `<span class="pill">Tên: ${esc(truoc.ten)} → ${esc(sau.ten)}</span> `;
     }
     them += [nsvPill(ct.them, "+", ""), nsvPill(ct.bot, "−", "pill--warn")].filter(Boolean).join(" ");
+    if (sau.phai_doi_mat_khau) them += ' <span class="pill">phải đổi mật khẩu lần đầu</span>';
     if (ct.nguoi_anh_huong && ct.nguoi_anh_huong.length) {
       them += ` <span class="pill">ảnh hưởng: ${esc(ct.nguoi_anh_huong.join(", "))}</span>`;
     } else if (ct.so_nguoi_anh_huong) {
@@ -123,10 +349,11 @@ function nsvDongLichSu(d) {
   </div>`;
 }
 
-async function nsvVeLichSu(el, loai = "tat_ca") {
+async function nsvVeLichSu(el, loai = "tat_ca", refId = "", gioiHan = 60) {
   if (!el) return;
   try {
-    const d = await api(`/nhan-su/lich-su?loai=${encodeURIComponent(loai)}&limit=60`);
+    const d = await api(`/nhan-su/lich-su?loai=${encodeURIComponent(loai)}&limit=${gioiHan}`
+      + (refId ? `&ref_id=${encodeURIComponent(refId)}` : ""));
     el.innerHTML = d.lich_su.length
       ? d.lich_su.map(nsvDongLichSu).join("")
       : '<p class="empty">Chưa có thay đổi nào về nhân sự hay phân quyền.</p>';
@@ -135,41 +362,26 @@ async function nsvVeLichSu(el, loai = "tat_ca") {
   }
 }
 
-/* ---------------- dùng chung: khoá kèm chuyển việc (mục 13.8) ---------------- */
+/* ---------------- dùng chung: chuyển việc, khoá, mở khoá (mục 13.8, UX-13-05) ---------------- */
 
-/* Hỏi chuyển việc cho AI. Trả null nếu người dùng thôi, `{deLai: true}` nếu
-   chọn để lại việc (chỉ khi đang khoá), hoặc kết quả của máy chủ. */
-async function nsvHoiChuyenViec(n, viec, khiKhoa) {
-  if (!nsv.nguoi.length) await nsvTaiDuLieu();
-  const ten = n.ho_ten || n.ten_dang_nhap;
-  const nguoiNhan = nsv.nguoi.filter((x) => !x.khoa && x.id !== n.id);
-  const lietKe = [
-    ...viec.hoi_thoai.slice(0, 3).map((h) => `hội thoại với ${h.khach || "khách"}`),
-    ...viec.cong_viec.slice(0, 3).map((v) => `việc “${v.tieu_de}”`),
-  ].join("; ");
-  const d = await hoiHop({
-    tieu_de: khiKhoa ? `Khoá ${ten}: chuyển việc trước` : `Chuyển việc của ${ten}`,
-    phu: `${ten} đang giữ ${viec.so_hoi_thoai} hội thoại và ${viec.so_cong_viec} việc chưa xong`
-      + (lietKe ? ` (${lietKe}${viec.tong > 6 ? "…" : ""})` : "")
-      + ". Khoá mà không chuyển là khách của họ chờ mà không ai trả lời.",
-    truong: [{
-      name: "nguoi_nhan", label: "Chuyển cho", type: "select", required: true,
-      value: nguoiNhan.length ? nguoiNhan[0].id : "",
-      options: [
-        ...nguoiNhan.map((x) => ({ value: x.id, label: `${x.ho_ten || x.ten_dang_nhap} (${x.ten_dang_nhap})` })),
-        ...(khiKhoa ? [{ value: "__de_lai__", label: "Không chuyển — khoá và để lại việc (khách có thể phải chờ)" }] : []),
-      ],
-    }],
-    nut: khiKhoa ? "Chuyển rồi khoá" : "Chuyển việc",
-    nguy_hiem: !!khiKhoa,
-  });
-  if (!d || !d.nguoi_nhan) return null;
-  if (d.nguoi_nhan === "__de_lai__") return { deLai: true };
+function nsvLietKeViec(viec) {
+  const ht = viec.hoi_thoai.slice(0, 5).map((h) => `Hội thoại với ${h.khach || "khách"}${h.kenh ? " · " + h.kenh : ""}`);
+  const cv = viec.cong_viec.slice(0, 5).map((v) => `Việc “${v.tieu_de}”${v.han ? " · hạn " + nsvNgay(v.han) : ""}`);
+  const con = viec.tong - ht.length - cv.length;
+  return [...ht, ...cv, ...(con > 0 ? [`… và ${con} mục khác`] : [])];
+}
+
+function nsvNguoiNhanViec(n) {
+  return nsv.nguoi.filter((x) => !x.khoa && x.id !== n.id).map((x) => ({
+    value: x.id, label: `Chuyển cho ${x.ho_ten || x.ten_dang_nhap} (${x.ten_dang_nhap})` }));
+}
+
+async function nsvChuyenViecThat(n, viec, nguoiNhan) {
   try {
     const kq = await api(`/nguoi-dung/${n.id}/chuyen-viec`, {
       method: "POST",
       body: JSON.stringify({
-        nguoi_nhan: d.nguoi_nhan,
+        nguoi_nhan: nguoiNhan,
         hoi_thoai: viec.so_hoi_thoai > 0,
         cong_viec: viec.so_cong_viec > 0,
       }),
@@ -182,41 +394,80 @@ async function nsvHoiChuyenViec(n, viec, khiKhoa) {
   }
 }
 
-/* Khoá / mở khoá. Khoá thì HỎI VỀ VIỆC ĐANG GIỮ trước — máy chủ cũng chặn
-   (409 `can_chuyen_viec`) nên gọi thẳng API hay màn cũ đều gặp cùng câu hỏi.
-   Lời xác nhận nói điều sẽ xảy ra: phiên đang mở bị đá ra ngay. */
+/* Chuyển việc KHÔNG kèm khoá (nút "Chuyển việc"). Khi khoá thì nsvKhoa tự hỏi
+   chuyển việc trong CÙNG hộp xác nhận khoá — không còn hai hộp nối nhau. */
+async function nsvHoiChuyenViec(n, viec) {
+  if (!nsv.nguoi.length) await nsvTaiDuLieu();
+  const ten = n.ho_ten || n.ten_dang_nhap;
+  const nhan = nsvNguoiNhanViec(n);
+  if (!nhan.length) { toast("Không còn ai đang làm để nhận việc.", true); return null; }
+  const d = await hoiHop({
+    tieu_de: `Chuyển việc của ${ten}`,
+    phu: `${ten} đang giữ ${viec.so_hoi_thoai} hội thoại và ${viec.so_cong_viec} việc chưa xong.`,
+    canh_bao: { tieu_de: "Sẽ chuyển:", muc: nsvLietKeViec(viec) },
+    truong: [{ name: "nguoi_nhan", label: "Chuyển cho", type: "select", required: true,
+               value: nhan[0].value, options: nhan }],
+    nut: "Chuyển việc",
+  });
+  if (!d || !d.nguoi_nhan) return null;
+  return nsvChuyenViecThat(n, viec, d.nguoi_nhan);
+}
+
+/* Khoá / mở khoá. Khoá thì hỏi về VIỆC ĐANG GIỮ ngay trong hộp xác nhận —
+ * máy chủ cũng chặn (409 `can_chuyen_viec`) nên gọi thẳng API hay màn cũ
+ * đều gặp cùng câu hỏi. Một hộp nói đủ: điều sẽ xảy ra, việc nào đang treo,
+ * chuyển cho ai. Trước đây là hộp chuyển việc rồi thêm một confirm() nữa. */
 async function nsvKhoa(n, xong) {
+  if (n.khoa) return nsvMoKhoa(n, xong);
   const ten = n.ten_dang_nhap;
-  const goi = (khoa, boQua) => api(
-    `/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=${khoa}${boQua ? "&bo_qua_viec=true" : ""}`,
-    { method: "POST" });
-  if (n.khoa) {
-    if (!confirm(`Mở khoá “${ten}”? Họ đăng nhập lại được ngay.`)) return;
-    try { await goi(false); toast(`Đã mở khoá ${ten}.`); } catch (err) { toast(err.message, true); }
-    if (xong) await xong();
-    return;
-  }
+  const hoTen = n.ho_ten || ten;
+  if (!nsv.nguoi.length) await nsvTaiDuLieu();
   let viec;
   try { viec = await api(`/nguoi-dung/${n.id}/viec-dang-giu`); } catch (err) { toast(err.message, true); return; }
+  const nhan = nsvNguoiNhanViec(n);
+  const d = await hoiHop({
+    tieu_de: `Khoá tài khoản ${hoTen}?`,
+    phu: `${ten}${n.email ? " · " + n.email : ""}`,
+    anh_huong: ["Mọi phiên đang mở của họ bị đăng xuất ngay lập tức.",
+                "Họ không đăng nhập được cho tới khi được mở khoá.",
+                "Tài khoản, vai trò và lịch sử giữ nguyên — không xoá gì."],
+    canh_bao: viec.tong ? {
+      tieu_de: `${hoTen} đang giữ ${viec.so_hoi_thoai} hội thoại và ${viec.so_cong_viec} việc chưa xong — `
+        + "khoá mà không chuyển là khách của họ chờ mà không ai trả lời:",
+      muc: nsvLietKeViec(viec) } : null,
+    truong: viec.tong ? [{
+      name: "nguoi_nhan", label: "Việc đang giữ", type: "select", required: true,
+      value: nhan.length ? nhan[0].value : "__de_lai__",
+      options: [...nhan, { value: "__de_lai__", label: "Không chuyển — khoá và để lại việc (khách có thể phải chờ)" }],
+    }] : [],
+    nut: viec.tong ? "Xác nhận khoá" : "Khoá tài khoản",
+    nguy_hiem: true,
+  });
+  if (!d) return;
   let boQua = false;
-  if (viec.tong) {
-    const kq = await nsvHoiChuyenViec(n, viec, true);
-    if (!kq) return;
-    if (kq.deLai) {
-      boQua = true;
-    } else if (kq.khong_chuyen_duoc && kq.khong_chuyen_duoc.length) {
-      const lyDo = kq.khong_chuyen_duoc.map((x) => `${x.khach || "khách"}: ${x.ly_do}`).join("; ");
-      if (!confirm(`${kq.khong_chuyen_duoc.length} hội thoại KHÔNG chuyển được (${lyDo}). `
-        + `Vẫn khoá “${ten}” và để lại các hội thoại ấy?`)) { if (xong) await xong(); return; }
+  if (viec.tong && d.nguoi_nhan === "__de_lai__") {
+    boQua = true;
+  } else if (viec.tong) {
+    const kq = await nsvChuyenViecThat(n, viec, d.nguoi_nhan);
+    if (!kq) { if (xong) await xong(); return; }
+    if (kq.khong_chuyen_duoc && kq.khong_chuyen_duoc.length) {
+      // Kết quả MỚI từ máy chủ (luật giao từ chối vài hội thoại) — chỉ hỏi
+      // lại khi thật sự có chuyện, và nói rõ từng hội thoại vì sao.
+      const tiep = await hoiHop({
+        tieu_de: `${kq.khong_chuyen_duoc.length} hội thoại KHÔNG chuyển được`,
+        canh_bao: { tieu_de: `Các hội thoại này vẫn nằm ở ${hoTen}:`,
+                    muc: kq.khong_chuyen_duoc.map((x) => `${x.khach || "khách"}: ${x.ly_do}`) },
+        anh_huong: ["Khoá ngay và để lại các hội thoại ấy — giao lại bằng tay ở màn Hội thoại."],
+        nut: "Vẫn khoá", nguy_hiem: true,
+      });
+      if (!tiep) { if (xong) await xong(); return; }
       boQua = true;
     }
-    if (!confirm(`Khoá “${ten}”? Mọi phiên đang mở của họ bị đá ra ngay lập tức.`)) { if (xong) await xong(); return; }
-  } else if (!confirm(`Khoá “${ten}”? Mọi phiên đang mở của họ bị đá ra ngay lập tức.`)) {
-    return;
   }
   try {
-    await goi(true, boQua);
-    toast(`Đã khoá ${ten} và đá mọi phiên.`);
+    await api(`/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=true${boQua ? "&bo_qua_viec=true" : ""}`,
+              { method: "POST" });
+    toast(`Đã khoá ${ten} và đăng xuất mọi phiên.`);
   } catch (err) {
     toast(err.message, true);
     // Ai đó vừa giao thêm việc cho người này giữa lúc đang hỏi: hỏi lại.
@@ -225,335 +476,89 @@ async function nsvKhoa(n, xong) {
   if (xong) await xong();
 }
 
-/* ======================== TAB "NHÂN VIÊN" ======================== */
-
-function nsvDongNguoi(n) {
-  const sua = nsvCo("nguoi_dung.sua");
-  const vai = (n.vai_tro_ten || []).map((t) => `<span class="pill">${esc(t)}</span>`).join(" ")
-    + (n.vai_tro_ngung || []).map((t) =>
-      ` <span class="pill pill--warn" title="Vai trò đã ngừng dùng — không cấp quyền nào">${esc(t)} · ngừng dùng</span>`).join("")
-    || '<span class="pill pill--warn">chưa có vai trò nào</span>';
-  const giu = Number(n.so_hoi_thoai_giu || 0);
-  const viec = Number(n.so_viec_chua_xong || 0);
-  const ganViec = giu || viec
-    ? ` <span class="pill${n.khoa ? " pill--warn" : ""}">giữ ${giu} hội thoại · ${viec} việc</span>` : "";
-  return `<div class="row">
-    <span class="row__flag row__flag--${n.khoa ? "halt" : (n.vai_tro_ten || []).length ? "auto" : "assist"}"></span>
-    <div class="row__main">
-      <b>${esc(n.ho_ten || n.ten_dang_nhap)}</b>
-      <span class="tag tag--${n.khoa ? "halt" : "auto"}">${n.khoa ? "Đã khoá" : "Đang làm"}</span>
-      <span class="row__sub">${esc(n.ten_dang_nhap)}${n.email ? " · " + esc(n.email) : ""}
-        · tạo ${nsvNgay(n.tao_luc)}
-        · ${n.dang_nhap_cuoi ? "vào lần cuối " + nsvNgay(n.dang_nhap_cuoi) : "chưa đăng nhập lần nào"}</span>
-    </div>
-    <div class="row__side">
-      <span>${vai}${ganViec}</span>
-      <span class="row__nut">
-        <button type="button" class="btn btn--sm btn--ghost" data-nsv-quyen="${esc(n.id)}">Quyền</button>
-        ${sua ? `<button type="button" class="btn btn--sm btn--ghost" data-nsv-sua="${esc(n.id)}">Sửa</button>
-        ${giu || viec ? `<button type="button" class="btn btn--sm btn--ghost" data-nsv-chuyen="${esc(n.id)}">Chuyển việc</button>` : ""}
-        <button type="button" class="btn btn--sm ${n.khoa ? "btn--ghost" : "btn--halt"}" data-nsv-khoa="${esc(n.id)}">${n.khoa ? "Mở khoá" : "Khoá"}</button>` : ""}
-      </span>
-    </div>
-  </div>`;
+/* Mở khoá (SEC-13-01). Tài khoản mang vai trò có quyền nhạy cảm — "Quản trị"
+ * là ví dụ đo được trên dữ liệu thật — thì hộp nói rõ VAI TRÒ NÀO, QUYỀN
+ * GÌ, và bắt gõ lại tên đăng nhập: mở khoá như thế là trao lại các quyền ấy
+ * ngay lập tức. Máy chủ cũng chặn (409 `can_xac_nhan_nhay_cam`). */
+function nsvHoiMoKhoa(n, nc) {
+  const hoTen = n.ho_ten || n.ten_dang_nhap;
+  const ds = Object.entries(nc || {});
+  const soNc = Object.keys(nsv.nhayCam).length;
+  return hoiHop({
+    tieu_de: `Mở khoá ${hoTen}?`,
+    phu: `${n.ten_dang_nhap}${(n.vai_tro_ten || []).length ? " · vai trò: " + n.vai_tro_ten.join(", ") : ""}`,
+    anh_huong: ["Họ đăng nhập lại được ngay bằng mật khẩu hiện có.",
+                "Mọi quyền của các vai trò họ đang mang có hiệu lực lại ngay."],
+    canh_bao: ds.length ? {
+      tieu_de: "Tài khoản này đang mang vai trò có QUYỀN NHẠY CẢM — mở khoá là trao lại các quyền ấy ngay:",
+      muc: [...ds.map(([v, q]) => `${v}: ${soNc && q.length >= soNc
+        ? "toàn bộ quyền nhạy cảm (cấp quyền, cấu hình AI, xoá dữ liệu khách…)"
+        : q.map(nsvNhanQuyen).join("; ")}`),
+            "Tài khoản chỉ cần xem? Bấm Quay lại, Sửa và gỡ vai trò thừa TRƯỚC khi mở khoá."],
+    } : null,
+    go_xac_nhan: ds.length ? n.ten_dang_nhap : "",
+    nut: ds.length ? "Vẫn mở khoá" : "Mở khoá",
+    nguy_hiem: ds.length > 0,
+  });
 }
 
-/* Form thêm/sửa — MỘT form cho cả hai, vai trò là ô TICK (một người nhiều
-   vai trò). Vai trò đã ngừng dùng: người đang mang thì vẫn hiện đã tick
-   (gỡ được), người chưa mang thì khoá — máy chủ cũng từ chối gán mới. */
-function nsvFormNguoi(n) {
-  const moi = !n;
-  const dangCo = new Set(n ? n.vai_tro_id || [] : []);
-  return `<form class="form" data-nsv-form-nguoi="${moi ? "" : esc(n.id)}">
-    <h3 class="panel__head">${moi ? "Thêm nhân viên" : `Sửa ${esc(n.ho_ten || n.ten_dang_nhap)}`}</h3>
-    <div class="form__row">
-      ${moi ? `<label class="field"><span>Tên đăng nhập</span>
-        <input name="ten_dang_nhap" required minlength="3" maxlength="64" autocomplete="off" placeholder="lan.nv"></label>`
-        : `<label class="field"><span>Tên đăng nhập <em class="hint">không đổi được — nhật ký cũ trỏ vào nó</em></span>
-        <input value="${esc(n.ten_dang_nhap)}" disabled></label>`}
-      <label class="field"><span>Họ tên</span>
-        <input name="ho_ten" required maxlength="120" value="${esc(n ? n.ho_ten : "")}" autocomplete="off"></label>
-    </div>
-    <div class="form__row">
-      <label class="field"><span>Email <em class="hint">không bắt buộc</em></span>
-        <input name="email" type="email" maxlength="200" value="${esc(n ? n.email || "" : "")}" autocomplete="off"></label>
-      ${moi ? `<label class="field"><span>Mật khẩu ban đầu</span>
-        <input name="mat_khau" type="password" autocomplete="new-password" minlength="8" required></label>` : ""}
-    </div>
-    <fieldset class="quyen__nhom"><legend>Vai trò <em class="hint">quyền = hợp quyền mọi vai trò đang dùng</em></legend>
-      ${nsv.vaiTro.map((v) => `<label class="quyen__o">
-        <input type="checkbox" name="vai_tro" value="${esc(v.id)}"${dangCo.has(v.id) ? " checked" : ""}${
-          !v.dang_dung && !dangCo.has(v.id) ? " disabled" : ""}>
-        <span>${esc(v.ten)}${v.dang_dung ? "" : " · ngừng dùng"}</span>
-        <small>${esc(v.mo_ta || "")}</small></label>`).join("")}
-    </fieldset>
-    <div class="row__nut">
-      <button type="submit" class="btn btn--sm btn--primary">${moi ? "Tạo tài khoản" : "Lưu"}</button>
-      <button type="button" class="btn btn--sm btn--ghost" data-nsv-huy-form>Huỷ</button>
-    </div>
-  </form>`;
-}
-
-async function nsvLuuNguoi(f) {
-  const id = f.dataset.nsvFormNguoi;
-  const d = Object.fromEntries(new FormData(f).entries());
-  const vai = $$('input[name="vai_tro"]:checked', f).map((i) => i.value);
-  const nut = f.querySelector("button[type=submit]");
-  nut.disabled = true;
+async function nsvMoKhoa(n, xong) {
+  const ten = n.ten_dang_nhap;
+  const goi = (xacNhan) => api(`/nguoi-dung/${encodeURIComponent(ten)}/khoa?khoa=false`
+    + (xacNhan ? "&xac_nhan_nhay_cam=true" : ""), { method: "POST" });
+  const nc = nsvVaiNhayCam(n);
+  if (!(await nsvHoiMoKhoa(n, nc))) return;
   try {
-    if (!id) {
-      await api("/nguoi-dung", {
-        method: "POST",
-        body: JSON.stringify({
-          ten_dang_nhap: String(d.ten_dang_nhap || "").trim(),
-          mat_khau: d.mat_khau, ho_ten: String(d.ho_ten || "").trim(),
-          email: String(d.email || "").trim() || null, vai_tro_ids: vai,
-        }),
-      });
-      toast(vai.length ? "Đã tạo tài khoản và cấp vai trò. Báo họ đổi mật khẩu ở mục Tôi."
-        : "Đã tạo. Chưa có vai trò nên họ vào được mà mọi màn đều trống.");
-    } else {
-      await api(`/nguoi-dung/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ ho_ten: String(d.ho_ten || "").trim(),
-                               email: String(d.email || "").trim() || null }),
-      });
-      const cu = (nsv.nguoi.find((x) => x.id === id) || {}).vai_tro_id || [];
-      if ([...cu].sort().join() !== [...vai].sort().join()) {
-        await api(`/nguoi-dung/${id}/vai-tro`, { method: "PUT", body: JSON.stringify({ vai_tro: vai }) });
-      }
-      toast("Đã lưu.");
-    }
-    return true;
+    await goi(Object.keys(nc).length > 0);
+    toast(`Đã mở khoá ${ten}.`);
   } catch (err) {
-    toast(err.message, true);
-    nut.disabled = false;
-    return false;
-  }
-}
-
-/* Quyền THỰC TẾ của một người, theo nhóm chức năng, kèm vai trò nào cấp. */
-function nsvVeQuyenNguoi(d) {
-  const co = d.quyen || {};
-  const nhom = nsv.nhom.map((g) => {
-    const dong = g.quyen.filter((q) => co[q.ma]);
-    return dong.length ? `<fieldset class="quyen__nhom"><legend>${esc(g.ten)}</legend>${
-      dong.map((q) => `<div class="quyen__o"><span>${esc(q.nhan)}</span>
-        <small>cấp bởi: ${esc(co[q.ma].join(", "))}</small></div>`).join("")}</fieldset>` : "";
-  }).join("");
-  return `<div class="ns-vaitro" data-nsv-xem-quyen>
-    ${nhom || '<p class="empty">Chưa được cấp quyền nào. Người này đăng nhập được nhưng mọi màn đều trống.</p>'}
-    ${(d.vai_tro_ngung || []).length ? `<p class="panel__note">Vai trò đã ngừng dùng (không cấp gì): ${esc(d.vai_tro_ngung.join(", "))}</p>` : ""}
-    <div class="row__nut"><button type="button" class="btn btn--sm btn--ghost" data-nsv-dong>Đóng</button></div>
-  </div>`;
-}
-
-async function nsvVeNhanVien(el) {
-  await nsvTaiDuLieu();
-  const ds = nsv.nguoi;
-  const dangLam = ds.filter((n) => !n.khoa).length;
-  const chuaVai = ds.filter((n) => !(n.vai_tro_ten || []).length).length;
-  const dem = el.querySelector("[data-nsv-dem]");
-  if (dem) {
-    dem.textContent = [`${ds.length} tài khoản`, `${dangLam} đang làm`,
-      ds.length - dangLam ? `${ds.length - dangLam} đã khoá` : "",
-      chuaVai ? `${chuaVai} chưa có vai trò` : ""].filter(Boolean).join(" · ");
-  }
-  el.querySelector("[data-nsv-ds]").innerHTML = ds.length
-    ? ds.map(nsvDongNguoi).join("") : '<p class="empty">Chưa có nhân viên nào.</p>';
-}
-
-GAN_TAB["ns-nhan-vien"] = async (el) => {
-  el.innerHTML = `<section class="panel">
-    <h2 class="panel__head">Nhân viên <span class="panel__note" data-nsv-dem>đang tải…</span>
-      ${nsvCo("nguoi_dung.sua") ? '<button type="button" class="btn btn--sm" data-nsv-them>Thêm nhân viên</button>' : ""}</h2>
-    <div data-nsv-khung-form></div>
-    <div class="rows" data-nsv-ds><p class="empty">Đang tải…</p></div>
-  </section>`;
-  if (!el.dataset.nsvGan) {
-    el.dataset.nsvGan = "1";
-    el.addEventListener("click", async (e) => {
-      const tim = (k) => e.target.closest(`[${k}]`);
-      const nguoiTheoId = (id) => nsv.nguoi.find((x) => x.id === id);
-      const khung = el.querySelector("[data-nsv-khung-form]");
-      if (tim("data-nsv-them")) {
-        khung.innerHTML = nsvFormNguoi(null);
-        khung.querySelector("input").focus();
-      } else if (tim("data-nsv-sua")) {
-        khung.innerHTML = nsvFormNguoi(nguoiTheoId(tim("data-nsv-sua").dataset.nsvSua));
-        khung.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } else if (tim("data-nsv-huy-form")) {
-        khung.innerHTML = "";
-      } else if (tim("data-nsv-khoa")) {
-        await nsvKhoa(nguoiTheoId(tim("data-nsv-khoa").dataset.nsvKhoa), () => nsvVeNhanVien(el));
-      } else if (tim("data-nsv-chuyen")) {
-        const n = nguoiTheoId(tim("data-nsv-chuyen").dataset.nsvChuyen);
-        try {
-          const viec = await api(`/nguoi-dung/${n.id}/viec-dang-giu`);
-          if (!viec.tong) { toast("Người này không còn giữ việc nào."); return; }
-          await nsvHoiChuyenViec(n, viec, false);
-        } catch (err) { toast(err.message, true); }
-        await nsvVeNhanVien(el);
-      } else if (tim("data-nsv-quyen")) {
-        $$("[data-nsv-xem-quyen]", el).forEach((b) => b.remove());
-        const nut = tim("data-nsv-quyen");
-        try {
-          const d = await api(`/nguoi-dung/${nut.dataset.nsvQuyen}/quyen`);
-          nut.closest(".row").insertAdjacentHTML("afterend", nsvVeQuyenNguoi(d));
-        } catch (err) { toast(err.message, true); }
-      } else if (tim("data-nsv-dong")) {
-        tim("data-nsv-dong").closest("[data-nsv-xem-quyen]").remove();
+    // Máy chủ thấy vai trò nhạy cảm mà danh sách trên màn hình chưa có (ai
+    // đó vừa gán): hỏi lại theo danh sách CỦA MÁY CHỦ, không tự xác nhận hộ.
+    if (err.chi_tiet && err.chi_tiet.can_xac_nhan_nhay_cam) {
+      if (await nsvHoiMoKhoa(n, err.chi_tiet.vai_tro || {})) {
+        try { await goi(true); toast(`Đã mở khoá ${ten}.`); } catch (e2) { toast(e2.message, true); }
       }
-    });
-    el.addEventListener("submit", async (e) => {
-      const f = e.target.closest("[data-nsv-form-nguoi]");
-      if (!f) return;
-      e.preventDefault();
-      if (await nsvLuuNguoi(f)) {
-        el.querySelector("[data-nsv-khung-form]").innerHTML = "";
-        await nsvVeNhanVien(el);
-      }
-    });
+    } else {
+      toast(err.message, true);
+    }
   }
-  try { await nsvVeNhanVien(el); } catch (err) {
-    el.querySelector("[data-nsv-ds]").innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-  }
-};
-
-/* ======================== TAB "VAI TRÒ & QUYỀN" ======================== */
-
-function nsvDongVaiTro(v) {
-  const sua = nsvCo("nguoi_dung.sua");
-  const soQuyen = v.toan_quyen ? "toàn bộ quyền (lấy từ mã)" : `${v.quyen.length} quyền`;
-  /* Nút Xoá chỉ hiện khi máy chủ sẽ cho xoá (`xoa_duoc`): vai trò từng có
-     người mang chỉ NGỪNG DÙNG được — nút bấm vào rồi mới báo 409 dạy người
-     ta rằng lỗi là chuyện bình thường. */
-  const nut = !sua ? "" : [
-    v.toan_quyen ? "" : `<button type="button" class="btn btn--sm btn--ghost" data-nsv-sua-vai="${esc(v.id)}">Sửa quyền</button>`,
-    v.he_thong ? "" : `<button type="button" class="btn btn--sm btn--ghost" data-nsv-trang-thai="${esc(v.id)}">${v.dang_dung ? "Ngừng dùng" : "Dùng lại"}</button>`,
-    v.xoa_duoc ? `<button type="button" class="btn btn--sm btn--ghost" data-nsv-xoa-vai="${esc(v.id)}">Xoá</button>` : "",
-  ].join("");
-  return `<div class="row">
-    <span class="row__flag row__flag--${!v.dang_dung ? "plain" : v.toan_quyen ? "halt" : "auto"}"></span>
-    <div class="row__main">
-      <b>${esc(v.ten)}${v.he_thong ? ' <span class="pill">dựng sẵn</span>' : ""}${
-        v.dang_dung ? "" : ' <span class="tag tag--plain">ngừng dùng</span>'}</b>
-      <span class="row__sub">${esc(v.mo_ta || "—")}</span>
-    </div>
-    <div class="row__side">
-      <span><span class="pill">${soQuyen}</span> <span class="pill">${v.so_nguoi} người</span></span>
-      ${nut ? `<span class="row__nut">${nut}</span>` : ""}
-    </div>
-  </div>`;
+  if (xong) await xong();
 }
 
-function nsvFormVaiTro(v) {
-  return `<form class="form" data-nsv-form-vai="${v ? esc(v.id) : ""}">
-    <h3 class="panel__head">${v ? `Sửa vai trò “${esc(v.ten)}”` : "Tạo vai trò mới"}</h3>
-    <label class="field"><span>Tên vai trò</span>
-      <input name="ten" required maxlength="80" value="${esc(v ? v.ten : "")}" placeholder="Trưởng nhóm CSKH" autocomplete="off"></label>
-    <label class="field"><span>Mô tả <em class="hint">để người sau hiểu vai trò này dành cho ai</em></span>
-      <input name="mo_ta" maxlength="500" value="${esc(v ? v.mo_ta : "")}" autocomplete="off"></label>
-    ${v && v.so_nguoi ? `<p class="panel__note">Lưu là ${v.so_nguoi} người đang mang vai trò này đổi quyền NGAY ở thao tác kế tiếp của họ.</p>` : ""}
-    <div class="quyen">${nsvBangQuyen(v ? v.quyen : [])}</div>
-    <div class="row__nut">
-      <button type="submit" class="btn btn--sm btn--primary">Lưu vai trò</button>
-      <button type="button" class="btn btn--sm btn--ghost" data-nsv-huy-vai>Huỷ</button>
-    </div>
-  </form>`;
-}
+/* ---------------- dùng chung: đặt lại mật khẩu (UX-13-07) ---------------- */
 
-async function nsvVeVaiTro(el) {
-  await nsvTaiDuLieu();
-  el.querySelector("[data-nsv-vai-ds]").innerHTML = nsv.vaiTro.map(nsvDongVaiTro).join("");
-  await nsvVeLichSu(el.querySelector("[data-nsv-lich-su]"),
-                    el.querySelector("[data-nsv-loc-lich-su]")?.value || "tat_ca");
-}
-
-/* Ngừng dùng / dùng lại — nói SỐ NGƯỜI bị ảnh hưởng, không hỏi "có chắc
-   không": câu ấy không mang thông tin, người ta bấm OK theo phản xạ. */
-async function nsvDoiTrangThaiVai(v) {
-  const loi = v.dang_dung
-    ? `Ngừng dùng “${v.ten}”? ${v.so_nguoi} người đang mang nó mất các quyền này NGAY `
-      + "(trừ quyền vai trò khác của họ cũng cấp). Vai trò vẫn nằm trong lịch sử và dùng lại được."
-    : `Dùng lại “${v.ten}”? ${v.so_nguoi} người đang mang nó có lại các quyền này ngay.`;
-  if (!confirm(loi)) return false;
+/* Quản trị KHÔNG cần biết mật khẩu mới: để trống thì máy chủ tạo, hiện MỘT
+ * lần trong hộp này rồi xoá khỏi trang (hoiDong dọn #hoiKhoi). Người nhận
+ * bị bắt đổi ngay lần đăng nhập tới — mật khẩu tạm là thứ người khác biết. */
+async function nsvDatLaiMatKhau(n, xong) {
+  const ten = n.ten_dang_nhap;
+  const d = await hoiHop({
+    tieu_de: `Đặt lại mật khẩu cho ${n.ho_ten || ten}?`,
+    phu: ten,
+    anh_huong: ["Mật khẩu hiện tại của họ thôi dùng được ngay.",
+                "Mọi thiết bị đang đăng nhập bằng tài khoản này bị đăng xuất.",
+                "Lần đăng nhập tới, họ phải đặt mật khẩu mới trước khi dùng dashboard.",
+                "Lịch sử ghi ai đặt lại và lúc nào — không ghi mật khẩu."],
+    truong: [{ name: "mat_khau_tam", type: "password", label: "Mật khẩu tạm",
+               hint: "để trống để hệ thống tự tạo (khuyên dùng)", minlength: 8, maxlength: 200 }],
+    nut: "Đặt lại mật khẩu", nguy_hiem: true,
+  });
+  if (!d) return;
+  let kq;
   try {
-    await api(`/vai-tro/${v.id}/trang-thai`, { method: "POST", body: JSON.stringify({ dang_dung: !v.dang_dung }) });
-    toast(v.dang_dung ? "Đã ngừng dùng vai trò." : "Đã dùng lại vai trò.");
-    return true;
-  } catch (err) { toast(err.message, true); return false; }
+    kq = await api(`/nguoi-dung/${n.id}/dat-lai-mat-khau`, {
+      method: "POST", body: JSON.stringify({ mat_khau_tam: d.mat_khau_tam || null }),
+    });
+  } catch (err) { toast(err.message, true); return; }
+  await hoiHop({
+    tieu_de: kq.mat_khau_tam ? `Mật khẩu tạm của ${ten}` : `Đã đặt lại mật khẩu cho ${ten}`,
+    phu: kq.mat_khau_tam ? "Chỉ hiện MỘT lần ở đây, không lưu ở đâu khác — chép lại ngay."
+      : "Mật khẩu tạm là mật khẩu bạn vừa gõ.",
+    bi_mat: kq.mat_khau_tam || "",
+    anh_huong: [`Đã đăng xuất ${kq.so_phien_thu_hoi} phiên đang mở.`,
+                "Báo mật khẩu cho họ qua kênh riêng (gặp trực tiếp, gọi điện) — không gửi vào nhóm chat chung.",
+                `Họ đăng nhập bằng “${ten}” và mật khẩu tạm, rồi đặt mật khẩu mới ngay.`],
+    nut: "Tôi đã ghi lại", an_huy: true,
+  });
+  if (xong) await xong();
 }
-
-GAN_TAB["ns-vai-tro"] = async (el) => {
-  el.innerHTML = `<section class="panel">
-    <h2 class="panel__head">Vai trò &amp; Quyền
-      <span class="panel__note">quyền của một người = hợp quyền mọi vai trò ĐANG DÙNG họ mang · sửa vai trò là mọi người mang nó đổi theo ngay</span>
-      ${nsvCo("nguoi_dung.sua") ? '<button type="button" class="btn btn--sm" data-nsv-tao-vai>Tạo vai trò</button>' : ""}</h2>
-    <div data-nsv-khung-vai></div>
-    <div class="rows" data-nsv-vai-ds><p class="empty">Đang tải…</p></div>
-  </section>
-  <section class="panel">
-    <h2 class="panel__head">Lịch sử nhân sự &amp; phân quyền
-      <span class="panel__note">ai đổi gì, lúc nào — trước và sau</span>
-      <select data-nsv-loc-lich-su>
-        <option value="tat_ca">Tất cả</option>
-        <option value="vai_tro">Vai trò &amp; quyền</option>
-        <option value="nguoi_dung">Tài khoản nhân viên</option>
-      </select></h2>
-    <div class="rows" data-nsv-lich-su><p class="empty">Đang tải…</p></div>
-  </section>`;
-  if (!el.dataset.nsvGan) {
-    el.dataset.nsvGan = "1";
-    el.addEventListener("click", async (e) => {
-      const tim = (k) => e.target.closest(`[${k}]`);
-      const vaiTheoId = (id) => nsv.vaiTro.find((x) => x.id === id);
-      const khung = el.querySelector("[data-nsv-khung-vai]");
-      if (tim("data-nsv-tao-vai")) {
-        khung.innerHTML = nsvFormVaiTro(null);
-      } else if (tim("data-nsv-sua-vai")) {
-        khung.innerHTML = nsvFormVaiTro(vaiTheoId(tim("data-nsv-sua-vai").dataset.nsvSuaVai));
-        khung.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } else if (tim("data-nsv-huy-vai")) {
-        khung.innerHTML = "";
-      } else if (tim("data-nsv-trang-thai")) {
-        if (await nsvDoiTrangThaiVai(vaiTheoId(tim("data-nsv-trang-thai").dataset.nsvTrangThai))) {
-          await nsvVeVaiTro(el);
-        }
-      } else if (tim("data-nsv-xoa-vai")) {
-        const v = vaiTheoId(tim("data-nsv-xoa-vai").dataset.nsvXoaVai);
-        if (!confirm(`Xoá hẳn vai trò “${v.ten}”? Chưa ai từng được gán vai trò này nên không mất lịch sử nào.`)) return;
-        try {
-          await api(`/vai-tro/${v.id}`, { method: "DELETE" });
-          toast("Đã xoá vai trò.");
-          await nsvVeVaiTro(el);
-        } catch (err) { toast(err.message, true); }
-      }
-    });
-    el.addEventListener("change", (e) => {
-      if (e.target.closest("[data-nsv-loc-lich-su]")) {
-        nsvVeLichSu(el.querySelector("[data-nsv-lich-su]"), e.target.value);
-      }
-    });
-    el.addEventListener("submit", async (e) => {
-      const f = e.target.closest("[data-nsv-form-vai]");
-      if (!f) return;
-      e.preventDefault();
-      const id = f.dataset.nsvFormVai;
-      const than = {
-        ten: f.ten.value.trim(), mo_ta: f.mo_ta.value.trim(),
-        quyen: $$('input[name="quyen"]:checked', f).map((i) => i.value),
-      };
-      try {
-        await api(id ? `/vai-tro/${id}` : "/vai-tro",
-                  { method: id ? "PUT" : "POST", body: JSON.stringify(than) });
-        toast(id ? "Đã lưu vai trò." : "Đã tạo vai trò.");
-        el.querySelector("[data-nsv-khung-vai]").innerHTML = "";
-        await nsvVeVaiTro(el);
-      } catch (err) { toast(err.message, true); }
-    });
-  }
-  try { await nsvVeVaiTro(el); } catch (err) {
-    el.querySelector("[data-nsv-vai-ds]").innerHTML = `<p class="empty">${esc(err.message)}</p>`;
-  }
-};

@@ -38,6 +38,10 @@ const QUYEN_TAB = {
   "ai-phong-thu": ["phong_thu.dung"],
   "ns-nhan-vien": ["nguoi_dung.doc"],
   "ns-vai-tro": ["nguoi_dung.doc"],
+  "ns-lich-su": ["nguoi_dung.doc"],
+  // Lịch ca đọc /api/lich-ca (dinh_tuyen.doc): người chỉ quản lý nhân sự
+  // mà không xem được định tuyến thì tab này chỉ là một trang trống.
+  "ns-lich-ca": ["dinh_tuyen.doc"],
   "ht-suc-khoe": ["cau_hinh.doc", "nhat_ky.doc"],
   "ht-sao-luu": ["khach.pii", "cau_hinh.doc"],
   "ht-nhat-ky": ["nhat_ky.doc"],

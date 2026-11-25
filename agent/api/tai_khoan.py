@@ -45,6 +45,10 @@ class TaoNguoiDungIn(BaseModel):
     vai_tro: str = Field("nhan_vien")
     email: str | None = Field(None, max_length=200)
     vai_tro_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Bắt đổi mật khẩu ở lần đăng nhập đầu (0068). Mặc định TẮT ở API để lời
+    # gọi cũ giữ đúng hành vi cũ; dashboard gửi True (ô tick bật sẵn) — mật
+    # khẩu ban đầu là thứ người tạo biết.
+    phai_doi_mat_khau: bool = False
 
 
 # ---------------------------------------------------------------
@@ -148,6 +152,11 @@ async def doi_mat_khau(body: DoiMatKhauIn,
                        nguoi: dict = Depends(bat_buoc_dang_nhap)) -> dict:
     """Đổi mật khẩu của chính mình. Mọi phiên đang mở bị đá ra."""
     await _kiem_lai_mat_khau(nguoi, body.mat_khau_cu)
+    # Đang bị bắt đổi (quản trị vừa đặt mật khẩu tạm): "đổi" sang đúng mật
+    # khẩu tạm ấy là tắt cờ mà người khác vẫn biết mật khẩu — đúng thứ cờ
+    # sinh ra để chấm dứt.
+    if nguoi.get("phai_doi_mat_khau") and body.mat_khau_moi == body.mat_khau_cu:
+        raise HTTPException(422, "Mật khẩu mới phải khác mật khẩu tạm quản trị đã đặt.")
     await xac_thuc.doi_mat_khau(nguoi["ten_dang_nhap"], body.mat_khau_moi)
     await db.log_event("auth.doi_mat_khau", actor=nguoi["ten_dang_nhap"])
     return {"ok": True, "ghi_chu": "Đã đổi. Mọi thiết bị phải đăng nhập lại."}
@@ -326,6 +335,9 @@ async def them_nguoi_dung(body: TaoNguoiDungIn,
                 if email:
                     await conn.execute(
                         "UPDATE nguoi_dung SET email = $2 WHERE id = $1", uid, email)
+                if body.phai_doi_mat_khau:
+                    await conn.execute(
+                        "UPDATE nguoi_dung SET phai_doi_mat_khau = true WHERE id = $1", uid)
                 for vid in vai:
                     await conn.execute(
                         "INSERT INTO nguoi_dung_vai_tro (nguoi_dung_id, vai_tro_id, gan_boi) "
@@ -336,7 +348,8 @@ async def them_nguoi_dung(body: TaoNguoiDungIn,
                     ten_dang_nhap=r["ten_dang_nhap"], ten_moi=r["ten_dang_nhap"],
                     truoc=None,
                     sau={"ho_ten": r["ho_ten"], "email": email, "vai_tro": ten_vai,
-                         "khoa": False},
+                         "khoa": False,
+                         "phai_doi_mat_khau": body.phai_doi_mat_khau},
                     them=ten_vai, bot=[])
     except Exception as exc:
         # Tài khoản ĐÃ tạo. Nói đúng điều ấy — không thì người ta bấm tạo lại
@@ -344,11 +357,13 @@ async def them_nguoi_dung(body: TaoNguoiDungIn,
         raise HTTPException(409, (
             f"Đã tạo {r['ten_dang_nhap']} nhưng CHƯA cấp được vai trò/email "
             f"({type(exc).__name__}). Sửa trên dòng của họ ở tab Nhân viên.")) from exc
-    return {**r, "email": email, "vai_tro_ten": ten_vai}
+    return {**r, "email": email, "vai_tro_ten": ten_vai,
+            "phai_doi_mat_khau": body.phai_doi_mat_khau}
 
 
 @router.post("/nguoi-dung/{ten}/khoa")
 async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False,
+                          xac_nhan_nhay_cam: bool = False,
                           nguoi: dict = Depends(can_quyen("nguoi_dung.sua"))) -> dict:
     """
     Khoá tài khoản và ĐÁ MỌI PHIÊN ĐANG MỞ.
@@ -364,6 +379,13 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False
 
     Không bao giờ XOÁ tài khoản: người đã nghỉ vẫn là tác giả của tin đã
     gửi, người duyệt của bản nháp, người giao của việc — khoá là đủ.
+
+    MỞ khoá một người đang mang vai trò có quyền nhạy cảm (SEC-13-01) thì
+    409 kèm danh sách vai trò, trừ khi `xac_nhan_nhay_cam=true`. Đo được trên
+    dữ liệu thật: tài khoản `staff_view` đã khoá vẫn mang vai trò "Quản trị"
+    — mở khoá nó một cú bấm là trao toàn quyền hệ thống cho một tài khoản
+    người ta nhớ là "chỉ xem". Chốt ở MÁY CHỦ, không chỉ ở hộp thoại: màn cũ,
+    script hay ai gọi thẳng API đều phải gặp cùng câu hỏi.
     """
     if ten.strip().lower() == nguoi["ten_dang_nhap"]:
         raise HTTPException(422, "Không tự khoá tài khoản của mình được")
@@ -374,6 +396,7 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False
         chan_cap_vuot,
         ghi_lich_su,
         quyen_cua_nguoi,
+        vai_tro_nhay_cam_cua,
     )
 
     async with db.pool().acquire() as conn:
@@ -386,6 +409,18 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False
             # Khoá cấp trên = đá cấp trên ra khỏi hệ thống: cùng luật với gán vai trò.
             chan_cap_vuot(nguoi, await quyen_cua_nguoi(conn, cu["id"]), "khoá người này")
             viec: dict = {}
+            nhay_cam: dict[str, list[str]] = {}
+            if not khoa and cu["khoa"]:
+                nhay_cam = await vai_tro_nhay_cam_cua(conn, cu["id"])
+                if nhay_cam and not xac_nhan_nhay_cam:
+                    raise HTTPException(409, {
+                        "can_xac_nhan_nhay_cam": True, "vai_tro": nhay_cam,
+                        "detail": (
+                            f"{ten} đang mang vai trò có quyền nhạy cảm: "
+                            f"{', '.join(nhay_cam)}. Mở khoá là họ dùng được "
+                            "các quyền ấy NGAY. Gỡ vai trò không cần thiết "
+                            "trước, hoặc xác nhận mở khoá."),
+                    })
             if khoa and not cu["khoa"]:
                 viec = await viec_dang_giu(conn, cu["id"])
                 if viec["tong"] and not bo_qua_viec:
@@ -411,5 +446,9 @@ async def khoa_nguoi_dung(ten: str, khoa: bool = True, bo_qua_viec: bool = False
                     truoc={"khoa": cu["khoa"]}, sau={"khoa": khoa},
                     de_lai_viec=({"so_hoi_thoai": viec["so_hoi_thoai"],
                                   "so_cong_viec": viec["so_cong_viec"]}
-                                 if viec.get("tong") else None))
+                                 if viec.get("tong") else None),
+                    # Mở khoá kèm quyền nhạy cảm: lịch sử ghi rõ người mở đã
+                    # được cảnh báo về vai trò nào — "không ai biết" không còn
+                    # là câu trả lời.
+                    vai_tro_nhay_cam=nhay_cam or None)
     return {"ok": True, "ten_dang_nhap": ten, "khoa": khoa}

@@ -192,14 +192,21 @@ $("#killswitch").addEventListener("click", async () => {
 
 $$(".modeswitch__opt").forEach((btn) =>
   btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const tt = $("#aiBatTrangThai");
+    if (tt) tt.textContent = "Đang lưu…";
     try {
       applyRuntime(await api("/runtime", {
         method: "POST", body: JSON.stringify({ mode: btn.dataset.mode }),
       }));
+      if (tt) tt.textContent = "Đã lưu chế độ";
       toast(btn.dataset.mode === "auto"
         ? "Chuyển sang tự động. Agent gửi thẳng cho khách."
         : "Chuyển sang gợi ý. Agent soạn, bạn duyệt trước khi gửi.");
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      if (tt) tt.textContent = "Lưu thất bại: " + e.message;
+      toast(e.message, true);
+    }
   })
 );
 
@@ -207,30 +214,51 @@ function applyRuntime(rt) {
   const sw = $("#killswitch");
   sw.classList.toggle("is-off", !rt.enabled);
   $("#killswitch-label").textContent = rt.enabled ? "Đang chạy" : "Đã ngắt";
-  $$(".modeswitch__opt").forEach((b) => b.classList.toggle("is-on", b.dataset.mode === rt.mode));
+  $$(".modeswitch__opt").forEach((b) => {
+    b.classList.toggle("is-on", b.dataset.mode === rt.mode);
+    b.disabled = !rt.enabled;
+  });
+  const khungCheDo = $("#aiCheDoKhung");
+  if (khungCheDo) khungCheDo.classList.toggle("is-disabled", !rt.enabled);
+  const tamTat = $("#aiCheDoTamTat");
+  if (tamTat) tamTat.hidden = !!rt.enabled;
   /* Công tắc AI ở Cấu hình cơ bản và đèn ngắt khẩn cấp ở thanh trên là
      HAI mặt của cùng `runtime.enabled` — vẽ cả hai từ một chỗ, nên không
      bao giờ một bên nói "đang chạy" khi bên kia nói "đã ngắt". */
   const bat = $("#aiBat");
   if (bat) {
     bat.checked = !!rt.enabled;
+    bat.setAttribute("aria-checked", rt.enabled ? "true" : "false");
     $("#aiBatNhan").textContent = rt.enabled ? "AI Agent đang BẬT" : "AI Agent đang TẮT";
+    const tag = $("#aiBatTag");
+    if (tag) {
+      tag.textContent = rt.enabled ? "Đang bật" : "Đang tắt";
+      tag.className = "tag " + (rt.enabled ? "tag--auto" : "tag--halt");
+    }
   }
 }
 
 $("#aiBat")?.addEventListener("change", async (e) => {
   const bat = e.target.checked;
+  const tt = $("#aiBatTrangThai");
+  e.target.disabled = true;
+  if (tt) tt.textContent = "Đang lưu…";
   try {
     applyRuntime(await api("/runtime", {
       method: "POST", body: JSON.stringify({ enabled: bat }),
     }));
+    if (tt) tt.textContent = "Đã lưu";
     toast(bat ? "AI Agent đã bật cho mọi kênh. Hội thoại nhân viên đang giữ vẫn của nhân viên."
       : "AI Agent đã tắt. Tin khách vào thẳng hàng chờ người.");
   } catch (err) {
     // Máy chủ từ chối (thiếu quyền agent.dieu_khien…): trả công tắc về
     // đúng trạng thái đang chạy, không để nó nói dối.
     e.target.checked = !bat;
+    e.target.setAttribute("aria-checked", !bat ? "true" : "false");
+    if (tt) tt.textContent = "Lưu thất bại: " + err.message;
     toast(err.message, true);
+  } finally {
+    e.target.disabled = false;
   }
 });
 
@@ -1872,20 +1900,20 @@ document.addEventListener("click", (ev) => {
 /* Các hành động xử lý. `id` giữ đúng id nút cũ: trình nghe ở dưới và các
  * test nút chết tìm theo id viết đủ. */
 const HANH_DONG_HT = {
-  tiepQuan: { id: "btn-take", nhan: "Tiếp quản", lop: "btn--halt",
-              goi_y: "Nhận hội thoại về mình; AI dừng gửi" },
+  tiepQuan: { id: "btn-take", nhan: "Tiếp quản", lop: "btn--primary",
+              goi_y: "Nhận hội thoại về mình và dừng AI tự động trả lời" },
   giao: { id: "btn-giao", nhan: "Chuyển nhân viên…", lop: "",
-          goi_y: "Giao hội thoại cho một nhân viên khác của kênh" },
+          goi_y: "Giao hội thoại cho nhân viên khác cùng kênh" },
   ketThuc: { id: "btn-release", nhan: "Kết thúc tiếp quản", lop: "",
-             goi_y: "Trả hội thoại về chế độ AI gợi ý" },
+             goi_y: "Ngừng tiếp quản và trả hội thoại về chế độ AI gợi ý" },
   tuTraLoi: { id: "btn-chedo", nhan: "Để agent tự trả lời", lop: "", che_do: "auto",
-              goi_y: "AI tự gửi câu trả lời, không chờ duyệt" },
+              goi_y: "AI tự gửi câu trả lời cho khách, không chờ duyệt" },
   duyetTruoc: { id: "btn-chedo", nhan: "Duyệt trước khi gửi", lop: "", che_do: "assist",
-                goi_y: "AI soạn xong chờ người duyệt rồi mới gửi" },
+                goi_y: "AI soạn sẵn câu trả lời và chờ bạn duyệt trước khi gửi" },
   giaiQuyet: { id: "btn-giai-quyet", nhan: "Đã giải quyết", lop: "btn--go",
-               goi_y: "Đóng vụ việc; khách nhắn tiếp thì tự mở lại" },
+               goi_y: "Đánh dấu hoàn tất và đóng hội thoại" },
   moLai: { id: "btn-mo-lai", nhan: "Mở lại", lop: "",
-           goi_y: "Mở lại hội thoại đã giải quyết để xử lý tiếp" },
+           goi_y: "Mở lại hội thoại đã giải quyết để tiếp tục xử lý" },
 };
 
 /* Hội thoại này, với người này, được làm gì — và việc nào là việc CHÍNH.
@@ -1945,8 +1973,11 @@ function hanhDongXuLy(c, ng) {
 
 function _nutHanhDong(a, trongMenu) {
   const lop = trongMenu ? "hd-them__muc" : `btn btn--sm ${a.lop}`;
+  const noiDung = trongMenu
+    ? `<span class="hd-them__ten">${esc(a.nhan)}</span>${a.goi_y ? `<span class="hd-them__goiy">${esc(a.goi_y)}</span>` : ""}`
+    : esc(a.nhan);
   return `<button type="button" class="${lop}" id="${a.id}" title="${esc(a.goi_y)}"
-    ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${esc(a.nhan)}</button>`;
+    ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${noiDung}</button>`;
 }
 
 /* Một nút chính + menu "⋯". Menu là <details>: mở/đóng không cần JS, và
@@ -1954,8 +1985,21 @@ function _nutHanhDong(a, trongMenu) {
  * không nhớ là menu tự sập ngay dưới ngón tay người đang chọn. */
 function veHanhDongXuLy(c, hd) {
   const mo = state.moHanhDong === String(c.id);
+  const toiId = (typeof state !== "undefined" && state.toiId) ? String(state.toiId) : "";
+  const laCuaToi = c.mode === "human" && c.assigned_to && String(c.assigned_to) === toiId;
+  const trangThaiTag = hd.giu
+    ? `<span class="tag tag--assist">${esc(hd.giu)}</span>`
+    : c.state === "resolved"
+      ? `<span class="tag tag--plain">Đã giải quyết</span>`
+      : laCuaToi
+        ? `<span class="tag tag--auto">Bạn đang tiếp quản · AI đã tắt</span>`
+        : (c.status === "escalated" || c.mode === "human")
+          ? `<span class="tag tag--halt">Chờ nhân viên tiếp quản</span>`
+          : c.mode === "assist"
+            ? `<span class="tag tag--assist">AI gợi ý</span>`
+            : `<span class="tag tag--plain">AI đang xử lý</span>`;
   return `<span class="hd" aria-label="Hành động xử lý">
-    ${hd.giu ? `<span class="tag tag--assist">${esc(hd.giu)}</span>` : ""}
+    ${trangThaiTag}
     ${hd.chinh ? _nutHanhDong(hd.chinh, false) : ""}
     ${hd.them.length ? `<details class="hd-them" data-hd-them="${esc(c.id)}" ${mo ? "open" : ""}>
       <summary class="btn btn--sm btn--ghost" aria-label="Hành động khác" title="Hành động khác">⋯</summary>
@@ -7492,11 +7536,37 @@ function veChatPhongThu() {
   box.scrollTop = box.scrollHeight;
 }
 
+function ptPhanLoaiLoiAi(luoiBat, raw) {
+  const r = String(raw || "").trim();
+  const low = r.toLowerCase();
+  if (luoiBat === "dung_bat_thuong" || low.includes("tool_calls") || low.includes("tool_use") || low.includes("lỗi kỹ thuật") || low.includes("model dừng bất thường")) {
+    return {
+      nhom: "Lỗi kỹ thuật",
+      nhan: "AI gặp sự cố kỹ thuật khi xử lý phản hồi — cần nhân viên tiếp quản.",
+      kyThuat: r,
+    };
+  }
+  if (luoiBat === "tin_cay_thap" || low.includes("độ tin cậy thấp") || low.includes("không đủ căn cứ") || low.includes("chưa đủ căn cứ")) {
+    return {
+      nhom: "Thiếu căn cứ",
+      nhan: "Tài liệu hiện có chưa đủ căn cứ rõ ràng — cần nhân viên kiểm tra.",
+      kyThuat: r,
+    };
+  }
+  return {
+    nhom: "Cần nhân viên tiếp quản",
+    nhan: r || "Hội thoại cần nhân viên trực tiếp hỗ trợ.",
+    kyThuat: "",
+  };
+}
+
 function veBenTrongPhongThu(d) {
+  const pt = d.luoi_bat ? ptPhanLoaiLoiAi(d.luoi_bat, d.escalate_reason) : null;
   const luoi = d.luoi_bat
     ? `<div class="row"><span class="row__flag row__flag--${esc(NHAN_LUOI_MAU[d.luoi_bat] || "assist")}"></span>
-        <span class="row__body"><span class="row__title">Lưới bắt: ${esc(d.nhan_luoi || d.luoi_bat)}</span>
-        <span class="row__sub">${esc(d.escalate_reason)}</span></span></div>`
+        <span class="row__body"><span class="row__title">${esc(pt.nhom)}: ${esc(d.nhan_luoi || d.luoi_bat)}</span>
+        <span class="row__sub">${esc(pt.nhan)}</span>
+        ${pt.kyThuat && pt.kyThuat !== pt.nhan ? `<details class="row__sub"><summary>Chi tiết kỹ thuật</summary><span>${esc(pt.kyThuat)}</span></details>` : ""}</span></div>`
     : `<div class="row"><span class="row__flag row__flag--auto"></span>
         <span class="row__body"><span class="row__title">Không lưới nào bắt</span></span></div>`;
   const congCu = d.cong_cu.length ? d.cong_cu.map((c, i) => `<details class="row">
@@ -9165,14 +9235,49 @@ async function taiSoThongBao() {
   }
 }
 
+const CHUONG_HUONG_DAN = {
+  ai_chuyen_giao: "Bấm để mở hội thoại, tiếp quản và phản hồi khách.",
+  duoc_giao_hoi_thoai: "Bấm để mở hội thoại và xử lý.",
+  can_duyet: "Bấm để kiểm tra và duyệt trước khi gửi.",
+  duoc_giao_viec: "Mở công việc để xem chi tiết và thực hiện.",
+  sla_sap_tre: "Ưu tiên mở hội thoại phản hồi trước khi quá hạn.",
+  sla_tre: "Đã quá hạn SLA — mở hội thoại xử lý ngay.",
+  viec_chua_giao: "Mở công việc để phân công người phụ trách.",
+  viec_huy: "Kiểm tra thông tin công việc đã hủy.",
+  viec_qua_han: "Mở công việc quá hạn để xử lý ngay.",
+};
+
+function tbLamSachNoiDung(t) {
+  const goc = String((t && t.noi_dung) || "").trim();
+  if (!goc) return "";
+  if (t.loai !== "ai_chuyen_giao") return goc;
+  const low = goc.toLowerCase();
+  if (low.includes("tool_calls") || low.includes("tool_use") || low.includes("malformed_function_call")) {
+    return "AI gặp lỗi kỹ thuật khi gọi công cụ hỗ trợ — chưa thể tự trả lời khách.";
+  }
+  if (low.includes("max_tokens") || low.includes("giới hạn độ dài")) {
+    return "AI phản hồi bị gián đoạn do vượt giới hạn độ dài — cần nhân viên trả lời tiếp.";
+  }
+  if (low.includes("model dừng bất thường")) {
+    return "AI gặp sự cố kỹ thuật khi xử lý câu trả lời — cần nhân viên tiếp quản.";
+  }
+  if (low.includes("độ tin cậy thấp") || low.includes("không đủ căn cứ")) {
+    return "AI chưa đủ căn cứ rõ ràng từ tài liệu — cần nhân viên kiểm tra và phản hồi khách.";
+  }
+  return goc.replace(/\s*\((?:tool_calls|tool_use|\d+(?:\.\d+)?)\)\s*/gi, " ").trim();
+}
+
 function dongThongBao(t) {
   const ai = [t.ten_khach, t.kenh].filter(Boolean).map(esc).join(" · ");
+  const noiDung = tbLamSachNoiDung(t);
+  const huongDan = (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim();
   return `<button type="button" class="chuong__dong${t.da_doc ? "" : " is-moi"}" role="listitem"
       data-tb="${esc(t.id)}">
     <span class="chuong__loai chuong__loai--${esc(t.loai)}">${esc(t.nhan_loai)}</span>
     <b class="chuong__tieude">${esc(t.tieu_de)}</b>
     ${ai ? `<span class="chuong__phu">${ai}</span>` : ""}
-    ${t.noi_dung ? `<span class="chuong__phu">${esc(t.noi_dung)}</span>` : ""}
+    ${noiDung ? `<span class="chuong__phu">${esc(noiDung)}</span>` : ""}
+    ${huongDan ? `<span class="chuong__huongdan">${esc(huongDan)}</span>` : ""}
     <time class="chuong__gio" datetime="${esc(t.tao_luc)}">${esc(clock(t.tao_luc))}${t.da_doc ? "" : " · chưa đọc"}</time>
   </button>`;
 }
@@ -12624,7 +12729,9 @@ function dxCoQuyen(q) {
 function dxDongChinhSach(h, sua) {
   let o;
   if (!h.ho_tro) {
-    o = `<span class="tag tag--plain">${h.ho_tro_de_xuat ? "Chỉ đề xuất — xử lý thủ công" : "Chưa hỗ trợ — chuyển nhân viên"}</span>`;
+    o = h.ho_tro_de_xuat
+      ? `<span class="tag tag--assist">Chỉ đề xuất — xử lý thủ công</span>`
+      : `<span class="tag tag--plain">Chưa hỗ trợ tự động — chuyển nhân viên</span>`;
   } else if (!h.cau_hinh_duoc) {
     o = `<span class="tag tag--auto">${esc(h.nhan_muc)} · luôn bật</span>`;
   } else {
@@ -12640,26 +12747,46 @@ function dxDongChinhSach(h, sua) {
           sua ? "" : " disabled"}></label>`
     : "";
   const co = !h.ho_tro ? "plain" : h.muc === "tu_dong" ? "auto" : h.muc === "co_phe_duyet" ? "assist" : "halt";
-  return `<div class="row dx-cs">
+  const chiTietPhan = [
+    h.mo_ta ? `<p class="row__sub">${esc(h.mo_ta)}</p>` : "",
+    h.ghi_chu ? `<p class="row__sub hint">${esc(h.ghi_chu)}</p>` : "",
+    h.ho_tro && h.cau_hinh_duoc ? `<p class="row__sub hint">Mặc định: ${esc(
+      { khong_su_dung: "Không sử dụng", co_phe_duyet: "Có phê duyệt", tu_dong: "Tự động" }[h.mac_dinh] || h.mac_dinh)}${
+      h.quyen_thi_hanh ? ` · người duyệt cần thêm quyền ${esc(h.quyen_thi_hanh)}` : ""}${
+      h.sua_boi ? ` · sửa bởi ${esc(h.sua_boi)}` : ""}</p>` : "",
+    nguong,
+  ].filter(Boolean).join("");
+  const coChiTiet = Boolean(chiTietPhan);
+  return `<div class="row dx-cs" data-dx-dong="${esc(h.ma)}">
     <span class="row__flag row__flag--${co}"></span>
     <div class="row__body">
       <b>${esc(h.ten)}</b>${h.da_doi ? ' <span class="tag tag--plain">đã đổi</span>' : ""}
-      <p class="row__sub">${esc(h.mo_ta)}</p>
-      ${h.ghi_chu ? `<p class="row__sub hint">${esc(h.ghi_chu)}</p>` : ""}
-      ${h.ho_tro && h.cau_hinh_duoc ? `<p class="row__sub hint">Mặc định: ${esc(
-        { khong_su_dung: "Không sử dụng", co_phe_duyet: "Có phê duyệt", tu_dong: "Tự động" }[h.mac_dinh] || h.mac_dinh)}${
-        h.quyen_thi_hanh ? ` · người duyệt cần thêm quyền ${esc(h.quyen_thi_hanh)}` : ""}${
-        h.sua_boi ? ` · sửa bởi ${esc(h.sua_boi)}` : ""}</p>` : ""}
-      ${nguong}
+      ${h.mo_ta ? `<p class="row__sub dx-cs__mo-ta-ngan">${esc(h.mo_ta)}</p>` : ""}
+      ${coChiTiet ? `<div class="dx-cs__chi-tiet" data-dx-chi-tiet="${esc(h.ma)}" hidden>${chiTietPhan}</div>` : ""}
     </div>
-    <div class="row__aside">${o}</div>
+    <div class="row__aside">${o}${coChiTiet ? `<button type="button" class="btn btn--sm btn--ghost" data-dx-mo-rong="${esc(h.ma)}" aria-expanded="false">Chi tiết ▾</button>` : ""}</div>
   </div>`;
+}
+
+function dxNhomChinhSach(tieuDe, moTa, ds, sua) {
+  if (!ds.length) return "";
+  return `<details class="dx-nhom" open>
+    <summary class="dx-nhom__dau">
+      <h3 class="dx-nhom__tieu-de"><span>${esc(tieuDe)} (${ds.length})</span><span class="hint">Thu gọn / Mở</span></h3>
+      <p class="dx-nhom__mo-ta">${esc(moTa)}</p>
+    </summary>
+    <div class="rows">${ds.map((h) => dxDongChinhSach(h, sua)).join("")}</div>
+  </details>`;
 }
 
 async function ganChinhSachUyQuyen(goc) {
   if (!goc) return;
   const sua = dxCoQuyen("agent.dieu_khien");
   const ve = (d) => {
+    const ds = d.hanh_dong || [];
+    const coTheCauHinh = ds.filter((h) => h.ho_tro && h.cau_hinh_duoc);
+    const luonBat = ds.filter((h) => h.ho_tro && !h.cau_hinh_duoc);
+    const chuaHoTroTuDong = ds.filter((h) => !h.ho_tro);
     goc.innerHTML = `<section class="panel dx-chinh-sach">
       <h2 class="panel__head">Chính sách &amp; Ủy quyền
         <span class="panel__note">AI được tự làm gì, việc gì phải có người duyệt</span></h2>
@@ -12670,7 +12797,27 @@ async function ganChinhSachUyQuyen(goc) {
         Hội thoại bật «Duyệt trước khi gửi» cũng được xử lý như Gợi ý.</p>
       <p class="row__sub hint">Tra cứu (sản phẩm, giá, tồn kho, đơn, vận chuyển, tài liệu) luôn được phép và không cần dòng nào ở đây.
         Hành động mới chưa có trong danh sách: mặc định <b>${esc(d.hanh_dong_la)}</b> (chuyển nhân viên).</p>
-      <div class="rows">${d.hanh_dong.map((h) => dxDongChinhSach(h, sua)).join("")}</div>
+      <div class="dx-canh-bao" role="note">
+        <b>Lưu ý tích hợp ERPNext:</b> Tự động sửa Sales Order trên ERPNext hiện <b>chưa được hỗ trợ</b> (Integration Pending). Các đề xuất sửa đơn chỉ dừng ở mức chờ duyệt và nhân viên xác nhận xử lý thủ công.
+      </div>
+      ${dxNhomChinhSach(
+        "Có thể cấu hình tự động hoặc phê duyệt",
+        "Backend đã hỗ trợ thực thi. Bạn có thể chọn Không sử dụng, Có phê duyệt hoặc Tự động (theo ngưỡng nếu có).",
+        coTheCauHinh,
+        sua
+      )}
+      ${dxNhomChinhSach(
+        "Hành động cố định theo hệ thống",
+        "Luôn bật theo quy tắc an toàn của hệ thống, không thể tắt.",
+        luonBat,
+        sua
+      )}
+      ${dxNhomChinhSach(
+        "Chỉ đề xuất / Chưa hỗ trợ tự động",
+        "Backend chưa hỗ trợ thực thi tự động — không thể bật chế độ Tự động. AI chỉ tạo đề xuất chờ xử lý thủ công hoặc chuyển nhân viên.",
+        chuaHoTroTuDong,
+        sua
+      )}
       <label class="field dx-han"><span>Đề xuất hết hạn sau (giờ) <em class="hint">quá hạn thì không thi hành được nữa</em></span>
         <input type="number" min="1" max="${esc(d.han_toi_da_gio)}" data-dx-han value="${esc(d.han_gio)}"${sua ? "" : " disabled"}></label>
       <div class="rowbtns">
@@ -12688,6 +12835,19 @@ async function ganChinhSachUyQuyen(goc) {
     catch (e) { goc.innerHTML = `<p class="empty">Không tải được chính sách: ${esc(e.message)}</p>`; }
   })().finally(() => { dangNap = null; }));
   goc.addEventListener("click", async (e) => {
+    const nutMo = e.target.closest("[data-dx-mo-rong]");
+    if (nutMo) {
+      const ma = nutMo.dataset.dxMoRong;
+      const dong = nutMo.closest("[data-dx-dong]");
+      const ct = dong && dong.querySelector(`[data-dx-chi-tiet="${CSS.escape(ma)}"]`);
+      if (ct) {
+        const dangAn = ct.hidden;
+        ct.hidden = !dangAn;
+        nutMo.setAttribute("aria-expanded", dangAn ? "true" : "false");
+        nutMo.textContent = dangAn ? "Thu gọn ▴" : "Chi tiết ▾";
+      }
+      return;
+    }
     if (!e.target.closest("[data-dx-luu]")) return;
     const hanh_dong = {};
     $$("[data-dx-muc]", goc).forEach((s) => { hanh_dong[s.dataset.dxMuc] = { muc: s.value }; });

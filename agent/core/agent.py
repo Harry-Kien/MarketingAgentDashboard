@@ -673,6 +673,23 @@ def _ghi_chi_phi(tong: float, dang_thu: bool) -> None:
         ngan_sach.ghi_nhan(tong)
 
 
+def _mo_ta_ly_do_dung(ly_do_dung: str) -> str:
+    """Biến stop_reason kỹ thuật thành mô tả tiếng Việt phân loại rõ nguyên nhân.
+
+    Giữ nguyên stop_reason thô trong `events` (`agent.dung_bat_thuong`); không
+    lộ chuỗi `tool_calls` hoặc `tool_use` ra thông báo nhân viên.
+    """
+    ma = (ly_do_dung or "").strip()
+    low = ma.lower()
+    if low in ("tool_calls", "tool_use", "malformed_function_call"):
+        return f"AI gặp lỗi kỹ thuật khi gọi công cụ hỗ trợ — cần nhân viên kiểm tra và trả lời khách ({ma})"
+    if low in ("max_tokens", "length"):
+        return f"AI phản hồi bị gián đoạn do vượt giới hạn độ dài — cần nhân viên tiếp quản ({ma})"
+    if low in ("safety", "recitation", "content_filter", "refusal"):
+        return f"Nội dung cần nhân viên kiểm tra và phản hồi trực tiếp ({ma})"
+    return f"AI gặp lỗi kỹ thuật khi xử lý phản hồi — cần nhân viên tiếp quản ({ma})" if ma else "AI gặp lỗi kỹ thuật khi xử lý phản hồi — cần nhân viên tiếp quản"
+
+
 async def respond(
     *, conversation_id: uuid.UUID, history: list[dict], question: str,
     customer_ref: str = "", channel: str = "",
@@ -956,7 +973,7 @@ async def respond(
             if ly_do_dung.lower() not in _DUNG_BINH_THUONG or dung_loi_goi_tool:
                 final_text = result.text or final_text
                 escalate = True
-                escalate_reason = escalate_reason or f"Model dừng bất thường ({ly_do_dung})"
+                escalate_reason = escalate_reason or _mo_ta_ly_do_dung(ly_do_dung)
                 luoi_bat = luoi_bat or "dung_bat_thuong"
                 if not dang_thu:
                     with suppress(Exception):
@@ -1186,9 +1203,9 @@ async def respond(
     if thieu_can_cu_tra_loi and _bat("tin_cay_thap"):
         escalate = True
         if confidence < hs.nguong_tu_tin and not co_du_lieu:
-            escalate_reason = escalate_reason or f"Độ tin cậy thấp ({confidence:.2f})"
+            escalate_reason = escalate_reason or "Độ tin cậy thấp: chưa đủ căn cứ rõ ràng từ tài liệu — cần nhân viên kiểm tra"
         else:
-            escalate_reason = escalate_reason or "Tài liệu truy xuất không đủ căn cứ hỗ trợ câu trả lời"
+            escalate_reason = escalate_reason or "Tài liệu truy xuất không đủ căn cứ hỗ trợ câu trả lời — cần nhân viên kiểm tra"
         luoi_bat = luoi_bat or "tin_cay_thap"
 
     # Chốt chặn cứng: luật tuân thủ không được phụ thuộc vào việc model

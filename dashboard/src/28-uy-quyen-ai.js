@@ -29,7 +29,9 @@ function dxCoQuyen(q) {
 function dxDongChinhSach(h, sua) {
   let o;
   if (!h.ho_tro) {
-    o = `<span class="tag tag--plain">${h.ho_tro_de_xuat ? "Chỉ đề xuất — xử lý thủ công" : "Chưa hỗ trợ — chuyển nhân viên"}</span>`;
+    o = h.ho_tro_de_xuat
+      ? `<span class="tag tag--assist">Chỉ đề xuất — xử lý thủ công</span>`
+      : `<span class="tag tag--plain">Chưa hỗ trợ tự động — chuyển nhân viên</span>`;
   } else if (!h.cau_hinh_duoc) {
     o = `<span class="tag tag--auto">${esc(h.nhan_muc)} · luôn bật</span>`;
   } else {
@@ -45,26 +47,46 @@ function dxDongChinhSach(h, sua) {
           sua ? "" : " disabled"}></label>`
     : "";
   const co = !h.ho_tro ? "plain" : h.muc === "tu_dong" ? "auto" : h.muc === "co_phe_duyet" ? "assist" : "halt";
-  return `<div class="row dx-cs">
+  const chiTietPhan = [
+    h.mo_ta ? `<p class="row__sub">${esc(h.mo_ta)}</p>` : "",
+    h.ghi_chu ? `<p class="row__sub hint">${esc(h.ghi_chu)}</p>` : "",
+    h.ho_tro && h.cau_hinh_duoc ? `<p class="row__sub hint">Mặc định: ${esc(
+      { khong_su_dung: "Không sử dụng", co_phe_duyet: "Có phê duyệt", tu_dong: "Tự động" }[h.mac_dinh] || h.mac_dinh)}${
+      h.quyen_thi_hanh ? ` · người duyệt cần thêm quyền ${esc(h.quyen_thi_hanh)}` : ""}${
+      h.sua_boi ? ` · sửa bởi ${esc(h.sua_boi)}` : ""}</p>` : "",
+    nguong,
+  ].filter(Boolean).join("");
+  const coChiTiet = Boolean(chiTietPhan);
+  return `<div class="row dx-cs" data-dx-dong="${esc(h.ma)}">
     <span class="row__flag row__flag--${co}"></span>
     <div class="row__body">
       <b>${esc(h.ten)}</b>${h.da_doi ? ' <span class="tag tag--plain">đã đổi</span>' : ""}
-      <p class="row__sub">${esc(h.mo_ta)}</p>
-      ${h.ghi_chu ? `<p class="row__sub hint">${esc(h.ghi_chu)}</p>` : ""}
-      ${h.ho_tro && h.cau_hinh_duoc ? `<p class="row__sub hint">Mặc định: ${esc(
-        { khong_su_dung: "Không sử dụng", co_phe_duyet: "Có phê duyệt", tu_dong: "Tự động" }[h.mac_dinh] || h.mac_dinh)}${
-        h.quyen_thi_hanh ? ` · người duyệt cần thêm quyền ${esc(h.quyen_thi_hanh)}` : ""}${
-        h.sua_boi ? ` · sửa bởi ${esc(h.sua_boi)}` : ""}</p>` : ""}
-      ${nguong}
+      ${h.mo_ta ? `<p class="row__sub dx-cs__mo-ta-ngan">${esc(h.mo_ta)}</p>` : ""}
+      ${coChiTiet ? `<div class="dx-cs__chi-tiet" data-dx-chi-tiet="${esc(h.ma)}" hidden>${chiTietPhan}</div>` : ""}
     </div>
-    <div class="row__aside">${o}</div>
+    <div class="row__aside">${o}${coChiTiet ? `<button type="button" class="btn btn--sm btn--ghost" data-dx-mo-rong="${esc(h.ma)}" aria-expanded="false">Chi tiết ▾</button>` : ""}</div>
   </div>`;
+}
+
+function dxNhomChinhSach(tieuDe, moTa, ds, sua) {
+  if (!ds.length) return "";
+  return `<details class="dx-nhom" open>
+    <summary class="dx-nhom__dau">
+      <h3 class="dx-nhom__tieu-de"><span>${esc(tieuDe)} (${ds.length})</span><span class="hint">Thu gọn / Mở</span></h3>
+      <p class="dx-nhom__mo-ta">${esc(moTa)}</p>
+    </summary>
+    <div class="rows">${ds.map((h) => dxDongChinhSach(h, sua)).join("")}</div>
+  </details>`;
 }
 
 async function ganChinhSachUyQuyen(goc) {
   if (!goc) return;
   const sua = dxCoQuyen("agent.dieu_khien");
   const ve = (d) => {
+    const ds = d.hanh_dong || [];
+    const coTheCauHinh = ds.filter((h) => h.ho_tro && h.cau_hinh_duoc);
+    const luonBat = ds.filter((h) => h.ho_tro && !h.cau_hinh_duoc);
+    const chuaHoTroTuDong = ds.filter((h) => !h.ho_tro);
     goc.innerHTML = `<section class="panel dx-chinh-sach">
       <h2 class="panel__head">Chính sách &amp; Ủy quyền
         <span class="panel__note">AI được tự làm gì, việc gì phải có người duyệt</span></h2>
@@ -75,7 +97,27 @@ async function ganChinhSachUyQuyen(goc) {
         Hội thoại bật «Duyệt trước khi gửi» cũng được xử lý như Gợi ý.</p>
       <p class="row__sub hint">Tra cứu (sản phẩm, giá, tồn kho, đơn, vận chuyển, tài liệu) luôn được phép và không cần dòng nào ở đây.
         Hành động mới chưa có trong danh sách: mặc định <b>${esc(d.hanh_dong_la)}</b> (chuyển nhân viên).</p>
-      <div class="rows">${d.hanh_dong.map((h) => dxDongChinhSach(h, sua)).join("")}</div>
+      <div class="dx-canh-bao" role="note">
+        <b>Lưu ý tích hợp ERPNext:</b> Tự động sửa Sales Order trên ERPNext hiện <b>chưa được hỗ trợ</b> (Integration Pending). Các đề xuất sửa đơn chỉ dừng ở mức chờ duyệt và nhân viên xác nhận xử lý thủ công.
+      </div>
+      ${dxNhomChinhSach(
+        "Có thể cấu hình tự động hoặc phê duyệt",
+        "Backend đã hỗ trợ thực thi. Bạn có thể chọn Không sử dụng, Có phê duyệt hoặc Tự động (theo ngưỡng nếu có).",
+        coTheCauHinh,
+        sua
+      )}
+      ${dxNhomChinhSach(
+        "Hành động cố định theo hệ thống",
+        "Luôn bật theo quy tắc an toàn của hệ thống, không thể tắt.",
+        luonBat,
+        sua
+      )}
+      ${dxNhomChinhSach(
+        "Chỉ đề xuất / Chưa hỗ trợ tự động",
+        "Backend chưa hỗ trợ thực thi tự động — không thể bật chế độ Tự động. AI chỉ tạo đề xuất chờ xử lý thủ công hoặc chuyển nhân viên.",
+        chuaHoTroTuDong,
+        sua
+      )}
       <label class="field dx-han"><span>Đề xuất hết hạn sau (giờ) <em class="hint">quá hạn thì không thi hành được nữa</em></span>
         <input type="number" min="1" max="${esc(d.han_toi_da_gio)}" data-dx-han value="${esc(d.han_gio)}"${sua ? "" : " disabled"}></label>
       <div class="rowbtns">
@@ -93,6 +135,19 @@ async function ganChinhSachUyQuyen(goc) {
     catch (e) { goc.innerHTML = `<p class="empty">Không tải được chính sách: ${esc(e.message)}</p>`; }
   })().finally(() => { dangNap = null; }));
   goc.addEventListener("click", async (e) => {
+    const nutMo = e.target.closest("[data-dx-mo-rong]");
+    if (nutMo) {
+      const ma = nutMo.dataset.dxMoRong;
+      const dong = nutMo.closest("[data-dx-dong]");
+      const ct = dong && dong.querySelector(`[data-dx-chi-tiet="${CSS.escape(ma)}"]`);
+      if (ct) {
+        const dangAn = ct.hidden;
+        ct.hidden = !dangAn;
+        nutMo.setAttribute("aria-expanded", dangAn ? "true" : "false");
+        nutMo.textContent = dangAn ? "Thu gọn ▴" : "Chi tiết ▾";
+      }
+      return;
+    }
     if (!e.target.closest("[data-dx-luu]")) return;
     const hanh_dong = {};
     $$("[data-dx-muc]", goc).forEach((s) => { hanh_dong[s.dataset.dxMuc] = { muc: s.value }; });

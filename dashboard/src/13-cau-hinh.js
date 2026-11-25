@@ -185,11 +185,37 @@ function veChatPhongThu() {
   box.scrollTop = box.scrollHeight;
 }
 
+function ptPhanLoaiLoiAi(luoiBat, raw) {
+  const r = String(raw || "").trim();
+  const low = r.toLowerCase();
+  if (luoiBat === "dung_bat_thuong" || low.includes("tool_calls") || low.includes("tool_use") || low.includes("lỗi kỹ thuật") || low.includes("model dừng bất thường")) {
+    return {
+      nhom: "Lỗi kỹ thuật",
+      nhan: "AI gặp sự cố kỹ thuật khi xử lý phản hồi — cần nhân viên tiếp quản.",
+      kyThuat: r,
+    };
+  }
+  if (luoiBat === "tin_cay_thap" || low.includes("độ tin cậy thấp") || low.includes("không đủ căn cứ") || low.includes("chưa đủ căn cứ")) {
+    return {
+      nhom: "Thiếu căn cứ",
+      nhan: "Tài liệu hiện có chưa đủ căn cứ rõ ràng — cần nhân viên kiểm tra.",
+      kyThuat: r,
+    };
+  }
+  return {
+    nhom: "Cần nhân viên tiếp quản",
+    nhan: r || "Hội thoại cần nhân viên trực tiếp hỗ trợ.",
+    kyThuat: "",
+  };
+}
+
 function veBenTrongPhongThu(d) {
+  const pt = d.luoi_bat ? ptPhanLoaiLoiAi(d.luoi_bat, d.escalate_reason) : null;
   const luoi = d.luoi_bat
     ? `<div class="row"><span class="row__flag row__flag--${esc(NHAN_LUOI_MAU[d.luoi_bat] || "assist")}"></span>
-        <span class="row__body"><span class="row__title">Lưới bắt: ${esc(d.nhan_luoi || d.luoi_bat)}</span>
-        <span class="row__sub">${esc(d.escalate_reason)}</span></span></div>`
+        <span class="row__body"><span class="row__title">${esc(pt.nhom)}: ${esc(d.nhan_luoi || d.luoi_bat)}</span>
+        <span class="row__sub">${esc(pt.nhan)}</span>
+        ${pt.kyThuat && pt.kyThuat !== pt.nhan ? `<details class="row__sub"><summary>Chi tiết kỹ thuật</summary><span>${esc(pt.kyThuat)}</span></details>` : ""}</span></div>`
     : `<div class="row"><span class="row__flag row__flag--auto"></span>
         <span class="row__body"><span class="row__title">Không lưới nào bắt</span></span></div>`;
   const congCu = d.cong_cu.length ? d.cong_cu.map((c, i) => `<details class="row">

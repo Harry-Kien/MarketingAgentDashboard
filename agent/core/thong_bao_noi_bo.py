@@ -45,6 +45,7 @@ LỖI, và hội thoại không có ai nhận thông báo thì ghi CẢNH BÁO.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -67,6 +68,48 @@ LOAI: dict[str, str] = {
     "viec_huy": "Việc bị hủy",
     "viec_qua_han": "Việc quá hạn",
 }
+
+_HUONG_DAN: dict[str, str] = {
+    "ai_chuyen_giao": "Mở hội thoại để tiếp quản và trả lời khách.",
+    "duoc_giao_hoi_thoai": "Mở hội thoại để kiểm tra và phản hồi khách.",
+    "can_duyet": "Mở hội thoại hoặc màn đơn hàng để duyệt trước khi gửi.",
+    "duoc_giao_viec": "Mở công việc để xem chi tiết và xử lý.",
+    "sla_sap_tre": "Ưu tiên kiểm tra và phản hồi khách trước khi quá hạn SLA.",
+    "sla_tre": "Hội thoại đã quá hạn SLA — ưu tiên xử lý ngay.",
+    "viec_chua_giao": "Phân công nhân viên phụ trách cho công việc này.",
+    "viec_huy": "Kiểm tra lại lý do hủy công việc nếu cần.",
+    "viec_qua_han": "Mở công việc để xử lý hoặc cập nhật tiến độ.",
+}
+
+_MA_KY_THUAT_RE = re.compile(
+    r"\s*\((?:tool_calls|tool_use|malformed_function_call|max_tokens|length|safety|recitation|content_filter|refusal|\d+(?:\.\d+)?)\)\s*",
+    re.IGNORECASE,
+)
+
+
+def chuan_hoa_noi_dung_thong_bao(loai: str, noi_dung: str | None) -> str:
+    """Chuẩn hóa nội dung thông báo sang tiếng Việt rõ ràng cho nhân viên.
+
+    Loại bỏ mã kỹ thuật thô (`tool_calls`, `tool_use`, điểm độ tin cậy thô...)
+    nhưng giữ đúng bản chất vấn đề: lỗi kỹ thuật / thiếu căn cứ / cần tiếp quản.
+    Dữ liệu kỹ thuật thô vẫn được giữ nguyên trong `events` và `dau_vet_ai`.
+    """
+    goc = " ".join(str(noi_dung or "").split())
+    if loai != "ai_chuyen_giao":
+        return goc
+    low = goc.lower()
+    if any(k in low for k in ("tool_calls", "tool_use", "malformed_function_call", "gọi công cụ")):
+        return "AI gặp lỗi kỹ thuật khi gọi công cụ hỗ trợ — chưa thể tự trả lời khách."
+    if any(k in low for k in ("max_tokens", "giới hạn độ dài")):
+        return "AI phản hồi bị gián đoạn do vượt giới hạn độ dài — cần nhân viên trả lời tiếp."
+    if "safety" in low or "content_filter" in low or "recitation" in low:
+        return "Nội dung cần nhân viên kiểm tra an toàn và phản hồi trực tiếp cho khách."
+    if "model dừng bất thường" in low or "lỗi kỹ thuật" in low:
+        return "AI gặp sự cố kỹ thuật khi xử lý câu trả lời — cần nhân viên tiếp quản."
+    if "độ tin cậy thấp" in low or "không đủ căn cứ" in low or "chưa đủ căn cứ" in low:
+        return "AI chưa đủ căn cứ rõ ràng từ tài liệu — cần nhân viên kiểm tra và phản hồi khách."
+    sach = _MA_KY_THUAT_RE.sub(" ", goc).strip(" .—-")
+    return sach or "Hội thoại cần nhân viên kiểm tra và tiếp quản."
 
 # Quyền "người quản lý" — người được báo khi kênh không có ai, và luôn được
 # báo khi SLA trễ. Dùng lại đúng quyền đã nói "thấy mọi kênh": người không
@@ -220,7 +263,8 @@ async def bao_ai_chuyen_giao(
             moi = await _ghi(
                 c, nhan, loai="ai_chuyen_giao",
                 tieu_de="AI chuyển hội thoại cho nhân viên",
-                noi_dung=ly_do, conversation_id=_uuid(conversation_id),
+                noi_dung=chuan_hoa_noi_dung_thong_bao("ai_chuyen_giao", ly_do),
+                conversation_id=_uuid(conversation_id),
                 khoa=f"ai_chuyen_giao:{_uuid(conversation_id)}",
             )
             kenh = await c.fetchval(
@@ -620,7 +664,8 @@ async def liet_ke(nguoi_id: UUID, *, chi_chua_doc: bool = False,
             "loai": r["loai"],
             "nhan_loai": LOAI.get(r["loai"], r["loai"]),
             "tieu_de": r["tieu_de"],
-            "noi_dung": r["noi_dung"],
+            "noi_dung": chuan_hoa_noi_dung_thong_bao(r["loai"], r["noi_dung"]),
+            "huong_dan": _HUONG_DAN.get(r["loai"], ""),
             "ten_khach": r["ten_khach"],
             "kenh": TEN_KENH.get(r["kenh"] or "", r["kenh"]),
             "tao_luc": r["tao_luc"].isoformat(),

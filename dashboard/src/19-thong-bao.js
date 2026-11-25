@@ -29,14 +29,49 @@ async function taiSoThongBao() {
   }
 }
 
+const CHUONG_HUONG_DAN = {
+  ai_chuyen_giao: "Bấm để mở hội thoại, tiếp quản và phản hồi khách.",
+  duoc_giao_hoi_thoai: "Bấm để mở hội thoại và xử lý.",
+  can_duyet: "Bấm để kiểm tra và duyệt trước khi gửi.",
+  duoc_giao_viec: "Mở công việc để xem chi tiết và thực hiện.",
+  sla_sap_tre: "Ưu tiên mở hội thoại phản hồi trước khi quá hạn.",
+  sla_tre: "Đã quá hạn SLA — mở hội thoại xử lý ngay.",
+  viec_chua_giao: "Mở công việc để phân công người phụ trách.",
+  viec_huy: "Kiểm tra thông tin công việc đã hủy.",
+  viec_qua_han: "Mở công việc quá hạn để xử lý ngay.",
+};
+
+function tbLamSachNoiDung(t) {
+  const goc = String((t && t.noi_dung) || "").trim();
+  if (!goc) return "";
+  if (t.loai !== "ai_chuyen_giao") return goc;
+  const low = goc.toLowerCase();
+  if (low.includes("tool_calls") || low.includes("tool_use") || low.includes("malformed_function_call")) {
+    return "AI gặp lỗi kỹ thuật khi gọi công cụ hỗ trợ — chưa thể tự trả lời khách.";
+  }
+  if (low.includes("max_tokens") || low.includes("giới hạn độ dài")) {
+    return "AI phản hồi bị gián đoạn do vượt giới hạn độ dài — cần nhân viên trả lời tiếp.";
+  }
+  if (low.includes("model dừng bất thường")) {
+    return "AI gặp sự cố kỹ thuật khi xử lý câu trả lời — cần nhân viên tiếp quản.";
+  }
+  if (low.includes("độ tin cậy thấp") || low.includes("không đủ căn cứ")) {
+    return "AI chưa đủ căn cứ rõ ràng từ tài liệu — cần nhân viên kiểm tra và phản hồi khách.";
+  }
+  return goc.replace(/\s*\((?:tool_calls|tool_use|\d+(?:\.\d+)?)\)\s*/gi, " ").trim();
+}
+
 function dongThongBao(t) {
   const ai = [t.ten_khach, t.kenh].filter(Boolean).map(esc).join(" · ");
+  const noiDung = tbLamSachNoiDung(t);
+  const huongDan = (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim();
   return `<button type="button" class="chuong__dong${t.da_doc ? "" : " is-moi"}" role="listitem"
       data-tb="${esc(t.id)}">
     <span class="chuong__loai chuong__loai--${esc(t.loai)}">${esc(t.nhan_loai)}</span>
     <b class="chuong__tieude">${esc(t.tieu_de)}</b>
     ${ai ? `<span class="chuong__phu">${ai}</span>` : ""}
-    ${t.noi_dung ? `<span class="chuong__phu">${esc(t.noi_dung)}</span>` : ""}
+    ${noiDung ? `<span class="chuong__phu">${esc(noiDung)}</span>` : ""}
+    ${huongDan ? `<span class="chuong__huongdan">${esc(huongDan)}</span>` : ""}
     <time class="chuong__gio" datetime="${esc(t.tao_luc)}">${esc(clock(t.tao_luc))}${t.da_doc ? "" : " · chưa đọc"}</time>
   </button>`;
 }

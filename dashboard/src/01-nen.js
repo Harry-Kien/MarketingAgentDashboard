@@ -171,14 +171,21 @@ $("#killswitch").addEventListener("click", async () => {
 
 $$(".modeswitch__opt").forEach((btn) =>
   btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const tt = $("#aiBatTrangThai");
+    if (tt) tt.textContent = "Đang lưu…";
     try {
       applyRuntime(await api("/runtime", {
         method: "POST", body: JSON.stringify({ mode: btn.dataset.mode }),
       }));
+      if (tt) tt.textContent = "Đã lưu chế độ";
       toast(btn.dataset.mode === "auto"
         ? "Chuyển sang tự động. Agent gửi thẳng cho khách."
         : "Chuyển sang gợi ý. Agent soạn, bạn duyệt trước khi gửi.");
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      if (tt) tt.textContent = "Lưu thất bại: " + e.message;
+      toast(e.message, true);
+    }
   })
 );
 
@@ -186,30 +193,51 @@ function applyRuntime(rt) {
   const sw = $("#killswitch");
   sw.classList.toggle("is-off", !rt.enabled);
   $("#killswitch-label").textContent = rt.enabled ? "Đang chạy" : "Đã ngắt";
-  $$(".modeswitch__opt").forEach((b) => b.classList.toggle("is-on", b.dataset.mode === rt.mode));
+  $$(".modeswitch__opt").forEach((b) => {
+    b.classList.toggle("is-on", b.dataset.mode === rt.mode);
+    b.disabled = !rt.enabled;
+  });
+  const khungCheDo = $("#aiCheDoKhung");
+  if (khungCheDo) khungCheDo.classList.toggle("is-disabled", !rt.enabled);
+  const tamTat = $("#aiCheDoTamTat");
+  if (tamTat) tamTat.hidden = !!rt.enabled;
   /* Công tắc AI ở Cấu hình cơ bản và đèn ngắt khẩn cấp ở thanh trên là
      HAI mặt của cùng `runtime.enabled` — vẽ cả hai từ một chỗ, nên không
      bao giờ một bên nói "đang chạy" khi bên kia nói "đã ngắt". */
   const bat = $("#aiBat");
   if (bat) {
     bat.checked = !!rt.enabled;
+    bat.setAttribute("aria-checked", rt.enabled ? "true" : "false");
     $("#aiBatNhan").textContent = rt.enabled ? "AI Agent đang BẬT" : "AI Agent đang TẮT";
+    const tag = $("#aiBatTag");
+    if (tag) {
+      tag.textContent = rt.enabled ? "Đang bật" : "Đang tắt";
+      tag.className = "tag " + (rt.enabled ? "tag--auto" : "tag--halt");
+    }
   }
 }
 
 $("#aiBat")?.addEventListener("change", async (e) => {
   const bat = e.target.checked;
+  const tt = $("#aiBatTrangThai");
+  e.target.disabled = true;
+  if (tt) tt.textContent = "Đang lưu…";
   try {
     applyRuntime(await api("/runtime", {
       method: "POST", body: JSON.stringify({ enabled: bat }),
     }));
+    if (tt) tt.textContent = "Đã lưu";
     toast(bat ? "AI Agent đã bật cho mọi kênh. Hội thoại nhân viên đang giữ vẫn của nhân viên."
       : "AI Agent đã tắt. Tin khách vào thẳng hàng chờ người.");
   } catch (err) {
     // Máy chủ từ chối (thiếu quyền agent.dieu_khien…): trả công tắc về
     // đúng trạng thái đang chạy, không để nó nói dối.
     e.target.checked = !bat;
+    e.target.setAttribute("aria-checked", !bat ? "true" : "false");
+    if (tt) tt.textContent = "Lưu thất bại: " + err.message;
     toast(err.message, true);
+  } finally {
+    e.target.disabled = false;
   }
 });
 

@@ -1089,10 +1089,14 @@
           <h2 class="panel__head">AI Agent
             <span class="panel__note">một cấu hình cho mọi kênh</span></h2>
           <div class="ai-bat">
-            <label class="switch ai-bat__cong">
-              <input type="checkbox" id="aiBat" aria-describedby="aiBatGhi">
-              <span id="aiBatNhan">đang tải…</span>
-            </label>
+            <div class="ai-bat__hang">
+              <label class="switch ai-bat__cong">
+                <input type="checkbox" id="aiBat" role="switch" aria-checked="false" aria-describedby="aiBatGhi">
+                <span id="aiBatNhan">đang tải…</span>
+              </label>
+              <span class="tag tag--plain" id="aiBatTag">Đang tải…</span>
+              <span class="row__sub" id="aiBatTrangThai" aria-live="polite"></span>
+            </div>
             <p class="panel__note" id="aiBatGhi">
               <b>Tắt:</b> AI không trả lời và không soạn nháp mới ở mọi kênh — tin khách
               vào thẳng hàng chờ người, nhân viên làm việc bình thường. <b>Bật lại:</b>
@@ -1100,12 +1104,15 @@
               thoại được bấm <i>Trả lại AI</i>.
             </p>
           </div>
-          <div class="ai-che-do">
+          <div class="ai-che-do" id="aiCheDoKhung">
             <span class="ai-che-do__nhan">Chế độ trả lời</span>
             <div class="modeswitch" role="group" aria-label="Chế độ trả lời của AI">
               <button type="button" data-mode="assist" class="modeswitch__opt">Gợi ý</button>
               <button type="button" data-mode="auto" class="modeswitch__opt">Tự động</button>
             </div>
+            <p class="panel__note" id="aiCheDoTamTat" hidden>
+              <b>AI Agent đang tắt:</b> lựa chọn chế độ tạm thời vô hiệu hóa. Chế độ đã lưu vẫn được giữ nguyên khi bạn bật lại AI.
+            </p>
             <p class="panel__note">
               <b>Gợi ý</b>: AI soạn nháp, nhân viên duyệt rồi mới gửi. <b>Tự động</b>:
               AI gửi thẳng cho khách. Áp dụng cho mọi kênh; nhân viên vẫn đặt được

@@ -24,20 +24,20 @@
 /* Các hành động xử lý. `id` giữ đúng id nút cũ: trình nghe ở dưới và các
  * test nút chết tìm theo id viết đủ. */
 const HANH_DONG_HT = {
-  tiepQuan: { id: "btn-take", nhan: "Tiếp quản", lop: "btn--halt",
-              goi_y: "Nhận hội thoại về mình; AI dừng gửi" },
+  tiepQuan: { id: "btn-take", nhan: "Tiếp quản", lop: "btn--primary",
+              goi_y: "Nhận hội thoại về mình và dừng AI tự động trả lời" },
   giao: { id: "btn-giao", nhan: "Chuyển nhân viên…", lop: "",
-          goi_y: "Giao hội thoại cho một nhân viên khác của kênh" },
+          goi_y: "Giao hội thoại cho nhân viên khác cùng kênh" },
   ketThuc: { id: "btn-release", nhan: "Kết thúc tiếp quản", lop: "",
-             goi_y: "Trả hội thoại về chế độ AI gợi ý" },
+             goi_y: "Ngừng tiếp quản và trả hội thoại về chế độ AI gợi ý" },
   tuTraLoi: { id: "btn-chedo", nhan: "Để agent tự trả lời", lop: "", che_do: "auto",
-              goi_y: "AI tự gửi câu trả lời, không chờ duyệt" },
+              goi_y: "AI tự gửi câu trả lời cho khách, không chờ duyệt" },
   duyetTruoc: { id: "btn-chedo", nhan: "Duyệt trước khi gửi", lop: "", che_do: "assist",
-                goi_y: "AI soạn xong chờ người duyệt rồi mới gửi" },
+                goi_y: "AI soạn sẵn câu trả lời và chờ bạn duyệt trước khi gửi" },
   giaiQuyet: { id: "btn-giai-quyet", nhan: "Đã giải quyết", lop: "btn--go",
-               goi_y: "Đóng vụ việc; khách nhắn tiếp thì tự mở lại" },
+               goi_y: "Đánh dấu hoàn tất và đóng hội thoại" },
   moLai: { id: "btn-mo-lai", nhan: "Mở lại", lop: "",
-           goi_y: "Mở lại hội thoại đã giải quyết để xử lý tiếp" },
+           goi_y: "Mở lại hội thoại đã giải quyết để tiếp tục xử lý" },
 };
 
 /* Hội thoại này, với người này, được làm gì — và việc nào là việc CHÍNH.
@@ -97,8 +97,11 @@ function hanhDongXuLy(c, ng) {
 
 function _nutHanhDong(a, trongMenu) {
   const lop = trongMenu ? "hd-them__muc" : `btn btn--sm ${a.lop}`;
+  const noiDung = trongMenu
+    ? `<span class="hd-them__ten">${esc(a.nhan)}</span>${a.goi_y ? `<span class="hd-them__goiy">${esc(a.goi_y)}</span>` : ""}`
+    : esc(a.nhan);
   return `<button type="button" class="${lop}" id="${a.id}" title="${esc(a.goi_y)}"
-    ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${esc(a.nhan)}</button>`;
+    ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${noiDung}</button>`;
 }
 
 /* Một nút chính + menu "⋯". Menu là <details>: mở/đóng không cần JS, và
@@ -106,8 +109,21 @@ function _nutHanhDong(a, trongMenu) {
  * không nhớ là menu tự sập ngay dưới ngón tay người đang chọn. */
 function veHanhDongXuLy(c, hd) {
   const mo = state.moHanhDong === String(c.id);
+  const toiId = (typeof state !== "undefined" && state.toiId) ? String(state.toiId) : "";
+  const laCuaToi = c.mode === "human" && c.assigned_to && String(c.assigned_to) === toiId;
+  const trangThaiTag = hd.giu
+    ? `<span class="tag tag--assist">${esc(hd.giu)}</span>`
+    : c.state === "resolved"
+      ? `<span class="tag tag--plain">Đã giải quyết</span>`
+      : laCuaToi
+        ? `<span class="tag tag--auto">Bạn đang tiếp quản · AI đã tắt</span>`
+        : (c.status === "escalated" || c.mode === "human")
+          ? `<span class="tag tag--halt">Chờ nhân viên tiếp quản</span>`
+          : c.mode === "assist"
+            ? `<span class="tag tag--assist">AI gợi ý</span>`
+            : `<span class="tag tag--plain">AI đang xử lý</span>`;
   return `<span class="hd" aria-label="Hành động xử lý">
-    ${hd.giu ? `<span class="tag tag--assist">${esc(hd.giu)}</span>` : ""}
+    ${trangThaiTag}
     ${hd.chinh ? _nutHanhDong(hd.chinh, false) : ""}
     ${hd.them.length ? `<details class="hd-them" data-hd-them="${esc(c.id)}" ${mo ? "open" : ""}>
       <summary class="btn btn--sm btn--ghost" aria-label="Hành động khác" title="Hành động khác">⋯</summary>

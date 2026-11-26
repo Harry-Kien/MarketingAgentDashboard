@@ -17,11 +17,9 @@ function aiChonModel(d, m) {
   const nhom = Object.entries(d.model_theo_ho).map(([ho, ds]) =>
     `<optgroup label="${esc({ gemini: "Gemini", claude: "Claude", gpt: "OpenAI GPT" }[ho] || ho)}">${
       ds.map((x) => `<option value="${esc(x)}"${x === m.hien ? " selected" : ""}>${esc(x)}</option>`).join("")}</optgroup>`).join("");
-  const nguon = { csdl: "lưu trên dashboard", env: "đang dùng .env", trong: "chưa đặt" }[m.nguon] || "";
   return `<label class="field"><span>${esc(m.nhan)} <em class="hint">${esc(d.model_dung_cho[m.khoa] || "")}</em></span>
     <select data-kntt-khoa="${esc(m.khoa)}">${co ? "" : `<option value="${esc(m.hien)}" selected>${esc(m.hien || "—")}</option>`}${nhom}</select></label>
-    <span class="row__sub">${esc(nguon)}${m.nguon === "csdl"
-      ? ` <button type="button" class="btn btn--sm btn--ghost" data-kntt-xoa="${esc(m.khoa)}">Bỏ, dùng .env</button>` : ""}</span>`;
+    ${knttDongNguon(m)}`;
 }
 
 /* Chỉ hiện ô khoá/endpoint của nhà cung cấp ĐANG CHỌN. Hiện cả ba là mời
@@ -47,6 +45,7 @@ function aiTheNhaCungCap(d) {
   const chon = `<label class="field"><span>Nhà cung cấp</span><select data-kntt-khoa="LLM_PROVIDER">${
     d.nha_cung_cap.map((n) => `<option value="${esc(n.ma)}"${n.ma === p.hien ? " selected" : ""}${
       n.ho_tro ? "" : " disabled"}>${esc(n.ten)}${n.ho_tro ? "" : " (chưa hỗ trợ)"}</option>`).join("")}</select></label>
+    ${knttDongNguon(p)}
     <p class="row__sub" data-ai-ghichu></p>`;
   const khoa = ["GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"].map((k) =>
     `<div data-ai-khoa-cua="${k}">${knttO(aiTruong(d, k))}</div>`).join("");

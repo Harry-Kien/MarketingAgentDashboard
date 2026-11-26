@@ -100,7 +100,8 @@ async def kiem_tat_ca() -> dict:
         muc.append(_muc("Cấu hình", CHAN, f"{type(exc).__name__}: {exc}"[:200]))
         return _bao_cao(loai, muc)
 
-    goc = {"erpnext": settings.erpnext_url,
+    from agent import cau_hinh_dong
+    goc = {"erpnext": cau_hinh_dong.lay("ERPNEXT_URL"),
            "odoo": settings.odoo_url}.get(loai, "")
     muc.append(_muc("Nguồn", TOT, f"{nguon.ten} → {goc or '(chưa đặt URL)'}"))
 

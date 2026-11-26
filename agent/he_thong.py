@@ -108,9 +108,10 @@ def muc_erp() -> dict:
     Odoo và ERPNext đều gửi `X-Frame-Options`. Bật nhúng thì người dùng bấm
     "Mở" và nhận một khung trắng — hỏng câm, không lỗi nào được ném.
     """
+    from agent import cau_hinh_dong
     loai = (settings.erp_loai or "tep").strip().lower()
     goc = {
-        "erpnext": settings.erpnext_url,
+        "erpnext": cau_hinh_dong.lay("ERPNEXT_URL"),
         "odoo": settings.odoo_url,
     }.get(loai, "")
 

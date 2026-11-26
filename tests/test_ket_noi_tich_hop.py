@@ -521,3 +521,41 @@ def test_giao_dien_gan_tab_va_khong_dung_lai_moi_nhip():
     assert "ganKetNoiTichHop" not in vong
     # Ô bí mật không bao giờ được dựng với value.
     assert 'type="password" autocomplete="off" data-kntt-khoa' in src22
+
+
+def test_luu_vao_dashboard_va_che_bi_mat():
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    assert node, "Cần node"
+    src22 = (ROOT / "dashboard" / "src" / "22-ket-noi-tich-hop.js").read_text(encoding="utf-8")
+    src23 = (ROOT / "dashboard" / "src" / "23-ai-co-ban.js").read_text(encoding="utf-8")
+    assert "knttDongNguon(" in src23
+
+    ma = (
+        "const window = { GAN_TAB: {} };\n"
+        "function esc(s){return String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}\n"
+        + src22.split("function knttTheDichVu")[0]
+        + """
+        const envText = knttO({ khoa: 'ERPNEXT_URL', nhan: 'URL', hien: 'http://erp.local', nguon: 'env', bi_mat: false });
+        const envSelect = knttO({ khoa: 'LLM_PROVIDER', nhan: 'NCC', hien: 'gemini', chon: ['gemini', 'openai'], nguon: 'env', bi_mat: false });
+        const envSecret = knttO({ khoa: 'ERPNEXT_API_KEY', nhan: 'Key', hien: '···abcd', nguon: 'env', bi_mat: true, da_dat: true });
+        const emptySecret = knttO({ khoa: 'GHN_TOKEN', nhan: 'Token', hien: '', nguon: 'trong', bi_mat: true, da_dat: false });
+        const csdlText = knttO({ khoa: 'GHN_SHOP_ID', nhan: 'Shop', hien: '123', nguon: 'csdl', bi_mat: false });
+        const trongText = knttO({ khoa: 'OPENAI_BASE_URL', nhan: 'Base', hien: '', nguon: 'trong', bi_mat: false });
+        console.log(JSON.stringify({ envText, envSelect, envSecret, emptySecret, csdlText, trongText }));
+        """
+    )
+    r = subprocess.run([node, "-e", ma], capture_output=True, text=True, encoding="utf-8", timeout=15)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    assert 'data-kntt-luu-env="ERPNEXT_URL"' in out["envText"] and "Lưu vào Dashboard" in out["envText"]
+    assert 'data-kntt-luu-env="LLM_PROVIDER"' in out["envSelect"] and "Lưu vào Dashboard" in out["envSelect"]
+    assert "data-kntt-luu-env" not in out["envSecret"] and "Lưu vào Dashboard" not in out["envSecret"]
+    assert "••••••••" in out["envSecret"] and "Đã lưu" in out["envSecret"]
+    assert "data-kntt-sua-bi-mat" in out["envSecret"] and "data-kntt-huy-bi-mat" in out["envSecret"]
+    assert " disabled" in out["envSecret"] and "···abcd" not in out["envSecret"]
+    assert "data-kntt-sua-bi-mat" not in out["emptySecret"] and " disabled" not in out["emptySecret"]
+    assert "data-kntt-luu-env" not in out["csdlText"] and 'data-kntt-xoa="GHN_SHOP_ID"' in out["csdlText"]
+    assert "data-kntt-luu-env" not in out["trongText"]

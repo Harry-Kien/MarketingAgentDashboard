@@ -77,8 +77,15 @@ function slaPhut(p) {
   return phan.join(" ");
 }
 
-function slaGoiY(chu) {
-  return `<span class="sla-goi-y" tabindex="0" role="img" aria-label="${esc(chu)}" title="${esc(chu)}">?</span>`;
+function slaGoiY(moTa, vd = "", ten = "") {
+  const nhan = ten ? `Giải thích ${ten}` : "Giải thích";
+  return `<span class="sla-tip-boc">
+    <button type="button" class="sla-goi-y" data-sla-tip aria-expanded="false" aria-label="${esc(nhan)}">?</button>
+    <span class="sla-tip" role="tooltip">
+      <span class="sla-tip__y">${esc(moTa)}</span>
+      ${vd ? `<span class="sla-tip__vd"><b>Ví dụ:</b> ${esc(vd)}</span>` : ""}
+    </span>
+  </span>`;
 }
 
 /* ---------------- khu 1: mục tiêu & thời hạn ---------------- */
@@ -86,19 +93,17 @@ function slaGoiY(chu) {
 function slaVeMucTieu(d, sua) {
   const the = d.muc_tieu.map((m) => {
     const g = SLA_GIAI_THICH[m.ma] || { y: "", vd: "" };
+    const ghiChu = `${SLA_CHE_DO_GIAI_THICH[m.che_do] || ""} (${slaNguon(m.nguon_che_do)})`;
     return `<div class="sla-mt" data-sla-mt="${esc(m.ma)}">
-      <div class="sla-mt__dau"><b>${esc(m.ten)}</b> ${slaGoiY(g.y)}</div>
-      <p class="sla-mo-ta">${esc(g.y)}</p>
-      <p class="sla-vd"><b>Ví dụ:</b> ${esc(g.vd)}</p>
+      <div class="sla-mt__dau"><b>${esc(m.ten)}</b> ${slaGoiY(g.y, g.vd, m.ten)}</div>
       <label class="field sla-mt__chon"><span>Đồng hồ tính</span>
-        <select data-sla-che-do${sua ? "" : " disabled"}>${Object.entries(d.che_do).map(([k, v]) =>
+        <select data-sla-che-do title="${esc(ghiChu)}"${sua ? "" : " disabled"}>${Object.entries(d.che_do).map(([k, v]) =>
           `<option value="${esc(k)}"${k === m.che_do ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
-      <p class="sla-mo-ta" data-sla-che-do-mo-ta>${esc(SLA_CHE_DO_GIAI_THICH[m.che_do] || "")} <i>(${esc(slaNguon(m.nguon_che_do))})</i></p>
     </div>`;
   }).join("");
   return `<section class="panel">
     <h2 class="panel__head">Ba mục tiêu SLA
-      <span class="panel__note">mỗi mục tiêu chọn đồng hồ riêng</span></h2>
+      <span class="panel__note">mỗi mục tiêu chọn đồng hồ tính riêng</span></h2>
     <div class="sla-luoi">${the}</div>
     ${sua ? `<div class="rowbtns sla-nut"><button type="button" class="btn btn--sm btn--go" data-sla-luu-mt>Lưu đồng hồ</button>
       <span class="sla-kq" data-sla-kq-mt aria-live="polite"></span></div>` : ""}
@@ -131,23 +136,33 @@ function slaVeChinhSach(cs, kenh, gioRieng, sua) {
       <td data-nhan="Giải quyết">${esc(slaPhut(p.resolution_minutes))}</td>
     </tr>`;
   }).join("");
+  const iconRong = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
   const bang = cs.length ? `<div class="bang-cuon"><table class="bang sla-bang">
       <thead><tr><th>Kênh</th><th>Mức ưu tiên</th><th>Phản hồi đầu</th><th>Sau chuyển giao</th><th>Giải quyết</th></tr></thead>
       <tbody>${dong}</tbody></table></div>`
-    : '<p class="empty">Chưa đặt hạn nào — chưa hội thoại nào có SLA.</p>';
+    : `<div class="sla-rong">
+        <div class="sla-rong__icon">${iconRong}</div>
+        <p class="sla-rong__ten">Chưa có chính sách thời hạn SLA</p>
+        <p class="sla-mo-ta">Chưa hội thoại nào được đặt hạn. Thêm chính sách chung cho mọi kênh hoặc riêng từng kênh để bắt đầu đo và cảnh báo.</p>
+        ${sua ? '<button type="button" class="btn btn--sm btn--primary" data-sla-mo-them-cs>+ Thêm chính sách đầu tiên</button>' : ""}
+      </div>`;
   const oKenh = '<option value="">mọi kênh</option>' + kenh.map((k) =>
     `<option value="${esc(k.id)}">${esc(k.display_name || k.channel)}</option>`).join("");
   return `<section class="panel">
-    <h2 class="panel__head">Thời hạn theo kênh và mức ưu tiên
-      <span class="panel__note">chỉ để ĐO và cảnh báo — không tự đóng hội thoại</span></h2>
-    <p class="sla-chu">Hội thoại nhận hạn của chính sách <b>đúng kênh</b> trước, không có thì chính sách
-      <b>mọi kênh</b>; đúng mức ưu tiên trước, không có thì mức <b>thường</b>.
-      <button type="button" class="btn btn--sm btn--ghost" data-sla-khu="thu-tinh">Xem thứ tự áp dụng và thử tính →</button></p>
+    <div class="panel__head sla-head-nut">
+      <span>Chính sách thời hạn SLA
+        <span class="panel__note">chỉ để đo và cảnh báo — không tự đóng hội thoại</span></span>
+      <span class="sla-head-nut__phai">
+        <button type="button" class="btn btn--sm btn--ghost" data-sla-khu="thu-tinh">Thử tính hạn →</button>
+        ${sua ? '<button type="button" class="btn btn--sm btn--primary" data-sla-mo-them-cs>+ Thêm chính sách</button>' : ""}
+      </span>
+    </div>
+    <p class="sla-chu">Ưu tiên chính sách <b>đúng kênh</b> trước, sau đó <b>mọi kênh</b>; đúng mức ưu tiên trước, sau đó mức <b>thường</b>.</p>
     ${bang}
-    ${sua ? `<details class="nang-cao sla-them">
-      <summary>Thêm hoặc sửa một thời hạn</summary>
+    ${sua ? `<details class="nang-cao sla-them" data-sla-them-cs>
+      <summary>Thêm hoặc cập nhật chính sách thời hạn</summary>
       <form class="form" data-sla-form-cs>
-      <div class="form__row">
+      <div class="form__row sla-cs-hang">
         <label class="field"><span>Kênh</span><select name="account_id">${oKenh}</select></label>
         <label class="field"><span>Mức ưu tiên</span><select name="priority">${Object.entries(SLA_UU_TIEN).map(([k, v]) =>
           `<option value="${k}">${v}</option>`).join("")}</select></label>
@@ -158,9 +173,8 @@ function slaVeChinhSach(cs, kenh, gioRieng, sua) {
         <label class="field"><span>Giải quyết (phút) <em class="hint">1440 = 1 ngày</em></span>
           <input name="resolution_minutes" type="number" min="1" max="525600" value="1440" required></label>
       </div>
-      <div class="rowbtns"><button type="submit" class="btn btn--sm">Lưu thời hạn</button></div>
-      <p class="sla-mo-ta">Cùng kênh và mức ưu tiên thì lưu là thay hạn cũ. Hội thoại đang chạy giữ hạn đã đặt;
-        hạn mới áp cho hội thoại (và lượt chuyển giao) bắt đầu sau khi lưu.</p>
+      <div class="rowbtns"><button type="submit" class="btn btn--sm btn--primary">Lưu thời hạn</button></div>
+      <p class="sla-mo-ta">Cùng kênh và mức ưu tiên sẽ cập nhật hạn cũ. Hội thoại đang chạy giữ hạn đã đặt; hạn mới áp cho hội thoại mới sau khi lưu.</p>
     </form></details>` : ""}
   </section>`;
 }
@@ -216,9 +230,9 @@ function slaVeLich(d, sua) {
   const l = d.lich;
   const ten = l.tuan.map((x) => x.thu);
   const ngay = l.tuan.map((x, i) => `<tr data-sla-thu="${i}">
-      <td>${esc(x.thu)}</td>
+      <td class="sla-tuan__thu">${esc(x.thu)}</td>
       <td><label class="sla-o-mo"><input type="checkbox" aria-label="${esc(x.thu)} mở cửa" data-sla-mo-cua${x.nghi ? "" : " checked"}${
-        sua ? "" : " disabled"}><span class="sla-o-mo__chu">mở</span></label></td>
+        sua ? "" : " disabled"}><span class="sla-o-mo__chu">${x.nghi ? "Nghỉ" : "Mở"}</span></label></td>
       <td><input type="time" aria-label="${esc(x.thu)} mở cửa" data-sla-gio-mo value="${esc(x.mo || "08:00")}"${sua ? "" : " disabled"}></td>
       <td><input type="time" aria-label="${esc(x.thu)} đóng cửa" data-sla-gio-dong value="${esc(x.dong === "24:00" ? "23:59" : (x.dong || "21:00"))}"${
         sua ? "" : " disabled"}></td>
@@ -229,42 +243,61 @@ function slaVeLich(d, sua) {
   const tt = d.trang_thai;
   const nguon = l.nguon === "csdl"
     ? `Lịch lưu trên dashboard — sửa bởi ${esc(l.sua_boi || "?")} lúc ${esc(slaLuc(l.sua_luc))}.`
-    : "Chưa có lịch trên dashboard — đang dùng .env (cùng một khung giờ cho mọi ngày, không ngày lễ).";
+    : "Đang dùng cấu hình .env (cùng một khung giờ cho mọi ngày, chưa có ngày lễ).";
   const gr = d.gio_rieng_chinh_sach;
   const canhGioRieng = (!gr.con_tac_dung && gr.ds.length)
     ? `<p class="dx-canh-bao">${gr.ds.length} chính sách SLA có giờ riêng — không còn tác dụng từ khi có lịch chung.</p>` : "";
   return `<section class="panel">
     <h2 class="panel__head">Giờ làm việc
-      <span class="panel__note">MỘT lịch cho hạn SLA, câu báo khách ngoài giờ và quy tắc tự động "ngoài giờ"</span></h2>
+      <span class="panel__note">một lịch chung cho hạn SLA, câu báo ngoài giờ và quy tắc tự động</span></h2>
     <div class="sla-than">
-      <p class="sla-mo-ta">${nguon}</p>
-      <p class="sla-chu">Bây giờ: <span class="tag ${tt.dang_trong_gio ? "tag--auto" : "tag--assist"}">${
-        tt.dang_trong_gio ? "trong giờ làm việc" : "ngoài giờ làm việc"}</span>${
-        !tt.dang_trong_gio && tt.mo_ke_tiep ? ` · có người lại lúc ${esc(slaLuc(tt.mo_ke_tiep))}` : ""}</p>
-      ${canhGioRieng}
-      <div class="sla-tom-tat" data-sla-tom-tat aria-live="polite">${slaVeTomTat(l.tuan, ten, l.bat)}</div>
-      <label class="field sla-bat"><span>Tính theo giờ mở cửa</span><select data-sla-lich-bat${sua ? "" : " disabled"}>
-        <option value="1"${l.bat ? " selected" : ""}>Bật — có giờ mở / đóng cửa</option>
-        <option value="0"${l.bat ? "" : " selected"}>Tắt — coi như trực 24/7</option></select></label>
-      <div class="sla-tuan"><table class="bang sla-tuan__bang">
-        <thead><tr><th>Thứ</th><th>Mở cửa</th><th>Từ</th><th>Đến</th></tr></thead>
-        <tbody>${ngay}</tbody></table></div>
-      ${sua ? '<div class="rowbtns"><button type="button" class="btn btn--sm" data-sla-chep-t2>Chép giờ Thứ Hai sang Thứ Ba – Thứ Sáu</button></div>' : ""}
-      <p class="sla-mo-ta">Giờ Việt Nam. Đến 21:00 nghĩa là 20:59 còn trong giờ. Đặt 23:59 = hết ngày. Không hỗ trợ ca qua đêm.</p>
-      <h3 class="subhead">Ngày nghỉ lễ</h3>
-      <ul class="sla-ds-le" data-sla-ds-le>${le || '<li class="empty">Chưa có ngày nghỉ lễ nào.</li>'}</ul>
-      ${sua ? `<div class="form__row sla-them-le">
-          <label class="field"><span>Ngày</span><input type="date" data-sla-le-moi></label>
-          <label class="field"><span>Tên <em class="hint">tuỳ chọn</em></span><input type="text" maxlength="80" data-sla-le-ten-moi placeholder="vd Quốc khánh"></label>
-          <button type="button" class="btn btn--sm" data-sla-them-le>Thêm ngày nghỉ</button>
+      <div class="sla-gio-dau">
+        <div class="sla-gio-dau__tt">
+          <span class="tag ${tt.dang_trong_gio ? "tag--auto" : "tag--assist"}">${
+            tt.dang_trong_gio ? "Đang trong giờ làm việc" : "Đang ngoài giờ làm việc"}</span>
+          ${!tt.dang_trong_gio && tt.mo_ke_tiep ? `<span class="sla-mo-ta">Mở lại lúc <b>${esc(slaLuc(tt.mo_ke_tiep))}</b></span>` : ""}
+          <span class="sla-mo-ta">${nguon}</span>
         </div>
-        <div class="rowbtns sla-nut">
-          <button type="button" class="btn btn--sm btn--go" data-sla-luu-lich>Lưu giờ làm việc</button>
-          ${l.nguon === "csdl" ? '<button type="button" class="btn btn--sm btn--ghost" data-sla-bo-lich>Bỏ lịch, dùng .env</button>' : ""}
-          <span class="sla-kq" data-sla-kq-lich aria-live="polite"></span>
+        <div class="sla-tom-tat" data-sla-tom-tat aria-live="polite">${slaVeTomTat(l.tuan, ten, l.bat)}</div>
+      </div>
+      ${canhGioRieng}
+      <div class="sla-gio-2cot">
+        <div class="sla-hop">
+          <div class="sla-hop__dau">
+            <h3 class="subhead">Lịch làm việc trong tuần</h3>
+            <label class="field sla-bat"><span>Chế độ áp dụng</span><select data-sla-lich-bat${sua ? "" : " disabled"}>
+              <option value="1"${l.bat ? " selected" : ""}>Bật — tính theo giờ mở / đóng cửa</option>
+              <option value="0"${l.bat ? "" : " selected"}>Tắt — coi như trực 24/7</option></select></label>
+          </div>
+          <div class="sla-tuan"><table class="bang sla-tuan__bang">
+            <thead><tr><th>Thứ</th><th>Trạng thái</th><th>Mở cửa</th><th>Đóng cửa</th></tr></thead>
+            <tbody>${ngay}</tbody></table></div>
+          ${sua ? '<div class="rowbtns"><button type="button" class="btn btn--sm btn--ghost" data-sla-chep-t2>Chép giờ Thứ Hai → Thứ Sáu</button></div>' : ""}
+          <p class="sla-mo-ta">Giờ Việt Nam. Đặt 23:59 là hết ngày; không hỗ trợ ca qua đêm.</p>
+        </div>
+        <div class="sla-hop">
+          <div class="sla-hop__dau">
+            <h3 class="subhead">Ngày nghỉ lễ <span class="tag tag--plain">${l.ngay_nghi.length}</span></h3>
+            <p class="sla-mo-ta">Đồng hồ SLA theo giờ làm việc sẽ tạm dừng vào các ngày này.</p>
+          </div>
+          <ul class="sla-ds-le" data-sla-ds-le>${le || '<li class="empty">Chưa có ngày nghỉ lễ nào.</li>'}</ul>
+          ${sua ? `<div class="sla-them-le">
+              <div class="sla-them-le__hang">
+                <label class="field"><span>Ngày nghỉ</span><input type="date" data-sla-le-moi></label>
+                <label class="field"><span>Tên ngày lễ <em class="hint">tuỳ chọn</em></span><input type="text" maxlength="80" data-sla-le-ten-moi placeholder="vd Quốc khánh"></label>
+              </div>
+              <button type="button" class="btn btn--sm" data-sla-them-le>+ Thêm ngày nghỉ</button>
+            </div>` : ""}
+        </div>
+      </div>
+      ${sua ? `<div class="sla-cuoi-bar">
+          <div class="rowbtns sla-nut">
+            <button type="button" class="btn btn--sm btn--go" data-sla-luu-lich>Lưu giờ làm việc</button>
+            ${l.nguon === "csdl" ? '<button type="button" class="btn btn--sm btn--ghost" data-sla-bo-lich>Bỏ lịch, dùng .env</button>' : ""}
+            <span class="sla-kq" data-sla-kq-lich aria-live="polite"></span>
+          </div>
+          <p class="sla-mo-ta">Hội thoại đang chạy giữ hạn cũ; lịch mới áp cho hạn đặt sau khi lưu. Câu báo ngoài giờ và quy tắc tự động đổi ngay (≤ 30 giây).</p>
         </div>` : ""}
-      <p class="sla-mo-ta">Hội thoại đang chạy giữ hạn đã đặt; lịch mới áp cho hạn đặt sau khi lưu.
-        Câu báo ngoài giờ và quy tắc tự động đổi ngay (≤ 30 giây).</p>
     </div>
   </section>`;
 }
@@ -298,28 +331,61 @@ function slaVeCanhBao(d, suaMt) {
   const khiTre = Object.entries(SLA_KHI_TRE).map(([k, [ten, mo]]) => `<label class="sla-chon">
       <input type="radio" name="sla_khi_tre" value="${esc(k)}" data-sla-khi-tre${k === d.khi_tre ? " checked" : ""}${tat}>
       <span><b>${esc(ten)}</b><span class="sla-mo-ta">${esc(mo)}</span></span></label>`).join("");
-  const rieng = d.muc_tieu.map((m) => `<tr>
-      <td>${esc(m.ten)}</td>
-      <td><input type="number" min="10" max="95" step="1" class="sla-o-so" data-sla-nguong-mt="${esc(m.ma)}"
-        aria-label="Ngưỡng riêng ${esc(m.ten)}" value="${m.nguong_canh_bao == null ? "" : esc(m.nguong_canh_bao)}"
-        placeholder="chung ${esc(d.nguong_chung)}%"${suaMt ? "" : " disabled"}></td>
-      <td><span class="sla-mo-ta">đang dùng ${esc(m.nguong_hieu_luc)}%</span></td>
-    </tr>`).join("");
+  const rieng = d.muc_tieu.map((m) => `<div class="sla-rieng-dong">
+      <div class="sla-rieng-dong__ten">
+        <b>${esc(m.ten)}</b>
+        <span class="sla-mo-ta">Đang áp dụng: ${esc(m.nguong_hieu_luc)}%</span>
+      </div>
+      <span class="sla-so-donvi">
+        <input type="number" min="10" max="95" step="1" class="sla-o-so" data-sla-nguong-mt="${esc(m.ma)}"
+          aria-label="Ngưỡng riêng ${esc(m.ten)}" value="${m.nguong_canh_bao == null ? "" : esc(m.nguong_canh_bao)}"
+          placeholder="${esc(d.nguong_chung)}"${suaMt ? "" : " disabled"}>
+        <span>%</span>
+      </span>
+    </div>`).join("");
   return `<section class="panel">
-    <h2 class="panel__head">Cảnh báo sớm và khi quá hạn
-      <span class="panel__note">đi qua chuông thông báo — tới người phụ trách hội thoại và người quản lý</span></h2>
+    <h2 class="panel__head">Cảnh báo sớm và xử lý khi quá hạn
+      <span class="panel__note">gửi qua chuông thông báo tới người phụ trách và quản lý</span></h2>
     <div class="sla-than">
-      <label class="field sla-nguong"><span>Ngưỡng cảnh báo (%) ${slaGoiY("Phần thời gian cho phép đã dùng thì báo trước. Số nguyên 10–95.")}</span>
-        <input type="number" min="10" max="95" step="1" data-sla-nguong-chung value="${esc(d.nguong_chung)}"${tat}></label>
-      <p class="sla-vd" data-sla-vd-nguong><b>Ví dụ:</b> ${esc(slaVdNguong(d.nguong_chung))}</p>
-      <fieldset class="sla-khi-tre"><legend>Khi quá hạn</legend>${khiTre}</fieldset>
-      ${suaCh ? `<div class="rowbtns sla-nut"><button type="button" class="btn btn--sm btn--go" data-sla-luu-canh-bao>Lưu cảnh báo</button>
-        <span class="sla-kq" data-sla-kq-cb aria-live="polite"></span></div>`
-        : '<p class="sla-mo-ta">Cần quyền <b>cau_hinh.sua</b> để đổi ngưỡng chung và việc làm khi quá hạn.</p>'}
-      <h3 class="subhead">Ngưỡng riêng từng mục tiêu <em class="hint">tuỳ chọn — để trống là theo ngưỡng chung</em></h3>
-      <div class="bang-cuon"><table class="bang sla-bang-nho"><tbody>${rieng}</tbody></table></div>
-      ${suaMt ? `<div class="rowbtns sla-nut"><button type="button" class="btn btn--sm" data-sla-luu-nguong-mt>Lưu ngưỡng riêng</button>
-        <span class="sla-kq" data-sla-kq-nguong aria-live="polite"></span></div>` : ""}
+      <div class="sla-cb-2cot">
+        <div class="sla-hop">
+          <div class="sla-hop__dau">
+            <h3 class="subhead">Cảnh báo chung</h3>
+            <p class="sla-mo-ta">Áp dụng mặc định cho mọi mục tiêu SLA chưa đặt ngưỡng riêng.</p>
+          </div>
+          <div class="field">
+            <span>Ngưỡng cảnh báo sớm (%) ${slaGoiY("Phần thời gian cho phép đã dùng thì gửi cảnh báo trước. Số nguyên 10–95.")}</span>
+            <div class="sla-truot-nhom">
+              <input type="range" min="10" max="95" step="1" class="sla-truot" data-sla-nguong-truot
+                aria-label="Thanh trượt ngưỡng cảnh báo (%)" value="${esc(d.nguong_chung)}"${tat}>
+              <span class="sla-so-donvi">
+                <input type="number" min="10" max="95" step="1" class="sla-o-so" data-sla-nguong-chung
+                  aria-label="Ngưỡng cảnh báo (%)" value="${esc(d.nguong_chung)}"${tat}>
+                <span>%</span>
+              </span>
+            </div>
+          </div>
+          <p class="sla-vd" data-sla-vd-nguong><b>Ví dụ:</b> ${esc(slaVdNguong(d.nguong_chung))}</p>
+          <fieldset class="sla-khi-tre"><legend>Xử lý khi quá hạn</legend>${khiTre}</fieldset>
+          <div class="sla-hop__cuoi">
+            ${suaCh ? `<div class="rowbtns sla-nut"><button type="button" class="btn btn--sm btn--go" data-sla-luu-canh-bao>Lưu cảnh báo chung</button>
+              <span class="sla-kq" data-sla-kq-cb aria-live="polite"></span></div>`
+              : '<p class="sla-mo-ta">Cần quyền <b>cau_hinh.sua</b> để đổi ngưỡng chung và xử lý khi quá hạn.</p>'}
+          </div>
+        </div>
+        <div class="sla-hop">
+          <div class="sla-hop__dau">
+            <h3 class="subhead">Ngưỡng riêng từng mục tiêu</h3>
+            <p class="sla-mo-ta">Tuỳ chọn — để trống để dùng theo ngưỡng chung (${esc(d.nguong_chung)}%).</p>
+          </div>
+          <div class="sla-rieng-ds">${rieng}</div>
+          <div class="sla-hop__cuoi">
+            ${suaMt ? `<div class="rowbtns sla-nut"><button type="button" class="btn btn--sm" data-sla-luu-nguong-mt>Lưu ngưỡng riêng</button>
+              <span class="sla-kq" data-sla-kq-nguong aria-live="polite"></span></div>`
+              : '<p class="sla-mo-ta">Cần quyền <b>dinh_tuyen.sua</b> để đổi ngưỡng riêng từng mục tiêu.</p>'}
+          </div>
+        </div>
+      </div>
       <details class="nang-cao sla-nang-cao">
         <summary>Nâng cao — khoá cấu hình kỹ thuật (SLA_NGUONG_CANH_BAO, SLA_KHI_TRE)</summary>
         <div data-sla-nang-cao></div>
@@ -381,7 +447,7 @@ async function ganSla(el) {
       + `<div data-sla-o="muc-tieu" role="tabpanel">${slaVeMucTieu(d, sua) + slaVeChinhSach(cs, kenh, d.gio_rieng_chinh_sach, sua)}</div>`
       + `<div data-sla-o="gio" role="tabpanel">${slaVeLich(d, sua)}</div>`
       + `<div data-sla-o="canh-bao" role="tabpanel">${slaVeCanhBao(d, sua)}</div>`
-      + `<div data-sla-o="thu-tinh" role="tabpanel">${slaVeThuTu(d, cs) + slaVeThuTinh(kenh)}</div>`;
+      + `<div data-sla-o="thu-tinh" role="tabpanel">${slaVeThuTinh(kenh) + slaVeThuTu(d, cs)}</div>`;
     if (khoiKyThuat) $("[data-sla-nang-cao]", el)?.append(khoiKyThuat);
     slaDoiKhu(el, khu);
     /* Ô ngưỡng chung / khi trễ (`#api-nhom-sla`) nằm NGOÀI phần bị thay
@@ -407,29 +473,76 @@ async function ganSla(el) {
     if (e.target.closest("[data-sla-thu]") || e.target.closest("[data-sla-lich-bat]")) {
       const l = slaGomLich(el);
       $("[data-sla-tom-tat]", el).innerHTML = slaVeTomTat(l.tuan, d.lich.tuan.map((x) => x.thu), l.bat);
+    } else if (e.target.closest("[data-sla-nguong-truot]")) {
+      const v = e.target.value;
+      const so = $("[data-sla-nguong-chung]", el);
+      if (so) so.value = v;
+      $("[data-sla-vd-nguong]", el).innerHTML = `<b>Ví dụ:</b> ${esc(slaVdNguong(v))}`;
     } else if (e.target.closest("[data-sla-nguong-chung]")) {
-      $("[data-sla-vd-nguong]", el).innerHTML = `<b>Ví dụ:</b> ${esc(slaVdNguong(e.target.value))}`;
+      const v = e.target.value;
+      const tr = $("[data-sla-nguong-truot]", el);
+      if (tr && Number(v) >= 10 && Number(v) <= 95) tr.value = v;
+      $("[data-sla-vd-nguong]", el).innerHTML = `<b>Ví dụ:</b> ${esc(slaVdNguong(v))}`;
     }
   });
   /* Ô chọn và ô tick phát `change`, không phải lúc nào cũng `input`. */
   el.addEventListener("change", (e) => {
-    /* Đổi đồng hồ thì câu giải thích dưới ô đổi theo — để nguyên câu của
-       chế độ cũ là màn hình tả một cấu hình khác với cấu hình đang chọn. */
     const cd = e.target.closest("[data-sla-che-do]");
     if (cd) {
-      const mo = cd.closest("[data-sla-mt]")?.querySelector("[data-sla-che-do-mo-ta]");
-      if (mo) mo.textContent = `${SLA_CHE_DO_GIAI_THICH[cd.value] || ""} (chưa lưu)`;
+      cd.title = `${SLA_CHE_DO_GIAI_THICH[cd.value] || ""} (chưa lưu)`;
     }
-    if (e.target.closest("[data-sla-mo-cua]") || e.target.closest("[data-sla-lich-bat]")) {
+    const moCua = e.target.closest("[data-sla-mo-cua]");
+    if (moCua) {
+      const chu = moCua.closest(".sla-o-mo")?.querySelector(".sla-o-mo__chu");
+      if (chu) chu.textContent = moCua.checked ? "Mở" : "Nghỉ";
+    }
+    if (moCua || e.target.closest("[data-sla-lich-bat]")) {
       e.target.dispatchEvent(new Event("input", { bubbles: true }));
     }
   });
+
+  if (!window._slaTipDocBound) {
+    window._slaTipDocBound = true;
+    const dongHetTip = (tru = null) => {
+      document.querySelectorAll(".sla-tip-boc.is-open").forEach((b) => {
+        if (b !== tru) {
+          b.classList.remove("is-open");
+          b.querySelector("[data-sla-tip]")?.setAttribute("aria-expanded", "false");
+        }
+      });
+    };
+    document.addEventListener("click", (ev) => {
+      const nut = ev.target.closest("[data-sla-tip]");
+      if (nut) {
+        ev.preventDefault();
+        const boc = nut.closest(".sla-tip-boc");
+        const dangMo = boc.classList.contains("is-open");
+        dongHetTip(boc);
+        boc.classList.toggle("is-open", !dangMo);
+        nut.setAttribute("aria-expanded", dangMo ? "false" : "true");
+        return;
+      }
+      if (!ev.target.closest(".sla-tip-boc")) dongHetTip();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") dongHetTip();
+    });
+  }
 
   el.addEventListener("click", async (e) => {
     const nutKhu = e.target.closest("[data-sla-khu]");
     if (nutKhu) {
       khu = nutKhu.dataset.slaKhu;
       slaDoiKhu(el, khu);
+      return;
+    }
+    if (e.target.closest("[data-sla-mo-them-cs]")) {
+      const det = $("[data-sla-them-cs]", el);
+      if (det) {
+        det.open = true;
+        det.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        det.querySelector("select, input")?.focus();
+      }
       return;
     }
     if (e.target.closest("[data-sla-luu-mt]")) {
@@ -444,8 +557,11 @@ async function ganSla(el) {
     } else if (e.target.closest("[data-sla-chep-t2]")) {
       const hang = $$("[data-sla-thu]", el);
       const t2 = hang[0];
+      const moT2 = $("[data-sla-mo-cua]", t2).checked;
       for (const r of hang.slice(1, 5)) {
-        $("[data-sla-mo-cua]", r).checked = $("[data-sla-mo-cua]", t2).checked;
+        $("[data-sla-mo-cua]", r).checked = moT2;
+        const chu = r.querySelector(".sla-o-mo__chu");
+        if (chu) chu.textContent = moT2 ? "Mở" : "Nghỉ";
         $("[data-sla-gio-mo]", r).value = $("[data-sla-gio-mo]", t2).value;
         $("[data-sla-gio-dong]", r).value = $("[data-sla-gio-dong]", t2).value;
       }

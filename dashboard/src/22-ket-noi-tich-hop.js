@@ -35,8 +35,21 @@ function knttLuc(iso) {
   return iso ? new Date(iso).toLocaleString("vi-VN") : "—";
 }
 
-/* Ô nhập của một trường. Ô BÍ MẬT là password và KHÔNG có value: máy chủ
- * chỉ gửi bốn ký tự cuối, nên mọi chữ trong ô là người dùng vừa gõ. */
+function knttDongNguon(m) {
+  const nguon = { csdl: "lưu trên dashboard", env: "đang dùng .env", trong: "chưa đặt" }[m.nguon] || "";
+  const luuEnv = m.nguon === "env" && !m.bi_mat && String(m.hien || "").trim()
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-kntt-luu-env="${esc(m.khoa)}"
+         aria-label="Lưu ${esc(m.nhan || m.khoa)} vào Dashboard"
+         title="Lưu giá trị hiện tại từ .env vào CSDL (Dashboard)">Lưu vào Dashboard</button>` : "";
+  const xoa = m.nguon === "csdl"
+    ? ` <button type="button" class="btn btn--sm btn--ghost" data-kntt-xoa="${esc(m.khoa)}"
+         title="Bỏ giá trị lưu trên dashboard, quay về .env">Bỏ, dùng .env</button>` : "";
+  const sua = m.sua_boi ? ` · sửa bởi ${esc(m.sua_boi)} lúc ${esc(knttLuc(m.sua_luc))}` : "";
+  return `<span class="row__sub">${esc(nguon)}${sua}${luuEnv}${xoa}</span>`;
+}
+
+/* Ô nhập của một trường. Ô BÍ MẬT là password và KHÔNG có value: khi đã có
+ * giá trị, khoá ô và chỉ hiện dấu chấm + "Đã lưu" + nút "Chỉnh sửa". */
 function knttO(m) {
   const nhan = `${esc(m.nhan)}${m.y_nghia ? ` <em class="hint">${esc(m.y_nghia)}</em>` : ""}`;
   let o;
@@ -44,18 +57,22 @@ function knttO(m) {
     o = `<select data-kntt-khoa="${esc(m.khoa)}">${m.chon.map((c) =>
       `<option value="${esc(c)}"${c === m.hien ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
   } else if (m.bi_mat) {
-    o = `<input type="password" autocomplete="off" data-kntt-khoa="${esc(m.khoa)}"
-      placeholder="${m.da_dat ? `đã đặt ${esc(m.hien)} — dán giá trị mới để thay` : "chưa đặt — dán vào đây"}">`;
+    o = `<span data-kntt-bi-mat>
+      ${m.da_dat ? `<span data-kntt-da-luu><span aria-hidden="true">••••••••</span>
+        <span class="tag tag--auto">Đã lưu</span>
+        <button type="button" class="btn btn--sm btn--ghost" data-kntt-sua-bi-mat
+          aria-label="Chỉnh sửa ${esc(m.nhan)}">Chỉnh sửa</button></span>` : ""}
+      <span data-kntt-nhap-bi-mat${m.da_dat ? " hidden" : ""}>
+        <input type="password" autocomplete="off" data-kntt-khoa="${esc(m.khoa)}"
+          aria-label="${esc(m.nhan)} mới"${m.da_dat ? " disabled" : ""}
+          placeholder="${m.da_dat ? "Nhập giá trị mới; để trống để giữ nguyên" : "Chưa cấu hình — nhập giá trị"}">
+        ${m.da_dat ? '<button type="button" class="btn btn--sm btn--ghost" data-kntt-huy-bi-mat>Hủy chỉnh sửa</button>' : ""}
+      </span></span>`;
   } else {
     o = `<input type="text" autocomplete="off" data-kntt-khoa="${esc(m.khoa)}" value="${esc(m.hien || "")}">`;
   }
-  const nguon = { csdl: "lưu trên dashboard", env: "đang dùng .env", trong: "chưa đặt" }[m.nguon] || "";
-  const xoa = m.nguon === "csdl"
-    ? ` <button type="button" class="btn btn--sm btn--ghost" data-kntt-xoa="${esc(m.khoa)}"
-         title="Bỏ giá trị lưu trên dashboard, quay về .env">Bỏ, dùng .env</button>` : "";
-  const sua = m.sua_boi ? ` · sửa bởi ${esc(m.sua_boi)} lúc ${esc(knttLuc(m.sua_luc))}` : "";
   return `<label class="field"><span>${nhan}</span>${o}</label>
-    <span class="row__sub">${esc(nguon)}${sua}${xoa}</span>`;
+    ${knttDongNguon(m)}`;
 }
 
 function knttThongKe(tk) {
@@ -162,7 +179,7 @@ function knttBangWebhook(d) {
 function knttGom(the, chiDaSua) {
   const ra = {};
   $$("[data-kntt-khoa]", the).forEach((o) => {
-    if (o.closest("[hidden]")) return;
+    if (o.disabled || o.closest("[hidden]")) return;
     if (chiDaSua && !_oDaSua(o)) return;
     const v = (o.value || "").trim();
     if (v) ra[o.dataset.knttKhoa] = v;
@@ -239,7 +256,46 @@ function knttGanSuKien(goc, napLai) {
         });
         return;
       }
+      if (b.hasAttribute("data-kntt-sua-bi-mat") || b.hasAttribute("data-kntt-huy-bi-mat")) {
+        const wrap = b.closest("[data-kntt-bi-mat]");
+        const sua = b.hasAttribute("data-kntt-sua-bi-mat");
+        const input = wrap.querySelector("input");
+        wrap.querySelector("[data-kntt-da-luu]").hidden = sua;
+        wrap.querySelector("[data-kntt-nhap-bi-mat]").hidden = !sua;
+        input.disabled = !sua;
+        if (!sua) input.value = "";
+        (sua ? input : wrap.querySelector("[data-kntt-sua-bi-mat]")).focus();
+        return;
+      }
       if (b.dataset.knttLuu) return await knttLuu(the, b.dataset.knttLuu, napLai);
+      if (b.dataset.knttLuuEnv) {
+        if (!the) return;
+        const khoa = b.dataset.knttLuuEnv;
+        const o = $$("[data-kntt-khoa]", the).find((el) => el.dataset.knttKhoa === khoa);
+        const v = o ? (o.value || "").trim() : "";
+        if (!v) {
+          toast("Trường này đang trống — nhập giá trị rồi bấm Lưu.", true);
+          return;
+        }
+        b.disabled = true;
+        try {
+          const r = await api(`/ket-noi/dich-vu/${encodeURIComponent(the.dataset.knttDv)}`, {
+            method: "PUT",
+            body: JSON.stringify({ gia_tri: { [khoa]: v } }),
+          });
+          if (r.hong && r.hong.length) {
+            const tb = r.hong.map((h) => h.loi).join("; ");
+            toast(tb, true);
+            const kq = the.querySelector(`[data-kntt-kq="${the.dataset.knttDv}"]`);
+            if (kq) kq.textContent = tb;
+            return;
+          }
+          toast("Đã lưu vào Dashboard — có hiệu lực ngay.");
+          return await napLai();
+        } finally {
+          b.disabled = false;
+        }
+      }
       if (b.dataset.knttKiem) return await knttKiem(the, b.dataset.knttKiem, napLai);
       if (b.dataset.knttXoa) {
         const ok = await hoiHop({

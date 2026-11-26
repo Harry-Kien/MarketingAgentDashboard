@@ -104,9 +104,10 @@ function _nutHanhDong(a, trongMenu) {
     ${a.che_do ? `data-chedo="${a.che_do}"` : ""} ${trongMenu ? 'role="menuitem"' : ""}>${noiDung}</button>`;
 }
 
-/* Một nút chính + menu "⋯". Menu là <details>: mở/đóng không cần JS, và
- * trạng thái mở nhớ trong `state.moHanhDong` vì panel dựng lại mỗi 6 giây —
- * không nhớ là menu tự sập ngay dưới ngón tay người đang chọn. */
+/* Split button: nút hành động chính + mũi tên mở menu thao tác bổ sung.
+ * Menu là <details>: mở/đóng không cần JS, và trạng thái mở nhớ trong
+ * `state.moHanhDong` vì panel dựng lại mỗi 6 giây — không nhớ là menu tự
+ * sập ngay dưới ngón tay người đang chọn. */
 function veHanhDongXuLy(c, hd) {
   const mo = state.moHanhDong === String(c.id);
   const toiId = (typeof state !== "undefined" && state.toiId) ? String(state.toiId) : "";
@@ -122,13 +123,18 @@ function veHanhDongXuLy(c, hd) {
           : c.mode === "assist"
             ? `<span class="tag tag--assist">AI gợi ý</span>`
             : `<span class="tag tag--plain">AI đang xử lý</span>`;
+  const iconMui = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  const chinhHtml = hd.chinh ? _nutHanhDong(hd.chinh, false) : "";
+  const themHtml = hd.them.length ? `<details class="hd-them" data-hd-them="${esc(c.id)}" ${mo ? "open" : ""}>
+      <summary class="btn btn--sm ${hd.chinh ? `${hd.chinh.lop || ""} hd-split__mui` : "btn--ghost"}" aria-label="Hành động khác" title="Hành động khác">${iconMui}</summary>
+      <div class="hd-them__menu" role="menu">${hd.them.map((a) => _nutHanhDong(a, true)).join("")}</div>
+    </details>` : "";
+  const nhomNut = (hd.chinh && hd.them.length)
+    ? `<span class="hd-split" role="group" aria-label="Nhóm thao tác xử lý">${chinhHtml}${themHtml}</span>`
+    : `${chinhHtml}${themHtml}`;
   return `<span class="hd" aria-label="Hành động xử lý">
     ${trangThaiTag}
-    ${hd.chinh ? _nutHanhDong(hd.chinh, false) : ""}
-    ${hd.them.length ? `<details class="hd-them" data-hd-them="${esc(c.id)}" ${mo ? "open" : ""}>
-      <summary class="btn btn--sm btn--ghost" aria-label="Hành động khác" title="Hành động khác">⋯</summary>
-      <div class="hd-them__menu" role="menu">${hd.them.map((a) => _nutHanhDong(a, true)).join("")}</div>
-    </details>` : ""}
+    ${nhomNut}
   </span>`;
 }
 

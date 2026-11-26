@@ -226,14 +226,21 @@ function knNangCaoTaiKhoan(account, h, t) {
 }
 
 function knDongTaiKhoan(account) {
+  const _q = (q) => (typeof coQuyen === "function" ? coQuyen(q) : true);
   const h = knTrangThai(account);
   const tt = h.trang_thai;
   const t = (state.knttTk || {})[account.id];
   const tat = account.status === "disabled";
-  const nutChinh = h.hanh_dong && KN_NUT[h.hanh_dong]
+  const suaKenh = _q("kenh.sua");
+  const noiKenh = _q("kenh.noi");
+  const dieuKhienAi = _q("agent.dieu_khien");
+  const suaCauHinh = _q("cau_hinh.sua");
+  const quyenNutChinh = h.hanh_dong === "quet_qr" ? noiKenh
+    : h.hanh_dong === "xem_webhook" ? true : suaKenh;
+  const nutChinh = h.hanh_dong && KN_NUT[h.hanh_dong] && quyenNutChinh
     ? `<button type="button" class="btn btn--sm${["loi", "can_xac_thuc"].includes(tt) ? " btn--primary" : ""}"
          data-kn-lam="${esc(h.hanh_dong)}" data-kn-id="${esc(account.id)}">${esc(KN_NUT[h.hanh_dong])}</button>` : "";
-  const fb = t && t.an_binh_luan_co_sdt
+  const fb = suaCauHinh && t && t.an_binh_luan_co_sdt
     ? `<label class="field kntt-fb"><span>Tự ẩn bình luận có số điện thoại</span>
         <select data-kntt-fb="${esc(account.id)}">
           <option value="chung"${t.an_binh_luan_co_sdt.rieng ? "" : " selected"}>Theo cấu hình chung (đang ${
@@ -243,16 +250,16 @@ function knDongTaiKhoan(account) {
         </select></label>` : "";
   const nhom = [
     knNhomNut("Kết nối", "Đăng nhập hoặc làm mới phiên với nền tảng.", [
-      account.channel === "zalo_personal" ? `<button type="button" class="btn btn--sm" data-qr="${account.id}" data-dang-chay="${account.status === "active" ? "1" : "0"}">Quét QR</button>` : "",
-      ["facebook", "instagram"].includes(account.channel) && account.status === "pending"
+      noiKenh && account.channel === "zalo_personal" ? `<button type="button" class="btn btn--sm" data-qr="${account.id}" data-dang-chay="${account.status === "active" ? "1" : "0"}">Quét QR</button>` : "",
+      suaKenh && ["facebook", "instagram"].includes(account.channel) && account.status === "pending"
         ? `<button type="button" class="btn btn--sm" data-subwebhook="${account.id}">Nhận tin</button>` : "",
     ].join("")),
     knNhomNut("Kiểm tra", "Chỉ hỏi nền tảng và ghi kết quả — không đổi cấu hình.", [
-      tat ? "" : `<button type="button" class="btn btn--sm" data-verify="${account.id}">Kiểm tra kết nối</button>`,
+      suaKenh && !tat ? `<button type="button" class="btn btn--sm" data-verify="${account.id}">Kiểm tra kết nối</button>` : "",
       `<button type="button" class="btn btn--sm btn--ghost" data-health="${account.id}">Lần kiểm gần nhất</button>`,
       `<button type="button" class="btn btn--sm btn--ghost" data-kn-dtg="${esc(account.id)}">Dòng thời gian</button>`,
     ].join("")),
-    knNhomNut("Điều khiển AI", "Bật/tắt AI trả lời riêng tài khoản này. Tin khách vẫn vào, tắt thì chuyển cho người.", [
+    dieuKhienAi ? knNhomNut("Điều khiển AI", "Bật/tắt AI trả lời riêng tài khoản này. Tin khách vẫn vào, tắt thì chuyển cho người.", [
       `<button type="button" class="btn btn--sm" data-agentbat="${account.id}"
         data-bat="${account.agent_bat === false ? "1" : "0"}">${account.agent_bat === false ? "Bật AI" : "Tắt AI"}</button>`,
       hoSoAgent.ds.length ? `<select class="hsa-chon" data-hsagan="${account.id}"
@@ -260,14 +267,14 @@ function knDongTaiKhoan(account) {
         <option value="">Hồ sơ mặc định</option>
         ${hoSoAgent.ds.map((x) => `<option value="${esc(x.id)}"${x.id === account.agent_ho_so_id ? " selected" : ""}>${esc(x.ten)}</option>`).join("")}
       </select>` : "",
-    ].join("")),
+    ].join("")) : "",
     fb ? knNhomNut("Tuỳ chọn Trang", "Áp dụng riêng cho Trang này.", fb) : "",
-    knNhomNut("Quản lý tài khoản", "Tạm ngắt: ngừng nhận và gửi tin, giữ dữ liệu. Xoá: vĩnh viễn, chỉ khi chưa có hội thoại.", [
+    suaKenh ? knNhomNut("Quản lý tài khoản", "Tạm ngắt: ngừng nhận và gửi tin, giữ dữ liệu. Xoá: vĩnh viễn, chỉ khi chưa có hội thoại.", [
       tat ? `<button type="button" class="btn btn--sm" data-kn-lam="bat_lai" data-kn-id="${esc(account.id)}">Bật lại</button>`
         : `<button type="button" class="btn btn--sm" data-disable="${account.id}" data-ten-tk="${esc(account.display_name)}">Tạm ngắt</button>`,
       `<button type="button" class="btn btn--sm btn--halt" data-xoa-tk="${account.id}"
         data-ten-tk="${esc(account.display_name)}">Xoá</button>`,
-    ].join(""), true),
+    ].join(""), true) : "",
   ].join("");
   return `<article class="account-line knh-tk knh-tk--${esc(tt)}" id="kn-tk-${esc(account.id)}">
     <span class="health-dot knh-cham knh-cham--${esc(tt)}" aria-hidden="true"></span>
@@ -316,7 +323,7 @@ function knNangCaoKenh(channel, items, p) {
     <summary>Chi tiết nâng cao của kênh (webhook)</summary>
     ${url ? `<p class="row__sub">Callback URL — khai đúng MỘT lần bên nền tảng:</p>
       <code class="callback" title="Khai đúng MỘT lần bên nhà cung cấp">${esc(url)}</code>` : ""}
-    ${meta ? `<div class="rowbtns"><button type="button" class="btn btn--sm" data-verifytoken-kenh="${items[0].id}">Xem verify token</button></div>
+    ${meta && (typeof coQuyen !== "function" || coQuyen("kenh.sua")) ? `<div class="rowbtns"><button type="button" class="btn btn--sm" data-verifytoken-kenh="${items[0].id}">Xem verify token</button></div>
       <div class="token-slot" data-tokenslot-kenh="${esc(channel)}">${oTokenDaHien(channel)}</div>` : ""}
     ${wh ? `<p class="row__sub">${esc(wh.xac_minh)}</p>
       <p class="row__sub">Sự kiện: ${(wh.su_kien || []).map(esc).join(", ")}</p>
@@ -348,12 +355,15 @@ function knKenhChuaNoi(ds) {
       const vi = noi === "meta" ? "Chưa khai ứng dụng Meta trong .env" : "Chưa khai ứng dụng Zalo OA trong .env";
       return `<li>${srcBadge(ch)}<span class="knh-chua-noi__goi-y">${esc(KN_GOI_Y_NOI[ch] || "")}${
         khoa ? ` <em class="hint">${esc(vi)}.</em>` : ""}</span>
-        <button type="button" class="btn btn--sm" data-kn-noi-nhanh="${esc(noi)}"${khoa ? ` disabled title="${esc(vi)}"` : ""}>Kết nối</button></li>`;
+        ${(typeof coQuyen !== "function" || coQuyen("kenh.sua")) ? `<button type="button" class="btn btn--sm" data-kn-noi-nhanh="${esc(noi)}"${khoa ? ` disabled title="${esc(vi)}"` : ""}>Kết nối</button>` : ""}</li>`;
     }).join("")}</ul>
   </section>`;
 }
 
 async function loadKetNoi() {
+  const suaKenh = typeof coQuyen !== "function" || coQuyen("kenh.sua");
+  const nutThem = $("#connection-add-toggle");
+  if (nutThem) nutThem.hidden = !suaKenh;
   const accounts = await api("/channel-accounts");
   const grouped = Object.fromEntries(Object.keys(CHANNEL_LABEL).map((key) => [key, []]));
   accounts.forEach((account) => (grouped[account.channel] ||= []).push(account));
@@ -382,7 +392,7 @@ async function loadKetNoi() {
     /* Việc CHUNG của cả kênh gom lên đây, không nhân lên theo số tài khoản:
      * một nút đăng ký webhook hàng loạt là thứ cần thấy ngay; URL callback và
      * verify token là chi tiết kỹ thuật, nằm trong phần nâng cao. */
-    const viecChung = KENH_META.includes(channel) && cho_xac_minh
+    const viecChung = suaKenh && KENH_META.includes(channel) && cho_xac_minh
       ? `<div class="channel-card__chung"><span class="row__sub">${cho_xac_minh} Trang chưa bật nhận tin.</span>
           <span class="channel-card__actions"><button type="button" class="btn btn--sm btn--go" data-subwebhook-all="${channel}">Nhận tin cho tất cả (${cho_xac_minh})</button></span></div>` : "";
 

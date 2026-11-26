@@ -35,13 +35,15 @@ function slaVeThuTu(d, cs) {
     ["Khi nào áp dụng", `Hội thoại mới bắt đầu ở mức <b>thường</b>. Đổi ưu tiên chỉ <b>rút ngắn</b> hạn đang chạy
       (tính từ lúc đổi). Lịch và số phút mới áp cho hạn đặt SAU khi lưu — hội thoại đang chạy giữ hạn cũ.`, ""],
   ];
-  return `<section class="panel">
-    <h2 class="panel__head">Thứ tự áp dụng
-      <span class="panel__note">đọc từ trên xuống — gặp nguồn nào có giá trị thì dùng nguồn ấy</span></h2>
+  return `<details class="panel nang-cao sla-thu-tu-gop">
+    <summary class="panel__head sla-thu-tu-gop__dau">
+      <span>Thứ tự áp dụng cấu hình SLA
+        <span class="panel__note">6 quy tắc ưu tiên — bấm để xem chi tiết nguồn đang dùng</span></span>
+    </summary>
     <ol class="sla-thu-tu">${muc.map(([ten, mo, tt]) => `<li>
       <div class="sla-thu-tu__dau"><b>${ten}</b> ${tt}</div>
       <p class="sla-mo-ta">${mo}</p></li>`).join("")}</ol>
-  </section>`;
+  </details>`;
 }
 
 function slaGioVNHienTai() {
@@ -54,21 +56,22 @@ function slaVeThuTinh(kenh) {
   const oKenh = '<option value="">mọi kênh (chính sách chung)</option>' + kenh.map((k) =>
     `<option value="${esc(k.id)}">${esc(k.display_name || k.channel)}</option>`).join("");
   return `<section class="panel">
-    <h2 class="panel__head">Thử tính hạn
-      <span class="panel__note">máy chủ tính bằng đúng phép tính đặt hạn thật — không lưu gì</span></h2>
-    <form class="form" data-sla-form-thu>
-      <div class="form__row">
+    <h2 class="panel__head">Thử tính thời hạn SLA
+      <span class="panel__note">tính bằng đúng phép tính đặt hạn thật trên máy chủ — không lưu dữ liệu</span></h2>
+    <form class="form sla-thu-form" data-sla-form-thu>
+      <div class="sla-thu-hang">
         <label class="field"><span>Kênh</span><select name="account_id">${oKenh}</select></label>
         <label class="field"><span>Mức ưu tiên</span><select name="uu_tien">${Object.entries(SLA_UU_TIEN).map(([k, v]) =>
-          `<option value="${k}">${v}</option>`).join("")}</select></label>
-        <label class="field"><span>Thời điểm bắt đầu <em class="hint">giờ Việt Nam</em></span>
+    `<option value="${k}">${v}</option>`).join("")}</select></label>
+        <label class="field"><span>Thời điểm bắt đầu (giờ VN)</span>
           <input type="datetime-local" name="bat_dau" value="${slaGioVNHienTai()}" required></label>
+        <button type="submit" class="btn btn--primary sla-thu-nut">Tính hạn</button>
       </div>
-      <div class="rowbtns"><button type="submit" class="btn btn--sm btn--primary">Tính hạn</button></div>
     </form>
     <div class="sla-thu-kq" data-sla-kq-thu aria-live="polite">
-      <p class="sla-mo-ta">Chọn kênh, mức và thời điểm khách nhắn (hoặc AI chuyển người), rồi bấm Tính hạn.
-        Thử một giờ tối thứ Bảy để thấy đồng hồ "giờ làm việc" dừng qua Chủ nhật.</p>
+      <div class="sla-thu-goi-y">
+        <p class="sla-mo-ta">Chọn kênh, mức ưu tiên và thời điểm bắt đầu, rồi bấm <b>Tính hạn</b> để xem mốc hạn và thời điểm cảnh báo sớm. Thử một giờ tối thứ Bảy để thấy đồng hồ "giờ làm việc" dừng qua Chủ nhật.</p>
+      </div>
     </div>
   </section>`;
 }
@@ -85,23 +88,29 @@ function slaVeKetQuaThu(r) {
   const gr = cs.gio_rieng
     ? `<p class="sla-mo-ta">Chính sách có giờ riêng ${esc(cs.gio_rieng.bat_dau)}h–${esc(cs.gio_rieng.ket_thuc)}h —
       ${cs.gio_rieng_co_tac_dung ? "ĐANG áp thay lịch .env." : "không áp vì đã có lịch chung."}</p>` : "";
-  const dong = r.muc_tieu.map((m) => `<tr>
-      <td data-nhan="Mục tiêu"><b>${esc(m.ten)}</b><span class="sla-mo-ta">${esc(m.tu)}</span></td>
-      <td data-nhan="Đồng hồ">${m.che_do === "gio_lam_viec" ? "giờ làm việc" : "24/7"}</td>
-      <td data-nhan="Cho phép">${m.phut ? esc(slaPhut(m.phut)) : "không đặt"}</td>
-      <td data-nhan="Hạn"><b>${m.han_chu ? esc(m.han_chu) : "—"}</b></td>
-      <td data-nhan="Chờ thực tế">${m.cho_thuc_phut == null ? "—" : esc(slaPhut(m.cho_thuc_phut))}</td>
-      <td data-nhan="Cảnh báo sớm">${m.canh_bao_sau_phut == null ? "—"
-        : `sau ${esc(slaPhut(m.canh_bao_sau_phut))} (${esc(m.nguong_phan_tram)}%)`}</td>
-    </tr>`).join("");
-  return `<p class="sla-chu">Bắt đầu: <b>${esc(r.bat_dau_chu)}</b> — <span class="tag ${r.lich.dang_mo_luc_bat_dau ? "tag--auto" : "tag--assist"}">${
-      r.lich.dang_mo_luc_bat_dau ? "trong giờ làm việc" : "ngoài giờ làm việc"}</span></p>
-    <p class="sla-chu">${nguon}</p>${gr}
-    <div class="bang-cuon"><table class="bang sla-bang">
-      <thead><tr><th>Mục tiêu</th><th>Đồng hồ</th><th>Cho phép</th><th>Hạn</th><th>Chờ thực tế</th><th>Cảnh báo sớm</th></tr></thead>
-      <tbody>${dong}</tbody></table></div>
-    <p class="sla-mo-ta">"Chờ thực tế" là thời gian trên đồng hồ treo tường từ lúc bắt đầu tới hạn — dài hơn số phút
-      cho phép khi đồng hồ SLA dừng ngoài giờ. Cảnh báo sớm đo trên đồng hồ của mục tiêu.</p>`;
+  const the = r.muc_tieu.map((m) => `<div class="sla-kq-the">
+      <div class="sla-kq-the__dau">
+        <b>${esc(m.ten)}</b>
+        <span class="tag tag--plain">${m.che_do === "gio_lam_viec" ? "Giờ làm việc" : "24/7"}</span>
+      </div>
+      <div class="sla-kq-the__han">${m.han_chu ? esc(m.han_chu) : "Không đặt hạn"}</div>
+      <dl class="sla-kq-the__meta">
+        <div><dt>Cho phép</dt><dd>${m.phut ? esc(slaPhut(m.phut)) : "không đặt"}</dd></div>
+        <div><dt>Chờ thực tế</dt><dd>${m.cho_thuc_phut == null ? "—" : esc(slaPhut(m.cho_thuc_phut))}</dd></div>
+        <div><dt>Cảnh báo sớm</dt><dd>${m.canh_bao_sau_phut == null ? "—"
+      : `sau ${esc(slaPhut(m.canh_bao_sau_phut))} (${esc(m.nguong_phan_tram)}%)`}</dd></div>
+      </dl>
+      <p class="sla-mo-ta">${esc(m.tu)}</p>
+    </div>`).join("");
+  return `<div class="sla-thu-tomtat">
+      <div class="sla-thu-tomtat__hang">
+        <span>Bắt đầu: <b>${esc(r.bat_dau_chu)}</b></span>
+        <span class="tag ${r.lich.dang_mo_luc_bat_dau ? "tag--auto" : "tag--assist"}">${r.lich.dang_mo_luc_bat_dau ? "Trong giờ làm việc" : "Ngoài giờ làm việc"}</span>
+      </div>
+      <p class="sla-mo-ta">${nguon}</p>${gr}
+    </div>
+    <div class="sla-kq-luoi">${the}</div>
+    <p class="sla-mo-ta">"Chờ thực tế" là thời gian đồng hồ treo tường từ lúc bắt đầu tới hạn — dài hơn thời gian cho phép khi đồng hồ SLA dừng ngoài giờ.</p>`;
 }
 
 async function slaThuTinh(f, el) {

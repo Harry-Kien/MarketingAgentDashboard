@@ -939,6 +939,8 @@ async def giao_khach(
     async with db.pool().acquire() as connection:
         async with connection.transaction():
             await _khach_ton_tai(connection, contact_id)
+            ten_khach = await connection.fetchval(
+                "SELECT display_name FROM contacts WHERE id = $1", contact_id) or ""
 
             nhan = await connection.fetchrow(
                 "SELECT nd.ho_ten, nd.ten_dang_nhap, nd.khoa, "
@@ -971,6 +973,11 @@ async def giao_khach(
     await db.log_event("khach.giao", actor=user.get("ten_dang_nhap", "?"),
                        ref_id=contact_id, owner=str(body.owner_user_id),
                        ly_do=body.ly_do.strip())
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.bao_duoc_giao_khach(
+        contact_id, body.owner_user_id, boi=user.get("id"),
+        ten_khach=ten_khach, ly_do=body.ly_do.strip())
     return {"contact_id": str(contact_id),
             "owner_user_id": str(body.owner_user_id),
             "owner_ho_ten": nhan["ho_ten"] or nhan["ten_dang_nhap"]}
@@ -1062,6 +1069,19 @@ async def giao_khach_hang_loat(
         "khach.giao_hang_loat" if body.owner_user_id else "khach.thu_hoi_hang_loat",
         actor=user.get("ten_dang_nhap", "?"), so_khach=len(ids),
         owner=str(body.owner_user_id) if body.owner_user_id else None, ly_do=ly_do)
+    if body.owner_user_id is not None:
+        from agent.core import thong_bao_noi_bo
+
+        if len(ids) == 1:
+            row_k = await db.fetchrow("SELECT display_name FROM contacts WHERE id = $1", ids[0])
+            ten_k = (row_k["display_name"] if row_k else None) or ""
+            await thong_bao_noi_bo.bao_duoc_giao_khach(
+                ids[0], body.owner_user_id, boi=user.get("id"),
+                ten_khach=ten_k, ly_do=ly_do)
+        else:
+            await thong_bao_noi_bo.bao_duoc_giao_khach(
+                None, body.owner_user_id, boi=user.get("id"),
+                ly_do=ly_do, so_luong=len(ids), contact_ids=ids)
     return {"so_khach": len(ids),
             "owner_user_id": str(body.owner_user_id) if body.owner_user_id else None,
             "owner_ho_ten": ten_nhan}

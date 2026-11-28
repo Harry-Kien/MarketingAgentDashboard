@@ -161,7 +161,8 @@ $("#pdpdform").addEventListener("submit", async (e) => {
       });
       $("#pdpdOut").innerHTML = `<p class="kit__note">${esc(r.ghi_chu)}</p>`;
       toast("Đã thực hiện yêu cầu xoá.");
-      loadPdpdPolicy(); loadEvents();
+      loadPdpdPolicy();
+      if (typeof window.nkLamMoi === "function") window.nkLamMoi();
     } catch (err) {
       toast(err.message, true); btn.disabled = false;
     }

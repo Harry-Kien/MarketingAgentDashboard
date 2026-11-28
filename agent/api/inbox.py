@@ -954,6 +954,8 @@ async def takeover_conversation(
 
         await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
             conversation_id, state.assigned_to, boi=actor_id)
+        await thong_bao_noi_bo.dong_bo_chuyen_nguoi_hoi_thoai(
+            conversation_id, state.assigned_to)
     return _routing_response(state)
 
 

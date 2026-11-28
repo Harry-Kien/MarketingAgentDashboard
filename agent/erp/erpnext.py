@@ -537,6 +537,12 @@ class NguonErpNext:
             "custom_shipping_reference": tham_chieu,
         }
         doc = await self.doc_van_don(ma)
+        if int(doc.get("docstatus") or 0) == 2 or str(doc.get("status") or "").strip().lower() == "cancelled":
+            from .hop_dong import DonERPDaHuy
+
+            raise DonERPDaHuy(
+                f"Sales Order {ma} trên ERPNext đã bị huỷ (docstatus=2), bỏ qua đồng bộ vận đơn."
+            )
         if all(_khop_truong_van_don(k, doc.get(k), v) for k, v in payload.items()):
             return False
         try:

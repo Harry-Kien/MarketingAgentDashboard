@@ -1215,7 +1215,7 @@ def _sinh_ma_don() -> str:
 
 async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
                        khach_dia_chi: str, lines: list[dict], tong: int,
-                       trang_thai: str, ghi_chu) -> dict:
+                       trang_thai: str, ghi_chu, channel: str | None = None) -> dict:
     """
     Chống trùng rồi INSERT, trong cùng một giao dịch. Trả {"row": ...} khi
     lưu được, ngược lại trả thẳng kết quả công cụ để agent đọc.
@@ -1263,7 +1263,7 @@ async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
                         conversation_id, lines, float(CUA_SO_CHONG_TRUNG_GIAY),
                     )
                     if cu is not None:
-                        await db.log_event("order.trung_bo_qua", ma_don=cu["ma_don"])
+                        await db.log_event("order.trung_bo_qua", actor="agent", ma_don=cu["ma_don"])
                         return {
                             "tao_duoc": False,
                             "trung_don": True,
@@ -1276,6 +1276,18 @@ async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
                                 "một đơn nữa thật, hỏi rõ rồi chuyển nhân viên."
                             ),
                         }
+                # Lấy đúng nguồn kênh từ hội thoại trong cùng giao dịch để không
+                # rơi về DEFAULT 'zalocrm' của bảng orders (TEST-17-01).
+                kenh = (channel or "").strip() or None
+                if conversation_id is not None:
+                    kenh_ht = await conn.fetchval(
+                        "SELECT channel FROM conversations WHERE id = $1",
+                        conversation_id,
+                    )
+                    if kenh_ht and str(kenh_ht).strip():
+                        kenh = str(kenh_ht).strip()
+                if not kenh:
+                    kenh = "khong_ro"
                 for _ in range(5):
                     ma_don = _sinh_ma_don()
                     try:
@@ -1284,12 +1296,12 @@ async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
                         async with conn.transaction():
                             row = await conn.fetchrow(
                                 """
-                                INSERT INTO orders (ma_don, conversation_id, khach_ten,
+                                INSERT INTO orders (ma_don, conversation_id, channel, khach_ten,
                                                     khach_sdt, khach_dia_chi, items,
                                                     tong_tien, trang_thai, ghi_chu)
-                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, ma_don
+                                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, ma_don
                                 """,
-                                ma_don, conversation_id, khach_ten, khach_sdt,
+                                ma_don, conversation_id, kenh, khach_ten, khach_sdt,
                                 khach_dia_chi, lines, tong, trang_thai, ghi_chu,
                             )
                         return {"row": dict(row)}
@@ -1318,7 +1330,10 @@ async def _luu_don_moi(*, conversation_id, khach_ten: str, khach_sdt: str,
 
 async def _tao_don_hang(args: dict, products: list[dict], conversation_id,
                         quyet=None, *, ep_da_chot: bool = False,
-                        tong_phai_bang: int | None = None) -> dict:
+                        tong_phai_bang: int | None = None,
+                        actor: str = "agent",
+                        nguoi_phe_duyet: str | None = None,
+                        nguon_thuc_thi: str | None = None) -> dict:
     """
     Tool DUY NHẤT có hậu quả không đảo ngược. Mọi chốt chặn nằm ở đây, không
     nằm trong prompt — prompt có thể bị model bỏ qua, mã thì không.
@@ -1464,15 +1479,21 @@ async def _tao_don_hang(args: dict, products: list[dict], conversation_id,
         du_hang, ly_do_kho = await kho.giu_hang(lines, row["ma_don"])
     except Exception as exc:  # noqa: BLE001
         du_hang, ly_do_kho = False, f"Lỗi hệ thống khi giữ hàng ({type(exc).__name__})."
-        await db.log_event("order.giu_hang_loi", ma_don=row["ma_don"],
+        await db.log_event("order.giu_hang_loi", actor=actor, ma_don=row["ma_don"],
                            loi=f"{type(exc).__name__}: {exc}"[:300])
     if not du_hang:
         await db.execute("DELETE FROM orders WHERE id = $1", row["id"])
         return {"tao_duoc": False, "ly_do": ly_do_kho}
 
+    nguon = nguon_thuc_thi or (
+        "tu_dong" if (quyet is not None and trang_thai == "da_chot")
+        else ("cho_duyet" if trang_thai == "cho_duyet" else "ai_tao_don")
+    )
     await db.log_event(
-        "order.created", ref_id=row["id"], ma_don=row["ma_don"],
+        "order.created", actor=actor, ref_id=row["id"], ma_don=row["ma_don"],
         tong_tien=tong, trang_thai=trang_thai,
+        nguoi_khoi_tao="agent", nguoi_phe_duyet=nguoi_phe_duyet,
+        nguon_thuc_thi=nguon,
     )
     if quyet is not None and trang_thai == "da_chot":
         # AI tự chốt theo ủy quyền — ghi MỨC đã cho phép, cho tra cứu kiểm toán.
@@ -1678,10 +1699,13 @@ async def _de_xuat_duyet_don_cho(row: dict, lines: list[dict], tong: int, nguong
 # nhất. Hai bộ tên cho cùng một thứ là hai nguồn sự thật, và sớm muộn chúng
 # lệch nhau.
 _LOI_TRANG_THAI_GIAO = {
-    "delivering": "Đơn đã bàn giao đơn vị vận chuyển và đang trên đường.",
+    "ready_to_pick": "Đơn đã có mã vận đơn và đang chờ đơn vị vận chuyển đến lấy hàng tại kho.",
+    "delivering": "Đơn đã bàn giao đơn vị vận chuyển và đang trên đường giao.",
     "delivered": "Đơn đã giao thành công.",
     "delivery_failed": "Đơn giao không thành công — cần người kiểm tra lại.",
-    "returned": "Đơn đang được hoàn về kho.",
+    "returning": "Đơn đang được hãng vận chuyển hoàn về kho.",
+    "returned": "Đơn đã được hãng vận chuyển hoàn về kho, đang chờ nhân viên kiểm tra hàng hoàn.",
+    "cancelled": "Vận đơn của đơn hàng này đã bị huỷ trên hãng vận chuyển.",
     "khong_ro": (
         "Hãng vận chuyển trả về một trạng thái hệ thống chưa nhận ra. "
         "Cần chuyển người kiểm tra, đừng đoán."
@@ -1818,41 +1842,90 @@ async def bang_chung_huy_don(order_id: UUID, ly_do: str = "") -> dict:
     """
     Căn cứ cho đề xuất huỷ: đọc từ SỔ CỦA CỬA HÀNG, không từ lời model.
     Trả {truoc, sau, nguon, rui_ro, thieu, ma_don, huy_duoc}.
+
+    Thống nhất hoàn toàn với chốt chặn ở `thao_tac_don.huy_don` (BUG-17-04):
+    không đánh dấu `huy_duoc=True` hay dự kiến `sau.tra_kho` khi đơn đang đối
+    soát vận đơn, đang có vận đơn hoạt động, hoặc cần kiểm kho thủ công.
     """
     don = await db.fetchrow(
-        "SELECT ma_don, trang_thai, tong_tien, items, trang_thai_giao_hang, ma_van_don, "
-        "don_vi_van_chuyen, erp_ma_don, so_tien_da_thu, conversation_id "
+        "SELECT ma_don, trang_thai, tong_tien, items, trang_thai_giao_hang, "
+        "ma_van_don, don_vi_van_chuyen, van_don_da_lay_hang, "
+        "erp_ma_don, so_tien_da_thu, conversation_id "
         "FROM orders WHERE id = $1", order_id)
     if don is None:
         return {"huy_duoc": False, "thieu": ["Không còn thấy đơn trong sổ"]}
+    yc_vd = await db.fetchrow(
+        "SELECT trang_thai, ma_van_don FROM shipping_waybill_requests WHERE order_id = $1",
+        order_id,
+    )
     items = don.get("items") or []
     if isinstance(items, str):
         items = json.loads(items)
-    tt = don["trang_thai"]
+    tt = str(don["trang_thai"] or "")
+    tt_yc = str((yc_vd or {}).get("trang_thai") or "")
+    ma_vd = str(don.get("ma_van_don") or (yc_vd or {}).get("ma_van_don") or "").strip()
+    tt_giao = str(don.get("trang_thai_giao_hang") or "").strip()
+    da_lay = don.get("van_don_da_lay_hang")
+
     rui_ro, thieu = [], []
     if don.get("erp_ma_don"):
         rui_ro.append(f"Đơn đã có bên ERP ({don['erp_ma_don']}) — huỷ ở đây KHÔNG huỷ bên ERP, cần huỷ tay.")
     elif tt == "cho_dong_bo":
         rui_ro.append("Đơn đang chờ đồng bộ — có thể đã tới ERP; tra ERP theo mã đơn.")
-    if don.get("ma_van_don"):
-        rui_ro.append(f"Đã có vận đơn {don['ma_van_don']} ({don.get('don_vi_van_chuyen') or 'hãng'}) "
-                      "— cần huỷ tay bên hãng.")
-    if don.get("trang_thai_giao_hang") in ("delivering",):
-        rui_ro.append("Hàng đang trên đường giao.")
     if int(don.get("so_tien_da_thu") or 0) > 0:
         rui_ro.append(f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ — cần hoàn tiền "
                       "(AI không hoàn tiền).".replace(",", "."))
     if not ly_do:
         thieu.append("Khách chưa nêu lý do huỷ")
+
     huy_duoc = tt not in ("da_giao", "da_huy")
     if not huy_duoc:
         thieu.append(f"Đơn đang «{_NHAN_TRANG_THAI_DON.get(tt, tt)}» — không huỷ được")
+
+    if tt_yc in ("sending", "unknown_timeout", "reconciling", "manual_required"):
+        huy_duoc = False
+        thieu.append(f"Đơn đang đối soát tạo vận đơn ({tt_yc}) — phải hoàn tất đối soát trước khi huỷ.")
+
+    if ma_vd:
+        hang = don.get("don_vi_van_chuyen") or "hãng vận chuyển"
+        if tt_giao == "delivered":
+            huy_duoc = False
+            thieu.append(f"Vận đơn {ma_vd} ({hang}) đã giao thành công — không huỷ được, xử lý như đổi trả.")
+        elif tt_giao == "ready_to_pick":
+            huy_duoc = False
+            rui_ro.append(f"Đã có vận đơn {ma_vd} ({hang}) đang chờ lấy hàng — cần huỷ vận đơn trên cổng hãng trước.")
+            thieu.append(f"Chưa thể huỷ đơn nội bộ khi vận đơn {ma_vd} chưa được hãng xác nhận huỷ.")
+        elif tt_giao in ("delivering", "delivery_failed", "returning"):
+            huy_duoc = False
+            nhan_giao = {
+                "delivering": "đang giao hàng",
+                "delivery_failed": "giao thất bại",
+                "returning": "đang hoàn hàng về kho",
+            }[tt_giao]
+            rui_ro.append(f"Vận đơn {ma_vd} ({hang}) đang ở trạng thái {nhan_giao} — hàng đã rời kho.")
+            thieu.append(f"Không huỷ trực tiếp khi vận đơn {ma_vd} đang {nhan_giao}; liên hệ hãng hoàn hàng về kho.")
+        elif tt_giao not in ("cancelled", "returned"):
+            huy_duoc = False
+            thieu.append(f"Vận đơn {ma_vd} chưa rõ trạng thái lấy hàng/hoàn hàng — chặn huỷ tự động để tránh lệch tồn kho.")
+        elif tt_giao == "returned":
+            rui_ro.append(f"Vận đơn {ma_vd} đã hoàn về kho — hệ thống KHÔNG tự động cộng tồn kho; nhân viên kiểm tra hàng hoàn rồi nhập qua Kho → Nhập.")
+        elif tt_giao == "cancelled" and da_lay is not False:
+            rui_ro.append(f"Vận đơn {ma_vd} đã huỷ nhưng chưa đủ bằng chứng hàng chưa rời kho — KHÔNG tự động cộng tồn kho, cần kiểm kho thực tế.")
+
+    se_tra_kho = huy_duoc and (
+        not ma_vd or (tt_giao == "cancelled" and da_lay is False)
+    )
+    tra_kho_du_kien = (
+        [f"{it.get('so_luong')} × {it.get('ten')}" for it in items if isinstance(it, dict)]
+        if se_tra_kho else []
+    )
     return {
         "ma_don": don["ma_don"], "huy_duoc": huy_duoc,
         "truoc": {"trang_thai": _NHAN_TRANG_THAI_DON.get(tt, tt),
+                  "trang_thai_giao_hang": tt_giao or None,
                   "tong_tien": int(don.get("tong_tien") or 0), "items": items},
-        "sau": {"trang_thai": "Đã huỷ", "tra_kho": [
-            f"{it.get('so_luong')} × {it.get('ten')}" for it in items if isinstance(it, dict)]},
+        "sau": {"trang_thai": "Đã huỷ" if huy_duoc else _NHAN_TRANG_THAI_DON.get(tt, tt),
+                "tra_kho": tra_kho_du_kien},
         "nguon": [{"ten": "Sổ đơn của cửa hàng",
                    "chi_tiet": f"đơn {don['ma_don']} thuộc đúng hội thoại này, trạng thái "
                                f"«{_NHAN_TRANG_THAI_DON.get(tt, tt)}»"}],

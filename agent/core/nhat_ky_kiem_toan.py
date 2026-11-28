@@ -33,6 +33,7 @@ BA RÀNG BUỘC, MỖI CÁI CÓ TEST CANH
 from __future__ import annotations
 
 import re
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -67,6 +68,8 @@ _KHOA_DANH_TINH = frozenset({
     "khach_ten", "khach_sdt", "khach_dia_chi", "khach_email",
     "ten_khach", "ho_ten", "dia_chi", "sdt", "so_dien_thoai", "email",
     "cccd", "nguoi_nhan", "ten_nguoi_nhan", "phone",
+    "customer_name", "customer_phone", "customer_email", "display_name",
+    "khach", "phone_number", "address",
 })
 
 # Bí mật NHẬN RA ĐƯỢC BẰNG HÌNH DẠNG, kể cả khi nằm dưới một khoá vô tội
@@ -159,8 +162,10 @@ NHOM_HANH_DONG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("phe_duyet", "Duyệt / sửa bản nháp", ("tin_nhan.%",)),
     ("hoi_thoai", "Hội thoại & bàn giao", (
         "conversation.%", "banGiao.%", "csat.%", "khach.giao%", "khach.thu_hoi",
-        "auto_routing.%", "auto_resolve.%", "binh_luan.%", "staff.%")),
-    ("don_hang", "Đơn hàng & vận chuyển", ("order.%", "shipping.%", "thanh_toan.%")),
+        "auto_routing.%", "auto_resolve.%", "binh_luan.%", "staff.%", "chatwoot.%")),
+    ("don_hang", "Đơn hàng & vận chuyển", (
+        "order.%", "shipping.%", "thanh_toan.%", "erp.don_%", "erp.keo_%")),
+    ("kho", "Kho hàng", ("kho.%", "erp.anh_xa_%", "erp.thieu_ho_so")),
     ("cong_viec", "Công việc", ("cong_viec.%",)),
     ("du_lieu_ca_nhan", "Dữ liệu cá nhân", ("pdpd.%", "bvdlcn.%", "contact.retention%")),
     ("khach_hang", "Khách hàng & nhãn", (
@@ -170,7 +175,8 @@ NHOM_HANH_DONG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("cau_hinh", "Cấu hình & tài liệu", (
         "runtime.%", "ky_nang.%", "tich_hop.%", "ho_so_agent.%", "kenh.%", "channel.%",
         "channel_account.%", "routing.%", "tu_dong.%", "tra_loi_nhanh.%",
-        "cau_hinh_api.%", "mcp.%", "lich_ca.%", "knowledge.%", "erp.xac_nhan_bang_gia",
+        "cau_hinh_api.%", "mcp.%", "lich_ca.%", "lich_lam_viec.%",
+        "sla.muc_tieu_doi", "knowledge.%", "erp.xac_nhan_bang_gia",
         "erp.go_xac_nhan_bang_gia", "zalo.account.%")),
 )
 NHOM_MAC_DINH = ("he_thong", "Vận hành hệ thống")
@@ -183,8 +189,22 @@ NHAN_NHOM = {ma: nhan for ma, nhan, _ in NHOM_HANH_DONG} | {NHOM_MAC_DINH[0]: NH
 _MAU_AI = ("ai.%", "agent.%", "cong_cu.%", "knowledge.retrieved", "dau_vet_ai.%",
            "che_du_lieu.%")
 _ACTOR_HE_THONG = ("system", "he_thong", "", "00000000-0000-0000-0000-000000000000")
+_ACTOR_TICH_HOP = ("chatwoot", "ghn", "ghtk", "erpnext", "meta", "zalo_webhook")
+_NHAN_TICH_HOP = {
+    "chatwoot": "Chatwoot",
+    "ghn": "GHN",
+    "ghtk": "GHTK",
+    "erpnext": "ERPNext",
+    "meta": "Meta",
+    "zalo_webhook": "Zalo Webhook",
+}
 _MAU_ACTOR_HE_THONG = ("migration%", "claude:%", "don-dep%")
-LOAI_TAC_NHAN = {"ai": "AI", "nhan_vien": "Nhân viên", "he_thong": "Hệ thống"}
+LOAI_TAC_NHAN = {
+    "ai": "AI",
+    "nhan_vien": "Nhân viên",
+    "he_thong": "Hệ thống",
+    "tich_hop": "Tích hợp ngoài",
+}
 
 TRANG_THAI = {
     "su_co": "Đã đánh dấu sự cố",
@@ -231,6 +251,7 @@ def _sql_actor_he_thong() -> str:
 
 def _sql_loai_tac_nhan() -> str:
     he_thong = _sql_actor_he_thong()
+    tich_hop = ", ".join(_sql_chuoi(a) for a in _ACTOR_TICH_HOP)
     # Kind dạng `ai.%` chỉ là AI khi actor KHÔNG phải một người: nhân viên
     # từ chối bản nháp (`ai.ban_nhap.tu_choi`), duyệt/từ chối đề xuất
     # (`ai.de_xuat.duyet`), sửa chính sách (`ai.uy_quyen.sua`) đều mang tên
@@ -238,6 +259,8 @@ def _sql_loai_tac_nhan() -> str:
     return (f"CASE WHEN e.actor IN ('agent', 'ai') THEN 'ai' "
             f"WHEN {he_thong} AND ({_like_bat_ky('e.kind', _MAU_AI)} "
             f"OR e.detail ? 'luot_id') THEN 'ai' "
+            f"WHEN e.actor IN ({tich_hop}) "
+            f"OR e.detail ->> 'nguon' = 'tich_hop_ngoai' THEN 'tich_hop' "
             f"WHEN {he_thong} THEN 'he_thong' ELSE 'nhan_vien' END")
 
 
@@ -340,7 +363,7 @@ SELECT e.id, e.kind, e.actor, e.ref_id, e.detail, e.created_at,
 
 
 def _la_su_kien_tai_khoan_kenh(kind: str, detail: dict[str, Any]) -> bool:
-    return kind.startswith(("channel_account.", "zalo_personal.")) or bool(
+    return kind.startswith(("channel_account.", "zalo_personal.", "kenh.")) or bool(
         detail.get("account_id")
     )
 
@@ -403,6 +426,9 @@ def ban_ghi(r: dict[str, Any], *, mat_na: che_du_lieu.MatNa | None = None,
     ten = None
     if loai == "nhan_vien":
         ten = r.get("nguoi_ten") or r.get("actor")
+    elif loai == "tich_hop":
+        act = str(r.get("actor") or "").strip().lower()
+        ten = _NHAN_TICH_HOP.get(act) or r.get("actor") or "Tích hợp ngoài"
     elif loai == "ai":
         ten = detail.get("ho_so") if isinstance(detail.get("ho_so"), str) else None
     elif loai == "he_thong" and isinstance(sach.get("nguoi_thuc_hien"), str) and sach["nguoi_thuc_hien"].strip():
@@ -584,13 +610,130 @@ def ket_qua(kind: str, sach: dict[str, Any]) -> str:
 TOI_DA_TRANG = 100
 
 
+def _sql_pham_vi(xem: nhat_ky_lien_ket.NguoiXem | None, ts: list[Any]) -> str:
+    """
+    Điều kiện phạm vi dữ liệu cho `theo_pham_vi=True` (SEC-NK-01):
+    thống nhất quyền xem Nhật ký toàn cục với quyền theo kênh/đối tượng.
+    """
+    if xem is None:
+        return "FALSE"
+    q = xem.quyen
+    kenh_ids = [UUID(k) for k in sorted(xem.kenh) if k]
+    _kenh_param: list[str] = []
+
+    def kenh_arg() -> str:
+        if not _kenh_param:
+            ts.append(kenh_ids)
+            _kenh_param.append(f"${len(ts)}::uuid[]")
+        return _kenh_param[0]
+
+    uid_val: UUID | None = None
+    if xem.id:
+        try:
+            uid_val = UUID(str(xem.id))
+        except ValueError:
+            uid_val = None
+    _uid_param: list[str] = []
+
+    def uid_arg() -> str | None:
+        if uid_val is None:
+            return None
+        if not _uid_param:
+            ts.append(uid_val)
+            _uid_param.append(f"${len(ts)}::uuid")
+        return _uid_param[0]
+
+    xem_tat_ca_kenh = "hoi_thoai.xem_tat_ca" in q
+    if xem_tat_ca_kenh:
+        kenh_hop_le = "TRUE"
+        neu_gan_kenh_phai_thuoc = "TRUE"
+    else:
+        ka = kenh_arg()
+        kenh_hop_le = (
+            f"(COALESCE(x.ht_account_id, x.kenh_tai_khoan_id) IS NOT NULL "
+            f"AND COALESCE(x.ht_account_id, x.kenh_tai_khoan_id) = ANY({ka}))"
+        )
+        neu_gan_kenh_phai_thuoc = (
+            f"((x.ht_account_id IS NULL AND x.kenh_tai_khoan_id IS NULL) "
+            f"OR COALESCE(x.ht_account_id, x.kenh_tai_khoan_id) = ANY({ka}))"
+        )
+
+    co_don = "don.doc" in q or "don.sua" in q
+    quyen_don = "TRUE" if co_don else "FALSE"
+    quyen_kho = "TRUE" if ("kho.doc" in q or "kho.sua" in q) else "FALSE"
+    quyen_khach = "TRUE" if ("khach.doc" in q or "khach.xem_tat_ca" in q) else "FALSE"
+    if "khach.doc" in q and "khach.xem_tat_ca" not in q:
+        quyen_khach = neu_gan_kenh_phai_thuoc
+    quyen_pdpd = "TRUE" if ("khach.pii" in q or "khach.xoa" in q or "khach.xem_tat_ca" in q) else "FALSE"
+    co_nv = "nguoi_dung.doc" in q or "nguoi_dung.sua" in q
+    quyen_nv = "TRUE" if co_nv else "FALSE"
+    quyen_cau_hinh = "TRUE" if (q & {
+        "cau_hinh.doc", "cau_hinh.sua", "dinh_tuyen.doc", "dinh_tuyen.sua",
+        "agent.doc", "agent.dieu_khien", "kenh.doc", "kenh.sua",
+        "ky_nang.doc", "ky_nang.sua", "mcp.doc", "mcp.sua",
+        "tich_hop.doc", "tich_hop.sua",
+    }) else "FALSE"
+    quyen_he_thong = "TRUE" if (q & {
+        "cau_hinh.doc", "cau_hinh.sua", "bao_cao.doc", "agent.doc", "agent.dieu_khien",
+    }) else "FALSE"
+    quyen_ht = kenh_hop_le if "hoi_thoai.doc" in q else "FALSE"
+
+    if "cong_viec.doc" in q:
+        if "cong_viec.xem_tat_ca" in q:
+            quyen_cv = "TRUE"
+        else:
+            ua = uid_arg()
+            quyen_cv = (
+                f"(x.dt_cv_nguoi_nhan IS NULL OR {ua} IN (x.dt_cv_nguoi_nhan, x.dt_cv_nguoi_giao))"
+                if ua else "x.dt_cv_nguoi_nhan IS NULL"
+            )
+    else:
+        quyen_cv = "FALSE"
+
+    quyen_sc = (
+        kenh_hop_le
+        if "hoi_thoai.doc" in q
+        else ("TRUE" if "nhat_ky.su_co" in q and xem_tat_ca_kenh else "FALSE")
+    )
+    if "nhat_ky.su_co" in q:
+        quyen_sc = (
+            f"({neu_gan_kenh_phai_thuoc} AND (x.hoi_thoai_id IS NOT NULL "
+            f"OR {quyen_he_thong} OR {'TRUE' if xem_tat_ca_kenh else 'FALSE'}))"
+        )
+
+    if co_nv:
+        nv_obj_cond = "TRUE"
+    else:
+        ua_nv = uid_arg()
+        nv_obj_cond = f"(x.dt_nv_id IS NULL OR x.dt_nv_id = {ua_nv})" if ua_nv else "x.dt_nv_id IS NULL"
+
+    return f"""(
+        CASE
+            WHEN x.nhom IN ('hoi_thoai', 'phe_duyet', 'tra_loi_ai', 'tra_cuu_ai') THEN {quyen_ht}
+            WHEN x.nhom = 'su_co' THEN ({quyen_sc})
+            WHEN x.nhom = 'don_hang' THEN ({quyen_don} AND {neu_gan_kenh_phai_thuoc})
+            WHEN x.nhom = 'kho' THEN {quyen_kho}
+            WHEN x.nhom = 'cong_viec' THEN ({quyen_cv} AND {neu_gan_kenh_phai_thuoc})
+            WHEN x.nhom = 'khach_hang' THEN {quyen_khach}
+            WHEN x.nhom = 'du_lieu_ca_nhan' THEN ({quyen_pdpd} AND {neu_gan_kenh_phai_thuoc})
+            WHEN x.nhom = 'truy_cap' THEN {quyen_nv}
+            WHEN x.nhom = 'cau_hinh' THEN ({quyen_cau_hinh} AND {neu_gan_kenh_phai_thuoc})
+            ELSE ({quyen_he_thong} AND {neu_gan_kenh_phai_thuoc})
+        END
+        AND (x.dt_don_id IS NULL OR {quyen_don})
+        AND (x.dt_cv_id IS NULL OR {quyen_cv})
+        AND {nv_obj_cond}
+    )"""
+
+
 async def tim(*, tu: datetime | None = None, den: datetime | None = None,
               hoi_thoai_id: UUID | None = None, loai_tac_nhan: str | None = None,
               nguoi_id: UUID | None = None, nhom: str | None = None,
               kind: str | None = None, trang_thai: str | None = None,
               luot_id: str | None = None, truoc: int | None = None,
               muc_do: list[str] | None = None, gom: bool = False,
-              nguoi: dict | None = None, limit: int = 50) -> dict[str, Any]:
+              nguoi: dict | None = None, theo_pham_vi: bool = False,
+              limit: int = 50, q: str = "", loai_doi_tuong: str = "") -> dict[str, Any]:
     """
     Tìm theo bộ lọc, mới nhất trước, phân trang bằng con trỏ `id`.
 
@@ -642,7 +785,12 @@ async def tim(*, tu: datetime | None = None, den: datetime | None = None,
         dk.append(f"x.id IN (SELECT id FROM events WHERE detail ? 'luot_id' "
                   f"AND detail ->> 'luot_id' = ${len(ts)})")
 
-    async def lay(con_tro: int | None, so: int) -> list[dict[str, Any]]:
+    mat_na = che_du_lieu.MatNa()
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    if theo_pham_vi:
+        dk.append(_sql_pham_vi(xem, ts))
+
+    async def lay_tho(con_tro: int | None, so: int) -> list[dict[str, Any]]:
         dk2, ts2 = list(dk), list(ts)
         if con_tro is not None:
             ts2.append(int(con_tro))
@@ -652,8 +800,34 @@ async def tim(*, tu: datetime | None = None, den: datetime | None = None,
             f"SELECT * FROM ({_SQL_GOC}) x {'WHERE ' + ' AND '.join(dk2) if dk2 else ''} "
             f"ORDER BY x.id DESC LIMIT ${len(ts2)}", *ts2)
 
-    mat_na = che_du_lieu.MatNa()
-    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    async def lay(con_tro: int | None, so: int) -> list[dict[str, Any]]:
+        if not q.strip() and not loai_doi_tuong:
+            return await lay_tho(con_tro, so)
+        # Apply scope in SQL FIRST; search only the same redacted representation
+        # that the viewer can read. Never search raw secret-bearing JSON.
+        found = []
+        needle = q.strip().casefold()
+        while len(found) < so:
+            rows = await lay_tho(con_tro, 200)
+            if not rows:
+                break
+            for row in rows:
+                b = ban_ghi(row, mat_na=mat_na, xem=xem)
+                kinds = {lk['loai'] for lk in b.get('lien_ket', [])}
+                if str(b['kind']).startswith('kho.'):
+                    kinds.add('san_pham')
+                if str(b['kind']).startswith('vai_tro.'):
+                    kinds.add('vai_tro')
+                if loai_doi_tuong and loai_doi_tuong not in kinds:
+                    continue
+                if needle and needle not in json.dumps(b, ensure_ascii=False).casefold():
+                    continue
+                found.append(row)
+                if len(found) == so:
+                    break
+            con_tro = rows[-1]['id']
+        return found
+
     if not gom:
         rows = await lay(truoc, limit + 1)
         items = [ban_ghi(r, mat_na=mat_na, xem=xem) for r in rows[:limit]]
@@ -715,14 +889,19 @@ def _khoa_gom(r: dict[str, Any]) -> tuple[str, ...] | None:
     return (str(r.get("kind")), str(r.get("trang_thai")), str(r.get("kenh_tai_khoan_id") or ""))
 
 
-async def mot(event_id: int, *, nguoi: dict | None = None) -> dict[str, Any] | None:
+async def mot(event_id: int, *, nguoi: dict | None = None,
+              theo_pham_vi: bool = False) -> dict[str, Any] | None:
     """Một bản ghi + chuỗi sự cố/giải trình trỏ về nó (đều là dòng mới)."""
-    rows = await db.fetch(f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1", int(event_id))
-    if not rows:
-        return None
     mat_na = che_du_lieu.MatNa()
     xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    ts: list[Any] = [int(event_id)]
+    pv_sql = f" AND {_sql_pham_vi(xem, ts)}" if theo_pham_vi else ""
+    rows = await db.fetch(f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1{pv_sql}", *ts)
+    if not rows:
+        return None
     goc = ban_ghi(rows[0], mat_na=mat_na, xem=xem)
+    ts_l: list[Any] = [int(event_id)]
+    pv_lien = f" AND {_sql_pham_vi(xem, ts_l)}" if theo_pham_vi else ""
     lien = await db.fetch(
         f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id IN ("
         "  SELECT id FROM events WHERE detail ? 'su_kien_goc' "
@@ -732,9 +911,24 @@ async def mot(event_id: int, *, nguoi: dict | None = None) -> dict[str, Any] | N
         "  SELECT b.id FROM events b JOIN events s "
         "    ON b.detail ->> 'su_co_id' = s.id::text "
         "   WHERE s.kind = 'su_co.danh_dau' AND s.detail ->> 'su_kien_goc' = $1::bigint::text"
-        ") ORDER BY x.id", int(event_id))
+        f"){pv_lien} ORDER BY x.id", *ts_l)
     goc["lien_quan"] = [ban_ghi(r, mat_na=mat_na, xem=xem) for r in lien]
     return goc
+
+
+async def co_quyen_luot(luot_id: str, nguoi: dict | None) -> bool:
+    """Kiểm tra người xem có quyền `hoi_thoai.doc` và thuộc kênh của lượt AI."""
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    if xem is None or not xem.co("hoi_thoai.doc"):
+        return False
+    if xem.co("hoi_thoai.xem_tat_ca"):
+        return True
+    cid = await hoi_thoai_cua_luot(luot_id)
+    if cid is None:
+        return False
+    row = await db.fetchrow("SELECT account_id FROM conversations WHERE id = $1", cid)
+    acc = row["account_id"] if row else None
+    return acc is not None and str(acc) in xem.kenh
 
 
 async def hoi_thoai_cua_luot(luot_id: str) -> UUID | None:
@@ -750,7 +944,8 @@ async def hoi_thoai_cua_luot(luot_id: str) -> UUID | None:
     return m["conversation_id"] if m else None
 
 
-async def luot(luot_id: str) -> dict[str, Any] | None:
+async def luot(luot_id: str, *, nguoi: dict | None = None,
+               theo_pham_vi: bool = False) -> dict[str, Any] | None:
     """
     TOÀN BỘ một lượt AI (điểm 4–5): tin khách -> tra tài liệu -> công cụ ->
     lưới -> trả lời / nháp / chuyển người, theo thứ tự thời gian.
@@ -759,12 +954,17 @@ async def luot(luot_id: str) -> dict[str, Any] | None:
     (phiên bản, đoạn trích) và kết quả công cụ (dữ liệu ERP/đơn lúc xử lý),
     đã che và có trần kích thước (`agent/core/dau_vet_ai.py`).
     """
+    if theo_pham_vi and not await co_quyen_luot(luot_id, nguoi):
+        return None
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+    ts: list[Any] = [luot_id]
+    pv_sql = f" AND {_sql_pham_vi(xem, ts)}" if theo_pham_vi else ""
     rows = await db.fetch(
         f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id IN ("
         "SELECT id FROM events WHERE detail ? 'luot_id' AND detail ->> 'luot_id' = $1"
-        ") ORDER BY x.id", luot_id)
+        f"){pv_sql} ORDER BY x.id", *ts)
     mat_na = che_du_lieu.MatNa()
-    buoc = [ban_ghi(r, mat_na=mat_na) for r in rows]
+    buoc = [ban_ghi(r, mat_na=mat_na, xem=xem) for r in rows]
     cid = await hoi_thoai_cua_luot(luot_id)
     tin_vao_id = next((b["chi_tiet"].get("tin_vao_id") for b in buoc
                        if isinstance(b["chi_tiet"].get("tin_vao_id"), str)), None)
@@ -840,7 +1040,8 @@ _SQL_TT_DE_XUAT = """CASE
 
 
 async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = None,
-                  truoc: datetime | None = None, limit: int = 50) -> dict[str, Any]:
+                  truoc: datetime | None = None, limit: int = 50,
+                  nguoi: dict | None = None, theo_pham_vi: bool = False) -> dict[str, Any]:
     """
     Lịch sử đề xuất của AI và quyết định của người.
 
@@ -850,9 +1051,16 @@ async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = 
     gì, ai/AI đề xuất, ai quyết, lúc nào, trạng thái, lượt AI nào.
     """
     limit = max(1, min(int(limit), TOI_DA_TRANG))
+    xem = await nhat_ky_lien_ket.nguoi_xem(nguoi) if theo_pham_vi else None
+    if theo_pham_vi and (xem is None or not (xem.co("hoi_thoai.doc") or xem.co("ai.duyet"))):
+        return {"items": [], "next_cursor": None}
+
     dk = ["m.role = 'agent'",
           "(m.delivery_status = 'draft' OR m.duyet_boi IS NOT NULL OR m.sua_boi IS NOT NULL)"]
     ts: list[Any] = []
+    if theo_pham_vi and xem is not None and not xem.co("hoi_thoai.xem_tat_ca"):
+        ts.append([UUID(k) for k in sorted(xem.kenh) if k])
+        dk.append(f"c.account_id = ANY(${len(ts)}::uuid[])")
     if hoi_thoai_id is not None:
         ts.append(hoi_thoai_id)
         dk.append(f"m.conversation_id = ${len(ts)}")
@@ -871,7 +1079,8 @@ async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = 
         f"       (SELECT COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) FROM nguoi_dung "
         f"         WHERE id = m.duyet_boi) AS duyet_boi_ten, "
         f"       {_SQL_TT_DE_XUAT} AS trang_thai "
-        f"  FROM messages m WHERE {' AND '.join(dk)} "
+        f"  FROM messages m JOIN conversations c ON c.id = m.conversation_id "
+        f" WHERE {' AND '.join(dk)} "
         f" ORDER BY m.created_at DESC, m.id DESC LIMIT ${len(ts)}", *ts)
     mat_na = che_du_lieu.MatNa()
     items = [{
@@ -894,7 +1103,9 @@ async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = 
     # Nguồn thứ hai: đề xuất HÀNH ĐỘNG của AI (lên đơn, huỷ đơn — bảng
     # ai_de_xuat, mục 17). Cùng hình dạng bản ghi, trộn theo thời gian; mỗi
     # nguồn lấy limit+1 nên trang sau không hụt dòng của nguồn nào.
-    items.extend(await _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, limit + 1, mat_na))
+    items.extend(await _de_xuat_hanh_dong(
+        hoi_thoai_id, trang_thai, truoc, limit + 1, mat_na,
+        xem=xem, theo_pham_vi=theo_pham_vi))
     items.sort(key=lambda x: x["luc_de_xuat"], reverse=True)
     con_nua = len(items) > limit or len(rows) > limit
     items = items[:limit]
@@ -903,9 +1114,14 @@ async def de_xuat(*, hoi_thoai_id: UUID | None = None, trang_thai: str | None = 
 
 
 async def _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, gioi_han: int,
-                             mat_na) -> list[dict[str, Any]]:
+                             mat_na, *, xem=None, theo_pham_vi: bool = False) -> list[dict[str, Any]]:
     dk: list[str] = ["TRUE"]
     ts: list[Any] = []
+    if theo_pham_vi and xem is not None and not xem.co("hoi_thoai.xem_tat_ca"):
+        ts.append([UUID(k) for k in sorted(xem.kenh) if k])
+        dk.append(f"c.account_id = ANY(${len(ts)}::uuid[])")
+    if theo_pham_vi and xem is not None and not (xem.co("don.doc") or xem.co("don.sua") or xem.co("ai.duyet")):
+        dk.append("d.hanh_dong NOT IN ('tao_don', 'huy_don')")
     if hoi_thoai_id is not None:
         ts.append(hoi_thoai_id)
         dk.append(f"d.conversation_id = ${len(ts)}")
@@ -931,7 +1147,9 @@ async def _de_xuat_hanh_dong(hoi_thoai_id, trang_thai, truoc, gioi_han: int,
         "       m.dau_vet_ai ->> 'luot_id' AS luot_id, "
         "       (SELECT COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) FROM nguoi_dung "
         "         WHERE id = COALESCE(d.duyet_boi, d.tu_choi_boi)) AS nguoi_quyet "
-        "  FROM ai_de_xuat d LEFT JOIN messages m ON m.id = d.message_id "
+        "  FROM ai_de_xuat d "
+        "  JOIN conversations c ON c.id = d.conversation_id "
+        "  LEFT JOIN messages m ON m.id = d.message_id "
         f" WHERE {' AND '.join(dk)} ORDER BY d.tao_luc DESC, d.id DESC LIMIT ${len(ts)}", *ts)
     ra: list[dict[str, Any]] = []
     for r in rows:
@@ -994,16 +1212,23 @@ async def _ghi(kind: str, actor: str, ref_id: UUID | None, detail: dict[str, Any
     return int(r["id"])
 
 
-async def _dong_goc(event_id: int) -> dict[str, Any]:
-    rows = await db.fetch(f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1", int(event_id))
+async def _dong_goc(event_id: int, *, nguoi: dict | None = None,
+                    theo_pham_vi: bool = False) -> dict[str, Any]:
+    ts: list[Any] = [int(event_id)]
+    pv_sql = ""
+    if theo_pham_vi:
+        xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+        pv_sql = f" AND {_sql_pham_vi(xem, ts)}"
+    rows = await db.fetch(f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1{pv_sql}", *ts)
     if not rows:
         raise KhongThay(f"không thấy sự kiện {event_id}")
     return rows[0]
 
 
-async def ghi_su_co(event_id: int, *, ghi_chu: str, boi: str) -> int:
+async def ghi_su_co(event_id: int, *, ghi_chu: str, boi: str,
+                    nguoi: dict | None = None, theo_pham_vi: bool = False) -> int:
     """Đánh dấu một hành động là SỰ CỐ. Dòng gốc không đổi một byte."""
-    goc = await _dong_goc(event_id)
+    goc = await _dong_goc(event_id, nguoi=nguoi, theo_pham_vi=theo_pham_vi)
     if str(goc["kind"]).startswith("su_co.") or goc["kind"] == "nhat_ky.giai_trinh":
         raise KhongHopLe("không đánh dấu sự cố lên chính một dòng sự cố/giải trình")
     da = await db.fetchrow(
@@ -1021,12 +1246,19 @@ async def ghi_su_co(event_id: int, *, ghi_chu: str, boi: str) -> int:
     return await _ghi("su_co.danh_dau", boi, goc.get("hoi_thoai_id"), detail)
 
 
-async def _su_co(su_co_id: int) -> dict[str, Any]:
-    r = await db.fetchrow(
-        "SELECT id, ref_id, detail FROM events WHERE id = $1 AND kind = 'su_co.danh_dau'",
-        int(su_co_id))
-    if not r:
+async def _su_co(su_co_id: int, *, nguoi: dict | None = None,
+                 theo_pham_vi: bool = False) -> dict[str, Any]:
+    ts: list[Any] = [int(su_co_id)]
+    pv_sql = ""
+    if theo_pham_vi:
+        xem = await nhat_ky_lien_ket.nguoi_xem(nguoi)
+        pv_sql = f" AND {_sql_pham_vi(xem, ts)}"
+    rows = await db.fetch(
+        f"SELECT * FROM ({_SQL_GOC}) x WHERE x.id = $1 AND x.kind = 'su_co.danh_dau'{pv_sql}",
+        *ts)
+    if not rows:
         raise KhongThay(f"không thấy sự cố {su_co_id}")
+    r = rows[0]
     dong = await db.fetchrow(
         "SELECT id FROM events WHERE kind = 'su_co.ket_thuc' AND detail ->> 'su_co_id' = $1::bigint::text "
         "LIMIT 1", int(su_co_id))
@@ -1035,10 +1267,11 @@ async def _su_co(su_co_id: int) -> dict[str, Any]:
     return r
 
 
-async def ghi_buoc_can_thiep(su_co_id: int, *, loai: str, ghi_chu: str, boi: str) -> int:
+async def ghi_buoc_can_thiep(su_co_id: int, *, loai: str, ghi_chu: str, boi: str,
+                             nguoi: dict | None = None, theo_pham_vi: bool = False) -> int:
     if loai not in BUOC_CAN_THIEP:
         raise KhongHopLe(f"loại bước lạ: {loai}")
-    sc = await _su_co(su_co_id)
+    sc = await _su_co(su_co_id, nguoi=nguoi, theo_pham_vi=theo_pham_vi)
     d = _doc_json(sc["detail"])
     d = d if isinstance(d, dict) else {}
     return await _ghi("su_co.can_thiep", boi, sc.get("ref_id"), {
@@ -1046,8 +1279,9 @@ async def ghi_buoc_can_thiep(su_co_id: int, *, loai: str, ghi_chu: str, boi: str
         "loai": loai, "nhan": BUOC_CAN_THIEP[loai], "ghi_chu": ghi_chu[:2000]})
 
 
-async def ghi_ket_thuc_su_co(su_co_id: int, *, ket_qua: str, ghi_chu: str, boi: str) -> int:
-    sc = await _su_co(su_co_id)
+async def ghi_ket_thuc_su_co(su_co_id: int, *, ket_qua: str, ghi_chu: str, boi: str,
+                             nguoi: dict | None = None, theo_pham_vi: bool = False) -> int:
+    sc = await _su_co(su_co_id, nguoi=nguoi, theo_pham_vi=theo_pham_vi)
     d = _doc_json(sc["detail"])
     d = d if isinstance(d, dict) else {}
     return await _ghi("su_co.ket_thuc", boi, sc.get("ref_id"), {
@@ -1055,8 +1289,9 @@ async def ghi_ket_thuc_su_co(su_co_id: int, *, ket_qua: str, ghi_chu: str, boi: 
         "ket_qua": ket_qua[:500], "ghi_chu": ghi_chu[:2000]})
 
 
-async def ghi_giai_trinh(event_id: int, *, ghi_chu: str, boi: str) -> int:
+async def ghi_giai_trinh(event_id: int, *, ghi_chu: str, boi: str,
+                         nguoi: dict | None = None, theo_pham_vi: bool = False) -> int:
     """Đính chính / giải trình cho một dòng — dòng mới, dòng cũ giữ nguyên."""
-    goc = await _dong_goc(event_id)
+    goc = await _dong_goc(event_id, nguoi=nguoi, theo_pham_vi=theo_pham_vi)
     return await _ghi("nhat_ky.giai_trinh", boi, goc.get("hoi_thoai_id"), {
         "su_kien_goc": int(event_id), "kind_goc": goc["kind"], "ghi_chu": ghi_chu[:2000]})

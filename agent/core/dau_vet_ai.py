@@ -121,8 +121,18 @@ _NHAN_CONG_CU = {
     "tra_cuu_van_chuyen": "vận chuyển",
 }
 _KHOA_SO_SANH = ("gia", "con_hang", "ton_kho", "trang_thai", "tong_tien")
+# BUG-16-03: đơn vị tiền phải kết thúc ranh giới chữ cái `(?![^\W\d_])` để
+# không bắt nhầm chữ "đ" ở đầu từ tiếng Việt ("1 đổi 1", "2026 được", "100 điểm"),
+# đồng thời nhận đủ các định dạng giá hợp lệ (100đ, 100 đ, 100.000đ, 100.000 VNĐ,
+# 100 nghìn đồng...).
 _SO_TIEN = re.compile(
-    r"(\d{1,3}(?:[.,]\d{3})+|\d{4,})\s*(?:đ|₫|vnđ|vnd|đồng|k\b|nghìn|ngàn)", re.IGNORECASE)
+    r"(?<![^\W\d_])"
+    r"(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)"
+    r"\s*"
+    r"(?:₫|(?:vnđ|vnd|đ|k|(?:nghìn|ngàn|triệu)(?:\s*(?:đồng|vnđ|vnd|đ))?"
+    r"|đồng(?!\s+(?:hồ|ý|nghiệp|bộ|thời|loạt|nhất)))(?![^\W\d_]))",
+    re.IGNORECASE,
+)
 _SO_THOI_HAN = re.compile(
     r"\b(\d+)\s*(ngày|tháng|tuần|giờ|năm|%)\b", re.IGNORECASE)
 _DON_VI_KHANG_DINH = re.compile(

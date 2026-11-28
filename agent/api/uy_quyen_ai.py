@@ -165,7 +165,9 @@ async def _thi_hanh(dx: dict, nguoi: dict) -> tuple[bool, dict, str | None, Any]
         tham_so = {k: v for k, v in ts.items() if k != "tong_tien"}
         kq = await tools._tao_don_hang(
             tham_so, catalog.get("san_pham", []), cid,
-            ep_da_chot=True, tong_phai_bang=ts.get("tong_tien"))
+            ep_da_chot=True, tong_phai_bang=ts.get("tong_tien"),
+            actor="agent", nguoi_phe_duyet=_ten(nguoi),
+            nguon_thuc_thi="phe_duyet_de_xuat_ai")
         if kq.get("tao_duoc") is not True:
             return False, kq, str(kq.get("ly_do") or "Không lên được đơn"), None
         moi = await db.fetchrow("SELECT id FROM orders WHERE ma_don = $1", kq.get("ma_don"))
@@ -336,4 +338,7 @@ async def tu_choi_ban_nhap(message_id: str, body: TuChoiIn | None = None,
         message_id=str(mid), conversation_id=str(sau["conversation_id"]),
         nguoi_tu_choi_id=str(nguoi.get("id") or ""), ly_do=ly_do or None,
         muc_uy_quyen=None)
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.ket_thuc_duyet_nhap(None, sau["conversation_id"])
     return {"ok": True, "trang_thai": "cancelled"}

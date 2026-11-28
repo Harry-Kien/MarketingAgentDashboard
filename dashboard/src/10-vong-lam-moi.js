@@ -75,7 +75,7 @@ async function refresh() {
       if (coQuyen("khach.pii")) { await loadPdpdPolicy(); await loadRetention(); }
       await loadCaiDatApi();
     }
-    if (dangMo("ht-nhat-ky")) await loadEvents();
+    if (tabDangHien("ht-nhat-ky") && typeof nkLamMoi === "function") await nkLamMoi();
   } catch (e) {
     toast("Không nối được máy chủ: " + e.message, true);
   }

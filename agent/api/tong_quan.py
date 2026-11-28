@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import (APIRouter, Depends)
+from fastapi import (APIRouter, Depends, Response)
 from pydantic import BaseModel
 
 from agent import db, runtime
@@ -286,28 +286,33 @@ class RuntimeBody(BaseModel):
 
 @router.post("/runtime")
 async def set_runtime(body: RuntimeBody, nguoi: dict = Depends(can_quyen("agent.dieu_khien"))) -> dict:
-    state = await runtime.luu(body.model_dump(exclude_none=True), boi=nguoi["ten_dang_nhap"])
-    await db.log_event("runtime.update", actor="staff", **{k: str(v) for k, v in state.items()})
+    ten = str(nguoi.get("ten_dang_nhap") or nguoi.get("id") or "")
+    state = await runtime.luu(body.model_dump(exclude_none=True), boi=ten)
+    await db.log_event("runtime.update", actor=ten or "system",
+                       boi=ten, **{k: str(v) for k, v in state.items()})
     return state
 
 
-@router.get("/events")
-async def recent_events(limit: int = 50, _quyen: dict = Depends(can_quyen("nhat_ky.doc"))) -> list[dict]:
-    rows = await db.fetch(
-        f"SELECT kind, actor, ref_id, detail, created_at FROM events "
-        f"ORDER BY created_at DESC LIMIT {int(limit)}"
-    )
+@router.get("/events", deprecated=True)
+async def recent_events(
+    response: Response,
+    limit: int = 50,
+    nguoi: dict = Depends(can_quyen("nhat_ky.doc")),
+) -> list[dict]:
+    """API cũ (deprecated): giữ tương thích cho script/test ngoài; ưu tiên dùng `GET /api/nhat-ky`."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/nhat-ky>; rel="successor-version"'
+    lim = max(1, min(int(limit), nhat_ky_kiem_toan.TOI_DA_TRANG))
+    kq = await nhat_ky_kiem_toan.tim(nguoi=nguoi, theo_pham_vi=True, limit=lim)
     return [
         {
-            "kind": r["kind"],
-            "actor": r["actor"],
-            "ref_id": str(r["ref_id"]) if r["ref_id"] else None,
-            # Làm sạch lúc ĐỌC (phiếu việc mục 18 điểm 13): dòng cũ ghi trước
-            # khi có quy tắc che vẫn nằm trong bảng.
-            "detail": nhat_ky_kiem_toan.lam_sach(r["detail"]),
-            "at": r["created_at"].isoformat(),
+            "kind": b["kind"],
+            "actor": (b["tac_nhan"].get("ten") or b["tac_nhan"].get("loai") or "he_thong"),
+            "ref_id": b["ref_id"],
+            "detail": b["chi_tiet"],
+            "at": b["luc"],
         }
-        for r in rows
+        for b in kq["items"]
     ]
 
 

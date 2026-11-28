@@ -131,4 +131,17 @@ class NativeConnectionVerifier:
                 status,
                 actor_id=actor_id,
             )
+        from agent import db as _db
+        if getattr(_db, "_pool", None) is not None:
+            from agent.core import thong_bao_noi_bo
+
+            if status == AccountStatus.REAUTH_REQUIRED:
+                await thong_bao_noi_bo.bao_kenh_can_xac_thuc(
+                    account_id,
+                    ten_tai_khoan=account.display_name,
+                    kenh=account.channel.value,
+                    ly_do=str((result.detail or {}).get("message") or result.code or ""),
+                )
+            elif status == AccountStatus.ACTIVE:
+                await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, account_id)
         return result

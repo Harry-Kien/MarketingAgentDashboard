@@ -485,7 +485,7 @@ async def meta_callback(
     # là một lựa chọn có ý thức.
     phieu = _kho_chon.tao(nguoi_bam, danh_sach)
     await db.log_event(
-        "oauth.meta.hien_chon_trang", actor="system", so_trang=len(danh_sach),
+        "oauth.meta.hien_chon_trang", actor=str(nguoi_bam), so_trang=len(danh_sach),
     )
     return _trang_ket_qua("Chọn Trang muốn kết nối",
                           dung_trang_chon(phieu, danh_sach),
@@ -576,13 +576,15 @@ async def _tao_tai_khoan_tu_danh_sach(
     """
     from uuid import UUID
 
+    from agent import ket_noi_tich_hop
     from agent.omnichannel.account_repository import PostgresAccountRepository
     from agent.omnichannel.account_service import (
         AccountActor,
+        AccountAlreadyExists,
         ChannelAccountService,
         CreateAccountCommand,
     )
-    from agent.omnichannel.accounts import Channel
+    from agent.omnichannel.accounts import AccountStatus, Channel
     from agent.channels.dang_ky_webhook_meta import dang_ky_webhook_trang
     from agent.security.credential_vault import CredentialVault, parse_master_keys
 
@@ -598,43 +600,80 @@ async def _tao_tai_khoan_tu_danh_sach(
     # khai một callback URL cho mỗi app, nên nhiều verify token là vô nghĩa.
     verify_token = settings.messenger_verify_token or secrets.token_urlsafe(24)
 
-    # NGƯỜI THẬT đã bấm nút, không phải một id bịa.
-    #
-    # `account_memberships.user_id` có khoá ngoại tới `nguoi_dung`. Dùng
-    # UUID(int=0) thì MỌI lượt tạo tài khoản chết vì ForeignKeyViolation, và
-    # người dùng chỉ thấy "Đã nối 0 Trang" — đã xảy ra thật với 6 Trang.
-    #
-    # `quyen` chứ không phải `is_admin`: `is_admin` là property suy ra từ
-    # tập quyền. Đặt nhầm thì actor luôn bị coi là không đủ quyền.
-    #
-    # Cấp thẳng `kenh.sua` ở đây là ĐÚNG chứ không phải đi tắt: người bấm đã
-    # qua `can_quyen("kenh.noi")` ở endpoint, và việc tạo tài khoản kênh là
-    # hệ quả tất yếu của luồng nối kênh mà họ vừa được phép chạy.
     actor = AccountActor(
         user_id=nguoi_bam if isinstance(nguoi_bam, UUID) else UUID(str(nguoi_bam)),
         quyen=frozenset({"kenh.sua"}),
     )
+    ten_nguoi = str(actor.user_id)
+    if getattr(db, "_pool", None) is not None:
+        ten_row = await db.fetchrow(
+            "SELECT ten_dang_nhap FROM nguoi_dung WHERE id = $1", actor.user_id
+        )
+        if ten_row and ten_row.get("ten_dang_nhap"):
+            ten_nguoi = str(ten_row["ten_dang_nhap"])
 
     ra: list[str] = []
     chua_dang_ky: list[str] = []
     da_noi_ig: list[str] = []
     for trang in danh_sach:
+        fb_creds = {
+            "access_token": trang["access_token"],
+            "app_secret": app_secret,
+            "verify_token": verify_token,
+        }
         try:
-            await service.create_account(
-                CreateAccountCommand(
-                    channel=Channel.FACEBOOK,
-                    display_name=trang["name"],
-                    external_account_id=trang["id"],
-                    capabilities={"send_text": True, "receive_message": True},
-                    metadata={"nguon": "oauth"},
-                    credentials={
-                        "access_token": trang["access_token"],
-                        "app_secret": app_secret,
-                        "verify_token": verify_token,
-                    },
-                ),
-                actor=actor,
-            )
+            try:
+                moi_fb = await service.create_account(
+                    CreateAccountCommand(
+                        channel=Channel.FACEBOOK,
+                        display_name=trang["name"],
+                        external_account_id=trang["id"],
+                        capabilities={"send_text": True, "receive_message": True},
+                        metadata={"nguon": "oauth"},
+                        credentials=fb_creds,
+                    ),
+                    actor=actor,
+                )
+                await ket_noi_tich_hop.ghi_lich_su(
+                    dich_vu="facebook", truong="tai_khoan", hanh_dong="tao",
+                    sua_boi=ten_nguoi, account_id=moi_fb.id, doi_tuong=moi_fb.display_name,
+                )
+            except AccountAlreadyExists:
+                existing_fb = await repository.find_by_external(Channel.FACEBOOK, trang["id"])
+                if existing_fb is None:
+                    raise
+                await service.rotate_credentials(existing_fb.id, fb_creds, actor=actor)
+                if existing_fb.status in {
+                    AccountStatus.REAUTH_REQUIRED,
+                    AccountStatus.DEGRADED,
+                    AccountStatus.PENDING,
+                }:
+                    await repository.update_status(
+                        existing_fb.id, AccountStatus.ACTIVE, actor_id=actor.user_id,
+                    )
+                await ket_noi_tich_hop.ghi_lich_su(
+                    dich_vu="facebook", truong="credentials", hanh_dong="doi_credential",
+                    bi_mat=True, sua_boi=ten_nguoi, account_id=existing_fb.id,
+                    doi_tuong=existing_fb.display_name,
+                )
+                await db.log_event(
+                    "channel_account.reconnected",
+                    actor=ten_nguoi,
+                    ref_id=existing_fb.id,
+                    trigger="oauth_meta",
+                    trang_thai="active",
+                    ket_qua="thanh_cong",
+                )
+                await db.log_event(
+                    "oauth.meta.ket_noi_lai",
+                    actor=ten_nguoi,
+                    ref_id=existing_fb.id,
+                    channel="facebook",
+                    display_name=existing_fb.display_name,
+                )
+                from agent.core import thong_bao_noi_bo
+
+                await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, existing_fb.id)
             ra.append(trang["name"])
 
             # Instagram Business của chính Trang này — nối luôn, không bắt
@@ -651,26 +690,58 @@ async def _tao_tai_khoan_tu_danh_sach(
                 try:
                     ten_ig = (trang.get("instagram_username")
                               or trang["name"]) + " (Instagram)"
-                    await service.create_account(
-                        CreateAccountCommand(
-                            channel=Channel.INSTAGRAM,
-                            display_name=ten_ig,
-                            external_account_id=trang["instagram_id"],
-                            capabilities={"send_text": True,
-                                          "receive_message": True},
-                            metadata={"nguon": "oauth", "trang_lien_ket": trang["id"]},
-                            credentials={
-                                "access_token": trang["access_token"],
-                                "app_secret": app_secret,
-                                "verify_token": verify_token,
-                            },
-                        ),
-                        actor=actor,
-                    )
+                    try:
+                        moi_ig = await service.create_account(
+                            CreateAccountCommand(
+                                channel=Channel.INSTAGRAM,
+                                display_name=ten_ig,
+                                external_account_id=trang["instagram_id"],
+                                capabilities={"send_text": True,
+                                              "receive_message": True},
+                                metadata={"nguon": "oauth", "trang_lien_ket": trang["id"]},
+                                credentials=fb_creds,
+                            ),
+                            actor=actor,
+                        )
+                        await ket_noi_tich_hop.ghi_lich_su(
+                            dich_vu="instagram", truong="tai_khoan", hanh_dong="tao",
+                            sua_boi=ten_nguoi, account_id=moi_ig.id, doi_tuong=moi_ig.display_name,
+                        )
+                    except AccountAlreadyExists:
+                        existing_ig = await repository.find_by_external(
+                            Channel.INSTAGRAM, trang["instagram_id"],
+                        )
+                        if existing_ig is None:
+                            raise
+                        await service.rotate_credentials(existing_ig.id, fb_creds, actor=actor)
+                        if existing_ig.status in {
+                            AccountStatus.REAUTH_REQUIRED,
+                            AccountStatus.DEGRADED,
+                            AccountStatus.PENDING,
+                        }:
+                            await repository.update_status(
+                                existing_ig.id, AccountStatus.ACTIVE, actor_id=actor.user_id,
+                            )
+                        await ket_noi_tich_hop.ghi_lich_su(
+                            dich_vu="instagram", truong="credentials", hanh_dong="doi_credential",
+                            bi_mat=True, sua_boi=ten_nguoi, account_id=existing_ig.id,
+                            doi_tuong=existing_ig.display_name,
+                        )
+                        await db.log_event(
+                            "channel_account.reconnected",
+                            actor=ten_nguoi,
+                            ref_id=existing_ig.id,
+                            trigger="oauth_meta",
+                            trang_thai="active",
+                            ket_qua="thanh_cong",
+                        )
+                        from agent.core import thong_bao_noi_bo
+
+                        await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, existing_ig.id)
                     da_noi_ig.append(ten_ig)
                 except Exception as exc:  # noqa: BLE001
                     await db.log_event(
-                        "oauth.meta.tao_instagram_loi", actor="system",
+                        "oauth.meta.tao_instagram_loi", actor=ten_nguoi,
                         trang=str(trang.get("name", ""))[:80],
                         error=f"{type(exc).__name__}: {exc}"[:200],
                     )
@@ -685,12 +756,12 @@ async def _tao_tai_khoan_tu_danh_sach(
             if not ok:
                 chua_dang_ky.append(trang["name"])
                 await db.log_event(
-                    "oauth.meta.dang_ky_webhook_loi", actor="system",
+                    "oauth.meta.dang_ky_webhook_loi", actor=ten_nguoi,
                     trang=str(trang.get("name", ""))[:80], error=ly_do,
                 )
         except Exception as exc:  # noqa: BLE001 — một Trang lỗi không chặn Trang khác
             await db.log_event(
-                "oauth.meta.tao_tai_khoan_loi", actor="system",
+                "oauth.meta.tao_tai_khoan_loi", actor=ten_nguoi,
                 trang=str(trang.get("name", ""))[:80],
                 error=f"{type(exc).__name__}: {exc}"[:200],
             )

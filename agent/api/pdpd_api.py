@@ -196,7 +196,8 @@ async def pdpd_xoa(sdt: str, body: XoaDuLieuIn,
         # liệu cá nhân là việc không hoàn tác được; nhật ký phải trả lời
         # được câu "ai đã làm việc này".
         kq = await du_lieu_ca_nhan.xoa(
-            sdt, ly_do=f"{body.ly_do} (bởi {nguoi['ten_dang_nhap']})"
+            sdt, ly_do=f"{body.ly_do} (bởi {nguoi['ten_dang_nhap']})",
+            nguoi_thuc_hien=str(nguoi.get("ten_dang_nhap") or nguoi.get("id") or ""),
         )
     except du_lieu_ca_nhan.ChuaDuyet as exc:
         # 409 chứ không 422: người vận hành không gõ sai gì cả, chỉ là chưa

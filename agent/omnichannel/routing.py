@@ -397,6 +397,10 @@ class PostgresRoutingTransaction:
             conversation_id,
             {"assignee_id": str(assignee_id), "reason": reason},
         )
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.ket_thuc_luot_chuyen_giao(
+            self._connection, conversation_id, danh_dau_da_xu_ly=True)
         return updated
 
     async def can_release(
@@ -479,6 +483,11 @@ class PostgresRoutingTransaction:
             "VALUES ('conversation.che_do',$1,$2,$3)",
             str(actor_id), conversation_id, {"che_do": che_do, "reason": reason},
         )
+        if che_do in ("auto", "assist"):
+            from agent.core import thong_bao_noi_bo
+
+            await thong_bao_noi_bo.ket_thuc_luot_chuyen_giao(
+                self._connection, conversation_id, danh_dau_da_xu_ly=True)
         return updated
 
     async def apply_release(

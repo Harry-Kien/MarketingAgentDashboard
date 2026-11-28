@@ -11,16 +11,32 @@ from typing import Any, Literal
 
 class InternalShippingStatus(str, Enum):
     """
-    4 trạng thái vận chuyển cốt lõi trong hệ thống nội bộ:
-      - DELIVERING: Hàng đang được trung chuyển, giao hàng hoặc đang xử lý.
-      - DELIVERED: Giao hàng và thu tiền COD thành công -> Đóng đơn.
-      - DELIVERY_FAILED: Giao hàng thất bại (khách hẹn lại, không nghe máy) -> Cần người can thiệp.
-      - RETURNED: Hàng hoàn về kho -> Tự động hoàn tồn kho.
+    7 trạng thái vận chuyển nội bộ (BUG-17-04):
+      - READY_TO_PICK: Đã tạo vận đơn, chờ shipper lấy hàng (hàng chưa rời kho).
+      - DELIVERING: Đã lấy hàng, đang trung chuyển hoặc đang giao tới khách.
+      - DELIVERED: Giao hàng thành công -> Đóng đơn.
+      - DELIVERY_FAILED: Giao thất bại / sự cố (hẹn lại, mất/hư) -> Cần người xử lý.
+      - RETURNING: Đang hoàn hàng về kho (hàng chưa về kệ -> KHÔNG cộng kho).
+      - RETURNED: Hãng xác nhận đã hoàn hàng về kho -> Sinh việc kiểm tra hàng hoàn, KHÔNG tự cộng kho.
+      - CANCELLED: Hãng xác nhận đã huỷ vận đơn.
     """
+    READY_TO_PICK = "ready_to_pick"
     DELIVERING = "delivering"
     DELIVERED = "delivered"
     DELIVERY_FAILED = "delivery_failed"
+    RETURNING = "returning"
     RETURNED = "returned"
+    CANCELLED = "cancelled"
+
+
+# Các trạng thái chứng minh hàng đã rời kho (bàn giao cho hãng vận chuyển).
+TRANG_THAI_DA_LAY_HANG = frozenset({
+    InternalShippingStatus.DELIVERING,
+    InternalShippingStatus.DELIVERY_FAILED,
+    InternalShippingStatus.RETURNING,
+    InternalShippingStatus.RETURNED,
+    InternalShippingStatus.DELIVERED,
+})
 
 
 @dataclass(slots=True)
@@ -54,7 +70,7 @@ class CreateWaybillResult:
     don_vi: str = ""
     phi_van_chuyen: int = 0
     ngay_du_kien_giao: datetime | None = None
-    trang_thai_noi_bo: InternalShippingStatus = InternalShippingStatus.DELIVERING
+    trang_thai_noi_bo: InternalShippingStatus = InternalShippingStatus.READY_TO_PICK
     thong_tin_them: dict[str, Any] = field(default_factory=dict)
     loi: str = ""
     # Không phải lỗi hệ thống — là việc cần người quyết. Ví dụ: địa chỉ khách

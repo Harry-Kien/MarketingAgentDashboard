@@ -180,13 +180,26 @@ class ChannelAccountService:
         actor: AccountActor,
     ) -> ChannelAccount:
         self._require_admin(actor)
-        if await self._repository.get(account_id) is None:
+        account = await self._repository.get(account_id)
+        if account is None:
             raise AccountNotFound("không tìm thấy tài khoản kênh")
         if not await self._repository.has_credentials(account_id):
             raise AccountDisabled("tài khoản chưa có credential để kích hoạt")
+        # BUG-TB-04: không đánh đồng thao tác bật tài khoản với xác thực kết nối thành công.
+        if account.status in {AccountStatus.REAUTH_REQUIRED, AccountStatus.DEGRADED}:
+            return account
+        target_status = AccountStatus.ACTIVE
+        latest_health = getattr(self._repository, "latest_health", None)
+        if account.status == AccountStatus.DISABLED and latest_health is not None:
+            health = await latest_health(account_id)
+            if isinstance(health, Mapping) and health.get("status") in {
+                AccountStatus.REAUTH_REQUIRED.value,
+                AccountStatus.DEGRADED.value,
+            }:
+                target_status = AccountStatus(str(health["status"]))
         return await self._repository.update_status(
             account_id,
-            AccountStatus.ACTIVE,
+            target_status,
             actor_id=actor.user_id,
         )
 

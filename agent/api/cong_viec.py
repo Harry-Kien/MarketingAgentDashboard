@@ -646,7 +646,27 @@ async def chi_tiet(
             "ghi_chu": ghi_chu,
             "tao_luc": r["tao_luc"].isoformat(),
         })
+    bien_dong_kho = []
+    if d.get("ma_don"):
+        bd_rows = await db.fetch(
+            "SELECT id, ma, thay_doi, ly_do, ma_don, ghi_chu, luc "
+            "FROM kho_bien_dong WHERE ma_don = $1 ORDER BY luc DESC, id DESC",
+            d["ma_don"],
+        )
+        bien_dong_kho = [
+            {
+                "id": int(b["id"]),
+                "ma": b["ma"],
+                "thay_doi": int(b["thay_doi"]),
+                "ly_do": b["ly_do"],
+                "ma_don": b["ma_don"],
+                "ghi_chu": b["ghi_chu"] or "",
+                "luc": b["luc"].isoformat(),
+            }
+            for b in bd_rows
+        ]
     return {"cong_viec": _sach(dict(d)), "lich_su": lich_su,
+            "bien_dong_kho": bien_dong_kho,
             "nhom_lich_su": [{"ma": m, "nhan": n} for m, n in cv.NHAN_NHOM_LICH_SU.items()],
             **_danh_muc()}
 
@@ -762,10 +782,14 @@ async def sua(
     # thái một việc đã giao không phải là "được giao" lần nữa.
     if (body.nguoi_nhan is not None and not body.xoa_nguoi_nhan
             and str(body.nguoi_nhan) != str(cu["nguoi_nhan"] or "")):
+        await thong_bao_noi_bo.dong_bo_doi_nguoi_viec(
+            cong_viec_id, body.nguoi_nhan, tieu_de_viec=tieu_de)
         await thong_bao_noi_bo.bao_duoc_giao_viec(
             cong_viec_id, body.nguoi_nhan, boi=nguoi.get("id"),
             tieu_de_viec=tieu_de, chuyen=cu["nguoi_nhan"] is not None)
     elif body.xoa_nguoi_nhan and cu["nguoi_nhan"] is not None and moi_tt in cv.CHUA_XONG:
+        await thong_bao_noi_bo.dong_bo_doi_nguoi_viec(
+            cong_viec_id, None, tieu_de_viec=tieu_de)
         # Thu hồi người nhận = việc quay về "Chưa phân công": phải có người biết.
         await thong_bao_noi_bo.bao_viec_chua_giao(
             cong_viec_id, tieu_de_viec=tieu_de, ly_do="đã thu hồi người nhận",
@@ -826,6 +850,8 @@ async def tu_dong_giao(
             "SELECT coalesce(ho_ten, ten_dang_nhap) FROM nguoi_dung WHERE id = $1",
             kq.nguoi_nhan) if kq.nguoi_nhan else None)
     if kq.nguoi_nhan:
+        await thong_bao_noi_bo.dong_bo_doi_nguoi_viec(
+            cong_viec_id, kq.nguoi_nhan, tieu_de_viec=tieu_de)
         await thong_bao_noi_bo.bao_duoc_giao_viec(
             cong_viec_id, kq.nguoi_nhan, boi=nguoi.get("id"), tieu_de_viec=tieu_de,
             tu_dong=True)

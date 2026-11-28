@@ -178,8 +178,10 @@ def test_ma_la_tra_None_chu_khong_doan_dang_giao():
     ("delivered", "delivered"),
     ("delivery_fail", "delivery_failed"),
     ("returned", "returned"),
+    ("returning", "returning"),
+    ("cancel", "cancelled"),
     ("delivering", "delivering"),
-    ("ready_to_pick", "delivering"),
+    ("ready_to_pick", "ready_to_pick"),
     ("sorting", "delivering"),
 ])
 def test_anh_xa_ma_quen_thuoc(ma, mong_doi):

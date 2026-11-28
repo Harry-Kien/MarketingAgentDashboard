@@ -449,7 +449,7 @@ $("#khoRows")?.addEventListener("click", (e) => {
   const a = e.target.closest("[data-xemanh]");
   if (!a) return;
   $("#anhLonImg").src = a.src;
-  $("#anhLonTen").textContent = a.closest(".row")?.querySelector("b, .row__title")?.textContent || a.dataset.xemanh;
+  $("#anhLonTen").textContent = a.closest("tr, .dh-card, .row")?.querySelector(".kho-ten, b, .row__title")?.textContent || a.dataset.xemanh;
   $("#anhLon").classList.remove("is-off");
 });
 const anhLonDong = () => $("#anhLon").classList.add("is-off");

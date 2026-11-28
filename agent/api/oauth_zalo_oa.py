@@ -274,29 +274,53 @@ async def _luu_tai_khoan(*, oa_id: str, ten: str, refresh_token: str,
     nghĩa là địa chỉ webhook đang khai ở Zalo trỏ vào bản cũ — bản có khoá
     đã hết hạn. Gửi được, nhận không được, và không có gì báo.
     """
+    from agent import ket_noi_tich_hop
     from agent.omnichannel.account_service import (
         AccountActor, CreateAccountCommand,
     )
-    from agent.omnichannel.accounts import Channel
+    from agent.omnichannel.accounts import AccountStatus, Channel
 
     app_id, secret = _app_id_va_secret()
     repo, service = _kho_tai_khoan()
 
-    # NGƯỜI THẬT đã bấm nút. `account_memberships.user_id` có khoá ngoại tới
-    # `nguoi_dung`; một id bịa làm mọi lượt tạo chết vì ForeignKeyViolation.
-    #
-    # `kenh.sua` cấp thẳng ở đây là hệ quả tất yếu của `kenh.noi` mà endpoint
-    # `/start` đã kiểm, không phải đường tắt.
     actor = AccountActor(
         user_id=nguoi_bam if isinstance(nguoi_bam, UUID) else UUID(str(nguoi_bam)),
         quyen=frozenset({"kenh.sua"}),
     )
+    ten_nguoi = str(actor.user_id)
+    if getattr(db, "_pool", None) is not None:
+        ten_row = await db.fetchrow(
+            "SELECT ten_dang_nhap FROM nguoi_dung WHERE id = $1", actor.user_id
+        )
+        if ten_row and ten_row.get("ten_dang_nhap"):
+            ten_nguoi = str(ten_row["ten_dang_nhap"])
     khoa = {"app_id": app_id, "secret_key": secret,
             "refresh_token": refresh_token}
 
     cu = await repo.find_by_external(Channel.ZALO_OA, oa_id)
     if cu is not None:
         await service.rotate_credentials(cu.id, khoa, actor=actor)
+        if cu.status in {
+            AccountStatus.REAUTH_REQUIRED,
+            AccountStatus.DEGRADED,
+            AccountStatus.PENDING,
+        }:
+            await repo.update_status(cu.id, AccountStatus.ACTIVE, actor_id=actor.user_id)
+        await ket_noi_tich_hop.ghi_lich_su(
+            dich_vu="zalo_oa", truong="credentials", hanh_dong="doi_credential",
+            bi_mat=True, sua_boi=ten_nguoi, account_id=cu.id, doi_tuong=ten,
+        )
+        await db.log_event(
+            "channel_account.reconnected",
+            actor=ten_nguoi,
+            ref_id=cu.id,
+            trigger="oauth_zalo_oa",
+            trang_thai="active",
+            ket_qua="thanh_cong",
+        )
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, cu.id)
         return cu.id, False
 
     moi = await service.create_account(
@@ -309,6 +333,10 @@ async def _luu_tai_khoan(*, oa_id: str, ten: str, refresh_token: str,
             credentials=khoa,
         ),
         actor=actor,
+    )
+    await ket_noi_tich_hop.ghi_lich_su(
+        dich_vu="zalo_oa", truong="tai_khoan", hanh_dong="tao",
+        sua_boi=ten_nguoi, account_id=moi.id, doi_tuong=ten,
     )
     return moi.id, True
 

@@ -381,27 +381,30 @@ async def dat(khoa: str, gia_tri: str, *, sua_boi: str) -> None:
     }
     # KHÔNG ghi giá trị vào nhật ký, kể cả khoá không bí mật — một danh sách
     # trắng "khoá nào in được" là một chỗ để lần sau thêm nhầm.
-    await db.log_event("cau_hinh_api.doi", actor=sua_boi, khoa=khoa)
+    await db.log_event("cau_hinh_api.doi", actor=sua_boi, khoa=khoa, nhom=_mo_ta(khoa).nhom)
     await _ghi_lich_su(khoa, "dat", sua_boi)
     _sau_khi_doi(khoa)
 
 
 async def xoa(khoa: str, *, sua_boi: str) -> None:
-    _mo_ta(khoa)
+    mo_ta = _mo_ta(khoa)
     await _kho.xoa(khoa)
     _gia_tri.pop(khoa, None)
     _meta.pop(khoa, None)
-    await db.log_event("cau_hinh_api.xoa", actor=sua_boi, khoa=khoa)
+    await db.log_event("cau_hinh_api.xoa", actor=sua_boi, khoa=khoa, nhom=mo_ta.nhom)
     await _ghi_lich_su(khoa, "xoa", sua_boi)
     _sau_khi_doi(khoa)
 
 
 async def _ghi_lich_su(khoa: str, hanh_dong: str, sua_boi: str) -> None:
-    """Lịch sử đổi cấu hình cho màn Kết nối & Tích hợp: TÊN trường, không giá trị."""
+    """Lịch sử đổi cấu hình cho màn Kết nối & Tích hợp: chỉ các khoá kết nối, không giá trị."""
     from agent import ket_noi_tich_hop
 
+    dv = ket_noi_tich_hop.dich_vu_ket_noi_cua_khoa(khoa)
+    if dv is None:
+        return
     await ket_noi_tich_hop.ghi_lich_su(
-        dich_vu=ket_noi_tich_hop.dich_vu_cua_khoa(khoa), truong=khoa,
+        dich_vu=dv, truong=khoa,
         hanh_dong=hanh_dong, sua_boi=sua_boi, bi_mat=_mo_ta(khoa).bi_mat)
 
 

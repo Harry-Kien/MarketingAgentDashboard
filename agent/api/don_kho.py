@@ -3,11 +3,12 @@ API đơn hàng, tồn kho, danh mục và ảnh sản phẩm.
 """
 from __future__ import annotations
 
+import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import (APIRouter, Depends, HTTPException, Response)
+from fastapi import (APIRouter, Depends, HTTPException, Query, Response)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -66,12 +67,14 @@ async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict =
     xem_tat_ca = any(q in (_quyen.get("quyen") or ())
                      for q in ("khach.xem_tat_ca", "hoi_thoai.xem_tat_ca"))
     sql = ("SELECT o.*, "
+           "cv_ord.nen_tang AS nen_tang, "
            "r.trang_thai AS van_don_trang_thai_yeucau, "
            "r.client_order_code AS van_don_client_order_code, "
            "r.ly_do_chan AS van_don_ly_do_chan, "
            "r.so_lan_doi_soat AS van_don_so_lan_doi_soat, "
            "r.loi_cuoi AS van_don_loi_cuoi "
            "FROM orders o "
+           "LEFT JOIN conversations cv_ord ON cv_ord.id = o.conversation_id "
            "LEFT JOIN shipping_waybill_requests r ON r.order_id = o.id "
            "WHERE ($1 OR EXISTS (SELECT 1 FROM conversations cv "
            "  JOIN account_memberships am ON am.account_id = cv.account_id "
@@ -93,6 +96,7 @@ async def list_orders(status: str | None = None, limit: int = 60, _quyen: dict =
             "tong_tien": int(r["tong_tien"]),
             "trang_thai": r["trang_thai"],
             "channel": r["channel"],
+            "nen_tang": r.get("nen_tang"),
             "ghi_chu": r["ghi_chu"],
             "conversation_id": str(r["conversation_id"]) if r["conversation_id"] else None,
             "created_at": r["created_at"].isoformat(),
@@ -118,6 +122,7 @@ _TRUONG_PHU_DON = (
     "yeu_cau_doi_tra_luc", "yeu_cau_doi_tra_loai", "yeu_cau_doi_tra_ly_do",
     "erp_ma_don", "erp_loi", "erp_so_lan_thu",
     "ma_van_don", "don_vi_van_chuyen", "trang_thai_giao_hang",
+    "van_don_da_lay_hang",
     # Tiền khách đã trả trước (VietQR). Màn hình hiện "Đã thu Xđ" — thiếu ở
     # đây là người đóng gói không biết đơn đã trả, và vận đơn thu hộ lần hai.
     "so_tien_da_thu", "da_thu_luc", "phi_van_chuyen",
@@ -125,6 +130,361 @@ _TRUONG_PHU_DON = (
     "erp_van_chuyen_thu_lai_luc", "erp_van_chuyen_loi",
     "erp_van_chuyen_dong_bo_luc",
 )
+
+_VN_TZ = timezone(timedelta(hours=7))
+
+_SQL_CAN_XU_LY = (
+    "(o.trang_thai IN ('cho_duyet', 'cho_dong_bo') "
+    "OR (o.yeu_cau_huy_luc IS NOT NULL AND o.trang_thai NOT IN ('da_huy', 'da_giao')) "
+    "OR (o.yeu_cau_doi_tra_luc IS NOT NULL AND o.trang_thai <> 'da_huy') "
+    "OR r.trang_thai IN ('sending', 'unknown_timeout', 'reconciling', 'manual_required') "
+    "OR o.trang_thai_giao_hang IN ('delivery_failed', 'returning') "
+    "OR o.erp_van_chuyen_trang_thai IN ('retry', 'dead'))"
+)
+
+
+def _pham_vi_don(nguoi: dict) -> tuple[bool, uuid.UUID]:
+    xem_tat_ca = any(
+        q in (nguoi.get("quyen") or ())
+        for q in ("khach.xem_tat_ca", "hoi_thoai.xem_tat_ca")
+    )
+    return xem_tat_ca, uuid.UUID(str(nguoi["id"]))
+
+
+def _dong_don_api(r: dict) -> dict:
+    return {
+        "id": str(r["id"]),
+        "ma_don": r["ma_don"],
+        "khach_ten": r["khach_ten"],
+        "khach_sdt": r["khach_sdt"],
+        "khach_dia_chi": r["khach_dia_chi"],
+        "items": _items(r.get("items")),
+        "tong_tien": int(r["tong_tien"]),
+        "trang_thai": r["trang_thai"],
+        "channel": r["channel"],
+        "nen_tang": r.get("nen_tang"),
+        "ghi_chu": r["ghi_chu"],
+        "conversation_id": str(r["conversation_id"]) if r.get("conversation_id") else None,
+        "created_at": _iso(r["created_at"]),
+        "updated_at": _iso(r.get("updated_at")),
+        **{k: _iso(r.get(k)) for k in _TRUONG_PHU_DON},
+        "van_don_trang_thai_yeucau": r.get("van_don_trang_thai_yeucau")
+        or ("confirmed" if str(r.get("ma_van_don") or "").strip() else "not_sent"),
+        "van_don_client_order_code": r.get("van_don_client_order_code") or r["ma_don"],
+        "van_don_ly_do_chan": r.get("van_don_ly_do_chan"),
+        "van_don_so_lan_doi_soat": int(r.get("van_don_so_lan_doi_soat") or 0),
+        "van_don_loi_cuoi": r.get("van_don_loi_cuoi"),
+    }
+
+
+def _ngay_dau(chu: str | None) -> datetime | None:
+    s = (chu or "").strip()
+    if not s:
+        return None
+    try:
+        d = datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=_VN_TZ)
+        return d.astimezone(timezone.utc)
+    except ValueError:
+        raise HTTPException(422, "Ngày lọc phải có định dạng YYYY-MM-DD và là ngày hợp lệ") from None
+
+
+@router.get("/orders/bang")
+async def list_orders_bang(
+    status: str = Query("all", max_length=32),
+    q: str = Query("", max_length=120),
+    channel: str = Query("all", max_length=40),
+    thanh_toan: str = Query("all", max_length=32),
+    van_chuyen: str = Query("all", max_length=32),
+    tu_ngay: str = Query("", max_length=20),
+    den_ngay: str = Query("", max_length=20),
+    page: int = Query(1, ge=1, le=10000),
+    page_size: int = Query(20, ge=5, le=100),
+    nguoi: dict = Depends(can_quyen("don.doc")),
+) -> dict:
+    """Danh sách đơn hàng dạng bảng: tìm kiếm, lọc đa chiều, KPI, đếm chip và phân trang."""
+    xem_tat_ca, uid = _pham_vi_don(nguoi)
+    from_sql = (
+        "FROM orders o "
+        "LEFT JOIN conversations cv_ord ON cv_ord.id = o.conversation_id "
+        "LEFT JOIN shipping_waybill_requests r ON r.order_id = o.id "
+    )
+    base_where = (
+        "($1 OR EXISTS (SELECT 1 FROM conversations cv "
+        "  JOIN account_memberships am ON am.account_id = cv.account_id "
+        "  WHERE cv.id = o.conversation_id AND am.user_id = $2))"
+    )
+
+    # 1. Tổng quan KPI và số đếm chip trong phạm vi kênh của người dùng
+    summary_row = await db.fetchrow(
+        f"""
+        SELECT
+            COUNT(*)::int AS tong_don,
+            COUNT(*) FILTER (WHERE o.trang_thai = 'cho_duyet')::int AS cho_duyet,
+            COUNT(*) FILTER (WHERE o.trang_thai = 'da_chot')::int AS da_chot,
+            COUNT(*) FILTER (WHERE o.trang_thai = 'cho_dong_bo')::int AS cho_dong_bo,
+            COUNT(*) FILTER (WHERE o.trang_thai = 'da_giao')::int AS da_giao,
+            COUNT(*) FILTER (WHERE o.trang_thai = 'da_huy')::int AS da_huy,
+            COUNT(*) FILTER (WHERE {_SQL_CAN_XU_LY})::int AS can_xu_ly
+        {from_sql}
+        WHERE {base_where}
+        """,
+        xem_tat_ca,
+        uid,
+    )
+    kenh_rows = await db.fetch(
+        f"""
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(LOWER(cv_ord.nen_tang)), ''), LOWER(o.channel)) AS kenh
+        {from_sql}
+        WHERE {base_where}
+        ORDER BY 1
+        """,
+        xem_tat_ca,
+        uid,
+    )
+
+    # 2. Bộ lọc chi tiết
+    where = [base_where]
+    args: list = [xem_tat_ca, uid]
+
+    st = (status or "all").strip()
+    if st == "can_xu_ly":
+        where.append(_SQL_CAN_XU_LY)
+    elif st and st != "all":
+        args.append(st)
+        where.append(f"o.trang_thai = ${len(args)}")
+
+    tu = (q or "").strip()
+    if tu:
+        th = tu.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        args.append(th)
+        idx_q = len(args)
+        so = "".join(ch for ch in tu if ch.isdigit())
+        if len(so) >= 3:
+            args.append(so)
+            idx_so = len(args)
+            where.append(
+                f"(o.ma_don ILIKE '%' || ${idx_q} || '%' "
+                f"OR o.khach_ten ILIKE '%' || ${idx_q} || '%' "
+                f"OR o.khach_sdt ILIKE '%' || ${idx_q} || '%' "
+                f"OR regexp_replace(o.khach_sdt, '\\D', '', 'g') LIKE '%' || ${idx_so} || '%')"
+            )
+        else:
+            where.append(
+                f"(o.ma_don ILIKE '%' || ${idx_q} || '%' "
+                f"OR o.khach_ten ILIKE '%' || ${idx_q} || '%' "
+                f"OR o.khach_sdt ILIKE '%' || ${idx_q} || '%')"
+            )
+
+    ch = (channel or "all").strip().lower()
+    if ch and ch != "all":
+        if ch == "facebook":
+            where.append(
+                "(LOWER(o.channel) IN ('facebook', 'messenger') "
+                "OR LOWER(COALESCE(cv_ord.nen_tang, '')) IN ('facebook', 'facebookpage', 'facebook_comment'))"
+            )
+        elif ch == "webchat":
+            where.append(
+                "(LOWER(o.channel) IN ('webchat', 'web') "
+                "OR LOWER(COALESCE(cv_ord.nen_tang, '')) IN ('webchat', 'webwidget'))"
+            )
+        else:
+            args.append(ch)
+            idx_c = len(args)
+            where.append(
+                f"(LOWER(o.channel) = ${idx_c} OR LOWER(COALESCE(cv_ord.nen_tang, '')) = ${idx_c})"
+            )
+
+    tt_pay = (thanh_toan or "all").strip()
+    if tt_pay == "chua_thu":
+        where.append("COALESCE(o.so_tien_da_thu, 0) = 0")
+    elif tt_pay == "thu_mot_phan":
+        where.append("COALESCE(o.so_tien_da_thu, 0) > 0 AND COALESCE(o.so_tien_da_thu, 0) < o.tong_tien")
+    elif tt_pay == "da_thu_du":
+        where.append("COALESCE(o.so_tien_da_thu, 0) >= o.tong_tien AND o.tong_tien > 0")
+
+    vc = (van_chuyen or "all").strip()
+    if vc == "chua_tao":
+        where.append(
+            "NULLIF(TRIM(o.ma_van_don), '') IS NULL "
+            "AND COALESCE(r.trang_thai, 'not_sent') NOT IN ('sending', 'unknown_timeout', 'reconciling', 'manual_required')"
+        )
+    elif vc == "cho_doi_soat":
+        where.append(
+            "NULLIF(TRIM(o.ma_van_don), '') IS NULL "
+            "AND r.trang_thai IN ('sending', 'unknown_timeout', 'reconciling', 'manual_required')"
+        )
+    elif vc and vc != "all":
+        args.append(vc)
+        where.append(f"o.trang_thai_giao_hang = ${len(args)}")
+
+    d_tu = _ngay_dau(tu_ngay)
+    if d_tu is not None:
+        args.append(d_tu)
+        where.append(f"o.created_at >= ${len(args)}")
+    d_den = _ngay_dau(den_ngay)
+    if d_tu is not None and d_den is not None and d_tu > d_den:
+        raise HTTPException(422, "Từ ngày không được sau Đến ngày")
+    if d_den is not None:
+        args.append(d_den + timedelta(days=1))
+        where.append(f"o.created_at < ${len(args)}")
+
+    where_sql = " AND ".join(where)
+    total_row = await db.fetchrow(f"SELECT COUNT(*)::int AS n {from_sql} WHERE {where_sql}", *args)
+    total = int((total_row or {}).get("n") or 0)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page_thuc = min(page, total_pages)
+    offset = (page_thuc - 1) * page_size
+
+    rows = await db.fetch(
+        f"""
+        SELECT o.*,
+               cv_ord.nen_tang AS nen_tang,
+               r.trang_thai AS van_don_trang_thai_yeucau,
+               r.client_order_code AS van_don_client_order_code,
+               r.ly_do_chan AS van_don_ly_do_chan,
+               r.so_lan_doi_soat AS van_don_so_lan_doi_soat,
+               r.loi_cuoi AS van_don_loi_cuoi
+        {from_sql}
+        WHERE {where_sql}
+        ORDER BY o.created_at DESC, o.id DESC
+        LIMIT {int(page_size)} OFFSET {int(offset)}
+        """,
+        *args,
+    )
+
+    s = dict(summary_row) if summary_row else {}
+    return {
+        "items": [_dong_don_api(dict(r)) for r in rows],
+        "total": total,
+        "page": page_thuc,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "kpi": {
+            "tong_don": int(s.get("tong_don") or 0),
+            "cho_duyet": int(s.get("cho_duyet") or 0),
+            "da_chot": int(s.get("da_chot") or 0),
+            "can_xu_ly": int(s.get("can_xu_ly") or 0),
+        },
+        "dem_trang_thai": {
+            "all": int(s.get("tong_don") or 0),
+            "cho_duyet": int(s.get("cho_duyet") or 0),
+            "da_chot": int(s.get("da_chot") or 0),
+            "cho_dong_bo": int(s.get("cho_dong_bo") or 0),
+            "da_giao": int(s.get("da_giao") or 0),
+            "da_huy": int(s.get("da_huy") or 0),
+        },
+        "kenh_co": [r["kenh"] for r in kenh_rows if r.get("kenh")],
+    }
+
+
+@router.get("/orders/{order_id}")
+async def get_order_detail(
+    order_id: str,
+    nguoi: dict = Depends(can_quyen("don.doc")),
+) -> dict:
+    """Chi tiết đầy đủ một đơn hàng cho side panel (Tổng quan / Vận chuyển / Đồng bộ ERP)."""
+    oid = _uuid_don(order_id)
+    xem_tat_ca, uid = _pham_vi_don(nguoi)
+    r = await db.fetchrow(
+        """
+        SELECT o.*,
+               cv_ord.nen_tang AS nen_tang,
+               cv_ord.customer_name AS conv_customer_name,
+               cv_ord.state AS conv_state,
+               r.trang_thai AS van_don_trang_thai_yeucau,
+               r.client_order_code AS van_don_client_order_code,
+               r.ly_do_chan AS van_don_ly_do_chan,
+               r.so_lan_doi_soat AS van_don_so_lan_doi_soat,
+               r.loi_cuoi AS van_don_loi_cuoi,
+               r.gui_luc AS van_don_gui_luc,
+               r.xac_nhan_luc AS van_don_xac_nhan_luc,
+               r.xac_nhan_boi AS van_don_xac_nhan_boi,
+               r.doi_soat_tiep_luc AS van_don_doi_soat_tiep_luc
+        FROM orders o
+        LEFT JOIN conversations cv_ord ON cv_ord.id = o.conversation_id
+        LEFT JOIN shipping_waybill_requests r ON r.order_id = o.id
+        WHERE o.id = $1
+          AND ($2 OR EXISTS (SELECT 1 FROM conversations cv
+              JOIN account_memberships am ON am.account_id = cv.account_id
+              WHERE cv.id = o.conversation_id AND am.user_id = $3))
+        """,
+        oid,
+        xem_tat_ca,
+        uid,
+    )
+    if r is None:
+        raise HTTPException(404, "Không tìm thấy đơn hàng")
+
+    don = _dong_don_api(dict(r))
+    raw_ls = r.get("lich_su_giao_hang")
+    if isinstance(raw_ls, str):
+        try:
+            raw_ls = json.loads(raw_ls)
+        except ValueError:
+            raw_ls = []
+    don["lich_su_giao_hang"] = list(raw_ls or [])
+    don["ngay_du_kien_giao"] = _iso(r.get("ngay_du_kien_giao"))
+    don["cap_nhat_van_chuyen_luc"] = _iso(r.get("cap_nhat_van_chuyen_luc"))
+    don["reconciliation"] = {
+        "trang_thai": don["van_don_trang_thai_yeucau"],
+        "client_order_code": don["van_don_client_order_code"],
+        "ly_do_chan": don["van_don_ly_do_chan"],
+        "so_lan_doi_soat": don["van_don_so_lan_doi_soat"],
+        "loi_cuoi": don["van_don_loi_cuoi"],
+        "gui_luc": _iso(r.get("van_don_gui_luc")),
+        "xac_nhan_luc": _iso(r.get("van_don_xac_nhan_luc")),
+        "xac_nhan_boi": r.get("van_don_xac_nhan_boi"),
+        "doi_soat_tiep_luc": _iso(r.get("van_don_doi_soat_tiep_luc")),
+    }
+    don["conversation"] = (
+        {
+            "id": str(r["conversation_id"]),
+            "customer_name": r.get("conv_customer_name") or r["khach_ten"],
+            "channel": r["channel"],
+            "nen_tang": r.get("nen_tang"),
+            "state": r.get("conv_state"),
+        }
+        if r.get("conversation_id")
+        else None
+    )
+
+    bd_rows = await db.fetch(
+        "SELECT id, ma, thay_doi, ly_do, ma_don, ghi_chu, luc "
+        "FROM kho_bien_dong WHERE ma_don = $1 ORDER BY luc DESC, id DESC LIMIT 30",
+        r["ma_don"],
+    )
+    don["bien_dong_kho"] = [
+        {
+            "id": int(b["id"]),
+            "ma": b["ma"],
+            "thay_doi": int(b["thay_doi"]),
+            "ly_do": b["ly_do"],
+            "ghi_chu": b["ghi_chu"] or "",
+            "luc": _iso(b["luc"]),
+        }
+        for b in bd_rows
+    ]
+
+    cv_rows = await db.fetch(
+        "SELECT id, tieu_de, trang_thai, uu_tien, ket_qua, tao_luc, xong_luc "
+        "FROM cong_viec WHERE order_id = $1 OR khoa_chong_trung LIKE $2 "
+        "ORDER BY tao_luc DESC LIMIT 10",
+        oid,
+        f"%:{r['ma_don']}",
+    )
+    don["cong_viec"] = [
+        {
+            "id": str(c["id"]),
+            "tieu_de": c["tieu_de"],
+            "trang_thai": c["trang_thai"],
+            "uu_tien": c["uu_tien"],
+            "ket_qua": c.get("ket_qua") or "",
+            "tao_luc": _iso(c["tao_luc"]),
+            "xong_luc": _iso(c.get("xong_luc")),
+        }
+        for c in cv_rows
+    ]
+    return don
 
 
 def _iso(v):
@@ -272,13 +632,18 @@ async def approve_order(order_id: str, nguoi: dict = Depends(can_quyen("don.sua"
         raise HTTPException(
             409, f"Đơn đang ở trạng thái '{hien['trang_thai']}' — chỉ duyệt được "
                  "đơn đang chờ duyệt.")
-    await db.log_event("order.approve", actor="staff", ref_id=oid, ma_don=don["ma_don"],
-                       boi=nguoi.get("ten_dang_nhap"))
+    ten = str(nguoi.get("ten_dang_nhap") or nguoi.get("id") or "")
+    await db.log_event(
+        "order.approve", actor=ten or "system", ref_id=oid, ma_don=don["ma_don"],
+        boi=ten, nguoi_phe_duyet=ten, nguon_thuc_thi="thu_cong",
+        vai_tro=nguoi.get("vai_tro") or None,
+    )
     # Duyệt ở màn Đơn hàng thì thẻ đề xuất AI của đơn này đã xong việc.
     # Duyệt QUA thẻ thì đề xuất đã ở `da_duyet`, câu này không chạm tới nó.
-    from agent.core import uy_quyen
+    from agent.core import thong_bao_noi_bo, uy_quyen
 
-    await uy_quyen.dong_theo_don(oid, "duyet", boi=str(nguoi.get("ten_dang_nhap") or "staff"))
+    await uy_quyen.dong_theo_don(oid, "duyet", boi=ten)
+    await thong_bao_noi_bo.ket_thuc_duyet_don(None, oid)
     kq = await day_don.day_don_da_luu(
         oid, ma_don=don["ma_don"], khach_ten=str(don.get("khach_ten") or ""),
         khach_sdt=str(don.get("khach_sdt") or ""),
@@ -299,14 +664,15 @@ async def cancel_order(order_id: str, _quyen: dict = Depends(can_quyen("don.sua"
     from agent.core import thao_tac_don, uy_quyen
 
     oid = _uuid_don(order_id)
+    ten = str(_quyen.get("ten_dang_nhap") or _quyen.get("id") or "")
     try:
-        kq = await thao_tac_don.huy_don(oid, actor="staff")
+        kq = await thao_tac_don.huy_don(oid, actor=ten or "system")
     except thao_tac_don.LoiThaoTacDon as exc:
         raise HTTPException(exc.ma, exc.thong_diep) from exc
     if kq.pop("da_huy_tu_truoc", False):
         return kq
     # Huỷ ở màn này thì thẻ đề xuất AI của chính đơn không được còn nút Duyệt.
-    await uy_quyen.dong_theo_don(oid, "huy", boi=str(_quyen.get("ten_dang_nhap") or "staff"))
+    await uy_quyen.dong_theo_don(oid, "huy", boi=ten)
     return kq
 
 
@@ -567,6 +933,9 @@ HANG_THAT = ("ghn", "ghtk")
 class NhapKhoIn(BaseModel):
     so_luong: int = Field(gt=0, le=100000)
     ghi_chu: str = Field("", max_length=300)
+    loai: Literal["nhap", "hoan_hang"] = "nhap"
+    ma_don: str | None = Field(None, max_length=64)
+    khoa_chong_trung: str | None = Field(None, max_length=120)
 
 
 class KiemKeIn(BaseModel):
@@ -654,20 +1023,109 @@ async def kho_bien_dong(ma: str = "", limit: int = 50, _quyen: dict = Depends(ca
     return {"bien_dong": await kho.so_bien_dong(ma, limit)}
 
 
+@router.get("/kho/bien-dong/bang")
+async def kho_bien_dong_bang(
+    q: str = Query("", max_length=120),
+    ly_do: str = Query("all", max_length=32),
+    chieu: str = Query("all", max_length=16),
+    tu_ngay: str = Query("", max_length=20),
+    den_ngay: str = Query("", max_length=20),
+    page: int = Query(1, ge=1, le=10000),
+    page_size: int = Query(20, ge=5, le=100),
+    _quyen: dict = Depends(can_quyen("kho.doc")),
+) -> dict:
+    """Sổ biến động kho dạng bảng: lọc theo từ khoá/loại/chiều/ngày, tồn sau và phân trang."""
+    from agent.core.tools import _catalog
+
+    d_tu = _ngay_dau(tu_ngay)
+    d_den = _ngay_dau(den_ngay)
+    if d_tu is not None and d_den is not None and d_tu > d_den:
+        raise HTTPException(422, "Từ ngày không được sau Đến ngày")
+    d_den_exclusive = (d_den + timedelta(days=1)) if d_den is not None else None
+    ten_theo_ma = {p["ma"]: str(p.get("ten") or "") for p in _catalog().get("san_pham", []) if p.get("ma")}
+    return await kho.so_bien_dong_bang(
+        q=q,
+        ly_do=ly_do,
+        chieu=chieu,
+        d_tu=d_tu,
+        d_den_exclusive=d_den_exclusive,
+        page=page,
+        page_size=page_size,
+        ten_theo_ma=ten_theo_ma,
+    )
+
+
+@router.get("/kho/{ma}/hoan-hang-info")
+async def kho_hoan_hang_info(
+    ma: str,
+    ma_don: str = Query("", max_length=64),
+    _quyen: dict = Depends(can_quyen("kho.doc")),
+) -> dict:
+    """Kiểm tra điều kiện và số lượng đã bán / đã hoàn / còn được nhập của đơn hàng hoàn."""
+    return await kho.thong_tin_nhap_hoan(ma, ma_don)
+
+
 @router.post("/kho/{ma}/nhap")
-async def kho_nhap(ma: str, body: NhapKhoIn, _quyen: dict = Depends(can_quyen("kho.sua"))) -> dict:
+async def kho_nhap(ma: str, body: NhapKhoIn, nguoi: dict = Depends(can_quyen("kho.sua"))) -> dict:
+    khoa = (body.khoa_chong_trung or "").strip()
+    ma_don = (body.ma_don or "").strip()
+    if body.loai == "hoan_hang":
+        if not ma_don:
+            raise HTTPException(422, "Nhập hàng hoàn bắt buộc phải nhập mã đơn hàng (ma_don).")
+        try:
+            actor_uid = uuid.UUID(str(nguoi["id"])) if nguoi.get("id") else None
+        except ValueError:
+            actor_uid = None
+        try:
+            r = await kho.nhap_hang_hoan(
+                ma,
+                body.so_luong,
+                ma_don,
+                body.ghi_chu,
+                khoa_chong_trung=khoa,
+                actor_id=actor_uid,
+            )
+        except kho.LoiNhapHangHoan as exc:
+            raise HTTPException(exc.ma, exc.thong_diep) from exc
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if not r.get("da_nhap_tu_truoc"):
+            await db.log_event(
+                "kho.nhap_hoan",
+                actor=nguoi.get("ten_dang_nhap", "nguoi"),
+                ma=ma,
+                ma_don=ma_don,
+                so_luong=body.so_luong,
+                bien_dong_id=r.get("bien_dong_id"),
+            )
+        return r
+
+    if ma_don:
+        raise HTTPException(
+            422,
+            "Nhập kho thông thường không gắn mã đơn hàng — chọn loại 'hoan_hang' để nhập hàng hoàn.",
+        )
     try:
-        r = await kho.nhap_hang(ma, body.so_luong, body.ghi_chu)
+        r = await kho.nhap_hang(ma, body.so_luong, body.ghi_chu, khoa_chong_trung=khoa)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    await db.log_event("kho.nhap", actor="nguoi", ma=ma, so_luong=body.so_luong)
+    if not r.get("da_nhap_tu_truoc"):
+        await db.log_event(
+            "kho.nhap",
+            actor=nguoi.get("ten_dang_nhap", "nguoi"),
+            ma=ma,
+            so_luong=body.so_luong,
+            bien_dong_id=r.get("bien_dong_id"),
+        )
     return r
 
 
 @router.post("/kho/{ma}/kiem-ke")
-async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen("kho.sua"))) -> dict:
+async def kho_kiem_ke(ma: str, body: KiemKeIn, nguoi: dict = Depends(can_quyen("kho.sua"))) -> dict:
     """
     Đặt lại số tồn về đúng thực tế đếm được.
 
@@ -680,5 +1138,5 @@ async def kho_kiem_ke(ma: str, body: KiemKeIn, _quyen: dict = Depends(can_quyen(
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    await db.log_event("kho.kiem_ke", actor="nguoi", **r, ly_do=body.ly_do)
+    await db.log_event("kho.kiem_ke", actor=nguoi.get("ten_dang_nhap", "nguoi"), **r, ly_do=body.ly_do)
     return r

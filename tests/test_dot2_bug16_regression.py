@@ -584,3 +584,84 @@ def test_bug16_02_khong_chay_trung_lap_side_effect_tool_trong_cung_luot(san_agen
     assert len(r.cong_cu) == 2
     assert r.cong_cu[0]["ket_qua"]["ma_don"] == "SO-2026-01"
     assert r.cong_cu[1]["ket_qua"].get("da_chan_lap") is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# C · BUG-16-03 — Regex nhận diện giá tiền `_SO_TIEN` không nhận nhầm từ bắt đầu bằng "đ"
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize(
+    "van_ban",
+    [
+        "Giá sản phẩm là 100đ.",
+        "Phí phụ thu 100 đ cho mỗi lượt.",
+        "Serum C giá 100.000đ đang còn hàng.",
+        "Tổng đơn là 100.000 VNĐ ạ.",
+        "Giá ưu đãi 100 nghìn đồng.",
+        "Phí ship 30 ngàn đồng toàn quốc.",
+        "Combo giá 250k nhé anh.",
+        "Giá niêm yết 1.250.000₫.",
+        "Giá bán 200,000 VND.",
+        "Gói bảo dưỡng 1,5 triệu đồng.",
+    ],
+)
+def test_bug16_03_nhan_dien_dung_cac_dinh_dang_gia_tien_hop_le(van_ban):
+    """BUG-16-03: `_SO_TIEN` phải nhận diện đúng các định dạng giá tiền hợp lệ."""
+    assert dau_vet_ai._SO_TIEN.search(van_ban) is not None, f"Phải nhận diện là giá tiền: {van_ban}"
+
+
+@pytest.mark.parametrize(
+    "van_ban",
+    [
+        "Chính sách đổi mới 1 đổi 1 trong 45 ngày đầu.",
+        "Hỗ trợ 1 đổi 1 nếu lỗi nhà sản xuất.",
+        "Sản phẩm mẫu E2E-2026 được bảo hành chính hãng 36 tháng.",
+        "Khách hàng được tích lũy 100 điểm thưởng.",
+        "Đơn hàng gồm 2 đơn riêng biệt và 3 ngày đầu miễn phí.",
+        "Trọng lượng 2kg, phạm vi giao 5km.",
+        "Thiết lập 1 đồng hồ tính SLA theo giờ làm việc.",
+        "Khách đã xác nhận 100% đồng ý nhận hàng.",
+    ],
+)
+def test_bug16_03_khong_nhan_nham_cum_khong_phai_gia_tien(van_ban):
+    """BUG-16-03: không bắt nhầm '1 đổi 1', '2026 được', '100 điểm', '2kg', '1 đồng hồ'... thành số tiền."""
+    assert dau_vet_ai._SO_TIEN.search(van_ban) is None, f"Không được nhận nhầm là giá tiền: {van_ban}"
+
+
+def test_bug16_03_phan_loai_can_cu_du_khi_rag_co_cum_1_doi_1():
+    """
+    BUG-16-03 + TC-16-001: câu trả lời dựa trên tài liệu RAG có chứa 'E2E-2026 được bảo hành'
+    và 'đổi mới 1 đổi 1' phải đạt trạng thái căn cứ `du` (không bị hạ xuống `chua_du` vì báo nhầm nêu số tiền).
+    """
+    reply = SimpleNamespace(
+        text=(
+            "Sản phẩm mẫu E2E-2026 được bảo hành chính hãng 36 tháng "
+            "và có thể đổi mới 1 đổi 1 trong 45 ngày đầu nếu có lỗi nhà sản xuất."
+        ),
+        confidence=0.85,
+        cong_cu=[],
+        tri_thuc=[
+            {
+                "title": "Chính sách bảo hành Đợt 6 E2E",
+                "trich": (
+                    "Sản phẩm mẫu E2E-2026 được bảo hành chính hãng 36 tháng tại Trung tâm Quận 1 "
+                    "và được đổi mới 1 đổi 1 trong 45 ngày đầu nếu có lỗi nhà sản xuất."
+                ),
+            }
+        ],
+    )
+    cc = dau_vet_ai.phan_loai_can_cu(reply, nguong=0.55)
+    assert cc["ma"] == "du"
+    assert cc["thieu"] == []
+
+    # Ngược lại: nếu câu trả lời thực sự nêu số tiền (vd '100 nghìn đồng') mà không tra danh mục/đơn -> vẫn báo `chua_du`
+    reply_gia = SimpleNamespace(
+        text="Sản phẩm này có giá 100 nghìn đồng và bảo hành 36 tháng.",
+        confidence=0.85,
+        cong_cu=[],
+        tri_thuc=reply.tri_thuc,
+    )
+    cc_gia = dau_vet_ai.phan_loai_can_cu(reply_gia, nguong=0.55)
+    assert cc_gia["ma"] == "chua_du"
+    assert any("nêu số tiền" in x for x in cc_gia["thieu"])

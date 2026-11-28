@@ -242,68 +242,236 @@ async def kiem_tra_bang_chung_thu_cong(dx: dict, *, ma_tham_chieu: str = "") -> 
     return bang_chung
 
 
+_TRANG_THAI_DOI_SOAT_VD_CHAN = frozenset({
+    "sending", "unknown_timeout", "reconciling", "manual_required",
+})
+
+
 async def huy_don(oid: UUID, *, actor: str, conversation_id: Any = None) -> dict:
     """
-    Huỷ đơn và TRẢ HÀNG VỀ KHO.
+    Huỷ đơn theo nguyên tắc toàn vẹn tồn kho & vận đơn (BUG-17-04):
 
-    Không trả lại thì mỗi đơn huỷ ăn mất tồn kho vĩnh viễn — bán mười đơn
-    huỷ chín đơn là kho báo hết hàng trong khi hàng vẫn nằm nguyên trên kệ.
-
-    KHÔNG huỷ đơn ĐÃ GIAO: hàng đang ở nhà khách, huỷ là cộng kho một món
-    không có trên kệ (rà soát 11.2026). Khách trả lại hàng là ĐỔI TRẢ —
-    nhận hàng về rồi nhập kho bằng tay.
-
-    `conversation_id` (đường AI): đơn phải thuộc đúng hội thoại ấy — kiểm LẠI
-    lúc thi hành, trong cùng giao dịch có khoá, không tin lúc đề xuất.
+    - Chặn huỷ (`409`) khi:
+      1. Đơn đã giao thành công (`da_giao` hoặc vận đơn `delivered`).
+      2. Đơn đang treo đối soát tạo vận đơn (`sending`, `unknown_timeout`,
+         `reconciling`, `manual_required`).
+      3. Đơn đã có mã vận đơn nhưng hãng chưa xác nhận huỷ (`cancelled`) hoặc
+         chưa hoàn hàng về kho (`returned`) — kể cả đơn cũ không rõ trạng thái
+         lấy hàng (`trang_thai_giao_hang` rỗng).
+    - Chỉ tự động trả kho (`kho.tra_hang`) khi chắc chắn hàng chưa rời kho:
+      1. Chưa tạo vận đơn và không có yêu cầu tạo vận đơn đang treo, HOẶC
+      2. Vận đơn đã được hãng xác nhận `cancelled` và `van_don_da_lay_hang IS FALSE`.
+    - Khi vận đơn ở trạng thái `returned` hoặc `cancelled` nhưng thiếu bằng chứng
+      chưa lấy hàng (đơn cũ `van_don_da_lay_hang IS NULL` hoặc đã lấy `TRUE`):
+      KHÔNG tự động cộng tồn kho — sinh công việc kiểm tra thực tế trước khi
+      nhập kho thủ công (Kho → Nhập), chống trùng theo `khoa_chong_trung`.
+    - Khoá dòng theo cùng thứ tự (`orders` → `shipping_waybill_requests`) với
+      `tao_van_don_cho_don` để chống race condition và deadlock.
     """
+    from agent.core import cong_viec
+
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             hien = await conn.fetchrow(
-                "SELECT trang_thai, conversation_id FROM orders WHERE id=$1 FOR UPDATE", oid)
+                """
+                SELECT trang_thai, conversation_id, ma_don, erp_ma_don,
+                       ma_van_don, don_vi_van_chuyen, trang_thai_giao_hang,
+                       van_don_da_lay_hang, so_tien_da_thu
+                FROM orders WHERE id=$1 FOR UPDATE
+                """,
+                oid,
+            )
             if hien is None:
                 raise LoiThaoTacDon(404, "Không có đơn này")
             if conversation_id is not None and str(hien["conversation_id"]) != str(conversation_id):
                 raise LoiThaoTacDon(409, "Đơn không thuộc hội thoại của đề xuất.")
-            cu = hien["trang_thai"]
+            cu = str(hien["trang_thai"] or "")
+            if cu == "da_huy":
+                return {
+                    "ok": True,
+                    "da_huy_tu_truoc": True,
+                    "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa.",
+                }
             if cu == "da_giao":
                 raise LoiThaoTacDon(
-                    409, "Đơn đã giao — không huỷ được: hàng đang ở chỗ khách, huỷ là "
-                         "cộng kho một món không có trên kệ. Xử lý như đổi trả: nhận "
-                         "hàng về rồi nhập kho (Kho → Nhập).")
+                    409,
+                    "Đơn đã giao — không huỷ được: hàng đang ở chỗ khách, huỷ là "
+                    "cộng kho một món không có trên kệ. Xử lý như đổi trả: nhận "
+                    "hàng về rồi nhập kho (Kho → Nhập).",
+                )
+
+            yc_vd = await conn.fetchrow(
+                "SELECT trang_thai, ma_van_don FROM shipping_waybill_requests "
+                "WHERE order_id = $1 FOR UPDATE",
+                oid,
+            )
+            tt_yc = str((yc_vd or {}).get("trang_thai") or "")
+            if tt_yc in _TRANG_THAI_DOI_SOAT_VD_CHAN:
+                raise LoiThaoTacDon(
+                    409,
+                    f"Đơn đang chờ đối soát tạo vận đơn ({tt_yc}) — không thể huỷ "
+                    "lúc này. Hoàn tất đối soát với hãng vận chuyển trước để tránh "
+                    "vừa tạo vận đơn vừa trả kho.",
+                )
+
+            ma_vd = str(hien.get("ma_van_don") or (yc_vd or {}).get("ma_van_don") or "").strip()
+            tt_giao = str(hien.get("trang_thai_giao_hang") or "").strip()
+
+            if ma_vd:
+                if tt_giao == "delivered":
+                    raise LoiThaoTacDon(
+                        409,
+                        f"Vận đơn {ma_vd} đã giao thành công — không huỷ được. "
+                        "Xử lý như đổi trả: nhận hàng về rồi nhập kho (Kho → Nhập).",
+                    )
+                if tt_giao == "ready_to_pick":
+                    raise LoiThaoTacDon(
+                        409,
+                        f"Đơn đã có vận đơn {ma_vd} (chờ lấy hàng) — cần huỷ vận đơn "
+                        "trên cổng hãng vận chuyển trước. Khi hãng xác nhận huỷ vận "
+                        "đơn, hệ thống sẽ tự cập nhật đơn.",
+                    )
+                if tt_giao in ("delivering", "delivery_failed", "returning"):
+                    nhan_tt = {
+                        "delivering": "đang giao hàng",
+                        "delivery_failed": "giao thất bại",
+                        "returning": "đang hoàn hàng về kho",
+                    }[tt_giao]
+                    raise LoiThaoTacDon(
+                        409,
+                        f"Đơn đã có vận đơn {ma_vd} ({nhan_tt}) — hàng đã rời kho nên "
+                        "không thể huỷ trực tiếp và không được cộng tồn kho. Liên hệ "
+                        "hãng hoàn hàng; khi hãng xác nhận đã hoàn về kho, nhân viên "
+                        "kiểm tra thực tế rồi nhập lại kho (Kho → Nhập).",
+                    )
+                if tt_giao not in ("cancelled", "returned"):
+                    raise LoiThaoTacDon(
+                        409,
+                        f"Đơn đã có vận đơn {ma_vd} nhưng chưa xác định rõ trạng thái "
+                        "lấy hàng/hoàn hàng — chặn huỷ tự động để tránh cộng tồn kho "
+                        "sai. Kiểm tra vận đơn trên cổng hãng trước.",
+                    )
+
             don = await conn.fetchrow(
                 "UPDATE orders SET trang_thai='da_huy', updated_at=now() "
                 "WHERE id=$1 AND trang_thai <> 'da_huy' "
-                "RETURNING ma_don, erp_ma_don, ma_van_don, so_tien_da_thu", oid,
+                "RETURNING ma_don, erp_ma_don, ma_van_don, don_vi_van_chuyen, "
+                "trang_thai_giao_hang, van_don_da_lay_hang, so_tien_da_thu, conversation_id",
+                oid,
             )
     if don is None:
-        return {"ok": True, "da_huy_tu_truoc": True,
-                "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa."}
+        return {
+            "ok": True,
+            "da_huy_tu_truoc": True,
+            "ghi_chu": "Đơn đã huỷ từ trước, không trả kho lần nữa.",
+        }
 
-    so_dong = await kho.tra_hang(don["ma_don"])
-    await db.log_event("order.cancel", actor=actor, ref_id=oid, ma_don=don["ma_don"],
-                       so_mat_hang_tra_kho=so_dong, trang_thai_cu=cu)
-    kq: dict = {"ok": True, "ma_don": don["ma_don"], "da_tra_kho": so_dong}
-    # Huỷ ở đây KHÔNG huỷ bên ERP hay bên hãng vận chuyển. Nói thẳng lúc
-    # bấm, để người huỷ tay bên đó — im là ERP vẫn xuất kho, hãng vẫn đi
-    # lấy hàng cho một đơn đã huỷ.
+    ma_don = str(don["ma_don"])
+    ma_vd_sau = str(don.get("ma_van_don") or "").strip()
+    tt_giao_sau = str(don.get("trang_thai_giao_hang") or "").strip()
+    da_lay_hang = don.get("van_don_da_lay_hang")
+
+    so_dong = 0
+    can_kiem_kho = False
+    if not ma_vd_sau:
+        so_dong = await kho.tra_hang(ma_don, ly_do="huy_don")
+    elif tt_giao_sau == "cancelled" and da_lay_hang is False:
+        so_dong = await kho.tra_hang(ma_don, ly_do="huy_don")
+    elif tt_giao_sau == "returned":
+        can_kiem_kho = True
+        await cong_viec.tao_tu_don_hang(
+            ma_don,
+            tieu_de=f"Kiểm tra hàng hoàn đơn {ma_don}",
+            mo_ta=(
+                f"Đơn {ma_don} (vận đơn {ma_vd_sau}) đã hoàn về kho. Kiểm tra "
+                "số lượng và tình trạng/nguyên seal sản phẩm trước khi nhập lại "
+                "kho thủ công (Kho → Nhập). Hệ thống KHÔNG tự động cộng tồn kho."
+            )[:1000],
+            khoa=f"don_hang:kiem_hang_hoan:{ma_don}",
+            conversation_id=don.get("conversation_id"),
+            uu_tien="cao",
+        )
+    elif tt_giao_sau == "cancelled":
+        can_kiem_kho = True
+        await cong_viec.tao_tu_don_hang(
+            ma_don,
+            tieu_de=f"Kiểm tra tồn kho đơn {ma_don} (vận đơn đã huỷ)",
+            mo_ta=(
+                f"Đơn {ma_don} (vận đơn {ma_vd_sau}) đã huỷ nhưng không đủ bằng "
+                "chứng hàng chưa rời kho (đơn cũ hoặc đã lấy hàng). Kiểm tra hàng "
+                "thực tế tại kho trước khi nhập lại kho thủ công (Kho → Nhập)."
+            )[:1000],
+            khoa=f"don_hang:kiem_kho_huy_vd:{ma_don}",
+            conversation_id=don.get("conversation_id"),
+            uu_tien="cao",
+        )
+
+    await db.log_event(
+        "order.cancel",
+        actor=actor,
+        ref_id=oid,
+        ma_don=ma_don,
+        so_mat_hang_tra_kho=so_dong,
+        trang_thai_cu=cu,
+        can_kiem_kho=can_kiem_kho,
+    )
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.ket_thuc_duyet_don(None, oid)
+    kq: dict = {
+        "ok": True,
+        "ma_don": ma_don,
+        "da_tra_kho": so_dong,
+        "can_kiem_kho": can_kiem_kho,
+    }
+    # Huỷ ở đây KHÔNG huỷ bên ERP. Nói thẳng lúc bấm và tạo việc chống trùng
+    # để nhân viên xử lý chứng từ bên ERPNext.
     ben = []
     if don.get("erp_ma_don"):
         ben.append(f"ERP (đơn {don['erp_ma_don']})")
+        await cong_viec.tao_tu_don_hang(
+            ma_don,
+            tieu_de=f"Huỷ Sales Order {don['erp_ma_don']} trên ERPNext cho đơn {ma_don}",
+            mo_ta=(
+                f"Đơn nội bộ {ma_don} đã bị huỷ. Kiểm tra và huỷ Sales Order "
+                f"{don['erp_ma_don']} trên ERPNext để tránh lệch số liệu kho/kế toán."
+            )[:1000],
+            khoa=f"don_hang:erp_huy_tay:{ma_don}",
+            conversation_id=don.get("conversation_id"),
+            uu_tien="cao",
+        )
     elif cu == "cho_dong_bo":
-        # Đang chờ đồng bộ = KHÔNG BIẾT ERP đã nhận chưa (lần đẩy trước có
-        # thể đã tới ERP rồi mới đứt mạng). Không có mã ERP để chỉ ra, nhưng
-        # im lặng là bỏ sót một đơn sống bên ERP.
-        ben.append(f"ERP (đơn đang chờ đồng bộ — tra ERP theo mã {don['ma_don']}, "
-                   "có thì huỷ)")
-    if don.get("ma_van_don"):
-        ben.append(f"hãng vận chuyển (vận đơn {don['ma_van_don']})")
+        ben.append(
+            f"ERP (đơn đang chờ đồng bộ — tra ERP theo mã {ma_don}, có thì huỷ)"
+        )
+        await cong_viec.tao_tu_don_hang(
+            ma_don,
+            tieu_de=f"Kiểm tra & huỷ đơn {ma_don} trên ERPNext (đang chờ đồng bộ)",
+            mo_ta=(
+                f"Đơn {ma_don} bị huỷ khi đang chờ đồng bộ ERPNext. Tra Sales Order "
+                f"theo po_no={ma_don} trên ERPNext; nếu đã tạo thì huỷ tay."
+            )[:1000],
+            khoa=f"don_hang:erp_huy_tay:{ma_don}",
+            conversation_id=don.get("conversation_id"),
+            uu_tien="cao",
+        )
     if ben:
-        kq["can_huy_tay"] = ("Đơn đã có bên " + " và ".join(ben)
-                             + ": vào đó huỷ tay, hệ thống không tự huỷ hộ.")
-        await db.log_event("order.cancel_can_huy_tay", ref_id=oid, ma_don=don["ma_don"],
-                           erp_ma_don=don.get("erp_ma_don"), ma_van_don=don.get("ma_van_don"),
-                           trang_thai_cu=cu)
+        kq["can_huy_tay"] = (
+            "Đơn đã có bên " + " và ".join(ben)
+            + ": vào đó huỷ tay, hệ thống không tự huỷ hộ."
+        )
+        await db.log_event(
+            "order.cancel_can_huy_tay",
+            actor=actor,
+            ref_id=oid,
+            ma_don=ma_don,
+            erp_ma_don=don.get("erp_ma_don"),
+            ma_van_don=ma_vd_sau or None,
+            trang_thai_cu=cu,
+        )
     if int(don.get("so_tien_da_thu") or 0) > 0:
-        kq["can_hoan_tien"] = (f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ"
-                               .replace(",", ".") + " — nhớ hoàn tiền cho khách.")
+        kq["can_hoan_tien"] = (
+            f"Khách đã trả trước {int(don['so_tien_da_thu']):,}đ".replace(",", ".")
+            + " — nhớ hoàn tiền cho khách."
+        )
     return kq

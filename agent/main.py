@@ -387,6 +387,10 @@ async def giu_phien_zalo_loop() -> None:
                         actor="system",
                         so_tai_khoan=len(ket_qua["da_khoi_phuc"]),
                     )
+                    from agent.core import thong_bao_noi_bo
+
+                    for aid_ok in ket_qua["da_khoi_phuc"]:
+                        await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, aid_ok)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — vòng nền không được chết
@@ -1249,8 +1253,9 @@ async def _xu_ly_su_kien_chatwoot(payload: dict, account_id=None) -> None:
         sender = payload.get("sender") or {}
         await db.log_event(
             "chatwoot.staff_takeover",
-            actor="staff",
+            actor="chatwoot",
             ref_id=conv["id"],
+            nguon="tich_hop_ngoai",
             ten=str(sender.get("name") or "")[:100],
         )
         return
@@ -1274,7 +1279,8 @@ async def _xu_ly_su_kien_chatwoot(payload: dict, account_id=None) -> None:
         )
         if conv:
             await db.log_event(
-                "chatwoot.resolved", actor="staff", ref_id=conv["id"]
+                "chatwoot.resolved", actor="chatwoot", ref_id=conv["id"],
+                nguon="tich_hop_ngoai",
             )
     elif status == "open":
         # Chỉ hội thoại do người trực ĐÃ giải quyết mới tự trả về Agent.

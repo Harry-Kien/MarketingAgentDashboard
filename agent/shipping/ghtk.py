@@ -106,16 +106,22 @@ def _so(v: Any) -> int:
 
 
 class GHTKShippingProvider(BaseShippingProvider):
-    # status_id theo tài liệu webhook GHTK. CHỈ "21 — đã trả hàng về shop"
-    # là RETURNED: trạng thái đó CỘNG HÀNG LẠI VÀO KHO (xem base.py), nên
-    # 20 (đang trả), 26 (hàng hoàn nhập kho GHTK, chưa về shop), 13 (bồi
-    # hoàn — hàng mất) đều không được nằm đó.
+    # status_id theo tài liệu webhook GHTK (BUG-17-04):
+    # - 1, 2, 12 : chưa lấy hàng (cửa sổ cho phép huỷ trên GHTK).
+    # - 3, 4, 8, 30, 31, 91 : đã lấy hàng / đang trung chuyển / đang giao.
+    # - 5, 6 : đã giao thành công.
+    # - 20, 26 : đang hoàn hàng về shop (chưa về kệ).
+    # - 21 : đã trả hàng về shop (sinh việc kiểm tra hàng hoàn, không tự cộng kho).
+    # - -1 : đã huỷ vận đơn trên GHTK.
+    # - 7, 9, 10, 13 : giao thất bại / hẹn giao lại / bồi hoàn mất hàng.
     BANG_MA_RIENG = {
-        **dict.fromkeys(("1", "2", "3", "4", "8", "12", "30", "31", "91"), _D.DELIVERING),
+        **dict.fromkeys(("1", "2", "12"), _D.READY_TO_PICK),
+        **dict.fromkeys(("3", "4", "8", "30", "31", "91"), _D.DELIVERING),
         **dict.fromkeys(("5", "6"), _D.DELIVERED),
+        **dict.fromkeys(("20", "26"), _D.RETURNING),
         "21": _D.RETURNED,
-        # 10 = khách hẹn giao lại: cùng chỗ với `khach_hen_lai` của bảng chung.
-        **dict.fromkeys(("-1", "7", "9", "10", "13", "20", "26"), _D.DELIVERY_FAILED),
+        "-1": _D.CANCELLED,
+        **dict.fromkeys(("7", "9", "10", "13"), _D.DELIVERY_FAILED),
     }
     # 11 = đối soát công nợ đơn hoàn: việc kế toán, không phải hàng đã về.
     # Xếp vào RETURNED là hoàn kho theo một bút toán. Còn lại là mã shipper
@@ -255,7 +261,7 @@ class GHTKShippingProvider(BaseShippingProvider):
                 if nhan and str(loi_ghtk.get("status")) != "-1":
                     return CreateWaybillResult(
                         ok=True, ma_van_don=nhan, don_vi="ghtk",
-                        trang_thai_noi_bo=self.map_status(str(loi_ghtk.get("status"))) or _D.DELIVERING,
+                        trang_thai_noi_bo=self.map_status(str(loi_ghtk.get("status"))) or _D.READY_TO_PICK,
                         thong_tin_them={"da_co_san": True, "ghtk": loi_ghtk},
                     )
                 return CreateWaybillResult(
@@ -272,7 +278,7 @@ class GHTKShippingProvider(BaseShippingProvider):
             ok=True, ma_van_don=nhan, don_vi="ghtk",
             phi_van_chuyen=_so(o.get("fee")) + _so(o.get("insurance_fee")),
             ngay_du_kien_giao=_ngay_du_kien(o.get("estimated_deliver_time")),
-            trang_thai_noi_bo=_D.DELIVERING, thong_tin_them=o,
+            trang_thai_noi_bo=_D.READY_TO_PICK, thong_tin_them=o,
         )
 
     async def tra_cuu(self, ma_van_don: str) -> TrackingResult:

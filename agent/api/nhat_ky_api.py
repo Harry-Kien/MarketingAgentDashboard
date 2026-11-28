@@ -39,8 +39,9 @@ from .phu_thuoc import can_quyen, chan_neu_ngoai_kenh
 
 router = APIRouter(prefix="/api/nhat-ky", tags=["nhat-ky"])
 
-LoaiTacNhan = Literal["ai", "nhan_vien", "he_thong"]
+LoaiTacNhan = Literal["ai", "nhan_vien", "he_thong", "tich_hop"]
 TrangThai = Literal["su_co", "loi", "cho_duyet", "chuyen_nguoi", "thanh_cong"]
+LoaiDoiTuong = Literal["don_hang", "san_pham", "hoi_thoai", "cong_viec", "nhan_vien", "vai_tro", "tai_khoan_kenh"]
 
 
 def _ten(nguoi: dict) -> str:
@@ -73,11 +74,25 @@ def _gio(t: datetime | None) -> datetime | None:
 
 
 @router.get("/danh-muc")
-async def danh_muc(_q: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
+async def danh_muc(nguoi_xem: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
     """Giá trị cho các ô lọc: nhóm hành động, loại tác nhân, trạng thái, người."""
-    nguoi = await db.fetch(
-        "SELECT id, COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) AS ten "
-        "FROM nguoi_dung ORDER BY 2")
+    quyen = frozenset(nguoi_xem.get("quyen") or ())
+    if "nguoi_dung.doc" in quyen or "nguoi_dung.sua" in quyen:
+        nguoi = await db.fetch(
+            "SELECT id, COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) AS ten "
+            "FROM nguoi_dung ORDER BY 2")
+    else:
+        uid = UUID(str(nguoi_xem["id"]))
+        nguoi = await db.fetch(
+            "SELECT id, COALESCE(NULLIF(ho_ten, ''), ten_dang_nhap) AS ten "
+            "FROM nguoi_dung "
+            "WHERE id = $1 OR EXISTS ("
+            "  SELECT 1 FROM account_memberships m1 "
+            "  JOIN account_memberships m2 ON m1.account_id = m2.account_id "
+            "  WHERE m1.user_id = $1 AND m2.user_id = nguoi_dung.id"
+            ") ORDER BY 2",
+            uid,
+        )
     return {
         "nhom": [{"ma": m, "nhan": n} for m, n, _ in nk.NHOM_HANH_DONG]
         + [{"ma": nk.NHOM_MAC_DINH[0], "nhan": nk.NHOM_MAC_DINH[1]}],
@@ -92,6 +107,8 @@ async def danh_muc(_q: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, An
 
 @router.get("")
 async def tra_cuu(
+    q: str = Query("", max_length=120),
+    loai_doi_tuong: LoaiDoiTuong | None = None,
     tu: datetime | None = None,
     den: datetime | None = None,
     hoi_thoai_id: UUID | None = None,
@@ -121,7 +138,8 @@ async def tra_cuu(
                         loai_tac_nhan=loai_tac_nhan, nguoi_id=nguoi_id, nhom=nhom,
                         kind=kind, trang_thai=trang_thai, luot_id=luot_id,
                         muc_do=_muc_do(muc_do), gom=gom, nguoi=nguoi,
-                        truoc=truoc, limit=limit)
+                        theo_pham_vi=True, truoc=truoc, limit=limit,
+                        q=q, loai_doi_tuong=loai_doi_tuong or "")
 
 
 _COT_CSV = ("id", "luc", "hanh_dong", "kind", "muc_do", "nhom", "tac_nhan", "ten_tac_nhan",
@@ -131,6 +149,10 @@ _COT_CSV = ("id", "luc", "hanh_dong", "kind", "muc_do", "nhom", "tac_nhan", "ten
 
 @router.get("/xuat.csv")
 async def xuat_csv(
+    q: str = Query("", max_length=120),
+    loai_doi_tuong: LoaiDoiTuong | None = None,
+    kind: str | None = Query(None, max_length=80),
+    luot_id: str | None = Query(None, max_length=40),
     tu: datetime | None = None,
     den: datetime | None = None,
     hoi_thoai_id: UUID | None = None,
@@ -155,8 +177,10 @@ async def xuat_csv(
     while len(dong) < 5000:
         kq = await nk.tim(tu=tu, den=den, hoi_thoai_id=hoi_thoai_id,
                           loai_tac_nhan=loai_tac_nhan, nguoi_id=nguoi_id, nhom=nhom,
-                          trang_thai=trang_thai, muc_do=md, truoc=truoc,
-                          limit=nk.TOI_DA_TRANG)
+                          trang_thai=trang_thai, muc_do=md, nguoi=nguoi,
+                          theo_pham_vi=True, truoc=truoc,
+                          limit=nk.TOI_DA_TRANG, q=q, loai_doi_tuong=loai_doi_tuong or "",
+                          kind=kind, luot_id=luot_id)
         dong.extend(kq["items"])
         truoc = kq["next_cursor"]
         if truoc is None:
@@ -191,17 +215,18 @@ async def de_xuat(
     trang_thai: str | None = Query(None, max_length=30),
     truoc: datetime | None = None,
     limit: int = Query(50, ge=1, le=nk.TOI_DA_TRANG),
-    _q: dict = Depends(can_quyen("nhat_ky.doc")),
+    nguoi: dict = Depends(can_quyen("nhat_ky.doc")),
 ) -> dict[str, Any]:
     """Lịch sử đề xuất của AI và quyết định của người (điểm 6)."""
     return await nk.de_xuat(hoi_thoai_id=hoi_thoai_id, trang_thai=trang_thai,
-                            truoc=_gio(truoc), limit=limit)
+                            truoc=_gio(truoc), limit=limit,
+                            nguoi=nguoi, theo_pham_vi=True)
 
 
 @router.get("/luot/{luot_id}")
 async def mot_luot(luot_id: str,
-                   _q: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
-    kq = await nk.luot(luot_id[:40])
+                   nguoi: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
+    kq = await nk.luot(luot_id[:40], nguoi=nguoi, theo_pham_vi=True)
     if kq is None:
         raise HTTPException(404, "Không thấy lượt AI này")
     return kq
@@ -268,36 +293,42 @@ async def buoc_can_thiep(su_co_id: int, body: BuocBody,
                          nguoi: dict = Depends(can_quyen("nhat_ky.su_co"))) -> dict[str, Any]:
     """Một bước can thiệp: đã tiếp quản, đã tắt AI, đã đổi chính sách…"""
     return await _ghi_hoac_loi(nk.ghi_buoc_can_thiep(
-        su_co_id, loai=body.loai, ghi_chu=body.ghi_chu, boi=_ten(nguoi)))
+        su_co_id, loai=body.loai, ghi_chu=body.ghi_chu, boi=_ten(nguoi),
+        nguoi=nguoi, theo_pham_vi=True))
 
 
 @router.post("/su-co/{su_co_id}/ket-thuc", status_code=201)
 async def ket_thuc_su_co(su_co_id: int, body: KetThucBody,
                          nguoi: dict = Depends(can_quyen("nhat_ky.su_co"))) -> dict[str, Any]:
     return await _ghi_hoac_loi(nk.ghi_ket_thuc_su_co(
-        su_co_id, ket_qua=body.ket_qua, ghi_chu=body.ghi_chu, boi=_ten(nguoi)))
+        su_co_id, ket_qua=body.ket_qua, ghi_chu=body.ghi_chu, boi=_ten(nguoi),
+        nguoi=nguoi, theo_pham_vi=True))
 
 
 @router.post("/{event_id}/su-co", status_code=201)
 async def danh_dau_su_co(event_id: int, body: SuCoBody,
                          nguoi: dict = Depends(can_quyen("nhat_ky.su_co"))) -> dict[str, Any]:
     """Đánh dấu một hành động là sự cố. Dòng gốc giữ nguyên; đây là dòng mới."""
-    return await _ghi_hoac_loi(nk.ghi_su_co(event_id, ghi_chu=body.ghi_chu, boi=_ten(nguoi)))
+    return await _ghi_hoac_loi(nk.ghi_su_co(
+        event_id, ghi_chu=body.ghi_chu, boi=_ten(nguoi),
+        nguoi=nguoi, theo_pham_vi=True))
 
 
 @router.post("/{event_id}/giai-trinh", status_code=201)
 async def giai_trinh(event_id: int, body: SuCoBody,
                      nguoi: dict = Depends(can_quyen("nhat_ky.su_co"))) -> dict[str, Any]:
     """Đính chính / giải trình — cách DUY NHẤT để "sửa" một dòng nhật ký."""
-    return await _ghi_hoac_loi(nk.ghi_giai_trinh(event_id, ghi_chu=body.ghi_chu, boi=_ten(nguoi)))
+    return await _ghi_hoac_loi(nk.ghi_giai_trinh(
+        event_id, ghi_chu=body.ghi_chu, boi=_ten(nguoi),
+        nguoi=nguoi, theo_pham_vi=True))
 
 
 @router.get("/{event_id}")
 async def mot_ban_ghi(event_id: int,
                       nguoi: dict = Depends(can_quyen("nhat_ky.doc"))) -> dict[str, Any]:
-    kq = await nk.mot(event_id, nguoi=nguoi)
+    kq = await nk.mot(event_id, nguoi=nguoi, theo_pham_vi=True)
     if kq is None:
         raise HTTPException(404, "Không thấy sự kiện")
     if kq.get("luot_id"):
-        kq["luot"] = await nk.luot(kq["luot_id"])
+        kq["luot"] = await nk.luot(kq["luot_id"], nguoi=nguoi, theo_pham_vi=True)
     return kq

@@ -23,7 +23,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from agent import cau_hinh_dong, db
@@ -519,15 +519,18 @@ def _co_mui_gio(t: datetime | None) -> datetime | None:
 @router.get("/lich-su")
 async def lich_su(dich_vu: str | None = None, gioi_han: int = 50,
                   tu: datetime | None = None, den: datetime | None = None,
+                  bo_qua: int = Query(0, ge=0, le=10000), chi_dich_vu: bool = False,
                   _: dict = Depends(can_quyen("cau_hinh.sua"))) -> list[dict[str, Any]]:
     return await kn.doc_lich_su(dich_vu=dich_vu, gioi_han=gioi_han,
-                                tu=_co_mui_gio(tu), den=_co_mui_gio(den))
+                                tu=_co_mui_gio(tu), den=_co_mui_gio(den),
+                                bo_qua=bo_qua, chi_dich_vu=chi_dich_vu)
 
 
 @router.get("/kenh/{account_id}/dong-thoi-gian")
 async def dong_thoi_gian(
     account_id: UUID, loai: str | None = None,
     tu: datetime | None = None, den: datetime | None = None, gioi_han: int = 100,
+    bo_qua: int = Query(0, ge=0, le=10000),
     user: dict = Depends(can_quyen("kenh.doc")),
     repository: PostgresAccountRepository = Depends(get_account_repository),
 ) -> dict[str, Any]:
@@ -556,7 +559,7 @@ async def dong_thoi_gian(
                  if xem_cau_hinh or k != "cau_hinh"},
         "su_kien": await kn.dong_thoi_gian(
             account_id, loai=chon, tu=_co_mui_gio(tu), den=_co_mui_gio(den),
-            gioi_han=gioi_han, xem_cau_hinh=xem_cau_hinh),
+            gioi_han=gioi_han, xem_cau_hinh=xem_cau_hinh, bo_qua=bo_qua),
     }
 
 

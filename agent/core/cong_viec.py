@@ -761,19 +761,23 @@ async def _tao_viec_he_thong(
     try:
         dong = await db.fetchrow(
             "INSERT INTO cong_viec (tieu_de, mo_ta, nguon, uu_tien, conversation_id, "
-            "                       contact_id, khoa_chong_trung) "
-            # Hội thoại đã kết thúc thì việc KHÔNG gắn vào nó (vẫn gắn khách).
+            "                       contact_id, order_id, khoa_chong_trung) "
+            # Hội thoại đã kết thúc thì việc KHÔNG gắn vào nó (vẫn gắn khách và đơn).
             # Trigger 0045 cấm việc mở trên hội thoại đã đóng — để nguyên
             # conversation_id là "giao hàng thất bại" của một khách đã chat
             # xong hôm qua bị từ chối, rơi vào nhánh except dưới đây: không
-            # ai gọi khách hẹn giao lại. Mã đơn trong tiêu đề đủ để lần ra.
+            # ai gọi khách hẹn giao lại. Mã đơn trong tiêu đề và `order_id`
+            # liên kết trực tiếp tới bản ghi đơn hàng.
             "SELECT $1, $2, $6, $3, "
             "       CASE WHEN c.state IN ('resolved', 'closed') THEN NULL ELSE c.id END, "
-            "       c.contact_id, $5 "
-            "FROM (SELECT 1) _ LEFT JOIN conversations c ON c.id = $4::uuid "
+            "       c.contact_id, o.id, $5 "
+            "FROM (SELECT 1) _ "
+            "LEFT JOIN conversations c ON c.id = $4::uuid "
+            "LEFT JOIN orders o ON o.ma_don = $7 "
             "ON CONFLICT DO NOTHING RETURNING id",
             tieu_de[:200], mo_ta, kiem_uu_tien(uu_tien),
             str(conversation_id) if conversation_id else None, khoa[:300], nguon,
+            str(ma_don or "").strip() or None,
         )
         if dong is None:
             return None

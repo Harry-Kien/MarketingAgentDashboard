@@ -340,6 +340,9 @@ async def _queue_approved_draft(
         mid, nguoi_duyet_id)
     await db.log_event("tin_nhan.duyet", actor=boi, ref_id=mid,
                        co_sua=noi_dung is not None)
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.ket_thuc_duyet_nhap(None, message["conversation_id"])
     return queued
 
 
@@ -645,7 +648,8 @@ async def set_default_account(body: ChonNickIn, _quyen: dict = Depends(can_quyen
     if body.zalo_account_id and not await zalo_acc.hop_le(body.zalo_account_id):
         raise HTTPException(422, "Nick không tồn tại hoặc đang không kết nối")
     runtime.update(zalo_account_id=body.zalo_account_id)
-    await db.log_event("zalo.account.default", actor="nguoi",
+    ten = str(_quyen.get("ten_dang_nhap") or _quyen.get("id") or "")
+    await db.log_event("zalo.account.default", actor=ten or "system",
                        account_id=body.zalo_account_id)
     return {"dang_chon": body.zalo_account_id}
 
@@ -663,7 +667,8 @@ async def pin_conversation_account(conv_id: uuid.UUID, body: ChonNickIn, _quyen:
     )
     if not row:
         raise HTTPException(404, "Không tìm thấy hội thoại")
-    await db.log_event("zalo.account.pinned", actor="nguoi",
+    ten = str(_quyen.get("ten_dang_nhap") or _quyen.get("id") or "")
+    await db.log_event("zalo.account.pinned", actor=ten or "system",
                        ref_id=conv_id, account_id=acc)
     return row
 

@@ -44,6 +44,10 @@ class TuChoiERP(LoiERP):
     """
 
 
+class DonERPDaHuy(TuChoiERP):
+    """Sales Order trên ERPNext đã bị huỷ (`docstatus = 2`) — dừng đồng bộ vận đơn."""
+
+
 @dataclass(frozen=True)
 class Gia:
     """Giá bán một sản phẩm, kèm nguồn để truy vết."""

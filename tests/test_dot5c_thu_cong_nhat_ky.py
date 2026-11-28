@@ -105,6 +105,7 @@ def test_dot5c_hoan_tat_thu_cong_va_dong_bo_nhat_ky_kiemthu(monkeypatch):
             )
             await db.execute("INSERT INTO conversations VALUES ($1, $2)", cid, acc_id)
             await db.execute("INSERT INTO nguoi_dung VALUES ($1, 'nv_kho', 'Nhân viên Kho')", uid)
+            await db.execute("INSERT INTO account_memberships VALUES ($1, $2)", acc_id, uid)
             await db.execute(
                 "INSERT INTO orders (id, conversation_id, ma_don, trang_thai, items, erp_ma_don) "
                 "VALUES ($1, $2, 'DH-5C', 'da_chot', $3, 'SO-5C')",

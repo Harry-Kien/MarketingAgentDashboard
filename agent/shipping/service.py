@@ -23,6 +23,7 @@ from .models import (
     CreateWaybillResult,
     InternalShippingStatus,
     ShippingItem,
+    TRANG_THAI_DA_LAY_HANG,
     TrackingResult,
     WebhookEventResult,
 )
@@ -148,6 +149,17 @@ async def _dong_bo_erp_sau_luu(
         )
 
 
+def _st_giao_tu_don(order: dict[str, Any] | None) -> InternalShippingStatus:
+    """Đọc trạng thái giao hàng thực tế trên đơn, tránh gán cứng DELIVERING."""
+    raw = str((order or {}).get("trang_thai_giao_hang") or "").strip()
+    if raw:
+        try:
+            return InternalShippingStatus(raw)
+        except ValueError:
+            pass
+    return InternalShippingStatus.READY_TO_PICK
+
+
 async def tao_van_don_cho_don(
     ma_don: str, provider_name: str | None = None
 ) -> CreateWaybillResult:
@@ -198,18 +210,26 @@ async def tao_van_don_cho_don(
             don_vi=str(order.get("don_vi_van_chuyen") or "ghn"),
             phi_van_chuyen=int(order.get("phi_van_chuyen") or 0),
             ngay_du_kien_giao=order.get("ngay_du_kien_giao"),
-            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            trang_thai_noi_bo=_st_giao_tu_don(order),
             thong_tin_them={"da_co_san": True, "ghi_chu": "Vận đơn đã được tạo trước đó."},
         )
-        # Retry RIÊNG ERP, không gọi hãng lần nữa.
-        if order.get("erp_ma_don") and order.get("erp_van_chuyen_trang_thai") != "synced":
+        # Retry RIÊNG ERP (không gọi hãng lần nữa), trừ khi đã synced hoặc ERP đã huỷ (skipped_cancelled).
+        tt_erp = str(order.get("erp_van_chuyen_trang_thai") or "")
+        if order.get("erp_ma_don") and tt_erp not in ("synced", "skipped_cancelled"):
             await db.execute(
                 "UPDATE orders SET erp_van_chuyen_trang_thai='pending', "
                 "erp_van_chuyen_thu_lai_luc=now() WHERE id=$1 "
-                "AND erp_van_chuyen_trang_thai <> 'processing'",
+                "AND erp_van_chuyen_trang_thai NOT IN ('processing', 'skipped_cancelled')",
                 order["id"],
             )
-        await _dong_bo_erp_sau_luu(order, result)
+        if tt_erp == "skipped_cancelled":
+            result.thong_tin_them["erp_sync"] = {
+                "ok": True,
+                "trang_thai": "skipped_cancelled",
+                "loi": order.get("erp_van_chuyen_loi"),
+            }
+        else:
+            await _dong_bo_erp_sau_luu(order, result)
         return result
 
     # --- CHỐT 2: Đầy đủ và chuẩn hóa thông tin giao nhận ---
@@ -288,15 +308,32 @@ async def tao_van_don_cho_don(
                 return CreateWaybillResult(
                     ok=False, loi=f"Không tìm thấy đơn hàng mã '{ma_don}' trong CSDL."
                 )
+            # Kiểm tra lại trạng thái đơn BÊN TRONG khoá FOR UPDATE để chống
+            # tranh chấp khi nhân viên vừa bấm huỷ đơn đồng thời với tạo vận đơn.
+            tt_locked = str(order_locked.get("trang_thai") or "")
+            if tt_locked != "da_chot":
+                return CreateWaybillResult(
+                    ok=False,
+                    loi=(
+                        f"Đơn hàng '{ma_don}' không còn ở trạng thái đã chốt "
+                        f"('{tt_locked}'), không thể tạo vận đơn."
+                    ),
+                )
             ma_vd_moi = str(order_locked.get("ma_van_don") or "").strip()
             if ma_vd_moi:
+                try:
+                    st_cu = InternalShippingStatus(
+                        str(order_locked.get("trang_thai_giao_hang") or "ready_to_pick")
+                    )
+                except ValueError:
+                    st_cu = InternalShippingStatus.READY_TO_PICK
                 khoa_bo_qua = CreateWaybillResult(
                     ok=True,
                     ma_van_don=ma_vd_moi,
                     don_vi=str(order_locked.get("don_vi_van_chuyen") or provider.code),
                     phi_van_chuyen=int(order_locked.get("phi_van_chuyen") or 0),
                     ngay_du_kien_giao=order_locked.get("ngay_du_kien_giao"),
-                    trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+                    trang_thai_noi_bo=st_cu,
                     thong_tin_them={"da_co_san": True, "ghi_chu": "Vận đơn đã được tạo trước đó."},
                 )
             else:
@@ -420,23 +457,38 @@ async def tao_van_don_cho_don(
             ma_van_don=ma_vd_san,
             don_vi=str(recover_existing.get("provider") or provider.code),
             phi_van_chuyen=int(recover_existing.get("phi_van_chuyen") or 0),
-            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            trang_thai_noi_bo=_st_giao_tu_don(order_saved),
             thong_tin_them={"da_co_san": True, "khoi_phuc_tu_yeu_cau": True},
             client_order_code=claimed_client_code,
         )
-        await _dong_bo_erp_sau_luu(order_saved, res_rec)
+        if str(order_saved.get("erp_van_chuyen_trang_thai") or "") == "skipped_cancelled":
+            res_rec.thong_tin_them["erp_sync"] = {
+                "ok": True,
+                "trang_thai": "skipped_cancelled",
+                "loi": order_saved.get("erp_van_chuyen_loi"),
+            }
+        else:
+            await _dong_bo_erp_sau_luu(order_saved, res_rec)
         return res_rec
 
     if khoa_bo_qua is not None:
         if khoa_bo_qua.ok and khoa_bo_qua.ma_van_don:
-            if order.get("erp_ma_don") and order.get("erp_van_chuyen_trang_thai") != "synced":
+            tt_erp_k = str(order.get("erp_van_chuyen_trang_thai") or "")
+            if order.get("erp_ma_don") and tt_erp_k not in ("synced", "skipped_cancelled"):
                 await db.execute(
                     "UPDATE orders SET erp_van_chuyen_trang_thai='pending', "
                     "erp_van_chuyen_thu_lai_luc=now() WHERE id=$1 "
-                    "AND erp_van_chuyen_trang_thai <> 'processing'",
+                    "AND erp_van_chuyen_trang_thai NOT IN ('processing', 'skipped_cancelled')",
                     order["id"],
                 )
-            await _dong_bo_erp_sau_luu(order, khoa_bo_qua)
+            if tt_erp_k == "skipped_cancelled":
+                khoa_bo_qua.thong_tin_them["erp_sync"] = {
+                    "ok": True,
+                    "trang_thai": "skipped_cancelled",
+                    "loi": order.get("erp_van_chuyen_loi"),
+                }
+            else:
+                await _dong_bo_erp_sau_luu(order, khoa_bo_qua)
         else:
             await db.log_event(
                 "shipping.create_blocked_reconcile",
@@ -726,17 +778,23 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
 
     # Cập nhật lại vị trí / trạng thái vào CSDL nếu có thay đổi
     if result.ok:
+        da_lay = result.trang_thai_noi_bo in TRANG_THAI_DA_LAY_HANG
         await db.execute(
             """
             UPDATE orders
             SET trang_thai_giao_hang = $1,
+                van_don_da_lay_hang = CASE
+                    WHEN van_don_da_lay_hang IS TRUE OR $3 THEN TRUE
+                    ELSE van_don_da_lay_hang END,
                 cap_nhat_van_chuyen_luc = now(),
                 erp_van_chuyen_trang_thai = CASE
                     WHEN erp_ma_don IS NOT NULL
+                     AND erp_van_chuyen_trang_thai <> 'skipped_cancelled'
                      AND trang_thai_giao_hang IS DISTINCT FROM $1
                     THEN 'pending' ELSE erp_van_chuyen_trang_thai END,
                 erp_van_chuyen_thu_lai_luc = CASE
                     WHEN erp_ma_don IS NOT NULL
+                     AND erp_van_chuyen_trang_thai <> 'skipped_cancelled'
                      AND trang_thai_giao_hang IS DISTINCT FROM $1
                     THEN now() ELSE erp_van_chuyen_thu_lai_luc END,
                 updated_at = now()
@@ -744,6 +802,7 @@ async def tra_cuu_van_don(ma_tra_cuu: str) -> TrackingResult:
             """,
             result.trang_thai_noi_bo.value,
             ma_van_don,
+            da_lay,
         )
 
     return result
@@ -892,13 +951,18 @@ async def xu_ly_webhook_van_chuyen(
     ma_van_don = order["ma_van_don"] or event.ma_van_don
     event_time = event.thoi_gian or datetime.now(timezone.utc)
 
+    da_lay_hang = st_noi_bo in TRANG_THAI_DA_LAY_HANG
+
     # Chỉ sự kiện mới hơn mới được đổi trạng thái. UPDATE nguyên tử cũng là
     # chốt chống webhook lặp: không có dòng RETURNING thì không chạy các tác
-    # dụng phụ (nhắn khách, hoàn kho, tạo Pending Action) lần nữa.
+    # dụng phụ (nhắn khách, hoàn kho, tạo công việc) lần nữa.
     updated = await db.fetchrow(
         """
         UPDATE orders
         SET trang_thai_giao_hang = $1,
+            van_don_da_lay_hang = CASE
+                WHEN van_don_da_lay_hang IS TRUE OR $8 THEN TRUE
+                ELSE van_don_da_lay_hang END,
             ma_van_don = COALESCE(ma_van_don, $4),
             don_vi_van_chuyen = COALESCE(don_vi_van_chuyen, $7),
             cap_nhat_van_chuyen_luc = $3,
@@ -907,13 +971,19 @@ async def xu_ly_webhook_van_chuyen(
                     'time', $3, 'status', $5::text, 'description', $6::text,
                     'carrier', $7::text)),
             erp_van_chuyen_trang_thai = CASE
-                WHEN erp_ma_don IS NOT NULL THEN 'pending'
+                WHEN erp_ma_don IS NOT NULL
+                 AND erp_van_chuyen_trang_thai <> 'skipped_cancelled'
+                    THEN 'pending'
                 ELSE erp_van_chuyen_trang_thai END,
             erp_van_chuyen_thu_lai_luc = CASE
-                WHEN erp_ma_don IS NOT NULL THEN now()
+                WHEN erp_ma_don IS NOT NULL
+                 AND erp_van_chuyen_trang_thai <> 'skipped_cancelled'
+                    THEN now()
                 ELSE erp_van_chuyen_thu_lai_luc END,
             erp_van_chuyen_loi = CASE
-                WHEN erp_ma_don IS NOT NULL THEN NULL
+                WHEN erp_ma_don IS NOT NULL
+                 AND erp_van_chuyen_trang_thai <> 'skipped_cancelled'
+                    THEN NULL
                 ELSE erp_van_chuyen_loi END,
             updated_at = now()
         WHERE id = $2
@@ -929,6 +999,7 @@ async def xu_ly_webhook_van_chuyen(
         event.trang_thai_goc,
         event.mo_ta[:300],
         provider_name,
+        da_lay_hang,
     )
     if updated is None:
         await db.log_event(
@@ -1010,21 +1081,111 @@ async def xu_ly_webhook_van_chuyen(
             f"vandon-dagiao:{ma_van_don}",
         )
 
-    # 2. HOÀN VỀ (RETURNED): Tự động cộng lại hàng vào kho (Restock) & Ghi nhật ký
+    # 2. ĐÃ HOÀN HÀNG VỀ KHO (RETURNED):
+    # Theo nghiệp vụ BUG-17-04: webhook `returned` chỉ xác nhận hãng đã hoàn
+    # kiện về shop, KHÔNG tự động cộng tồn kho (mỹ phẩm cần kiểm tra số lượng,
+    # tình trạng và nguyên seal trước khi nhập lại qua Kho → Nhập).
     elif st_noi_bo == InternalShippingStatus.RETURNED:
         await db.execute(
-            "UPDATE orders SET trang_thai = 'da_huy', updated_at = now() WHERE id = $1",
+            "UPDATE orders SET trang_thai = 'da_huy', updated_at = now() "
+            "WHERE id = $1 AND trang_thai NOT IN ('da_huy', 'da_giao')",
             order["id"],
         )
-        so_mon_hoan = await kho.tra_hang(ma_don, ly_do="hoan_hang")
         await db.log_event(
-            "shipping.restocked",
+            "shipping.returned_cho_kiem_hang",
+            ref_id=order["id"],
             ma_don=ma_don,
             ma_van_don=ma_van_don,
-            so_san_pham=so_mon_hoan,
+            carrier=provider_name,
+        )
+        nhac_erp = (
+            f" Đồng thời kiểm tra/xử lý chứng từ ERPNext ({order['erp_ma_don']})."
+            if order.get("erp_ma_don")
+            else ""
+        )
+        await cong_viec.tao_tu_don_hang(
+            ma_don,
+            tieu_de=f"Kiểm tra hàng hoàn đơn {ma_don}",
+            mo_ta=(
+                f"Hãng {provider_name.upper()} xác nhận đã hoàn vận đơn "
+                f"{ma_van_don} về kho. Kiểm tra số lượng và tình trạng/nguyên "
+                "seal sản phẩm trước khi nhập lại kho (Kho → Nhập). Hệ thống "
+                f"KHÔNG tự động cộng tồn kho.{nhac_erp}"
+            )[:1000],
+            khoa=f"don_hang:kiem_hang_hoan:{ma_don}",
+            conversation_id=order.get("conversation_id"),
+            uu_tien="cao",
         )
 
-    # 3. GIAO THẤT BẠI (DELIVERY_FAILED): Báo động cho nhân viên
+    # 3. ĐANG HOÀN HÀNG (RETURNING): Hàng đang quay về, chưa về kệ -> không đụng kho
+    elif st_noi_bo == InternalShippingStatus.RETURNING:
+        await db.log_event(
+            "shipping.returning",
+            ref_id=order["id"],
+            ma_don=ma_don,
+            ma_van_don=ma_van_don,
+            carrier=provider_name,
+            st_goc=event.trang_thai_goc,
+        )
+
+    # 4. ĐÃ HUỶ VẬN ĐƠN TRÊN HÃNG (CANCELLED):
+    # - Chỉ tự động cộng tồn kho khi `van_don_da_lay_hang IS FALSE` (bằng chứng
+    #   rõ ràng shipper chưa từng lấy hàng rời kho).
+    # - Đơn cũ (`van_don_da_lay_hang IS NULL`) hoặc đã qua bước lấy hàng (`TRUE`):
+    #   KHÔNG tự động hoàn tồn -> sinh việc kiểm tra kho thực tế.
+    elif st_noi_bo == InternalShippingStatus.CANCELLED:
+        await db.execute(
+            "UPDATE orders SET trang_thai = 'da_huy', updated_at = now() "
+            "WHERE id = $1 AND trang_thai NOT IN ('da_huy', 'da_giao')",
+            order["id"],
+        )
+        if order.get("van_don_da_lay_hang") is False:
+            so_mon_hoan = await kho.tra_hang(ma_don, ly_do="huy_don")
+            await db.log_event(
+                "shipping.cancelled_restocked",
+                ref_id=order["id"],
+                ma_don=ma_don,
+                ma_van_don=ma_van_don,
+                carrier=provider_name,
+                so_san_pham=so_mon_hoan,
+            )
+        else:
+            await db.log_event(
+                "shipping.cancelled_cho_kiem_kho",
+                ref_id=order["id"],
+                ma_don=ma_don,
+                ma_van_don=ma_van_don,
+                carrier=provider_name,
+                da_lay_hang=order.get("van_don_da_lay_hang"),
+            )
+            await cong_viec.tao_tu_don_hang(
+                ma_don,
+                tieu_de=f"Kiểm tra tồn kho đơn {ma_don} (vận đơn đã huỷ)",
+                mo_ta=(
+                    f"Hãng {provider_name.upper()} báo vận đơn {ma_van_don} đã huỷ, "
+                    "nhưng hệ thống không đủ bằng chứng hàng chưa rời kho (đơn cũ "
+                    "hoặc đã ghi nhận bước lấy hàng). Kiểm tra hàng thực tế tại kho "
+                    "trước khi nhập lại kho thủ công (Kho → Nhập)."
+                )[:1000],
+                khoa=f"don_hang:kiem_kho_huy_vd:{ma_don}",
+                conversation_id=order.get("conversation_id"),
+                uu_tien="cao",
+            )
+        if order.get("erp_ma_don"):
+            await cong_viec.tao_tu_don_hang(
+                ma_don,
+                tieu_de=f"Huỷ Sales Order {order['erp_ma_don']} trên ERPNext cho đơn {ma_don}",
+                mo_ta=(
+                    f"Vận đơn {ma_van_don} của đơn {ma_don} đã huỷ trên "
+                    f"{provider_name.upper()} và đơn nội bộ đã chuyển sang đã huỷ. "
+                    f"Kiểm tra và huỷ chứng từ {order['erp_ma_don']} trên ERPNext."
+                )[:1000],
+                khoa=f"don_hang:erp_huy_tay:{ma_don}",
+                conversation_id=order.get("conversation_id"),
+                uu_tien="cao",
+            )
+
+    # 5. GIAO THẤT BẠI (DELIVERY_FAILED): Báo động cho nhân viên
     elif st_noi_bo == InternalShippingStatus.DELIVERY_FAILED:
         await db.log_event(
             "shipping.delivery_alert",

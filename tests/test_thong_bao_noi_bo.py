@@ -365,6 +365,7 @@ def test_dinh_tuyen_tu_dong_giao_xong_thi_bao(app_that):
     tk = _kenh_webchat(qt)
     lan_id, lan = _nhan_vien_moi(qt, "lan")
     _khach_nhan(app_that, tk, "Chị Hoa", "cần tư vấn")
+    _them_thanh_vien(app_that, tk, lan_id)
     cid = UUID(_cid_moi_nhat(app_that, tk))
 
     class Kho:

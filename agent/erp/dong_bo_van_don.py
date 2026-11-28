@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent import db
-from agent.erp.hop_dong import TuChoiERP
+from agent.erp.hop_dong import DonERPDaHuy, TuChoiERP
 
 SO_LAN_TOI_DA = 8
 KHOA_QUA_HAN_PHUT = 15
@@ -129,6 +129,25 @@ async def _that_bai(viec: dict[str, Any], exc: Exception, vinh_vien: bool) -> st
     return trang_thai
 
 
+async def _bo_qua_da_huy(viec: dict[str, Any], ly_do: str) -> None:
+    """Sales Order bên ERPNext đã huỷ (docstatus=2): dừng đồng bộ, không báo dead."""
+    await db.execute(
+        """
+        UPDATE orders
+        SET erp_van_chuyen_trang_thai = 'skipped_cancelled',
+            erp_van_chuyen_loi = $2,
+            erp_van_chuyen_thu_lai_luc = NULL,
+            erp_van_chuyen_khoa_luc = NULL,
+            erp_van_chuyen_khoa_boi = NULL,
+            updated_at = now()
+        WHERE id = $1 AND erp_van_chuyen_khoa_boi = $3
+        """,
+        viec["id"],
+        ly_do[:500],
+        viec["erp_van_chuyen_khoa_boi"],
+    )
+
+
 async def _xu_ly(viec: dict[str, Any], nguon) -> dict[str, Any]:
     luc = viec["cap_nhat_van_chuyen_luc"] or datetime.now(timezone.utc)
     try:
@@ -136,7 +155,7 @@ async def _xu_ly(viec: dict[str, Any], nguon) -> dict[str, Any]:
             erp_ma_don=str(viec["erp_ma_don"]),
             ma_van_don=str(viec["ma_van_don"]),
             don_vi=str(viec["don_vi_van_chuyen"] or "ghn"),
-            trang_thai=str(viec["trang_thai_giao_hang"] or "delivering"),
+            trang_thai=str(viec["trang_thai_giao_hang"] or "ready_to_pick"),
             dong_bo_luc=luc,
             tham_chieu=str(viec["ma_don"]),
         )
@@ -149,6 +168,15 @@ async def _xu_ly(viec: dict[str, Any], nguon) -> dict[str, Any]:
         )
         return {"ok": trang_thai == "synced", "trang_thai": trang_thai,
                 "da_ghi": da_ghi}
+    except DonERPDaHuy as exc:
+        loi = f"{type(exc).__name__}: {exc}"[:300]
+        await _bo_qua_da_huy(viec, loi)
+        await db.log_event(
+            "shipping.erp_sync_skipped_cancelled", ref_id=viec["id"],
+            ma_don=viec["ma_don"], erp_ma_don=viec["erp_ma_don"],
+            ma_van_don=viec["ma_van_don"],
+        )
+        return {"ok": True, "trang_thai": "skipped_cancelled", "da_ghi": False, "loi": loi}
     except TuChoiERP as exc:
         loi = f"{type(exc).__name__}: {exc}"[:300]
         trang_thai = await _that_bai(viec, exc, True)
@@ -190,8 +218,9 @@ async def dong_bo_ngay(ma_don: str, nguon=None) -> dict[str, Any]:
             "SELECT erp_van_chuyen_trang_thai, erp_van_chuyen_loi "
             "FROM orders WHERE ma_don=$1", ma_don,
         )
-        return {"ok": bool(row and row.get("erp_van_chuyen_trang_thai") == "synced"),
-                "trang_thai": (row or {}).get("erp_van_chuyen_trang_thai", "not_found"),
+        tt = (row or {}).get("erp_van_chuyen_trang_thai", "not_found")
+        return {"ok": tt in ("synced", "skipped_cancelled"),
+                "trang_thai": tt,
                 "loi": (row or {}).get("erp_van_chuyen_loi")}
     tu_tao = None
     try:

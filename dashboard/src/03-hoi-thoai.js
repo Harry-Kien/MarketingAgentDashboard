@@ -9,7 +9,7 @@ function nutDuyetDuoc() {
 
 const CHANNEL_LABEL = {
   zalo_personal: "Zalo cá nhân", zalo_oa: "Zalo OA",
-  facebook: "Facebook", instagram: "Instagram",
+  facebook: "Facebook", messenger: "Facebook", instagram: "Instagram",
   whatsapp: "WhatsApp", webchat: "Web chat", web: "Web chat",
 };
 

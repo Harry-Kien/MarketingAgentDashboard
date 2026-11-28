@@ -93,16 +93,30 @@ async def fetchrow_chac(sql: str, *args: Any) -> dict:
     return row
 
 
-async def execute(sql: str, *args: Any) -> str:
-    async with pool().acquire() as conn:
+async def execute(sql: str, *args: Any, conn: Any = None) -> str:
+    if conn is not None:
         return await conn.execute(sql, *args)
+    async with pool().acquire() as moi:
+        return await moi.execute(sql, *args)
 
 
-async def log_event(kind: str, *, actor: str = "system", ref_id=None, **detail) -> None:
-    """Ghi nhật ký kiểm toán. Không bao giờ để lỗi log làm hỏng luồng chính."""
+async def log_event(
+    kind: str, *, actor: str = "system", ref_id=None, conn: Any = None, **detail
+) -> None:
+    """Ghi nhật ký kiểm toán. Nếu `conn` được truyền vào, ghi trong transaction."""
     # Trong một lượt AI, mọi dòng tự mang mã lượt — nơi ghi không phải nhớ.
     # Xem agent/core/luot_ai.py.
     detail = luot_ai.gan_vao(detail, ref_id)
+    if conn is not None:
+        await execute(
+            "INSERT INTO events (kind, actor, ref_id, detail) VALUES ($1,$2,$3,$4)",
+            kind,
+            actor,
+            ref_id,
+            detail,
+            conn=conn,
+        )
+        return
     try:
         await execute(
             "INSERT INTO events (kind, actor, ref_id, detail) VALUES ($1,$2,$3,$4)",

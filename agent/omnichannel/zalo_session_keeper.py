@@ -157,6 +157,16 @@ async def bao_phien_hong(
             code="zalo_personal.can_quet_lai", detail={"ly_do": str(ly_do)[:200]})
         await repository.update_status(
             account_id, AccountStatus.REAUTH_REQUIRED, actor_id=SYSTEM_ACTOR_ID)
+        from agent import db as _db
+        if getattr(_db, "_pool", None) is not None:
+            from agent.core import thong_bao_noi_bo
+
+            await thong_bao_noi_bo.bao_kenh_can_xac_thuc(
+                account_id,
+                ten_tai_khoan=ten,
+                kenh="zalo_personal",
+                ly_do=f"Zalo cá nhân «{ten}» mất phiên đăng nhập — cần quét QR lại.",
+            )
     await ghi_nhat_ky(
         "zalo_personal.lech_bi_mat_sidecar" if lech else "zalo_personal.can_quet_lai",
         actor="system", ref_id=account_id, ly_do=str(ly_do)[:200])

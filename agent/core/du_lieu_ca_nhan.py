@@ -550,7 +550,8 @@ async def _xoa_ho_so_crm(ho_so: list[dict]) -> dict:
             "danh_tinh": danh_tinh, "dong_y": dong_y}
 
 
-async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
+async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu",
+              nguoi_thuc_hien: str | None = None) -> dict:
     """
     Thực hiện yêu cầu xoá dữ liệu của một khách.
 
@@ -625,8 +626,11 @@ async def xoa(sdt: str, *, ly_do: str = "khách yêu cầu") -> dict:
     # 6. Ghi nhật ký để CHỨNG MINH đã thực hiện — băm số, không lưu số thật.
     #    Ghi CẢ phần chưa làm được: một bằng chứng tuân thủ che giấu phần
     #    còn thiếu thì tệ hơn không có bằng chứng nào.
+    actor_thuc = (nguoi_thuc_hien or "").strip() or str(
+        phieu.get("approved_by") or phieu.get("requested_by") or "system"
+    )
     await db.log_event(
-        "pdpd.xoa_du_lieu", actor="nguoi",
+        "pdpd.xoa_du_lieu", actor=actor_thuc,
         dau_van_tay=_dau_van_tay(so),
         so_don_an_danh=truoc["so_don_hang"],
         so_hoi_thoai_xoa=hoi_thoai,

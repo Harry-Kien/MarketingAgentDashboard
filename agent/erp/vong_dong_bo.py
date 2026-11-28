@@ -208,11 +208,20 @@ class PostgresKhoDon:
         #
         # `AND trang_thai='cho_dong_bo'`: đơn người đã huỷ không được "sống
         # lại" thành chờ duyệt.
-        await db.execute(
+        don = await db.fetchrow(
             "UPDATE orders SET trang_thai='cho_duyet', erp_loi=$2, "
-            "updated_at=now() WHERE id=$1 AND trang_thai='cho_dong_bo'",
+            "updated_at=now() WHERE id=$1 AND trang_thai='cho_dong_bo' "
+            "RETURNING id, ma_don, conversation_id",
             id_don, ly_do[:500],
         )
+        if don is not None:
+            from agent.core import thong_bao_noi_bo
+
+            await thong_bao_noi_bo.bao_can_duyet_don(
+                don["id"],
+                conversation_id=don.get("conversation_id"),
+                ma_don=str(don["ma_don"]),
+            )
 
 
     async def don_da_day(self, gioi_han: int = 50) -> list[dict]:
@@ -237,7 +246,7 @@ class PostgresKhoDon:
             FROM orders
             WHERE erp_ma_don IS NOT NULL
               AND (trang_thai_giao_hang IS NULL
-                   OR trang_thai_giao_hang NOT IN ('delivered', 'returned'))
+                   OR trang_thai_giao_hang NOT IN ('delivered', 'returned', 'cancelled'))
               AND trang_thai <> 'da_huy'
             ORDER BY updated_at
             LIMIT $1

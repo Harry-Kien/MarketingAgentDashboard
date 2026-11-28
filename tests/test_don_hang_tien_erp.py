@@ -317,7 +317,7 @@ def test_tien_thu_ho_khong_bao_gio_am():
 def test_man_don_co_nut_da_nhan_tien_dung_hoi_hop():
     js = (ROOT / "dashboard" / "src" / "05-don-kho.js").read_text(encoding="utf-8")
     assert "data-odathu" in js and '"/da-thu-tien"' in js
-    khoi = js[js.index('$$("[data-odathu]")'):][:1200]
+    khoi = js[js.index("if (btn.dataset.odathu)"):][:1200]
     assert "hoiHop(" in khoi and "prompt(" not in khoi
     assert "Đã thu" in js and "o.so_tien_da_thu" in js
 

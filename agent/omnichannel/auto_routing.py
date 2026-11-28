@@ -370,6 +370,8 @@ class AutoRoutingWorker:
 
                     await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
                         conversation_id, nguoi_nhan, tu_dong=True)
+                    await thong_bao_noi_bo.dong_bo_chuyen_nguoi_hoi_thoai(
+                        conversation_id, nguoi_nhan)
         await self._repository.heartbeat(worker_id)
         return {"examined": len(ids), "assigned": assigned}
 

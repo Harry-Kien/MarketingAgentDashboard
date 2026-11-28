@@ -258,16 +258,40 @@ def test_khoi_luon_o_lai_nam_ngoai_phan_bi_thay():
     trường thông tin khách KHÔNG được nằm trong đó — gắn mô-đun Tích hợp
     hay Nhân sự vào là chúng biến mất mà không ai thay.
     """
+    from html.parser import HTMLParser
+
+    class _KiemTraTabGoc(HTMLParser):
+        def __init__(self, target_id: str):
+            super().__init__()
+            self.target_id = target_id
+            self.depth_tg = 0
+            self.found = False
+            self.inside_tg = False
+
+        def handle_starttag(self, tag, attrs):
+            d = dict(attrs)
+            if tag == "div" and "tab__goc" in (d.get("class") or "").split():
+                self.depth_tg = 1
+            elif self.depth_tg > 0 and tag == "div":
+                self.depth_tg += 1
+            if d.get("id") == self.target_id:
+                self.found = True
+                if self.depth_tg > 0:
+                    self.inside_tg = True
+
+        def handle_endtag(self, tag):
+            if self.depth_tg > 0 and tag == "div":
+                self.depth_tg -= 1
+
     for tid, oid in [("cc-ket-noi", "connectiongrid"), ("ns-lich-ca", "lcPanel"),
                      ("ns-vai-tro", "tamnhin"), ("cc-nhan", "truong-ds"), ("ai-co-ban", "aiBat"),
                      # Ngưỡng SLA chung / khi trễ: mô-đun 26-sla.js thay .tab__goc.
                      ("cc-sla", "api-nhom-sla")]:
         t = _tab(tid)
-        i = t.index(f'id="{oid}"')
-        if 'class="tab__goc"' in t:
-            g = t.index('class="tab__goc"')
-            # nằm trước tab__goc, hoặc sau thẻ đóng của nó
-            assert i < g or i > t.index("\n        </div>", g), f"#{oid} nằm trong .tab__goc của {tid}"
+        p = _KiemTraTabGoc(oid)
+        p.feed(t)
+        assert p.found, f"không tìm thấy #{oid} trong {tid}"
+        assert not p.inside_tg, f"#{oid} nằm trong .tab__goc của {tid}"
 
 
 def test_chinh_sach_uy_quyen_la_cho_trong():
@@ -285,8 +309,9 @@ def test_suc_khoe_he_thong_chi_o_he_thong_va_nhat_ky():
 def test_nut_quay_lai_hai_buoc():
     """Màn 2 lớp (hộp hỏi chung #congHoi) dùng "← Quay lại", không còn "Thôi, quay lại"."""
     assert "Thôi, quay lại" not in HTML
-    hoi = HTML[HTML.index('id="congHoi"'):]
-    assert '<a href="#" id="hoiHuy">← Quay lại</a>' in hoi[:900]
+    dau = HTML.index('id="congHoi"')
+    hoi = HTML[dau:HTML.index("</form>", dau)]
+    assert '<a href="#" id="hoiHuy">← Quay lại</a>' in hoi
 
 
 def test_bo_chon_che_do_roi_thanh_tren_vao_cau_hinh_co_ban():
@@ -320,7 +345,8 @@ def test_csat_va_vietqr_khong_hien_nhung_ma_con():
     # Mã giữ nguyên: bảng nhóm còn đủ, chỉ không có ô nào nhận.
     assert 'thanh_toan: "Thanh toán (VietQR)"' in JS and 'csat: "Khảo sát hài lòng (CSAT)"' in JS
     assert "const HIEN_VIETQR = false;" in JS
-    assert "${HIEN_VIETQR && o.trang_thai" in JS
+    assert 'data-oqr-gui="' not in JS and "data-oqr-gui=" not in HTML
+    assert "/vietqr/gui" in JS
     assert "<th>CSAT</th>" not in JS
     assert "CSAT" not in HTML.replace("<!--", "\x00").split("\x00")[0]  # không lộ ở thanh trên
 
@@ -355,7 +381,7 @@ def test_moi_nhom_khoa_moi_deu_co_cho_hien():
     ('dangMo("cc-tu-dong")', "loadQuyTac()"),
     ('dangMo("ai-tri-thuc")', "loadDocs()"),
     ('dangMo("ai-ky-nang")', "loadKyNang()"),
-    ('dangMo("ht-nhat-ky")', "loadEvents()"),
+    ('tabDangHien("ht-nhat-ky")', "nkLamMoi()"),
     ('dangMo("ht-suc-khoe")', "loadHeThong()"),
 ])
 def test_vong_lam_moi_nap_theo_tab(dieu_kien, loader):

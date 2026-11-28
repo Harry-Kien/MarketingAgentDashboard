@@ -423,6 +423,11 @@ async def zalo_personal_callback(
                 status,
                 actor_id=SYSTEM_ACTOR_ID,
             )
+        from agent import db as _db
+        if getattr(_db, "_pool", None) is not None and connected:
+            from agent.core import thong_bao_noi_bo
+
+            await thong_bao_noi_bo.ket_thuc_kenh_xac_thuc(None, account_id)
         da_ghi_kn = False
         if connected:
             da_ghi_kn = await _ghi_su_kien_ket_noi_lai(

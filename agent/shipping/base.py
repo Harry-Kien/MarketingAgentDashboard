@@ -42,36 +42,41 @@ def _nap(trang_thai: InternalShippingStatus, *ma: str) -> None:
         _BANG_MA[m] = trang_thai
 
 
-# Đang đi — hàng vẫn đang trên đường tới khách.
+# Chờ lấy hàng — đã tạo vận đơn nhưng shipper chưa lấy, hàng chưa rời kho.
+_nap(InternalShippingStatus.READY_TO_PICK,
+     "ready_to_pick", "picking", "money_collect_picking",
+     "lay_hang", "dang_lay_hang")
+
+# Đang đi — hàng đã bàn giao hãng vận chuyển và đang trên đường tới khách.
 _nap(InternalShippingStatus.DELIVERING,
-     "ready_to_pick", "picking", "picked", "pickup", "money_collect_picking",
-     "storing", "transporting", "sorting", "delivering", "in_transit",
-     "dang_giao", "lay_hang", "dang_lay_hang")
+     "picked", "pickup", "storing", "transporting", "sorting",
+     "delivering", "in_transit", "dang_giao")
 
 # Đã tới tay khách.
 _nap(InternalShippingStatus.DELIVERED,
      "delivered", "delivery_success", "success", "finish", "completed",
      "da_giao", "giao_thanh_cong", "thanh_cong")
 
-# CHỈ những mã nghĩa là HÀNG ĐÃ VỀ TỚI KHO mới nằm ở đây.
-#
-# Trạng thái này KÍCH HOẠT HOÀN KHO — hệ thống cộng hàng trở lại số tồn. Xếp
-# nhầm một mã vào đây là kho báo có hàng trong khi kệ trống, rồi bán tiếp cái
-# không tồn tại.
-#
-# Vì thế `lost`, `damage`, `return_transporting`, `waiting_to_return` KHÔNG
-# nằm ở đây: hàng mất, hàng vỡ, hàng còn trên xe — không cái nào đang nằm
-# trên kệ. Bản của cộng sự xếp `damage` và `lost` vào RETURNED.
+# Hãng xác nhận đã hoàn hàng về tới kho shop.
+# Lưu ý (BUG-17-04): KHÔNG tự động cộng tồn kho — hệ thống sinh việc kiểm tra
+# số lượng và tình trạng/nguyên seal hàng hoàn trước khi nhập kho thủ công.
 _nap(InternalShippingStatus.RETURNED,
      "returned", "return_complete", "da_hoan", "hoan_ve", "da_ve_kho")
 
-# Cần người xử lý: chưa giao được, hoặc hàng đang trên đường về, hoặc mất.
-# Không tự động làm gì với kho — người kiểm rồi mới quyết.
+# Hàng đang trên đường hoàn về shop (chưa về tới kho -> tuyệt đối không cộng kho).
+_nap(InternalShippingStatus.RETURNING,
+     "waiting_to_return", "return", "returning", "return_transporting",
+     "return_sorting", "return_fail")
+
+# Hãng xác nhận đã huỷ vận đơn.
+_nap(InternalShippingStatus.CANCELLED,
+     "cancel", "cancelled")
+
+# Cần người xử lý: giao không thành công, hẹn giao lại, hư hỏng hoặc thất lạc.
+# Không tự động cộng tồn kho — người kiểm tra rồi mới quyết.
 _nap(InternalShippingStatus.DELIVERY_FAILED,
      "delivery_fail", "delivery_failed", "failed", "fail", "exception",
-     "cancel", "cancelled", "damage", "lost", "return_fail",
-     "waiting_to_return", "return", "returning", "return_transporting",
-     "return_sorting", "khach_hen_lai", "that_bai", "khong_giao_duoc")
+     "damage", "lost", "khach_hen_lai", "that_bai", "khong_giao_duoc")
 
 
 def anh_xa_trang_thai(ma_hang: str) -> tuple[InternalShippingStatus | None, str]:

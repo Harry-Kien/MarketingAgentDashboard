@@ -43,6 +43,9 @@ const CHUONG_HUONG_DAN = {
   viec_chua_giao: "Mở công việc để phân công người phụ trách.",
   viec_huy: "Kiểm tra thông tin công việc đã hủy.",
   viec_qua_han: "Mở công việc quá hạn để xử lý ngay.",
+  kenh_can_xac_thuc: "Mở Kết nối kênh để xác thực lại hoặc quét QR kết nối.",
+  tin_nhan_that_bai: "Mở hội thoại hoặc Ca trực để kiểm tra và gửi lại tin.",
+  duoc_giao_khach: "Mở hồ sơ khách hàng để theo dõi và chăm sóc.",
 };
 
 function tbLamSachNoiDung(t) {
@@ -86,13 +89,19 @@ function dongThongBao(t) {
   const ai = [t.ten_khach, t.kenh].filter(Boolean).map(esc).join(" · ");
   const noiDung = tbLamSachNoiDung(t);
   const nhom = t.nhom || (t.can_xu_ly === false ? "da_xu_ly" : "can_xu_ly");
-  // Hướng dẫn "bấm để làm gì" chỉ có nghĩa khi CÒN việc để làm.
-  const huongDan = nhom === "can_xu_ly" ? (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim() : "";
-  return `<button type="button" class="chuong__dong chuong__dong--${esc(nhom)}${t.da_doc ? "" : " is-moi"}" role="listitem"
+  const khoa = t.mo_duoc === false;
+  const ketQua = khoa ? nhom : (t.ket_qua_nghiep_vu || nhom);
+  const nhanTrangThai = khoa
+    ? (nhom === "thong_tin" ? "Thông tin" : "Ngoài phạm vi")
+    : (t.nhan_trang_thai || CHUONG_NHOM[nhom] || "");
+  // Hướng dẫn "bấm để làm gì" chỉ có nghĩa khi CÒN việc để làm và còn quyền mở.
+  const huongDan = (!khoa && nhom === "can_xu_ly")
+    ? (t.huong_dan || CHUONG_HUONG_DAN[t.loai] || "").trim() : "";
+  return `<button type="button" class="chuong__dong chuong__dong--${esc(nhom)}${t.da_doc ? "" : " is-moi"}${khoa ? " chuong__dong--khoa" : ""}" role="listitem"
       data-tb="${esc(t.id)}" title="${esc(noiDung)}">
     <span class="chuong__hang">
       <span class="chuong__loai chuong__loai--${esc(t.loai)}">${esc(t.nhan_loai)}</span>
-      <span class="chuong__nhom chuong__nhom--${esc(nhom)}">${esc(CHUONG_NHOM[nhom] || "")}</span>
+      <span class="chuong__nhom chuong__nhom--${esc(ketQua)}">${esc(nhanTrangThai)}</span>
       <time class="chuong__gio" datetime="${esc(t.tao_luc)}">${esc(clock(t.tao_luc))}${t.da_doc ? "" : " · chưa đọc"}</time>
     </span>
     <b class="chuong__tieude">${esc(t.tieu_de)}</b>
@@ -186,30 +195,43 @@ function moDongChuong(mo) {
   if (mo) taiDanhSachChuong();
 }
 
-/* Đi tới chỗ thông báo trỏ vào. Dùng đúng đường điều hướng sẵn có
- * (`doiMan`, `state.openConv`) — một lối thứ hai là một chỗ nữa để lệch. */
-async function diToiLienKet(lk) {
-  if (!lk) return;
+/* Đi tới chỗ thông báo trỏ vào. Dùng đúng một đường điều hướng chung cho cả
+ * chuông thông báo và Nhật ký hệ thống (BUG-TB-02): mở thẳng side panel đơn
+ * hàng, chi tiết hội thoại, chi tiết việc, hồ sơ khách hoặc kết nối kênh. */
+async function diToiLienKet(lk, t = null) {
+  if (t && t.mo_duoc === false) {
+    toast(t.ly_do_khong_mo || "Đối tượng đã bị xóa hoặc bạn không còn quyền truy cập.", true);
+    return false;
+  }
+  if (!lk) return false;
   if (lk.loai === "hoi_thoai") {
     state.openConv = lk.id;
     state.mobileViewingChat = true;
     state.cuonToiChiTiet = true;
-    doiMan("hoithoai");
-    return;
+    if (doiMan("hoithoai") === false) return false;
+    return true;
   }
-  if (lk.loai === "don_hang") { doiMan("donhang"); return; }
+  if (lk.loai === "don_hang") {
+    if (doiMan("donhang") === false) return false;
+    if (typeof dhTaiChiTiet === "function") await dhTaiChiTiet(lk.id, true);
+    return true;
+  }
   if (lk.loai === "cong_viec") {
-    /* Màn Công việc mới (25-cong-viec.js) mở thẳng chi tiết + lịch sử, bất
-       kể bộ lọc đang chọn. Mô-đun ấy hỏng thì lui về danh sách cũ. */
-    if (typeof window.moCongViec === "function" && await window.moCongViec(lk.id)) return;
-    doiMan("cv-danh-sach");
-    try { await loadCongViec(); } catch { /* vòng làm mới sẽ thử lại */ }
-    const dong = $(`#cv-ds [data-cv="${CSS.escape(lk.id)}"]`);
-    if (!dong) { toast("Việc này không nằm trong bộ lọc đang chọn ở màn Công việc."); return; }
-    dong.scrollIntoView({ behavior: "smooth", block: "center" });
-    dong.classList.add("is-chuong");
-    setTimeout(() => dong.classList.remove("is-chuong"), 2400);
+    if (typeof window.moCongViec === "function") return await window.moCongViec(lk.id);
+    if (doiMan("cv-danh-sach") === false) return false;
+    return true;
   }
+  if (lk.loai === "khach_hang") {
+    if (lk.id && typeof openCustomer === "function") {
+      openCustomer(lk.id);
+      return state.view === "khachhang";
+    }
+    return doiMan("khachhang") !== false;
+  }
+  if (lk.loai === "tai_khoan_kenh") {
+    return doiMan("cc-ket-noi") !== false;
+  }
+  return false;
 }
 
 $("#chuongNut")?.addEventListener("click", (e) => {
@@ -247,7 +269,7 @@ $("#chuongDs")?.addEventListener("click", async (e) => {
     } catch (err) { console.warn("Không đánh dấu đã đọc được", err); }
   }
   moDongChuong(false);
-  await diToiLienKet(t.lien_ket);
+  await diToiLienKet(t.lien_ket, t);
 });
 
 /* Bấm ra ngoài hoặc Esc thì đóng — khung nổi che mất nội dung bên dưới. */

@@ -142,6 +142,9 @@ class PostgresOutboxAdminRepository:
                     actor,
                     {"account_id": str(link["account_id"])},
                 )
+                from agent.core import thong_bao_noi_bo
+
+                await thong_bao_noi_bo.ket_thuc_tin_nhan_that_bai(connection, job_id)
         return dict(link)
 
     async def cancel(
@@ -194,6 +197,9 @@ class PostgresOutboxAdminRepository:
                     actor,
                     {"account_id": str(link["account_id"])},
                 )
+                from agent.core import thong_bao_noi_bo
+
+                await thong_bao_noi_bo.ket_thuc_tin_nhan_that_bai(connection, job_id)
         return dict(link)
 
 

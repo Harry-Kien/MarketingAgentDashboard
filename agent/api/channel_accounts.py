@@ -112,16 +112,18 @@ def _actor(user: dict) -> AccountActor:
                         quyen=frozenset(user.get("quyen", ())))
 
 
-async def _lich_su(user: dict, account: Any, hanh_dong: str, truong: str) -> None:
+async def _lich_su(
+    user: dict, account: Any, hanh_dong: str, truong: str, *, conn: Any = None
+) -> bool:
     """Một dòng "ai đổi gì" cho màn Kết nối & Tích hợp — TÊN trường, không giá trị."""
     from agent import ket_noi_tich_hop
 
     kenh = getattr(account, "channel", "")
-    await ket_noi_tich_hop.ghi_lich_su(
+    return await ket_noi_tich_hop.ghi_lich_su(
         dich_vu=str(getattr(kenh, "value", kenh) or "kenh"), truong=truong,
         hanh_dong=hanh_dong, sua_boi=str(user.get("ten_dang_nhap") or "?"),
         bi_mat=hanh_dong == "doi_credential", account_id=getattr(account, "id", None),
-        doi_tuong=getattr(account, "display_name", None))
+        doi_tuong=getattr(account, "display_name", None), conn=conn)
 
 
 def _raise_public(exc: Exception) -> None:
@@ -636,21 +638,38 @@ async def xoa_tai_khoan(
     """
     Xoá hẳn một tài khoản kênh.
 
-    KHÔNG BAO GIỜ XOÁ LỊCH SỬ KHÁCH. Tài khoản đã có hội thoại thì từ chối
-    xoá và bảo người vận hành dùng "Tạm ngắt" — hội thoại cũ là bằng chứng
-    của cửa hàng, và một nút dọn dẹp giao diện không được phép xoá nó.
-
-    Cái ĐƯỢC xoá theo (lược đồ khai `ON DELETE CASCADE`): credential, sự
-    kiện sức khoẻ, phân quyền, luật định tuyến, SLA, inbox_events. Trong đó
-    credential là thứ QUAN TRỌNG phải đi: để lại bí mật của một tài khoản
-    không còn dùng là để lại một chiếc chìa khoá không ai canh.
+    BUG-LS-04: tách rõ sự kiện yêu cầu xoá (`kenh.yeu_cau_xoa`), xoá thành công
+    (`kenh.xoa_tai_khoan` + `lich_su_ket_noi` chỉ khi DELETE thành công trong cùng
+    transaction), và xoá thất bại (`kenh.xoa_that_bai`) — bảo toàn bất biến của `events`.
     """
+    import asyncpg
+
     account = await repository.get(account_id)
     if account is None:
         raise HTTPException(404, "Không tìm thấy tài khoản kênh")
 
+    kenh_val = str(account.channel.value if hasattr(account.channel, "value")
+                   else account.channel)
+    ten_hien = account.display_name or ""
+    await db.log_event(
+        "kenh.yeu_cau_xoa",
+        actor=user["ten_dang_nhap"],
+        ref_id=account_id,
+        channel=kenh_val,
+        display_name=ten_hien,
+    )
+
     giu = await _dang_giu(account_id)
     if giu:
+        ly_do_chan = f"Còn {', '.join(giu)}"
+        await db.log_event(
+            "kenh.xoa_that_bai",
+            actor=user["ten_dang_nhap"],
+            ref_id=account_id,
+            channel=kenh_val,
+            display_name=ten_hien,
+            ly_do=ly_do_chan,
+        )
         raise HTTPException(
             409,
             f"Không xoá được: còn {', '.join(giu)}. Lịch sử khách không bị "
@@ -658,23 +677,57 @@ async def xoa_tai_khoan(
             "dữ liệu.",
         )
 
-    # Ghi nhật ký TRƯỚC khi xoá. Ghi sau thì lần xoá thành công cuối cùng
-    # có thể không để lại dấu vết nào nếu tiến trình chết giữa chừng — và
-    # đúng lúc ấy là lúc người ta cần biết ai đã xoá cái gì.
-    await db.log_event(
-        "kenh.xoa_tai_khoan",
-        # `_actor()` trả về AccountActor — đúng cho `service.*`, SAI cho
-        # `db.log_event`: cột `events.actor` là TEXT và asyncpg từ chối một
-        # đối tượng. Chép khuôn từ dòng `disable_account` ngay bên trên là
-        # rơi thẳng vào bẫy này.
-        actor=user["ten_dang_nhap"],
-        ref_id=account_id,      # cột uuid — str() cũng bị từ chối
-        channel=str(account.channel.value if hasattr(account.channel, "value")
-                    else account.channel),
-        display_name=account.display_name or "",
-    )
-    await _lich_su(user, account, "xoa_tai_khoan", "tai_khoan")
-    await db.execute("DELETE FROM channel_accounts WHERE id = $1", account_id)
+    try:
+        async with db.pool().acquire() as conn:
+            async with conn.transaction():
+                res = await db.execute(
+                    "DELETE FROM channel_accounts WHERE id = $1", account_id, conn=conn
+                )
+                if res.endswith(" 0"):
+                    raise HTTPException(404, "Không tìm thấy tài khoản kênh")
+                await db.log_event(
+                    "kenh.xoa_tai_khoan",
+                    actor=user["ten_dang_nhap"],
+                    ref_id=account_id,
+                    conn=conn,
+                    channel=kenh_val,
+                    display_name=ten_hien,
+                )
+                await _lich_su(user, account, "xoa_tai_khoan", "tai_khoan", conn=conn)
+    except HTTPException as exc:
+        await db.log_event(
+            "kenh.xoa_that_bai",
+            actor=user["ten_dang_nhap"],
+            ref_id=account_id,
+            channel=kenh_val,
+            display_name=ten_hien,
+            ly_do=str(exc.detail)[:200],
+        )
+        raise
+    except (asyncpg.ForeignKeyViolationError, asyncpg.RestrictViolationError) as exc:
+        await db.log_event(
+            "kenh.xoa_that_bai",
+            actor=user["ten_dang_nhap"],
+            ref_id=account_id,
+            channel=kenh_val,
+            display_name=ten_hien,
+            ly_do=f"Ràng buộc dữ liệu: {type(exc).__name__}",
+        )
+        raise HTTPException(
+            409,
+            "Không xoá được: tài khoản vừa phát sinh dữ liệu liên kết mới. "
+            "Dùng \"Tạm ngắt\" để ngừng kênh mà vẫn giữ dữ liệu.",
+        ) from exc
+    except Exception as exc:
+        await db.log_event(
+            "kenh.xoa_that_bai",
+            actor=user["ten_dang_nhap"],
+            ref_id=account_id,
+            channel=kenh_val,
+            display_name=ten_hien,
+            ly_do=f"{type(exc).__name__}: {exc}"[:200],
+        )
+        raise
     return {"da_xoa": str(account_id)}
 
 

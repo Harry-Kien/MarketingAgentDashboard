@@ -39,7 +39,18 @@ const NK_LOAI_LK = { hoi_thoai: "Hội thoại", don_hang: "Đơn hàng", cong_v
   nhan_vien: "Nhân viên", tai_khoan_kenh: "Tài khoản kênh" };
 
 const nk = { loc: {}, conTro: [], trangNay: null, danhMuc: null, moId: null, xem: "su_kien", el: null,
-  hien: "nghiep_vu", gom: true };
+  hien: "nghiep_vu", gom: true, reqSeq: 0, locNangCao: false };
+
+function nkMoTaHien() {
+  if (nk.hien === "nghiep_vu" && (nk.loc.q || nk.loc.loai_doi_tuong || nk.loc.hoi_thoai_id || nk.loc.luot_id)) {
+    return "Đang tìm kiếm trên toàn bộ mức sự kiện (bao gồm vận hành và kỹ thuật) khớp điều kiện lọc.";
+  }
+  return nk.hien === "nghiep_vu"
+    ? "Đang ẩn sự kiện vận hành và kỹ thuật chạy nền. Sự cố đã đánh dấu luôn hiện."
+    : nk.hien === "van_hanh"
+      ? "Thêm sự kiện vận hành: kết nối kênh, đồng bộ, sao lưu, SLA."
+      : "Toàn bộ nhật ký, kể cả bước kỹ thuật — dùng khi gỡ lỗi.";
+}
 
 function nkCo(q) { return !!(state.toiQuyen && state.toiQuyen.has(q)); }
 
@@ -51,6 +62,7 @@ function nkTacNhan(b) {
   const t = b.tac_nhan || {};
   if (t.loai === "nhan_vien") return t.ten ? `Nhân viên · ${t.ten}` : "Nhân viên";
   if (t.loai === "ai") return t.ten ? `AI · ${t.ten}` : "AI";
+  if (t.loai === "tich_hop") return t.ten ? `Tích hợp · ${t.ten}` : "Tích hợp ngoài";
   return "Hệ thống";
 }
 
@@ -63,6 +75,9 @@ function nkIso(v) {
 }
 
 function nkMucDo() {
+  if (nk.hien === "nghiep_vu" && (nk.loc.q || nk.loc.loai_doi_tuong || nk.loc.hoi_thoai_id || nk.loc.luot_id)) {
+    return "";
+  }
   return (NK_HIEN.find((x) => x.ma === nk.hien) || NK_HIEN[0]).muc;
 }
 
@@ -76,12 +91,11 @@ function nkChuoiLoc(them = {}) {
   return p.toString();
 }
 
-/* Hội thoại / đơn / công việc đi qua `diToiLienKet` của chuông thông báo
- * (đã biết mở chi tiết việc, mở hội thoại); nhân viên và tài khoản kênh
- * chưa có trang chi tiết riêng nên mở đúng tab chứa chúng. */
+/* Hội thoại / đơn / công việc / tài khoản kênh đi qua `diToiLienKet` của
+ * chuông thông báo (mở thẳng side panel đơn hàng, chi tiết việc, hội thoại);
+ * nhân viên mở tab Nhân sự. */
 async function nkDiToi(lk) {
   if (lk.loai === "nhan_vien") { doiMan("ns-nhan-vien"); return; }
-  if (lk.loai === "tai_khoan_kenh") { doiMan("cc-ket-noi"); return; }
   if (typeof diToiLienKet === "function") await diToiLienKet(lk);
 }
 
@@ -115,6 +129,9 @@ function nkVeKhung(el) {
   const locKind = nk.loc.kind
     ? `<p class="nk-loc-kind"><span class="tag tag--plain">Chỉ loại: ${esc(nk.loc.kind_nhan || nk.loc.kind)}</span>
         <button type="button" class="btn btn--sm btn--ghost" data-nk-bo-kind>Bỏ lọc loại này</button></p>` : "";
+  const nangCaoKeys = ["loai_tac_nhan", "nguoi_id", "nhom", "trang_thai", "hoi_thoai_id", "luot_id"];
+  const soNangCao = nangCaoKeys.filter((k) => Boolean(nk.loc[k])).length;
+  const moNangCao = Boolean(nk.locNangCao || soNangCao > 0);
   el.innerHTML = `<section class="panel">
     <h2 class="panel__head">Nhật ký kiểm toán
       <span class="panel__note">AI, nhân viên và hệ thống · chỉ thêm, không sửa được</span></h2>
@@ -131,23 +148,27 @@ function nkVeKhung(el) {
           data-nk-hien="${x.ma}" aria-pressed="${nk.hien === x.ma}">${esc(x.nhan)}</button>`).join("")}
       </div>
       <label class="nk-gom"><input type="checkbox" data-nk-gom${nk.gom ? " checked" : ""}> Gộp sự kiện lặp liên tiếp</label>
-      <p class="hint nk-hien__ghi">${nk.hien === "nghiep_vu"
-        ? "Đang ẩn sự kiện vận hành và kỹ thuật chạy nền. Sự cố đã đánh dấu luôn hiện."
-        : nk.hien === "van_hanh" ? "Thêm sự kiện vận hành: kết nối kênh, đồng bộ, sao lưu, SLA."
-          : "Toàn bộ nhật ký, kể cả bước kỹ thuật — dùng khi gỡ lỗi."}</p>
+      <p class="hint nk-hien__ghi" data-nk-hien-ghi>${esc(nkMoTaHien())}</p>
       ${locKind}
     </div>
     <form class="form" data-nk-loc ${suKien ? "" : "hidden"}>
       <div class="form__row">
+        <label class="field"><span>Tìm kiếm</span><input type="search" name="q" maxlength="120" value="${esc(nk.loc.q || "")}" placeholder="Mã đơn, SKU, tên đối tượng, nội dung…"></label>
+        ${chon("loai_doi_tuong", "Loại đối tượng", Object.entries({ ...NK_LOAI_LK, san_pham: "Sản phẩm / Kho", vai_tro: "Vai trò" }).map(([ma, nhan]) => ({ma, nhan})), nk.loc.loai_doi_tuong)}
         <label class="field"><span>Từ</span><input type="datetime-local" name="tu" value="${esc(nk.loc.tu_o || "")}"></label>
         <label class="field"><span>Đến</span><input type="datetime-local" name="den" value="${esc(nk.loc.den_o || "")}"></label>
-        ${chon("loai_tac_nhan", "Tác nhân", dm.loai_tac_nhan, nk.loc.loai_tac_nhan)}
-        ${chon("nguoi_id", "Người", dm.nguoi, nk.loc.nguoi_id)}
-        ${chon("nhom", "Loại hành động", dm.nhom, nk.loc.nhom)}
-        ${chon("trang_thai", "Trạng thái", dm.trang_thai, nk.loc.trang_thai)}
-        <label class="field"><span>Hội thoại (mã)</span><input name="hoi_thoai_id" value="${esc(nk.loc.hoi_thoai_id || "")}" placeholder="dán mã hội thoại" autocomplete="off"></label>
-        <label class="field"><span>Lượt AI (mã)</span><input name="luot_id" value="${esc(nk.loc.luot_id || "")}" autocomplete="off"></label>
       </div>
+      <details class="nk-loc-nangcao"${moNangCao ? " open" : ""}>
+        <summary>Bộ lọc nâng cao${soNangCao ? ` (${soNangCao} đang chọn)` : ""}</summary>
+        <div class="form__row">
+          ${chon("loai_tac_nhan", "Tác nhân", dm.loai_tac_nhan, nk.loc.loai_tac_nhan)}
+          ${chon("nguoi_id", "Người", dm.nguoi, nk.loc.nguoi_id)}
+          ${chon("nhom", "Loại hành động", dm.nhom, nk.loc.nhom)}
+          ${chon("trang_thai", "Trạng thái", dm.trang_thai, nk.loc.trang_thai)}
+          <label class="field"><span>Hội thoại (mã)</span><input name="hoi_thoai_id" value="${esc(nk.loc.hoi_thoai_id || "")}" placeholder="dán mã hội thoại" autocomplete="off"></label>
+          <label class="field"><span>Lượt AI (mã)</span><input name="luot_id" value="${esc(nk.loc.luot_id || "")}" autocomplete="off"></label>
+        </div>
+      </details>
       <div class="rowbtns">
         <button type="submit" class="btn btn--sm btn--primary">Lọc</button>
         <button type="button" class="btn btn--sm btn--ghost" data-nk-xoa-loc>Xoá lọc</button>
@@ -189,18 +210,23 @@ function nkDong(b) {
 async function nkTai() {
   const el = nk.el;
   if (!el) return;
+  const seq = ++nk.reqSeq;
   const ds = el.querySelector("[data-nk-ds]");
   const trang = el.querySelector("[data-nk-trang]");
+  ds.setAttribute("aria-busy", "true");
+  ds.innerHTML = '<p class="empty">Đang tải…</p>';
   try {
     let kq;
     if (nk.xem === "de_xuat") {
       const truoc = nk.conTro[nk.conTro.length - 1];
       kq = await api("/nhat-ky/de-xuat?" + new URLSearchParams(truoc ? { truoc } : {}).toString());
+      if (seq !== nk.reqSeq) return;
       ds.innerHTML = kq.items.length ? kq.items.map(nkDongDeXuat).join("")
         : '<p class="empty">Chưa có đề xuất nào của AI.</p>';
     } else {
       const truoc = nk.conTro[nk.conTro.length - 1];
       kq = await api("/nhat-ky?" + nkChuoiLoc(truoc ? { truoc } : {}));
+      if (seq !== nk.reqSeq) return;
       ds.innerHTML = kq.items.length ? kq.items.map(nkDong).join("")
         : '<p class="empty">Không có sự kiện nào khớp bộ lọc.</p>';
     }
@@ -209,8 +235,11 @@ async function nkTai() {
       <span class="hint">Trang ${nk.conTro.length + 1}</span>
       ${kq.next_cursor ? '<button type="button" class="btn btn--sm btn--ghost" data-nk-sau>Cũ hơn →</button>' : ""}`;
   } catch (e) {
+    if (seq !== nk.reqSeq) return;
     ds.innerHTML = `<p class="empty">Không tải được: ${esc(e.message)}</p>`;
     trang.innerHTML = "";
+  } finally {
+    if (seq === nk.reqSeq) ds.setAttribute("aria-busy", "false");
   }
 }
 
@@ -413,7 +442,7 @@ async function nkXuLyClick(e) {
        xem ngay trên màn này là đủ). CSV luôn là từng dòng, không gộp. */
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(nk.loc)) {
-      if (v && !["luot_id", "kind", "kind_nhan"].includes(k) && !k.endsWith("_o")) p.set(k, v);
+      if (v && k !== "kind_nhan" && !k.endsWith("_o")) p.set(k, v);
     }
     if (nkMucDo()) p.set("muc_do", nkMucDo());
     window.open("/api/nhat-ky/xuat.csv?" + p.toString(), "_blank");
@@ -450,6 +479,23 @@ async function nkXuLyClick(e) {
   }
 }
 
+function nkCapNhatDanhMuc(el) {
+  const form = el.querySelector("[data-nk-loc]");
+  const dm = nk.danhMuc;
+  if (!form || !dm) return;
+  const cap = (name, ds) => {
+    const sel = form.elements[name];
+    if (!sel) return;
+    const html = '<option value="">Tất cả</option>' + (ds || []).map((x) =>
+      `<option value="${esc(x.ma ?? x.id)}">${esc(x.nhan ?? x.ten)}</option>`).join("");
+    ganLuaChon(sel, html);
+  };
+  cap("loai_tac_nhan", dm.loai_tac_nhan);
+  cap("nguoi_id", dm.nguoi);
+  cap("nhom", dm.nhom);
+  cap("trang_thai", dm.trang_thai);
+}
+
 window.GAN_TAB = window.GAN_TAB || {};
 GAN_TAB["ht-nhat-ky"] = async (el) => {
   nk.el = el;
@@ -474,23 +520,34 @@ GAN_TAB["ht-nhat-ky"] = async (el) => {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(f).entries());
     nk.loc = {
+      q: (d.q || "").trim(), loai_doi_tuong: d.loai_doi_tuong || "",
       tu: nkIso(d.tu), den: nkIso(d.den), tu_o: d.tu, den_o: d.den,
       loai_tac_nhan: d.loai_tac_nhan, nguoi_id: d.nguoi_id, nhom: d.nhom,
       trang_thai: d.trang_thai, hoi_thoai_id: (d.hoi_thoai_id || "").trim(),
       luot_id: (d.luot_id || "").trim(),
     };
     nk.conTro = [];
+    const ghi = el.querySelector("[data-nk-hien-ghi]");
+    if (ghi) ghi.textContent = nkMoTaHien();
     await nkTai();
   });
+  el.addEventListener("toggle", (e) => {
+    if (e.target.matches(".nk-loc-nangcao")) nk.locNangCao = e.target.open;
+  }, true);
   /* Làm mới trang ĐẦU mỗi lần tab hiện lại — trang sau giữ nguyên, kẻo
    * người đang đọc trang 3 bị kéo về trang 1. */
   el.closest("[data-gan]")?.addEventListener("tab:hien", () => { if (!nk.conTro.length) nkTai(); });
   try {
     nk.danhMuc = await api("/nhat-ky/danh-muc");
-    nkVeKhung(el);
+    nkCapNhatDanhMuc(el);
   } catch (e) { toast(e.message, true); }
-  await nkTai();
+  if (!nk.reqSeq) await nkTai();
 };
+
+async function nkLamMoi() {
+  if (nk.el && !nk.conTro.length && nkCo("nhat_ky.doc")) await nkTai();
+}
+window.nkLamMoi = nkLamMoi;
 
 /* ---------------- Nhật ký của MỘT hội thoại ----------------
  * Trong panel "Chi tiết" của hội thoại. Chỉ cần `hoi_thoai.doc` và hội

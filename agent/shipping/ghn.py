@@ -344,7 +344,7 @@ class GHNShippingProvider(BaseShippingProvider):
             don_vi="ghn",
             phi_van_chuyen=total_fee,
             ngay_du_kien_giao=expected_delivery,
-            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            trang_thai_noi_bo=InternalShippingStatus.READY_TO_PICK,
             thong_tin_them=res_data,
             client_order_code=client_code,
         )

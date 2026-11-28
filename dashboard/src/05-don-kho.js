@@ -7,222 +7,469 @@ const ORDER_LABEL = {
   cho_duyet: "Chờ duyệt", da_chot: "Đã chốt", da_huy: "Đã huỷ",
   cho_dong_bo: "Chờ đồng bộ kho", da_giao: "Đã giao",
 };
-const ORDER_TONE  = {
+const ORDER_TONE = {
   cho_duyet: "duyet", da_chot: "chot", da_huy: "huy",
   cho_dong_bo: "duyet", da_giao: "chot",
 };
 /* Khớp `agent/shipping/models.InternalShippingStatus`. */
 const NHAN_GIAO = {
-  delivering: "đang giao", delivered: "đã giao",
-  delivery_failed: "giao thất bại", returned: "đã hoàn về",
+  ready_to_pick: "chờ lấy hàng",
+  delivering: "đang giao",
+  delivered: "đã giao",
+  delivery_failed: "giao thất bại",
+  returning: "đang hoàn hàng",
+  returned: "đã hoàn về",
+  cancelled: "đã huỷ vận đơn",
 };
 const VAN_DON_DOI_SOAT_CHAN = new Set([
   "sending", "unknown_timeout", "reconciling", "manual_required",
 ]);
 const VAN_DON_YEU_CAU_LABEL = {
+  not_sent: "Chưa gửi hãng",
   sending: "Đang gửi GHN",
+  confirmed: "Đã xác nhận",
+  rejected: "Hãng từ chối",
   unknown_timeout: "Chờ đối soát GHN",
   reconciling: "Đang đối soát GHN",
+  reconciled: "Đã đối soát",
   manual_required: "Cần xác nhận GHN thủ công",
+};
+const ERP_SHIP_LABEL = {
+  not_required: "Chưa cần đồng bộ",
+  pending: "Chờ đồng bộ ERP",
+  processing: "Đang đồng bộ ERP",
+  retry: "Đang thử lại ERP",
+  synced: "Đã đồng bộ ERP",
+  dead: "Lỗi đồng bộ ERP",
+  skipped_cancelled: "Bỏ qua (ERP đã huỷ)",
+};
+const ERP_SHIP_TONE = {
+  not_required: "plain",
+  pending: "duyet",
+  processing: "duyet",
+  retry: "duyet",
+  synced: "chot",
+  dead: "huy",
+  skipped_cancelled: "plain",
 };
 const vnd = (n) => Number(n || 0).toLocaleString("vi-VN") + "đ";
 
 /* Thanh toán VietQR ẨN khỏi giao diện theo phiếu việc của chủ dự án
-   (20.11.2026): không có ô cấu hình tài khoản nhận tiền nào được vẽ, nên
-   nút QR trên dòng đơn chỉ còn là nút bấm ra lỗi "chưa cấu hình". Mã và
-   API (/api/orders/{id}/vietqr*) giữ nguyên — bật lại là đổi hằng này và
-   cho nhóm `thanh_toan` một ô trong `[data-api-cac-nhom]`. */
+   (20.11.2026): giữ nguyên mã & API. */
 const HIEN_VIETQR = false;
 
-$$("#orderfilter .chip").forEach((chip) =>
-  chip.addEventListener("click", () => {
-    state.orderFilter = chip.dataset.ostatus;
-    $$("#orderfilter .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
-    loadOrders();
-  })
-);
+/* Trạng thái lọc, phân trang và ngăn chi tiết của module Đơn hàng. */
+const dhState = {
+  status: "all",
+  q: "",
+  channel: "all",
+  thanh_toan: "all",
+  van_chuyen: "all",
+  tu_ngay: "",
+  den_ngay: "",
+  page: 1,
+  pageSize: 20,
+  items: [],
+  openId: null,
+  detail: null,
+  tab: "tong_quan",
+  quayVe: null,
+  searchTimer: null,
+  listRequest: 0,
+  detailRequest: 0,
+};
 
-/* Hãng vận chuyển thật đã nối chưa — hỏi MỘT lần mỗi lần tải trang. Chưa
-   nối thì nút "Tạo vận đơn" không hiện: một nút bấm lần nào cũng báo lỗi là
-   nút người ta học cách lờ đi, kể cả khi đã nối xong. */
 let VAN_CHUYEN = null;
 
-async function loadOrders() {
-  if (VAN_CHUYEN === null) {
-    try { VAN_CHUYEN = await api("/van-chuyen/cau-hinh"); }
-    catch { VAN_CHUYEN = { that: false }; }
+function dhCoSua() {
+  return !!(state.toiQuyen && state.toiQuyen.has("don.sua"));
+}
+
+function dhNganHep() {
+  return window.matchMedia("(max-width: 1180px)").matches;
+}
+
+function dhFullTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("vi-VN", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return String(iso); }
+}
+
+function dhCapFirst(s) {
+  const t = String(s || "");
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
+}
+
+function dhTinhTrang(o) {
+  const cho_duyet = o.trang_thai === "cho_duyet";
+  const cho_dong_bo = o.trang_thai === "cho_dong_bo";
+  const xin_huy = !!(o.yeu_cau_huy_luc && o.trang_thai !== "da_huy" && o.trang_thai !== "da_giao");
+  const doi_tra = !!(o.yeu_cau_doi_tra_luc && o.trang_thai !== "da_huy");
+  const da_thu = Number(o.so_tien_da_thu || 0);
+  const tong = Number(o.tong_tien || 0);
+  const con_mo = o.trang_thai === "da_chot" || o.trang_thai === "cho_dong_bo";
+  const tt_yc_vd = o.van_don_trang_thai_yeucau || "not_sent";
+  const cho_doi_soat_vd = !o.ma_van_don && VAN_DON_DOI_SOAT_CHAN.has(tt_yc_vd);
+  const tao_van_don = !!(VAN_CHUYEN && VAN_CHUYEN.that && o.trang_thai === "da_chot"
+    && !o.ma_van_don && !xin_huy && !cho_doi_soat_vd);
+  const erp_loi_vd = o.erp_van_chuyen_trang_thai === "dead" || o.erp_van_chuyen_trang_thai === "retry";
+  const erp_retry_duoc = !!(o.erp_ma_don && o.ma_van_don
+    && ["pending", "retry", "dead"].includes(o.erp_van_chuyen_trang_thai || ""));
+  const ship_su_co = o.trang_thai_giao_hang === "delivery_failed" || o.trang_thai_giao_hang === "returning";
+  const canh_bao_do = xin_huy || tt_yc_vd === "manual_required" || o.erp_van_chuyen_trang_thai === "dead"
+    || o.trang_thai_giao_hang === "delivery_failed";
+  const canh_bao_vang = cho_duyet || cho_dong_bo || cho_doi_soat_vd || doi_tra || ship_su_co || erp_loi_vd;
+  return {
+    cho_duyet, cho_dong_bo, xin_huy, doi_tra, da_thu, tong, con_mo,
+    tt_yc_vd, cho_doi_soat_vd, tao_van_don, erp_loi_vd, erp_retry_duoc,
+    ship_su_co, canh_bao_do, canh_bao_vang,
+  };
+}
+
+function dhThanhToanBadge(o) {
+  const da = Number(o.so_tien_da_thu || 0);
+  const tong = Number(o.tong_tien || 0);
+  if (da <= 0) return '<span class="tag tag--plain">Chưa thu</span>';
+  if (tong > 0 && da >= tong) {
+    return `<span class="tag tag--chot" title="${o.da_thu_luc ? "Ghi lúc " + esc(dhFullTime(o.da_thu_luc)) : ""}">Đã thu đủ</span>`;
   }
-  const list = await api("/orders?status=" + (state.orderFilter || "all"));
-  const cho = list.filter((o) => o.trang_thai === "cho_duyet").length;
-  $("#c-donhang").textContent = cho || "";
+  return `<span class="tag tag--duyet" title="Đã thu ${esc(vnd(da))}">Thu ${esc(vnd(da))}</span>`;
+}
 
-  $("#orders").innerHTML = list.length ? list.map((o) => {
-    const items = (Array.isArray(o.items) ? o.items : [])
-      .map((i) => `<span class="order__line">${esc(i.ten)} &times;${i.so_luong} — ${vnd(i.thanh_tien)}</span>`)
-      .join("");
-    const cho_duyet = o.trang_thai === "cho_duyet";
-    /*
-     * Đơn `cho_dong_bo`: đã ghi nhận nhưng CHƯA vào được kho/ERP.
-     *
-     * Khách đã được agent hứa "sẽ có người gọi xác nhận". Máy đang tự thử
-     * lại, nhưng nếu nó bỏ cuộc thì lời hứa đó rơi vào khoảng không. Nên
-     * dòng này phải NHÌN THẤY ĐƯỢC, không được lẫn vào đám đơn đã xong.
-     */
-    const cho_dong_bo = o.trang_thai === "cho_dong_bo";
+function dhVanChuyenCell(o, st) {
+  if (st.cho_doi_soat_vd) {
+    const tone = st.tt_yc_vd === "manual_required" ? "huy" : "duyet";
+    return `<span class="dh-stack"><span class="tag tag--${tone}">${esc(VAN_DON_YEU_CAU_LABEL[st.tt_yc_vd] || st.tt_yc_vd)}</span>`
+      + `<span class="dh-sub">${esc(o.van_don_client_order_code || o.ma_don)}</span></span>`;
+  }
+  if (!o.ma_van_don) {
+    return '<span class="dh-sub" style="margin-top:0">Chưa tạo vận đơn</span>';
+  }
+  const g = o.trang_thai_giao_hang || "";
+  const nhan = g ? dhCapFirst(NHAN_GIAO[g] || g) : "Chưa rõ trạng thái";
+  const tone = g === "delivered" ? "chot"
+    : (g === "delivery_failed" || g === "cancelled") ? "huy"
+      : (g === "returning" || g === "returned" || g === "ready_to_pick") ? "duyet"
+        : "plain";
+  const hang = o.don_vi_van_chuyen ? o.don_vi_van_chuyen.toUpperCase() + " · " : "";
+  return `<span class="dh-stack"><span class="tag tag--${tone}">${esc(nhan)}</span>`
+    + `<span class="dh-sub">${esc(hang + o.ma_van_don)}</span></span>`;
+}
 
-    /*
-     * Khách xin huỷ: phải NHÌN THẤY NGAY trên dòng đơn.
-     *
-     * Agent ghi nhận yêu cầu rồi chuyển hội thoại cho người. Nhưng người
-     * đóng gói làm việc ở MÀN HÌNH NÀY, không đọc từng đoạn chat. Không
-     * hiện ở đây thì hàng vẫn gói và gửi đi, khách từ chối nhận, shop chịu
-     * phí hoàn COD — mà không có lỗi nào bị ném ở đâu cả.
-     *
-     * Đơn đã huỷ rồi thì thôi, cờ hết nghĩa.
-     */
-    /* Đơn ĐÃ GIAO thì cờ xin huỷ cũng thôi nghĩa: hàng đã ở nhà khách, đó là
-       đổi trả — và máy chủ từ chối huỷ đơn đã giao (cộng kho món không có
-       trên kệ). */
-    const xin_huy = o.yeu_cau_huy_luc && o.trang_thai !== "da_huy" && o.trang_thai !== "da_giao";
-    /* Tiền khách đã trả trước (VietQR). Hiện ngay trên dòng để người đóng
-       gói biết; vận đơn chỉ thu hộ phần còn lại. Không có dòng này thì
-       khách đã chuyển khoản bị shipper thu lần hai. */
-    const da_thu = Number(o.so_tien_da_thu || 0);
-    const con_mo = o.trang_thai === "da_chot" || o.trang_thai === "cho_dong_bo";
-    const tt_yc_vd = o.van_don_trang_thai_yeucau || "not_sent";
-    const cho_doi_soat_vd = !o.ma_van_don && VAN_DON_DOI_SOAT_CHAN.has(tt_yc_vd);
-    /* Đơn đã chốt, chưa có vận đơn: nút tạo vận đơn ngay trên dòng. Hàm tạo
-       vận đơn có bốn chốt từ lâu, nhưng trước 29.10.2026 không có nút nào
-       gọi tới nó — đơn chốt xong rồi nằm im, phải lên trang hãng gõ tay. */
-    const tao_van_don = VAN_CHUYEN && VAN_CHUYEN.that && o.trang_thai === "da_chot"
-      && !o.ma_van_don && !xin_huy && !cho_doi_soat_vd;
-    const doi_tra = o.yeu_cau_doi_tra_luc && o.trang_thai !== "da_huy";
-    const bang_xin_huy = xin_huy
-      ? `<span class="order__xinhuy"><b>Khách xin huỷ</b> — ${clock(o.yeu_cau_huy_luc)}${
-          o.yeu_cau_huy_ly_do ? " · " + esc(o.yeu_cau_huy_ly_do) : ""
-        }<br>Dừng đóng gói và gọi lại cho khách trước khi quyết định.</span>`
-      : "";
-    const bang_doi_soat_vd = cho_doi_soat_vd
-      ? `<span class="order__xinhuy"><b>${esc(VAN_DON_YEU_CAU_LABEL[tt_yc_vd] || tt_yc_vd)}</b>${
-          o.van_don_client_order_code ? " · mã tham chiếu <b>" + esc(o.van_don_client_order_code) + "</b>" : ""
-        }${o.van_don_so_lan_doi_soat ? " · đã đối soát " + o.van_don_so_lan_doi_soat + " lần" : ""
-        }<br>${esc(o.van_don_ly_do_chan || o.van_don_loi_cuoi || "Đã tạm khoá tạo lại để tránh tạo hai vận đơn GHN.")}</span>`
-      : "";
+/* Hành động theo trạng thái & quyền: 1 nút chính + menu "⋯" cho thao tác phụ. */
+function dhHanhDong(o) {
+  const st = dhTinhTrang(o);
+  const sua = dhCoSua();
+  let chinh = null;
+  const them = [];
+  if (sua) {
+    if (st.cho_duyet) {
+      chinh = { attr: `data-oapprove="${o.id}"`, nhan: "Duyệt", lop: "btn--go" };
+    } else if (st.cho_doi_soat_vd) {
+      chinh = { attr: `data-odoisoat="${o.id}"`, nhan: "Kiểm tra GHN", lop: "btn--primary" };
+    } else if (st.tao_van_don) {
+      chinh = { attr: `data-ovandon="${o.id}"`, nhan: "Tạo vận đơn", lop: "btn--go" };
+    } else if (st.con_mo) {
+      chinh = {
+        attr: `data-odathu="${o.id}" data-ma="${esc(o.ma_don)}" data-goi-y="${Number(o.tong_tien || 0) + Number(o.phi_van_chuyen || 0)}" data-da-thu="${st.da_thu}"`,
+        nhan: "Xác nhận đã nhận tiền",
+        lop: "btn--ghost",
+      };
+    }
 
-    return `<div class="row${xin_huy ? " row--xinhuy" : ""}">
-      <span class="row__flag row__flag--${(xin_huy || tt_yc_vd === "manual_required") ? "halt" : (cho_duyet || cho_dong_bo || cho_doi_soat_vd) ? "assist" : o.trang_thai === "da_huy" ? "halt" : "auto"}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(o.ma_don)} · ${esc(o.khach_ten)}
-          <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${ORDER_LABEL[o.trang_thai] || o.trang_thai}</span>
-          ${xin_huy ? '<span class="tag tag--halt">Khách xin huỷ</span>' : ""}
-          ${cho_doi_soat_vd ? `<span class="tag tag--${tt_yc_vd === "manual_required" ? "halt" : "duyet"}">${esc(VAN_DON_YEU_CAU_LABEL[tt_yc_vd] || tt_yc_vd)}</span>` : ""}
-          ${srcBadge(o.channel, o.nen_tang)}</span>
-        ${bang_xin_huy}
-        ${bang_doi_soat_vd}
-        ${doi_tra ? `<span class="order__xinhuy"><b>Khách xin ${({ doi: "đổi hàng", tra: "trả hàng" })[o.yeu_cau_doi_tra_loai] || "đổi/trả"}</b> — ${
-            clock(o.yeu_cau_doi_tra_luc)}${o.yeu_cau_doi_tra_ly_do ? " · " + esc(o.yeu_cau_doi_tra_ly_do) : ""
-          }<br>Gọi lại cho khách để thống nhất cách đổi/trả.</span>` : ""}
-        ${o.ma_van_don ? `<span class="order__ship">Vận đơn <b>${esc(o.ma_van_don)}</b>${
-            o.don_vi_van_chuyen ? " · " + esc(o.don_vi_van_chuyen.toUpperCase()) : ""}${
-            o.trang_thai_giao_hang ? " · " + esc(NHAN_GIAO[o.trang_thai_giao_hang] || o.trang_thai_giao_hang) : ""
-          }</span>` : ""}
-        ${cho_dong_bo ? `<span class="order__xinhuy"><b>Chưa vào được kho/ERP</b>${
-            o.erp_loi ? " — " + esc(o.erp_loi) : ""
-          }${o.erp_so_lan_thu ? " · đã thử " + o.erp_so_lan_thu + " lần" : ""
-          }<br>Khách đã được hứa sẽ có người gọi xác nhận. Máy đang tự thử lại.</span>` : ""}
-        <span class="order__items">${items}</span>
-        <span class="order__ship">${esc(o.khach_sdt)} · ${esc(o.khach_dia_chi)}</span>
-      </span>
-      <span class="row__side">
-        <span class="order__total">${vnd(o.tong_tien)}</span>
-        ${da_thu > 0 ? `<span class="tag tag--auto" title="${
-            o.da_thu_luc ? "Ghi lúc " + esc(clock(o.da_thu_luc)) : ""}">Đã thu ${vnd(da_thu)}</span>` : ""}
-        <span class="row__time">${clock(o.created_at)}</span>
-        ${HIEN_VIETQR && o.trang_thai === "da_chot" ? `<span class="order__qr">
-            <a class="btn btn--sm btn--ghost" href="/api/orders/${o.id}/vietqr.svg" target="_blank"
-               rel="noopener" title="Mở mã VietQR (tổng hàng + phí ship)">QR</a>
-            ${o.conversation_id ? `<button type="button" class="btn btn--sm" data-oqr-gui="${o.id}"
-               title="Gửi mã QR thanh toán vào hội thoại của đơn">Gửi QR</button>` : ""}
-          </span>` : ""}
-        ${con_mo ? `<button type="button" class="btn btn--sm btn--ghost" data-odathu="${o.id}"
-            data-ma="${esc(o.ma_don)}" data-goi-y="${Number(o.tong_tien || 0) + Number(o.phi_van_chuyen || 0)}"
-            data-da-thu="${da_thu}" title="Ghi nhận khách đã chuyển khoản — vận đơn chỉ thu hộ phần còn lại">Đã nhận tiền</button>` : ""}
-        ${cho_duyet ? `<span style="display:flex;gap:6px;margin-top:4px">
-            <button type="button" class="btn btn--sm btn--go" data-oapprove="${o.id}">Duyệt</button>
-            <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ</button>
-          </span>` : xin_huy ? `<span style="display:flex;gap:6px;margin-top:4px">
-            <button type="button" class="btn btn--sm btn--halt" data-ocancel="${o.id}">Huỷ đơn</button>
-          </span>` : cho_doi_soat_vd ? `<span style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
-            <button type="button" class="btn btn--sm" data-odoisoat="${o.id}"
-              title="Kiểm tra lại vận đơn trên GHN theo client_order_code">Kiểm tra GHN</button>
-            <button type="button" class="btn btn--sm btn--halt" data-oxnvandon="${o.id}"
-              data-omadon="${esc(o.ma_don)}" data-oref="${esc(o.van_don_client_order_code || o.ma_don)}"
-              title="Xác nhận kết quả kiểm tra thủ công trên cổng GHN">Xác nhận GHN</button>
-          </span>` : tao_van_don ? `<span style="display:flex;gap:6px;margin-top:4px">
-            <button type="button" class="btn btn--sm btn--go" data-ovandon="${o.id}"
-              title="Tạo vận đơn ${esc((VAN_CHUYEN.hang || "").toUpperCase())} và nhắn mã cho khách">Tạo vận đơn</button>
-          </span>` : ""}
-      </span>
-    </div>`;
-  }).join("") : '<p class="empty">Chưa có đơn hàng nào.</p>';
+    if (st.con_mo && !(chinh && chinh.attr.includes("data-odathu"))) {
+      them.push({
+        attr: `data-odathu="${o.id}" data-ma="${esc(o.ma_don)}" data-goi-y="${Number(o.tong_tien || 0) + Number(o.phi_van_chuyen || 0)}" data-da-thu="${st.da_thu}"`,
+        nhan: "Xác nhận đã nhận tiền",
+        goiY: "Cập nhật số tiền khách đã chuyển khoản",
+      });
+    }
+    if (st.tao_van_don && !(chinh && chinh.attr.includes("data-ovandon"))) {
+      them.push({
+        attr: `data-ovandon="${o.id}"`,
+        nhan: "Tạo vận đơn",
+        goiY: `Đẩy vận đơn sang ${(VAN_CHUYEN?.hang || "hãng").toUpperCase()}`,
+      });
+    }
+    if (st.cho_doi_soat_vd) {
+      them.push({
+        attr: `data-oxnvandon="${o.id}" data-omadon="${esc(o.ma_don)}" data-oref="${esc(o.van_don_client_order_code || o.ma_don)}"`,
+        nhan: "Xác nhận GHN thủ công…",
+        goiY: "Đối chiếu kết quả trên cổng GHN",
+        nguy: true,
+      });
+    }
+    if (st.erp_retry_duoc) {
+      them.push({
+        attr: `data-oerpretry="${o.id}"`,
+        nhan: "Thử lại đồng bộ ERP",
+        goiY: "Đẩy lại mã vận đơn sang Sales Order ERPNext",
+      });
+    }
+    if (o.trang_thai !== "da_huy" && o.trang_thai !== "da_giao") {
+      them.push({
+        attr: `data-ocancel="${o.id}"`,
+        nhan: "Huỷ đơn",
+        goiY: o.ma_van_don
+          ? "Chặn huỷ nếu hàng đã bàn giao hãng (BUG-17-04)"
+          : "Huỷ đơn nội bộ và hoàn tồn nếu đủ điều kiện",
+        nguy: true,
+      });
+    }
+  }
+  return { chinh, them };
+}
 
-  /* Mọi nút đơn hàng báo ĐÚNG kết quả máy chủ trả về. Bản trước báo "Đã
-     duyệt đơn." vô điều kiện — kể cả khi ERP từ chối và đơn vừa bị huỷ. */
-  const bam = (b, viec) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    try { await viec(); } catch (e) { toast(e.message, true); }
-    finally { b.disabled = false; loadOrders(); }
+function dhVeNutNhom(o, trongNgan = false) {
+  const { chinh, them } = dhHanhDong(o);
+  const nutChinh = chinh
+    ? `<button type="button" class="btn btn--sm ${chinh.lop}" ${chinh.attr}>${esc(chinh.nhan)}</button>`
+    : (!trongNgan ? `<button type="button" class="btn btn--sm btn--ghost" data-omo="${o.id}">Chi tiết</button>` : "");
+  const nutThem = them.length ? `<details class="hd-them${trongNgan ? " cvx-them" : ""}">
+      <summary class="btn btn--sm btn--ghost" aria-label="Thao tác khác" title="Thao tác khác">⋯</summary>
+      <div class="hd-them__menu" role="menu">${them.map((m) =>
+    `<button type="button" class="hd-them__muc${m.nguy ? " cvx-them__nguy" : ""}" role="menuitem" ${m.attr}>
+          <span class="hd-them__ten">${esc(m.nhan)}</span><span class="hd-them__goiy">${esc(m.goiY)}</span></button>`).join("")}
+      </div>
+    </details>` : "";
+  return `<span class="dh-act-grp">${nutChinh}${nutThem}</span>`;
+}
+
+function dhVeKpi(kpi) {
+  const el = $("#orderKpi");
+  if (!el || !kpi) return;
+  const cur = dhState.status;
+  el.innerHTML = [
+    ["all", "Tổng đơn", kpi.tong_don, "trong phạm vi kênh"],
+    ["cho_duyet", "Chờ duyệt", kpi.cho_duyet, "cần nhân viên xác nhận"],
+    ["da_chot", "Đã chốt", kpi.da_chot, "đã xác nhận đơn hàng"],
+    ["can_xu_ly", "Cần xử lý", kpi.can_xu_ly, "xin huỷ, đối soát, lỗi giao/ERP"],
+  ].map(([key, label, count, hint]) => `<button type="button" class="readout__cell${cur === key ? " is-on" : ""}" data-okpi="${key}" aria-pressed="${cur === key}">
+    <span class="readout__label">${label}</span><span class="readout__value">${num(count)}</span>
+    <span class="readout__unit">${hint}</span></button>`).join("");
+}
+
+function dhCapNhatChip(dem) {
+  if (!dem) return;
+  $$("#orderfilter [data-ocnt]").forEach((b) => {
+    const k = b.dataset.ocnt;
+    b.textContent = dem[k] != null ? `(${dem[k]})` : "";
   });
-  $$("[data-oapprove]").forEach((b) => bam(b, async () => {
-    const r = await api("/orders/" + b.dataset.oapprove + "/approve", { method: "POST" });
-    if (r.erp === "tu_choi") toast("ERP từ chối đơn " + r.ma_don + " — đơn đã huỷ, hàng trả về kho. " + (r.erp_loi || ""), true);
-    else if (r.erp === "cho_lai") toast("Đã duyệt " + r.ma_don + ", nhưng chưa vào được ERP — máy tự thử lại.", true);
-    else toast(r.erp_ma_don ? "Đã duyệt " + r.ma_don + " · ERP " + r.erp_ma_don + "." : "Đã duyệt đơn " + r.ma_don + ".");
-  }));
-  $$("[data-ocancel]").forEach((b) => bam(b, async () => {
-    const r = await api("/orders/" + b.dataset.ocancel + "/cancel", { method: "POST" });
-    const nhac = [r.can_huy_tay, r.can_hoan_tien].filter(Boolean).join(" ");
-    if (nhac) toast("Đã huỷ " + r.ma_don + ". " + nhac, true);
-    else toast("Đã huỷ đơn.");
-  }));
-  /* "Đã nhận tiền": người đối chiếu sao kê rồi ghi TỔNG đã nhận. Máy chủ
-     ghi đè chứ không cộng dồn — bấm hai lần không thành trừ COD hai lần. */
-  $$("[data-odathu]").forEach((b) => bam(b, async () => {
-    const daCo = Number(b.dataset.daThu || 0);
+  $$("#orderfilter .chip").forEach((c) => {
+    c.classList.toggle("is-on", c.dataset.ostatus === dhState.status);
+  });
+}
+
+function dhCoLoc() {
+  return dhState.status !== "all" || !!dhState.q || dhState.channel !== "all"
+    || dhState.thanh_toan !== "all" || dhState.van_chuyen !== "all"
+    || !!dhState.tu_ngay || !!dhState.den_ngay;
+}
+
+function dhVeBang(items) {
+  const box = $("#orders");
+  if (!box) return;
+  if (!items.length) {
+    box.innerHTML = `<p class="empty">${dhCoLoc()
+      ? "Không có đơn hàng nào khớp bộ lọc hiện tại."
+      : "Chưa có đơn hàng nào."}</p>`;
+    return;
+  }
+
+  const rowsHtml = items.map((o) => {
+    const st = dhTinhTrang(o);
+    const cls = (dhState.openId === o.id ? " is-on" : "")
+      + (st.canh_bao_do ? " is-alert" : st.canh_bao_vang ? " is-warn" : "");
+    const coTag = [
+      st.xin_huy ? '<span class="tag tag--halt">Xin huỷ</span>' : "",
+      st.doi_tra ? `<span class="tag tag--duyet">Đổi/trả</span>` : "",
+      o.erp_van_chuyen_trang_thai === "dead" ? '<span class="tag tag--huy">Lỗi ERP</span>' : "",
+    ].filter(Boolean).join(" ");
+    return `<tr class="dh-tr${cls}" data-orow="${o.id}">
+      <td>
+        <button type="button" class="dh-code" data-omo="${o.id}">${esc(o.ma_don)}</button>
+        ${o.erp_ma_don ? `<span class="dh-sub">ERP: ${esc(o.erp_ma_don)}</span>` : ""}
+      </td>
+      <td class="dh-col-cust">
+        <span class="dh-cust">${esc(o.khach_ten)}</span>
+        <span class="dh-sub">${esc(o.khach_sdt || "—")}</span>
+      </td>
+      <td>${srcBadge(o.channel, o.nen_tang)}</td>
+      <td>
+        <span class="dh-stack">
+          <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${esc(ORDER_LABEL[o.trang_thai] || o.trang_thai)}</span>
+          ${coTag ? `<span>${coTag}</span>` : ""}
+        </span>
+      </td>
+      <td>${dhThanhToanBadge(o)}</td>
+      <td class="dh-col-ship">${dhVanChuyenCell(o, st)}</td>
+      <td class="is-num"><b>${vnd(o.tong_tien)}</b></td>
+      <td class="dh-col-time" title="${esc(dhFullTime(o.created_at))}">${clock(o.created_at)}</td>
+      <td class="is-act">${dhVeNutNhom(o, false)}</td>
+    </tr>`;
+  }).join("");
+
+  const cardsHtml = items.map((o) => {
+    const st = dhTinhTrang(o);
+    const cls = (dhState.openId === o.id ? " is-on" : "")
+      + (st.canh_bao_do ? " is-alert" : st.canh_bao_vang ? " is-warn" : "");
+    return `<article class="dh-card${cls}" data-orow="${o.id}">
+      <div class="dh-card__top">
+        <button type="button" class="dh-code" data-omo="${o.id}">${esc(o.ma_don)}</button>
+        <span class="tag tag--${ORDER_TONE[o.trang_thai] || "plain"}">${esc(ORDER_LABEL[o.trang_thai] || o.trang_thai)}</span>
+      </div>
+      <div class="dh-card__mid">
+        <span><b>${esc(o.khach_ten)}</b> · ${esc(o.khach_sdt || "—")}</span>
+        ${srcBadge(o.channel, o.nen_tang)}
+      </div>
+      <div class="dh-card__mid">
+        <span>${dhThanhToanBadge(o)}</span>
+        <span>${dhVanChuyenCell(o, st)}</span>
+      </div>
+      <div class="dh-card__bot">
+        <span><b>${vnd(o.tong_tien)}</b> · <span style="color:hsl(var(--muted-foreground))">${clock(o.created_at)}</span></span>
+        ${dhVeNutNhom(o, false)}
+      </div>
+    </article>`;
+  }).join("");
+
+  box.innerHTML = `<div class="dh-table-wrap">
+      <table class="dh-table">
+        <thead>
+          <tr>
+            <th>Mã đơn</th>
+            <th>Khách hàng</th>
+            <th>Kênh</th>
+            <th>Trạng thái</th>
+            <th>Thanh toán</th>
+            <th>Vận chuyển</th>
+            <th class="is-num">Tổng tiền</th>
+            <th>Thời gian</th>
+            <th class="is-act">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="dh-cards">${cardsHtml}</div>`;
+}
+
+function dhVePhanTrang(total, page, totalPages, pageSize) {
+  const el = $("#orderPager");
+  if (!el) return;
+  if (total <= 0) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const tu = (page - 1) * pageSize + 1;
+  const den = Math.min(total, page * pageSize);
+  el.innerHTML = `<span>Hiển thị <b>${tu}–${den}</b> / <b>${total}</b> đơn hàng</span>
+    <span class="dh-pager__nav">
+      <button type="button" class="btn btn--sm btn--ghost" data-opage="${page - 1}"${page <= 1 ? " disabled" : ""}>← Trước</button>
+      <span>Trang ${page}/${totalPages}</span>
+      <button type="button" class="btn btn--sm btn--ghost" data-opage="${page + 1}"${page >= totalPages ? " disabled" : ""}>Sau →</button>
+    </span>`;
+}
+
+
+/* ---------------- thực thi hành động đơn hàng ---------------- */
+
+async function dhXuLyNut(btn) {
+  const menu = btn.closest("details");
+  if (menu) menu.open = false;
+
+  if (btn.dataset.oapprove) {
+    btn.disabled = true;
+    try {
+      const r = await api("/orders/" + btn.dataset.oapprove + "/approve", { method: "POST" });
+      if (r.erp === "tu_choi") toast("ERP từ chối đơn " + r.ma_don + " — đơn đã huỷ, hàng trả về kho. " + (r.erp_loi || ""), true);
+      else if (r.erp === "cho_lai") toast("Đã duyệt " + r.ma_don + ", nhưng chưa vào được ERP — máy tự thử lại.", true);
+      else toast(r.erp_ma_don ? "Đã duyệt " + r.ma_don + " · ERP " + r.erp_ma_don + "." : "Đã duyệt đơn " + r.ma_don + ".");
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; await loadOrders(); }
+    return;
+  }
+
+  if (btn.dataset.ocancel) {
+    btn.disabled = true;
+    try {
+      const r = await api("/orders/" + btn.dataset.ocancel + "/cancel", { method: "POST" });
+      const nhac = [r.can_huy_tay, r.can_hoan_tien].filter(Boolean).join(" ");
+      if (nhac) toast("Đã huỷ " + r.ma_don + ". " + nhac, true);
+      else toast("Đã huỷ đơn.");
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; await loadOrders(); }
+    return;
+  }
+
+  if (btn.dataset.odathu) {
+    const daCo = Number(btn.dataset.daThu || 0);
     const d = await hoiHop({
-      tieu_de: `Đã nhận tiền đơn ${b.dataset.ma}`,
+      tieu_de: `Xác nhận đã nhận tiền · ${btn.dataset.ma}`,
       phu: "Đối chiếu sao kê ngân hàng trước khi ghi — hệ thống không đọc được tài khoản. "
         + "Vận đơn tạo sau đó chỉ thu hộ phần còn lại.",
       truong: [
-        { name: "so_tien", label: "Tổng số tiền đã nhận (đồng)", type: "number",
-          value: daCo > 0 ? daCo : b.dataset.goiY, min: 1, step: 1, required: true },
+        {
+          name: "so_tien", label: "Tổng số tiền đã nhận (đồng)", type: "number",
+          value: daCo > 0 ? daCo : btn.dataset.goiY, min: 1, step: 1, required: true
+        },
         { name: "ghi_chu", label: "Ghi chú", hint: "mã giao dịch ngân hàng…", maxlength: 300 },
       ],
-      nut: "Ghi đã nhận",
+      nut: "Xác nhận đã nhận tiền",
     });
     if (!d) return;
-    const r = await api("/orders/" + b.dataset.odathu + "/da-thu-tien", {
-      method: "POST",
-      body: JSON.stringify({ so_tien: parseInt(d.so_tien, 10), ghi_chu: d.ghi_chu || "" }),
-    });
-    if (r.can_sua_cod) toast("Đã ghi " + vnd(r.so_tien_da_thu) + ". " + r.can_sua_cod, true);
-    else toast("Đã ghi nhận " + vnd(r.so_tien_da_thu) + " cho đơn " + r.ma_don
-      + " · còn thu hộ " + vnd(r.thu_ho_cod) + ".");
-  }));
-  $$("[data-ovandon]").forEach((b) => bam(b, async () => {
-    const r = await api("/orders/" + b.dataset.ovandon + "/van-don", { method: "POST", body: "{}" });
-    toast(r.da_co_san ? "Đơn đã có vận đơn " + r.ma_van_don + "."
-      : "Đã tạo vận đơn " + r.ma_van_don + " và nhắn mã cho khách.");
-  }));
-  $$("[data-odoisoat]").forEach((b) => bam(b, async () => {
-    const r = await api("/orders/" + b.dataset.odoisoat + "/shipping-reconcile", { method: "POST" });
-    if (r.ok && r.ma_van_don) toast("Đã đối soát GHN: khôi phục vận đơn " + r.ma_van_don + ".");
-    else toast(r.ly_do_chan || r.loi || "Chưa xác nhận được trên GHN; cần kiểm tra thủ công.", true);
-  }));
-  $$("[data-oxnvandon]").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      const r = await api("/orders/" + btn.dataset.odathu + "/da-thu-tien", {
+        method: "POST",
+        body: JSON.stringify({ so_tien: parseInt(d.so_tien, 10), ghi_chu: d.ghi_chu || "" }),
+      });
+      if (r.can_sua_cod) toast("Đã ghi " + vnd(r.so_tien_da_thu) + ". " + r.can_sua_cod, true);
+      else toast("Đã ghi nhận " + vnd(r.so_tien_da_thu) + " cho đơn " + r.ma_don
+        + " · còn thu hộ " + vnd(r.thu_ho_cod) + ".");
+      await loadOrders();
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
+
+  if (btn.dataset.ovandon) {
+    btn.disabled = true;
+    try {
+      const r = await api("/orders/" + btn.dataset.ovandon + "/van-don", { method: "POST", body: "{}" });
+      toast(r.da_co_san ? "Đơn đã có vận đơn " + r.ma_van_don + "."
+        : "Đã tạo vận đơn " + r.ma_van_don + " và nhắn mã cho khách.");
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; await loadOrders(); }
+    return;
+  }
+
+  if (btn.dataset.odoisoat) {
+    btn.disabled = true;
+    try {
+      const r = await api("/orders/" + btn.dataset.odoisoat + "/shipping-reconcile", { method: "POST" });
+      if (r.ok && r.ma_van_don) toast("Đã đối soát GHN: khôi phục vận đơn " + r.ma_van_don + ".");
+      else toast(r.ly_do_chan || r.loi || "Chưa xác nhận được trên GHN; cần kiểm tra thủ công.", true);
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; await loadOrders(); }
+    return;
+  }
+
+  if (btn.dataset.oerpretry) {
+    btn.disabled = true;
+    try {
+      const r = await api("/orders/" + btn.dataset.oerpretry + "/shipping-erp-retry", { method: "POST" });
+      toast(r.ok ? `Đồng bộ ERP: ${ERP_SHIP_LABEL[r.trang_thai] || r.trang_thai}.`
+        : (r.loi || "Đồng bộ ERP chưa thành công — máy sẽ thử lại."), !r.ok);
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; await loadOrders(); }
+    return;
+  }
+
+  if (btn.dataset.oxnvandon) {
     const d = await hoiHop({
-      tieu_de: `Xác nhận GHN thủ công · ${b.dataset.omadon}`,
-      phu: `Mã tham chiếu client_order_code: ${b.dataset.oref}. Kiểm tra cổng GHN trước khi xác nhận.`,
+      tieu_de: `Xác nhận GHN thủ công · ${btn.dataset.omadon}`,
+      phu: `Mã tham chiếu client_order_code: ${btn.dataset.oref}. Kiểm tra cổng GHN trước khi xác nhận.`,
       truong: [
         {
           name: "ket_qua",
@@ -247,7 +494,7 @@ async function loadOrders() {
       return;
     }
     try {
-      const r = await api("/orders/" + b.dataset.oxnvandon + "/shipping-manual-confirm", {
+      const r = await api("/orders/" + btn.dataset.oxnvandon + "/shipping-manual-confirm", {
         method: "POST",
         body: JSON.stringify({
           ket_qua: d.ket_qua,
@@ -258,221 +505,233 @@ async function loadOrders() {
       toast(r.ma_van_don
         ? `Đã xác nhận vận đơn ${r.ma_van_don}.`
         : "Đã xác nhận GHN chưa tạo đơn — có thể tạo vận đơn lại.");
-      loadOrders();
+      await loadOrders();
     } catch (e) { toast(e.message, true); }
-  }));
+  }
 }
 
-/* ---------------- kho hàng ---------------- */
+/* ---------------- gắn sự kiện một lần ---------------- */
 
-// Tồn kho là số SỐNG: trừ khi chốt đơn, trả khi huỷ. Trước đây nó là một
-// con số tĩnh trong file JSON — bán trăm đơn vẫn báo y nguyên.
+function dhCapNhatChieuCaoToolbar() {
+  const tb = $("#orderToolbar");
+  const khung = $(".dh-khung");
+  if (tb && khung) {
+    khung.style.setProperty("--dh-toolbar-h", tb.offsetHeight + "px");
+  }
+}
+
+function dhGanSuKien() {
+  const view = $('.view[data-view="donhang"]');
+  if (!view || view.dataset.dhBound) return;
+  view.dataset.dhBound = "1";
+
+  const tb = $("#orderToolbar", view);
+  if (tb && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => dhCapNhatChieuCaoToolbar()).observe(tb);
+  }
+  dhCapNhatChieuCaoToolbar();
+
+  $$("#orderfilter .chip", view).forEach((chip) =>
+    chip.addEventListener("click", () => {
+      dhState.status = chip.dataset.ostatus;
+      state.orderFilter = dhState.status;
+      dhState.page = 1;
+      loadOrders();
+    })
+  );
+
+  $("#orderSearch", view)?.addEventListener("input", (e) => {
+    dhState.q = e.target.value.trim();
+    dhState.page = 1;
+    clearTimeout(dhState.searchTimer);
+    dhState.searchTimer = setTimeout(() => loadOrders(), 240);
+  });
+
+  const bindSel = (sel, key) => $(sel, view)?.addEventListener("change", (e) => {
+    dhState[key] = e.target.value;
+    dhState.page = 1;
+    loadOrders();
+  });
+  bindSel("#orderChannel", "channel");
+  bindSel("#orderPay", "thanh_toan");
+  bindSel("#orderShip", "van_chuyen");
+  bindSel("#orderFrom", "tu_ngay");
+  bindSel("#orderTo", "den_ngay");
+
+  $("#orderReset", view)?.addEventListener("click", () => {
+    dhState.status = "all";
+    state.orderFilter = "all";
+    dhState.q = "";
+    dhState.channel = "all";
+    dhState.thanh_toan = "all";
+    dhState.van_chuyen = "all";
+    dhState.tu_ngay = "";
+    dhState.den_ngay = "";
+    dhState.page = 1;
+    if ($("#orderSearch", view)) $("#orderSearch", view).value = "";
+    if ($("#orderChannel", view)) $("#orderChannel", view).value = "all";
+    if ($("#orderPay", view)) $("#orderPay", view).value = "all";
+    if ($("#orderShip", view)) $("#orderShip", view).value = "all";
+    if ($("#orderFrom", view)) $("#orderFrom", view).value = "";
+    if ($("#orderTo", view)) $("#orderTo", view).value = "";
+    loadOrders();
+  });
+
+  view.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-oretry]")) { await loadOrders(); return; }
+    const kpi = e.target.closest("[data-okpi]");
+    if (kpi) {
+      dhState.status = kpi.dataset.okpi;
+      state.orderFilter = dhState.status;
+      dhState.page = 1;
+      loadOrders();
+      return;
+    }
+    const pg = e.target.closest("[data-opage]");
+    if (pg && !pg.disabled) {
+      dhState.page = Math.max(1, parseInt(pg.dataset.opage, 10) || 1);
+      loadOrders();
+      return;
+    }
+    if (e.target.closest("[data-odong]")) { dhDongNgan(); return; }
+    const tabBtn = e.target.closest("[data-otab]");
+    if (tabBtn) {
+      dhState.tab = tabBtn.dataset.otab;
+      dhVeChiTiet();
+      $(`#orderDetail [data-otab="${dhState.tab}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    const goTab = e.target.closest("[data-omo-tab]");
+    if (goTab) {
+      dhState.tab = goTab.dataset.omoTab;
+      dhVeChiTiet();
+      $(`#orderDetail [data-otab="${dhState.tab}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    const moHt = e.target.closest("[data-omo-ht]");
+    if (moHt) {
+      const cid = moHt.dataset.omoHt;
+      dhDongNgan();
+      state.openConv = cid;
+      if (typeof doiMan === "function") doiMan("hoithoai");
+      else $('[data-view="hoithoai"]')?.click();
+      if (typeof loadThread === "function") loadThread(cid);
+      return;
+    }
+    const act = e.target.closest("[data-oapprove],[data-ocancel],[data-odathu],[data-ovandon],[data-odoisoat],[data-oxnvandon],[data-oerpretry]");
+    if (act) {
+      e.stopPropagation();
+      await dhXuLyNut(act);
+      return;
+    }
+    if (e.target.closest("details.hd-them")) {
+      e.stopPropagation();
+      return;
+    }
+    const mo = e.target.closest("[data-omo]") || e.target.closest("[data-orow]");
+    if (mo) {
+      const id = mo.dataset.omo || mo.dataset.orow;
+      if (id) await dhTaiChiTiet(id, true);
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    const kpi = e.target.closest?.("[data-okpi]");
+    if (kpi && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); kpi.click(); return; }
+    if (e.key === "Tab" && dhState.openId && dhNganHep() && !hoiDangMo) {
+      const focusable = $$("#orderDetail button:not([disabled]), #orderDetail a[href], #orderDetail summary")
+        .filter(el => el.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (first && (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+        e.preventDefault(); (e.shiftKey ? last : first).focus();
+      }
+    }
+    if (e.key !== "Escape" || !dhState.openId || hoiDangMo) return;
+    if (typeof chuong !== "undefined" && chuong.mo) return;
+    if (state.view !== "donhang") return;
+    dhDongNgan();
+  });
+
+  window.matchMedia("(max-width: 1180px)").addEventListener?.("change", () => {
+    if (dhState.openId) dhMoNgan();
+  });
+  document.addEventListener("click", (e) => {
+    const nav = e.target.closest("button[data-view]");
+    if (nav && nav.dataset.view !== "donhang" && dhState.openId) dhDongNgan();
+  });
+}
+
+async function loadOrders() {
+  dhGanSuKien();
+  const request = ++dhState.listRequest;
+  $("#orders")?.setAttribute("aria-busy", "true");
+  try {
+    if (VAN_CHUYEN === null) {
+      try { VAN_CHUYEN = await api("/van-chuyen/cau-hinh"); }
+      catch { VAN_CHUYEN = { that: false }; }
+    }
+    const p = new URLSearchParams({
+      status: dhState.status || "all",
+      q: dhState.q || "",
+      channel: dhState.channel || "all",
+      thanh_toan: dhState.thanh_toan || "all",
+      van_chuyen: dhState.van_chuyen || "all",
+      tu_ngay: dhState.tu_ngay || "",
+      den_ngay: dhState.den_ngay || "",
+      page: String(dhState.page || 1),
+      page_size: String(dhState.pageSize || 20),
+    });
+    const data = await api("/orders/bang?" + p.toString());
+    if (request !== dhState.listRequest) return;
+    dhState.items = data.items || [];
+    dhState.page = data.page || 1;
+    $("#c-donhang").textContent = (data.kpi && data.kpi.cho_duyet) || "";
+
+    const resetBtn = $("#orderReset");
+    if (resetBtn) resetBtn.hidden = !dhCoLoc();
+    const sum = $("#orderSummary");
+    if (sum) sum.textContent = data.total ? `${data.total} đơn khớp bộ lọc` : "";
+
+    dhVeKpi(data.kpi);
+    const channels = $("#orderChannel");
+    for (const channel of data.kenh_co || []) {
+      if (channels && ![...channels.options].some(option => option.value === channel)) {
+        channels.add(new Option(CHANNEL_LABEL[channel] || NEN_TANG_LABEL[channel] || channel, channel));
+      }
+    }
+    dhCapNhatChip(data.dem_trang_thai);
+    dhVeBang(dhState.items);
+    dhVePhanTrang(data.total || 0, dhState.page, data.total_pages || 1, data.page_size || dhState.pageSize);
+    dhCapNhatChieuCaoToolbar();
+
+    /* Nếu đang mở ngăn chi tiết và người dùng không mở menu ⋯, cập nhật êm dữ liệu chi tiết. */
+    if (dhState.openId && !$("#orderDetail details[open]")) {
+      await dhTaiChiTiet(dhState.openId, false);
+    }
+  } catch (e) {
+    if (request !== dhState.listRequest) return;
+    $("#orders").innerHTML = `<p class="empty" role="alert">Không tải được đơn hàng: ${esc(e.message)} <button type="button" class="btn btn--sm" data-oretry>Thử lại</button></p>`;
+    $("#orderPager").hidden = true;
+    $("#orderSummary").textContent = "Không tải được dữ liệu";
+  } finally {
+    if (request === dhState.listRequest) $("#orders")?.setAttribute("aria-busy", "false");
+  }
+}
+
+/* ---------------- kho hàng (2 tab: Tồn kho + Sổ biến động kho) ---------------- */
+
+// Nhãn biến động và loại nhập kho dùng chung cho Đơn hàng và module Kho (05b-kho.js).
+// hàng đã xuất / hoàn về chỉ nhập lại sau kiểm tra qua Nhập hàng hoàn.
 const KHO_LY_DO = {
-  ban: "bán", huy_don: "huỷ đơn", nhap: "nhập hàng", kiem_ke: "kiểm kê",
+  ban: "xuất bán",
+  huy_don: "huỷ đơn (tự hoàn)",
+  hoan_hang: "nhập hàng hoàn",
+  erp_tu_choi: "ERP từ chối",
+  nhap: "nhập kho",
+  kiem_ke: "kiểm kê",
 };
 
-$$("#khofilter .chip").forEach((chip) =>
-  chip.addEventListener("click", () => {
-    state.khoFilter = chip.dataset.kstatus;
-    $$("#khofilter .chip").forEach((c) => c.classList.toggle("is-on", c === chip));
-    loadKho();
-  })
-);
-
-/* ---------------- kết nối kho / ERP ---------------- */
-
-/* Mức của bộ kiểm khác mức của bộ sức khoẻ: ở đây "chan" nghĩa là CHƯA DÙNG
-   ĐƯỢC, không phải "đang hỏng". Dùng chung bảng màu nhưng đổi tên cho khớp. */
-const ERP_TONE  = { tot: "auto", canh_bao: "assist", chan: "halt" };
-const ERP_LABEL = { tot: "Đủ", canh_bao: "Cảnh báo", chan: "CHẶN" };
-
-/* Dòng cấu hình ERP gần như không đổi, nhưng đọc nó thì CHẠM VÀO ERP THẬT.
-   `loadKho()` nằm trong vòng làm mới 6 giây, nên không có phanh thì mở tab
-   Kho rồi đi ăn trưa là 600 lượt gọi ERP mỗi giờ.
-
-   `ep = true` cho lúc người vừa bấm Thử kết nối — họ cần thấy ngay. */
-const ERP_CAUHINH_MOI_MS = 60000;
-let erpCauHinhLuc = 0;
-
-async function loadErpCauHinh(ep = false) {
-  const box = $("#erpcauhinh");
-  if (!box) return;
-  if (!ep && box.innerHTML.trim()
-      && Date.now() - erpCauHinhLuc < ERP_CAUHINH_MOI_MS) return;
-  erpCauHinhLuc = Date.now();
-  try {
-    const d = await api("/erp/suc-khoe");
-    const chuaNoi = d.nguon === "tep";
-    box.innerHTML = `<div class="row">
-      <span class="row__flag row__flag--${chuaNoi ? "assist" : d.mach_mo ? "halt" : "auto"}"></span>
-      <div class="row__main">
-        <b>Nguồn: ${esc(d.nguon)}</b>
-        <span class="row__sub">${chuaNoi
-          ? "Đang đọc tệp data/catalog.json trên đĩa — CHƯA nối ERP thật. Đặt ERP_LOAI=erpnext hoặc odoo trong .env rồi khởi động lại."
-          : (d.mach_mo
-              ? "NGẮT MẠCH đang mở — giá và tồn kho đang trả “không biết”"
-              : "đang trả lời bình thường")}</span>
-      </div>
-      <span class="tag tag--${chuaNoi ? "assist" : d.song ? "auto" : "halt"}">${
-        chuaNoi ? "chưa nối" : d.song ? "sống" : "không gọi được"}</span>
-    </div>`;
-  } catch (e) {
-    box.innerHTML = `<p class="empty">Không đọc được cấu hình: ${esc(e.message)}</p>`;
-  }
-}
-
-$("#erpthu")?.addEventListener("click", async () => {
-  const box = $("#erpketqua");
-  const btn = $("#erpthu");
-  btn.disabled = true;
-  /* Nói rõ nó GỌI THẬT. Người bấm cần biết mình đang tiêu hạn mức API của
-     cửa hàng, không phải đọc một con số đã lưu sẵn. */
-  box.innerHTML = '<p class="empty">Đang gọi thật vào ERP…</p>';
-  try {
-    const d = await api("/erp/kiem-ket-noi", { method: "POST" });
-    const dau = `<div class="row"><span class="row__flag row__flag--${ERP_TONE[d.trang_thai]}"></span>
-      <div class="row__main"><b>${d.san_sang ? "SẴN SÀNG đọc" : "CHƯA DÙNG ĐƯỢC"}</b>
-      <span class="row__sub">ERP_LOAI=${esc(d.erp_loai)} · đẩy đơn ${
-        d.ghi_don ? "BẬT" : "tắt"}${d.ma_kho ? " · kho " + esc(d.ma_kho) : ""}</span></div></div>`;
-    box.innerHTML = dau + d.muc.map((m) => `<div class="row">
-        <span class="row__flag row__flag--${ERP_TONE[m.trang_thai] || "plain"}"></span>
-        <div class="row__main"><b>${esc(m.ten)}</b>
-          <span class="row__sub">${esc(m.ghi_chu)}</span>
-          ${m.goi_y ? `<span class="row__sub">└─ ${esc(m.goi_y)}</span>` : ""}</div>
-        <span class="row__side">
-          ${m.ten === "Bảng giá"
-            /* Mục DUY NHẤT máy không tự quyết được. Nút nằm ngay cạnh nó,
-               không nằm trong một màn cài đặt nào khác: người vừa đọc dòng
-               cảnh báo là người đang có đủ ngữ cảnh để bấm. */
-            ? `<button type="button" class="btn btn--sm" data-bg-xacnhan="${
-                 m.trang_thai === "tot" ? "go" : "ghi"}">${
-                 m.trang_thai === "tot" ? "Gỡ xác nhận" : "Tôi đã kiểm"}</button>`
-            : ""}
-          <span class="tag tag--${ERP_TONE[m.trang_thai] || "plain"}">${
-            ERP_LABEL[m.trang_thai] || m.trang_thai}</span>
-        </span>
-      </div>`).join("");
-    loadErpCauHinh(true);
-  } catch (e) {
-    box.innerHTML = `<p class="empty">Không kiểm được: ${esc(e.message)}</p>`;
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-async function loadKho() {
-  loadErpCauHinh();
-  const k = await api("/kho");
-  $("#c-kho").textContent = (k.het_hang + k.sap_het) || "";
-
-  $("#khoCards").innerHTML =
-      cell("Mã hàng", num(k.tong_ma), "", null, "auto")
-    + cell("Hết hàng", num(k.het_hang), "", null, k.het_hang ? "halt" : "auto")
-    + cell("Sắp hết", num(k.sap_het), "\u2264" + k.nguong_sap_het, null,
-           k.sap_het ? "assist" : "auto")
-    + cell("Giá trị tồn", vnd(k.gia_tri_ton), "", 1, "spend");
-
-  const loc = state.khoFilter || "all";
-  const ds = k.san_pham.filter((x) =>
-    loc === "het" ? x.so_luong === 0
-    : loc === "sap_het" ? x.sap_het
-    : true);
-
-  $("#khoRows").innerHTML = ds.length ? ds.map((x) => {
-    const tone = x.so_luong === 0 ? "halt" : x.sap_het ? "assist" : "auto";
-    /* Ảnh sản phẩm ngay trên dòng kho.
-     *
-     * Người trực cần đối chiếu khi khách mô tả bằng lời — "cái chai xanh
-     * xanh ấy" — thay vì mở thư mục ảnh ra tìm. Và cùng tấm ảnh đó là thứ
-     * agent gửi cho khách, nên nhìn thấy nó ở đây là biết khách sẽ thấy gì.
-     *
-     * `loading="lazy"`: màn hình có thể hàng trăm mã, tải hết cùng lúc là
-     * mở hàng trăm kết nối cho một lần cuộn. */
-    const anh = x.co_anh
-      ? `<img class="kho__anh" src="/api/san-pham/${encodeURIComponent(x.ma)}/anh"
-             alt="" loading="lazy" data-xemanh="${esc(x.ma)}">`
-      : '<span class="kho__anh kho__anh--trong">—</span>';
-    const them = [x.dung_tich, ...(x.da_phu_hop || []).slice(0, 2)]
-      .filter(Boolean).join(" · ");
-    return `<div class="row row--kho">
-      <span class="row__flag row__flag--${tone}"></span>
-      ${anh}
-      <span class="row__body">
-        <span class="row__title">${esc(x.ma)} · ${esc(x.ten)}
-          ${x.so_luong === 0 ? '<span class="tag tag--huy">Hết hàng</span>'
-            : x.sap_het ? '<span class="tag tag--duyet">Sắp hết</span>' : ""}</span>
-        <span class="row__sub">${esc(x.loai)} · ${vnd(x.gia)}${them ? " · " + esc(them) : ""}</span>
-      </span>
-      <span class="row__side">
-        <span class="row__num">${num(x.so_luong)}</span>
-        <span style="display:flex;gap:6px;margin-top:4px">
-          <button type="button" class="btn btn--sm" data-knhap="${esc(x.ma)}">Nhập</button>
-          <button type="button" class="btn btn--sm" data-kkiemke="${esc(x.ma)}"
-            data-kton="${x.so_luong}">Kiểm kê</button>
-        </span>
-      </span>
-    </div>`;
-  }).join("") : '<p class="empty">Không có mã nào khớp bộ lọc.</p>';
-
-  $$("[data-knhap]").forEach((b) => b.addEventListener("click", async () => {
-    const d = await hoiHop({
-      tieu_de: `Nhập kho ${b.dataset.knhap}`,
-      truong: [
-        { name: "so_luong", label: "Nhập thêm bao nhiêu", type: "number", value: 50,
-          min: 1, max: 1000000, step: 1, required: true },
-        { name: "ghi_chu", label: "Ghi chú", hint: "số lô, nhà cung cấp…", maxlength: 300 },
-      ],
-      nut: "Nhập kho",
-    });
-    if (!d) return;
-    try {
-      const r = await api(`/kho/${encodeURIComponent(b.dataset.knhap)}/nhap`, {
-        method: "POST",
-        body: JSON.stringify({ so_luong: parseInt(d.so_luong, 10), ghi_chu: d.ghi_chu || "" }),
-      });
-      toast(`${r.ma}: tồn mới ${r.ton_moi}`);
-      loadKho();
-    } catch (e) { toast(e.message, true); }
-  }));
-
-  // Kiểm kê bắt buộc có lý do — kho LUÔN lệch, và không ghi vì sao thì
-  // sau này không ai truy được lệch từ đâu.
-  $$("[data-kkiemke]").forEach((b) => b.addEventListener("click", async () => {
-    const d = await hoiHop({
-      tieu_de: `Kiểm kê ${b.dataset.kkiemke}`,
-      phu: `Hệ thống đang ghi ${b.dataset.kton}. Lý do là bắt buộc — không ghi thì sau này không ai truy được lệch từ đâu.`,
-      truong: [
-        { name: "so_luong_moi", label: "Đếm thực tế được", type: "number",
-          value: b.dataset.kton, min: 0, max: 1000000, step: 1, required: true },
-        { name: "ly_do", label: "Lý do lệch", placeholder: "vỡ, mất, đếm sai…",
-          required: true, maxlength: 300 },
-      ],
-      nut: "Ghi kiểm kê",
-    });
-    if (!d) return;
-    try {
-      const r = await api(`/kho/${encodeURIComponent(b.dataset.kkiemke)}/kiem-ke`, {
-        method: "POST",
-        body: JSON.stringify({ so_luong_moi: parseInt(d.so_luong_moi, 10), ly_do: d.ly_do }),
-      });
-      toast(`${r.ma}: ${r.cu} → ${r.moi} (lệch ${r.lech > 0 ? "+" : ""}${r.lech})`);
-      loadKho();
-    } catch (e) { toast(e.message, true); }
-  }));
-
-  const { bien_dong } = await api("/kho/bien-dong?limit=25");
-  $("#khoSo").innerHTML = bien_dong.length ? bien_dong.map((b) => `
-    <div class="row">
-      <span class="row__flag row__flag--${b.thay_doi < 0 ? "halt" : "auto"}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(b.ma)}
-          <span class="tag tag--plain">${esc(KHO_LY_DO[b.ly_do] || b.ly_do)}</span></span>
-        <span class="row__sub">${esc(b.ma_don || b.ghi_chu || "")}</span>
-      </span>
-      <span class="row__side">
-        <span class="row__num">${b.thay_doi > 0 ? "+" : ""}${b.thay_doi}</span>
-        <span class="row__time">${clock(b.luc)}</span>
-      </span>
-    </div>`).join("") : '<p class="empty">Chưa có biến động nào.</p>';
-}
-
+const KHO_NHAP_LOAI = [
+  { value: "nhap", label: "Nhập kho thông thường" },
+  { value: "hoan_hang", label: "Nhập hàng hoàn từ đơn" },
+];

@@ -48,7 +48,7 @@ class MockShippingProvider(BaseShippingProvider):
             "tong_tien": req.tong_tien,
             "thu_ho_cod": req.thu_ho_cod,
             "trang_thai_goc": "picking",
-            "trang_thai_noi_bo": InternalShippingStatus.DELIVERING,
+            "trang_thai_noi_bo": InternalShippingStatus.READY_TO_PICK,
             "phi_van_chuyen": 25000,
             "ngay_du_kien_giao": eta,
             "created_at": now,
@@ -56,7 +56,7 @@ class MockShippingProvider(BaseShippingProvider):
                 {
                     "thoi_gian": now,
                     "trang_thai_hang": "picking",
-                    "trang_thai_noi_bo": InternalShippingStatus.DELIVERING,
+                    "trang_thai_noi_bo": InternalShippingStatus.READY_TO_PICK,
                     "dia_diem": "Kho Aurora Skin - TP.HCM",
                     "mo_ta": "Đã tiếp nhận yêu cầu lấy hàng từ người gửi.",
                 }
@@ -73,7 +73,7 @@ class MockShippingProvider(BaseShippingProvider):
             don_vi=self._code,
             phi_van_chuyen=25000,
             ngay_du_kien_giao=eta,
-            trang_thai_noi_bo=InternalShippingStatus.DELIVERING,
+            trang_thai_noi_bo=InternalShippingStatus.READY_TO_PICK,
             thong_tin_them={"note": "Đơn thử nghiệm Mock Carrier"},
             client_order_code=client_code,
         )

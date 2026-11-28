@@ -51,8 +51,13 @@ function hoiVeKhoi({ anh_huong, canh_bao, bi_mat }) {
 
 function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = false,
                   anh_huong = null, canh_bao = null, go_xac_nhan = "", bi_mat = "",
-                  nut_huy = "← Quay lại", an_huy = false }) {
+                  nut_huy = "← Quay lại", an_huy = false, modal_kho = false, onRender = null }) {
   if (hoiDangMo) hoiDong(null);           // hộp mới thay hộp cũ, không chồng
+  const form = $("#hoiform");
+  if (form && typeof form._hoiCleanup === "function") {
+    form._hoiCleanup();
+    form._hoiCleanup = null;
+  }
   $("#hoiTen").textContent = tieu_de;
   $("#hoiPhu").textContent = phu;
   $("#hoiPhu").hidden = !phu;
@@ -84,7 +89,7 @@ function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = fals
         + (t.step != null ? ` step="${t.step}"` : "")
         + ` autocomplete="${t.type === "password" ? "new-password" : "off"}">`;
     }
-    return `<label class="field"><span>${esc(t.label)}${
+    return `<label class="field"${t.hidden ? " hidden" : ""}><span>${esc(t.label)}${
       t.hint ? ` <em class="hint">${esc(t.hint)}</em>` : ""}</span>${o}</label>`;
   }).join("");
   const nutGui = $("#hoiNut");
@@ -96,15 +101,29 @@ function hoiHop({ tieu_de, phu = "", truong = [], nut = "Lưu", nguy_hiem = fals
   nutGui.disabled = !!go_xac_nhan;
   $("#hoiform").dataset.goXacNhan = go_xac_nhan || "";
   $("#hoiform").classList.toggle("is-nguy", !!nguy_hiem);
+  $("#hoiform").classList.toggle("is-modal-kho", !!modal_kho);
+  const dongBtn = $("#hoiDongBtn");
+  if (dongBtn) dongBtn.hidden = !modal_kho;
+  const huyBtn = $("#hoiHuyBtn");
+  if (huyBtn) huyBtn.hidden = !modal_kho;
   const huy = $("#hoiHuy");
-  if (huy) { huy.textContent = nut_huy; huy.closest(".cong__note").hidden = !!an_huy; }
+  if (huy) { huy.textContent = nut_huy; huy.closest(".cong__note").hidden = !!an_huy || !!modal_kho; }
+  if (typeof onRender === "function" && form) {
+    const cleanup = onRender(form, { khoi, truongBox: $("#hoiTruong"), nutGui, loiEl: $("#hoiLoi") });
+    if (typeof cleanup === "function") form._hoiCleanup = cleanup;
+  }
   $("#congHoi").classList.remove("is-off");
-  const dau = $("#hoiTruong").querySelector("input, textarea, select") || nutGui;
+  const dau = $("#hoiTruong").querySelector("input:not([hidden]), textarea, select") || nutGui;
   if (dau) setTimeout(() => dau.focus(), 0);
   return new Promise((resolve) => { hoiDangMo = resolve; });
 }
 
 function hoiDong(gia_tri) {
+  const form = $("#hoiform");
+  if (form && typeof form._hoiCleanup === "function") {
+    form._hoiCleanup();
+    form._hoiCleanup = null;
+  }
   $("#congHoi").classList.add("is-off");
   // Bí mật (mật khẩu tạm) không được nằm lại trong DOM sau khi đóng hộp.
   if ($("#hoiKhoi")) $("#hoiKhoi").innerHTML = "";
@@ -141,54 +160,16 @@ $("#hoiform")?.addEventListener("submit", (e) => {
   hoiDong(d);
 });
 $("#hoiHuy")?.addEventListener("click", (e) => { e.preventDefault(); hoiDong(null); });
+$("#hoiDongBtn")?.addEventListener("click", () => hoiDong(null));
+$("#hoiHuyBtn")?.addEventListener("click", () => hoiDong(null));
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && hoiDangMo) hoiDong(null);
 });
 
 /* ---------------- nhật ký ---------------- */
 
-/* Chi tiết sự kiện cho NGƯỜI đọc, không phải JSON thô.
- *
- * `{"muc_do":"hong","tieu_de":"Hệ thống đang hỏng","chi_tiet":...}` dài
- * 2.600 ký tự bị cắt sau 90 — người trực thấy đúng phần vô nghĩa nhất.
- * Báo động thì hiện tiêu đề và chi tiết; lỗi thì hiện lỗi; còn lại là
- * `khoá: giá trị`. JSON đầy đủ vẫn còn trong `title` để rê chuột xem. */
-function moTaChiTiet(d) {
-  if (d == null) return "";
-  if (typeof d !== "object") return String(d);
-  if (d.tieu_de) return [d.tieu_de, d.chi_tiet].filter(Boolean).join(" — ");
-  if (d.error) return String(d.error);
-  return Object.entries(d).map(([k, v]) =>
-    `${k}: ${v !== null && typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ");
-}
-
-async function loadEvents() {
-  /* Nhật ký kiểm toán cần quyền riêng `nhat_ky.doc`. Không có quyền thì nói
-     rõ ngay trên ô — để lỗi 403 nổ lên thì cả vòng làm mới màn Nhật ký dừng. */
-  if (state.toiQuyen && !state.toiQuyen.has("nhat_ky.doc")) {
-    $("#events").innerHTML = '<p class="empty">Cần quyền "Xem nhật ký kiểm toán" để xem mục này.</p>';
-    return;
-  }
-  const evs = await api("/events");
-  $("#events").innerHTML = evs.length ? evs.map((e) => {
-    const tone = e.kind.includes("error") || e.kind.includes("failed") ? "halt"
-      : e.kind.includes("escalat") ? "assist" : "auto";
-    // Tác nhân là "system" hay UUID toàn số 0 đều là hệ thống tự làm —
-    // in chuỗi 36 ký tự ấy ra chỉ tốn chỗ và không ai đọc.
-    const ai = !e.actor || e.actor === "system" || /^0{8}-/.test(e.actor) ? "hệ thống" : e.actor;
-    return `<div class="row">
-      <span class="row__flag row__flag--${tone}"></span>
-      <span class="row__body">
-        <span class="row__title">${esc(e.kind)}</span>
-        <span class="row__sub" title="${esc(JSON.stringify(e.detail))}">${esc(moTaChiTiet(e.detail))}</span>
-      </span>
-      <span class="row__side">
-        <span class="row__num">${esc(ai)}</span>
-        <span class="row__time">${clock(e.at)}</span>
-      </span>
-    </div>`;
-  }).join("") : '<p class="empty">Chưa có sự kiện nào.</p>';
-}
+/* Màn Nhật ký cũ (`loadEvents` gọi `/api/events`) đã được thay thế hoàn toàn
+ * bằng mô-đun Nhật ký kiểm toán tại `27-nhat-ky.js` (`/api/nhat-ky`). */
 
 
 /* Định dạng số kiểu Việt Nam — màn Kho và Chi phí dùng chung. */

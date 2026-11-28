@@ -174,7 +174,17 @@ class PostgresRoutingAdminRepository:
             ),
         }
 
-    async def create_team(self, *, name: str, description: str, actor_id: UUID):
+    async def _ten_actor(self, connection, actor_id: UUID, actor_ten: str | None) -> str:
+        ten = (actor_ten or "").strip()
+        if ten:
+            return ten
+        row = await connection.fetchval(
+            "SELECT ten_dang_nhap FROM nguoi_dung WHERE id = $1", actor_id,
+        )
+        return str(row or actor_id)
+
+    async def create_team(self, *, name: str, description: str, actor_id: UUID,
+                          actor_ten: str | None = None):
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
@@ -182,12 +192,13 @@ class PostgresRoutingAdminRepository:
                     name,
                     description,
                 )
+                ten = await self._ten_actor(connection, actor_id, actor_ten)
                 await connection.execute(
                     "INSERT INTO events (kind, actor, ref_id, detail) "
                     "VALUES ('routing.team_created',$1,$2,$3)",
-                    str(actor_id),
+                    ten,
                     row["id"],
-                    {"name": name},
+                    {"name": name, "nguoi_id": str(actor_id)},
                 )
         return dict(row)
 
@@ -201,6 +212,7 @@ class PostgresRoutingAdminRepository:
         max_active: int,
         is_available: bool,
         actor_id: UUID,
+        actor_ten: str | None = None,
     ):
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
@@ -217,14 +229,15 @@ class PostgresRoutingAdminRepository:
                     """,
                     team_id, user_id, role, skills, max_active, is_available,
                 )
+                ten = await self._ten_actor(connection, actor_id, actor_ten)
                 await connection.execute(
                     "INSERT INTO events (kind, actor, ref_id, detail) "
                     "VALUES ('routing.member_upserted',$1,$2,$3)",
-                    str(actor_id), team_id, {"user_id": str(user_id)},
+                    ten, team_id, {"user_id": str(user_id), "nguoi_id": str(actor_id)},
                 )
         return dict(row)
 
-    async def create_rule(self, *, actor_id: UUID, **values):
+    async def create_rule(self, *, actor_id: UUID, actor_ten: str | None = None, **values):
         async with self._pool_provider().acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
@@ -236,15 +249,17 @@ class PostgresRoutingAdminRepository:
                     values["account_id"], values["team_id"], values["priority"],
                     values["required_skills"], values["weight"], values["active"],
                 )
+                ten = await self._ten_actor(connection, actor_id, actor_ten)
                 await connection.execute(
                     "INSERT INTO events (kind, actor, ref_id, detail) "
                     "VALUES ('routing.rule_created',$1,$2,$3)",
-                    str(actor_id), row["id"], {"team_id": str(values["team_id"])},
+                    ten, row["id"],
+                    {"team_id": str(values["team_id"]), "nguoi_id": str(actor_id)},
                 )
         return dict(row)
 
-    async def upsert_sla(self, *, actor_id: UUID, da_gui: frozenset[str] | None = None,
-                         **values):
+    async def upsert_sla(self, *, actor_id: UUID, actor_ten: str | None = None,
+                         da_gui: frozenset[str] | None = None, **values):
         """
         `da_gui`: các ô người gọi THẬT SỰ gửi. Ô không gửi thì GIỮ giá trị
         đang lưu — form cũ không có ô phút chuyển giao, form mới không có ô
@@ -278,10 +293,12 @@ class PostgresRoutingAdminRepository:
                     values["business_hours"], values["active"],
                     values.get("handover_response_minutes"), giu_cg, giu_gio,
                 )
+                ten = await self._ten_actor(connection, actor_id, actor_ten)
                 await connection.execute(
                     "INSERT INTO events (kind, actor, ref_id, detail) "
                     "VALUES ('routing.sla_upserted',$1,$2,$3)",
-                    str(actor_id), row["id"], {"priority": values["priority"]},
+                    ten, row["id"],
+                    {"priority": values["priority"], "nguoi_id": str(actor_id)},
                 )
         return dict(row)
 
@@ -292,6 +309,10 @@ def get_routing_admin_repository() -> PostgresRoutingAdminRepository:
 
 def _actor(user: dict) -> UUID:
     return UUID(str(user["id"]))
+
+
+def _ten_nguoi(user: dict) -> str:
+    return str(user.get("ten_dang_nhap") or user.get("id") or "")
 
 
 @router.get("")
@@ -309,7 +330,8 @@ async def create_team(
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.create_team(
-        name=body.name.strip(), description=body.description.strip(), actor_id=_actor(user)
+        name=body.name.strip(), description=body.description.strip(),
+        actor_id=_actor(user), actor_ten=_ten_nguoi(user),
     )
 
 
@@ -322,7 +344,8 @@ async def upsert_team_member(
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.upsert_member(
-        team_id=team_id, user_id=user_id, actor_id=_actor(user), **body.model_dump()
+        team_id=team_id, user_id=user_id, actor_id=_actor(user),
+        actor_ten=_ten_nguoi(user), **body.model_dump()
     )
 
 
@@ -332,7 +355,9 @@ async def create_routing_rule(
     user: dict = Depends(can_quyen("dinh_tuyen.sua")),
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
-    return await repository.create_rule(actor_id=_actor(user), **body.model_dump())
+    return await repository.create_rule(
+        actor_id=_actor(user), actor_ten=_ten_nguoi(user), **body.model_dump()
+    )
 
 
 @router.put("/sla-policies")
@@ -342,5 +367,6 @@ async def upsert_sla_policy(
     repository: PostgresRoutingAdminRepository = Depends(get_routing_admin_repository),
 ):
     return await repository.upsert_sla(actor_id=_actor(user),
+                                       actor_ten=_ten_nguoi(user),
                                        da_gui=frozenset(body.model_fields_set),
                                        **body.model_dump())

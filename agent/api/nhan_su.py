@@ -356,7 +356,10 @@ async def chuyen_viec(
     for cid in da_chuyen:
         await thong_bao_noi_bo.bao_duoc_giao_hoi_thoai(
             UUID(cid), body.nguoi_nhan, boi=actor_id)
+        await thong_bao_noi_bo.dong_bo_chuyen_nguoi_hoi_thoai(UUID(cid), body.nguoi_nhan)
     for v in viec:
+        await thong_bao_noi_bo.dong_bo_doi_nguoi_viec(
+            v["id"], body.nguoi_nhan, tieu_de_viec=v["tieu_de"] or "")
         await thong_bao_noi_bo.bao_duoc_giao_viec(
             v["id"], body.nguoi_nhan, boi=actor_id, tieu_de_viec=v["tieu_de"] or "",
             chuyen=True)
@@ -384,6 +387,8 @@ async def lich_su_nhan_su(
     ref_id: UUID | None = None,
     loai: str = Query("tat_ca", pattern="^(tat_ca|vai_tro|nguoi_dung)$"),
     limit: int = Query(100, ge=1, le=300),
+    truoc: int | None = Query(None, ge=1),
+    q: str = Query("", max_length=120),
     _q: dict = Depends(can_quyen("nguoi_dung.doc")),
 ) -> dict[str, Any]:
     """
@@ -397,10 +402,14 @@ async def lich_su_nhan_su(
     rows = await db.fetch(
         "SELECT id, kind, actor, ref_id, detail, created_at FROM events "
         "WHERE kind = ANY($1::text[]) AND ($2::uuid IS NULL OR ref_id = $2) "
-        "ORDER BY created_at DESC, id DESC LIMIT $3",
-        loai_ds, ref_id, limit)
+        "AND ($4::bigint IS NULL OR id < $4) "
+        "AND ($5 = '' OR actor ILIKE $5 OR detail->>'ten' ILIKE $5 "
+        "OR detail->>'ten_dang_nhap' ILIKE $5 OR detail->'truoc'->>'ten' ILIKE $5 "
+        "OR detail->'sau'->>'ten' ILIKE $5) "
+        "ORDER BY id DESC LIMIT $3",
+        loai_ds, ref_id, limit + 1, truoc, '%' + q.strip() + '%' if q.strip() else '')
     ra = []
-    for r in rows:
+    for r in rows[:limit]:
         ct = r["detail"]
         # Dòng cũ có thể bị mã hoá hai lần (chuỗi JSON trong JSONB) — xem
         # ghi chú codec ở `agent/db.py`. Không giải thì màn Lịch sử hiện một
@@ -417,4 +426,4 @@ async def lich_su_nhan_su(
             "luc": r["created_at"].isoformat(),
             "chi_tiet": ct if isinstance(ct, dict) else {"ghi_chu": ct},
         })
-    return {"lich_su": ra}
+    return {"lich_su": ra, "next_cursor": ra[-1]['id'] if len(rows) > limit and ra else None}

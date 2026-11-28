@@ -163,34 +163,7 @@ GAN_TAB["ns-vai-tro"] = async (el) => {
    muốn đọc lịch sử phải cuộn qua mọi vai trò — và tab Vai trò thì dài theo
    số vai trò. Lọc theo loại ở máy chủ, tìm theo tên ở máy khách. */
 GAN_TAB["ns-lich-su"] = async (el) => {
-  el.innerHTML = `<section class="panel nsv-panel">
-    <h2 class="panel__head">Lịch sử nhân sự &amp; phân quyền</h2>
-    <p class="panel__note nsv-ghi">Ai đổi gì, lúc nào — trước và sau. 200 thay đổi gần nhất.</p>
-    <div class="nsv-loc" role="search">
-      <input type="search" class="nsv-tim" data-nsv-tim-ls autocomplete="off"
-             placeholder="Tìm người làm, người/vai trò bị đổi…" aria-label="Tìm trong lịch sử">
-      <select data-nsv-loc-lich-su aria-label="Lọc theo loại thay đổi">
-        <option value="tat_ca">Tất cả</option>
-        <option value="vai_tro">Vai trò &amp; quyền</option>
-        <option value="nguoi_dung">Tài khoản nhân viên</option>
-      </select>
-    </div>
-    <div class="rows" data-nsv-lich-su><p class="empty">Đang tải…</p></div>
-  </section>`;
-  const khung = el.querySelector("[data-nsv-lich-su]");
-  const loc = () => {
-    const k = nsvBoDau(el.querySelector("[data-nsv-tim-ls]").value).trim();
-    $$(".row", khung).forEach((r) => { r.hidden = !!k && !nsvBoDau(r.textContent).includes(k); });
-  };
-  const veLai = async () => {
-    if (!nsv.nhom.length) await nsvTaiDuLieu();     // nhãn quyền cho các dòng "+ quyền"
-    await nsvVeLichSu(khung, el.querySelector("[data-nsv-loc-lich-su]").value, "", 200);
-    loc();
-  };
-  el.addEventListener("input", (e) => { if (e.target.matches("[data-nsv-tim-ls]")) loc(); });
-  el.addEventListener("change", (e) => { if (e.target.matches("[data-nsv-loc-lich-su]")) veLai(); });
-  el.addEventListener("tab:hien", () => veLai());
-  await veLai();
+  await nsvLichSuHaiCot(el);
 };
 
 /* ---------------- bắt đổi mật khẩu ở lần đăng nhập tới (UX-13-07) ---------------- */

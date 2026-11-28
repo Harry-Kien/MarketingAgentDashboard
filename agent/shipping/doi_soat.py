@@ -23,7 +23,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from agent import db
-from .models import CreateWaybillResult, InternalShippingStatus
+from .models import (
+    CreateWaybillResult,
+    InternalShippingStatus,
+    TRANG_THAI_DA_LAY_HANG,
+)
 
 
 def _jsonb(gia_tri: Any) -> Any:
@@ -114,7 +118,9 @@ async def chot_luu_van_don_thanh_cong(
     Ghi nhận `ma_van_don` vào `orders` và cập nhật `shipping_waybill_requests`
     trong cùng một transaction ngắn, đồng thời bật cờ chờ đồng bộ ERPNext (DEV-02).
     """
-    st_giao = (trang_thai_noi_bo or InternalShippingStatus.DELIVERING).value
+    st_enum = trang_thai_noi_bo or InternalShippingStatus.READY_TO_PICK
+    st_giao = st_enum.value
+    da_lay_hang = st_enum in TRANG_THAI_DA_LAY_HANG
     now = datetime.now(timezone.utc)
     payload_json = _jsonb(du_lieu_phan_hoi or {})
 
@@ -126,20 +132,26 @@ async def chot_luu_van_don_thanh_cong(
                 SET ma_van_don = COALESCE(NULLIF(TRIM(ma_van_don), ''), $1),
                     don_vi_van_chuyen = COALESCE(NULLIF(TRIM(don_vi_van_chuyen), ''), $2),
                     trang_thai_giao_hang = COALESCE(NULLIF(TRIM(trang_thai_giao_hang), ''), $3),
+                    van_don_da_lay_hang = CASE
+                        WHEN van_don_da_lay_hang IS TRUE THEN TRUE
+                        ELSE $8 END,
                     phi_van_chuyen = COALESCE(NULLIF(phi_van_chuyen, 0), $4),
                     ngay_du_kien_giao = COALESCE(ngay_du_kien_giao, $5),
                     cap_nhat_van_chuyen_luc = COALESCE(cap_nhat_van_chuyen_luc, $6),
                     erp_van_chuyen_trang_thai = CASE
-                        WHEN erp_ma_don IS NOT NULL AND erp_van_chuyen_trang_thai <> 'synced'
+                        WHEN erp_ma_don IS NOT NULL
+                         AND erp_van_chuyen_trang_thai NOT IN ('synced', 'skipped_cancelled')
                             THEN 'pending'
                         WHEN erp_ma_don IS NOT NULL THEN erp_van_chuyen_trang_thai
                         ELSE 'not_required' END,
                     erp_van_chuyen_thu_lai_luc = CASE
-                        WHEN erp_ma_don IS NOT NULL AND erp_van_chuyen_trang_thai <> 'synced'
+                        WHEN erp_ma_don IS NOT NULL
+                         AND erp_van_chuyen_trang_thai NOT IN ('synced', 'skipped_cancelled')
                             THEN now()
                         ELSE erp_van_chuyen_thu_lai_luc END,
                     erp_van_chuyen_loi = CASE
-                        WHEN erp_ma_don IS NOT NULL AND erp_van_chuyen_trang_thai <> 'synced'
+                        WHEN erp_ma_don IS NOT NULL
+                         AND erp_van_chuyen_trang_thai NOT IN ('synced', 'skipped_cancelled')
                             THEN NULL
                         ELSE erp_van_chuyen_loi END,
                     updated_at = now()
@@ -158,6 +170,7 @@ async def chot_luu_van_don_thanh_cong(
                 ngay_du_kien_giao,
                 now,
                 order_id,
+                da_lay_hang,
             )
             if order is None:
                 hien = await conn.fetchrow(
@@ -391,7 +404,7 @@ async def doi_soat_mot_yeu_cau(
             don_vi=provider_code,
             phi_van_chuyen=lookup.phi_van_chuyen,
             ngay_du_kien_giao=lookup.ngay_du_kien_giao,
-            trang_thai_noi_bo=lookup.trang_thai_noi_bo or InternalShippingStatus.DELIVERING,
+            trang_thai_noi_bo=lookup.trang_thai_noi_bo or InternalShippingStatus.READY_TO_PICK,
             client_order_code=client_order_code,
         )
         await service._dong_bo_erp_sau_luu(order_saved, sync_res)

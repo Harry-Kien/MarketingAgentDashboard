@@ -171,11 +171,13 @@ def test_dut_mang_khong_nem(monkeypatch):
 # ------------------------------------------------------------------ trạng thái
 
 @pytest.mark.parametrize("ma,mong", [
-    ("1", S.DELIVERING), ("2", S.DELIVERING), ("4", S.DELIVERING), ("12", S.DELIVERING),
+    ("1", S.READY_TO_PICK), ("2", S.READY_TO_PICK), ("12", S.READY_TO_PICK),
+    ("3", S.DELIVERING), ("4", S.DELIVERING),
     ("5", S.DELIVERED), ("6", S.DELIVERED),
+    ("20", S.RETURNING), ("26", S.RETURNING),
     ("21", S.RETURNED),
-    ("-1", S.DELIVERY_FAILED), ("9", S.DELIVERY_FAILED), ("10", S.DELIVERY_FAILED),
-    ("20", S.DELIVERY_FAILED),
+    ("-1", S.CANCELLED),
+    ("9", S.DELIVERY_FAILED), ("10", S.DELIVERY_FAILED), ("13", S.DELIVERY_FAILED),
 ])
 def test_anh_xa_ma_ghtk(ma, mong):
     assert GHTKShippingProvider().map_status(ma) == mong

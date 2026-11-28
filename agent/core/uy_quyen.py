@@ -523,6 +523,9 @@ async def het_han_qua_han(conversation_id: Any = None, *, chi_id: Any = None) ->
         """, _uuid(conversation_id), _uuid(chi_id))
     for r in rows:
         await _su_kien("ai.de_xuat.het_han", r)
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.ket_thuc_duyet_de_xuat(None, r["id"])
     return len(rows)
 
 
@@ -565,6 +568,9 @@ async def nhan_duyet(de_xuat_id: UUID, nguoi: dict) -> dict:
                 "cap_nhat_luc=now() WHERE id=$1 RETURNING *", de_xuat_id, nguoi_id)
     await _su_kien("ai.de_xuat.duyet", dong, actor=str(nguoi.get("ten_dang_nhap") or "?"),
                    nguoi_duyet_id=str(nguoi_id) if nguoi_id else None)
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.ket_thuc_duyet_de_xuat(None, dong["id"])
     return dict(dong)
 
 
@@ -656,6 +662,9 @@ async def tu_choi(de_xuat_id: UUID, nguoi: dict, ly_do: str = "") -> dict:
     await _su_kien("ai.de_xuat.tu_choi", dong, actor=str(nguoi.get("ten_dang_nhap") or "?"),
                    nguoi_tu_choi_id=str(_uuid(nguoi.get("id")) or "") or None,
                    ly_do=(ly_do or "")[:300])
+    from agent.core import thong_bao_noi_bo
+
+    await thong_bao_noi_bo.ket_thuc_duyet_de_xuat(None, dong["id"])
     return dict(dong)
 
 
@@ -711,6 +720,9 @@ async def _dong_theo_don(order_id: Any, su_kien: str, *, boi: str) -> int:
         await _su_kien("ai.de_xuat.thuc_hien" if r["trang_thai"] == "da_thuc_hien"
                        else "ai.de_xuat.tu_choi", r, actor=boi, qua="man_don_hang",
                        su_kien_don=su_kien)
+        from agent.core import thong_bao_noi_bo
+
+        await thong_bao_noi_bo.ket_thuc_duyet_de_xuat(None, r["id"])
     return len(rows)
 
 

@@ -151,9 +151,16 @@ def test_lo_agent_va_lo_duyet_dung_chung_mot_ham_day_erp():
 
 def test_huy_don_da_co_ben_erp_thi_nhac_huy_tay(app_that):
     qt = _quan_tri_vao(app_that)
-    oid, _ = _don(app_that, "da_chot", erp_ma_don="SAL-9", ma_van_don="GHN123")
-    r = qt.post(f"/api/orders/{oid}/cancel").json()
-    assert "SAL-9" in r["can_huy_tay"] and "GHN123" in r["can_huy_tay"]
+    # Đơn chưa có vận đơn nhưng đã sang ERPNext -> cho huỷ và nhắc huỷ tay ERP
+    oid_erp, _ = _don(app_that, "da_chot", erp_ma_don="SAL-9", ma_van_don=None)
+    r = qt.post(f"/api/orders/{oid_erp}/cancel")
+    assert r.status_code == 200
+    assert "SAL-9" in r.json()["can_huy_tay"]
+
+    # Đơn đã có vận đơn còn hoạt động / chưa rõ trạng thái -> chặn 409 (BUG-17-04)
+    oid_vd, _ = _don(app_that, "da_chot", erp_ma_don="SAL-10", ma_van_don="GHN123")
+    r_vd = qt.post(f"/api/orders/{oid_vd}/cancel")
+    assert r_vd.status_code == 409 and "GHN123" in r_vd.text
 
 
 # ------------------------------------------------------------- 2. vận đơn

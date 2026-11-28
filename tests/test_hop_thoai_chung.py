@@ -98,10 +98,10 @@ def test_nhap_kho_kiem_ke_co_o_so():
 # ---------------- lỗi giao diện đo được ----------------
 
 def test_nhat_ky_khong_hien_json_tho():
-    khoi = _khoi("async function loadEvents")
-    assert "moTaChiTiet(e.detail)" in khoi
-    assert 'title="${esc(JSON.stringify(e.detail))}"' in khoi   # JSON đủ vẫn còn khi rê chuột
-    assert "function moTaChiTiet" in JS
+    khoi = _khoi("function nkDong(b)", dai=1800)
+    assert "b.hanh_dong" in khoi and "b.ket_qua" in khoi
+    assert "JSON.stringify" not in khoi, "dòng chính của Nhật ký không được in JSON thô"
+    assert "function loadEvents" not in JS, "caller loadEvents cũ gọi /api/events đã được loại bỏ"
 
 
 def test_goi_y_phong_thu_xuong_dong():
@@ -118,8 +118,25 @@ def test_o_cau_hinh_co_nhan_cho_bo_doc_man_hinh():
 
 
 def test_kho_dien_thoai_nut_du_cao_va_nhan_khong_tran():
-    mobile = CSS[CSS.index("@media (max-width: 560px)"):]
-    mobile = mobile[:mobile.index("\n}\n")]
+    khoi_mobile = []
+    pos = 0
+    marker = "@media (max-width: 560px)"
+    while True:
+        idx = CSS.find(marker, pos)
+        if idx == -1:
+            break
+        start = CSS.index("{", idx) + 1
+        depth = 1
+        i = start
+        while i < len(CSS) and depth > 0:
+            if CSS[i] == "{":
+                depth += 1
+            elif CSS[i] == "}":
+                depth -= 1
+            i += 1
+        khoi_mobile.append(CSS[start:i - 1])
+        pos = i
+    mobile = "\n".join(khoi_mobile)
     assert ".btn--sm, .chip { padding: 7px 12px; min-height: 34px; }" in mobile
     assert ".row__side { max-width: 46%; flex-wrap: wrap; }" in mobile
     assert ".tag, .src, .pill { white-space: normal;" in mobile

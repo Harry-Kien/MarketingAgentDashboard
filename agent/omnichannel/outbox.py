@@ -162,6 +162,27 @@ async def _keu_tin_chet(job: OutboxJob, error: str) -> None:
               f"job={job.id} loai={job.kind} loi={error[:160]}", file=sys.stderr)
 
     try:
+        from agent import db as _db
+        if getattr(_db, "_pool", None) is not None:
+            from agent.core import thong_bao_noi_bo
+
+            gui_boi = None
+            if job.message_id is not None:
+                dong_tin = await _db.fetchrow(
+                    "SELECT gui_boi FROM messages WHERE id = $1", job.message_id)
+                gui_boi = dong_tin["gui_boi"] if dong_tin else None
+            await thong_bao_noi_bo.bao_tin_nhan_that_bai(
+                job.id,
+                conversation_id=job.conversation_id,
+                account_id=job.account_id,
+                gui_boi=gui_boi,
+                loi=error[:200],
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outbox] TIN CHẾT không thông báo nội bộ được ({type(exc).__name__}): "
+              f"job={job.id} loai={job.kind}", file=sys.stderr)
+
+    try:
         from agent import canh_gac
 
         await canh_gac._bao(

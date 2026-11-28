@@ -39,6 +39,7 @@ from uuid import UUID
 
 from agent import cau_hinh_dong, db
 from agent.config import settings
+from agent.omnichannel.accounts import Channel
 
 _log = logging.getLogger("agent.ket_noi_tich_hop")
 
@@ -111,11 +112,24 @@ DICH_VU: dict[str, DichVu] = {d.ma: d for d in (
 )}
 
 
-def dich_vu_cua_khoa(khoa: str) -> str:
-    """Khoá thuộc dịch vụ nào; khoá lẻ (CSAT, SLA...) thì theo nhóm của nó."""
+DICH_VU_LICH_SU_KET_NOI: frozenset[str] = (
+    frozenset(DICH_VU) | {c.value for c in Channel} | {"kenh"}
+)
+
+
+def dich_vu_ket_noi_cua_khoa(khoa: str) -> str | None:
+    """Khoá thuộc dịch vụ Kết nối & Tích hợp nào; khoá nghiệp vụ (SLA, CSAT...) trả None."""
     for d in DICH_VU.values():
         if khoa in d.khoa:
             return d.ma
+    return None
+
+
+def dich_vu_cua_khoa(khoa: str) -> str:
+    """Khoá thuộc dịch vụ nào; khoá lẻ (CSAT, SLA...) thì theo nhóm của nó."""
+    dv = dich_vu_ket_noi_cua_khoa(khoa)
+    if dv is not None:
+        return dv
     mo_ta = cau_hinh_dong.DANH_MUC.get(khoa)
     return mo_ta.nhom if mo_ta else "khac"
 
@@ -242,20 +256,38 @@ HANH_DONG = frozenset({"dat", "xoa", "doi_credential", "bat", "tat", "doi_tuy_ch
                        "tao", "xoa_tai_khoan"})
 
 
+_LOI_GHI_LICH_SU: list[dict[str, Any]] = []
+
+
+def lay_loi_ghi_lich_su_gan_day() -> list[dict[str, Any]]:
+    """Trả danh sách lỗi ghi lịch sử kết nối gần đây để kiểm chứng/cảnh báo."""
+    return list(_LOI_GHI_LICH_SU)
+
+
 async def ghi_lich_su(*, dich_vu: str, truong: str, hanh_dong: str, sua_boi: str,
                       bi_mat: bool = False, account_id: UUID | None = None,
-                      doi_tuong: str | None = None) -> None:
+                      doi_tuong: str | None = None, conn: Any = None,
+                      bat_buoc: bool = False) -> bool:
     """Ghi MỘT dòng lịch sử. Không bao giờ nhận giá trị — chữ ký hàm không có chỗ.
 
-    Hỏng thì KHÔNG chặn thao tác (khoá đã lưu xong rồi), nhưng cũng không im:
-    ghi lỗi qua logging — đúng cách `db.log_event` làm.
+    Nếu có `conn`, chạy trong cùng giao dịch của caller (thất bại sẽ rollback
+    đồng bộ). Khi `conn=None`, nếu lỗi sẽ ghi log, lưu vào bộ đếm kiểm chứng
+    và phát sự kiện cảnh báo thay vì bỏ qua âm thầm.
     """
     if hanh_dong not in HANH_DONG:
         raise ValueError(f"hành động lịch sử lạ: {hanh_dong!r}")
+    if conn is not None:
+        await conn.execute(
+            "INSERT INTO lich_su_ket_noi (dich_vu, truong, hanh_dong, bi_mat, account_id, "
+            "doi_tuong, sua_boi) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            dich_vu[:40], truong[:300], hanh_dong, bi_mat, account_id,
+            (doi_tuong or None) and str(doi_tuong)[:120], (sua_boi or "?")[:120],
+        )
+        return True
     if db._pool is None:
         # Chỉ xảy ra trong test đơn vị không có CSDL; tiến trình thật luôn có
         # pool trước khi nhận request.
-        return
+        return True
     try:
         await db.execute(
             "INSERT INTO lich_su_ket_noi (dich_vu, truong, hanh_dong, bi_mat, account_id, "
@@ -263,35 +295,66 @@ async def ghi_lich_su(*, dich_vu: str, truong: str, hanh_dong: str, sua_boi: str
             dich_vu[:40], truong[:300], hanh_dong, bi_mat, account_id,
             (doi_tuong or None) and str(doi_tuong)[:120], (sua_boi or "?")[:120],
         )
+        return True
     except Exception as exc:  # noqa: BLE001
+        thong_tin = {
+            "dich_vu": dich_vu[:40],
+            "truong": truong[:120],
+            "hanh_dong": hanh_dong,
+            "account_id": str(account_id) if account_id else None,
+            "loi": f"{type(exc).__name__}: {exc}"[:200],
+        }
+        _LOI_GHI_LICH_SU.append(thong_tin)
+        if len(_LOI_GHI_LICH_SU) > 100:
+            del _LOI_GHI_LICH_SU[:len(_LOI_GHI_LICH_SU) - 100]
         _log.error("KHÔNG ghi được lịch sử kết nối %s/%s: %s: %s",
                    dich_vu, truong, type(exc).__name__, exc)
+        try:
+            await db.log_event(
+                "lich_su_ket_noi.ghi_loi",
+                actor="system",
+                ref_id=account_id,
+                **thong_tin,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        if bat_buoc:
+            raise
+        return False
 
 
 async def doc_lich_su(*, dich_vu: str | None = None, gioi_han: int = 50,
                       tu: datetime | None = None, den: datetime | None = None,
-                      account_id: UUID | None = None) -> list[dict]:
+                      account_id: UUID | None = None,
+                      chi_ket_noi: bool = True, bo_qua: int = 0,
+                      chi_dich_vu: bool = False, _gioi_han_noi_bo: bool = False) -> list[dict]:
     """Lịch sử đổi cấu hình, lọc theo dịch vụ / khoảng thời gian / tài khoản.
 
-    Lọc ở MÁY CHỦ chứ không lọc 30 dòng mới nhất ở trình duyệt: lọc "GHN tháng
-    trước" trên 30 dòng mới nhất là trả rỗng trong khi sổ có dữ liệu — một
-    câu trả lời sai mà trông như đúng (UX-08-08).
+    Mặc định `chi_ket_noi=True` để màn Kết nối & Tích hợp chỉ đọc các dịch vụ
+    tích hợp và kênh liên lạc (tách khỏi cấu hình nghiệp vụ SLA, CSAT...), đồng
+    thời giữ nguyên các dòng lịch sử cũ trong CSDL (BUG-LS-01).
     """
-    gioi_han = max(1, min(int(gioi_han), 200))
+    gioi_han = max(1, min(int(gioi_han), 10300 if _gioi_han_noi_bo else 200))
     dk: list[str] = []
     ts: list[Any] = []
+    if chi_dich_vu:
+        dk.append("account_id IS NULL")
+    if chi_ket_noi:
+        ts.append(sorted(DICH_VU_LICH_SU_KET_NOI))
+        dk.append(f"dich_vu = ANY(${len(ts)})")
     for cot, v in (("dich_vu = ${}", dich_vu or None), ("sua_luc >= ${}", tu),
                    ("sua_luc < ${}", den), ("account_id = ${}", account_id)):
         if v is not None:
             ts.append(v)
             dk.append(cot.format(len(ts)))
     ts.append(gioi_han)
+    ts.append(max(0, bo_qua))
     rows = await db.fetch(
         "SELECT dich_vu, truong, hanh_dong, bi_mat, account_id, doi_tuong, sua_boi, sua_luc "
         f"FROM lich_su_ket_noi {('WHERE ' + ' AND '.join(dk)) if dk else ''} "
-        f"ORDER BY sua_luc DESC, id DESC LIMIT ${len(ts)}", *ts)
+        f"ORDER BY sua_luc DESC, id DESC LIMIT ${len(ts)-1} OFFSET ${len(ts)}", *ts)
     return [{**r, "account_id": str(r["account_id"]) if r["account_id"] else None,
-             "nhan_truong": _NHAN_TRUONG.get(r["truong"], r["truong"]),
+             "nhan_truong": _nhan_truong_lich_su(r["truong"]),
              "sua_luc": r["sua_luc"].isoformat()} for r in rows]
 
 
@@ -308,27 +371,180 @@ LOAI_DONG_THOI_GIAN = {
 _NHAN_LICH_SU = {"dat": "đặt", "xoa": "bỏ (về .env)", "doi_credential": "đổi thông tin đăng nhập",
                  "bat": "bật", "tat": "tạm ngắt", "doi_tuy_chon": "đổi tuỳ chọn", "tao": "tạo",
                  "xoa_tai_khoan": "xoá tài khoản"}
-# Tên trường kỹ thuật mà thao tác KÊNH ghi (khoá cấu hình như GHN_TOKEN giữ
-# nguyên — đó là tên người vận hành thấy trong .env và trên ô nhập).
-_NHAN_TRUONG = {"tai_khoan": "tài khoản kênh", "trang_thai": "tài khoản kênh",
-                "credentials": "thông tin đăng nhập",
-                "an_binh_luan_co_sdt": "tuỳ chọn ẩn bình luận có SĐT"}
+# Tên trường kỹ thuật mà thao tác KÊNH ghi (khoá cấu hình như GHN_TOKEN quy
+# về nhãn tiếng Việt dễ đọc, không bao giờ trả giá trị bí mật).
+_NHAN_TRUONG = {
+    "tai_khoan": "tài khoản kênh",
+    "trang_thai": "tài khoản kênh",
+    "credentials": "thông tin đăng nhập",
+    "an_binh_luan_co_sdt": "tuỳ chọn ẩn bình luận có SĐT",
+    "GHN_TOKEN": "token Giao Hàng Nhanh (GHN)",
+    "GHN_SHOP_ID": "mã cửa hàng GHN",
+    "GHTK_TOKEN": "token Giao Hàng Tiết Kiệm (GHTK)",
+    "GHTK_MA_DOI_TAC": "mã đối tác GHTK",
+    "GHTK_KHO_ID": "mã kho lấy hàng GHTK",
+    "ERPNEXT_URL": "địa chỉ ERPNext",
+    "ERPNEXT_API_KEY": "khoá API ERPNext",
+    "ERPNEXT_API_SECRET": "khoá bí mật ERPNext",
+    "LLM_PROVIDER": "nhà cung cấp AI",
+    "GEMINI_API_KEY": "khoá API Gemini",
+    "ANTHROPIC_API_KEY": "khoá API Anthropic",
+    "OPENAI_API_KEY": "khoá API OpenAI",
+    "OPENAI_BASE_URL": "địa chỉ máy chủ OpenAI",
+    "MODEL_CHAT": "model trả lời khách",
+    "MODEL_HARD": "model việc khó",
+    "MODEL_CHEAP": "model kiểm sức khoẻ",
+    "THONG_BAO_AI": "công tắc thông báo minh bạch AI",
+    "TIN_THONG_BAO_AI": "nội dung thông báo minh bạch AI",
+}
+
+
+def _nhan_truong_lich_su(truong: str) -> str:
+    goc = str(truong or "").strip()
+    if not goc:
+        return "thiết lập kết nối"
+    if goc in _NHAN_TRUONG:
+        return _NHAN_TRUONG[goc]
+    chuan = goc.upper()
+    if chuan in _NHAN_TRUONG:
+        return _NHAN_TRUONG[chuan]
+    mo_ta = cau_hinh_dong.DANH_MUC.get(chuan)
+    if mo_ta and mo_ta.nhan:
+        return mo_ta.nhan
+    return "thiết lập kết nối"
 # Sự kiện riêng của màn Kết nối mà nhãn nhật ký chung chưa có. Thiếu nhãn thì
 # dòng thời gian hiện mã `kenh.agent_bat_tat` thô — đúng thứ UX-20-05 muốn bỏ.
 _NHAN_SU_KIEN_KENH = {
     "kenh.agent_bat_tat": "Bật/tắt AI cho tài khoản",
     "kenh.ho_so_agent": "Đổi hồ sơ AI của tài khoản",
     "kenh.tuy_chon": "Đổi tuỳ chọn Trang",
+    "kenh.yeu_cau_xoa": "Yêu cầu xoá tài khoản kênh",
     "kenh.xoa_tai_khoan": "Xoá tài khoản kênh",
+    "kenh.xoa_that_bai": "Xoá tài khoản kênh thất bại",
+    "oauth.meta.ket_noi_lai": "Kết nối lại qua Meta OAuth",
 }
 _UUID_TRAN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 _MUC_STATUS = {"active": "xanh", "pending": "vang", "degraded": "do",
                "reauth_required": "do", "disabled": "tat"}
+_CUA_SO_GOP_GIAY = 2.5
+
+
+def _chuan_actor_gop(boi: str | None) -> str:
+    s = " ".join(str(boi or "").split()).casefold()
+    return "" if s in ("", "?", "hệ thống", "system") else s
+
+
+def _cung_actor_gop(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    ax, bx = _chuan_actor_gop(a.get("boi")), _chuan_actor_gop(b.get("boi"))
+    return bool(ax and bx and ax == bx)
+
+
+def _gop_dong_thoi_gian(mucs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    BUG-LS-02 & TECH-DEBT-NK-01: chỉ gộp các bản ghi từ `events`, `lich_su_ket_noi`
+    và `account_health_events` khi có căn cứ rõ ràng cùng thuộc MỘT thao tác;
+    không gộp hai sự kiện độc lập chỉ vì trùng thời điểm, và giữ đầy đủ
+    truy vết nguồn gốc (`nguon`, `kind`, `hanh_dong`, `status`, `code`, `ly_do`).
+    """
+    bo: set[int] = set()
+    sk_idx = [i for i, x in enumerate(mucs) if x["loai"] == "su_kien"]
+    ch_idx = [i for i, x in enumerate(mucs) if x["loai"] == "cau_hinh"]
+    sc_idx = [i for i, x in enumerate(mucs) if x["loai"] == "suc_khoe"]
+
+    def _gan_nguon(item: dict[str, Any], *ten: str) -> None:
+        ds = list(item["ky_thuat"].get("nguon") or [])
+        for t in ten:
+            if t not in ds:
+                ds.append(t)
+        item["ky_thuat"]["nguon"] = ds
+
+    for ic in ch_idx:
+        if ic in bo:
+            continue
+        ch = mucs[ic]
+        hd = ch["ky_thuat"].get("hanh_dong")
+        dt_c = ch["_dt"]
+        for is_k in sk_idx:
+            if is_k in bo:
+                continue
+            sk = mucs[is_k]
+            kind = sk["ky_thuat"].get("kind")
+            if abs((dt_c - sk["_dt"]).total_seconds()) > _CUA_SO_GOP_GIAY:
+                continue
+            if not _cung_actor_gop(ch, sk):
+                continue
+
+            if hd == "tao" and kind == "channel_account.created":
+                _gan_nguon(sk, "events", "lich_su_ket_noi")
+                sk["ky_thuat"]["hanh_dong"] = "tao"
+                sk["ky_thuat"]["truong"] = ch["ky_thuat"].get("truong")
+                bo.add(ic)
+                break
+            if hd == "doi_credential" and kind == "channel_account.credentials_rotated":
+                _gan_nguon(ch, "lich_su_ket_noi", "events")
+                ch["ky_thuat"]["kind"] = kind
+                bo.add(is_k)
+                break
+            if hd in ("bat", "tat") and kind == "channel_account.status_changed":
+                st = sk["ky_thuat"].get("status") or ""
+                khop_tt = (hd == "tat" and st == "disabled") or (
+                    hd == "bat" and st in ("active", "reauth_required", "degraded")
+                )
+                if not khop_tt:
+                    continue
+                _gan_nguon(ch, "lich_su_ket_noi", "events")
+                ch["ky_thuat"]["kind"] = kind
+                ch["ky_thuat"]["status"] = st
+                if sk.get("mo_ta"):
+                    ch["mo_ta"] = sk["mo_ta"]
+                bo.add(is_k)
+                break
+
+    for ih in sc_idx:
+        if ih in bo:
+            continue
+        sc = mucs[ih]
+        st_h = sc["ky_thuat"].get("status")
+        code_h = sc["ky_thuat"].get("code")
+        ly_do_h = str(sc["ky_thuat"].get("ly_do") or "").strip()
+        dt_h = sc["_dt"]
+        for is_k in sk_idx:
+            if is_k in bo:
+                continue
+            sk = mucs[is_k]
+            kind = sk["ky_thuat"].get("kind")
+            if abs((dt_h - sk["_dt"]).total_seconds()) > _CUA_SO_GOP_GIAY:
+                continue
+            if kind == "channel_account.status_changed":
+                st_e = sk["ky_thuat"].get("status")
+                if st_e and st_h and st_e == st_h:
+                    _gan_nguon(sc, "account_health_events", "events")
+                    sc["ky_thuat"]["kind"] = kind
+                    if _chuan_actor_gop(sk.get("boi")):
+                        sc["boi"] = sk["boi"]
+                    bo.add(is_k)
+            elif kind == "zalo_personal.can_quet_lai":
+                ly_do_e = str(sk["ky_thuat"].get("ly_do") or "").strip()
+                ly_do_khop = (not ly_do_e) or (not ly_do_h) or (ly_do_e == ly_do_h)
+                if code_h == "zalo_personal.can_quet_lai" and st_h == "reauth_required" and ly_do_khop:
+                    _gan_nguon(sc, "account_health_events", "events")
+                    ds_kind = list(sc["ky_thuat"].get("kinds") or [])
+                    if "kind" in sc["ky_thuat"] and sc["ky_thuat"]["kind"] not in ds_kind:
+                        ds_kind.append(sc["ky_thuat"]["kind"])
+                    if kind not in ds_kind:
+                        ds_kind.append(kind)
+                    sc["ky_thuat"]["kinds"] = ds_kind
+                    if ly_do_e and not ly_do_h:
+                        sc["ky_thuat"]["ly_do"] = ly_do_e
+                    bo.add(is_k)
+
+    return [x for i, x in enumerate(mucs) if i not in bo]
 
 
 async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
                          tu: datetime | None = None, den: datetime | None = None,
-                         gioi_han: int = 100, xem_cau_hinh: bool = True) -> list[dict[str, Any]]:
+                         gioi_han: int = 100, xem_cau_hinh: bool = True,
+                         bo_qua: int = 0) -> list[dict[str, Any]]:
     """Sự kiện của MỘT tài khoản kênh, mới nhất trước.
 
     Sức khoẻ chỉ lấy những lần ĐỔI trạng thái hoặc đổi mã: sidecar Zalo gửi
@@ -343,9 +559,12 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
     from agent.omnichannel.suc_khoe_kenh import NHAN_TRANG_THAI_KET_NOI
 
     gioi_han = max(1, min(int(gioi_han), 300))
+    trang_size = gioi_han
     loai = set(loai or LOAI_DONG_THOI_GIAN) & set(LOAI_DONG_THOI_GIAN)
     if not xem_cau_hinh:
         loai.discard("cau_hinh")
+    can_gop = len(loai) > 1
+    fetch_limit = (gioi_han + bo_qua) * (2 if can_gop else 1)
     nhan_status = {"active": NHAN_TRANG_THAI_KET_NOI["hoat_dong"],
                    "pending": NHAN_TRANG_THAI_KET_NOI["chua_ket_noi"],
                    "degraded": NHAN_TRANG_THAI_KET_NOI["loi"],
@@ -367,7 +586,7 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
             ) t
             WHERE status_truoc IS DISTINCT FROM status OR code_truoc IS DISTINCT FROM code
             ORDER BY observed_at DESC LIMIT $4
-            """, account_id, tu, den, gioi_han)
+            """, account_id, tu, den, fetch_limit)
         for r in rows:
             ct = r["detail"]
             if isinstance(ct, str):
@@ -377,7 +596,8 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
                     ct = {}
             gt = tra(r["code"])
             ra.append({
-                "luc": r["observed_at"].isoformat(), "loai": "suc_khoe",
+                "luc": r["observed_at"].isoformat(), "_dt": r["observed_at"],
+                "loai": "suc_khoe",
                 "muc": _MUC_STATUS.get(r["status"], "vang"),
                 "tieu_de": nhan_status.get(r["status"], r["status"]),
                 "mo_ta": gt.tieu_de if gt and r["status"] != "active" else "",
@@ -399,7 +619,7 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
               AND ($2::timestamptz IS NULL OR e.created_at >= $2)
               AND ($3::timestamptz IS NULL OR e.created_at < $3)
             ORDER BY e.created_at DESC LIMIT $4
-            """, account_id, tu, den, gioi_han)
+            """, account_id, tu, den, fetch_limit)
         for r in rows:
             ct = r["detail"]
             if isinstance(ct, str):
@@ -409,9 +629,15 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
                     ct = {}
             ct = ct if isinstance(ct, dict) else {}
             st = str(ct.get("status") or "")
+            ky_thuat: dict[str, Any] = {"kind": r["kind"]}
+            if st:
+                ky_thuat["status"] = st
+            if ct.get("ly_do"):
+                ky_thuat["ly_do"] = str(ct.get("ly_do"))[:300]
             ra.append({
-                "luc": r["created_at"].isoformat(), "loai": "su_kien",
-                "muc": _MUC_STATUS.get(st, "xanh" if "loi" not in r["kind"] else "do"),
+                "luc": r["created_at"].isoformat(), "_dt": r["created_at"],
+                "loai": "su_kien",
+                "muc": _MUC_STATUS.get(st, "xanh" if "loi" not in r["kind"] and "that_bai" not in r["kind"] else "do"),
                 "tieu_de": (_NHAN_SU_KIEN_KENH.get(r["kind"]) or NHAN_HANH_DONG.get(r["kind"])
                             or r["kind"]),
                 "mo_ta": f"→ {nhan_status[st]}" if st in nhan_status else "",
@@ -421,23 +647,32 @@ async def dong_thoi_gian(account_id: UUID, *, loai: set[str] | None = None,
                                       or r["actor"] in ("system", "", None)
                                       else str(r["actor"])[:60]),
                 # Chỉ mã sự kiện — detail có thể mang số điện thoại, tên khách.
-                "ky_thuat": {"kind": r["kind"]},
+                "ky_thuat": ky_thuat,
             })
 
     if "cau_hinh" in loai:
-        for r in await doc_lich_su(account_id=account_id, tu=tu, den=den, gioi_han=gioi_han):
+        for r in await doc_lich_su(account_id=account_id, tu=tu, den=den, gioi_han=fetch_limit,
+                                  _gioi_han_noi_bo=True):
+            tieu_de = (
+                f"{_NHAN_LICH_SU.get(r['hanh_dong'], r['hanh_dong'])} "
+                f"{_nhan_truong_lich_su(r['truong'])}"
+                f"{' (bí mật)' if r['bi_mat'] else ''}".strip()
+            )
             ra.append({
-                "luc": r["sua_luc"], "loai": "cau_hinh",
+                "luc": r["sua_luc"], "_dt": datetime.fromisoformat(r["sua_luc"]),
+                "loai": "cau_hinh",
                 "muc": "tat" if r["hanh_dong"] in ("tat", "xoa_tai_khoan") else "xanh",
-                "tieu_de": f"{_NHAN_LICH_SU.get(r['hanh_dong'], r['hanh_dong'])} "
-                           f"{_NHAN_TRUONG.get(r['truong'], r['truong'])}"
-                           f"{' (bí mật)' if r['bi_mat'] else ''}".strip().capitalize(),
+                "tieu_de": tieu_de[:1].upper() + tieu_de[1:],
                 "mo_ta": "", "boi": r["sua_boi"],
                 "ky_thuat": {"hanh_dong": r["hanh_dong"], "truong": r["truong"]},
             })
 
+    if can_gop:
+        ra = _gop_dong_thoi_gian(ra)
     ra.sort(key=lambda x: x["luc"], reverse=True)
-    return ra[:gioi_han]
+    for x in ra:
+        x.pop("_dt", None)
+    return ra[bo_qua:bo_qua + trang_size]
 
 
 # ------------------------------------------------------------------ webhook
